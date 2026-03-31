@@ -1,0 +1,174 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  FLUTTER_VERSION: '3.41.x'
+
+jobs:
+  build-linux:
+    name: Build Linux Desktop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install Linux dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build libgtk-3-dev
+      - name: Build
+        working-directory: apps/client
+        run: flutter build linux --release
+      - name: Package
+        run: |
+          cd apps/client/build/linux/x64/release/bundle
+          tar czf ${{ github.workspace }}/echo-linux-x64.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: echo-linux-x64
+          path: echo-linux-x64.tar.gz
+
+  build-windows:
+    name: Build Windows Desktop
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build
+        working-directory: apps/client
+        run: flutter build windows --release
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path apps/client/build/windows/x64/runner/Release/* -DestinationPath echo-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: echo-windows-x64
+          path: echo-windows-x64.zip
+
+  build-web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build
+        working-directory: apps/client
+        run: flutter build web --release
+      - name: Package
+        run: |
+          cd apps/client/build/web
+          tar czf ${{ github.workspace }}/echo-web.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: echo-web
+          path: echo-web.tar.gz
+
+  build-server:
+    name: Build Server Binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --package echo-server
+      - name: Package
+        run: |
+          mkdir -p echo-server-pkg
+          cp target/release/echo-server echo-server-pkg/
+          cp -r apps/server/src/migrations echo-server-pkg/
+          cp .env.example echo-server-pkg/
+          cd echo-server-pkg && tar czf ${{ github.workspace }}/echo-server-linux-x64.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: echo-server-linux-x64
+          path: echo-server-linux-x64.tar.gz
+
+  docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/server
+          tags: |
+            type=sha,prefix=
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-windows, build-web, build-server]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: List artifacts
+        run: find artifacts -type f | sort
+      - name: Create Release (tagged)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/echo-linux-x64/echo-linux-x64.tar.gz
+            artifacts/echo-windows-x64/echo-windows-x64.zip
+            artifacts/echo-web/echo-web.tar.gz
+            artifacts/echo-server-linux-x64/echo-server-linux-x64.tar.gz
+      - name: Create/Update Latest Pre-Release
+        if: github.ref == 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          prerelease: true
+          generate_release_notes: false
+          body: |
+            Automated build from `main` branch.
+            Commit: ${{ github.sha }}
+            Built: ${{ github.event.head_commit.timestamp }}
+          files: |
+            artifacts/echo-linux-x64/echo-linux-x64.tar.gz
+            artifacts/echo-windows-x64/echo-windows-x64.zip
+            artifacts/echo-web/echo-web.tar.gz
+            artifacts/echo-server-linux-x64/echo-server-linux-x64.tar.gz
