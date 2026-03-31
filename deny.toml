@@ -2,10 +2,8 @@
 all-features = true
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "deny"
-notice = "warn"
+version = 2
+ignore = []
 
 [licenses]
 unlicensed = "deny"
