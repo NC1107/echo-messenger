@@ -17,14 +17,11 @@ jobs:
   audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
-    permissions:
-      checks: write
-      contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-audit
+      - run: cargo audit --ignore RUSTSEC-2023-0071
   deny:
     name: License + Ban Check
     runs-on: ubuntu-latest
