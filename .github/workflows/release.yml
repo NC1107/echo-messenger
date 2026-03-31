@@ -24,21 +24,69 @@ jobs:
           channel: stable
           cache: true
       - name: Install Linux dependencies
-        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build libgtk-3-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libfuse2
       - name: Build
         working-directory: apps/client
         run: flutter build linux --release
-      - name: Package
+      - name: Package tar.gz
         run: |
           cd apps/client/build/linux/x64/release/bundle
           tar czf ${{ github.workspace }}/echo-linux-x64.tar.gz .
+      - name: Build AppImage
+        run: |
+          # Download appimagetool
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x appimagetool
+
+          # Create AppDir structure
+          mkdir -p Echo.AppDir/usr/bin
+          mkdir -p Echo.AppDir/usr/lib
+          mkdir -p Echo.AppDir/usr/share/applications
+          mkdir -p Echo.AppDir/usr/share/icons/hicolor/256x256/apps
+
+          # Copy Flutter bundle
+          cp -r apps/client/build/linux/x64/release/bundle/* Echo.AppDir/usr/bin/
+
+          # Create desktop file
+          cat > Echo.AppDir/usr/share/applications/echo.desktop << 'DESKTOP'
+          [Desktop Entry]
+          Name=Echo
+          Comment=Encrypted Messaging
+          Exec=echo_app
+          Icon=echo
+          Type=Application
+          Categories=Network;InstantMessaging;
+          DESKTOP
+          cp Echo.AppDir/usr/share/applications/echo.desktop Echo.AppDir/echo.desktop
+
+          # Create a simple icon (placeholder)
+          convert -size 256x256 xc:'#4338CA' -fill white -gravity center -pointsize 72 -annotate 0 'E' Echo.AppDir/usr/share/icons/hicolor/256x256/apps/echo.png 2>/dev/null || \
+          echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAALEwAACxMBAJqcGAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAAGfSURBVHic7dpBDoMwDETR3v+ipe5CFYkJxNMx0v+LRBjHThgAAAAAAACAt7pExBkRm4p8axAQJwfE8wNi3/cQcSIgzp8g7uN5IiCePkHcx+wEEBCLE0BALE4AAbE4AQTE4gQQEIsTQEAsTgABsTgBBMTiBBAQixPw9wFpTAD9E0BALE4AAbE4AQTE4gQQEIsTQEAsTgABsTgBBMTiBBAQixNAQCxOAAGxOAEExOIEEBCLE0BALE4AAbE4AQTE4gT8PCAiIuJExL6NX29OQOwr9m08TwTE0yeI+3idCAjxBHEfs/87IJ4fEPu+h4gTAfH0CeI+ZicAAAAAAACgld/Z11F+5qlvwbfnGr7y0rdyTQ==" | base64 -d > Echo.AppDir/usr/share/icons/hicolor/256x256/apps/echo.png
+          cp Echo.AppDir/usr/share/icons/hicolor/256x256/apps/echo.png Echo.AppDir/echo.png
+
+          # Create AppRun
+          cat > Echo.AppDir/AppRun << 'APPRUN'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "$0")")"
+          export LD_LIBRARY_PATH="${HERE}/usr/bin/lib:${LD_LIBRARY_PATH}"
+          exec "${HERE}/usr/bin/echo_app" "$@"
+          APPRUN
+          chmod +x Echo.AppDir/AppRun
+
+          # Build AppImage
+          ARCH=x86_64 ./appimagetool --no-appstream Echo.AppDir Echo-x86_64.AppImage || \
+          ARCH=x86_64 ./appimagetool Echo.AppDir Echo-x86_64.AppImage
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
           name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'Latest Build' }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          files: echo-linux-x64.tar.gz
+          files: |
+            echo-linux-x64.tar.gz
+            Echo-x86_64.AppImage
 
   build-windows:
     name: Build Windows Desktop
@@ -53,17 +101,53 @@ jobs:
       - name: Build
         working-directory: apps/client
         run: flutter build windows --release
-      - name: Package
+      - name: Create InnoSetup script
         shell: pwsh
         run: |
-          Compress-Archive -Path apps/client/build/windows/x64/runner/Release/* -DestinationPath echo-windows-x64.zip
+          @"
+          [Setup]
+          AppName=Echo
+          AppVersion=0.1.0
+          AppPublisher=Echo Contributors
+          DefaultDirName={autopf}\Echo
+          DefaultGroupName=Echo
+          OutputDir=.
+          OutputBaseFilename=Echo-Setup-x64
+          Compression=lzma2
+          SolidCompression=yes
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          UninstallDisplayIcon={app}\echo_app.exe
+          SetupIconFile=
+
+          [Files]
+          Source: "apps\client\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs
+
+          [Icons]
+          Name: "{group}\Echo"; Filename: "{app}\echo_app.exe"
+          Name: "{commondesktop}\Echo"; Filename: "{app}\echo_app.exe"
+          Name: "{group}\Uninstall Echo"; Filename: "{uninstallexe}"
+
+          [Run]
+          Filename: "{app}\echo_app.exe"; Description: "Launch Echo"; Flags: postinstall nowait
+          "@ | Out-File -Encoding ASCII echo-setup.iss
+      - name: Build installer
+        shell: cmd
+        run: |
+          "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" echo-setup.iss
+      - name: Package zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path apps/client/build/windows/x64/runner/Release/* -DestinationPath echo-windows-x64-portable.zip
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
           name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'Latest Build' }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          files: echo-windows-x64.zip
+          files: |
+            Echo-Setup-x64.exe
+            echo-windows-x64-portable.zip
 
   build-web:
     name: Build Web
