@@ -1,0 +1,36 @@
+name: Flutter CI
+
+on:
+  pull_request:
+    paths: ["apps/client/**"]
+  push:
+    branches: [main, dev]
+    paths: ["apps/client/**"]
+
+concurrency:
+  group: flutter-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Analyze + Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.29.x"
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        working-directory: apps/client
+        run: flutter pub get
+      - name: Format check
+        working-directory: apps/client
+        run: dart format --set-exit-if-changed .
+      - name: Analyze
+        working-directory: apps/client
+        run: flutter analyze --fatal-infos
+      - name: Test
+        working-directory: apps/client
+        run: flutter test

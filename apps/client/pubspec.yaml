@@ -1,0 +1,25 @@
+name: echo_app
+description: Decentralized encrypted messenger
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.6.0
+  go_router: ^14.0.0
+  http: ^1.3.0
+  web_socket_channel: ^3.0.0
+  cryptography: ^2.7.0
+  shared_preferences: ^2.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

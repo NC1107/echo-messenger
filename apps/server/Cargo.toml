@@ -1,0 +1,41 @@
+[package]
+name = "echo-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+
+# Web framework
+axum = { version = "0.8", features = ["ws"] }
+axum-extra = { version = "0.10", features = ["typed-header"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
+
+# Auth
+jsonwebtoken = "9"
+argon2 = "0.5"
+
+# WebSocket / async
+futures-util = "0.3"
+
+# Connection hub
+dashmap = "6"
+
+# Config
+dotenvy = "0.15"
+
+# Encoding
+base64 = "0.22"
+
+# Tracing
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

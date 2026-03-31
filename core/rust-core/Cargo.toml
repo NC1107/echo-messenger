@@ -1,0 +1,35 @@
+[package]
+name = "echo-core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+
+# Networking
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", features = ["json"] }
+
+# Storage
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher"] }
+
+# Crypto utilities
+rand = "0.8"
+base64 = "0.22"
+
+# Crypto - Signal Protocol primitives
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+ed25519-dalek = { version = "2", features = ["serde"] }
+aes-gcm = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"

@@ -1,0 +1,81 @@
+# Rust
+**/target/
+**/*.rs.bk
+
+# Flutter / Dart
+**/.dart_tool/
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/build/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/android/.gradle/
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/ios/Flutter/Flutter.framework
+**/ios/.symlinks/
+**/ios/Pods/
+**/linux/flutter/ephemeral/
+**/windows/flutter/ephemeral/
+**/macos/Flutter/ephemeral/
+**/.metadata
+
+# Generated code (flutter_rust_bridge)
+**/generated/
+**/bridge_generated.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Secrets & Environment
+.env
+.env.local
+.env.production
+*.pem
+*.key
+*.p12
+*.keystore
+*.jks
+
+# Build artifacts
+*.so
+*.dylib
+*.dll
+*.a
+*.o
+*.apk
+*.aab
+*.ipa
+*.deb
+*.rpm
+*.AppImage
+
+# Coverage
+coverage/
+lcov.info
+*.profraw
+*.profdata
+tarpaulin-report.html
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker overrides
+docker-compose.override.yml
+
+# Node (commitlint)
+node_modules/
+package-lock.json
+
+# Research/context files (project notes, not source)
+/research/
+/context/
+/meta/
+/architecture/
+RESEARCH.md
