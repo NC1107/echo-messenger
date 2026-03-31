@@ -96,8 +96,59 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   void confirmSent(String messageId, String conversationId, String timestamp) {
-    // Update optimistic messages with real data if needed.
-    // For now, optimistic messages are already displayed.
+    // Replace the most recent pending/sending message in this conversation
+    // with the server-assigned ID so that delivery receipts can match it.
+    final updatedConv =
+        Map<String, List<ChatMessage>>.from(state.messagesByConversation);
+    final messages = updatedConv[conversationId];
+    if (messages != null) {
+      // Find the most recent optimistic (pending_*) message from us
+      for (var i = messages.length - 1; i >= 0; i--) {
+        final msg = messages[i];
+        if (msg.id.startsWith('pending_') &&
+            msg.isMine &&
+            msg.status == MessageStatus.sending) {
+          final updatedMessages = List<ChatMessage>.from(messages);
+          updatedMessages[i] = msg.copyWith(
+            id: messageId,
+            timestamp: timestamp,
+            status: MessageStatus.sent,
+          );
+          updatedConv[conversationId] = updatedMessages;
+          break;
+        }
+      }
+    }
+
+    // Also update in peer-based map
+    final updatedPeer =
+        Map<String, List<ChatMessage>>.from(state.messagesByPeer);
+    for (final key in updatedPeer.keys) {
+      final peerMessages = updatedPeer[key]!;
+      for (var i = peerMessages.length - 1; i >= 0; i--) {
+        final msg = peerMessages[i];
+        if (msg.id.startsWith('pending_') &&
+            msg.isMine &&
+            msg.status == MessageStatus.sending &&
+            msg.conversationId == conversationId) {
+          final updatedMessages = List<ChatMessage>.from(peerMessages);
+          updatedMessages[i] = msg.copyWith(
+            id: messageId,
+            timestamp: timestamp,
+            status: MessageStatus.sent,
+          );
+          updatedPeer[key] = updatedMessages;
+          break;
+        }
+      }
+    }
+
+    state = ChatState(
+      messagesByConversation: updatedConv,
+      messagesByPeer: updatedPeer,
+      loadingHistory: state.loadingHistory,
+      hasMore: state.hasMore,
+    );
   }
 
   /// Load message history from the server for a conversation.

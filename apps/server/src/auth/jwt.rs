@@ -14,7 +14,7 @@ pub struct Claims {
 
 pub fn create_token(user_id: Uuid, secret: &str) -> Result<String, AppError> {
     let exp = chrono::Utc::now()
-        .checked_add_signed(chrono::Duration::hours(24))
+        .checked_add_signed(chrono::Duration::days(7))
         .expect("valid timestamp")
         .timestamp() as usize;
 
@@ -71,9 +71,9 @@ mod tests {
         let token = create_token(user_id, TEST_SECRET).unwrap();
         let claims = validate_token(&token, TEST_SECRET).unwrap();
         assert_eq!(claims.sub, user_id.to_string());
-        // Expiry should be roughly 24 hours from now
+        // Expiry should be roughly 7 days from now
         let now = chrono::Utc::now().timestamp() as usize;
         assert!(claims.exp > now);
-        assert!(claims.exp <= now + 24 * 3600 + 5); // within 24h + small margin
+        assert!(claims.exp <= now + 7 * 24 * 3600 + 5); // within 7d + small margin
     }
 }

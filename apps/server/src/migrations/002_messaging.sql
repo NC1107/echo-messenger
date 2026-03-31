@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS contacts (
     UNIQUE(requester_id, target_id)
 );
 CREATE INDEX IF NOT EXISTS idx_contacts_target ON contacts(target_id, status);
+CREATE INDEX IF NOT EXISTS idx_contacts_requester ON contacts(requester_id, status);
 
 CREATE TABLE IF NOT EXISTS conversations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

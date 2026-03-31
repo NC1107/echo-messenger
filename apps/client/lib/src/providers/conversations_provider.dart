@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -50,9 +51,18 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   Future<void> loadConversations() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
+      developer.log(
+        'loadConversations: fetching from $_serverUrl/api/conversations',
+        name: 'ConversationsProvider',
+      );
       final response = await http.get(
         Uri.parse('$_serverUrl/api/conversations'),
         headers: _headers,
+      );
+
+      developer.log(
+        'loadConversations: status=${response.statusCode} body=${response.body}',
+        name: 'ConversationsProvider',
       );
 
       if (response.statusCode == 200) {
@@ -61,6 +71,11 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         final conversations = list
             .map((e) => Conversation.fromJson(e as Map<String, dynamic>))
             .toList();
+
+        developer.log(
+          'loadConversations: parsed ${conversations.length} conversations',
+          name: 'ConversationsProvider',
+        );
 
         // Replace encrypted previews with cached decrypted text or placeholder
         for (var i = 0; i < conversations.length; i++) {
@@ -82,12 +97,20 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
 
         state = state.copyWith(conversations: conversations, isLoading: false);
       } else {
+        developer.log(
+          'loadConversations: failed with status ${response.statusCode}',
+          name: 'ConversationsProvider',
+        );
         state = state.copyWith(
           isLoading: false,
           error: 'Failed to load conversations',
         );
       }
     } catch (e) {
+      developer.log(
+        'loadConversations: exception $e',
+        name: 'ConversationsProvider',
+      );
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }

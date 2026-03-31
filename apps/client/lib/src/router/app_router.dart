@@ -2,11 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
-import '../screens/chat_screen.dart';
 import '../screens/contacts_screen.dart';
-import '../screens/conversations_screen.dart';
 import '../screens/create_group_screen.dart';
 import '../screens/group_info_screen.dart';
+import '../screens/home_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/register_screen.dart';
 
@@ -22,7 +21,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           state.matchedLocation == '/register';
 
       if (!isLoggedIn && !isAuthRoute) return '/login';
-      if (isLoggedIn && isAuthRoute) return '/conversations';
+      if (isLoggedIn && isAuthRoute) return '/home';
       return null;
     },
     routes: [
@@ -35,9 +34,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const RegisterScreen(),
       ),
       GoRoute(
-        path: '/conversations',
-        builder: (context, state) => const ConversationsScreen(),
+        path: '/home',
+        builder: (context, state) => const HomeScreen(),
       ),
+      // Keep these as overlay routes that push on top of home
       GoRoute(
         path: '/contacts',
         builder: (context, state) => const ContactsScreen(),
@@ -45,24 +45,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/create-group',
         builder: (context, state) => const CreateGroupScreen(),
-      ),
-      GoRoute(
-        path: '/chat/:userId',
-        builder: (_, state) => ChatScreen(
-          userId: state.pathParameters['userId']!,
-          username: state.uri.queryParameters['username'] ?? 'Unknown',
-          conversationId: state.uri.queryParameters['conversationId'],
-          isGroup: false,
-        ),
-      ),
-      GoRoute(
-        path: '/chat-group/:conversationId',
-        builder: (_, state) => ChatScreen(
-          userId: '', // Not used for group chats
-          username: state.uri.queryParameters['name'] ?? 'Group',
-          conversationId: state.pathParameters['conversationId'],
-          isGroup: true,
-        ),
       ),
       GoRoute(
         path: '/group-info/:conversationId',

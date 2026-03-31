@@ -185,7 +185,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       if ((response.statusCode == 200 || response.statusCode == 204) &&
           mounted) {
         await ref.read(conversationsProvider.notifier).loadConversations();
-        if (mounted) context.go('/conversations');
+        if (mounted) context.go('/home');
       }
     } catch (_) {
       if (mounted) {

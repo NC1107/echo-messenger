@@ -141,9 +141,8 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                             : null,
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () {
-                          context.push(
-                            '/chat/${contact.userId}?username=${Uri.encodeComponent(contact.username)}',
-                          );
+                          // Navigate back to home -- the user can select the conversation there
+                          context.go('/home');
                         },
                       ),
                     ),

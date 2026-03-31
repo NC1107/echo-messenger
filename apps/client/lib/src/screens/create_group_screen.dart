@@ -56,11 +56,8 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
     setState(() => _isCreating = false);
 
     if (conversationId != null && conversationId.isNotEmpty) {
-      // Navigate to the new group chat
-      context.go(
-        '/chat-group/$conversationId'
-        '?name=${Uri.encodeComponent(name)}',
-      );
+      // Navigate back to home (the new group will appear in the list)
+      context.go('/home');
     }
   }
 

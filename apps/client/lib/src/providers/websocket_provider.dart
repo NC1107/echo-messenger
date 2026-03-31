@@ -277,6 +277,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
             senderUsername: senderUsername,
           );
     }
+
+    // Brute-force: always reload conversations from server to ensure the list
+    // is current, regardless of whether the conversation was already known.
+    ref.read(conversationsProvider.notifier).loadConversations();
   }
 
   Future<void> _decryptAndDeliverWithPreview(

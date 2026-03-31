@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthState {
   final bool isLoggedIn;
@@ -42,9 +43,50 @@ class AuthState {
 class AuthNotifier extends StateNotifier<AuthState> {
   AuthNotifier() : super(const AuthState());
 
+  static const _keyUsername = 'echo_auth_username';
+  static const _keyPassword = 'echo_auth_password';
+
   String _serverUrl = 'http://localhost:8080';
 
   void setServerUrl(String url) => _serverUrl = url;
+
+  /// Try to auto-login using stored credentials from SharedPreferences.
+  Future<bool> tryAutoLogin() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final username = prefs.getString(_keyUsername);
+      final password = prefs.getString(_keyPassword);
+      if (username != null && password != null) {
+        await login(username, password);
+        return state.isLoggedIn;
+      }
+    } catch (_) {
+      // Auto-login failed silently -- user can log in manually
+    }
+    return false;
+  }
+
+  /// Persist credentials to SharedPreferences for auto-login on restart.
+  Future<void> _storeCredentials(String username, String password) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyUsername, username);
+      await prefs.setString(_keyPassword, password);
+    } catch (_) {
+      // Best effort
+    }
+  }
+
+  /// Clear stored credentials.
+  Future<void> _clearCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keyUsername);
+      await prefs.remove(_keyPassword);
+    } catch (_) {
+      // Best effort
+    }
+  }
 
   Future<void> register(String username, String password) async {
     state = state.copyWith(isLoading: true, error: null);
@@ -63,6 +105,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           username: username,
           token: data['access_token'] as String,
         );
+        await _storeCredentials(username, password);
       } else {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         state = state.copyWith(
@@ -92,6 +135,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           username: username,
           token: data['access_token'] as String,
         );
+        await _storeCredentials(username, password);
       } else {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         state = state.copyWith(
@@ -105,6 +149,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   void logout() {
+    _clearCredentials();
     state = const AuthState();
   }
 }

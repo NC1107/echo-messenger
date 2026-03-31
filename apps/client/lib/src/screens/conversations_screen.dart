@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -17,6 +19,8 @@ class ConversationsScreen extends ConsumerStatefulWidget {
 }
 
 class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
+  Timer? _refreshTimer;
+
   @override
   void initState() {
     super.initState();
@@ -25,19 +29,33 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _initData() async {
     // Initialize crypto (generate keys, upload to server)
     final cryptoNotifier = ref.read(cryptoProvider.notifier);
     await cryptoNotifier.initAndUploadKeys();
 
-    // Load conversations
-    ref.read(conversationsProvider.notifier).loadConversations();
+    // Load conversations AFTER crypto init completes
+    await ref.read(conversationsProvider.notifier).loadConversations();
 
     // Connect WebSocket
     final wsState = ref.read(websocketProvider);
     if (!wsState.isConnected) {
       ref.read(websocketProvider.notifier).connect();
     }
+
+    // Periodically reload conversations every 15 seconds as a safety net
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) {
+        ref.read(conversationsProvider.notifier).loadConversations();
+      }
+    });
   }
 
   void _logout() {
