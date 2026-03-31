@@ -1,5 +1,5 @@
 -- Add kind and title columns to conversations
-ALTER TABLE conversations ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'direct' CHECK (kind IN ('direct', 'group'));
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'direct';
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS title TEXT;
 
 -- Reactions table
@@ -19,4 +19,4 @@ CREATE TABLE IF NOT EXISTS read_receipts (
     user_id UUID NOT NULL REFERENCES users(id),
     last_read_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (conversation_id, user_id)
-)
+);

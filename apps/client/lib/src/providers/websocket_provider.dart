@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/chat_message.dart';
@@ -146,24 +147,33 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     }));
   }
 
-  /// Send a reaction.
-  void sendReaction(String conversationId, String messageId, String emoji) {
-    _channel?.sink.add(jsonEncode({
-      'type': 'reaction',
-      'conversation_id': conversationId,
-      'message_id': messageId,
-      'emoji': emoji,
-    }));
+  /// Send a reaction via REST (server broadcasts via WebSocket to other members).
+  Future<void> sendReaction(
+      String conversationId, String messageId, String emoji) async {
+    final token = ref.read(authProvider).token ?? '';
+    try {
+      await http.post(
+        Uri.parse('http://localhost:8080/api/messages/$messageId/reactions'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'emoji': emoji}),
+      );
+    } catch (_) {}
   }
 
-  /// Remove a reaction.
-  void removeReaction(String conversationId, String messageId, String emoji) {
-    _channel?.sink.add(jsonEncode({
-      'type': 'remove_reaction',
-      'conversation_id': conversationId,
-      'message_id': messageId,
-      'emoji': emoji,
-    }));
+  /// Remove a reaction via REST.
+  Future<void> removeReaction(
+      String conversationId, String messageId, String emoji) async {
+    final token = ref.read(authProvider).token ?? '';
+    try {
+      await http.delete(
+        Uri.parse(
+            'http://localhost:8080/api/messages/$messageId/reactions/$emoji'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+    } catch (_) {}
   }
 
   /// Send a read receipt via WebSocket.

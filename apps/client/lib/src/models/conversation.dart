@@ -20,10 +20,20 @@ class Conversation {
   });
 
   factory Conversation.fromJson(Map<String, dynamic> json) {
-    final membersList = (json['members'] as List?)
+    var membersList = (json['members'] as List?)
             ?.map((e) => ConversationMember.fromJson(e as Map<String, dynamic>))
             .toList() ??
         [];
+
+    // Fallback: if server returns peer_user_id/peer_username (old format)
+    if (membersList.isEmpty && json['peer_user_id'] != null) {
+      membersList = [
+        ConversationMember(
+          userId: json['peer_user_id'] as String,
+          username: json['peer_username'] as String? ?? 'Unknown',
+        ),
+      ];
+    }
 
     // Server returns kind as "direct"/"group", or is_group as bool
     final kind = json['kind'] as String?;

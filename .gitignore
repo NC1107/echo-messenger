@@ -79,3 +79,11 @@ package-lock.json
 /meta/
 /architecture/
 RESEARCH.md
+
+# Node
+node_modules/
+package.json
+package-lock.json
+
+# Playwright
+tests/e2e/test-results/

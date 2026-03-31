@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 class AuthState {
   final bool isLoggedIn;
   final String? userId;
+  final String? username;
   final String? token;
   final String? error;
   final bool isLoading;
@@ -13,6 +14,7 @@ class AuthState {
   const AuthState({
     this.isLoggedIn = false,
     this.userId,
+    this.username,
     this.token,
     this.error,
     this.isLoading = false,
@@ -21,6 +23,7 @@ class AuthState {
   AuthState copyWith({
     bool? isLoggedIn,
     String? userId,
+    String? username,
     String? token,
     String? error,
     bool? isLoading,
@@ -28,6 +31,7 @@ class AuthState {
     return AuthState(
       isLoggedIn: isLoggedIn ?? this.isLoggedIn,
       userId: userId ?? this.userId,
+      username: username ?? this.username,
       token: token ?? this.token,
       error: error,
       isLoading: isLoading ?? this.isLoading,
@@ -56,6 +60,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         state = AuthState(
           isLoggedIn: true,
           userId: data['user_id'] as String,
+          username: username,
           token: data['access_token'] as String,
         );
       } else {
@@ -84,6 +89,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         state = AuthState(
           isLoggedIn: true,
           userId: data['user_id'] as String,
+          username: username,
           token: data['access_token'] as String,
         );
       } else {

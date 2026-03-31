@@ -77,6 +77,12 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     );
   }
 
+  bool _looksEncrypted(String text) {
+    // Base64 ciphertext is typically 28+ chars of alphanumeric + /+=
+    if (text.length < 20) return false;
+    return RegExp(r'^[A-Za-z0-9+/=]{20,}$').hasMatch(text);
+  }
+
   String _formatTimestamp(String? timestamp) {
     if (timestamp == null || timestamp.isEmpty) return '';
     try {
@@ -106,7 +112,9 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     final conversationsState = ref.watch(conversationsProvider);
     final wsState = ref.watch(websocketProvider);
     final cryptoState = ref.watch(cryptoProvider);
-    final myUserId = ref.watch(authProvider).userId ?? '';
+    final authState = ref.watch(authProvider);
+    final myUserId = authState.userId ?? '';
+    final myUsername = authState.username ?? '';
 
     ref.listen<ConversationsState>(conversationsProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
@@ -144,6 +152,21 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
               size: 14,
               color: cryptoState.isInitialized ? Colors.green : Colors.orange,
             ),
+            if (myUsername.isNotEmpty) ...[
+              const Spacer(),
+              CircleAvatar(
+                radius: 14,
+                child: Text(
+                  myUsername[0].toUpperCase(),
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                myUsername,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ],
         ),
         actions: [
@@ -202,6 +225,10 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                             _formatTimestamp(conv.lastMessageTimestamp);
 
                         String? snippet = conv.lastMessage;
+                        // If the message looks like base64 ciphertext, show placeholder
+                        if (snippet != null && _looksEncrypted(snippet)) {
+                          snippet = 'Encrypted message';
+                        }
                         if (snippet != null &&
                             conv.isGroup &&
                             conv.lastMessageSender != null) {
