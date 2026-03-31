@@ -1,11 +1,13 @@
 pub mod auth;
 pub mod contacts;
+pub mod groups;
 pub mod keys;
 pub mod messages;
+pub mod reactions;
 pub mod ws;
 
 use axum::Router;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
@@ -36,16 +38,36 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let message_routes = Router::new()
         .route("/conversations", get(messages::list_conversations))
-        .route("/messages/{conversation_id}", get(messages::get_messages));
+        .route(
+            "/conversations/{conversation_id}/read",
+            post(reactions::mark_read),
+        )
+        .route("/messages/{conversation_id}", get(messages::get_messages))
+        .route(
+            "/messages/{message_id}/reactions",
+            post(reactions::add_reaction),
+        )
+        .route(
+            "/messages/{message_id}/reactions/{emoji}",
+            delete(reactions::remove_reaction),
+        );
 
     let key_routes = Router::new()
         .route("/upload", post(keys::upload_bundle))
         .route("/bundle/{user_id}", get(keys::get_bundle));
 
+    let group_routes = Router::new()
+        .route("/", post(groups::create_group))
+        .route("/{id}", get(groups::get_group))
+        .route("/{id}/members", post(groups::add_member))
+        .route("/{id}/members/{user_id}", delete(groups::remove_member))
+        .route("/{id}/leave", post(groups::leave_group));
+
     Router::new()
         .nest("/api/auth", auth_routes)
         .nest("/api/contacts", contact_routes)
         .nest("/api/keys", key_routes)
+        .nest("/api/groups", group_routes)
         .nest("/api", message_routes)
         .route("/ws", get(ws::ws_upgrade))
         .layer(cors)

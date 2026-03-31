@@ -52,6 +52,66 @@ void main() {
       expect(msg.content, 'full field test');
       expect(msg.timestamp, '2026-03-31T15:30:00Z');
       expect(msg.isMine, isFalse);
+      expect(msg.status, MessageStatus.sent);
+      expect(msg.reactions, isEmpty);
+    });
+
+    test('default status is sent', () {
+      final json = {
+        'message_id': 'msg-1',
+        'from_user_id': 'user-abc',
+        'from_username': 'alice',
+        'conversation_id': 'conv-1',
+        'content': 'hello',
+        'timestamp': '2026-03-31T12:00:00Z',
+      };
+
+      final msg = ChatMessage.fromServerJson(json, 'user-abc');
+      expect(msg.status, MessageStatus.sent);
+    });
+
+    test('reactions parsed from json', () {
+      final json = {
+        'message_id': 'msg-1',
+        'from_user_id': 'user-abc',
+        'from_username': 'alice',
+        'conversation_id': 'conv-1',
+        'content': 'hello',
+        'timestamp': '2026-03-31T12:00:00Z',
+        'reactions': [
+          {
+            'message_id': 'msg-1',
+            'user_id': 'user-xyz',
+            'username': 'bob',
+            'emoji': '👍',
+          },
+        ],
+      };
+
+      final msg = ChatMessage.fromServerJson(json, 'user-abc');
+      expect(msg.reactions, hasLength(1));
+      expect(msg.reactions.first.emoji, '👍');
+      expect(msg.reactions.first.userId, 'user-xyz');
+    });
+
+    test('copyWith preserves unchanged fields', () {
+      const msg = ChatMessage(
+        id: 'msg-1',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'hello',
+        timestamp: '2026-03-31T12:00:00Z',
+        isMine: true,
+        status: MessageStatus.sending,
+      );
+
+      final updated = msg.copyWith(status: MessageStatus.sent);
+
+      expect(updated.id, 'msg-1');
+      expect(updated.content, 'hello');
+      expect(updated.status, MessageStatus.sent);
+      expect(updated.isMine, isTrue);
     });
   });
 }

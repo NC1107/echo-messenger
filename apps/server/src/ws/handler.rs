@@ -15,7 +15,15 @@ use crate::routes::AppState;
 #[serde(tag = "type")]
 enum ClientMessage {
     #[serde(rename = "send_message")]
-    SendMessage { to_user_id: Uuid, content: String },
+    SendMessage {
+        conversation_id: Option<Uuid>,
+        to_user_id: Option<Uuid>,
+        content: String,
+    },
+    #[serde(rename = "typing")]
+    Typing { conversation_id: Uuid },
+    #[serde(rename = "read_receipt")]
+    ReadReceipt { conversation_id: Uuid },
 }
 
 #[derive(Serialize)]
@@ -35,6 +43,17 @@ enum ServerMessage {
         message_id: Uuid,
         conversation_id: Uuid,
         timestamp: DateTime<Utc>,
+    },
+    #[serde(rename = "typing")]
+    Typing {
+        conversation_id: Uuid,
+        user_id: Uuid,
+        username: String,
+    },
+    #[serde(rename = "read_receipt")]
+    ReadReceipt {
+        conversation_id: Uuid,
+        user_id: Uuid,
     },
     #[serde(rename = "error")]
     Error { message: String },
@@ -110,79 +129,204 @@ async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str,
 
     match msg {
         ClientMessage::SendMessage {
+            conversation_id,
             to_user_id,
             content,
         } => {
-            // Verify contacts
-            match db::contacts::are_contacts(&state.pool, sender_id, to_user_id).await {
-                Ok(true) => {}
-                Ok(false) => {
-                    send_error(state, sender_id, "Not a contact");
-                    return;
-                }
-                Err(_) => {
-                    send_error(state, sender_id, "Database error");
-                    return;
-                }
+            handle_send_message(state, sender_id, sender_username, conversation_id, to_user_id, content).await;
+        }
+        ClientMessage::Typing { conversation_id } => {
+            handle_typing(state, sender_id, sender_username, conversation_id).await;
+        }
+        ClientMessage::ReadReceipt { conversation_id } => {
+            handle_read_receipt(state, sender_id, conversation_id).await;
+        }
+    }
+}
+
+async fn handle_send_message(
+    state: &AppState,
+    sender_id: Uuid,
+    sender_username: &str,
+    conversation_id: Option<Uuid>,
+    to_user_id: Option<Uuid>,
+    content: String,
+) {
+    // Determine the conversation to send to.
+    // If conversation_id is provided, use it (for group messages or explicit DM).
+    // If to_user_id is provided without conversation_id, find/create DM conversation (backward compat).
+    let conv_id = if let Some(cid) = conversation_id {
+        // Verify sender is a member of this conversation
+        match db::groups::is_member(&state.pool, cid, sender_id).await {
+            Ok(true) => cid,
+            Ok(false) => {
+                send_error(state, sender_id, "Not a member of this conversation");
+                return;
             }
-
-            // Find or create conversation
-            let conv_id = match db::messages::find_or_create_dm_conversation(
-                &state.pool,
-                sender_id,
-                to_user_id,
-            )
-            .await
-            {
-                Ok(id) => id,
-                Err(_) => {
-                    send_error(state, sender_id, "Failed to create conversation");
-                    return;
-                }
-            };
-
-            // Store message
-            let stored = match db::messages::store_message(
-                &state.pool,
-                conv_id,
-                sender_id,
-                &content,
-            )
-            .await
-            {
-                Ok(row) => row,
-                Err(_) => {
-                    send_error(state, sender_id, "Failed to store message");
-                    return;
-                }
-            };
-
-            // Send confirmation to sender
-            let confirm = ServerMessage::MessageSent {
-                message_id: stored.id,
-                conversation_id: conv_id,
-                timestamp: stored.created_at,
-            };
-            if let Ok(json) = serde_json::to_string(&confirm) {
-                state.hub.send_to(&sender_id, WsMessage::Text(json.into()));
-            }
-
-            // Send to recipient if online
-            let deliver = ServerMessage::NewMessage {
-                message_id: stored.id,
-                from_user_id: sender_id,
-                from_username: sender_username.to_string(),
-                conversation_id: conv_id,
-                content,
-                timestamp: stored.created_at,
-            };
-            if let Ok(json) = serde_json::to_string(&deliver)
-                && state.hub.send_to(&to_user_id, WsMessage::Text(json.into()))
-            {
-                // Mark as delivered
-                let _ = db::messages::mark_delivered(&state.pool, &[stored.id]).await;
+            Err(_) => {
+                send_error(state, sender_id, "Database error");
+                return;
             }
         }
+    } else if let Some(to_uid) = to_user_id {
+        // Legacy DM path: verify contacts
+        match db::contacts::are_contacts(&state.pool, sender_id, to_uid).await {
+            Ok(true) => {}
+            Ok(false) => {
+                send_error(state, sender_id, "Not a contact");
+                return;
+            }
+            Err(_) => {
+                send_error(state, sender_id, "Database error");
+                return;
+            }
+        }
+
+        match db::messages::find_or_create_dm_conversation(&state.pool, sender_id, to_uid).await {
+            Ok(id) => id,
+            Err(_) => {
+                send_error(state, sender_id, "Failed to create conversation");
+                return;
+            }
+        }
+    } else {
+        send_error(state, sender_id, "Must provide conversation_id or to_user_id");
+        return;
+    };
+
+    // Store message
+    let stored = match db::messages::store_message(&state.pool, conv_id, sender_id, &content).await {
+        Ok(row) => row,
+        Err(_) => {
+            send_error(state, sender_id, "Failed to store message");
+            return;
+        }
+    };
+
+    // Send confirmation to sender
+    let confirm = ServerMessage::MessageSent {
+        message_id: stored.id,
+        conversation_id: conv_id,
+        timestamp: stored.created_at,
+    };
+    if let Ok(json) = serde_json::to_string(&confirm) {
+        state.hub.send_to(&sender_id, WsMessage::Text(json.into()));
+    }
+
+    // Fan out to all conversation members (except sender)
+    let member_ids = match db::groups::get_conversation_member_ids(&state.pool, conv_id).await {
+        Ok(ids) => ids,
+        Err(_) => {
+            tracing::error!("Failed to get conversation members for fan-out");
+            return;
+        }
+    };
+
+    let deliver = ServerMessage::NewMessage {
+        message_id: stored.id,
+        from_user_id: sender_id,
+        from_username: sender_username.to_string(),
+        conversation_id: conv_id,
+        content,
+        timestamp: stored.created_at,
+    };
+    let json = match serde_json::to_string(&deliver) {
+        Ok(j) => j,
+        Err(_) => return,
+    };
+
+    let mut delivered_ids = Vec::new();
+    for member_id in &member_ids {
+        if *member_id == sender_id {
+            continue;
+        }
+        if state.hub.send_to(member_id, WsMessage::Text(json.clone().into())) {
+            delivered_ids.push(stored.id);
+        }
+    }
+
+    if !delivered_ids.is_empty() {
+        let _ = db::messages::mark_delivered(&state.pool, &[stored.id]).await;
+    }
+}
+
+async fn handle_typing(
+    state: &AppState,
+    sender_id: Uuid,
+    sender_username: &str,
+    conversation_id: Uuid,
+) {
+    // Verify membership
+    let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    if !is_member {
+        return;
+    }
+
+    let member_ids =
+        match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await {
+            Ok(ids) => ids,
+            Err(_) => return,
+        };
+
+    let event = ServerMessage::Typing {
+        conversation_id,
+        user_id: sender_id,
+        username: sender_username.to_string(),
+    };
+    let json = match serde_json::to_string(&event) {
+        Ok(j) => j,
+        Err(_) => return,
+    };
+
+    for member_id in &member_ids {
+        if *member_id == sender_id {
+            continue;
+        }
+        state
+            .hub
+            .send_to(member_id, WsMessage::Text(json.clone().into()));
+    }
+}
+
+async fn handle_read_receipt(state: &AppState, sender_id: Uuid, conversation_id: Uuid) {
+    // Verify membership
+    let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    if !is_member {
+        return;
+    }
+
+    // Persist the read receipt
+    let _ = db::reactions::mark_read(&state.pool, conversation_id, sender_id).await;
+
+    // Broadcast to other members
+    let member_ids =
+        match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await {
+            Ok(ids) => ids,
+            Err(_) => return,
+        };
+
+    let event = ServerMessage::ReadReceipt {
+        conversation_id,
+        user_id: sender_id,
+    };
+    let json = match serde_json::to_string(&event) {
+        Ok(j) => j,
+        Err(_) => return,
+    };
+
+    for member_id in &member_ids {
+        if *member_id == sender_id {
+            continue;
+        }
+        state
+            .hub
+            .send_to(member_id, WsMessage::Text(json.clone().into()));
     }
 }
 

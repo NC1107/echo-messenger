@@ -14,38 +14,117 @@ use crate::error::AppError;
 
 use super::AppState;
 
-#[derive(Debug, sqlx::FromRow, Serialize)]
-pub struct ConversationInfo {
-    pub conversation_id: Uuid,
-    pub peer_user_id: Uuid,
-    pub peer_username: String,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct MessageQuery {
     pub before: Option<DateTime<Utc>>,
     pub limit: Option<i64>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ConversationListItem {
+    pub conversation_id: Uuid,
+    pub kind: String,
+    pub title: Option<String>,
+    pub members: Vec<MemberInfo>,
+    pub last_message: Option<LastMessageInfo>,
+    pub unread_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MemberInfo {
+    pub user_id: Uuid,
+    pub username: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LastMessageInfo {
+    pub content: String,
+    pub sender_username: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct ConversationRow {
+    conversation_id: Uuid,
+    kind: String,
+    title: Option<String>,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct LastMessageRow {
+    content: String,
+    sender_username: String,
+    created_at: DateTime<Utc>,
+}
+
 pub async fn list_conversations(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Get all conversations the user is a member of, with the peer info
-    let conversations = sqlx::query_as::<_, ConversationInfo>(
-        "SELECT cm1.conversation_id, cm2.user_id AS peer_user_id, u.username AS peer_username \
-         FROM conversation_members cm1 \
-         JOIN conversation_members cm2 ON cm1.conversation_id = cm2.conversation_id AND cm2.user_id != $1 \
-         JOIN users u ON u.id = cm2.user_id \
-         WHERE cm1.user_id = $1 \
-         ORDER BY cm1.conversation_id",
+    // Get all conversations the user is a member of
+    let conversations = sqlx::query_as::<_, ConversationRow>(
+        "SELECT c.id AS conversation_id, c.kind, c.title \
+         FROM conversations c \
+         JOIN conversation_members cm ON cm.conversation_id = c.id \
+         WHERE cm.user_id = $1 \
+         ORDER BY c.created_at DESC",
     )
     .bind(auth.user_id)
     .fetch_all(&state.pool)
     .await
     .map_err(|_| AppError::internal("Database error"))?;
 
-    Ok(Json(conversations))
+    let mut result = Vec::with_capacity(conversations.len());
+
+    for conv in conversations {
+        // Get members
+        let members = db::groups::get_group_members(&state.pool, conv.conversation_id)
+            .await
+            .map_err(|_| AppError::internal("Database error"))?;
+
+        let member_infos: Vec<MemberInfo> = members
+            .into_iter()
+            .map(|m| MemberInfo {
+                user_id: m.user_id,
+                username: m.username,
+            })
+            .collect();
+
+        // Get last message
+        let last_message = sqlx::query_as::<_, LastMessageRow>(
+            "SELECT m.content, u.username AS sender_username, m.created_at \
+             FROM messages m \
+             JOIN users u ON u.id = m.sender_id \
+             WHERE m.conversation_id = $1 \
+             ORDER BY m.created_at DESC \
+             LIMIT 1",
+        )
+        .bind(conv.conversation_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
+        // Get unread count
+        let unread_count =
+            db::reactions::get_unread_count(&state.pool, conv.conversation_id, auth.user_id)
+                .await
+                .unwrap_or(0);
+
+        result.push(ConversationListItem {
+            conversation_id: conv.conversation_id,
+            kind: conv.kind,
+            title: conv.title,
+            members: member_infos,
+            last_message: last_message.map(|lm| LastMessageInfo {
+                content: lm.content,
+                sender_username: lm.sender_username,
+                created_at: lm.created_at,
+            }),
+            unread_count,
+        });
+    }
+
+    Ok(Json(result))
 }
 
 pub async fn get_messages(
@@ -55,16 +134,11 @@ pub async fn get_messages(
     Query(params): Query<MessageQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     // Verify the user is a member of this conversation
-    let is_member: (bool,) = sqlx::query_as(
-        "SELECT EXISTS(SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2)",
-    )
-    .bind(conversation_id)
-    .bind(auth.user_id)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|_| AppError::internal("Database error"))?;
+    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
 
-    if !is_member.0 {
+    if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
     }
 

@@ -2,11 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../providers/auth_provider.dart';
-import '../providers/chat_provider.dart';
 import '../providers/contacts_provider.dart';
-import '../providers/crypto_provider.dart';
-import '../providers/websocket_provider.dart';
 
 class ContactsScreen extends ConsumerStatefulWidget {
   const ContactsScreen({super.key});
@@ -20,29 +16,9 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initData();
+      ref.read(contactsProvider.notifier).loadContacts();
+      ref.read(contactsProvider.notifier).loadPending();
     });
-  }
-
-  Future<void> _initData() async {
-    // Initialize crypto (generate keys, upload to server)
-    final cryptoNotifier = ref.read(cryptoProvider.notifier);
-    await cryptoNotifier.initAndUploadKeys();
-
-    final contactsNotifier = ref.read(contactsProvider.notifier);
-    contactsNotifier.loadContacts();
-    contactsNotifier.loadPending();
-
-    final isConnected = ref.read(websocketProvider);
-    if (!isConnected) {
-      ref.read(websocketProvider.notifier).connect();
-    }
-  }
-
-  void _logout() {
-    ref.read(websocketProvider.notifier).disconnect();
-    ref.read(chatProvider.notifier).clear();
-    ref.read(authProvider.notifier).logout();
   }
 
   void _showAddContactDialog() {
@@ -89,8 +65,6 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
   @override
   Widget build(BuildContext context) {
     final contactsState = ref.watch(contactsProvider);
-    final isWsConnected = ref.watch(websocketProvider);
-    final cryptoState = ref.watch(cryptoProvider);
 
     ref.listen<ContactsState>(contactsProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
@@ -100,52 +74,9 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
       }
     });
 
-    ref.listen<CryptoState>(cryptoProvider, (prev, next) {
-      if (next.error != null && next.error != prev?.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Encryption: ${next.error}'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-            duration: const Duration(seconds: 10),
-          ),
-        );
-      }
-    });
-
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            const Text('Echo'),
-            const SizedBox(width: 8),
-            Icon(
-              Icons.circle,
-              size: 10,
-              color: isWsConnected ? Colors.green : Colors.grey,
-            ),
-            const SizedBox(width: 4),
-            Icon(
-              cryptoState.isInitialized ? Icons.lock : Icons.lock_open,
-              size: 14,
-              color: cryptoState.isInitialized ? Colors.green : Colors.orange,
-            ),
-          ],
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: () {
-              ref.read(contactsProvider.notifier).loadContacts();
-              ref.read(contactsProvider.notifier).loadPending();
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-            onPressed: _logout,
-          ),
-        ],
+        title: const Text('Contacts'),
       ),
       body:
           contactsState.isLoading &&
