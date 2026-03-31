@@ -25,13 +25,33 @@ class Conversation {
             .toList() ??
         [];
 
+    // Server returns kind as "direct"/"group", or is_group as bool
+    final kind = json['kind'] as String?;
+    final isGroupValue =
+        json['is_group'] as bool? ?? (kind == 'group');
+
+    // Server returns last_message as an object with content/sender_username/created_at
+    String? lastMsg;
+    String? lastMsgTimestamp;
+    String? lastMsgSender;
+    final lastMessageObj = json['last_message'];
+    if (lastMessageObj is Map<String, dynamic>) {
+      lastMsg = lastMessageObj['content'] as String?;
+      lastMsgTimestamp = lastMessageObj['created_at'] as String?;
+      lastMsgSender = lastMessageObj['sender_username'] as String?;
+    } else if (lastMessageObj is String) {
+      lastMsg = lastMessageObj;
+      lastMsgTimestamp = json['last_message_timestamp'] as String?;
+      lastMsgSender = json['last_message_sender'] as String?;
+    }
+
     return Conversation(
       id: json['conversation_id'] as String? ?? json['id'] as String,
-      name: json['name'] as String?,
-      isGroup: json['is_group'] as bool? ?? false,
-      lastMessage: json['last_message'] as String?,
-      lastMessageTimestamp: json['last_message_timestamp'] as String?,
-      lastMessageSender: json['last_message_sender'] as String?,
+      name: (json['title'] ?? json['name']) as String?,
+      isGroup: isGroupValue,
+      lastMessage: lastMsg,
+      lastMessageTimestamp: lastMsgTimestamp,
+      lastMessageSender: lastMsgSender,
       unreadCount: json['unread_count'] as int? ?? 0,
       members: membersList,
     );

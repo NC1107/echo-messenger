@@ -288,13 +288,19 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                               final peer = conv.members
                                   .where((m) => m.userId != myUserId)
                                   .firstOrNull;
-                              final peerUserId = peer?.userId ?? '';
-                              final peerUsername = peer?.username ?? displayName;
-                              context.push(
-                                '/chat/$peerUserId'
-                                '?username=${Uri.encodeComponent(peerUsername)}'
-                                '&conversationId=${conv.id}',
-                              );
+                              if (peer != null) {
+                                context.push(
+                                  '/chat/${peer.userId}'
+                                  '?username=${Uri.encodeComponent(peer.username)}'
+                                  '&conversationId=${conv.id}',
+                                );
+                              } else {
+                                // Fallback: use group route
+                                context.push(
+                                  '/chat-group/${conv.id}'
+                                  '?name=${Uri.encodeComponent(displayName)}',
+                                );
+                              }
                             }
                           },
                         );

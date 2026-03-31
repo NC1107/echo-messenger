@@ -96,16 +96,19 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         lastMessageSender: senderUsername,
         unreadCount: conv.unreadCount + 1,
       );
+
+      // Re-sort by last activity
+      updated.sort((a, b) {
+        final aTime = a.lastMessageTimestamp ?? '';
+        final bTime = b.lastMessageTimestamp ?? '';
+        return bTime.compareTo(aTime);
+      });
+
+      state = state.copyWith(conversations: updated);
+    } else {
+      // New conversation we don't have locally -- reload from server
+      loadConversations();
     }
-
-    // Re-sort by last activity
-    updated.sort((a, b) {
-      final aTime = a.lastMessageTimestamp ?? '';
-      final bTime = b.lastMessageTimestamp ?? '';
-      return bTime.compareTo(aTime);
-    });
-
-    state = state.copyWith(conversations: updated);
   }
 
   /// Mark a conversation as read (reset unread count).
