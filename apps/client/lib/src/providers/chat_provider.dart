@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
+import '../services/crypto_service.dart';
 
 class ChatState {
   /// Messages keyed by conversation ID.
@@ -152,12 +153,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
+  /// Check if a string looks like base64-encoded ciphertext.
+  static bool _looksEncrypted(String text) {
+    if (text.length < 20) return false;
+    return RegExp(r'^[A-Za-z0-9+/=]{20,}$').hasMatch(text);
+  }
+
   /// Load history with the user's own ID for isMine determination.
+  /// If [crypto] is provided, attempts to decrypt encrypted messages.
   Future<void> loadHistoryWithUserId(
     String conversationId,
     String token,
     String myUserId, {
     String? before,
+    CryptoService? crypto,
   }) async {
     if (state.isLoadingHistory(conversationId)) return;
 
@@ -189,10 +198,28 @@ class ChatNotifier extends StateNotifier<ChatState> {
         final List<dynamic> messagesList =
             body is List ? body : (body['messages'] as List? ?? []);
 
-        final newMessages = messagesList
-            .map((e) =>
-                ChatMessage.fromServerJson(e as Map<String, dynamic>, myUserId))
-            .toList();
+        final newMessages = <ChatMessage>[];
+        for (final e in messagesList) {
+          var msg = ChatMessage.fromServerJson(
+              e as Map<String, dynamic>, myUserId);
+
+          // Attempt to decrypt encrypted history messages
+          if (_looksEncrypted(msg.content)) {
+            if (crypto != null) {
+              try {
+                final decrypted = await crypto.decryptMessage(
+                    msg.fromUserId, msg.content);
+                msg = msg.copyWith(content: decrypted);
+              } catch (_) {
+                msg = msg.copyWith(content: '[Encrypted history]');
+              }
+            } else {
+              msg = msg.copyWith(content: '[Encrypted history]');
+            }
+          }
+
+          newMessages.add(msg);
+        }
 
         _mergeMessages(conversationId, newMessages, before != null);
       }

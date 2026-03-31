@@ -7,6 +7,7 @@ import '../models/reaction.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/crypto_provider.dart';
 import '../providers/websocket_provider.dart';
 
 /// Common emojis for the reaction picker.
@@ -34,11 +35,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   bool _historyLoaded = false;
+  bool _isTextEmpty = true;
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _messageController.addListener(_onTextEmptyChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadInitialHistory();
       _markAsRead();
@@ -47,10 +50,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
+    _messageController.removeListener(_onTextEmptyChanged);
     _messageController.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onTextEmptyChanged() {
+    final empty = _messageController.text.trim().isEmpty;
+    if (empty != _isTextEmpty) {
+      setState(() {
+        _isTextEmpty = empty;
+      });
+    }
   }
 
   void _loadInitialHistory() {
@@ -63,10 +76,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final auth = ref.read(authProvider);
     if (auth.token == null || auth.userId == null) return;
 
+    final cryptoState = ref.read(cryptoProvider);
+    final crypto = cryptoState.isInitialized
+        ? ref.read(cryptoServiceProvider)
+        : null;
+    if (crypto != null) {
+      crypto.setToken(auth.token!);
+    }
+
     ref.read(chatProvider.notifier).loadHistoryWithUserId(
           convId,
           auth.token!,
           auth.userId!,
+          crypto: crypto,
         );
   }
 
@@ -74,6 +96,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final convId = widget.conversationId;
     if (convId == null || convId.isEmpty) return;
 
+    // Immediately update local unread count to zero
+    ref.read(conversationsProvider.notifier).markAsRead(convId);
+    // Notify server via REST and WebSocket
     ref.read(conversationsProvider.notifier).sendReadReceipt(convId);
     ref.read(websocketProvider.notifier).sendReadReceipt(convId);
   }
@@ -102,11 +127,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final auth = ref.read(authProvider);
     if (auth.token == null || auth.userId == null) return;
 
+    final cryptoState = ref.read(cryptoProvider);
+    final crypto = cryptoState.isInitialized
+        ? ref.read(cryptoServiceProvider)
+        : null;
+    if (crypto != null) {
+      crypto.setToken(auth.token!);
+    }
+
     ref.read(chatProvider.notifier).loadHistoryWithUserId(
           convId,
           auth.token!,
           auth.userId!,
           before: oldestTimestamp,
+          crypto: crypto,
         );
   }
 
@@ -236,6 +270,113 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  bool _withinTwoMinutes(String ts1, String ts2) {
+    try {
+      final dt1 = DateTime.parse(ts1);
+      final dt2 = DateTime.parse(ts2);
+      return dt2.difference(dt1).inMinutes.abs() < 2;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _differentDay(String ts1, String ts2) {
+    try {
+      final dt1 = DateTime.parse(ts1).toLocal();
+      final dt2 = DateTime.parse(ts2).toLocal();
+      return dt1.year != dt2.year ||
+          dt1.month != dt2.month ||
+          dt1.day != dt2.day;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Widget _buildDateHeader(String timestamp) {
+    try {
+      final dt = DateTime.parse(timestamp).toLocal();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final messageDay = DateTime(dt.year, dt.month, dt.day);
+      final diff = today.difference(messageDay).inDays;
+
+      String label;
+      if (diff == 0) {
+        label = 'Today';
+      } else if (diff == 1) {
+        label = 'Yesterday';
+      } else {
+        const months = [
+          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        ];
+        label = '${months[dt.month - 1]} ${dt.day}';
+      }
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.grey,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      );
+    } catch (_) {
+      return const SizedBox.shrink();
+    }
+  }
+
+  Widget _buildEncryptionBanner(bool isGroup) {
+    if (isGroup) {
+      return Container(
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.orange.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange),
+            SizedBox(width: 6),
+            Text(
+              'Group messages are not encrypted',
+              style: TextStyle(fontSize: 12, color: Colors.orange),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.green.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.lock, size: 14, color: Colors.green[400]),
+          const SizedBox(width: 6),
+          Text(
+            'Messages are end-to-end encrypted',
+            style: TextStyle(fontSize: 12, color: Colors.green[400]),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatState = ref.watch(chatProvider);
@@ -289,37 +430,85 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             const LinearProgressIndicator(),
           Expanded(
             child: messages.isEmpty && !isLoadingHistory
-                ? const Center(
-                    child: Text(
-                      'No messages yet. Say hello!',
-                      style: TextStyle(color: Colors.grey),
-                    ),
+                ? Column(
+                    children: [
+                      _buildEncryptionBanner(widget.isGroup),
+                      const Expanded(
+                        child: Center(
+                          child: Text(
+                            'No messages yet. Say hello!',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                      ),
+                    ],
                   )
                 : ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.all(16),
-                    itemCount: messages.length,
+                    // +1 for the encryption banner at position 0
+                    itemCount: messages.length + 1,
                     itemBuilder: (context, index) {
-                      final msg = messages[index];
+                      // First item is the encryption banner
+                      if (index == 0) {
+                        return _buildEncryptionBanner(widget.isGroup);
+                      }
+
+                      final msgIndex = index - 1;
+                      final msg = messages[msgIndex];
 
                       // Show sender name in group chats
                       final showSenderName =
                           widget.isGroup && !msg.isMine;
 
-                      return GestureDetector(
-                        onLongPress: () => _showReactionPicker(msg),
-                        child: _MessageBubble(
-                          content: msg.content,
-                          timestamp: _formatTimestamp(msg.timestamp),
-                          isMine: msg.isMine,
-                          colorScheme: colorScheme,
-                          senderName: showSenderName
-                              ? msg.fromUsername
-                              : null,
-                          status: msg.isMine ? msg.status : null,
-                          reactions: msg.reactions,
-                          myUserId: myUserId,
-                        ),
+                      // Message grouping: reduce spacing for consecutive
+                      // messages from the same sender within 2 minutes
+                      bool isGroupedWithPrevious = false;
+                      bool isLastInGroup = true;
+                      if (msgIndex > 0) {
+                        final prev = messages[msgIndex - 1];
+                        if (prev.fromUserId == msg.fromUserId &&
+                            _withinTwoMinutes(prev.timestamp, msg.timestamp)) {
+                          isGroupedWithPrevious = true;
+                        }
+                      }
+                      if (msgIndex < messages.length - 1) {
+                        final next = messages[msgIndex + 1];
+                        if (next.fromUserId == msg.fromUserId &&
+                            _withinTwoMinutes(msg.timestamp, next.timestamp)) {
+                          isLastInGroup = false;
+                        }
+                      }
+
+                      // Date headers between messages on different days
+                      Widget? dateHeader;
+                      if (msgIndex == 0 ||
+                          _differentDay(
+                              messages[msgIndex - 1].timestamp, msg.timestamp)) {
+                        dateHeader = _buildDateHeader(msg.timestamp);
+                      }
+
+                      return Column(
+                        children: [
+                          ?dateHeader,
+                          GestureDetector(
+                            onLongPress: () => _showReactionPicker(msg),
+                            child: _MessageBubble(
+                              content: msg.content,
+                              timestamp: _formatTimestamp(msg.timestamp),
+                              isMine: msg.isMine,
+                              colorScheme: colorScheme,
+                              senderName: showSenderName
+                                  ? msg.fromUsername
+                                  : null,
+                              status: msg.isMine ? msg.status : null,
+                              reactions: msg.reactions,
+                              myUserId: myUserId,
+                              isGroupedWithPrevious: isGroupedWithPrevious,
+                              showTimestamp: isLastInGroup,
+                            ),
+                          ),
+                        ],
                       );
                     },
                   ),
@@ -331,9 +520,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               padding: const EdgeInsets.symmetric(
                   horizontal: 16, vertical: 4),
               child: Text(
-                typingUsers.length == 1
-                    ? '${typingUsers.first} is typing...'
-                    : '${typingUsers.join(", ")} are typing...',
+                widget.isGroup
+                    ? (typingUsers.length == 1
+                        ? '${typingUsers.first} is typing...'
+                        : '${typingUsers.join(", ")} are typing...')
+                    : 'typing...',
                 style: TextStyle(
                   fontSize: 12,
                   fontStyle: FontStyle.italic,
@@ -368,7 +559,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
                 const SizedBox(width: 8),
                 IconButton.filled(
-                  onPressed: _sendMessage,
+                  onPressed: _isTextEmpty ? null : _sendMessage,
                   icon: const Icon(Icons.send),
                 ),
               ],
@@ -389,6 +580,8 @@ class _MessageBubble extends StatelessWidget {
   final MessageStatus? status;
   final List<Reaction> reactions;
   final String myUserId;
+  final bool isGroupedWithPrevious;
+  final bool showTimestamp;
 
   const _MessageBubble({
     required this.content,
@@ -399,6 +592,8 @@ class _MessageBubble extends StatelessWidget {
     this.status,
     this.reactions = const [],
     this.myUserId = '',
+    this.isGroupedWithPrevious = false,
+    this.showTimestamp = true,
   });
 
   Widget _buildStatusIcon() {
@@ -422,6 +617,12 @@ class _MessageBubble extends StatelessWidget {
           Icons.done_all,
           size: 14,
           color: colorScheme.onPrimary.withValues(alpha: 0.7),
+        );
+      case MessageStatus.failed:
+        return Icon(
+          Icons.error_outline,
+          size: 14,
+          color: colorScheme.error,
         );
     }
   }
@@ -478,6 +679,18 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isFailed = status == MessageStatus.failed;
+    final bubbleColor = isFailed
+        ? colorScheme.errorContainer
+        : isMine
+            ? colorScheme.primary
+            : const Color(0xFF2A2D3E);
+    final textColor = isFailed
+        ? colorScheme.onErrorContainer
+        : isMine
+            ? colorScheme.onPrimary
+            : colorScheme.onSurface;
+
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Column(
@@ -488,13 +701,13 @@ class _MessageBubble extends StatelessWidget {
             constraints: BoxConstraints(
               maxWidth: MediaQuery.of(context).size.width * 0.7,
             ),
-            margin: const EdgeInsets.symmetric(vertical: 4),
+            margin: EdgeInsets.symmetric(
+              vertical: isGroupedWithPrevious ? 1 : 4,
+            ),
             padding:
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: isMine
-                  ? colorScheme.primary
-                  : colorScheme.surfaceContainerHighest,
+              color: bubbleColor,
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(16),
                 topRight: const Radius.circular(16),
@@ -505,7 +718,7 @@ class _MessageBubble extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (senderName != null)
+                if (senderName != null && !isGroupedWithPrevious)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
@@ -519,34 +732,32 @@ class _MessageBubble extends StatelessWidget {
                   ),
                 Text(
                   content,
-                  style: TextStyle(
-                    color: isMine
-                        ? colorScheme.onPrimary
-                        : colorScheme.onSurface,
-                  ),
+                  style: TextStyle(color: textColor),
                 ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text(
-                      timestamp,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: isMine
-                            ? colorScheme.onPrimary
-                                .withValues(alpha: 0.7)
-                            : colorScheme.onSurface
-                                .withValues(alpha: 0.5),
+                if (showTimestamp) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        timestamp,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isMine
+                              ? colorScheme.onPrimary
+                                  .withValues(alpha: 0.7)
+                              : colorScheme.onSurface
+                                  .withValues(alpha: 0.5),
+                        ),
                       ),
-                    ),
-                    if (isMine) ...[
-                      const SizedBox(width: 4),
-                      _buildStatusIcon(),
+                      if (isMine) ...[
+                        const SizedBox(width: 4),
+                        _buildStatusIcon(),
+                      ],
                     ],
-                  ],
-                ),
+                  ),
+                ],
               ],
             ),
           ),

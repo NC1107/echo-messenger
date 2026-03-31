@@ -44,11 +44,16 @@ enum ServerMessage {
         conversation_id: Uuid,
         timestamp: DateTime<Utc>,
     },
+    #[serde(rename = "delivered")]
+    Delivered {
+        message_id: Uuid,
+        conversation_id: Uuid,
+    },
     #[serde(rename = "typing")]
     Typing {
         conversation_id: Uuid,
         user_id: Uuid,
-        username: String,
+        from_username: String,
     },
     #[serde(rename = "read_receipt")]
     ReadReceipt {
@@ -98,6 +103,19 @@ pub async fn handle_socket(
         }
         if !ids.is_empty() {
             let _ = db::messages::mark_delivered(&state.pool, &ids).await;
+
+            // Notify original senders that their messages were delivered
+            for msg in &undelivered {
+                let delivered_event = ServerMessage::Delivered {
+                    message_id: msg.id,
+                    conversation_id: msg.conversation_id,
+                };
+                if let Ok(json) = serde_json::to_string(&delivered_event) {
+                    state
+                        .hub
+                        .send_to(&msg.sender_id, WsMessage::Text(json.into()));
+                }
+            }
         }
     }
 
@@ -247,6 +265,17 @@ async fn handle_send_message(
 
     if !delivered_ids.is_empty() {
         let _ = db::messages::mark_delivered(&state.pool, &[stored.id]).await;
+
+        // Send delivery confirmation back to the sender
+        let delivered_event = ServerMessage::Delivered {
+            message_id: stored.id,
+            conversation_id: conv_id,
+        };
+        if let Ok(delivered_json) = serde_json::to_string(&delivered_event) {
+            state
+                .hub
+                .send_to(&sender_id, WsMessage::Text(delivered_json.into()));
+        }
     }
 }
 
@@ -274,7 +303,7 @@ async fn handle_typing(
     let event = ServerMessage::Typing {
         conversation_id,
         user_id: sender_id,
-        username: sender_username.to_string(),
+        from_username: sender_username.to_string(),
     };
     let json = match serde_json::to_string(&event) {
         Ok(j) => j,

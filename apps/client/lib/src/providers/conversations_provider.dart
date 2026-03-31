@@ -33,6 +33,9 @@ class ConversationsState {
 class ConversationsNotifier extends StateNotifier<ConversationsState> {
   final Ref ref;
 
+  /// Cache of decrypted message previews by conversationId.
+  final Map<String, String> _decryptedPreviews = {};
+
   ConversationsNotifier(this.ref) : super(const ConversationsState());
 
   String get _serverUrl => 'http://localhost:8080';
@@ -59,6 +62,17 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
             .map((e) => Conversation.fromJson(e as Map<String, dynamic>))
             .toList();
 
+        // Replace encrypted previews with cached decrypted text or placeholder
+        for (var i = 0; i < conversations.length; i++) {
+          final conv = conversations[i];
+          if (conv.lastMessage != null && _looksEncrypted(conv.lastMessage!)) {
+            final cached = _decryptedPreviews[conv.id];
+            conversations[i] = conv.copyWith(
+              lastMessage: cached ?? 'Encrypted message',
+            );
+          }
+        }
+
         // Sort by last activity (most recent first)
         conversations.sort((a, b) {
           final aTime = a.lastMessageTimestamp ?? '';
@@ -78,6 +92,12 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     }
   }
 
+  /// Check if a string looks like base64-encoded ciphertext.
+  static bool _looksEncrypted(String text) {
+    if (text.length < 20) return false;
+    return RegExp(r'^[A-Za-z0-9+/=]{20,}$').hasMatch(text);
+  }
+
   /// Update a conversation when a new message is received.
   void onNewMessage({
     required String conversationId,
@@ -85,6 +105,10 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     required String timestamp,
     required String senderUsername,
   }) {
+    // Cache the decrypted preview (content passed here is already decrypted
+    // by the websocket provider)
+    _decryptedPreviews[conversationId] = content;
+
     final updated = List<Conversation>.from(state.conversations);
     final index = updated.indexWhere((c) => c.id == conversationId);
 

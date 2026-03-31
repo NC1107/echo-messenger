@@ -1,6 +1,6 @@
 import 'reaction.dart';
 
-enum MessageStatus { sending, sent, delivered }
+enum MessageStatus { sending, sent, delivered, failed }
 
 class ChatMessage {
   final String id;

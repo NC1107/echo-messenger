@@ -77,12 +77,6 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
     );
   }
 
-  bool _looksEncrypted(String text) {
-    // Base64 ciphertext is typically 28+ chars of alphanumeric + /+=
-    if (text.length < 20) return false;
-    return RegExp(r'^[A-Za-z0-9+/=]{20,}$').hasMatch(text);
-  }
-
   String _formatTimestamp(String? timestamp) {
     if (timestamp == null || timestamp.isEmpty) return '';
     try {
@@ -152,21 +146,6 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
               size: 14,
               color: cryptoState.isInitialized ? Colors.green : Colors.orange,
             ),
-            if (myUsername.isNotEmpty) ...[
-              const Spacer(),
-              CircleAvatar(
-                radius: 14,
-                child: Text(
-                  myUsername[0].toUpperCase(),
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                myUsername,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
           ],
         ),
         actions: [
@@ -175,17 +154,51 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
             tooltip: 'Contacts',
             onPressed: () => context.push('/contacts'),
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: () {
-              ref.read(conversationsProvider.notifier).loadConversations();
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'More',
+            onSelected: (value) {
+              switch (value) {
+                case 'refresh':
+                  ref.read(conversationsProvider.notifier).loadConversations();
+                case 'logout':
+                  _logout();
+              }
             },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-            onPressed: _logout,
+            itemBuilder: (context) => [
+              if (myUsername.isNotEmpty)
+                PopupMenuItem(
+                  enabled: false,
+                  child: Text(
+                    myUsername,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              if (myUsername.isNotEmpty) const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'refresh',
+                child: Row(
+                  children: [
+                    Icon(Icons.refresh, size: 20),
+                    SizedBox(width: 8),
+                    Text('Refresh'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, size: 20),
+                    SizedBox(width: 8),
+                    Text('Logout'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -225,10 +238,8 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                             _formatTimestamp(conv.lastMessageTimestamp);
 
                         String? snippet = conv.lastMessage;
-                        // If the message looks like base64 ciphertext, show placeholder
-                        if (snippet != null && _looksEncrypted(snippet)) {
-                          snippet = 'Encrypted message';
-                        }
+                        // Preview text is already handled by the provider
+                        // (decrypted or replaced with placeholder)
                         if (snippet != null &&
                             conv.isGroup &&
                             conv.lastMessageSender != null) {

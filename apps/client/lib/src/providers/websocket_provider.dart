@@ -98,17 +98,25 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   Future<void> sendMessage(String toUserId, String content,
       {String? conversationId}) async {
     final cryptoState = ref.read(cryptoProvider);
-    String payload = content;
 
-    if (cryptoState.isInitialized) {
-      try {
-        final crypto = ref.read(cryptoServiceProvider);
-        final token = ref.read(authProvider).token ?? '';
-        crypto.setToken(token);
-        payload = await crypto.encryptMessage(toUserId, content);
-      } catch (_) {
-        // Fall back to plaintext if encryption fails.
-      }
+    if (!cryptoState.isInitialized) {
+      // Encryption not available -- show failure instead of sending plaintext
+      _addFailedMessage(toUserId, 'Encryption not initialized',
+          conversationId: conversationId ?? '');
+      return;
+    }
+
+    String payload;
+    try {
+      final crypto = ref.read(cryptoServiceProvider);
+      final token = ref.read(authProvider).token ?? '';
+      crypto.setToken(token);
+      payload = await crypto.encryptMessage(toUserId, content);
+    } catch (_) {
+      // Encryption failed -- do NOT fall back to plaintext
+      _addFailedMessage(toUserId, 'Encryption failed',
+          conversationId: conversationId ?? '');
+      return;
     }
 
     final msg = <String, dynamic>{
@@ -121,6 +129,23 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     }
 
     _channel?.sink.add(jsonEncode(msg));
+  }
+
+  /// Add a failed message to the chat so the user can see the error.
+  void _addFailedMessage(String peerUserId, String reason,
+      {String conversationId = ''}) {
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final msg = ChatMessage(
+      id: 'failed_${DateTime.now().millisecondsSinceEpoch}',
+      fromUserId: myUserId,
+      fromUsername: 'You',
+      conversationId: conversationId,
+      content: reason,
+      timestamp: DateTime.now().toIso8601String(),
+      isMine: true,
+      status: MessageStatus.failed,
+    );
+    ref.read(chatProvider.notifier).addMessage(msg);
   }
 
   /// Send a message to a group conversation.
@@ -227,46 +252,64 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   void _handleNewMessage(Map<String, dynamic> json, String myUserId) {
     final rawContent = json['content'] as String;
     final fromUserId = json['from_user_id'] as String;
+    final conversationId = json['conversation_id'] as String;
+    final timestamp = json['timestamp'] as String;
+    final senderUsername = json['from_username'] as String;
     final cryptoState = ref.read(cryptoProvider);
 
     if (cryptoState.isInitialized) {
       final crypto = ref.read(cryptoServiceProvider);
       final token = ref.read(authProvider).token ?? '';
       crypto.setToken(token);
-      _decryptAndDeliver(crypto, json, rawContent, fromUserId, myUserId);
+      _decryptAndDeliverWithPreview(
+        crypto, json, rawContent, fromUserId, myUserId,
+        conversationId, timestamp, senderUsername,
+      );
     } else {
       final msg = ChatMessage.fromServerJson(json, myUserId);
       ref.read(chatProvider.notifier).addMessage(msg);
-    }
 
-    // Update conversations list
-    ref.read(conversationsProvider.notifier).onNewMessage(
-          conversationId: json['conversation_id'] as String,
-          content: rawContent,
-          timestamp: json['timestamp'] as String,
-          senderUsername: json['from_username'] as String,
-        );
+      // Update conversations list with raw content
+      ref.read(conversationsProvider.notifier).onNewMessage(
+            conversationId: conversationId,
+            content: rawContent,
+            timestamp: timestamp,
+            senderUsername: senderUsername,
+          );
+    }
   }
 
-  Future<void> _decryptAndDeliver(
+  Future<void> _decryptAndDeliverWithPreview(
     CryptoService crypto,
     Map<String, dynamic> json,
     String rawContent,
     String fromUserId,
     String myUserId,
+    String conversationId,
+    String timestamp,
+    String senderUsername,
   ) async {
     String decryptedContent;
     try {
       decryptedContent = await crypto.decryptMessage(fromUserId, rawContent);
     } catch (_) {
-      decryptedContent = rawContent;
+      decryptedContent = '[Could not decrypt]';
     }
 
     final decryptedJson = Map<String, dynamic>.from(json);
     decryptedJson['content'] = decryptedContent;
     final msg = ChatMessage.fromServerJson(decryptedJson, myUserId);
     ref.read(chatProvider.notifier).addMessage(msg);
+
+    // Update conversations list with decrypted preview
+    ref.read(conversationsProvider.notifier).onNewMessage(
+          conversationId: conversationId,
+          content: decryptedContent,
+          timestamp: timestamp,
+          senderUsername: senderUsername,
+        );
   }
+
 
   void _handleTyping(Map<String, dynamic> json, String myUserId) {
     final conversationId = json['conversation_id'] as String;
