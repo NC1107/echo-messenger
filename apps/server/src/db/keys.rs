@@ -122,10 +122,8 @@ pub async fn get_prekey_bundle(
     .fetch_optional(pool)
     .await?;
 
-    let one_time_prekey = otp_row.map(|(key_id, public_key)| OneTimePreKeyRow {
-        key_id,
-        public_key,
-    });
+    let one_time_prekey =
+        otp_row.map(|(key_id, public_key)| OneTimePreKeyRow { key_id, public_key });
 
     Ok(Some(PreKeyBundleRow {
         identity_key,
@@ -138,10 +136,7 @@ pub async fn get_prekey_bundle(
 
 /// Count available (unused) one-time prekeys for a user.
 #[allow(dead_code)] // Will be used for prekey replenishment logic
-pub async fn count_one_time_prekeys(
-    pool: &PgPool,
-    user_id: Uuid,
-) -> Result<i64, sqlx::Error> {
+pub async fn count_one_time_prekeys(pool: &PgPool, user_id: Uuid) -> Result<i64, sqlx::Error> {
     let row: (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM one_time_prekeys WHERE user_id = $1 AND NOT used")
             .bind(user_id)

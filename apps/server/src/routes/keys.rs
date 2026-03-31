@@ -1,9 +1,9 @@
 //! PreKey bundle upload and fetch endpoints.
 
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -51,8 +51,8 @@ pub struct OneTimePreKeyResponse {
     pub public_key: String,
 }
 
-use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 
 /// POST /api/keys/upload -- Upload a PreKey bundle for the authenticated user.
 pub async fn upload_bundle(
@@ -92,8 +92,7 @@ pub async fn upload_bundle(
     .await?;
 
     if !one_time_prekeys.is_empty() {
-        db::keys::store_one_time_prekeys(&state.pool, auth_user.user_id, &one_time_prekeys)
-            .await?;
+        db::keys::store_one_time_prekeys(&state.pool, auth_user.user_id, &one_time_prekeys).await?;
     }
 
     tracing::info!(

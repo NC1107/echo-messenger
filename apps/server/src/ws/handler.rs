@@ -99,12 +99,7 @@ pub async fn handle_socket(
     tracing::info!("WebSocket disconnected: {} ({})", username, user_id);
 }
 
-async fn handle_text_message(
-    text: &str,
-    sender_id: Uuid,
-    sender_username: &str,
-    state: &AppState,
-) {
+async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str, state: &AppState) {
     let msg: ClientMessage = match serde_json::from_str(text) {
         Ok(m) => m,
         Err(e) => {
@@ -133,7 +128,9 @@ async fn handle_text_message(
 
             // Find or create conversation
             let conv_id = match db::messages::find_or_create_dm_conversation(
-                &state.pool, sender_id, to_user_id,
+                &state.pool,
+                sender_id,
+                to_user_id,
             )
             .await
             {
@@ -145,15 +142,20 @@ async fn handle_text_message(
             };
 
             // Store message
-            let stored =
-                match db::messages::store_message(&state.pool, conv_id, sender_id, &content).await
-                {
-                    Ok(row) => row,
-                    Err(_) => {
-                        send_error(state, sender_id, "Failed to store message");
-                        return;
-                    }
-                };
+            let stored = match db::messages::store_message(
+                &state.pool,
+                conv_id,
+                sender_id,
+                &content,
+            )
+            .await
+            {
+                Ok(row) => row,
+                Err(_) => {
+                    send_error(state, sender_id, "Failed to store message");
+                    return;
+                }
+            };
 
             // Send confirmation to sender
             let confirm = ServerMessage::MessageSent {
@@ -175,9 +177,7 @@ async fn handle_text_message(
                 timestamp: stored.created_at,
             };
             if let Ok(json) = serde_json::to_string(&deliver)
-                && state
-                    .hub
-                    .send_to(&to_user_id, WsMessage::Text(json.into()))
+                && state.hub.send_to(&to_user_id, WsMessage::Text(json.into()))
             {
                 // Mark as delivered
                 let _ = db::messages::mark_delivered(&state.pool, &[stored.id]).await;

@@ -43,8 +43,7 @@ class CryptoService {
       if (storedPrivate != null) {
         debugPrint('[CryptoService] Loading existing keypair from prefs');
         final privateBytes = base64Decode(storedPrivate);
-        final publicBytes =
-            base64Decode(prefs.getString(_identityPubKeyPref)!);
+        final publicBytes = base64Decode(prefs.getString(_identityPubKeyPref)!);
         _identityKeyPair = SimpleKeyPairData(
           privateBytes,
           publicKey: SimplePublicKey(publicBytes, type: KeyPairType.x25519),
@@ -59,9 +58,12 @@ class CryptoService {
 
         await prefs.setString(_identityKeyPref, base64Encode(privateBytes));
         await prefs.setString(
-            _identityPubKeyPref, base64Encode(publicKey.bytes));
+          _identityPubKeyPref,
+          base64Encode(publicKey.bytes),
+        );
         debugPrint(
-            '[CryptoService] Keypair generated and saved (${publicKey.bytes.length} bytes)');
+          '[CryptoService] Keypair generated and saved (${publicKey.bytes.length} bytes)',
+        );
       }
 
       // Load cached session keys
@@ -73,7 +75,8 @@ class CryptoService {
         }
       }
       debugPrint(
-          '[CryptoService] init() complete. ${_sessionKeys.length} cached session keys.');
+        '[CryptoService] init() complete. ${_sessionKeys.length} cached session keys.',
+      );
     } catch (e, st) {
       debugPrint('[CryptoService] init() FAILED: $e');
       debugPrint('[CryptoService] $st');
@@ -96,17 +99,15 @@ class CryptoService {
     for (var i = 0; i < 10; i++) {
       final otpPair = await _x25519.newKeyPair();
       final otpPub = await otpPair.extractPublicKey();
-      otps.add({
-        'key_id': i,
-        'public_key': base64Encode(otpPub.bytes),
-      });
+      otps.add({'key_id': i, 'public_key': base64Encode(otpPub.bytes)});
     }
 
     final body = jsonEncode({
       'identity_key': pubKeyB64,
       'signed_prekey': pubKeyB64,
-      'signed_prekey_signature':
-          base64Encode(Uint8List(64)), // Placeholder for prototype
+      'signed_prekey_signature': base64Encode(
+        Uint8List(64),
+      ), // Placeholder for prototype
       'signed_prekey_id': 1,
       'one_time_prekeys': otps,
     });
@@ -121,10 +122,12 @@ class CryptoService {
     );
 
     debugPrint(
-        '[CryptoService] uploadKeys response: ${response.statusCode} ${response.body}');
+      '[CryptoService] uploadKeys response: ${response.statusCode} ${response.body}',
+    );
     if (response.statusCode != 201) {
       throw Exception(
-          'Failed to upload keys: HTTP ${response.statusCode} ${response.body}');
+        'Failed to upload keys: HTTP ${response.statusCode} ${response.body}',
+      );
     }
     debugPrint('[CryptoService] Keys uploaded successfully');
   }
@@ -140,9 +143,7 @@ class CryptoService {
     // Fetch peer's PreKey bundle from server
     final response = await http.get(
       Uri.parse('$serverUrl/api/keys/bundle/$peerUserId'),
-      headers: {
-        'Authorization': 'Bearer $_token',
-      },
+      headers: {'Authorization': 'Bearer $_token'},
     );
 
     if (response.statusCode != 200) {
@@ -151,8 +152,10 @@ class CryptoService {
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final theirPubKeyBytes = base64Decode(data['identity_key'] as String);
-    final theirPubKey =
-        SimplePublicKey(theirPubKeyBytes, type: KeyPairType.x25519);
+    final theirPubKey = SimplePublicKey(
+      theirPubKeyBytes,
+      type: KeyPairType.x25519,
+    );
 
     // Perform X25519 DH to derive shared secret
     final sharedSecret = await _x25519.sharedSecretKey(
@@ -182,7 +185,9 @@ class CryptoService {
     final prefs = await SharedPreferences.getInstance();
     final derivedBytes = await derivedKey.extractBytes();
     await prefs.setString(
-        '$_sessionKeyPrefix$peerUserId', base64Encode(derivedBytes));
+      '$_sessionKeyPrefix$peerUserId',
+      base64Encode(derivedBytes),
+    );
 
     return derivedKey;
   }
@@ -201,14 +206,24 @@ class CryptoService {
 
     // Pack: nonce (12) || ciphertext || mac (16)
     final packed = Uint8List(
-        secretBox.nonce.length + secretBox.cipherText.length + secretBox.mac.bytes.length);
+      secretBox.nonce.length +
+          secretBox.cipherText.length +
+          secretBox.mac.bytes.length,
+    );
     var offset = 0;
     packed.setRange(offset, offset + secretBox.nonce.length, secretBox.nonce);
     offset += secretBox.nonce.length;
     packed.setRange(
-        offset, offset + secretBox.cipherText.length, secretBox.cipherText);
+      offset,
+      offset + secretBox.cipherText.length,
+      secretBox.cipherText,
+    );
     offset += secretBox.cipherText.length;
-    packed.setRange(offset, offset + secretBox.mac.bytes.length, secretBox.mac.bytes);
+    packed.setRange(
+      offset,
+      offset + secretBox.mac.bytes.length,
+      secretBox.mac.bytes,
+    );
 
     return base64Encode(packed);
   }
@@ -226,16 +241,9 @@ class CryptoService {
     final cipherText = packed.sublist(12, packed.length - 16);
     final mac = Mac(packed.sublist(packed.length - 16));
 
-    final secretBox = SecretBox(
-      cipherText,
-      nonce: nonce,
-      mac: mac,
-    );
+    final secretBox = SecretBox(cipherText, nonce: nonce, mac: mac);
 
-    final plainBytes = await _aesGcm.decrypt(
-      secretBox,
-      secretKey: sessionKey,
-    );
+    final plainBytes = await _aesGcm.decrypt(secretBox, secretKey: sessionKey);
 
     return utf8.decode(plainBytes);
   }

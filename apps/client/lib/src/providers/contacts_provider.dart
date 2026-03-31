@@ -43,9 +43,9 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   String? get _token => ref.read(authProvider).token;
 
   Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ${_token ?? ""}',
-      };
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ${_token ?? ""}',
+  };
 
   Future<void> loadContacts() async {
     state = state.copyWith(isLoading: true, error: null);
@@ -61,7 +61,9 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
         state = state.copyWith(contacts: list, isLoading: false);
       } else {
         state = state.copyWith(
-            isLoading: false, error: 'Failed to load contacts');
+          isLoading: false,
+          error: 'Failed to load contacts',
+        );
       }
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
@@ -96,7 +98,8 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
       } else {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         state = state.copyWith(
-            error: data['error'] as String? ?? 'Failed to send request');
+          error: data['error'] as String? ?? 'Failed to send request',
+        );
       }
     } catch (e) {
       state = state.copyWith(error: e.toString());
@@ -116,7 +119,8 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   }
 }
 
-final contactsProvider =
-    StateNotifierProvider<ContactsNotifier, ContactsState>((ref) {
-  return ContactsNotifier(ref);
-});
+final contactsProvider = StateNotifierProvider<ContactsNotifier, ContactsState>(
+  (ref) {
+    return ContactsNotifier(ref);
+  },
+);

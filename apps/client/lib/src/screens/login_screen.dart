@@ -24,10 +24,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _login() async {
     final auth = ref.read(authProvider.notifier);
-    await auth.login(
-      _usernameController.text.trim(),
-      _passwordController.text,
-    );
+    await auth.login(_usernameController.text.trim(), _passwordController.text);
     // Crypto init happens in contacts_screen._initData() after navigation
   }
 
@@ -73,7 +70,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   const SizedBox(height: 12),
                   Text(
                     authState.error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 24),

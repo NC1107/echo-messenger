@@ -1,7 +1,7 @@
 //! WebSocket upgrade endpoint.
 
 use axum::{
-    extract::{ws::WebSocketUpgrade, Query, State},
+    extract::{Query, State, ws::WebSocketUpgrade},
     response::IntoResponse,
 };
 use serde::Deserialize;

@@ -3,8 +3,8 @@ pub mod keys;
 pub mod messages;
 pub mod users;
 
-use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 
 pub async fn create_pool(database_url: &str) -> PgPool {
     PgPoolOptions::new()

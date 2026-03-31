@@ -41,8 +41,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.withMessage(peerUserId, msg);
   }
 
-  void confirmSent(
-      String messageId, String conversationId, String timestamp) {
+  void confirmSent(String messageId, String conversationId, String timestamp) {
     // Optimistic messages are already displayed.
     // Could update the pending message with real ID/timestamp if needed.
   }

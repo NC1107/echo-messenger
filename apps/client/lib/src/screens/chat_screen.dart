@@ -31,7 +31,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (text.isEmpty) return;
 
     final myUserId = ref.read(authProvider).userId ?? '';
-    ref.read(chatProvider.notifier).addOptimistic(widget.userId, text, myUserId);
+    ref
+        .read(chatProvider.notifier)
+        .addOptimistic(widget.userId, text, myUserId);
     _messageController.clear();
     _scrollToBottom();
     await ref.read(websocketProvider.notifier).sendMessage(widget.userId, text);
@@ -75,9 +77,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.username),
-      ),
+      appBar: AppBar(title: Text(widget.username)),
       body: Column(
         children: [
           Expanded(
@@ -108,9 +108,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             decoration: BoxDecoration(
               color: colorScheme.surface,
               border: Border(
-                top: BorderSide(
-                  color: Theme.of(context).dividerColor,
-                ),
+                top: BorderSide(color: Theme.of(context).dividerColor),
               ),
             ),
             child: Row(
@@ -183,9 +181,7 @@ class _MessageBubble extends StatelessWidget {
             Text(
               content,
               style: TextStyle(
-                color: isMine
-                    ? colorScheme.onPrimary
-                    : colorScheme.onSurface,
+                color: isMine ? colorScheme.onPrimary : colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: 4),

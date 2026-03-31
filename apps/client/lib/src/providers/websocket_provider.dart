@@ -63,11 +63,13 @@ class WebSocketNotifier extends StateNotifier<bool> {
       }
     }
 
-    _channel?.sink.add(jsonEncode({
-      'type': 'send_message',
-      'to_user_id': toUserId,
-      'content': payload,
-    }));
+    _channel?.sink.add(
+      jsonEncode({
+        'type': 'send_message',
+        'to_user_id': toUserId,
+        'content': payload,
+      }),
+    );
   }
 
   void _onMessage(String data) {
@@ -79,7 +81,9 @@ class WebSocketNotifier extends StateNotifier<bool> {
       case 'new_message':
         _handleNewMessage(json, myUserId);
       case 'message_sent':
-        ref.read(chatProvider.notifier).confirmSent(
+        ref
+            .read(chatProvider.notifier)
+            .confirmSent(
               json['message_id'] as String,
               json['conversation_id'] as String,
               json['timestamp'] as String,
@@ -135,7 +139,6 @@ class WebSocketNotifier extends StateNotifier<bool> {
   }
 }
 
-final websocketProvider =
-    StateNotifierProvider<WebSocketNotifier, bool>((ref) {
+final websocketProvider = StateNotifierProvider<WebSocketNotifier, bool>((ref) {
   return WebSocketNotifier(ref);
 });

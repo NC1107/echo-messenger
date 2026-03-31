@@ -117,22 +117,31 @@ void main() {
 
       // Alice encrypts
       final plaintext = utf8.encode('Secret message from Alice');
-      final secretBox =
-          await aes.encrypt(plaintext, secretKey: aliceSessionKey);
+      final secretBox = await aes.encrypt(
+        plaintext,
+        secretKey: aliceSessionKey,
+      );
 
       // Pack as CryptoService does: nonce || ciphertext || mac
-      final packed = Uint8List(secretBox.nonce.length +
-          secretBox.cipherText.length +
-          secretBox.mac.bytes.length);
+      final packed = Uint8List(
+        secretBox.nonce.length +
+            secretBox.cipherText.length +
+            secretBox.mac.bytes.length,
+      );
       var offset = 0;
-      packed.setRange(
-          offset, offset + secretBox.nonce.length, secretBox.nonce);
+      packed.setRange(offset, offset + secretBox.nonce.length, secretBox.nonce);
       offset += secretBox.nonce.length;
-      packed.setRange(offset, offset + secretBox.cipherText.length,
-          secretBox.cipherText);
+      packed.setRange(
+        offset,
+        offset + secretBox.cipherText.length,
+        secretBox.cipherText,
+      );
       offset += secretBox.cipherText.length;
       packed.setRange(
-          offset, offset + secretBox.mac.bytes.length, secretBox.mac.bytes);
+        offset,
+        offset + secretBox.mac.bytes.length,
+        secretBox.mac.bytes,
+      );
 
       final ciphertextB64 = base64Encode(packed);
       debugPrint('Ciphertext: $ciphertextB64');
@@ -144,8 +153,7 @@ void main() {
       final mac = Mac(unpacked.sublist(unpacked.length - 16));
 
       final recovered = SecretBox(cipherText, nonce: nonce, mac: mac);
-      final decrypted =
-          await aes.decrypt(recovered, secretKey: bobSessionKey);
+      final decrypted = await aes.decrypt(recovered, secretKey: bobSessionKey);
 
       expect(utf8.decode(decrypted), equals('Secret message from Alice'));
       debugPrint('Decrypted: ${utf8.decode(decrypted)}');

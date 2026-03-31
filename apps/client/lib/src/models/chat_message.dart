@@ -18,7 +18,9 @@ class ChatMessage {
   });
 
   factory ChatMessage.fromServerJson(
-      Map<String, dynamic> json, String myUserId) {
+    Map<String, dynamic> json,
+    String myUserId,
+  ) {
     return ChatMessage(
       id: json['message_id'] as String,
       fromUserId: json['from_user_id'] as String,

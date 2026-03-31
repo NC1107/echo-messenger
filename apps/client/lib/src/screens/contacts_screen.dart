@@ -94,9 +94,9 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
 
     ref.listen<ContactsState>(contactsProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(next.error!)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(next.error!)));
       }
     });
 
@@ -147,7 +147,8 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
           ),
         ],
       ),
-      body: contactsState.isLoading &&
+      body:
+          contactsState.isLoading &&
               contactsState.contacts.isEmpty &&
               contactsState.pendingRequests.isEmpty
           ? const Center(child: CircularProgressIndicator())
@@ -165,16 +166,14 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                       child: Text(
                         'Pending Requests',
                         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                       ),
                     ),
                     ...contactsState.pendingRequests.map(
                       (contact) => ListTile(
                         leading: CircleAvatar(
-                          child: Text(
-                            contact.username[0].toUpperCase(),
-                          ),
+                          child: Text(contact.username[0].toUpperCase()),
                         ),
                         title: Text(contact.username),
                         subtitle: const Text('Wants to connect'),
@@ -196,16 +195,14 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                       child: Text(
                         'Contacts',
                         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
                       ),
                     ),
                     ...contactsState.contacts.map(
                       (contact) => ListTile(
                         leading: CircleAvatar(
-                          child: Text(
-                            contact.username[0].toUpperCase(),
-                          ),
+                          child: Text(contact.username[0].toUpperCase()),
                         ),
                         title: Text(contact.displayName ?? contact.username),
                         subtitle: contact.displayName != null

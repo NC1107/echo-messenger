@@ -4,8 +4,8 @@ pub mod keys;
 pub mod messages;
 pub mod ws;
 
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
@@ -36,10 +36,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let message_routes = Router::new()
         .route("/conversations", get(messages::list_conversations))
-        .route(
-            "/messages/{conversation_id}",
-            get(messages::get_messages),
-        );
+        .route("/messages/{conversation_id}", get(messages::get_messages));
 
     let key_routes = Router::new()
         .route("/upload", post(keys::upload_bundle))

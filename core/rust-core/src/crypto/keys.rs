@@ -63,10 +63,7 @@ pub fn generate_signed_prekey(
 /// Generate a batch of one-time prekeys.
 ///
 /// Returns a vec of (key_id, secret, public_key_bytes).
-pub fn generate_one_time_prekeys(
-    start_id: u32,
-    count: u32,
-) -> Vec<(u32, StaticSecret, Vec<u8>)> {
+pub fn generate_one_time_prekeys(start_id: u32, count: u32) -> Vec<(u32, StaticSecret, Vec<u8>)> {
     (0..count)
         .map(|i| {
             let id = start_id + i;
@@ -88,7 +85,8 @@ pub fn build_prekey_bundle(
         generate_signed_prekey(identity, signed_prekey_id);
 
     let otps = generate_one_time_prekeys(one_time_prekey_start_id, one_time_prekey_count);
-    let otp_publics: Vec<(u32, Vec<u8>)> = otps.iter().map(|(id, _, pk)| (*id, pk.clone())).collect();
+    let otp_publics: Vec<(u32, Vec<u8>)> =
+        otps.iter().map(|(id, _, pk)| (*id, pk.clone())).collect();
     let otp_secrets: Vec<(u32, StaticSecret)> = otps
         .into_iter()
         .map(|(id, secret, _)| (id, secret))
@@ -127,8 +125,7 @@ mod tests {
         assert_eq!(sig_bytes.len(), 64);
 
         // Verify the signature
-        let sig =
-            ed25519_dalek::Signature::from_bytes(sig_bytes.as_slice().try_into().unwrap());
+        let sig = ed25519_dalek::Signature::from_bytes(sig_bytes.as_slice().try_into().unwrap());
         assert!(identity.verifying_key.verify(&public_bytes, &sig).is_ok());
     }
 

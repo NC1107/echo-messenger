@@ -1,9 +1,9 @@
 //! Authentication endpoints: register, login.
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 

@@ -1,8 +1,8 @@
 //! Message and conversation REST endpoints.
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
-use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -69,10 +69,9 @@ pub async fn get_messages(
     }
 
     let limit = params.limit.unwrap_or(50).min(100);
-    let messages =
-        db::messages::get_messages(&state.pool, conversation_id, params.before, limit)
-            .await
-            .map_err(|_| AppError::internal("Database error"))?;
+    let messages = db::messages::get_messages(&state.pool, conversation_id, params.before, limit)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
 
     Ok(Json(messages))
 }

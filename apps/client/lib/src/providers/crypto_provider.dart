@@ -77,7 +77,8 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
   }
 }
 
-final cryptoProvider =
-    StateNotifierProvider<CryptoNotifier, CryptoState>((ref) {
+final cryptoProvider = StateNotifierProvider<CryptoNotifier, CryptoState>((
+  ref,
+) {
   return CryptoNotifier(ref);
 });
