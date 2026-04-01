@@ -102,11 +102,13 @@ class ConversationMember {
   final String userId;
   final String username;
   final String? role;
+  final String? avatarUrl;
 
   const ConversationMember({
     required this.userId,
     required this.username,
     this.role,
+    this.avatarUrl,
   });
 
   factory ConversationMember.fromJson(Map<String, dynamic> json) {
@@ -114,6 +116,7 @@ class ConversationMember {
       userId: json['user_id'] as String,
       username: json['username'] as String,
       role: json['role'] as String?,
+      avatarUrl: json['avatar_url'] as String?,
     );
   }
 }

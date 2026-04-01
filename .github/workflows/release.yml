@@ -86,7 +86,8 @@ jobs:
           EOF
           cp Echo.AppDir/echo.desktop Echo.AppDir/usr/share/applications/
           # Placeholder icon
-          echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > Echo.AppDir/echo.png
+          magick public/black_echo_icon.png -gravity center -background none -extent 1408x1408 -resize 256x256 Echo.AppDir/echo.png || \
+          cp public/black_echo_icon.png Echo.AppDir/echo.png
           cp Echo.AppDir/echo.png Echo.AppDir/usr/share/icons/hicolor/256x256/apps/
           cat > Echo.AppDir/AppRun << 'APPRUN'
           #!/bin/bash

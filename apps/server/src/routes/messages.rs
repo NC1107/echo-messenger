@@ -5,8 +5,8 @@ use axum::extract::ws::Message as WsMessage;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use chrono::{DateTime, NaiveDateTime, Utc};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -16,8 +16,36 @@ use crate::error::AppError;
 
 use super::AppState;
 
+/// Lenient DateTime parser: accepts both `2026-01-01T00:00:00Z` and `2026-01-01T00:00:00.000`
+fn deserialize_lenient_datetime<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    match opt {
+        None => Ok(None),
+        Some(s) => {
+            // Try RFC 3339 first (with timezone)
+            if let Ok(dt) = DateTime::parse_from_rfc3339(&s) {
+                return Ok(Some(dt.with_timezone(&Utc)));
+            }
+            // Fallback: NaiveDateTime (no timezone, assume UTC)
+            if let Ok(naive) = NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.f") {
+                return Ok(Some(naive.and_utc()));
+            }
+            if let Ok(naive) = NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S") {
+                return Ok(Some(naive.and_utc()));
+            }
+            Err(serde::de::Error::custom(format!(
+                "cannot parse datetime: {s}"
+            )))
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct MessageQuery {
+    #[serde(default, deserialize_with = "deserialize_lenient_datetime")]
     pub before: Option<DateTime<Utc>>,
     pub limit: Option<i64>,
 }
@@ -36,6 +64,7 @@ pub struct ConversationListItem {
 pub struct MemberInfo {
     pub user_id: Uuid,
     pub username: String,
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -68,7 +97,7 @@ pub async fn list_conversations(
             c.kind, \
             c.title, \
             (SELECT json_agg(json_build_object( \
-                'user_id', u.id, 'username', u.username \
+                'user_id', u.id, 'username', u.username, 'avatar_url', u.avatar_url \
             )) FROM conversation_members cm2 \
             JOIN users u ON cm2.user_id = u.id \
             WHERE cm2.conversation_id = c.id) AS members_json, \

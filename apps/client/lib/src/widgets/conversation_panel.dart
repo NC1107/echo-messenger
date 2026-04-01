@@ -7,6 +7,7 @@ import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
@@ -253,8 +254,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   @override
   Widget build(BuildContext context) {
     final conversationsState = ref.watch(conversationsProvider);
-    final myUserId = ref.watch(authProvider).userId ?? '';
-    final myUsername = ref.watch(authProvider).username ?? 'User';
+    final authState = ref.watch(authProvider);
+    final myUserId = authState.userId ?? '';
+    final myUsername = authState.username ?? 'User';
+    final serverUrl = ref.watch(serverUrlProvider);
     final wsState = ref.watch(websocketProvider);
     final contactsState = ref.watch(contactsProvider);
 
@@ -569,6 +572,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                       name: myUsername,
                       radius: 16,
                       bgColor: EchoTheme.accent,
+                      imageUrl: authState.avatarUrl != null
+                          ? '$serverUrl${authState.avatarUrl}'
+                          : null,
                     ),
                     Positioned(
                       bottom: 0,

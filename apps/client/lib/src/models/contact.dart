@@ -3,6 +3,7 @@ class Contact {
   final String userId;
   final String username;
   final String? displayName;
+  final String? avatarUrl;
   final String status;
 
   const Contact({
@@ -10,6 +11,7 @@ class Contact {
     required this.userId,
     required this.username,
     this.displayName,
+    this.avatarUrl,
     required this.status,
   });
 
@@ -19,6 +21,7 @@ class Contact {
       userId: json['user_id'] as String,
       username: json['username'] as String,
       displayName: json['display_name'] as String?,
+      avatarUrl: json['avatar_url'] as String?,
       status: json['status'] as String,
     );
   }
