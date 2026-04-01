@@ -64,7 +64,7 @@ jobs:
           sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libfuse2 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good
       - name: Build
         working-directory: apps/client
-        run: flutter build linux --release
+        run: flutter build linux --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
       - name: Package tar.gz
         run: |
           cd apps/client/build/linux/x64/release/bundle
@@ -120,7 +120,7 @@ jobs:
           cache: true
       - name: Build
         working-directory: apps/client
-        run: flutter build windows --release
+        run: flutter build windows --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
       - name: Create InnoSetup script
         shell: pwsh
         run: |
@@ -181,7 +181,7 @@ jobs:
           cache: true
       - name: Build
         working-directory: apps/client
-        run: flutter build web --release
+        run: flutter build web --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
       - name: Package
         run: |
           cd apps/client/build/web
@@ -268,7 +268,7 @@ jobs:
           cache: true
       - name: Build web
         working-directory: apps/client
-        run: flutter build web --release
+        run: flutter build web --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:

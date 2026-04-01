@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
+import '../version.dart';
+import '../theme/echo_theme.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -93,6 +95,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 TextButton(
                   onPressed: () => context.go('/register'),
                   child: const Text('Create an account'),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Echo v$appVersion',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: EchoTheme.textMuted,
+                    fontSize: 11,
+                  ),
                 ),
               ],
             ),

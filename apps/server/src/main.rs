@@ -22,7 +22,7 @@ async fn main() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    tracing::info!("Starting Echo server");
+    tracing::info!("Starting Echo server v{}", env!("CARGO_PKG_VERSION"));
 
     // Ensure upload directories exist (Docker volume mounts may override build-time mkdir)
     std::fs::create_dir_all("./uploads/avatars").expect("Failed to create uploads directory");

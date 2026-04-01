@@ -15,6 +15,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
+import '../version.dart';
 
 /// Section identifiers for the settings navigation.
 enum SettingsSection { account, privacy, server, appearance, about }
@@ -823,7 +824,12 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Version ${_serverVersion ?? "0.1.0"}',
+          'Client version: $appVersion',
+          style: const TextStyle(color: EchoTheme.textMuted, fontSize: 14),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Server version: ${_serverVersion ?? "unknown"}',
           style: const TextStyle(color: EchoTheme.textMuted, fontSize: 14),
         ),
         const SizedBox(height: 24),

@@ -124,18 +124,17 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     final serverUrl = ref.read(serverUrlProvider);
     final wsBase = wsUrlFromHttpUrl(serverUrl);
 
-    // Try to get a WebSocket ticket first
+    // Get a single-use WebSocket ticket (secure: JWT never in URL)
     final ticket = await _fetchWsTicket();
 
-    final Uri uri;
-    if (ticket != null && ticket.isNotEmpty) {
-      uri = Uri.parse('$wsBase/ws?ticket=$ticket');
-    } else {
-      // Fallback: use JWT token directly (old server behavior)
-      final token = ref.read(authProvider).token ?? '';
-      uri = Uri.parse('$wsBase/ws?token=$token');
+    if (ticket == null || ticket.isEmpty) {
+      // Ticket fetch failed -- don't connect, let reconnect timer retry
+      debugPrint('[WebSocket] Failed to obtain ticket, will retry...');
+      state = state.copyWith(isConnected: false);
+      return;
     }
 
+    final uri = Uri.parse('$wsBase/ws?ticket=$ticket');
     _channel = WebSocketChannel.connect(uri);
     state = state.copyWith(isConnected: true);
 
