@@ -2,7 +2,6 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
     branches: [main]
 
 permissions:
@@ -13,9 +12,45 @@ env:
   FLUTTER_VERSION: '3.41.x'
 
 jobs:
+  version:
+    name: Calculate Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Calculate next version
+        id: version
+        run: |
+          # Get the latest version tag, default to v0.0.0
+          LATEST=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -z "$LATEST" ]; then
+            LATEST="v0.0.0"
+          fi
+
+          # Strip the 'v' prefix and split
+          VERSION="${LATEST#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          # Increment patch
+          PATCH=$((PATCH + 1))
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          NEW_TAG="v${NEW_VERSION}"
+
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+          echo "New version: $NEW_TAG (previous: $LATEST)"
+
   build-linux:
     name: Build Linux Desktop
     runs-on: ubuntu-latest
+    needs: version
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -36,21 +71,11 @@ jobs:
           tar czf ${{ github.workspace }}/echo-linux-x64.tar.gz .
       - name: Build AppImage
         run: |
-          # Download appimagetool
           wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
-
-          # Create AppDir structure
-          mkdir -p Echo.AppDir/usr/bin
-          mkdir -p Echo.AppDir/usr/lib
-          mkdir -p Echo.AppDir/usr/share/applications
-          mkdir -p Echo.AppDir/usr/share/icons/hicolor/256x256/apps
-
-          # Copy Flutter bundle
+          mkdir -p Echo.AppDir/usr/bin Echo.AppDir/usr/share/applications Echo.AppDir/usr/share/icons/hicolor/256x256/apps
           cp -r apps/client/build/linux/x64/release/bundle/* Echo.AppDir/usr/bin/
-
-          # Create desktop file
-          cat > Echo.AppDir/usr/share/applications/echo.desktop << 'DESKTOP'
+          cat > Echo.AppDir/echo.desktop << 'EOF'
           [Desktop Entry]
           Name=Echo
           Comment=Encrypted Messaging
@@ -58,15 +83,11 @@ jobs:
           Icon=echo
           Type=Application
           Categories=Network;InstantMessaging;
-          DESKTOP
-          cp Echo.AppDir/usr/share/applications/echo.desktop Echo.AppDir/echo.desktop
-
-          # Create a simple icon (placeholder)
-          convert -size 256x256 xc:'#4338CA' -fill white -gravity center -pointsize 72 -annotate 0 'E' Echo.AppDir/usr/share/icons/hicolor/256x256/apps/echo.png 2>/dev/null || \
-          echo "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAALEwAACxMBAJqcGAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAAGfSURBVHic7dpBDoMwDETR3v+ipe5CFYkJxNMx0v+LRBjHThgAAAAAAACAt7pExBkRm4p8axAQJwfE8wNi3/cQcSIgzp8g7uN5IiCePkHcx+wEEBCLE0BALE4AAbE4AQTE4gQQEIsTQEAsTgABsTgBBMTiBBAQixPw9wFpTAD9E0BALE4AAbE4AQTE4gQQEIsTQEAsTgABsTgBBMTiBBAQixNAQCxOAAGxOAEExOIEEBCLE0BALE4AAbE4AQTE4gT8PCAiIuJExL6NX29OQOwr9m08TwTE0yeI+3idCAjxBHEfs/87IJ4fEPu+h4gTAfH0CeI+ZicAAAAAAACgld/Z11F+5qlvwbfnGr7y0rdyTQ==" | base64 -d > Echo.AppDir/usr/share/icons/hicolor/256x256/apps/echo.png
-          cp Echo.AppDir/usr/share/icons/hicolor/256x256/apps/echo.png Echo.AppDir/echo.png
-
-          # Create AppRun
+          EOF
+          cp Echo.AppDir/echo.desktop Echo.AppDir/usr/share/applications/
+          # Placeholder icon
+          echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > Echo.AppDir/echo.png
+          cp Echo.AppDir/echo.png Echo.AppDir/usr/share/icons/hicolor/256x256/apps/
           cat > Echo.AppDir/AppRun << 'APPRUN'
           #!/bin/bash
           HERE="$(dirname "$(readlink -f "$0")")"
@@ -74,16 +95,14 @@ jobs:
           exec "${HERE}/usr/bin/echo_app" "$@"
           APPRUN
           chmod +x Echo.AppDir/AppRun
-
-          # Build AppImage
           ARCH=x86_64 ./appimagetool --no-appstream Echo.AppDir Echo-x86_64.AppImage || \
           ARCH=x86_64 ./appimagetool Echo.AppDir Echo-x86_64.AppImage
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'Latest Build' }}
-          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Echo ${{ needs.version.outputs.tag }}
+          generate_release_notes: true
           files: |
             echo-linux-x64.tar.gz
             Echo-x86_64.AppImage
@@ -91,6 +110,7 @@ jobs:
   build-windows:
     name: Build Windows Desktop
     runs-on: windows-latest
+    needs: version
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -107,7 +127,7 @@ jobs:
           @"
           [Setup]
           AppName=Echo
-          AppVersion=0.1.0
+          AppVersion=${{ needs.version.outputs.version }}
           AppPublisher=Echo Contributors
           DefaultDirName={autopf}\Echo
           DefaultGroupName=Echo
@@ -142,9 +162,8 @@ jobs:
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'Latest Build' }}
-          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Echo ${{ needs.version.outputs.tag }}
           files: |
             Echo-Setup-x64.exe
             echo-windows-x64-portable.zip
@@ -152,6 +171,7 @@ jobs:
   build-web:
     name: Build Web
     runs-on: ubuntu-latest
+    needs: version
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -169,14 +189,14 @@ jobs:
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'Latest Build' }}
-          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Echo ${{ needs.version.outputs.tag }}
           files: echo-web.tar.gz
 
   build-server:
     name: Build Server Binary
     runs-on: ubuntu-latest
+    needs: version
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -193,14 +213,14 @@ jobs:
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'Latest Build' }}
-          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Echo ${{ needs.version.outputs.tag }}
           files: echo-server-linux-x64.tar.gz
 
   docker:
     name: Build Docker Image
     runs-on: ubuntu-latest
+    needs: version
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -215,8 +235,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}/server
           tags: |
-            type=sha,prefix=
-            type=ref,event=tag
+            type=raw,value=${{ needs.version.outputs.version }}
             type=raw,value=latest,enable={{is_default_branch}}
       - uses: docker/build-push-action@v6
         with:
@@ -231,6 +250,7 @@ jobs:
   docker-web:
     name: Build Web Docker Image
     runs-on: ubuntu-latest
+    needs: version
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -253,8 +273,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}/web
           tags: |
-            type=sha,prefix=
-            type=ref,event=tag
+            type=raw,value=${{ needs.version.outputs.version }}
             type=raw,value=latest,enable={{is_default_branch}}
       - uses: docker/build-push-action@v6
         with:
@@ -265,3 +284,16 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  tag:
+    name: Create Git Tag
+    runs-on: ubuntu-latest
+    needs: [version, build-linux, build-windows, build-web, build-server]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ needs.version.outputs.tag }}
+          git push origin ${{ needs.version.outputs.tag }}
