@@ -81,6 +81,15 @@ Pre-commit hooks (lefthook): cargo fmt check + clippy on .rs files, commitlint o
 - **Message wire format**: Initial = `[0xEC, 0x01] + identity_pub(32) + ephemeral_pub(32) + session_wire`; Normal = `header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`. Both base64-wrapped over WebSocket.
 - **Soft deletes**: Messages use `is_deleted` flag, not hard deletes.
 
+## Commit Style
+
+Conventional commits, short and human-readable. One line subject, optional brief body. Examples from this repo:
+- `fix: Signal Protocol session establishment -- Alice/Bob role detection`
+- `feat: Signal Protocol integration -- X3DH + Double Ratchet in Dart + device-aware server`
+- `refactor: upgrade theme to ThemeExtension for scalable custom themes`
+
+Keep it concise -- no multi-paragraph explanations, no bullet lists in commit messages.
+
 ## Known Limitations
 
 1. Private keys stored in SharedPreferences (should use flutter_secure_storage / platform keystore)

@@ -272,19 +272,16 @@ class CryptoService {
       type: KeyPairType.x25519,
     );
 
-    // Parse optional one-time prekey
-    SimplePublicKey? bobOneTimePrekey;
-    if (data['one_time_prekey'] != null) {
-      final otpBytes = base64Decode(data['one_time_prekey'] as String);
-      bobOneTimePrekey = SimplePublicKey(otpBytes, type: KeyPairType.x25519);
-    }
+    // NOTE: One-time prekeys are not used because OTP private keys are not
+    // persisted on the client. Both Alice and Bob must use 3-DH only so the
+    // shared secrets match. OTPs are still uploaded/stored server-side for
+    // future use once private-key persistence is implemented.
 
-    // Perform X3DH as Alice (initiator) and save result for initial message prefix
+    // Perform X3DH as Alice (initiator) -- 3-DH only (no one-time prekey)
     final x3dhResult = await X3DH.initiate(
       aliceIdentity: _identityKeyPair!,
       bobIdentityKey: bobIdentityKey,
       bobSignedPrekey: bobSignedPrekey,
-      bobOneTimePrekey: bobOneTimePrekey,
     );
 
     // Initialize Double Ratchet as Alice.
