@@ -6,6 +6,7 @@ use uuid::Uuid;
 #[derive(Debug, serde::Serialize)]
 pub struct PreKeyBundleRow {
     pub identity_key: Vec<u8>,
+    pub signing_key: Option<Vec<u8>>,
     pub signed_prekey: Vec<u8>,
     pub signed_prekey_signature: Vec<u8>,
     pub signed_prekey_id: i32,
@@ -96,16 +97,16 @@ pub async fn get_prekey_bundle(
     device_id: i32,
 ) -> Result<Option<PreKeyBundleRow>, sqlx::Error> {
     // Fetch identity key for this device
-    let identity_row: Option<(Vec<u8>,)> = sqlx::query_as(
-        "SELECT identity_key FROM identity_keys WHERE user_id = $1 AND device_id = $2",
+    let identity_row: Option<(Vec<u8>, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT identity_key, signing_key FROM identity_keys WHERE user_id = $1 AND device_id = $2",
     )
     .bind(user_id)
     .bind(device_id)
     .fetch_optional(pool)
     .await?;
 
-    let identity_key = match identity_row {
-        Some((k,)) => k,
+    let (identity_key, signing_key) = match identity_row {
+        Some((k, sk)) => (k, sk),
         None => return Ok(None),
     };
 
@@ -144,6 +145,7 @@ pub async fn get_prekey_bundle(
 
     Ok(Some(PreKeyBundleRow {
         identity_key,
+        signing_key,
         signed_prekey,
         signed_prekey_signature,
         signed_prekey_id,

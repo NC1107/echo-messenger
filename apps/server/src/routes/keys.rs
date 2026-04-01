@@ -44,6 +44,8 @@ pub struct OneTimePreKeyUpload {
 #[derive(Debug, Serialize)]
 pub struct PreKeyBundleResponse {
     pub identity_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signing_key: Option<String>,
     pub signed_prekey: String,
     pub signed_prekey_signature: String,
     pub signed_prekey_id: i32,
@@ -186,6 +188,7 @@ pub async fn get_bundle(
 
     let response = PreKeyBundleResponse {
         identity_key: BASE64.encode(&bundle.identity_key),
+        signing_key: bundle.signing_key.as_ref().map(|sk| BASE64.encode(sk)),
         signed_prekey: BASE64.encode(&bundle.signed_prekey),
         signed_prekey_signature: BASE64.encode(&bundle.signed_prekey_signature),
         signed_prekey_id: bundle.signed_prekey_id,
@@ -212,6 +215,7 @@ pub async fn get_device_bundle(
 
     let response = PreKeyBundleResponse {
         identity_key: BASE64.encode(&bundle.identity_key),
+        signing_key: bundle.signing_key.as_ref().map(|sk| BASE64.encode(sk)),
         signed_prekey: BASE64.encode(&bundle.signed_prekey),
         signed_prekey_signature: BASE64.encode(&bundle.signed_prekey_signature),
         signed_prekey_id: bundle.signed_prekey_id,

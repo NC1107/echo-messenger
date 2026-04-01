@@ -33,6 +33,7 @@ class CryptoService {
   SimpleKeyPair? _signedPrekeyPair;
   SimpleKeyPair? _signingKeyPair;
   final Map<String, SignalSession> _sessions = {};
+  X3dhInitResult? _lastX3dhResult;
   bool _keysAreFresh = false;
 
   final _x25519 = X25519();
@@ -278,7 +279,7 @@ class CryptoService {
       bobOneTimePrekey = SimplePublicKey(otpBytes, type: KeyPairType.x25519);
     }
 
-    // Perform X3DH as Alice (initiator)
+    // Perform X3DH as Alice (initiator) and save result for initial message prefix
     final x3dhResult = await X3DH.initiate(
       aliceIdentity: _identityKeyPair!,
       bobIdentityKey: bobIdentityKey,
@@ -294,39 +295,96 @@ class CryptoService {
     );
 
     _sessions[peerUserId] = session;
+    _lastX3dhResult = x3dhResult; // Save for initial message prefix
     await _saveSession(peerUserId, session);
 
     return session;
   }
 
+  // Magic byte prefix for initial messages that include X3DH key exchange data.
+  // Format: [0xEC, 0x01] || alice_identity_pub (32) || alice_ephemeral_pub (32) || session_wire
+  static const _initialMsgMagic = [0xEC, 0x01];
+
   /// Encrypt a plaintext message for a specific peer.
   ///
-  /// Returns a base64-encoded string containing the Signal Protocol wire format:
-  /// header_len (4 LE) || header (40) || nonce (12) || ciphertext || tag (16).
+  /// For the first message (new session), includes X3DH key exchange data
+  /// so the receiver can establish the session as Bob.
   Future<String> encryptMessage(String peerUserId, String plaintext) async {
+    final isNewSession = !_sessions.containsKey(peerUserId);
     final session = await getOrCreateSession(peerUserId);
     final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
 
     final wire = await session.encrypt(plaintextBytes);
 
-    // Persist updated session state after encryption advances the chain
-    await _saveSession(peerUserId, session);
+    Uint8List finalWire;
+    if (isNewSession && _lastX3dhResult != null) {
+      // First message: prepend magic + identity + ephemeral keys
+      final idPub = (await _identityKeyPair!.extractPublicKey()).bytes;
+      final ephPub = _lastX3dhResult!.ephemeralPublic.bytes;
+      finalWire = Uint8List(2 + 32 + 32 + wire.length);
+      finalWire[0] = _initialMsgMagic[0];
+      finalWire[1] = _initialMsgMagic[1];
+      finalWire.setRange(2, 34, Uint8List.fromList(idPub));
+      finalWire.setRange(34, 66, Uint8List.fromList(ephPub));
+      finalWire.setRange(66, finalWire.length, wire);
+      _lastX3dhResult = null; // Clear after use
+    } else {
+      finalWire = wire;
+    }
 
-    return base64Encode(wire);
+    await _saveSession(peerUserId, session);
+    return base64Encode(finalWire);
   }
 
   /// Decrypt a base64-encoded ciphertext from a specific peer.
   ///
-  /// Handles DH ratchet steps and out-of-order message delivery automatically.
+  /// If this is an initial message (contains X3DH key exchange prefix),
+  /// establishes the session as Bob (responder) before decrypting.
   Future<String> decryptMessage(String peerUserId, String ciphertextB64) async {
+    final fullWire = Uint8List.fromList(base64Decode(ciphertextB64));
+
+    // Check for initial message magic prefix
+    if (fullWire.length > 66 &&
+        fullWire[0] == _initialMsgMagic[0] &&
+        fullWire[1] == _initialMsgMagic[1] &&
+        !_sessions.containsKey(peerUserId)) {
+      // This is an initial message -- establish session as Bob
+      final aliceIdentityPub = SimplePublicKey(
+        fullWire.sublist(2, 34),
+        type: KeyPairType.x25519,
+      );
+      final aliceEphemeralPub = SimplePublicKey(
+        fullWire.sublist(34, 66),
+        type: KeyPairType.x25519,
+      );
+      final sessionWire = fullWire.sublist(66);
+
+      // Compute X3DH as Bob (responder)
+      if (_signedPrekeyPair == null) await init();
+      final sharedSecret = await X3DH.respond(
+        bobIdentity: _identityKeyPair!,
+        bobSignedPrekey: _signedPrekeyPair!,
+        aliceIdentityKey: aliceIdentityPub,
+        aliceEphemeralKey: aliceEphemeralPub,
+      );
+
+      // Initialize Double Ratchet as Bob
+      final session = await SignalSession.initBob(
+        sharedSecret,
+        _signedPrekeyPair!,
+      );
+
+      // Decrypt the actual message
+      final plainBytes = await session.decrypt(sessionWire);
+      _sessions[peerUserId] = session;
+      await _saveSession(peerUserId, session);
+      return utf8.decode(plainBytes);
+    }
+
+    // Normal message -- use existing session
     final session = await getOrCreateSession(peerUserId);
-    final wire = base64Decode(ciphertextB64);
-
-    final plainBytes = await session.decrypt(Uint8List.fromList(wire));
-
-    // Persist updated session state after decryption may advance the chain
+    final plainBytes = await session.decrypt(fullWire);
     await _saveSession(peerUserId, session);
-
     return utf8.decode(plainBytes);
   }
 
