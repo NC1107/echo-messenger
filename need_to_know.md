@@ -14,11 +14,11 @@ Decentralized encrypted chat app. Rust server + Flutter client (web, Linux, Wind
 
 ## Critical Knowledge
 
-### Web Build MUST use CanvasKit renderer
+### Web Build
 ```bash
-flutter build web --release --web-renderer=canvaskit --pwa-strategy=none --dart-define=APP_VERSION=$VERSION
+flutter build web --release --pwa-strategy=none --dart-define=APP_VERSION=$VERSION
 ```
-- `--web-renderer=canvaskit` -- REQUIRED for visual parity with desktop. Without this, Flutter uses HTML renderer which goes through DOM/CSS and looks completely different from the Skia-rendered desktop app.
+- CanvasKit is the default (and only) web renderer in Flutter 3.22+. The `--web-renderer` flag was removed.
 - `--pwa-strategy=none` -- Disables service worker to prevent stale JS caching
 - `--dart-define=APP_VERSION=X.Y.Z` -- Injects version at compile time
 
@@ -27,7 +27,7 @@ Instead of serving from root, deploy each version to a unique path:
 ```bash
 export RELEASE="0.0.X"
 rm -rf ./build/web
-flutter build web --release --base-href /$RELEASE/ --web-renderer=canvaskit --pwa-strategy=none
+flutter build web --release --base-href /$RELEASE/ --pwa-strategy=none
 mkdir -p build/web_output/$RELEASE
 mv build/web/* build/web_output/$RELEASE
 mv build/web_output/$RELEASE/index.html build/web_output/index.html

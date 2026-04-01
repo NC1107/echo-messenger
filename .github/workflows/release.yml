@@ -244,7 +244,7 @@ jobs:
           cache: true
       - name: Build
         working-directory: apps/client
-        run: flutter build web --release --web-renderer=canvaskit --pwa-strategy=none --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
+        run: flutter build web --release --pwa-strategy=none --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
       - name: Package tar.gz
         run: |
           cd apps/client/build/web
