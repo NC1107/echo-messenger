@@ -294,14 +294,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
           username: username,
         );
       } else {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        state = state.copyWith(
-          isLoading: false,
-          error: data['error'] as String? ?? 'Registration failed',
-        );
+        String errorMsg = 'Registration failed';
+        try {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          errorMsg = data['error'] as String? ?? errorMsg;
+        } catch (_) {
+          errorMsg = 'Server error (${response.statusCode})';
+        }
+        state = state.copyWith(isLoading: false, error: errorMsg);
       }
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      final msg = e.toString().contains('FormatException')
+          ? 'Cannot reach server. Check your connection.'
+          : e.toString();
+      state = state.copyWith(isLoading: false, error: msg);
     }
   }
 
@@ -336,14 +342,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
           username: username,
         );
       } else {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        state = state.copyWith(
-          isLoading: false,
-          error: data['error'] as String? ?? 'Login failed',
-        );
+        String errorMsg = 'Invalid username or password';
+        try {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          errorMsg = data['error'] as String? ?? errorMsg;
+        } catch (_) {
+          errorMsg = 'Server error (${response.statusCode})';
+        }
+        state = state.copyWith(isLoading: false, error: errorMsg);
       }
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      final msg = e.toString().contains('FormatException')
+          ? 'Cannot reach server. Check your connection.'
+          : e.toString();
+      state = state.copyWith(isLoading: false, error: msg);
     }
   }
 
