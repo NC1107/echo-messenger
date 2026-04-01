@@ -188,54 +188,51 @@ class _MessageItemState extends State<MessageItem> {
       grouped.putIfAbsent(r.emoji, () => []).add(r);
     }
 
-    return Padding(
-      padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
-      child: Wrap(
-        spacing: 4,
-        runSpacing: 4,
-        alignment: isMine ? WrapAlignment.end : WrapAlignment.start,
-        children: grouped.entries.map((entry) {
-          final hasMyReaction = entry.value.any(
-            (r) => r.userId == widget.myUserId,
-          );
-          return InkWell(
-            onTap: () {
-              widget.onReactionSelect?.call(widget.message, entry.key);
-            },
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: hasMyReaction
-                    ? EchoTheme.accent.withValues(alpha: 0.2)
-                    : EchoTheme.surface,
-                borderRadius: BorderRadius.circular(10),
-                border: hasMyReaction
-                    ? Border.all(color: EchoTheme.accent, width: 1)
-                    : null,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(entry.key, style: const TextStyle(fontSize: 14)),
-                  if (entry.value.length > 1) ...[
-                    const SizedBox(width: 4),
-                    Text(
-                      '${entry.value.length}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: hasMyReaction
-                            ? EchoTheme.accent
-                            : EchoTheme.textSecondary,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+    return Wrap(
+      spacing: 3,
+      runSpacing: 3,
+      children: grouped.entries.map((entry) {
+        final hasMyReaction = entry.value.any(
+          (r) => r.userId == widget.myUserId,
+        );
+        return InkWell(
+          onTap: () {
+            widget.onReactionSelect?.call(widget.message, entry.key);
+          },
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            height: 20,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              color: hasMyReaction
+                  ? EchoTheme.accent.withValues(alpha: 0.2)
+                  : EchoTheme.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: hasMyReaction
+                  ? Border.all(color: EchoTheme.accent, width: 1)
+                  : null,
             ),
-          );
-        }).toList(),
-      ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(entry.key, style: const TextStyle(fontSize: 12)),
+                if (entry.value.length > 1) ...[
+                  const SizedBox(width: 2),
+                  Text(
+                    '${entry.value.length}',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: hasMyReaction
+                          ? EchoTheme.accent
+                          : EchoTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -247,6 +244,99 @@ class _MessageItemState extends State<MessageItem> {
 
     // Check if message is an image
     final imageWidget = _buildImageContent(msg.content, isMine: isMine);
+
+    final hasReactions = msg.reactions.isNotEmpty;
+    final reactionsWidget = _buildReactions(msg.reactions, isMine);
+
+    // The bubble widget
+    final bubble = Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.65,
+      ),
+      padding: imageWidget != null
+          ? const EdgeInsets.all(4)
+          : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isFailed
+            ? EchoTheme.danger.withValues(alpha: 0.2)
+            : isMine
+            ? EchoTheme.sentBubble
+            : EchoTheme.recvBubble,
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(16),
+          topRight: const Radius.circular(16),
+          bottomLeft: Radius.circular(!isMine ? 4 : 16),
+          bottomRight: Radius.circular(isMine ? 4 : 16),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Sender name for group received messages
+          if (!isMine && widget.showHeader)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: 4,
+                left: imageWidget != null ? 8 : 0,
+              ),
+              child: Text(
+                msg.fromUsername,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: _getUserColor(msg.fromUserId),
+                ),
+              ),
+            ),
+          // Image or text content
+          if (imageWidget != null)
+            imageWidget
+          else
+            _buildMessageText(
+              msg.content,
+              textColor: isFailed
+                  ? EchoTheme.danger
+                  : isMine
+                  ? Colors.white
+                  : EchoTheme.textPrimary,
+            ),
+        ],
+      ),
+    );
+
+    // Bubble + reactions row: reactions on the left of the bubble
+    Widget bubbleWithReactions;
+    if (hasReactions) {
+      if (isMine) {
+        bubbleWithReactions = Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(right: 4, bottom: 2),
+              child: reactionsWidget,
+            ),
+            Flexible(child: bubble),
+          ],
+        );
+      } else {
+        bubbleWithReactions = Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(child: bubble),
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 2),
+              child: reactionsWidget,
+            ),
+          ],
+        );
+      }
+    } else {
+      bubbleWithReactions = bubble;
+    }
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -285,66 +375,8 @@ class _MessageItemState extends State<MessageItem> {
                       ),
                       const SizedBox(width: 8),
                     ],
-                    // Bubble
-                    Flexible(
-                      child: Container(
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.65,
-                        ),
-                        padding: imageWidget != null
-                            ? const EdgeInsets.all(4)
-                            : const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                        decoration: BoxDecoration(
-                          color: isFailed
-                              ? EchoTheme.danger.withValues(alpha: 0.2)
-                              : isMine
-                              ? EchoTheme.sentBubble
-                              : EchoTheme.recvBubble,
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(16),
-                            topRight: const Radius.circular(16),
-                            bottomLeft: Radius.circular(!isMine ? 4 : 16),
-                            bottomRight: Radius.circular(isMine ? 4 : 16),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Sender name for group received messages
-                            if (!isMine && widget.showHeader)
-                              Padding(
-                                padding: EdgeInsets.only(
-                                  bottom: 4,
-                                  left: imageWidget != null ? 8 : 0,
-                                ),
-                                child: Text(
-                                  msg.fromUsername,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: _getUserColor(msg.fromUserId),
-                                  ),
-                                ),
-                              ),
-                            // Image or text content
-                            if (imageWidget != null)
-                              imageWidget
-                            else
-                              _buildMessageText(
-                                msg.content,
-                                textColor: isFailed
-                                    ? EchoTheme.danger
-                                    : isMine
-                                    ? Colors.white
-                                    : EchoTheme.textPrimary,
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
+                    // Bubble with reactions
+                    Flexible(child: bubbleWithReactions),
                   ],
                 ),
                 // Hover action buttons
@@ -394,7 +426,6 @@ class _MessageItemState extends State<MessageItem> {
                   ],
                 ),
               ),
-            _buildReactions(msg.reactions, isMine),
           ],
         ),
       ),

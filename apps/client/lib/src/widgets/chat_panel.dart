@@ -191,55 +191,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     }
   }
 
-  void _showEmojiPicker() {
-    final emojis = [
-      '😀',
-      '😂',
-      '❤️',
-      '👍',
-      '🔥',
-      '🎉',
-      '😢',
-      '😮',
-      '🤔',
-      '👀',
-      '💪',
-      '✨',
-      '🙏',
-      '💯',
-      '😍',
-      '🤣',
-    ];
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: EchoTheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: emojis
-              .map(
-                (emoji) => GestureDetector(
-                  onTap: () {
-                    _messageController.text += emoji;
-                    _messageController.selection = TextSelection.fromPosition(
-                      TextPosition(offset: _messageController.text.length),
-                    );
-                    Navigator.pop(ctx);
-                  },
-                  child: Text(emoji, style: const TextStyle(fontSize: 28)),
-                ),
-              )
-              .toList(),
-        ),
-      ),
-    );
-  }
-
   Future<void> _pickFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -848,21 +799,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                       ),
                       onChanged: _onInputChanged,
                       onSubmitted: (_) => _sendMessage(),
-                    ),
-                  ),
-                  // Emoji button
-                  IconButton(
-                    icon: const Icon(
-                      Icons.sentiment_satisfied_alt_outlined,
-                      size: 18,
-                    ),
-                    color: EchoTheme.textSecondary,
-                    tooltip: 'Insert emoji',
-                    onPressed: _showEmojiPicker,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
                     ),
                   ),
                   // Send button

@@ -31,7 +31,7 @@ source "$HOME/.cargo/env" 2>/dev/null || true
 export DATABASE_URL="postgres://echo:dev_password@localhost:5432/echo_dev"
 export JWT_SECRET="dev-secret"
 export RUST_LOG="echo_server=info"
-mkdir -p uploads
+mkdir -p uploads/avatars
 
 if [ ! -f target/debug/echo-server ]; then
     echo "   Building server (first time)..."

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
@@ -92,6 +93,15 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   /// 0 = Chats, 1 = Contacts, 2 = Groups
   int _selectedTab = 0;
 
+  /// Pinned conversation IDs
+  Set<String> _pinnedIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPinnedIds();
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -99,11 +109,97 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     super.dispose();
   }
 
+  Future<void> _loadPinnedIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pinned = prefs.getStringList('pinned_conversation_ids') ?? [];
+    if (mounted) {
+      setState(() => _pinnedIds = pinned.toSet());
+    }
+  }
+
+  Future<void> _savePinnedIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('pinned_conversation_ids', _pinnedIds.toList());
+  }
+
+  void _togglePin(String conversationId) {
+    setState(() {
+      if (_pinnedIds.contains(conversationId)) {
+        _pinnedIds.remove(conversationId);
+      } else {
+        _pinnedIds.add(conversationId);
+      }
+    });
+    _savePinnedIds();
+  }
+
+  /// Sort conversations: pinned first, then by last message timestamp.
+  List<Conversation> _sortConversations(List<Conversation> conversations) {
+    final pinned = <Conversation>[];
+    final unpinned = <Conversation>[];
+    for (final conv in conversations) {
+      if (_pinnedIds.contains(conv.id)) {
+        pinned.add(conv);
+      } else {
+        unpinned.add(conv);
+      }
+    }
+    return [...pinned, ...unpinned];
+  }
+
   void _clearSearch() {
     setState(() {
       _searchQuery = '';
       _isSearching = false;
       _searchController.clear();
+    });
+  }
+
+  void _showConversationContextMenu(
+    BuildContext context,
+    Conversation conv,
+    Offset position,
+  ) {
+    final isPinned = _pinnedIds.contains(conv.id);
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(position.dx, position.dy, 0, 0),
+        Offset.zero & overlay.size,
+      ),
+      color: EchoTheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: EchoTheme.border),
+      ),
+      items: [
+        PopupMenuItem<String>(
+          value: 'pin',
+          child: Row(
+            children: [
+              Icon(
+                isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                size: 16,
+                color: EchoTheme.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                isPinned ? 'Unpin' : 'Pin to top',
+                style: const TextStyle(
+                  color: EchoTheme.textPrimary,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == 'pin') {
+        _togglePin(conv.id);
+      }
     });
   }
 
@@ -594,18 +690,25 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ),
       );
     }
+
+    final sorted = _sortConversations(conversations);
+
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      itemCount: conversations.length,
+      itemCount: sorted.length,
       itemBuilder: (context, index) {
-        final conv = conversations[index];
+        final conv = sorted[index];
         final isSelected = conv.id == widget.selectedConversationId;
+        final isPinned = _pinnedIds.contains(conv.id);
         return _ConversationItem(
           conversation: conv,
           myUserId: myUserId,
           isSelected: isSelected,
+          isPinned: isPinned,
           timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
           onTap: () => widget.onConversationTap(conv),
+          onContextMenu: (position) =>
+              _showConversationContextMenu(context, conv, position),
         );
       },
     );
@@ -707,18 +810,25 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ),
       );
     }
+
+    final sorted = _sortConversations(groupConversations);
+
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      itemCount: groupConversations.length,
+      itemCount: sorted.length,
       itemBuilder: (context, index) {
-        final conv = groupConversations[index];
+        final conv = sorted[index];
         final isSelected = conv.id == widget.selectedConversationId;
+        final isPinned = _pinnedIds.contains(conv.id);
         return _ConversationItem(
           conversation: conv,
           myUserId: myUserId,
           isSelected: isSelected,
+          isPinned: isPinned,
           timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
           onTap: () => widget.onConversationTap(conv),
+          onContextMenu: (position) =>
+              _showConversationContextMenu(context, conv, position),
         );
       },
     );
@@ -839,15 +949,19 @@ class _ConversationItem extends StatefulWidget {
   final Conversation conversation;
   final String myUserId;
   final bool isSelected;
+  final bool isPinned;
   final String timestamp;
   final VoidCallback onTap;
+  final void Function(Offset position)? onContextMenu;
 
   const _ConversationItem({
     required this.conversation,
     required this.myUserId,
     required this.isSelected,
+    required this.isPinned,
     required this.timestamp,
     required this.onTap,
+    this.onContextMenu,
   });
 
   @override
@@ -879,6 +993,12 @@ class _ConversationItemState extends State<_ConversationItem> {
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
         onTap: widget.onTap,
+        onSecondaryTapUp: (details) {
+          widget.onContextMenu?.call(details.globalPosition);
+        },
+        onLongPressStart: (details) {
+          widget.onContextMenu?.call(details.globalPosition);
+        },
         child: Container(
           height: 68,
           margin: const EdgeInsets.symmetric(vertical: 1),
@@ -932,6 +1052,15 @@ class _ConversationItemState extends State<_ConversationItem> {
                   children: [
                     Row(
                       children: [
+                        if (widget.isPinned)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 4),
+                            child: Icon(
+                              Icons.push_pin,
+                              size: 12,
+                              color: EchoTheme.textMuted,
+                            ),
+                          ),
                         Expanded(
                           child: Text(
                             displayName,

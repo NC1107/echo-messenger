@@ -35,6 +35,8 @@ RUN apt-get update && apt-get install -y \
 COPY --from=builder /app/target/release/echo-server /usr/local/bin/echo-server
 COPY apps/server/src/migrations /opt/echo/migrations
 
+RUN mkdir -p /app/uploads/avatars
+
 USER echo
 EXPOSE 8080
 

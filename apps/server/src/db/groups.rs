@@ -303,6 +303,26 @@ pub async fn get_conversation_kind(
     Ok(row.map(|(kind,)| kind))
 }
 
+/// Check if a user already owns a public group with the given title.
+pub async fn user_has_public_group_named(
+    pool: &PgPool,
+    user_id: Uuid,
+    title: &str,
+) -> Result<bool, sqlx::Error> {
+    let row: (bool,) = sqlx::query_as(
+        "SELECT EXISTS(\
+            SELECT 1 FROM conversations c \
+            JOIN conversation_members cm ON cm.conversation_id = c.id \
+            WHERE cm.user_id = $1 AND cm.role = 'owner' AND c.title = $2 AND c.is_public = true\
+        )",
+    )
+    .bind(user_id)
+    .bind(title)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
 /// Check if a group is public.
 pub async fn is_public(pool: &PgPool, group_id: Uuid) -> Result<bool, sqlx::Error> {
     let row: Option<(bool,)> = sqlx::query_as("SELECT is_public FROM conversations WHERE id = $1")

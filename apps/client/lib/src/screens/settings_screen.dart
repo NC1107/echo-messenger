@@ -16,37 +16,173 @@ import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 
 /// Section identifiers for the settings navigation.
-enum _SettingsSection { account, privacy, server, appearance, about }
+enum SettingsSection { account, privacy, server, appearance, about }
 
-class SettingsScreen extends ConsumerStatefulWidget {
-  const SettingsScreen({super.key});
-
-  @override
-  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+/// Returns a human-readable label for a settings section.
+String settingsSectionLabel(SettingsSection section) {
+  switch (section) {
+    case SettingsSection.account:
+      return 'Account';
+    case SettingsSection.privacy:
+      return 'Privacy';
+    case SettingsSection.server:
+      return 'Server';
+    case SettingsSection.appearance:
+      return 'Appearance';
+    case SettingsSection.about:
+      return 'About';
+  }
 }
 
-class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+// ---------------------------------------------------------------------------
+// Settings nav list widget (reusable)
+// ---------------------------------------------------------------------------
+
+class SettingsNavList extends StatelessWidget {
+  final SettingsSection? selected;
+  final void Function(SettingsSection) onTap;
+  final VoidCallback onLogout;
+
+  const SettingsNavList({
+    super.key,
+    this.selected,
+    required this.onTap,
+    required this.onLogout,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const SizedBox(height: 8),
+        _navItem(
+          icon: Icons.person_outlined,
+          label: 'Account',
+          section: SettingsSection.account,
+        ),
+        _navItem(
+          icon: Icons.lock_outline,
+          label: 'Privacy',
+          section: SettingsSection.privacy,
+        ),
+        _navItem(
+          icon: Icons.dns_outlined,
+          label: 'Server',
+          section: SettingsSection.server,
+        ),
+        _navItem(
+          icon: Icons.palette_outlined,
+          label: 'Appearance',
+          section: SettingsSection.appearance,
+        ),
+        _navItem(
+          icon: Icons.info_outline,
+          label: 'About',
+          section: SettingsSection.about,
+        ),
+        const Spacer(),
+        // Logout button
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: onLogout,
+              icon: const Icon(Icons.logout, size: 18, color: EchoTheme.danger),
+              label: const Text(
+                'Log out',
+                style: TextStyle(color: EchoTheme.danger),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: EchoTheme.danger),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _navItem({
+    required IconData icon,
+    required String label,
+    required SettingsSection section,
+  }) {
+    final isSelected = selected == section;
+    return Material(
+      color: isSelected ? EchoTheme.accentLight : Colors.transparent,
+      child: InkWell(
+        onTap: () => onTap(section),
+        hoverColor: EchoTheme.surfaceHover,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: isSelected ? EchoTheme.accent : EchoTheme.textSecondary,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? EchoTheme.accent : EchoTheme.textPrimary,
+                  fontSize: 14,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Settings content widget (reusable)
+// ---------------------------------------------------------------------------
+
+class SettingsContent extends ConsumerStatefulWidget {
+  final SettingsSection section;
+
+  const SettingsContent({super.key, required this.section});
+
+  @override
+  ConsumerState<SettingsContent> createState() => _SettingsContentState();
+}
+
+class _SettingsContentState extends ConsumerState<SettingsContent> {
   bool _serverOnline = false;
   bool _checkingHealth = true;
   String? _serverVersion;
 
-  _SettingsSection _selectedSection = _SettingsSection.account;
-
-  /// On mobile, null means we show the nav list; non-null means we pushed into
-  /// the detail view for that section.
-  _SettingsSection? _mobileDetailSection;
-
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkServerHealth();
-    });
+    if (widget.section == SettingsSection.server ||
+        widget.section == SettingsSection.about) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _checkServerHealth();
+      });
+    }
   }
 
-  // ---------------------------------------------------------------------------
-  // Server health (preserved from original)
-  // ---------------------------------------------------------------------------
+  @override
+  void didUpdateWidget(covariant SettingsContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.section != oldWidget.section &&
+        (widget.section == SettingsSection.server ||
+            widget.section == SettingsSection.about) &&
+        _serverVersion == null) {
+      _checkServerHealth();
+    }
+  }
 
   Future<void> _checkServerHealth() async {
     setState(() => _checkingHealth = true);
@@ -81,21 +217,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // Logout
-  // ---------------------------------------------------------------------------
-
-  void _logout(BuildContext context, WidgetRef ref) {
-    ref.read(websocketProvider.notifier).disconnect();
-    ref.read(chatProvider.notifier).clear();
-    ref.read(authProvider.notifier).logout();
-    context.go('/login');
-  }
-
-  // ---------------------------------------------------------------------------
-  // Change server dialog (preserved from original)
-  // ---------------------------------------------------------------------------
 
   Future<void> _showChangeServerDialog() async {
     final currentUrl = ref.read(serverUrlProvider);
@@ -184,10 +305,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Avatar upload
-  // ---------------------------------------------------------------------------
-
   Future<void> _uploadAvatar() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
@@ -239,10 +356,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // QR code dialog
-  // ---------------------------------------------------------------------------
 
   void _showQrCodeDialog() {
     final authState = ref.read(authProvider);
@@ -319,265 +432,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Layout
-  // ---------------------------------------------------------------------------
-
-  bool get _isMobile => MediaQuery.of(context).size.width < 600;
-
   @override
   Widget build(BuildContext context) {
-    if (_isMobile) {
-      return _buildMobileLayout();
-    }
-    return _buildDesktopLayout();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Mobile layout: nav list or detail
-  // ---------------------------------------------------------------------------
-
-  Widget _buildMobileLayout() {
-    if (_mobileDetailSection != null) {
-      return Scaffold(
-        backgroundColor: EchoTheme.mainBg,
-        appBar: AppBar(
-          backgroundColor: EchoTheme.sidebarBg,
-          title: Text(
-            _sectionLabel(_mobileDetailSection!),
-            style: const TextStyle(
-              color: EchoTheme.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: EchoTheme.textSecondary),
-            onPressed: () => setState(() => _mobileDetailSection = null),
-          ),
-        ),
-        body: _buildSectionContent(_mobileDetailSection!),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: EchoTheme.mainBg,
-      appBar: AppBar(
-        backgroundColor: EchoTheme.sidebarBg,
-        title: const Text(
-          'Settings',
-          style: TextStyle(
-            color: EchoTheme.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: EchoTheme.textSecondary),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: _buildNavList(
-        onTap: (section) => setState(() => _mobileDetailSection = section),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Desktop layout: two-panel
-  // ---------------------------------------------------------------------------
-
-  Widget _buildDesktopLayout() {
-    return Scaffold(
-      backgroundColor: EchoTheme.mainBg,
-      appBar: AppBar(
-        backgroundColor: EchoTheme.sidebarBg,
-        title: const Text(
-          'Settings',
-          style: TextStyle(
-            color: EchoTheme.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: EchoTheme.textSecondary),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Left nav panel (200px)
-              SizedBox(
-                width: 200,
-                child: _buildNavList(
-                  onTap: (section) =>
-                      setState(() => _selectedSection = section),
-                  selected: _selectedSection,
-                ),
-              ),
-              Container(width: 1, color: EchoTheme.border),
-              // Right content panel
-              Expanded(child: _buildSectionContent(_selectedSection)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Navigation list
-  // ---------------------------------------------------------------------------
-
-  Widget _buildNavList({
-    required void Function(_SettingsSection) onTap,
-    _SettingsSection? selected,
-  }) {
-    return Column(
-      children: [
-        const SizedBox(height: 8),
-        _navItem(
-          icon: Icons.person_outlined,
-          label: 'Account',
-          section: _SettingsSection.account,
-          selected: selected,
-          onTap: onTap,
-        ),
-        _navItem(
-          icon: Icons.lock_outline,
-          label: 'Privacy',
-          section: _SettingsSection.privacy,
-          selected: selected,
-          onTap: onTap,
-        ),
-        _navItem(
-          icon: Icons.dns_outlined,
-          label: 'Server',
-          section: _SettingsSection.server,
-          selected: selected,
-          onTap: onTap,
-        ),
-        _navItem(
-          icon: Icons.palette_outlined,
-          label: 'Appearance',
-          section: _SettingsSection.appearance,
-          selected: selected,
-          onTap: onTap,
-        ),
-        _navItem(
-          icon: Icons.info_outline,
-          label: 'About',
-          section: _SettingsSection.about,
-          selected: selected,
-          onTap: onTap,
-        ),
-        const Spacer(),
-        // Logout button
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () => _logout(context, ref),
-              icon: const Icon(Icons.logout, size: 18, color: EchoTheme.danger),
-              label: const Text(
-                'Log out',
-                style: TextStyle(color: EchoTheme.danger),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: EchoTheme.danger),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _navItem({
-    required IconData icon,
-    required String label,
-    required _SettingsSection section,
-    required _SettingsSection? selected,
-    required void Function(_SettingsSection) onTap,
-  }) {
-    final isSelected = selected == section;
-    return Material(
-      color: isSelected ? EchoTheme.accentLight : Colors.transparent,
-      child: InkWell(
-        onTap: () => onTap(section),
-        hoverColor: EchoTheme.surfaceHover,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: isSelected ? EchoTheme.accent : EchoTheme.textSecondary,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                label,
-                style: TextStyle(
-                  color: isSelected ? EchoTheme.accent : EchoTheme.textPrimary,
-                  fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Section content router
-  // ---------------------------------------------------------------------------
-
-  String _sectionLabel(_SettingsSection section) {
-    switch (section) {
-      case _SettingsSection.account:
-        return 'Account';
-      case _SettingsSection.privacy:
-        return 'Privacy';
-      case _SettingsSection.server:
-        return 'Server';
-      case _SettingsSection.appearance:
-        return 'Appearance';
-      case _SettingsSection.about:
-        return 'About';
-    }
-  }
-
-  Widget _buildSectionContent(_SettingsSection section) {
-    switch (section) {
-      case _SettingsSection.account:
+    switch (widget.section) {
+      case SettingsSection.account:
         return _buildAccountSection();
-      case _SettingsSection.privacy:
+      case SettingsSection.privacy:
         return _buildPrivacySection();
-      case _SettingsSection.server:
+      case SettingsSection.server:
         return _buildServerSection();
-      case _SettingsSection.appearance:
+      case SettingsSection.appearance:
         return _buildAppearanceSection();
-      case _SettingsSection.about:
+      case SettingsSection.about:
         return _buildAboutSection();
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // Account section
-  // ---------------------------------------------------------------------------
 
   Widget _buildAccountSection() {
     final authState = ref.watch(authProvider);
@@ -586,7 +455,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        // Avatar + username
         Row(
           children: [
             Stack(
@@ -648,7 +516,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
         ),
         const SizedBox(height: 24),
-        // Upload Avatar button
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
@@ -658,7 +525,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        // QR Code button
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
@@ -670,10 +536,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ],
     );
   }
-
-  // ---------------------------------------------------------------------------
-  // Privacy section
-  // ---------------------------------------------------------------------------
 
   Widget _buildPrivacySection() {
     return const Center(
@@ -700,10 +562,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Server section
-  // ---------------------------------------------------------------------------
-
   Widget _buildServerSection() {
     final serverUrl = ref.watch(serverUrlProvider);
     final displayHost = Uri.tryParse(serverUrl)?.host ?? serverUrl;
@@ -711,7 +569,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        // Connected to
         ListTile(
           leading: const Icon(
             Icons.dns_outlined,
@@ -727,7 +584,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             style: const TextStyle(color: EchoTheme.textMuted, fontSize: 12),
           ),
         ),
-        // Status
         ListTile(
           leading: Icon(
             Icons.circle,
@@ -761,7 +617,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onPressed: _checkServerHealth,
           ),
         ),
-        // Server version
         if (_serverVersion != null)
           ListTile(
             leading: const Icon(
@@ -779,7 +634,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
         const Divider(color: EchoTheme.border, height: 32),
-        // Change server
         ListTile(
           leading: const Icon(
             Icons.swap_horiz_outlined,
@@ -805,10 +659,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Appearance section
-  // ---------------------------------------------------------------------------
-
   Widget _buildAppearanceSection() {
     return const Center(
       child: Column(
@@ -833,10 +683,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
   }
-
-  // ---------------------------------------------------------------------------
-  // About section
-  // ---------------------------------------------------------------------------
 
   Widget _buildAboutSection() {
     return ListView(
@@ -875,6 +721,136 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Full settings screen (used on mobile route / standalone)
+// ---------------------------------------------------------------------------
+
+class SettingsScreen extends ConsumerStatefulWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
+  SettingsSection _selectedSection = SettingsSection.account;
+  SettingsSection? _mobileDetailSection;
+
+  void _logout() {
+    ref.read(websocketProvider.notifier).disconnect();
+    ref.read(chatProvider.notifier).clear();
+    ref.read(authProvider.notifier).logout();
+    context.go('/login');
+  }
+
+  bool get _isMobile => MediaQuery.of(context).size.width < 600;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isMobile) {
+      return _buildMobileLayout();
+    }
+    return _buildDesktopLayout();
+  }
+
+  Widget _buildMobileLayout() {
+    if (_mobileDetailSection != null) {
+      return Scaffold(
+        backgroundColor: EchoTheme.mainBg,
+        appBar: AppBar(
+          backgroundColor: EchoTheme.sidebarBg,
+          title: Text(
+            settingsSectionLabel(_mobileDetailSection!),
+            style: const TextStyle(
+              color: EchoTheme.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: EchoTheme.textSecondary),
+            onPressed: () => setState(() => _mobileDetailSection = null),
+          ),
+        ),
+        body: SettingsContent(
+          key: ValueKey(_mobileDetailSection),
+          section: _mobileDetailSection!,
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: EchoTheme.mainBg,
+      appBar: AppBar(
+        backgroundColor: EchoTheme.sidebarBg,
+        title: const Text(
+          'Settings',
+          style: TextStyle(
+            color: EchoTheme.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: EchoTheme.textSecondary),
+          onPressed: () => context.pop(),
+        ),
+      ),
+      body: SettingsNavList(
+        onTap: (section) => setState(() => _mobileDetailSection = section),
+        onLogout: _logout,
+      ),
+    );
+  }
+
+  Widget _buildDesktopLayout() {
+    return Scaffold(
+      backgroundColor: EchoTheme.mainBg,
+      appBar: AppBar(
+        backgroundColor: EchoTheme.sidebarBg,
+        title: const Text(
+          'Settings',
+          style: TextStyle(
+            color: EchoTheme.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: EchoTheme.textSecondary),
+          onPressed: () => context.pop(),
+        ),
+      ),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 200,
+                child: SettingsNavList(
+                  selected: _selectedSection,
+                  onTap: (section) =>
+                      setState(() => _selectedSection = section),
+                  onLogout: _logout,
+                ),
+              ),
+              Container(width: 1, color: EchoTheme.border),
+              Expanded(
+                child: SettingsContent(
+                  key: ValueKey(_selectedSection),
+                  section: _selectedSection,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -69,6 +69,22 @@ pub async fn create_group(
         ));
     }
 
+    // Prevent duplicate public group names per creator
+    if body.is_public {
+        let already_exists =
+            db::groups::user_has_public_group_named(&state.pool, auth.user_id, &body.name)
+                .await
+                .map_err(|e| {
+                    tracing::error!("Failed to check duplicate group name: {:?}", e);
+                    AppError::internal("Failed to check duplicate group name")
+                })?;
+        if already_exists {
+            return Err(AppError::conflict(
+                "You already own a public group with this name",
+            ));
+        }
+    }
+
     let group = db::groups::create_group_with_visibility(
         &state.pool,
         auth.user_id,

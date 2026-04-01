@@ -7,6 +7,8 @@ import '../models/conversation.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/crypto_provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/chat_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
@@ -16,6 +18,7 @@ import '../widgets/members_panel.dart';
 import 'contacts_screen.dart';
 import 'create_group_screen.dart';
 import 'discover_groups_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -30,6 +33,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   // For narrow screen navigation
   int _narrowPanelIndex = 0; // 0 = conv list, 1 = chat
+
+  // Settings inline state
+  bool _showSettings = false;
+  SettingsSection _settingsSection = SettingsSection.account;
+
+  // Collapsible sidebar state
+  bool _sidebarCollapsed = false;
 
   @override
   void initState() {
@@ -112,6 +122,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() {
       _selectedConversation = conv;
       _narrowPanelIndex = 1;
+      _showSettings = false;
     });
   }
 
@@ -236,6 +247,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  void _openSettings() {
+    if (_isDesktop || MediaQuery.of(context).size.width >= 600) {
+      setState(() {
+        _showSettings = true;
+        _settingsSection = SettingsSection.account;
+      });
+    } else {
+      context.push('/settings');
+    }
+  }
+
+  void _logout() {
+    ref.read(websocketProvider.notifier).disconnect();
+    ref.read(chatProvider.notifier).clear();
+    ref.read(authProvider.notifier).logout();
+    context.go('/login');
+  }
+
   ConversationPanel _buildConversationPanel() {
     return ConversationPanel(
       selectedConversationId: _selectedConversation?.id,
@@ -243,9 +272,163 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onNewChat: _openContacts,
       onNewGroup: _openCreateGroup,
       onDiscover: _openDiscoverGroups,
-      onSettings: () => context.push('/settings'),
+      onSettings: _openSettings,
       onShowContacts: _openContacts,
       onMessageContact: _messageContact,
+    );
+  }
+
+  /// Builds a collapsed sidebar showing only avatars.
+  Widget _buildCollapsedSidebar() {
+    final conversationsState = ref.watch(conversationsProvider);
+    final myUserId = ref.watch(authProvider).userId ?? '';
+    final conversations = conversationsState.conversations;
+
+    return Container(
+      width: 60,
+      color: EchoTheme.sidebarBg,
+      child: Column(
+        children: [
+          // Header with expand button
+          Container(
+            height: 56,
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: EchoTheme.border, width: 1),
+              ),
+            ),
+            child: Center(
+              child: IconButton(
+                icon: const Icon(Icons.chevron_right, size: 20),
+                color: EchoTheme.textSecondary,
+                tooltip: 'Expand sidebar',
+                onPressed: () => setState(() => _sidebarCollapsed = false),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
+            ),
+          ),
+          // Conversation avatars
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: conversations.length,
+              itemBuilder: (context, index) {
+                final conv = conversations[index];
+                final displayName = conv.displayName(myUserId);
+                final isSelected = conv.id == _selectedConversation?.id;
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Tooltip(
+                    message: displayName,
+                    preferBelow: false,
+                    child: GestureDetector(
+                      onTap: () => _selectConversation(conv),
+                      child: Center(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: isSelected
+                                ? Border.all(color: EchoTheme.accent, width: 2)
+                                : null,
+                          ),
+                          child: buildAvatar(
+                            name: displayName,
+                            radius: 18,
+                            bgColor: conv.isGroup ? EchoTheme.accent : null,
+                            fallbackIcon: conv.isGroup
+                                ? const Icon(
+                                    Icons.group,
+                                    size: 16,
+                                    color: Colors.white,
+                                  )
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          // Settings icon at bottom
+          Container(
+            height: 60,
+            decoration: const BoxDecoration(
+              color: EchoTheme.mainBg,
+              border: Border(
+                top: BorderSide(color: EchoTheme.border, width: 1),
+              ),
+            ),
+            child: Center(
+              child: IconButton(
+                icon: const Icon(Icons.settings_outlined, size: 18),
+                color: EchoTheme.textSecondary,
+                tooltip: 'Settings',
+                onPressed: _openSettings,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Builds the settings sidebar panel (replaces conversations when settings open).
+  Widget _buildSettingsSidebar(double width) {
+    return Container(
+      width: width,
+      color: EchoTheme.sidebarBg,
+      child: Column(
+        children: [
+          // Header with back button
+          Container(
+            height: 56,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: EchoTheme.border, width: 1),
+              ),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, size: 20),
+                  color: EchoTheme.textSecondary,
+                  tooltip: 'Back to conversations',
+                  onPressed: () => setState(() => _showSettings = false),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Settings',
+                  style: TextStyle(
+                    color: EchoTheme.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Settings nav list
+          Expanded(
+            child: SettingsNavList(
+              selected: _settingsSection,
+              onTap: (section) => setState(() => _settingsSection = section),
+              onLogout: _logout,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -285,29 +468,69 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return _buildWideLayout();
   }
 
-  /// Desktop layout: 320px sidebar + flex chat + optional 280px members panel
+  /// Desktop layout: sidebar + flex chat + optional 280px members panel
   Widget _buildDesktopLayout() {
+    final sidebarWidth = 320.0;
+
+    // Determine what the right panel shows
+    Widget rightPanel;
+    if (_showSettings) {
+      rightPanel = SettingsContent(
+        key: ValueKey(_settingsSection),
+        section: _settingsSection,
+      );
+    } else if (_selectedConversation != null) {
+      rightPanel = ChatPanel(
+        conversation: _selectedConversation,
+        onGroupInfo: _showGroupInfo,
+        onMembersToggle: _selectedConversation?.isGroup == true
+            ? _toggleMembers
+            : null,
+      );
+    } else {
+      rightPanel = _buildEmptyState();
+    }
+
     return Scaffold(
       body: Row(
         children: [
-          // Left sidebar: conversations (320px)
-          SizedBox(width: 320, child: _buildConversationPanel()),
+          // Left sidebar
+          if (_sidebarCollapsed)
+            _buildCollapsedSidebar()
+          else if (_showSettings)
+            _buildSettingsSidebar(sidebarWidth)
+          else
+            SizedBox(
+              width: sidebarWidth,
+              child: Stack(
+                children: [
+                  _buildConversationPanel(),
+                  // Collapse button at bottom of header
+                  Positioned(
+                    top: 16,
+                    right: 4,
+                    child: IconButton(
+                      icon: const Icon(Icons.chevron_left, size: 18),
+                      color: EchoTheme.textMuted,
+                      tooltip: 'Collapse sidebar',
+                      onPressed: () => setState(() => _sidebarCollapsed = true),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 24,
+                        minHeight: 24,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Thin vertical divider
           Container(width: 1, color: EchoTheme.border),
-          // Center: chat area (flex)
-          Expanded(
-            child: _selectedConversation != null
-                ? ChatPanel(
-                    conversation: _selectedConversation,
-                    onGroupInfo: _showGroupInfo,
-                    onMembersToggle: _selectedConversation?.isGroup == true
-                        ? _toggleMembers
-                        : null,
-                  )
-                : _buildEmptyState(),
-          ),
+          // Center: content area (flex)
+          Expanded(child: rightPanel),
           // Right: members panel (optional, 280px)
-          if (_showMembers &&
+          if (!_showSettings &&
+              _showMembers &&
               _selectedConversation != null &&
               _selectedConversation!.isGroup) ...[
             Container(width: 1, color: EchoTheme.border),
@@ -318,24 +541,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  /// Tablet layout (600-899px): 300px sidebar + flex chat
+  /// Tablet layout (600-899px): sidebar + flex chat
   Widget _buildWideLayout() {
+    Widget rightPanel;
+    if (_showSettings) {
+      rightPanel = SettingsContent(
+        key: ValueKey(_settingsSection),
+        section: _settingsSection,
+      );
+    } else if (_selectedConversation != null) {
+      rightPanel = ChatPanel(
+        conversation: _selectedConversation,
+        onGroupInfo: _showGroupInfo,
+      );
+    } else {
+      rightPanel = _buildEmptyState();
+    }
+
     return Scaffold(
       body: Row(
         children: [
-          // Left sidebar: conversations
-          SizedBox(width: 300, child: _buildConversationPanel()),
+          // Left sidebar
+          if (_showSettings)
+            _buildSettingsSidebar(300)
+          else
+            SizedBox(width: 300, child: _buildConversationPanel()),
           // Thin vertical divider
           Container(width: 1, color: EchoTheme.border),
-          // Right: chat area
-          Expanded(
-            child: _selectedConversation != null
-                ? ChatPanel(
-                    conversation: _selectedConversation,
-                    onGroupInfo: _showGroupInfo,
-                  )
-                : _buildEmptyState(),
-          ),
+          // Right: content area
+          Expanded(child: rightPanel),
         ],
       ),
     );

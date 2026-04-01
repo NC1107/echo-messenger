@@ -29,8 +29,8 @@ class _PublicGroup {
   factory _PublicGroup.fromJson(Map<String, dynamic> json) {
     return _PublicGroup(
       id: json['id'] as String? ?? json['conversation_id'] as String? ?? '',
-      name: json['name'] as String? ?? 'Unnamed',
-      description: json['description'] as String?,
+      name: (json['title'] ?? json['name']) as String? ?? 'Unnamed',
+      description: (json['description'] ?? json['desc']) as String?,
       memberCount: json['member_count'] as int? ?? 0,
       joined: json['is_member'] as bool? ?? false,
     );

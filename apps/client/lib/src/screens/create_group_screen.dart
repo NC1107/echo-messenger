@@ -67,6 +67,9 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
     setState(() => _isCreating = false);
 
     if (conversationId != null && conversationId.isNotEmpty) {
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
       context.go('/home');
     }
   }
