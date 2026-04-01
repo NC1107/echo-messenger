@@ -3,17 +3,17 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:flutter/foundation.dart';
+
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
+import '../utils/crypto_utils.dart';
 import 'server_url_provider.dart';
 
 class ChatState {
   /// Messages keyed by conversation ID.
   final Map<String, List<ChatMessage>> messagesByConversation;
-
-  /// Legacy: messages keyed by peer user ID (for backward compat).
-  final Map<String, List<ChatMessage>> messagesByPeer;
 
   /// Whether history is currently loading for a conversation.
   final Map<String, bool> loadingHistory;
@@ -23,7 +23,6 @@ class ChatState {
 
   const ChatState({
     this.messagesByConversation = const {},
-    this.messagesByPeer = const {},
     this.loadingHistory = const {},
     this.hasMore = const {},
   });
@@ -31,11 +30,6 @@ class ChatState {
   /// Get messages for a conversation ID.
   List<ChatMessage> messagesForConversation(String conversationId) {
     return messagesByConversation[conversationId] ?? [];
-  }
-
-  /// Get messages for a peer user ID (legacy support).
-  List<ChatMessage> messagesFor(String peerUserId) {
-    return messagesByPeer[peerUserId] ?? [];
   }
 
   bool isLoadingHistory(String conversationId) {
@@ -46,10 +40,7 @@ class ChatState {
     return hasMore[conversationId] ?? true;
   }
 
-  ChatState withMessage(String peerKey, ChatMessage msg) {
-    final updatedPeer = Map<String, List<ChatMessage>>.from(messagesByPeer);
-    updatedPeer[peerKey] = [...(updatedPeer[peerKey] ?? []), msg];
-
+  ChatState withMessage(ChatMessage msg) {
     final updatedConv = Map<String, List<ChatMessage>>.from(
       messagesByConversation,
     );
@@ -63,7 +54,6 @@ class ChatState {
 
     return ChatState(
       messagesByConversation: updatedConv,
-      messagesByPeer: updatedPeer,
       loadingHistory: loadingHistory,
       hasMore: hasMore,
     );
@@ -78,10 +68,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   String get _serverUrl => ref.read(serverUrlProvider);
 
   void addMessage(ChatMessage msg) {
-    final peerKey = msg.isMine
-        ? _findPeerForConversation(msg.conversationId) ?? msg.fromUserId
-        : msg.fromUserId;
-    state = state.withMessage(peerKey, msg);
+    state = state.withMessage(msg);
   }
 
   void addOptimistic(
@@ -100,7 +87,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       isMine: true,
       status: MessageStatus.sending,
     );
-    state = state.withMessage(peerUserId, msg);
+    state = state.withMessage(msg);
   }
 
   void confirmSent(String messageId, String conversationId, String timestamp) {
@@ -129,99 +116,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
       }
     }
 
-    // Also update in peer-based map
-    final updatedPeer = Map<String, List<ChatMessage>>.from(
-      state.messagesByPeer,
-    );
-    for (final key in updatedPeer.keys) {
-      final peerMessages = updatedPeer[key]!;
-      for (var i = peerMessages.length - 1; i >= 0; i--) {
-        final msg = peerMessages[i];
-        if (msg.id.startsWith('pending_') &&
-            msg.isMine &&
-            msg.status == MessageStatus.sending &&
-            msg.conversationId == conversationId) {
-          final updatedMessages = List<ChatMessage>.from(peerMessages);
-          updatedMessages[i] = msg.copyWith(
-            id: messageId,
-            timestamp: timestamp,
-            status: MessageStatus.sent,
-          );
-          updatedPeer[key] = updatedMessages;
-          break;
-        }
-      }
-    }
-
     state = ChatState(
       messagesByConversation: updatedConv,
-      messagesByPeer: updatedPeer,
       loadingHistory: state.loadingHistory,
       hasMore: state.hasMore,
     );
-  }
-
-  /// Load message history from the server for a conversation.
-  Future<void> loadHistory(
-    String conversationId,
-    String token, {
-    String? before,
-  }) async {
-    if (state.isLoadingHistory(conversationId)) return;
-
-    final updatedLoading = Map<String, bool>.from(state.loadingHistory);
-    updatedLoading[conversationId] = true;
-    state = ChatState(
-      messagesByConversation: state.messagesByConversation,
-      messagesByPeer: state.messagesByPeer,
-      loadingHistory: updatedLoading,
-      hasMore: state.hasMore,
-    );
-
-    try {
-      var url = '$_serverUrl/api/messages/$conversationId?limit=50';
-      if (before != null) {
-        url += '&before=$before';
-      }
-
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
-        final List<dynamic> messagesList = body is List
-            ? body
-            : (body['messages'] as List? ?? []);
-
-        // We need the user ID to determine isMine. Extract from token or
-        // pass it in. For now, we parse from the existing messages or use
-        // a placeholder approach -- the caller should set myUserId.
-        // We'll accept it as a parameter via an overload.
-        _mergeHistory(conversationId, messagesList, before != null);
-      }
-    } catch (_) {
-      // Silently fail -- messages stay as-is
-    } finally {
-      final updatedLoading2 = Map<String, bool>.from(state.loadingHistory);
-      updatedLoading2[conversationId] = false;
-      state = ChatState(
-        messagesByConversation: state.messagesByConversation,
-        messagesByPeer: state.messagesByPeer,
-        loadingHistory: updatedLoading2,
-        hasMore: state.hasMore,
-      );
-    }
-  }
-
-  /// Check if a string looks like base64-encoded ciphertext.
-  static bool _looksEncrypted(String text) {
-    if (text.length < 20) return false;
-    return RegExp(r'^[A-Za-z0-9+/=]{20,}$').hasMatch(text);
   }
 
   /// Load history with the user's own ID for isMine determination.
@@ -239,7 +138,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
     updatedLoading[conversationId] = true;
     state = ChatState(
       messagesByConversation: state.messagesByConversation,
-      messagesByPeer: state.messagesByPeer,
       loadingHistory: updatedLoading,
       hasMore: state.hasMore,
     );
@@ -272,7 +170,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
           );
 
           // Attempt to decrypt encrypted history messages
-          if (_looksEncrypted(msg.content)) {
+          if (looksEncrypted(msg.content)) {
             if (crypto != null) {
               try {
                 final decrypted = await crypto.decryptMessage(
@@ -293,27 +191,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
         _mergeMessages(conversationId, newMessages, before != null);
       }
-    } catch (_) {
-      // Silently fail
+    } catch (e) {
+      debugPrint(
+        '[Chat] loadHistoryWithUserId failed for '
+        '$conversationId: $e',
+      );
     } finally {
       final updatedLoading2 = Map<String, bool>.from(state.loadingHistory);
       updatedLoading2[conversationId] = false;
       state = ChatState(
         messagesByConversation: state.messagesByConversation,
-        messagesByPeer: state.messagesByPeer,
         loadingHistory: updatedLoading2,
         hasMore: state.hasMore,
       );
     }
-  }
-
-  void _mergeHistory(
-    String conversationId,
-    List<dynamic> serverMessages,
-    bool isPagination,
-  ) {
-    // Without myUserId, we cannot properly set isMine. This method is a
-    // fallback; prefer loadHistoryWithUserId.
   }
 
   void _mergeMessages(
@@ -344,7 +235,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     state = ChatState(
       messagesByConversation: updatedConv,
-      messagesByPeer: state.messagesByPeer,
       loadingHistory: state.loadingHistory,
       hasMore: updatedHasMore,
     );
@@ -373,7 +263,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     state = ChatState(
       messagesByConversation: updatedConv,
-      messagesByPeer: state.messagesByPeer,
       loadingHistory: state.loadingHistory,
       hasMore: state.hasMore,
     );
@@ -403,7 +292,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     state = ChatState(
       messagesByConversation: updatedConv,
-      messagesByPeer: state.messagesByPeer,
       loadingHistory: state.loadingHistory,
       hasMore: state.hasMore,
     );
@@ -430,15 +318,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     state = ChatState(
       messagesByConversation: updatedConv,
-      messagesByPeer: state.messagesByPeer,
       loadingHistory: state.loadingHistory,
       hasMore: state.hasMore,
     );
-  }
-
-  String? _findPeerForConversation(String conversationId) {
-    // For now, we don't track this mapping.
-    return null;
   }
 
   void clear() {

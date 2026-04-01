@@ -1,9 +1,11 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
+import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
 import 'server_url_provider.dart';
 
@@ -68,7 +70,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         // Replace encrypted previews with cached decrypted text or placeholder
         for (var i = 0; i < conversations.length; i++) {
           final conv = conversations[i];
-          if (conv.lastMessage != null && _looksEncrypted(conv.lastMessage!)) {
+          if (conv.lastMessage != null && looksEncrypted(conv.lastMessage!)) {
             final cached = _decryptedPreviews[conv.id];
             conversations[i] = conv.copyWith(
               lastMessage: cached ?? 'Encrypted message',
@@ -93,12 +95,6 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());
     }
-  }
-
-  /// Check if a string looks like base64-encoded ciphertext.
-  static bool _looksEncrypted(String text) {
-    if (text.length < 20) return false;
-    return RegExp(r'^[A-Za-z0-9+/=]{20,}$').hasMatch(text);
   }
 
   /// Update a conversation when a new message is received.
@@ -157,8 +153,11 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         Uri.parse('$_serverUrl/api/conversations/$conversationId/read'),
         headers: _headers,
       );
-    } catch (_) {
-      // Best effort
+    } catch (e) {
+      debugPrint(
+        '[Conversations] sendReadReceipt failed for '
+        '$conversationId: $e',
+      );
     }
   }
 
@@ -199,12 +198,25 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   }
 
   /// Create a new group conversation.
-  Future<String?> createGroup(String name, List<String> memberIds) async {
+  Future<String?> createGroup(
+    String name,
+    List<String> memberIds, {
+    String? description,
+    bool isPublic = false,
+  }) async {
     try {
+      final body = <String, dynamic>{
+        'name': name,
+        'member_ids': memberIds,
+        'is_public': isPublic,
+      };
+      if (description != null) {
+        body['description'] = description;
+      }
       final response = await http.post(
         Uri.parse('$_serverUrl/api/groups'),
         headers: _headers,
-        body: jsonEncode({'name': name, 'member_ids': memberIds}),
+        body: jsonEncode(body),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {

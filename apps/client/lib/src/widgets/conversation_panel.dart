@@ -8,6 +8,7 @@ import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
+import '../utils/time_utils.dart';
 
 /// Shared avatar builder used across conversation panel widgets.
 Widget buildAvatar({
@@ -104,30 +105,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       _isSearching = false;
       _searchController.clear();
     });
-  }
-
-  String _formatTimestamp(String? timestamp) {
-    if (timestamp == null || timestamp.isEmpty) return '';
-    try {
-      final dt = DateTime.parse(timestamp).toLocal();
-      final now = DateTime.now();
-      final diff = now.difference(dt);
-
-      if (diff.inDays > 0) {
-        if (diff.inDays == 1) return 'Yesterday';
-        if (diff.inDays < 7) {
-          const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-          return days[dt.weekday - 1];
-        }
-        return '${dt.day}/${dt.month}/${dt.year}';
-      }
-
-      final hour = dt.hour.toString().padLeft(2, '0');
-      final minute = dt.minute.toString().padLeft(2, '0');
-      return '$hour:$minute';
-    } catch (_) {
-      return '';
-    }
   }
 
   @override
@@ -442,7 +419,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ),
             child: Row(
               children: [
-                // Avatar with online dot
+                // Avatar with connection dot
                 Stack(
                   children: [
                     buildAvatar(
@@ -457,7 +434,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                         width: 10,
                         height: 10,
                         decoration: BoxDecoration(
-                          color: EchoTheme.online,
+                          color: wsState.isConnected
+                              ? EchoTheme.online
+                              : EchoTheme.warning,
                           shape: BoxShape.circle,
                           border: Border.all(color: EchoTheme.mainBg, width: 2),
                         ),
@@ -480,10 +459,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const Text(
-                        'Online',
+                      Text(
+                        wsState.isConnected ? 'Online' : 'Reconnecting...',
                         style: TextStyle(
-                          color: EchoTheme.textMuted,
+                          color: wsState.isConnected
+                              ? EchoTheme.online
+                              : EchoTheme.warning,
                           fontSize: 11,
                         ),
                       ),
@@ -623,7 +604,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           conversation: conv,
           myUserId: myUserId,
           isSelected: isSelected,
-          timestamp: _formatTimestamp(conv.lastMessageTimestamp),
+          timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
           onTap: () => widget.onConversationTap(conv),
         );
       },
@@ -736,7 +717,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           conversation: conv,
           myUserId: myUserId,
           isSelected: isSelected,
-          timestamp: _formatTimestamp(conv.lastMessageTimestamp),
+          timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
           onTap: () => widget.onConversationTap(conv),
         );
       },

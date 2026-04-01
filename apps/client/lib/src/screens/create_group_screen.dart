@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../theme/echo_theme.dart';
 
 class CreateGroupScreen extends ConsumerStatefulWidget {
   const CreateGroupScreen({super.key});
@@ -14,8 +15,10 @@ class CreateGroupScreen extends ConsumerStatefulWidget {
 
 class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
   final _nameController = TextEditingController();
+  final _descriptionController = TextEditingController();
   final Set<String> _selectedUserIds = {};
   bool _isCreating = false;
+  bool _isPublic = false;
 
   @override
   void initState() {
@@ -28,6 +31,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -48,15 +52,21 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
 
     setState(() => _isCreating = true);
 
+    final description = _descriptionController.text.trim();
+
     final conversationId = await ref
         .read(conversationsProvider.notifier)
-        .createGroup(name, _selectedUserIds.toList());
+        .createGroup(
+          name,
+          _selectedUserIds.toList(),
+          description: description.isNotEmpty ? description : null,
+          isPublic: _isPublic,
+        );
 
     if (!mounted) return;
     setState(() => _isCreating = false);
 
     if (conversationId != null && conversationId.isNotEmpty) {
-      // Navigate back to home (the new group will appear in the list)
       context.go('/home');
     }
   }
@@ -95,9 +105,66 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.group_outlined),
                   ),
-                  textInputAction: TextInputAction.done,
+                  textInputAction: TextInputAction.next,
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  controller: _descriptionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Description (optional)',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.description_outlined),
+                  ),
+                  textInputAction: TextInputAction.done,
+                  maxLines: 2,
+                  minLines: 1,
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Public / Private toggle
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment<bool>(
+                          value: false,
+                          label: Text('Private'),
+                          icon: Icon(Icons.lock_outline, size: 16),
+                        ),
+                        ButtonSegment<bool>(
+                          value: true,
+                          label: Text('Public'),
+                          icon: Icon(Icons.public, size: 16),
+                        ),
+                      ],
+                      selected: {_isPublic},
+                      onSelectionChanged: (selection) {
+                        setState(() => _isPublic = selection.first);
+                      },
+                      style: SegmentedButton.styleFrom(
+                        selectedBackgroundColor: EchoTheme.accentLight,
+                        selectedForegroundColor: EchoTheme.accent,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _isPublic
+                          ? 'Anyone can discover and join'
+                          : 'Only invited members can join',
+                      style: const TextStyle(
+                        color: EchoTheme.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(

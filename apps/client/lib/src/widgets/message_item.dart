@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../theme/echo_theme.dart';
+import '../utils/time_utils.dart';
 import 'conversation_panel.dart' show buildAvatar, avatarColor;
 
 /// Common emojis for the reaction picker.
@@ -48,19 +49,6 @@ class MessageItem extends StatefulWidget {
 
 class _MessageItemState extends State<MessageItem> {
   bool _isHovered = false;
-
-  String _formatTimestamp(String timestamp) {
-    try {
-      final dt = DateTime.parse(timestamp).toLocal();
-      final hour = dt.hour;
-      final minute = dt.minute.toString().padLeft(2, '0');
-      final ampm = hour >= 12 ? 'PM' : 'AM';
-      final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
-      return '$displayHour:$minute $ampm';
-    } catch (_) {
-      return '';
-    }
-  }
 
   Widget _buildStatusIcon(MessageStatus? status) {
     if (status == null) return const SizedBox.shrink();
@@ -396,7 +384,7 @@ class _MessageItemState extends State<MessageItem> {
                       : MainAxisAlignment.start,
                   children: [
                     Text(
-                      _formatTimestamp(msg.timestamp),
+                      formatMessageTimestamp(msg.timestamp),
                       style: const TextStyle(
                         fontSize: 11,
                         color: EchoTheme.textMuted,

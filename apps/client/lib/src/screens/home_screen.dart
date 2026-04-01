@@ -15,6 +15,7 @@ import '../widgets/conversation_panel.dart';
 import '../widgets/members_panel.dart';
 import 'contacts_screen.dart';
 import 'create_group_screen.dart';
+import 'discover_groups_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -132,12 +133,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  void _showDiscoverSnackbar() {
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Coming soon')));
+  void _openDiscoverGroups() {
+    if (_isDesktop) {
+      _showDiscoverGroupsDialog();
+    } else {
+      context.push('/discover-groups');
     }
+  }
+
+  void _showDiscoverGroupsDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: EchoTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: EchoTheme.border),
+        ),
+        child: SizedBox(
+          width: 480,
+          height: 640,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: const DiscoverGroupsScreen(),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Called from the Contacts tab in the sidebar when "Message" is tapped.
@@ -220,7 +242,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onConversationTap: _selectConversation,
       onNewChat: _openContacts,
       onNewGroup: _openCreateGroup,
-      onDiscover: _showDiscoverSnackbar,
+      onDiscover: _openDiscoverGroups,
       onSettings: () => context.push('/settings'),
       onShowContacts: _openContacts,
       onMessageContact: _messageContact,

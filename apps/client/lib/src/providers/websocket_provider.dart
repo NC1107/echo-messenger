@@ -9,6 +9,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
+import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
 import 'chat_provider.dart';
 import 'conversations_provider.dart';
@@ -314,14 +315,6 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     ref.read(conversationsProvider.notifier).loadConversations();
   }
 
-  /// Heuristic: returns true if the text looks like base64-encoded ciphertext
-  /// (at least 20 chars of only base64 alphabet). Plaintext group messages
-  /// will almost never match this pattern.
-  bool _looksEncrypted(String text) {
-    if (text.length < 20) return false;
-    return RegExp(r'^[A-Za-z0-9+/=]{20,}$').hasMatch(text);
-  }
-
   Future<void> _decryptAndDeliverWithPreview(
     CryptoService crypto,
     Map<String, dynamic> json,
@@ -334,7 +327,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   ) async {
     String decryptedContent;
 
-    if (!_looksEncrypted(rawContent)) {
+    if (!looksEncrypted(rawContent)) {
       // Content does not look encrypted (e.g. plaintext group messages) --
       // deliver as-is without attempting decryption.
       decryptedContent = rawContent;

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 import '../screens/contacts_screen.dart';
 import '../screens/create_group_screen.dart';
+import '../screens/discover_groups_screen.dart';
 import '../screens/group_info_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/login_screen.dart';
@@ -46,6 +47,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => GroupInfoScreen(
           conversationId: state.pathParameters['conversationId']!,
         ),
+      ),
+      GoRoute(
+        path: '/discover-groups',
+        builder: (context, state) => const DiscoverGroupsScreen(),
       ),
       GoRoute(
         path: '/settings',

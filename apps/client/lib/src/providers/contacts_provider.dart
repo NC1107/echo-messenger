@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
@@ -83,7 +84,9 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
             .toList();
         state = state.copyWith(pendingRequests: list);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Contacts] loadPending failed: $e');
+    }
   }
 
   Future<void> sendRequest(String username) async {
@@ -116,7 +119,9 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
       );
       await loadContacts();
       await loadPending();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[Contacts] acceptRequest failed for $contactId: $e');
+    }
   }
 }
 
