@@ -70,7 +70,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     await showDialog<void>(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: EchoTheme.surface,
         shape: RoundedRectangleBorder(
