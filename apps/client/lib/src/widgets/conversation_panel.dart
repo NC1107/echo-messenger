@@ -217,10 +217,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         Rect.fromLTWH(position.dx, position.dy, 0, 0),
         Offset.zero & overlay.size,
       ),
-      color: EchoTheme.surface,
+      color: context.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: EchoTheme.border),
+        side: BorderSide(color: context.border),
       ),
       items: [
         PopupMenuItem<String>(
@@ -230,15 +230,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               Icon(
                 isPinned ? Icons.push_pin : Icons.push_pin_outlined,
                 size: 16,
-                color: EchoTheme.textSecondary,
+                color: context.textSecondary,
               ),
               const SizedBox(width: 8),
               Text(
                 isPinned ? 'Unpin' : 'Pin to top',
-                style: const TextStyle(
-                  color: EchoTheme.textPrimary,
-                  fontSize: 13,
-                ),
+                style: TextStyle(color: context.textPrimary, fontSize: 13),
               ),
             ],
           ),
@@ -279,24 +276,24 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final groupConversations = conversations.where((c) => c.isGroup).toList();
 
     return Container(
-      color: EchoTheme.sidebarBg,
+      color: context.sidebarBg,
       child: Column(
         children: [
           // Logo header
           Container(
             height: 56,
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(
-                bottom: BorderSide(color: EchoTheme.border, width: 1),
+                bottom: BorderSide(color: context.border, width: 1),
               ),
             ),
             child: Row(
               children: [
-                const Text(
+                Text(
                   'Echo',
                   style: TextStyle(
-                    color: EchoTheme.textPrimary,
+                    color: context.textPrimary,
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
                     letterSpacing: -0.5,
@@ -309,7 +306,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                   decoration: BoxDecoration(
                     color: wsState.isConnected
                         ? EchoTheme.online
-                        : EchoTheme.textMuted,
+                        : context.textMuted,
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -323,7 +320,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                       children: [
                         IconButton(
                           icon: const Icon(Icons.person_add_outlined, size: 18),
-                          color: EchoTheme.textSecondary,
+                          color: context.textSecondary,
                           tooltip: 'New Chat',
                           onPressed: widget.onNewChat,
                           padding: EdgeInsets.zero,
@@ -359,7 +356,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.group_add_outlined, size: 18),
-                      color: EchoTheme.textSecondary,
+                      color: context.textSecondary,
                       tooltip: 'New Group',
                       onPressed: widget.onNewGroup,
                       padding: EdgeInsets.zero,
@@ -370,7 +367,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.explore_outlined, size: 18),
-                      color: EchoTheme.textSecondary,
+                      color: context.textSecondary,
                       tooltip: 'Discover Groups',
                       onPressed: widget.onDiscover,
                       padding: EdgeInsets.zero,
@@ -399,7 +396,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               child: Container(
                 height: 36,
                 decoration: BoxDecoration(
-                  color: EchoTheme.surface,
+                  color: context.surface,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: _isSearching
@@ -414,10 +411,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                         child: Row(
                           children: [
                             const SizedBox(width: 12),
-                            const Icon(
+                            Icon(
                               Icons.search_outlined,
                               size: 18,
-                              color: EchoTheme.textMuted,
+                              color: context.textMuted,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -425,14 +422,14 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                                 controller: _searchController,
                                 focusNode: _searchFocusNode,
                                 autofocus: true,
-                                style: const TextStyle(
-                                  color: EchoTheme.textPrimary,
+                                style: TextStyle(
+                                  color: context.textPrimary,
                                   fontSize: 13,
                                 ),
-                                decoration: const InputDecoration(
+                                decoration: InputDecoration(
                                   hintText: 'Search conversations',
                                   hintStyle: TextStyle(
-                                    color: EchoTheme.textMuted,
+                                    color: context.textMuted,
                                     fontSize: 13,
                                   ),
                                   border: InputBorder.none,
@@ -454,7 +451,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                             if (_searchQuery.isNotEmpty)
                               IconButton(
                                 icon: const Icon(Icons.close, size: 16),
-                                color: EchoTheme.textMuted,
+                                color: context.textMuted,
                                 onPressed: _clearSearch,
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(
@@ -467,19 +464,19 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                           ],
                         ),
                       )
-                    : const Row(
+                    : Row(
                         children: [
-                          SizedBox(width: 12),
+                          const SizedBox(width: 12),
                           Icon(
                             Icons.search_outlined,
                             size: 18,
-                            color: EchoTheme.textMuted,
+                            color: context.textMuted,
                           ),
-                          SizedBox(width: 8),
+                          const SizedBox(width: 8),
                           Text(
                             'Search conversations',
                             style: TextStyle(
-                              color: EchoTheme.textMuted,
+                              color: context.textMuted,
                               fontSize: 13,
                             ),
                           ),
@@ -510,33 +507,29 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 height: 48,
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
-                  color: EchoTheme.accent.withValues(alpha: 0.08),
+                  color: context.accent.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.person_add_outlined,
                       size: 18,
-                      color: EchoTheme.accent,
+                      color: context.accent,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         '$pendingCount pending request${pendingCount == 1 ? '' : 's'}',
-                        style: const TextStyle(
-                          color: EchoTheme.accent,
+                        style: TextStyle(
+                          color: context.accent,
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
-                    const Icon(
-                      Icons.chevron_right,
-                      size: 18,
-                      color: EchoTheme.accent,
-                    ),
+                    Icon(Icons.chevron_right, size: 18, color: context.accent),
                   ],
                 ),
               ),
@@ -557,11 +550,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           Container(
             height: 60,
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: const BoxDecoration(
-              color: EchoTheme.mainBg,
-              border: Border(
-                top: BorderSide(color: EchoTheme.border, width: 1),
-              ),
+            decoration: BoxDecoration(
+              color: context.mainBg,
+              border: Border(top: BorderSide(color: context.border, width: 1)),
             ),
             child: Row(
               children: [
@@ -571,7 +562,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                     buildAvatar(
                       name: myUsername,
                       radius: 16,
-                      bgColor: EchoTheme.accent,
+                      bgColor: context.accent,
                       imageUrl: authState.avatarUrl != null
                           ? '$serverUrl${authState.avatarUrl}'
                           : null,
@@ -587,7 +578,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                               ? EchoTheme.online
                               : EchoTheme.warning,
                           shape: BoxShape.circle,
-                          border: Border.all(color: EchoTheme.mainBg, width: 2),
+                          border: Border.all(color: context.mainBg, width: 2),
                         ),
                       ),
                     ),
@@ -601,8 +592,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                     children: [
                       Text(
                         myUsername,
-                        style: const TextStyle(
-                          color: EchoTheme.textPrimary,
+                        style: TextStyle(
+                          color: context.textPrimary,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                         ),
@@ -622,7 +613,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.settings_outlined, size: 18),
-                  color: EchoTheme.textSecondary,
+                  color: context.textSecondary,
                   tooltip: 'Settings',
                   onPressed: widget.onSettings,
                   padding: EdgeInsets.zero,
@@ -647,14 +638,14 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         child: Container(
           height: 30,
           decoration: BoxDecoration(
-            color: isSelected ? EchoTheme.accent : EchoTheme.surface,
+            color: isSelected ? context.accent : context.surface,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Center(
             child: Text(
               label,
               style: TextStyle(
-                color: isSelected ? Colors.white : EchoTheme.textSecondary,
+                color: isSelected ? Colors.white : context.textSecondary,
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
               ),
@@ -695,11 +686,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     String myUserId,
   ) {
     if (conversationsState.isLoading && allConversations.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(
-          color: EchoTheme.accent,
-          strokeWidth: 2,
-        ),
+      return Center(
+        child: CircularProgressIndicator(color: context.accent, strokeWidth: 2),
       );
     }
     if (conversations.isEmpty) {
@@ -714,15 +702,15 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                     ? Icons.search_off
                     : Icons.forum_outlined,
                 size: 40,
-                color: EchoTheme.textMuted.withValues(alpha: 0.5),
+                color: context.textMuted.withValues(alpha: 0.5),
               ),
               const SizedBox(height: 16),
               Text(
                 _searchQuery.isNotEmpty
                     ? "No results found for '$_searchQuery'"
                     : 'No conversations yet',
-                style: const TextStyle(
-                  color: EchoTheme.textSecondary,
+                style: TextStyle(
+                  color: context.textSecondary,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
@@ -733,10 +721,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                     ? 'Try a different search term'
                     : 'Start a new chat to get going',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: EchoTheme.textMuted,
-                  fontSize: 13,
-                ),
+                style: TextStyle(color: context.textMuted, fontSize: 13),
               ),
             ],
           ),
@@ -784,11 +769,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final contacts = contactsState.contacts;
 
     if (contactsState.isLoading && contacts.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(
-          color: EchoTheme.accent,
-          strokeWidth: 2,
-        ),
+      return Center(
+        child: CircularProgressIndicator(color: context.accent, strokeWidth: 2),
       );
     }
 
@@ -802,22 +784,22 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               Icon(
                 Icons.people_outline,
                 size: 40,
-                color: EchoTheme.textMuted.withValues(alpha: 0.5),
+                color: context.textMuted.withValues(alpha: 0.5),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'No contacts yet',
                 style: TextStyle(
-                  color: EchoTheme.textSecondary,
+                  color: context.textSecondary,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Add a contact to get started',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: EchoTheme.textMuted, fontSize: 13),
+                style: TextStyle(color: context.textMuted, fontSize: 13),
               ),
             ],
           ),
@@ -858,15 +840,15 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                     ? Icons.search_off
                     : Icons.group_outlined,
                 size: 40,
-                color: EchoTheme.textMuted.withValues(alpha: 0.5),
+                color: context.textMuted.withValues(alpha: 0.5),
               ),
               const SizedBox(height: 16),
               Text(
                 _searchQuery.isNotEmpty
                     ? "No results found for '$_searchQuery'"
                     : 'No groups yet',
-                style: const TextStyle(
-                  color: EchoTheme.textSecondary,
+                style: TextStyle(
+                  color: context.textSecondary,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
@@ -877,10 +859,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                     ? 'Try a different search term'
                     : 'Create or join a group',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: EchoTheme.textMuted,
-                  fontSize: 13,
-                ),
+                style: TextStyle(color: context.textMuted, fontSize: 13),
               ),
             ],
           ),
@@ -949,7 +928,7 @@ class _ContactItemState extends State<_ContactItem> {
         height: 56,
         margin: const EdgeInsets.symmetric(vertical: 1),
         decoration: BoxDecoration(
-          color: _isHovered ? EchoTheme.surfaceHover : Colors.transparent,
+          color: _isHovered ? context.surfaceHover : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -972,7 +951,7 @@ class _ContactItemState extends State<_ContactItem> {
                     decoration: BoxDecoration(
                       color: EchoTheme.online,
                       shape: BoxShape.circle,
-                      border: Border.all(color: EchoTheme.sidebarBg, width: 2),
+                      border: Border.all(color: context.sidebarBg, width: 2),
                     ),
                   ),
                 ),
@@ -988,19 +967,16 @@ class _ContactItemState extends State<_ContactItem> {
                   Text(
                     displayName ?? username,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
-                      color: EchoTheme.textPrimary,
+                      color: context.textPrimary,
                     ),
                   ),
                   if (displayName != null)
                     Text(
                       '@$username',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: EchoTheme.textMuted,
-                      ),
+                      style: TextStyle(fontSize: 12, color: context.textMuted),
                     ),
                 ],
               ),
@@ -1009,18 +985,18 @@ class _ContactItemState extends State<_ContactItem> {
             SizedBox(
               height: 28,
               child: Material(
-                color: EchoTheme.accentLight,
+                color: context.accentLight,
                 borderRadius: BorderRadius.circular(6),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(6),
                   onTap: widget.onMessage,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Center(
                       child: Text(
                         'Message',
                         style: TextStyle(
-                          color: EchoTheme.accent,
+                          color: context.accent,
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
                         ),
@@ -1100,9 +1076,9 @@ class _ConversationItemState extends State<_ConversationItem> {
           margin: const EdgeInsets.symmetric(vertical: 1),
           decoration: BoxDecoration(
             color: widget.isSelected
-                ? EchoTheme.accentLight
+                ? context.accentLight
                 : _isHovered
-                ? EchoTheme.surfaceHover
+                ? context.surfaceHover
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
@@ -1133,10 +1109,10 @@ class _ConversationItemState extends State<_ConversationItem> {
                         decoration: BoxDecoration(
                           color: widget.isPeerOnline
                               ? EchoTheme.online
-                              : EchoTheme.textMuted,
+                              : context.textMuted,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: EchoTheme.sidebarBg,
+                            color: context.sidebarBg,
                             width: 2,
                           ),
                         ),
@@ -1154,12 +1130,12 @@ class _ConversationItemState extends State<_ConversationItem> {
                     Row(
                       children: [
                         if (widget.isPinned)
-                          const Padding(
-                            padding: EdgeInsets.only(right: 4),
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
                             child: Icon(
                               Icons.push_pin,
                               size: 12,
-                              color: EchoTheme.textMuted,
+                              color: context.textMuted,
                             ),
                           ),
                         Expanded(
@@ -1171,7 +1147,7 @@ class _ConversationItemState extends State<_ConversationItem> {
                               fontWeight: hasUnread
                                   ? FontWeight.w700
                                   : FontWeight.w500,
-                              color: EchoTheme.textPrimary,
+                              color: context.textPrimary,
                             ),
                           ),
                         ),
@@ -1181,8 +1157,8 @@ class _ConversationItemState extends State<_ConversationItem> {
                             style: TextStyle(
                               fontSize: 11,
                               color: hasUnread
-                                  ? EchoTheme.accent
-                                  : EchoTheme.textMuted,
+                                  ? context.accent
+                                  : context.textMuted,
                             ),
                           ),
                       ],
@@ -1198,7 +1174,7 @@ class _ConversationItemState extends State<_ConversationItem> {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 13,
-                                color: EchoTheme.textMuted,
+                                color: context.textMuted,
                                 fontWeight: hasUnread
                                     ? FontWeight.w500
                                     : FontWeight.normal,
@@ -1210,8 +1186,8 @@ class _ConversationItemState extends State<_ConversationItem> {
                               margin: const EdgeInsets.only(left: 8),
                               width: 10,
                               height: 10,
-                              decoration: const BoxDecoration(
-                                color: EchoTheme.accent,
+                              decoration: BoxDecoration(
+                                color: context.accent,
                                 shape: BoxShape.circle,
                               ),
                             ),

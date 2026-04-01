@@ -25,10 +25,10 @@ class UserProfileScreen extends ConsumerStatefulWidget {
       showDialog(
         context: context,
         builder: (_) => Dialog(
-          backgroundColor: EchoTheme.surface,
+          backgroundColor: context.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: EchoTheme.border),
+            side: BorderSide(color: context.border),
           ),
           child: SizedBox(
             width: 400,
@@ -42,8 +42,8 @@ class UserProfileScreen extends ConsumerStatefulWidget {
         MaterialPageRoute(
           builder: (_) => Scaffold(
             appBar: AppBar(
-              title: const Text('Profile'),
-              backgroundColor: EchoTheme.surface,
+              title: Text('Profile'),
+              backgroundColor: context.surface,
             ),
             body: UserProfileScreen(userId: userId),
           ),
@@ -160,11 +160,8 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     final serverUrl = ref.watch(serverUrlProvider);
 
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(
-          color: EchoTheme.accent,
-          strokeWidth: 2,
-        ),
+      return Center(
+        child: CircularProgressIndicator(color: context.accent, strokeWidth: 2),
       );
     }
 
@@ -172,7 +169,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
       return Center(
         child: Text(
           _error!,
-          style: const TextStyle(color: EchoTheme.textMuted, fontSize: 14),
+          style: TextStyle(color: context.textMuted, fontSize: 14),
         ),
       );
     }
@@ -190,8 +187,8 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
           if (_displayName != null && _displayName!.isNotEmpty)
             Text(
               _displayName!,
-              style: const TextStyle(
-                color: EchoTheme.textPrimary,
+              style: TextStyle(
+                color: context.textPrimary,
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
               ),
@@ -201,8 +198,8 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
             '@$_username',
             style: TextStyle(
               color: _displayName != null
-                  ? EchoTheme.textMuted
-                  : EchoTheme.textPrimary,
+                  ? context.textMuted
+                  : context.textPrimary,
               fontSize: _displayName != null ? 14 : 22,
               fontWeight: _displayName != null
                   ? FontWeight.normal
@@ -217,8 +214,8 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
               child: Text(
                 _bio!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: EchoTheme.textSecondary,
+                style: TextStyle(
+                  color: context.textSecondary,
                   fontSize: 14,
                   height: 1.4,
                 ),
@@ -229,18 +226,15 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
+              Icon(
                 Icons.calendar_today_outlined,
                 size: 14,
-                color: EchoTheme.textMuted,
+                color: context.textMuted,
               ),
               const SizedBox(width: 6),
               Text(
                 'Member since ${_formatMemberSince(_createdAt)}',
-                style: const TextStyle(
-                  color: EchoTheme.textMuted,
-                  fontSize: 13,
-                ),
+                style: TextStyle(color: context.textMuted, fontSize: 13),
               ),
             ],
           ),
@@ -252,9 +246,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
               child: FilledButton.icon(
                 onPressed: _addContact,
                 icon: const Icon(Icons.person_add_outlined, size: 18),
-                label: const Text('Add Contact'),
+                label: Text('Add Contact'),
                 style: FilledButton.styleFrom(
-                  backgroundColor: EchoTheme.accent,
+                  backgroundColor: context.accent,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),

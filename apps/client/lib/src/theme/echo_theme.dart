@@ -208,6 +208,7 @@ class EchoTheme {
   static const lightSentBubble = Color(0xFF6366F1);
   static const lightRecvBubble = Color(0xFFE4E4E7);
   static const lightBorder = Color(0xFFE4E4E7);
+  static const lightAccentLight = Color(0x1A6366F1);
 
   static ThemeData get lightTheme {
     final baseTextTheme = GoogleFonts.interTextTheme(
@@ -385,4 +386,32 @@ class EchoTheme {
       ),
     );
   }
+}
+
+/// Theme-aware color accessors. Use `context.mainBg` instead of `EchoTheme.mainBg`.
+extension EchoColors on BuildContext {
+  bool get isDark => Theme.of(this).brightness == Brightness.dark;
+
+  Color get mainBg => isDark ? EchoTheme.mainBg : EchoTheme.lightMainBg;
+  Color get sidebarBg =>
+      isDark ? EchoTheme.sidebarBg : EchoTheme.lightSidebarBg;
+  Color get chatBg => isDark ? EchoTheme.chatBg : EchoTheme.lightChatBg;
+  Color get surface => isDark ? EchoTheme.surface : EchoTheme.lightSurface;
+  Color get surfaceHover =>
+      isDark ? EchoTheme.surfaceHover : EchoTheme.lightSurfaceHover;
+  Color get accent => EchoTheme.accent; // same in both
+  Color get accentHover => EchoTheme.accentHover;
+  Color get accentLight =>
+      isDark ? EchoTheme.accentLight : EchoTheme.lightAccentLight;
+  Color get textPrimary =>
+      isDark ? EchoTheme.textPrimary : EchoTheme.lightTextPrimary;
+  Color get textSecondary =>
+      isDark ? EchoTheme.textSecondary : EchoTheme.lightTextSecondary;
+  Color get textMuted =>
+      isDark ? EchoTheme.textMuted : EchoTheme.lightTextMuted;
+  Color get sentBubble =>
+      isDark ? EchoTheme.sentBubble : EchoTheme.lightSentBubble;
+  Color get recvBubble =>
+      isDark ? EchoTheme.recvBubble : EchoTheme.lightRecvBubble;
+  Color get border => isDark ? EchoTheme.border : EchoTheme.lightBorder;
 }

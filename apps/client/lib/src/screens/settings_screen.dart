@@ -58,26 +58,31 @@ class SettingsNavList extends StatelessWidget {
       children: [
         const SizedBox(height: 8),
         _navItem(
+          context: context,
           icon: Icons.person_outlined,
           label: 'Account',
           section: SettingsSection.account,
         ),
         _navItem(
+          context: context,
           icon: Icons.lock_outline,
           label: 'Privacy',
           section: SettingsSection.privacy,
         ),
         _navItem(
+          context: context,
           icon: Icons.dns_outlined,
           label: 'Server',
           section: SettingsSection.server,
         ),
         _navItem(
+          context: context,
           icon: Icons.palette_outlined,
           label: 'Appearance',
           section: SettingsSection.appearance,
         ),
         _navItem(
+          context: context,
           icon: Icons.info_outline,
           label: 'About',
           section: SettingsSection.about,
@@ -110,16 +115,17 @@ class SettingsNavList extends StatelessWidget {
   }
 
   Widget _navItem({
+    required BuildContext context,
     required IconData icon,
     required String label,
     required SettingsSection section,
   }) {
     final isSelected = selected == section;
     return Material(
-      color: isSelected ? EchoTheme.accentLight : Colors.transparent,
+      color: isSelected ? context.accentLight : Colors.transparent,
       child: InkWell(
         onTap: () => onTap(section),
-        hoverColor: EchoTheme.surfaceHover,
+        hoverColor: context.surfaceHover,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
@@ -127,13 +133,13 @@ class SettingsNavList extends StatelessWidget {
               Icon(
                 icon,
                 size: 20,
-                color: isSelected ? EchoTheme.accent : EchoTheme.textSecondary,
+                color: isSelected ? context.accent : context.textSecondary,
               ),
               const SizedBox(width: 12),
               Text(
                 label,
                 style: TextStyle(
-                  color: isSelected ? EchoTheme.accent : EchoTheme.textPrimary,
+                  color: isSelected ? context.accent : context.textPrimary,
                   fontSize: 14,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 ),
@@ -227,15 +233,15 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
     final newUrl = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: EchoTheme.surface,
+        backgroundColor: context.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: EchoTheme.border),
+          side: BorderSide(color: context.border),
         ),
-        title: const Text(
+        title: Text(
           'Change Server',
           style: TextStyle(
-            color: EchoTheme.textPrimary,
+            color: context.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
@@ -244,10 +250,10 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Enter the URL of an Echo server. You will need to log in again after changing servers.',
               style: TextStyle(
-                color: EchoTheme.textSecondary,
+                color: context.textSecondary,
                 fontSize: 13,
                 height: 1.4,
               ),
@@ -255,10 +261,7 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
             const SizedBox(height: 16),
             TextField(
               controller: controller,
-              style: const TextStyle(
-                color: EchoTheme.textPrimary,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: context.textPrimary, fontSize: 14),
               decoration: const InputDecoration(
                 labelText: 'Server URL',
                 hintText: 'https://echo-messenger.us',
@@ -377,15 +380,15 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: EchoTheme.surface,
+        backgroundColor: context.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: EchoTheme.border),
+          side: BorderSide(color: context.border),
         ),
-        title: const Text(
+        title: Text(
           'My QR Code',
           style: TextStyle(
-            color: EchoTheme.textPrimary,
+            color: context.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
@@ -409,8 +412,8 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
             const SizedBox(height: 16),
             Text(
               username,
-              style: const TextStyle(
-                color: EchoTheme.textPrimary,
+              style: TextStyle(
+                color: context.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
@@ -418,7 +421,7 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
             const SizedBox(height: 4),
             Text(
               echoUri,
-              style: const TextStyle(color: EchoTheme.textMuted, fontSize: 12),
+              style: TextStyle(color: context.textMuted, fontSize: 12),
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(
@@ -472,7 +475,7 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
               children: [
                 CircleAvatar(
                   radius: 32,
-                  backgroundColor: EchoTheme.accent,
+                  backgroundColor: context.accent,
                   backgroundImage: authState.avatarUrl != null
                       ? NetworkImage(
                           '${ref.read(serverUrlProvider)}${authState.avatarUrl}',
@@ -501,14 +504,14 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
                       width: 24,
                       height: 24,
                       decoration: BoxDecoration(
-                        color: EchoTheme.surface,
+                        color: context.surface,
                         shape: BoxShape.circle,
-                        border: Border.all(color: EchoTheme.border, width: 2),
+                        border: Border.all(color: context.border, width: 2),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.edit,
                         size: 12,
-                        color: EchoTheme.textSecondary,
+                        color: context.textSecondary,
                       ),
                     ),
                   ),
@@ -521,16 +524,16 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
               children: [
                 Text(
                   username,
-                  style: const TextStyle(
-                    color: EchoTheme.textPrimary,
+                  style: TextStyle(
+                    color: context.textPrimary,
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 2),
-                const Text(
+                Text(
                   'Online',
-                  style: TextStyle(color: EchoTheme.textMuted, fontSize: 13),
+                  style: TextStyle(color: context.textMuted, fontSize: 13),
                 ),
               ],
             ),
@@ -559,24 +562,24 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
   }
 
   Widget _buildPrivacySection() {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.lock_outline, size: 48, color: EchoTheme.textMuted),
-          SizedBox(height: 16),
+          Icon(Icons.lock_outline, size: 48, color: context.textMuted),
+          const SizedBox(height: 16),
           Text(
             'Coming soon',
             style: TextStyle(
-              color: EchoTheme.textSecondary,
+              color: context.textSecondary,
               fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
             'Privacy settings will be available in a future update.',
-            style: TextStyle(color: EchoTheme.textMuted, fontSize: 13),
+            style: TextStyle(color: context.textMuted, fontSize: 13),
           ),
         ],
       ),
@@ -591,18 +594,18 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
       padding: const EdgeInsets.all(24),
       children: [
         ListTile(
-          leading: const Icon(
+          leading: Icon(
             Icons.dns_outlined,
-            color: EchoTheme.textSecondary,
+            color: context.textSecondary,
             size: 22,
           ),
-          title: const Text(
+          title: Text(
             'Connected to',
-            style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
+            style: TextStyle(color: context.textPrimary, fontSize: 15),
           ),
           subtitle: Text(
             displayHost,
-            style: const TextStyle(color: EchoTheme.textMuted, fontSize: 12),
+            style: TextStyle(color: context.textMuted, fontSize: 12),
           ),
         ),
         ListTile(
@@ -613,9 +616,9 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
                 : (_serverOnline ? EchoTheme.online : EchoTheme.danger),
             size: 12,
           ),
-          title: const Text(
+          title: Text(
             'Status',
-            style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
+            style: TextStyle(color: context.textPrimary, fontSize: 15),
           ),
           subtitle: Text(
             _checkingHealth
@@ -629,49 +632,45 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
             ),
           ),
           trailing: IconButton(
-            icon: const Icon(
-              Icons.refresh,
-              color: EchoTheme.textMuted,
-              size: 20,
-            ),
+            icon: Icon(Icons.refresh, color: context.textMuted, size: 20),
             tooltip: 'Refresh status',
             onPressed: _checkServerHealth,
           ),
         ),
         if (_serverVersion != null)
           ListTile(
-            leading: const Icon(
+            leading: Icon(
               Icons.info_outline,
-              color: EchoTheme.textSecondary,
+              color: context.textSecondary,
               size: 22,
             ),
-            title: const Text(
+            title: Text(
               'Server version',
-              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
+              style: TextStyle(color: context.textPrimary, fontSize: 15),
             ),
             subtitle: Text(
               _serverVersion!,
-              style: const TextStyle(color: EchoTheme.textMuted, fontSize: 12),
+              style: TextStyle(color: context.textMuted, fontSize: 12),
             ),
           ),
-        const Divider(color: EchoTheme.border, height: 32),
+        Divider(color: context.border, height: 32),
         ListTile(
-          leading: const Icon(
+          leading: Icon(
             Icons.swap_horiz_outlined,
-            color: EchoTheme.textSecondary,
+            color: context.textSecondary,
             size: 22,
           ),
-          title: const Text(
+          title: Text(
             'Change server',
-            style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
+            style: TextStyle(color: context.textPrimary, fontSize: 15),
           ),
-          subtitle: const Text(
+          subtitle: Text(
             'Connect to a different Echo server',
-            style: TextStyle(color: EchoTheme.textMuted, fontSize: 12),
+            style: TextStyle(color: context.textMuted, fontSize: 12),
           ),
-          trailing: const Icon(
+          trailing: Icon(
             Icons.chevron_right,
-            color: EchoTheme.textMuted,
+            color: context.textMuted,
             size: 20,
           ),
           onTap: _showChangeServerDialog,
@@ -686,10 +685,10 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        const Text(
+        Text(
           'Theme',
           style: TextStyle(
-            color: EchoTheme.textPrimary,
+            color: context.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
@@ -729,10 +728,10 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: EchoTheme.surface,
+        backgroundColor: context.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: EchoTheme.border),
+          side: BorderSide(color: context.border),
         ),
         title: const Text(
           'Delete Account',
@@ -742,11 +741,11 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        content: const Text(
+        content: Text(
           'This will permanently delete your account and all data. '
           'This cannot be undone.',
           style: TextStyle(
-            color: EchoTheme.textSecondary,
+            color: context.textSecondary,
             fontSize: 14,
             height: 1.5,
           ),
@@ -814,10 +813,10 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        const Text(
+        Text(
           'Echo Messenger',
           style: TextStyle(
-            color: EchoTheme.textPrimary,
+            color: context.textPrimary,
             fontSize: 20,
             fontWeight: FontWeight.w700,
           ),
@@ -825,34 +824,34 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
         const SizedBox(height: 8),
         Text(
           'Client version: $appVersion',
-          style: const TextStyle(color: EchoTheme.textMuted, fontSize: 14),
+          style: TextStyle(color: context.textMuted, fontSize: 14),
         ),
         const SizedBox(height: 4),
         Text(
           'Server version: ${_serverVersion ?? "unknown"}',
-          style: const TextStyle(color: EchoTheme.textMuted, fontSize: 14),
+          style: TextStyle(color: context.textMuted, fontSize: 14),
         ),
         const SizedBox(height: 24),
-        const Text(
+        Text(
           'Open source',
           style: TextStyle(
-            color: EchoTheme.accent,
+            color: context.accent,
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
+        Text(
           'Echo is a decentralized, end-to-end encrypted messenger. '
           'Contributions and self-hosting are welcome.',
           style: TextStyle(
-            color: EchoTheme.textSecondary,
+            color: context.textSecondary,
             fontSize: 13,
             height: 1.5,
           ),
         ),
         const SizedBox(height: 32),
-        const Divider(color: EchoTheme.border),
+        Divider(color: context.border),
         const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
@@ -910,19 +909,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget _buildMobileLayout() {
     if (_mobileDetailSection != null) {
       return Scaffold(
-        backgroundColor: EchoTheme.mainBg,
+        backgroundColor: context.mainBg,
         appBar: AppBar(
-          backgroundColor: EchoTheme.sidebarBg,
+          backgroundColor: context.sidebarBg,
           title: Text(
             settingsSectionLabel(_mobileDetailSection!),
-            style: const TextStyle(
-              color: EchoTheme.textPrimary,
+            style: TextStyle(
+              color: context.textPrimary,
               fontSize: 18,
               fontWeight: FontWeight.w600,
             ),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: EchoTheme.textSecondary),
+            icon: Icon(Icons.arrow_back, color: context.textSecondary),
             onPressed: () => setState(() => _mobileDetailSection = null),
           ),
         ),
@@ -934,19 +933,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
 
     return Scaffold(
-      backgroundColor: EchoTheme.mainBg,
+      backgroundColor: context.mainBg,
       appBar: AppBar(
-        backgroundColor: EchoTheme.sidebarBg,
-        title: const Text(
+        backgroundColor: context.sidebarBg,
+        title: Text(
           'Settings',
           style: TextStyle(
-            color: EchoTheme.textPrimary,
+            color: context.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: EchoTheme.textSecondary),
+          icon: Icon(Icons.arrow_back, color: context.textSecondary),
           onPressed: () => context.pop(),
         ),
       ),
@@ -959,19 +958,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _buildDesktopLayout() {
     return Scaffold(
-      backgroundColor: EchoTheme.mainBg,
+      backgroundColor: context.mainBg,
       appBar: AppBar(
-        backgroundColor: EchoTheme.sidebarBg,
-        title: const Text(
+        backgroundColor: context.sidebarBg,
+        title: Text(
           'Settings',
           style: TextStyle(
-            color: EchoTheme.textPrimary,
+            color: context.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: EchoTheme.textSecondary),
+          icon: Icon(Icons.arrow_back, color: context.textSecondary),
           onPressed: () => context.pop(),
         ),
       ),
@@ -990,7 +989,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   onLogout: _logout,
                 ),
               ),
-              Container(width: 1, color: EchoTheme.border),
+              Container(width: 1, color: context.border),
               Expanded(
                 child: SettingsContent(
                   key: ValueKey(_selectedSection),
@@ -1023,18 +1022,18 @@ class _ThemeOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isSelected ? EchoTheme.accentLight : Colors.transparent,
+      color: isSelected ? context.accentLight : Colors.transparent,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
-        hoverColor: EchoTheme.surfaceHover,
+        hoverColor: context.surfaceHover,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: isSelected ? EchoTheme.accent : EchoTheme.border,
+              color: isSelected ? context.accent : context.border,
               width: 1,
             ),
           ),
@@ -1043,7 +1042,7 @@ class _ThemeOption extends StatelessWidget {
               Icon(
                 icon,
                 size: 22,
-                color: isSelected ? EchoTheme.accent : EchoTheme.textSecondary,
+                color: isSelected ? context.accent : context.textSecondary,
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -1054,8 +1053,8 @@ class _ThemeOption extends StatelessWidget {
                       label,
                       style: TextStyle(
                         color: isSelected
-                            ? EchoTheme.accent
-                            : EchoTheme.textPrimary,
+                            ? context.accent
+                            : context.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1063,20 +1062,13 @@ class _ThemeOption extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: const TextStyle(
-                        color: EchoTheme.textMuted,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: context.textMuted, fontSize: 12),
                     ),
                   ],
                 ),
               ),
               if (isSelected)
-                const Icon(
-                  Icons.check_circle,
-                  size: 20,
-                  color: EchoTheme.accent,
-                ),
+                Icon(Icons.check_circle, size: 20, color: context.accent),
             ],
           ),
         ),

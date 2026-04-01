@@ -176,13 +176,13 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: EchoTheme.mainBg,
+      backgroundColor: context.mainBg,
       appBar: AppBar(
-        backgroundColor: EchoTheme.sidebarBg,
-        title: const Text(
+        backgroundColor: context.sidebarBg,
+        title: Text(
           'Discover Groups',
           style: TextStyle(
-            color: EchoTheme.textPrimary,
+            color: context.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
@@ -195,10 +195,7 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
             padding: const EdgeInsets.all(16),
             child: TextField(
               controller: _searchController,
-              style: const TextStyle(
-                color: EchoTheme.textPrimary,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: context.textPrimary, fontSize: 14),
               decoration: const InputDecoration(
                 hintText: 'Search public groups...',
                 prefixIcon: Icon(Icons.search, size: 20),
@@ -209,9 +206,9 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
           // Content
           Expanded(
             child: _isLoading
-                ? const Center(
+                ? Center(
                     child: CircularProgressIndicator(
-                      color: EchoTheme.accent,
+                      color: context.accent,
                       strokeWidth: 2,
                     ),
                   )
@@ -220,16 +217,16 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.error_outline,
                           size: 40,
-                          color: EchoTheme.textMuted,
+                          color: context.textMuted,
                         ),
                         const SizedBox(height: 12),
                         Text(
                           _error!,
-                          style: const TextStyle(
-                            color: EchoTheme.textSecondary,
+                          style: TextStyle(
+                            color: context.textSecondary,
                             fontSize: 14,
                           ),
                         ),
@@ -250,22 +247,22 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
                         Icon(
                           Icons.explore_outlined,
                           size: 48,
-                          color: EchoTheme.textMuted.withValues(alpha: 0.5),
+                          color: context.textMuted.withValues(alpha: 0.5),
                         ),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                           'No public groups found',
                           style: TextStyle(
-                            color: EchoTheme.textSecondary,
+                            color: context.textSecondary,
                             fontSize: 15,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                           'Try a different search or create a public group',
                           style: TextStyle(
-                            color: EchoTheme.textMuted,
+                            color: context.textMuted,
                             fontSize: 13,
                           ),
                         ),
@@ -308,16 +305,16 @@ class _GroupDiscoveryItem extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: EchoTheme.surface,
+        color: context.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: EchoTheme.border),
+        border: Border.all(color: context.border),
       ),
       child: Row(
         children: [
           // Group avatar
           CircleAvatar(
             radius: 22,
-            backgroundColor: EchoTheme.accent,
+            backgroundColor: context.accent,
             child: const Icon(Icons.group, size: 20, color: Colors.white),
           ),
           const SizedBox(width: 12),
@@ -328,8 +325,8 @@ class _GroupDiscoveryItem extends StatelessWidget {
               children: [
                 Text(
                   group.name,
-                  style: const TextStyle(
-                    color: EchoTheme.textPrimary,
+                  style: TextStyle(
+                    color: context.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
@@ -341,8 +338,8 @@ class _GroupDiscoveryItem extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     group.description!,
-                    style: const TextStyle(
-                      color: EchoTheme.textSecondary,
+                    style: TextStyle(
+                      color: context.textSecondary,
                       fontSize: 13,
                     ),
                     maxLines: 2,
@@ -352,10 +349,7 @@ class _GroupDiscoveryItem extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
-                  style: const TextStyle(
-                    color: EchoTheme.textMuted,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: context.textMuted, fontSize: 12),
                 ),
               ],
             ),
@@ -366,14 +360,14 @@ class _GroupDiscoveryItem extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               decoration: BoxDecoration(
-                color: EchoTheme.surface,
+                color: context.surface,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: EchoTheme.border),
+                border: Border.all(color: context.border),
               ),
-              child: const Text(
+              child: Text(
                 'Joined',
                 style: TextStyle(
-                  color: EchoTheme.textMuted,
+                  color: context.textMuted,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),

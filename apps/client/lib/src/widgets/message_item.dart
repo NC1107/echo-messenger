@@ -68,10 +68,10 @@ class _MessageItemState extends State<MessageItem> {
     switch (status) {
       case MessageStatus.sending:
         icon = Icons.schedule_outlined;
-        color = EchoTheme.textMuted;
+        color = context.textMuted;
       case MessageStatus.sent:
         icon = Icons.check_outlined;
-        color = EchoTheme.textMuted;
+        color = context.textMuted;
       case MessageStatus.delivered:
         icon = Icons.done_all_outlined;
         color = EchoTheme.online;
@@ -115,13 +115,13 @@ class _MessageItemState extends State<MessageItem> {
           width: 300,
           height: 80,
           decoration: BoxDecoration(
-            color: EchoTheme.surface,
+            color: context.surface,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Center(
+          child: Center(
             child: Text(
               '[Image failed to load]',
-              style: TextStyle(color: EchoTheme.textMuted, fontSize: 13),
+              style: TextStyle(color: context.textMuted, fontSize: 13),
             ),
           ),
         ),
@@ -158,11 +158,11 @@ class _MessageItemState extends State<MessageItem> {
       spans.add(
         TextSpan(
           text: url,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 15,
-            color: EchoTheme.accentHover,
+            color: context.accentHover,
             decoration: TextDecoration.underline,
-            decorationColor: EchoTheme.accentHover,
+            decorationColor: context.accentHover,
             height: 1.47,
           ),
           recognizer: TapGestureRecognizer()
@@ -209,9 +209,9 @@ class _MessageItemState extends State<MessageItem> {
         height: 24,
         padding: const EdgeInsets.symmetric(horizontal: 6),
         decoration: BoxDecoration(
-          color: EchoTheme.surface,
+          color: context.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: EchoTheme.border, width: 1),
+          border: Border.all(color: context.border, width: 1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -225,10 +225,7 @@ class _MessageItemState extends State<MessageItem> {
               const SizedBox(width: 2),
               Text(
                 '$totalCount',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: EchoTheme.textMuted,
-                ),
+                style: TextStyle(fontSize: 12, color: context.textMuted),
               ),
             ],
           ],
@@ -261,8 +258,8 @@ class _MessageItemState extends State<MessageItem> {
         color: isFailed
             ? EchoTheme.danger.withValues(alpha: 0.2)
             : isMine
-            ? EchoTheme.sentBubble
-            : EchoTheme.recvBubble,
+            ? context.sentBubble
+            : context.recvBubble,
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(16),
           topRight: const Radius.circular(16),
@@ -299,7 +296,7 @@ class _MessageItemState extends State<MessageItem> {
                   ? EchoTheme.danger
                   : isMine
                   ? Colors.white
-                  : EchoTheme.textPrimary,
+                  : context.textPrimary,
             ),
         ],
       ),
@@ -388,9 +385,9 @@ class _MessageItemState extends State<MessageItem> {
                       left: isMine ? 0 : null,
                       child: Container(
                         decoration: BoxDecoration(
-                          color: EchoTheme.surface,
+                          color: context.surface,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: EchoTheme.border, width: 1),
+                          border: Border.all(color: context.border, width: 1),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -445,20 +442,20 @@ class _MessageItemState extends State<MessageItem> {
                     children: [
                       Text(
                         formatMessageTimestamp(msg.timestamp),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: EchoTheme.textMuted,
+                          color: context.textMuted,
                         ),
                       ),
                       if (msg.editedAt != null)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 4),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4),
                           child: Text(
                             '(edited)',
                             style: TextStyle(
                               fontSize: 10,
                               fontStyle: FontStyle.italic,
-                              color: EchoTheme.textMuted,
+                              color: context.textMuted,
                             ),
                           ),
                         ),
@@ -493,7 +490,7 @@ class _HoverActionButton extends StatelessWidget {
         onTap: onPressed,
         child: Padding(
           padding: const EdgeInsets.all(6),
-          child: Icon(icon, size: 16, color: EchoTheme.textSecondary),
+          child: Icon(icon, size: 16, color: context.textSecondary),
         ),
       ),
     );

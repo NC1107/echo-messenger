@@ -142,19 +142,19 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: EchoTheme.mainBg,
+      backgroundColor: context.mainBg,
       appBar: AppBar(
-        backgroundColor: EchoTheme.sidebarBg,
-        title: const Text(
+        backgroundColor: context.sidebarBg,
+        title: Text(
           'Join Group',
           style: TextStyle(
-            color: EchoTheme.textPrimary,
+            color: context.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: EchoTheme.textSecondary),
+          icon: Icon(Icons.arrow_back, color: context.textSecondary),
           onPressed: () => context.go('/home'),
         ),
       ),
@@ -162,7 +162,7 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400),
           child: _isLoading
-              ? const CircularProgressIndicator(color: EchoTheme.accent)
+              ? CircularProgressIndicator(color: context.accent)
               : _buildContent(),
         ),
       ),
@@ -178,15 +178,15 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
           // Group icon
           CircleAvatar(
             radius: 40,
-            backgroundColor: EchoTheme.accent,
+            backgroundColor: context.accent,
             child: const Icon(Icons.group, size: 40, color: Colors.white),
           ),
           const SizedBox(height: 20),
           // Group name
           Text(
             _groupName ?? 'Group',
-            style: const TextStyle(
-              color: EchoTheme.textPrimary,
+            style: TextStyle(
+              color: context.textPrimary,
               fontSize: 22,
               fontWeight: FontWeight.bold,
             ),
@@ -195,15 +195,15 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
             const SizedBox(height: 8),
             Text(
               '$_memberCount member${_memberCount == 1 ? '' : 's'}',
-              style: const TextStyle(color: EchoTheme.textMuted, fontSize: 14),
+              style: TextStyle(color: context.textMuted, fontSize: 14),
             ),
           ],
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'You have been invited to join this group.',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: EchoTheme.textSecondary,
+              color: context.textSecondary,
               fontSize: 14,
               height: 1.4,
             ),
@@ -223,7 +223,7 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
             child: FilledButton(
               onPressed: _isJoining ? null : _joinGroup,
               style: FilledButton.styleFrom(
-                backgroundColor: EchoTheme.accent,
+                backgroundColor: context.accent,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -250,9 +250,9 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
           const SizedBox(height: 12),
           TextButton(
             onPressed: () => context.go('/home'),
-            child: const Text(
+            child: Text(
               'Cancel',
-              style: TextStyle(color: EchoTheme.textSecondary),
+              style: TextStyle(color: context.textSecondary),
             ),
           ),
         ],

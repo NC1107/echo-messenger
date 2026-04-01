@@ -1,8 +1,13 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
 
 import '../providers/auth_provider.dart';
+import '../providers/server_url_provider.dart';
 import '../version.dart';
 import '../theme/echo_theme.dart';
 
@@ -18,6 +23,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
   String? _passwordError;
+
+  Future<Map<String, String?>>? _versionFuture;
 
   @override
   void dispose() {
@@ -46,9 +53,54 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     // Crypto init happens in contacts_screen._initData() after navigation
   }
 
+  Future<Map<String, String?>> _fetchVersionInfo(String serverUrl) async {
+    String? serverVersion;
+    String? serverHost;
+    String? webVersion;
+
+    // Fetch server version from /api/health
+    try {
+      final uri = Uri.parse('$serverUrl/api/health');
+      serverHost = uri.host;
+      final resp = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        final body = jsonDecode(resp.body) as Map<String, dynamic>;
+        serverVersion = body['version'] as String?;
+      }
+    } catch (_) {
+      // serverVersion stays null
+    }
+
+    // Fetch web container version (web only)
+    if (kIsWeb) {
+      try {
+        final resp = await http
+            .get(Uri.parse('/version.txt'))
+            .timeout(const Duration(seconds: 3));
+        if (resp.statusCode == 200) {
+          final text = resp.body.trim();
+          if (text.isNotEmpty && text.length < 30) {
+            webVersion = text;
+          }
+        }
+      } catch (_) {
+        // webVersion stays null
+      }
+    }
+
+    return {
+      'serverVersion': serverVersion,
+      'serverHost': serverHost,
+      'webVersion': webVersion,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
+    final serverUrl = ref.watch(serverUrlProvider);
+
+    _versionFuture ??= _fetchVersionInfo(serverUrl);
 
     return Scaffold(
       body: Center(
@@ -133,10 +185,48 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 Text(
                   'Echo v$appVersion',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: EchoTheme.textMuted,
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: context.textMuted, fontSize: 11),
+                ),
+                FutureBuilder<Map<String, String?>>(
+                  future: _versionFuture,
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const SizedBox.shrink();
+                    }
+                    final info = snapshot.data!;
+                    final serverVersion = info['serverVersion'];
+                    final serverHost = info['serverHost'];
+                    final webVersion = info['webVersion'];
+
+                    final serverText = serverVersion != null
+                        ? 'Server: $serverHost v$serverVersion'
+                        : 'Server: unreachable';
+                    final serverColor = serverVersion != null
+                        ? context.textMuted
+                        : EchoTheme.warning;
+
+                    return Column(
+                      children: [
+                        const SizedBox(height: 2),
+                        Text(
+                          serverText,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: serverColor, fontSize: 11),
+                        ),
+                        if (kIsWeb && webVersion != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Web: v$webVersion',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: context.textMuted,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
                 ),
               ],
             ),

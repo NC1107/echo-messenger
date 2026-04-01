@@ -150,8 +150,8 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
                         setState(() => _isPublic = selection.first);
                       },
                       style: SegmentedButton.styleFrom(
-                        selectedBackgroundColor: EchoTheme.accentLight,
-                        selectedForegroundColor: EchoTheme.accent,
+                        selectedBackgroundColor: context.accentLight,
+                        selectedForegroundColor: context.accent,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -159,10 +159,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
                       _isPublic
                           ? 'Anyone can discover and join'
                           : 'Only invited members can join',
-                      style: const TextStyle(
-                        color: EchoTheme.textMuted,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: context.textMuted, fontSize: 12),
                     ),
                   ],
                 ),

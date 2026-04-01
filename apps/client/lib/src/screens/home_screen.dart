@@ -94,15 +94,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       context: context,
       barrierDismissible: true,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: EchoTheme.surface,
+        backgroundColor: context.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: EchoTheme.border),
+          side: BorderSide(color: context.border),
         ),
-        title: const Text(
+        title: Text(
           'Welcome to Echo',
           style: TextStyle(
-            color: EchoTheme.textPrimary,
+            color: context.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
@@ -111,8 +111,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           'You\'re connected to the official Echo server at $displayHost\n\n'
           'Your messages are end-to-end encrypted. The server cannot read your messages.\n\n'
           'In the future, you\'ll be able to self-host your own Echo server.',
-          style: const TextStyle(
-            color: EchoTheme.textSecondary,
+          style: TextStyle(
+            color: context.textSecondary,
             fontSize: 14,
             height: 1.5,
           ),
@@ -167,10 +167,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => Dialog(
-        backgroundColor: EchoTheme.surface,
+        backgroundColor: context.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: EchoTheme.border),
+          side: BorderSide(color: context.border),
         ),
         child: SizedBox(
           width: 480,
@@ -203,10 +203,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => Dialog(
-        backgroundColor: EchoTheme.surface,
+        backgroundColor: context.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: EchoTheme.border),
+          side: BorderSide(color: context.border),
         ),
         child: SizedBox(
           width: 480,
@@ -229,10 +229,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => Dialog(
-        backgroundColor: EchoTheme.surface,
+        backgroundColor: context.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: EchoTheme.border),
+          side: BorderSide(color: context.border),
         ),
         child: SizedBox(
           width: 480,
@@ -298,21 +298,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Container(
       width: 60,
-      color: EchoTheme.sidebarBg,
+      color: context.sidebarBg,
       child: Column(
         children: [
           // Header with expand button
           Container(
             height: 56,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(
-                bottom: BorderSide(color: EchoTheme.border, width: 1),
+                bottom: BorderSide(color: context.border, width: 1),
               ),
             ),
             child: Center(
               child: IconButton(
-                icon: const Icon(Icons.chevron_right, size: 20),
-                color: EchoTheme.textSecondary,
+                icon: Icon(Icons.chevron_right, size: 20),
+                color: context.textSecondary,
                 tooltip: 'Expand sidebar',
                 onPressed: () => setState(() => _sidebarCollapsed = false),
                 padding: EdgeInsets.zero,
@@ -342,7 +342,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: isSelected
-                                ? Border.all(color: EchoTheme.accent, width: 2)
+                                ? Border.all(color: context.accent, width: 2)
                                 : null,
                           ),
                           child: buildAvatar(
@@ -370,16 +370,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // Settings icon at bottom
           Container(
             height: 60,
-            decoration: const BoxDecoration(
-              color: EchoTheme.mainBg,
-              border: Border(
-                top: BorderSide(color: EchoTheme.border, width: 1),
-              ),
+            decoration: BoxDecoration(
+              color: context.mainBg,
+              border: Border(top: BorderSide(color: context.border, width: 1)),
             ),
             child: Center(
               child: IconButton(
-                icon: const Icon(Icons.settings_outlined, size: 18),
-                color: EchoTheme.textSecondary,
+                icon: Icon(Icons.settings_outlined, size: 18),
+                color: context.textSecondary,
                 tooltip: 'Settings',
                 onPressed: _openSettings,
                 padding: EdgeInsets.zero,
@@ -396,23 +394,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildSettingsSidebar(double width) {
     return Container(
       width: width,
-      color: EchoTheme.sidebarBg,
+      color: context.sidebarBg,
       child: Column(
         children: [
           // Header with back button
           Container(
             height: 56,
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(
-                bottom: BorderSide(color: EchoTheme.border, width: 1),
+                bottom: BorderSide(color: context.border, width: 1),
               ),
             ),
             child: Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.arrow_back, size: 20),
-                  color: EchoTheme.textSecondary,
+                  icon: Icon(Icons.arrow_back, size: 20),
+                  color: context.textSecondary,
                   tooltip: 'Back to conversations',
                   onPressed: () => setState(() => _showSettings = false),
                   padding: EdgeInsets.zero,
@@ -422,10 +420,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'Settings',
                   style: TextStyle(
-                    color: EchoTheme.textPrimary,
+                    color: context.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                   ),
@@ -534,8 +532,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     top: 16,
                     right: 4,
                     child: IconButton(
-                      icon: const Icon(Icons.chevron_left, size: 18),
-                      color: EchoTheme.textMuted,
+                      icon: Icon(Icons.chevron_left, size: 18),
+                      color: context.textMuted,
                       tooltip: 'Collapse sidebar',
                       onPressed: () => setState(() => _sidebarCollapsed = true),
                       padding: EdgeInsets.zero,
@@ -549,7 +547,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           // Thin vertical divider
-          Container(width: 1, color: EchoTheme.border),
+          Container(width: 1, color: context.border),
           // Center: content area (flex)
           Expanded(child: rightPanel),
           // Right: members panel (optional, 280px)
@@ -557,7 +555,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               _showMembers &&
               _selectedConversation != null &&
               _selectedConversation!.isGroup) ...[
-            Container(width: 1, color: EchoTheme.border),
+            Container(width: 1, color: context.border),
             MembersPanel(
               conversation: _selectedConversation,
               onGroupLeft: () {
@@ -600,7 +598,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           else
             SizedBox(width: 300, child: _buildConversationPanel()),
           // Thin vertical divider
-          Container(width: 1, color: EchoTheme.border),
+          Container(width: 1, color: context.border),
           // Right: content area
           Expanded(child: rightPanel),
         ],
@@ -615,13 +613,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           children: [
             Container(
               height: 56,
-              color: EchoTheme.chatBg,
+              color: context.chatBg,
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back_outlined, size: 20),
-                    color: EchoTheme.textSecondary,
+                    icon: Icon(Icons.arrow_back_outlined, size: 20),
+                    color: context.textSecondary,
                     onPressed: () {
                       setState(() => _narrowPanelIndex = 0);
                     },
@@ -645,7 +643,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildEmptyState() {
     return Container(
-      color: EchoTheme.chatBg,
+      color: context.chatBg,
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -653,21 +651,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             Icon(
               Icons.chat_bubble_outline_rounded,
               size: 56,
-              color: EchoTheme.textMuted.withValues(alpha: 0.4),
+              color: context.textMuted.withValues(alpha: 0.4),
             ),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'Select a conversation',
               style: TextStyle(
-                color: EchoTheme.textSecondary,
+                color: context.textSecondary,
                 fontSize: 18,
                 fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Pick someone from the left to start chatting',
-              style: TextStyle(color: EchoTheme.textMuted, fontSize: 14),
+              style: TextStyle(color: context.textMuted, fontSize: 14),
             ),
           ],
         ),

@@ -16,9 +16,9 @@ class UserStatusBar extends ConsumerWidget {
     return Container(
       height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: const BoxDecoration(
-        color: EchoTheme.mainBg,
-        border: Border(top: BorderSide(color: EchoTheme.border, width: 1)),
+      decoration: BoxDecoration(
+        color: context.mainBg,
+        border: Border(top: BorderSide(color: context.border, width: 1)),
       ),
       child: Row(
         children: [
@@ -27,7 +27,7 @@ class UserStatusBar extends ConsumerWidget {
             children: [
               CircleAvatar(
                 radius: 16,
-                backgroundColor: EchoTheme.accent,
+                backgroundColor: context.accent,
                 child: Text(
                   initial,
                   style: const TextStyle(
@@ -46,7 +46,7 @@ class UserStatusBar extends ConsumerWidget {
                   decoration: BoxDecoration(
                     color: EchoTheme.online,
                     shape: BoxShape.circle,
-                    border: Border.all(color: EchoTheme.mainBg, width: 2),
+                    border: Border.all(color: context.mainBg, width: 2),
                   ),
                 ),
               ),
@@ -61,16 +61,16 @@ class UserStatusBar extends ConsumerWidget {
               children: [
                 Text(
                   username,
-                  style: const TextStyle(
-                    color: EchoTheme.textPrimary,
+                  style: TextStyle(
+                    color: context.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
-                const Text(
+                Text(
                   'Online',
-                  style: TextStyle(color: EchoTheme.textMuted, fontSize: 11),
+                  style: TextStyle(color: context.textMuted, fontSize: 11),
                 ),
               ],
             ),
@@ -78,7 +78,7 @@ class UserStatusBar extends ConsumerWidget {
           // Settings gear
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 18),
-            color: EchoTheme.textSecondary,
+            color: context.textSecondary,
             tooltip: 'Settings',
             onPressed: () {},
             padding: EdgeInsets.zero,

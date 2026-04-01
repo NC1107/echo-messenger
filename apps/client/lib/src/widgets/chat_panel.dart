@@ -363,23 +363,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
         child: Row(
           children: [
-            const Expanded(
-              child: Divider(color: EchoTheme.border, thickness: 1),
-            ),
+            Expanded(child: Divider(color: context.border, thickness: 1)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: EchoTheme.textMuted,
+                  color: context.textMuted,
                 ),
               ),
             ),
-            const Expanded(
-              child: Divider(color: EchoTheme.border, thickness: 1),
-            ),
+            Expanded(child: Divider(color: context.border, thickness: 1)),
           ],
         ),
       );
@@ -394,7 +390,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: isGroup
-            ? EchoTheme.surface
+            ? context.surface
             : EchoTheme.online.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -405,7 +401,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           Icon(
             isGroup ? Icons.shield_outlined : Icons.lock_outlined,
             size: 14,
-            color: isGroup ? EchoTheme.textMuted : EchoTheme.online,
+            color: isGroup ? context.textMuted : EchoTheme.online,
           ),
           const SizedBox(width: 8),
           Text(
@@ -414,7 +410,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                 : 'Messages are end-to-end encrypted',
             style: TextStyle(
               fontSize: isGroup ? 11 : 12,
-              color: isGroup ? EchoTheme.textMuted : EchoTheme.online,
+              color: isGroup ? context.textMuted : EchoTheme.online,
             ),
           ),
         ],
@@ -479,22 +475,22 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: EchoTheme.surface,
+        backgroundColor: context.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: EchoTheme.border),
+          side: BorderSide(color: context.border),
         ),
-        title: const Text(
+        title: Text(
           'Delete this message?',
           style: TextStyle(
-            color: EchoTheme.textPrimary,
+            color: context.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
         ),
-        content: const Text(
+        content: Text(
           'This action cannot be undone.',
-          style: TextStyle(color: EchoTheme.textSecondary, fontSize: 14),
+          style: TextStyle(color: context.textSecondary, fontSize: 14),
         ),
         actions: [
           TextButton(
@@ -545,7 +541,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: EchoTheme.surface,
+      backgroundColor: context.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
       ),
@@ -569,7 +565,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: alreadyReacted
-                        ? EchoTheme.accent.withValues(alpha: 0.2)
+                        ? context.accent.withValues(alpha: 0.2)
                         : null,
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -619,7 +615,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     if (conv == null) {
       return Container(
-        color: EchoTheme.chatBg,
+        color: context.chatBg,
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -627,12 +623,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               Icon(
                 Icons.chat_bubble_outline_rounded,
                 size: 56,
-                color: EchoTheme.textMuted.withValues(alpha: 0.4),
+                color: context.textMuted.withValues(alpha: 0.4),
               ),
               const SizedBox(height: 20),
-              const Text(
+              Text(
                 'Select a conversation to start chatting',
-                style: TextStyle(color: EchoTheme.textMuted, fontSize: 16),
+                style: TextStyle(color: context.textMuted, fontSize: 16),
               ),
             ],
           ),
@@ -671,17 +667,17 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     });
 
     return Container(
-      color: EchoTheme.chatBg,
+      color: context.chatBg,
       child: Column(
         children: [
           // Header bar -- 56px
           Container(
             height: 56,
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: const BoxDecoration(
-              color: EchoTheme.chatBg,
+            decoration: BoxDecoration(
+              color: context.chatBg,
               border: Border(
-                bottom: BorderSide(color: EchoTheme.border, width: 1),
+                bottom: BorderSide(color: context.border, width: 1),
               ),
             ),
             child: Row(
@@ -724,8 +720,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     children: [
                       Text(
                         displayName,
-                        style: const TextStyle(
-                          color: EchoTheme.textPrimary,
+                        style: TextStyle(
+                          color: context.textPrimary,
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                         ),
@@ -735,8 +731,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                           if (conv.isGroup) {
                             return Text(
                               '${conv.members.length} members',
-                              style: const TextStyle(
-                                color: EchoTheme.textMuted,
+                              style: TextStyle(
+                                color: context.textMuted,
                                 fontSize: 12,
                               ),
                             );
@@ -752,7 +748,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                             style: TextStyle(
                               color: peerOnline
                                   ? EchoTheme.online
-                                  : EchoTheme.textMuted,
+                                  : context.textMuted,
                               fontSize: 12,
                             ),
                           );
@@ -765,7 +761,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   if (widget.onMembersToggle != null)
                     IconButton(
                       icon: const Icon(Icons.people_outline, size: 20),
-                      color: EchoTheme.textSecondary,
+                      color: context.textSecondary,
                       tooltip: 'Members',
                       onPressed: widget.onMembersToggle,
                       padding: EdgeInsets.zero,
@@ -776,7 +772,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     ),
                   IconButton(
                     icon: const Icon(Icons.info_outline, size: 20),
-                    color: EchoTheme.textSecondary,
+                    color: context.textSecondary,
                     tooltip: 'Group Info',
                     onPressed: widget.onGroupInfo,
                     padding: EdgeInsets.zero,
@@ -791,9 +787,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           ),
           // Loading indicator for history
           if (isLoadingHistory)
-            const LinearProgressIndicator(
-              color: EchoTheme.accent,
-              backgroundColor: EchoTheme.chatBg,
+            LinearProgressIndicator(
+              color: context.accent,
+              backgroundColor: context.chatBg,
               minHeight: 2,
             ),
           // Messages
@@ -824,8 +820,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                               const SizedBox(height: 16),
                               Text(
                                 displayName,
-                                style: const TextStyle(
-                                  color: EchoTheme.textPrimary,
+                                style: TextStyle(
+                                  color: context.textPrimary,
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -835,8 +831,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                 conv.isGroup
                                     ? 'This is the start of #$displayName'
                                     : 'Start your conversation with $displayName',
-                                style: const TextStyle(
-                                  color: EchoTheme.textMuted,
+                                style: TextStyle(
+                                  color: context.textMuted,
                                   fontSize: 14,
                                 ),
                               ),
@@ -934,10 +930,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                           ? '${typingUsers.first} is typing...'
                           : '${typingUsers.join(", ")} are typing...')
                     : '$displayName is typing...',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontStyle: FontStyle.italic,
-                  color: EchoTheme.textMuted,
+                  color: context.textMuted,
                 ),
               ),
             ),
@@ -945,20 +941,16 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           if (_isEditing)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-              color: EchoTheme.accent.withValues(alpha: 0.08),
+              color: context.accent.withValues(alpha: 0.08),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.edit_outlined,
-                    size: 14,
-                    color: EchoTheme.accent,
-                  ),
+                  Icon(Icons.edit_outlined, size: 14, color: context.accent),
                   const SizedBox(width: 8),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Editing message...',
                       style: TextStyle(
-                        color: EchoTheme.accent,
+                        color: context.accent,
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
@@ -966,10 +958,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   ),
                   GestureDetector(
                     onTap: _cancelEditMode,
-                    child: const Icon(
+                    child: Icon(
                       Icons.close,
                       size: 16,
-                      color: EchoTheme.textMuted,
+                      color: context.textMuted,
                     ),
                   ),
                 ],
@@ -978,14 +970,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           // Input area
           Container(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-            color: EchoTheme.chatBg,
+            color: context.chatBg,
             child: Container(
               height: 44,
               decoration: BoxDecoration(
-                color: EchoTheme.surface,
+                color: context.surface,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: _isEditing ? EchoTheme.accent : EchoTheme.border,
+                  color: _isEditing ? context.accent : context.border,
                   width: 1,
                 ),
               ),
@@ -998,7 +990,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                       padding: const EdgeInsets.only(left: 4),
                       child: IconButton(
                         icon: const Icon(Icons.attach_file_outlined, size: 18),
-                        color: EchoTheme.textSecondary,
+                        color: context.textSecondary,
                         tooltip: 'Attach file',
                         onPressed: _pickFile,
                         padding: EdgeInsets.zero,
@@ -1024,9 +1016,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                         controller: _messageController,
                         focusNode: _inputFocusNode,
                         maxLines: 1,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
-                          color: EchoTheme.textPrimary,
+                          color: context.textPrimary,
                         ),
                         decoration: InputDecoration(
                           hintText: _isEditing
@@ -1058,7 +1050,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                           decoration: BoxDecoration(
                             color: _isEditing
                                 ? EchoTheme.online
-                                : EchoTheme.accent,
+                                : context.accent,
                             shape: BoxShape.circle,
                           ),
                           child: Icon(

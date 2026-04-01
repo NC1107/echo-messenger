@@ -206,7 +206,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                               height: 32,
                               width: 90,
                               child: Material(
-                                color: EchoTheme.accentLight,
+                                color: context.accentLight,
                                 borderRadius: BorderRadius.circular(6),
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(6),
@@ -216,15 +216,15 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                                           contact.userId,
                                           contact.username,
                                         ),
-                                  child: const Padding(
-                                    padding: EdgeInsets.symmetric(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
                                       horizontal: 12,
                                     ),
                                     child: Center(
                                       child: Text(
                                         'Message',
                                         style: TextStyle(
-                                          color: EchoTheme.accent,
+                                          color: context.accent,
                                           fontSize: 13,
                                           fontWeight: FontWeight.w500,
                                         ),

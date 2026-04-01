@@ -23,7 +23,7 @@ class MembersPanel extends ConsumerWidget {
     final conv = conversation;
     // Show nothing for DMs or when no group is selected
     if (conv == null || !conv.isGroup) {
-      return Container(width: 280, color: EchoTheme.sidebarBg);
+      return Container(width: 280, color: context.sidebarBg);
     }
 
     final members = conv.members;
@@ -37,24 +37,24 @@ class MembersPanel extends ConsumerWidget {
 
     return Container(
       width: 280,
-      color: EchoTheme.sidebarBg,
+      color: context.sidebarBg,
       child: Column(
         children: [
           // Header
           Container(
             height: 56,
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(
-                bottom: BorderSide(color: EchoTheme.border, width: 1),
+                bottom: BorderSide(color: context.border, width: 1),
               ),
             ),
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 'Members (${members.length})',
-                style: const TextStyle(
-                  color: EchoTheme.textPrimary,
+                style: TextStyle(
+                  color: context.textPrimary,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
@@ -80,10 +80,8 @@ class MembersPanel extends ConsumerWidget {
           // Leave / Delete group buttons
           Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            decoration: const BoxDecoration(
-              border: Border(
-                top: BorderSide(color: EchoTheme.border, width: 1),
-              ),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: context.border, width: 1)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -132,22 +130,22 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: EchoTheme.surface,
+        backgroundColor: context.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: EchoTheme.border),
+          side: BorderSide(color: context.border),
         ),
-        title: const Text(
+        title: Text(
           'Remove member',
           style: TextStyle(
-            color: EchoTheme.textPrimary,
+            color: context.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
         ),
         content: Text(
           'Remove ${widget.member.username} from this group?',
-          style: const TextStyle(color: EchoTheme.textSecondary, fontSize: 14),
+          style: TextStyle(color: context.textSecondary, fontSize: 14),
         ),
         actions: [
           TextButton(
@@ -221,8 +219,8 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
 
     switch (role) {
       case 'owner':
-        bgColor = EchoTheme.accent.withValues(alpha: 0.15);
-        textColor = EchoTheme.accent;
+        bgColor = context.accent.withValues(alpha: 0.15);
+        textColor = context.accent;
         label = 'Owner';
       case 'admin':
         bgColor = EchoTheme.warning.withValues(alpha: 0.15);
@@ -284,7 +282,7 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                 decoration: BoxDecoration(
                   color: EchoTheme.online,
                   shape: BoxShape.circle,
-                  border: Border.all(color: EchoTheme.sidebarBg, width: 1.5),
+                  border: Border.all(color: context.sidebarBg, width: 1.5),
                 ),
               ),
               const SizedBox(width: 8),
@@ -296,8 +294,8 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                       child: Text(
                         member.username,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: EchoTheme.textSecondary,
+                        style: TextStyle(
+                          color: context.textSecondary,
                           fontSize: 13,
                         ),
                       ),
@@ -315,7 +313,7 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                   height: 24,
                   child: IconButton(
                     icon: const Icon(Icons.close, size: 14),
-                    color: EchoTheme.textMuted,
+                    color: context.textMuted,
                     tooltip: 'Remove member',
                     onPressed: _removeMember,
                     padding: EdgeInsets.zero,
@@ -326,12 +324,12 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                   ),
                 ),
               if (_isRemoving)
-                const SizedBox(
+                SizedBox(
                   width: 14,
                   height: 14,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: EchoTheme.textMuted,
+                    color: context.textMuted,
                   ),
                 ),
             ],
@@ -447,23 +445,23 @@ class _DeleteGroupButtonState extends ConsumerState<_DeleteGroupButton> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: EchoTheme.surface,
+        backgroundColor: context.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: EchoTheme.border),
+          side: BorderSide(color: context.border),
         ),
-        title: const Text(
+        title: Text(
           'Delete group',
           style: TextStyle(
-            color: EchoTheme.textPrimary,
+            color: context.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
           ),
         ),
-        content: const Text(
+        content: Text(
           'This will permanently delete the group and all its messages. '
           'This action cannot be undone.',
-          style: TextStyle(color: EchoTheme.textSecondary, fontSize: 14),
+          style: TextStyle(color: context.textSecondary, fontSize: 14),
         ),
         actions: [
           TextButton(
