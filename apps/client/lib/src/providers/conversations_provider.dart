@@ -185,6 +185,56 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     }
   }
 
+  /// Find an existing DM with a peer, or create one by sending a greeting.
+  Future<Conversation?> getOrCreateDm(
+    String peerUserId,
+    String peerUsername,
+  ) async {
+    // Search existing conversations for a non-group with that peer
+    for (final conv in state.conversations) {
+      if (!conv.isGroup) {
+        final hasPeer = conv.members.any((m) => m.userId == peerUserId);
+        if (hasPeer) return conv;
+      }
+    }
+
+    // Not found -- send a greeting message via WebSocket which auto-creates
+    // the conversation. We use the REST endpoint to send a one-off message.
+    try {
+      final response = await http.post(
+        Uri.parse('$_serverUrl/api/messages'),
+        headers: _headers,
+        body: jsonEncode({'to_user_id': peerUserId, 'content': 'Hey!'}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        // The server may return the conversation_id in the response
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final convId = data['conversation_id'] as String?;
+        if (convId != null && convId.isNotEmpty) {
+          await loadConversations();
+          return state.conversations.where((c) => c.id == convId).firstOrNull;
+        }
+      }
+    } catch (_) {
+      // Fall through to reload approach
+    }
+
+    // Wait briefly for the server to process, then reload
+    await Future<void>.delayed(const Duration(seconds: 2));
+    await loadConversations();
+
+    // Try to find the new conversation
+    for (final conv in state.conversations) {
+      if (!conv.isGroup) {
+        final hasPeer = conv.members.any((m) => m.userId == peerUserId);
+        if (hasPeer) return conv;
+      }
+    }
+
+    return null;
+  }
+
   /// Create a new group conversation.
   Future<String?> createGroup(String name, List<String> memberIds) async {
     try {

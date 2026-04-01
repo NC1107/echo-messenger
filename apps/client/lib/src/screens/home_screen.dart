@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation.dart';
+import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/server_url_provider.dart';
@@ -11,6 +12,9 @@ import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/chat_panel.dart';
 import '../widgets/conversation_panel.dart';
+import '../widgets/members_panel.dart';
+import 'contacts_screen.dart';
+import 'create_group_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -21,6 +25,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   Conversation? _selectedConversation;
+  bool _showMembers = false;
 
   // For narrow screen navigation
   int _narrowPanelIndex = 0; // 0 = conv list, 1 = chat
@@ -47,7 +52,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // 3. Load conversations AFTER crypto and WS are set up
     await ref.read(conversationsProvider.notifier).loadConversations();
 
-    // 4. Show first-login server notice
+    // 4. Load contacts for pending badge
+    ref.read(contactsProvider.notifier).loadContacts();
+    ref.read(contactsProvider.notifier).loadPending();
+
+    // 5. Show first-login server notice
     await _showServerNoticeIfNeeded();
   }
 
@@ -105,7 +114,108 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  bool get _isDesktop => MediaQuery.of(context).size.width >= 900;
+
   void _showNewChatOptions() {
+    if (_isDesktop) {
+      _showNewChatPopupMenu();
+    } else {
+      _showNewChatBottomSheet();
+    }
+  }
+
+  void _showNewChatPopupMenu() {
+    // Position the menu below the header area, aligned to the right of the sidebar
+    const sidebarWidth = 320.0;
+    const headerHeight = 56.0;
+
+    showMenu<String>(
+      context: context,
+      position: const RelativeRect.fromLTRB(
+        sidebarWidth - 200,
+        headerHeight + 4,
+        0,
+        0,
+      ),
+      color: EchoTheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: EchoTheme.border),
+      ),
+      items: [
+        const PopupMenuItem<String>(
+          value: 'contacts',
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.person_outline, color: EchoTheme.textSecondary),
+            title: Text(
+              'New Chat',
+              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Start a conversation with a contact',
+              style: TextStyle(color: EchoTheme.textMuted, fontSize: 12),
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        const PopupMenuItem<String>(
+          value: 'group',
+          child: ListTile(
+            dense: true,
+            leading: Icon(
+              Icons.group_add_outlined,
+              color: EchoTheme.textSecondary,
+            ),
+            title: Text(
+              'New Group',
+              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Create a group conversation',
+              style: TextStyle(color: EchoTheme.textMuted, fontSize: 12),
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        const PopupMenuItem<String>(
+          value: 'discover',
+          child: ListTile(
+            dense: true,
+            leading: Icon(
+              Icons.explore_outlined,
+              color: EchoTheme.textSecondary,
+            ),
+            title: Text(
+              'Discover Groups',
+              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Find and join public groups',
+              style: TextStyle(color: EchoTheme.textMuted, fontSize: 12),
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == null) return;
+      switch (value) {
+        case 'contacts':
+          _openContacts();
+        case 'group':
+          _openCreateGroup();
+        case 'discover':
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Coming soon')));
+          }
+      }
+    });
+  }
+
+  void _showNewChatBottomSheet() {
     showModalBottomSheet(
       context: context,
       backgroundColor: EchoTheme.surface,
@@ -131,7 +241,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
               onTap: () {
                 Navigator.pop(sheetContext);
-                context.push('/contacts');
+                _openContacts();
               },
             ),
             ListTile(
@@ -149,10 +259,93 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
               onTap: () {
                 Navigator.pop(sheetContext);
-                context.push('/create-group');
+                _openCreateGroup();
+              },
+            ),
+            ListTile(
+              leading: const Icon(
+                Icons.explore_outlined,
+                color: EchoTheme.textSecondary,
+              ),
+              title: const Text(
+                'Discover Groups',
+                style: TextStyle(color: EchoTheme.textPrimary),
+              ),
+              subtitle: const Text(
+                'Find and join public groups',
+                style: TextStyle(color: EchoTheme.textMuted),
+              ),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('Coming soon')));
               },
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  void _openContacts() {
+    if (_isDesktop) {
+      _showContactsDialog();
+    } else {
+      context.push('/contacts');
+    }
+  }
+
+  void _openCreateGroup() {
+    if (_isDesktop) {
+      _showCreateGroupDialog();
+    } else {
+      context.push('/create-group');
+    }
+  }
+
+  void _showContactsDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: EchoTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: EchoTheme.border),
+        ),
+        child: SizedBox(
+          width: 480,
+          height: 600,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: ContactsScreen(
+              onStartConversation: (conv) {
+                Navigator.pop(dialogContext);
+                _selectConversation(conv);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showCreateGroupDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: EchoTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: EchoTheme.border),
+        ),
+        child: SizedBox(
+          width: 480,
+          height: 600,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: const CreateGroupScreen(),
+          ),
         ),
       ),
     );
@@ -164,10 +357,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     context.push('/group-info/${conv.id}');
   }
 
+  void _toggleMembers() {
+    setState(() {
+      _showMembers = !_showMembers;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final isNarrow = width < 600;
+    final isDesktop = width >= 900;
 
     // Listen for errors
     ref.listen<ConversationsState>(conversationsProvider, (prev, next) {
@@ -193,9 +393,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (isNarrow) {
       return _buildNarrowLayout();
     }
+    if (isDesktop) {
+      return _buildDesktopLayout();
+    }
     return _buildWideLayout();
   }
 
+  /// Desktop layout: 320px sidebar + flex chat + optional 280px members panel
+  Widget _buildDesktopLayout() {
+    return Scaffold(
+      body: Row(
+        children: [
+          // Left sidebar: conversations (320px)
+          SizedBox(
+            width: 320,
+            child: ConversationPanel(
+              selectedConversationId: _selectedConversation?.id,
+              onConversationTap: _selectConversation,
+              onNewChat: _showNewChatOptions,
+              onSettings: () => context.push('/settings'),
+              onShowContacts: _openContacts,
+            ),
+          ),
+          // Thin vertical divider
+          Container(width: 1, color: EchoTheme.border),
+          // Center: chat area (flex)
+          Expanded(
+            child: _selectedConversation != null
+                ? ChatPanel(
+                    conversation: _selectedConversation,
+                    onGroupInfo: _showGroupInfo,
+                    onMembersToggle: _selectedConversation?.isGroup == true
+                        ? _toggleMembers
+                        : null,
+                  )
+                : _buildEmptyState(),
+          ),
+          // Right: members panel (optional, 280px)
+          if (_showMembers &&
+              _selectedConversation != null &&
+              _selectedConversation!.isGroup) ...[
+            Container(width: 1, color: EchoTheme.border),
+            MembersPanel(conversation: _selectedConversation),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Tablet layout (600-899px): 300px sidebar + flex chat
   Widget _buildWideLayout() {
     return Scaffold(
       body: Row(
@@ -208,6 +454,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onConversationTap: _selectConversation,
               onNewChat: _showNewChatOptions,
               onSettings: () => context.push('/settings'),
+              onShowContacts: _openContacts,
             ),
           ),
           // Thin vertical divider
@@ -264,6 +511,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onConversationTap: _selectConversation,
         onNewChat: _showNewChatOptions,
         onSettings: () => context.push('/settings'),
+        onShowContacts: _openContacts,
       ),
     );
   }

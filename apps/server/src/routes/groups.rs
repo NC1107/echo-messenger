@@ -1,7 +1,7 @@
 //! Group management REST endpoints.
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,21 @@ use super::AppState;
 pub struct CreateGroupRequest {
     pub name: String,
     pub member_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub is_public: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PublicGroupsQuery {
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublicGroupResponse {
+    pub id: Uuid,
+    pub title: Option<String>,
+    pub member_count: i64,
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Serialize)]
@@ -51,12 +66,18 @@ pub async fn create_group(
         ));
     }
 
-    let group = db::groups::create_group(&state.pool, auth.user_id, &body.name, &body.member_ids)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to create group: {:?}", e);
-            AppError::internal("Failed to create group")
-        })?;
+    let group = db::groups::create_group_with_visibility(
+        &state.pool,
+        auth.user_id,
+        &body.name,
+        &body.member_ids,
+        body.is_public,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to create group: {:?}", e);
+        AppError::internal("Failed to create group")
+    })?;
 
     let members = db::groups::get_group_members(&state.pool, group.id)
         .await
@@ -188,6 +209,52 @@ pub async fn remove_member(
     }
 
     Ok(Json(serde_json::json!({ "status": "removed" })))
+}
+
+/// GET /api/groups/public -- List public groups.
+pub async fn list_public_groups(
+    _auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<PublicGroupsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let groups = db::groups::list_public_groups(&state.pool, query.search.as_deref())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to list public groups: {:?}", e);
+            AppError::internal("Failed to list public groups")
+        })?;
+
+    let response: Vec<PublicGroupResponse> = groups
+        .into_iter()
+        .map(|g| PublicGroupResponse {
+            id: g.id,
+            title: g.title,
+            member_count: g.member_count,
+            created_at: g.created_at,
+        })
+        .collect();
+
+    Ok(Json(response))
+}
+
+/// POST /api/groups/:id/join -- Join a public group.
+pub async fn join_group(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let joined = db::groups::join_public_group(&state.pool, group_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to join group: {:?}", e);
+            AppError::internal("Failed to join group")
+        })?;
+
+    if !joined {
+        return Err(AppError::bad_request("Group not found or is not public"));
+    }
+
+    Ok(Json(serde_json::json!({ "status": "joined" })))
 }
 
 /// POST /api/groups/:id/leave -- Leave a group.

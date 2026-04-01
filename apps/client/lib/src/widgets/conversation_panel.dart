@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
+import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 
-class ConversationPanel extends ConsumerWidget {
+class ConversationPanel extends ConsumerStatefulWidget {
   final String? selectedConversationId;
   final void Function(Conversation conversation) onConversationTap;
   final VoidCallback? onNewChat;
   final VoidCallback? onSettings;
+  final VoidCallback? onShowContacts;
 
   const ConversationPanel({
     super.key,
@@ -19,7 +22,33 @@ class ConversationPanel extends ConsumerWidget {
     required this.onConversationTap,
     this.onNewChat,
     this.onSettings,
+    this.onShowContacts,
   });
+
+  @override
+  ConsumerState<ConversationPanel> createState() => _ConversationPanelState();
+}
+
+class _ConversationPanelState extends ConsumerState<ConversationPanel> {
+  String _searchQuery = '';
+  bool _isSearching = false;
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _clearSearch() {
+    setState(() {
+      _searchQuery = '';
+      _isSearching = false;
+      _searchController.clear();
+    });
+  }
 
   String _formatTimestamp(String? timestamp) {
     if (timestamp == null || timestamp.isEmpty) return '';
@@ -46,13 +75,26 @@ class ConversationPanel extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final conversationsState = ref.watch(conversationsProvider);
     final myUserId = ref.watch(authProvider).userId ?? '';
     final myUsername = ref.watch(authProvider).username ?? 'User';
     final wsState = ref.watch(websocketProvider);
+    final contactsState = ref.watch(contactsProvider);
 
-    final conversations = conversationsState.conversations;
+    final pendingCount = contactsState.pendingRequests.length;
+
+    final allConversations = conversationsState.conversations;
+
+    // Filter conversations by search query
+    final conversations = _searchQuery.isEmpty
+        ? allConversations
+        : allConversations.where((conv) {
+            final query = _searchQuery.toLowerCase();
+            final name = conv.displayName(myUserId).toLowerCase();
+            final lastMsg = (conv.lastMessage ?? '').toLowerCase();
+            return name.contains(query) || lastMsg.contains(query);
+          }).toList();
 
     return Container(
       color: EchoTheme.sidebarBg,
@@ -90,16 +132,45 @@ class ConversationPanel extends ConsumerWidget {
                   ),
                 ),
                 const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  color: EchoTheme.textSecondary,
-                  tooltip: 'New Chat',
-                  onPressed: onNewChat,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
-                  ),
+                // New chat icon with pending badge
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      color: EchoTheme.textSecondary,
+                      tooltip: 'New Chat',
+                      onPressed: widget.onNewChat,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                    ),
+                    if (pendingCount > 0)
+                      Positioned(
+                        top: -2,
+                        right: -2,
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          decoration: const BoxDecoration(
+                            color: EchoTheme.danger,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              pendingCount > 9 ? '9+' : '$pendingCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -107,32 +178,150 @@ class ConversationPanel extends ConsumerWidget {
           // Search bar
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Container(
-              height: 36,
-              decoration: BoxDecoration(
-                color: EchoTheme.surface,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Row(
-                children: [
-                  SizedBox(width: 12),
-                  Icon(
-                    Icons.search_outlined,
-                    size: 18,
-                    color: EchoTheme.textMuted,
-                  ),
-                  SizedBox(width: 8),
-                  Text(
-                    'Search conversations',
-                    style: TextStyle(color: EchoTheme.textMuted, fontSize: 13),
-                  ),
-                ],
+            child: GestureDetector(
+              onTap: () {
+                if (!_isSearching) {
+                  setState(() => _isSearching = true);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _searchFocusNode.requestFocus();
+                  });
+                }
+              },
+              child: Container(
+                height: 36,
+                decoration: BoxDecoration(
+                  color: EchoTheme.surface,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: _isSearching
+                    ? KeyboardListener(
+                        focusNode: FocusNode(),
+                        onKeyEvent: (event) {
+                          if (event is KeyDownEvent &&
+                              event.logicalKey == LogicalKeyboardKey.escape) {
+                            _clearSearch();
+                          }
+                        },
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 12),
+                            const Icon(
+                              Icons.search_outlined,
+                              size: 18,
+                              color: EchoTheme.textMuted,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextField(
+                                controller: _searchController,
+                                focusNode: _searchFocusNode,
+                                autofocus: true,
+                                style: const TextStyle(
+                                  color: EchoTheme.textPrimary,
+                                  fontSize: 13,
+                                ),
+                                decoration: const InputDecoration(
+                                  hintText: 'Search conversations',
+                                  hintStyle: TextStyle(
+                                    color: EchoTheme.textMuted,
+                                    fontSize: 13,
+                                  ),
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  filled: false,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                  isDense: true,
+                                ),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _searchQuery = value.trim();
+                                  });
+                                },
+                              ),
+                            ),
+                            if (_searchQuery.isNotEmpty)
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 16),
+                                color: EchoTheme.textMuted,
+                                onPressed: _clearSearch,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 28,
+                                  minHeight: 28,
+                                ),
+                              )
+                            else
+                              const SizedBox(width: 8),
+                          ],
+                        ),
+                      )
+                    : const Row(
+                        children: [
+                          SizedBox(width: 12),
+                          Icon(
+                            Icons.search_outlined,
+                            size: 18,
+                            color: EchoTheme.textMuted,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Search conversations',
+                            style: TextStyle(
+                              color: EchoTheme.textMuted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
               ),
             ),
           ),
+          // Pending requests banner
+          if (pendingCount > 0)
+            GestureDetector(
+              onTap: widget.onShowContacts ?? widget.onSettings,
+              child: Container(
+                height: 48,
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: EchoTheme.accent.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.person_add_outlined,
+                      size: 18,
+                      color: EchoTheme.accent,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '$pendingCount pending request${pendingCount == 1 ? '' : 's'}',
+                        style: const TextStyle(
+                          color: EchoTheme.accent,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: EchoTheme.accent,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (pendingCount > 0) const SizedBox(height: 4),
           // Conversation list
           Expanded(
-            child: conversationsState.isLoading && conversations.isEmpty
+            child: conversationsState.isLoading && allConversations.isEmpty
                 ? const Center(
                     child: CircularProgressIndicator(
                       color: EchoTheme.accent,
@@ -147,24 +336,30 @@ class ConversationPanel extends ConsumerWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            Icons.forum_outlined,
+                            _searchQuery.isNotEmpty
+                                ? Icons.search_off
+                                : Icons.forum_outlined,
                             size: 40,
                             color: EchoTheme.textMuted.withValues(alpha: 0.5),
                           ),
                           const SizedBox(height: 16),
-                          const Text(
-                            'No conversations yet',
-                            style: TextStyle(
+                          Text(
+                            _searchQuery.isNotEmpty
+                                ? 'No results found'
+                                : 'No conversations yet',
+                            style: const TextStyle(
                               color: EchoTheme.textSecondary,
                               fontSize: 14,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
                           const SizedBox(height: 8),
-                          const Text(
-                            'Start a new chat to get going',
+                          Text(
+                            _searchQuery.isNotEmpty
+                                ? 'Try a different search term'
+                                : 'Start a new chat to get going',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: EchoTheme.textMuted,
                               fontSize: 13,
                             ),
@@ -181,13 +376,14 @@ class ConversationPanel extends ConsumerWidget {
                     itemCount: conversations.length,
                     itemBuilder: (context, index) {
                       final conv = conversations[index];
-                      final isSelected = conv.id == selectedConversationId;
+                      final isSelected =
+                          conv.id == widget.selectedConversationId;
                       return _ConversationItem(
                         conversation: conv,
                         myUserId: myUserId,
                         isSelected: isSelected,
                         timestamp: _formatTimestamp(conv.lastMessageTimestamp),
-                        onTap: () => onConversationTap(conv),
+                        onTap: () => widget.onConversationTap(conv),
                       );
                     },
                   ),
@@ -265,7 +461,7 @@ class ConversationPanel extends ConsumerWidget {
                   icon: const Icon(Icons.settings_outlined, size: 18),
                   color: EchoTheme.textSecondary,
                   tooltip: 'Settings',
-                  onPressed: onSettings,
+                  onPressed: widget.onSettings,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
                     minWidth: 32,

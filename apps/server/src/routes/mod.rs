@@ -65,9 +65,11 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let group_routes = Router::new()
         .route("/", post(groups::create_group))
+        .route("/public", get(groups::list_public_groups))
         .route("/{id}", get(groups::get_group))
         .route("/{id}/members", post(groups::add_member))
         .route("/{id}/members/{user_id}", delete(groups::remove_member))
+        .route("/{id}/join", post(groups::join_group))
         .route("/{id}/leave", post(groups::leave_group));
 
     Router::new()

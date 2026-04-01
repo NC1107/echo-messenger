@@ -2,16 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../models/conversation.dart';
 import '../providers/contacts_provider.dart';
+import '../providers/conversations_provider.dart';
+import '../theme/echo_theme.dart';
 
 class ContactsScreen extends ConsumerStatefulWidget {
-  const ContactsScreen({super.key});
+  /// When provided, tapping "Message" on a contact will call this callback
+  /// instead of navigating away. Used when ContactsScreen is shown in a dialog.
+  final void Function(Conversation)? onStartConversation;
+
+  const ContactsScreen({super.key, this.onStartConversation});
 
   @override
   ConsumerState<ContactsScreen> createState() => _ContactsScreenState();
 }
 
 class _ContactsScreenState extends ConsumerState<ContactsScreen> {
+  bool _isStartingDm = false;
+
   @override
   void initState() {
     super.initState();
@@ -60,6 +69,35 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _messageContact(String userId, String username) async {
+    if (_isStartingDm) return;
+    setState(() => _isStartingDm = true);
+
+    try {
+      final conv = await ref
+          .read(conversationsProvider.notifier)
+          .getOrCreateDm(userId, username);
+
+      if (!mounted) return;
+
+      if (conv != null) {
+        if (widget.onStartConversation != null) {
+          widget.onStartConversation!(conv);
+        } else {
+          context.go('/home');
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not start conversation')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isStartingDm = false);
+      }
+    }
   }
 
   @override
@@ -137,11 +175,35 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                         subtitle: contact.displayName != null
                             ? Text('@${contact.username}')
                             : null,
-                        trailing: const Icon(Icons.chevron_right_outlined),
-                        onTap: () {
-                          // Navigate back to home -- the user can select the conversation there
-                          context.go('/home');
-                        },
+                        trailing: SizedBox(
+                          height: 32,
+                          child: Material(
+                            color: EchoTheme.accentLight,
+                            borderRadius: BorderRadius.circular(6),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(6),
+                              onTap: _isStartingDm
+                                  ? null
+                                  : () => _messageContact(
+                                      contact.userId,
+                                      contact.username,
+                                    ),
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 12),
+                                child: Center(
+                                  child: Text(
+                                    'Message',
+                                    style: TextStyle(
+                                      color: EchoTheme.accent,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ],

@@ -590,11 +590,23 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     minHeight: 36,
                   ),
                 ),
-                if (conv.isGroup)
+                if (conv.isGroup) ...[
+                  if (widget.onMembersToggle != null)
+                    IconButton(
+                      icon: const Icon(Icons.people_outline, size: 20),
+                      color: EchoTheme.textSecondary,
+                      tooltip: 'Members',
+                      onPressed: widget.onMembersToggle,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                    ),
                   IconButton(
-                    icon: const Icon(Icons.people_outline, size: 20),
+                    icon: const Icon(Icons.info_outline, size: 20),
                     color: EchoTheme.textSecondary,
-                    tooltip: 'Members',
+                    tooltip: 'Group Info',
                     onPressed: widget.onGroupInfo,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
@@ -602,6 +614,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                       minHeight: 36,
                     ),
                   ),
+                ],
               ],
             ),
           ),
