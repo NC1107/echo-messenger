@@ -66,10 +66,7 @@ pub async fn upload(
             continue;
         }
 
-        let original_filename = field
-            .file_name()
-            .unwrap_or("upload")
-            .to_string();
+        let original_filename = field.file_name().unwrap_or("upload").to_string();
 
         let mime_type = field
             .content_type()

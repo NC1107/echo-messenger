@@ -38,9 +38,6 @@ void main() async {
   }
 
   runApp(
-    UncontrolledProviderScope(
-      container: container,
-      child: const EchoApp(),
-    ),
+    UncontrolledProviderScope(container: container, child: const EchoApp()),
   );
 }

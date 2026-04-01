@@ -117,24 +117,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading:
-                  const Icon(Icons.person_outline, color: EchoTheme.textSecondary),
-              title: const Text('New Chat',
-                  style: TextStyle(color: EchoTheme.textPrimary)),
-              subtitle: const Text('Start a conversation with a contact',
-                  style: TextStyle(color: EchoTheme.textMuted)),
+              leading: const Icon(
+                Icons.person_outline,
+                color: EchoTheme.textSecondary,
+              ),
+              title: const Text(
+                'New Chat',
+                style: TextStyle(color: EchoTheme.textPrimary),
+              ),
+              subtitle: const Text(
+                'Start a conversation with a contact',
+                style: TextStyle(color: EchoTheme.textMuted),
+              ),
               onTap: () {
                 Navigator.pop(sheetContext);
                 context.push('/contacts');
               },
             ),
             ListTile(
-              leading: const Icon(Icons.group_add_outlined,
-                  color: EchoTheme.textSecondary),
-              title: const Text('New Group',
-                  style: TextStyle(color: EchoTheme.textPrimary)),
-              subtitle: const Text('Create a group conversation',
-                  style: TextStyle(color: EchoTheme.textMuted)),
+              leading: const Icon(
+                Icons.group_add_outlined,
+                color: EchoTheme.textSecondary,
+              ),
+              title: const Text(
+                'New Group',
+                style: TextStyle(color: EchoTheme.textPrimary),
+              ),
+              subtitle: const Text(
+                'Create a group conversation',
+                style: TextStyle(color: EchoTheme.textMuted),
+              ),
               onTap: () {
                 Navigator.pop(sheetContext);
                 context.push('/create-group');
@@ -160,8 +172,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Listen for errors
     ref.listen<ConversationsState>(conversationsProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(next.error!)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(next.error!)));
       }
     });
 
@@ -279,10 +292,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SizedBox(height: 8),
             const Text(
               'Pick someone from the left to start chatting',
-              style: TextStyle(
-                color: EchoTheme.textMuted,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: EchoTheme.textMuted, fontSize: 14),
             ),
           ],
         ),

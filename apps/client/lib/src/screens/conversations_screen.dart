@@ -130,8 +130,9 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
 
     ref.listen<ConversationsState>(conversationsProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(next.error!)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(next.error!)));
       }
     });
 
@@ -160,7 +161,9 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
             ),
             const SizedBox(width: 4),
             Icon(
-              cryptoState.isInitialized ? Icons.lock_outlined : Icons.lock_open_outlined,
+              cryptoState.isInitialized
+                  ? Icons.lock_outlined
+                  : Icons.lock_open_outlined,
               size: 14,
               color: cryptoState.isInitialized ? Colors.green : Colors.orange,
             ),
@@ -220,7 +223,8 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
           ),
         ],
       ),
-      body: conversationsState.isLoading &&
+      body:
+          conversationsState.isLoading &&
               conversationsState.conversations.isEmpty
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -252,8 +256,9 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                         final initials = displayName.isNotEmpty
                             ? displayName[0].toUpperCase()
                             : '?';
-                        final timeStr =
-                            _formatTimestamp(conv.lastMessageTimestamp);
+                        final timeStr = _formatTimestamp(
+                          conv.lastMessageTimestamp,
+                        );
 
                         String? snippet = conv.lastMessage;
                         // Preview text is already handled by the provider
@@ -261,8 +266,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                         if (snippet != null &&
                             conv.isGroup &&
                             conv.lastMessageSender != null) {
-                          snippet =
-                              '${conv.lastMessageSender}: $snippet';
+                          snippet = '${conv.lastMessageSender}: $snippet';
                         }
 
                         return ListTile(
@@ -282,7 +286,8 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                                   overflow: TextOverflow.ellipsis,
                                   style: conv.unreadCount > 0
                                       ? const TextStyle(
-                                          fontWeight: FontWeight.bold)
+                                          fontWeight: FontWeight.bold,
+                                        )
                                       : null,
                                 ),
                               ),
@@ -292,9 +297,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: conv.unreadCount > 0
-                                        ? Theme.of(context)
-                                            .colorScheme
-                                            .primary
+                                        ? Theme.of(context).colorScheme.primary
                                         : Colors.grey,
                                   ),
                                 ),
@@ -307,7 +310,8 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                                   overflow: TextOverflow.ellipsis,
                                   style: conv.unreadCount > 0
                                       ? const TextStyle(
-                                          fontWeight: FontWeight.w500)
+                                          fontWeight: FontWeight.w500,
+                                        )
                                       : null,
                                 )
                               : null,
@@ -315,8 +319,9 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                               ? Container(
                                   padding: const EdgeInsets.all(6),
                                   decoration: BoxDecoration(
-                                    color:
-                                        Theme.of(context).colorScheme.primary,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
                                     shape: BoxShape.circle,
                                   ),
                                   child: Text(
@@ -326,9 +331,9 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.bold,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onPrimary,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimary,
                                     ),
                                   ),
                                 )

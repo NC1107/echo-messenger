@@ -50,8 +50,9 @@ class ChatState {
     final updatedPeer = Map<String, List<ChatMessage>>.from(messagesByPeer);
     updatedPeer[peerKey] = [...(updatedPeer[peerKey] ?? []), msg];
 
-    final updatedConv =
-        Map<String, List<ChatMessage>>.from(messagesByConversation);
+    final updatedConv = Map<String, List<ChatMessage>>.from(
+      messagesByConversation,
+    );
     if (msg.conversationId.isNotEmpty) {
       final existing = updatedConv[msg.conversationId] ?? [];
       // Deduplicate by ID
@@ -83,8 +84,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.withMessage(peerKey, msg);
   }
 
-  void addOptimistic(String peerUserId, String content, String myUserId,
-      {String conversationId = ''}) {
+  void addOptimistic(
+    String peerUserId,
+    String content,
+    String myUserId, {
+    String conversationId = '',
+  }) {
     final msg = ChatMessage(
       id: 'pending_${DateTime.now().millisecondsSinceEpoch}',
       fromUserId: myUserId,
@@ -101,8 +106,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
   void confirmSent(String messageId, String conversationId, String timestamp) {
     // Replace the most recent pending/sending message in this conversation
     // with the server-assigned ID so that delivery receipts can match it.
-    final updatedConv =
-        Map<String, List<ChatMessage>>.from(state.messagesByConversation);
+    final updatedConv = Map<String, List<ChatMessage>>.from(
+      state.messagesByConversation,
+    );
     final messages = updatedConv[conversationId];
     if (messages != null) {
       // Find the most recent optimistic (pending_*) message from us
@@ -124,8 +130,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
 
     // Also update in peer-based map
-    final updatedPeer =
-        Map<String, List<ChatMessage>>.from(state.messagesByPeer);
+    final updatedPeer = Map<String, List<ChatMessage>>.from(
+      state.messagesByPeer,
+    );
     for (final key in updatedPeer.keys) {
       final peerMessages = updatedPeer[key]!;
       for (var i = peerMessages.length - 1; i >= 0; i--) {
@@ -155,8 +162,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   /// Load message history from the server for a conversation.
-  Future<void> loadHistory(String conversationId, String token,
-      {String? before}) async {
+  Future<void> loadHistory(
+    String conversationId,
+    String token, {
+    String? before,
+  }) async {
     if (state.isLoadingHistory(conversationId)) return;
 
     final updatedLoading = Map<String, bool>.from(state.loadingHistory);
@@ -184,8 +194,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
-        final List<dynamic> messagesList =
-            body is List ? body : (body['messages'] as List? ?? []);
+        final List<dynamic> messagesList = body is List
+            ? body
+            : (body['messages'] as List? ?? []);
 
         // We need the user ID to determine isMine. Extract from token or
         // pass it in. For now, we parse from the existing messages or use
@@ -249,20 +260,25 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
-        final List<dynamic> messagesList =
-            body is List ? body : (body['messages'] as List? ?? []);
+        final List<dynamic> messagesList = body is List
+            ? body
+            : (body['messages'] as List? ?? []);
 
         final newMessages = <ChatMessage>[];
         for (final e in messagesList) {
           var msg = ChatMessage.fromServerJson(
-              e as Map<String, dynamic>, myUserId);
+            e as Map<String, dynamic>,
+            myUserId,
+          );
 
           // Attempt to decrypt encrypted history messages
           if (_looksEncrypted(msg.content)) {
             if (crypto != null) {
               try {
                 final decrypted = await crypto.decryptMessage(
-                    msg.fromUserId, msg.content);
+                  msg.fromUserId,
+                  msg.content,
+                );
                 msg = msg.copyWith(content: decrypted);
               } catch (_) {
                 msg = msg.copyWith(content: '[Encrypted history]');
@@ -292,20 +308,28 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   void _mergeHistory(
-      String conversationId, List<dynamic> serverMessages, bool isPagination) {
+    String conversationId,
+    List<dynamic> serverMessages,
+    bool isPagination,
+  ) {
     // Without myUserId, we cannot properly set isMine. This method is a
     // fallback; prefer loadHistoryWithUserId.
   }
 
   void _mergeMessages(
-      String conversationId, List<ChatMessage> newMessages, bool isPagination) {
-    final updatedConv =
-        Map<String, List<ChatMessage>>.from(state.messagesByConversation);
+    String conversationId,
+    List<ChatMessage> newMessages,
+    bool isPagination,
+  ) {
+    final updatedConv = Map<String, List<ChatMessage>>.from(
+      state.messagesByConversation,
+    );
     final existing = updatedConv[conversationId] ?? [];
     final existingIds = existing.map((m) => m.id).toSet();
 
-    final deduped =
-        newMessages.where((m) => !existingIds.contains(m.id)).toList();
+    final deduped = newMessages
+        .where((m) => !existingIds.contains(m.id))
+        .toList();
 
     if (isPagination) {
       // Older messages go to the front
@@ -328,8 +352,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   /// Add a reaction to a message.
   void addReaction(String conversationId, Reaction reaction) {
-    final updatedConv =
-        Map<String, List<ChatMessage>>.from(state.messagesByConversation);
+    final updatedConv = Map<String, List<ChatMessage>>.from(
+      state.messagesByConversation,
+    );
     final messages = updatedConv[conversationId];
     if (messages == null) return;
 
@@ -338,7 +363,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
         final reactions = List<Reaction>.from(msg.reactions);
         // Remove existing reaction from same user with same emoji (toggle)
         reactions.removeWhere(
-            (r) => r.userId == reaction.userId && r.emoji == reaction.emoji);
+          (r) => r.userId == reaction.userId && r.emoji == reaction.emoji,
+        );
         reactions.add(reaction);
         return msg.copyWith(reactions: reactions);
       }
@@ -355,17 +381,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   /// Remove a reaction from a message.
   void removeReaction(
-      String conversationId, String messageId, String userId, String emoji) {
-    final updatedConv =
-        Map<String, List<ChatMessage>>.from(state.messagesByConversation);
+    String conversationId,
+    String messageId,
+    String userId,
+    String emoji,
+  ) {
+    final updatedConv = Map<String, List<ChatMessage>>.from(
+      state.messagesByConversation,
+    );
     final messages = updatedConv[conversationId];
     if (messages == null) return;
 
     updatedConv[conversationId] = messages.map((msg) {
       if (msg.id == messageId) {
         final reactions = List<Reaction>.from(msg.reactions);
-        reactions
-            .removeWhere((r) => r.userId == userId && r.emoji == emoji);
+        reactions.removeWhere((r) => r.userId == userId && r.emoji == emoji);
         return msg.copyWith(reactions: reactions);
       }
       return msg;
@@ -381,9 +411,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   /// Update message status (sent, delivered).
   void updateMessageStatus(
-      String conversationId, String messageId, MessageStatus status) {
-    final updatedConv =
-        Map<String, List<ChatMessage>>.from(state.messagesByConversation);
+    String conversationId,
+    String messageId,
+    MessageStatus status,
+  ) {
+    final updatedConv = Map<String, List<ChatMessage>>.from(
+      state.messagesByConversation,
+    );
     final messages = updatedConv[conversationId];
     if (messages == null) return;
 

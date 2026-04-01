@@ -22,10 +22,7 @@ class WebSocketState {
   /// Map of conversationId -> set of usernames currently typing.
   final Map<String, Map<String, DateTime>> typingUsers;
 
-  const WebSocketState({
-    this.isConnected = false,
-    this.typingUsers = const {},
-  });
+  const WebSocketState({this.isConnected = false, this.typingUsers = const {}});
 
   WebSocketState copyWith({
     bool? isConnected,
@@ -103,14 +100,20 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   }
 
   /// Send an encrypted message to a peer.
-  Future<void> sendMessage(String toUserId, String content,
-      {String? conversationId}) async {
+  Future<void> sendMessage(
+    String toUserId,
+    String content, {
+    String? conversationId,
+  }) async {
     final cryptoState = ref.read(cryptoProvider);
 
     if (!cryptoState.isInitialized) {
       // Encryption not available -- show failure instead of sending plaintext
-      _addFailedMessage(toUserId, 'Encryption not initialized',
-          conversationId: conversationId ?? '');
+      _addFailedMessage(
+        toUserId,
+        'Encryption not initialized',
+        conversationId: conversationId ?? '',
+      );
       return;
     }
 
@@ -122,8 +125,11 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
       payload = await crypto.encryptMessage(toUserId, content);
     } catch (_) {
       // Encryption failed -- do NOT fall back to plaintext
-      _addFailedMessage(toUserId, 'Encryption failed',
-          conversationId: conversationId ?? '');
+      _addFailedMessage(
+        toUserId,
+        'Encryption failed',
+        conversationId: conversationId ?? '',
+      );
       return;
     }
 
@@ -140,8 +146,11 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   }
 
   /// Add a failed message to the chat so the user can see the error.
-  void _addFailedMessage(String peerUserId, String reason,
-      {String conversationId = ''}) {
+  void _addFailedMessage(
+    String peerUserId,
+    String reason, {
+    String conversationId = '',
+  }) {
     final myUserId = ref.read(authProvider).userId ?? '';
     final msg = ChatMessage(
       id: 'failed_${DateTime.now().millisecondsSinceEpoch}',
@@ -158,11 +167,13 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
 
   /// Send a message to a group conversation.
   Future<void> sendGroupMessage(String conversationId, String content) async {
-    _channel?.sink.add(jsonEncode({
-      'type': 'send_message',
-      'conversation_id': conversationId,
-      'content': content,
-    }));
+    _channel?.sink.add(
+      jsonEncode({
+        'type': 'send_message',
+        'conversation_id': conversationId,
+        'content': content,
+      }),
+    );
   }
 
   /// Send a typing indicator (throttled to max 1 per 3 seconds per conversation).
@@ -174,15 +185,17 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     }
     _lastTypingSent[conversationId] = now;
 
-    _channel?.sink.add(jsonEncode({
-      'type': 'typing',
-      'conversation_id': conversationId,
-    }));
+    _channel?.sink.add(
+      jsonEncode({'type': 'typing', 'conversation_id': conversationId}),
+    );
   }
 
   /// Send a reaction via REST (server broadcasts via WebSocket to other members).
   Future<void> sendReaction(
-      String conversationId, String messageId, String emoji) async {
+    String conversationId,
+    String messageId,
+    String emoji,
+  ) async {
     final token = ref.read(authProvider).token ?? '';
     final serverUrl = ref.read(serverUrlProvider);
     try {
@@ -199,13 +212,15 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
 
   /// Remove a reaction via REST.
   Future<void> removeReaction(
-      String conversationId, String messageId, String emoji) async {
+    String conversationId,
+    String messageId,
+    String emoji,
+  ) async {
     final token = ref.read(authProvider).token ?? '';
     final serverUrl = ref.read(serverUrlProvider);
     try {
       await http.delete(
-        Uri.parse(
-            '$serverUrl/api/messages/$messageId/reactions/$emoji'),
+        Uri.parse('$serverUrl/api/messages/$messageId/reactions/$emoji'),
         headers: {'Authorization': 'Bearer $token'},
       );
     } catch (_) {}
@@ -213,10 +228,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
 
   /// Send a read receipt via WebSocket.
   void sendReadReceipt(String conversationId) {
-    _channel?.sink.add(jsonEncode({
-      'type': 'read_receipt',
-      'conversation_id': conversationId,
-    }));
+    _channel?.sink.add(
+      jsonEncode({'type': 'read_receipt', 'conversation_id': conversationId}),
+    );
   }
 
   void _onMessage(String data) {
@@ -249,17 +263,13 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     final messageId = json['message_id'] as String;
     final conversationId = json['conversation_id'] as String;
     final timestamp = json['timestamp'] as String;
-    ref.read(chatProvider.notifier).confirmSent(
-          messageId,
-          conversationId,
-          timestamp,
-        );
+    ref
+        .read(chatProvider.notifier)
+        .confirmSent(messageId, conversationId, timestamp);
     // Update status to sent
-    ref.read(chatProvider.notifier).updateMessageStatus(
-          conversationId,
-          messageId,
-          MessageStatus.sent,
-        );
+    ref
+        .read(chatProvider.notifier)
+        .updateMessageStatus(conversationId, messageId, MessageStatus.sent);
   }
 
   void _handleNewMessage(Map<String, dynamic> json, String myUserId) {
@@ -275,15 +285,23 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
       final token = ref.read(authProvider).token ?? '';
       crypto.setToken(token);
       _decryptAndDeliverWithPreview(
-        crypto, json, rawContent, fromUserId, myUserId,
-        conversationId, timestamp, senderUsername,
+        crypto,
+        json,
+        rawContent,
+        fromUserId,
+        myUserId,
+        conversationId,
+        timestamp,
+        senderUsername,
       );
     } else {
       final msg = ChatMessage.fromServerJson(json, myUserId);
       ref.read(chatProvider.notifier).addMessage(msg);
 
       // Update conversations list with raw content
-      ref.read(conversationsProvider.notifier).onNewMessage(
+      ref
+          .read(conversationsProvider.notifier)
+          .onNewMessage(
             conversationId: conversationId,
             content: rawContent,
             timestamp: timestamp,
@@ -328,8 +346,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
         // with a fresh key fetch.
         try {
           await crypto.invalidateSessionKey(fromUserId);
-          decryptedContent =
-              await crypto.decryptMessage(fromUserId, rawContent);
+          decryptedContent = await crypto.decryptMessage(
+            fromUserId,
+            rawContent,
+          );
         } catch (retryError) {
           debugPrint(
             '[WebSocket] Decryption failed for message in $conversationId '
@@ -347,14 +367,15 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     ref.read(chatProvider.notifier).addMessage(msg);
 
     // Update conversations list with decrypted preview
-    ref.read(conversationsProvider.notifier).onNewMessage(
+    ref
+        .read(conversationsProvider.notifier)
+        .onNewMessage(
           conversationId: conversationId,
           content: decryptedContent,
           timestamp: timestamp,
           senderUsername: senderUsername,
         );
   }
-
 
   void _handleTyping(Map<String, dynamic> json, String myUserId) {
     final conversationId = json['conversation_id'] as String;
@@ -364,10 +385,12 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     // Don't show own typing indicator
     if (fromUserId == myUserId) return;
 
-    final updatedTyping =
-        Map<String, Map<String, DateTime>>.from(state.typingUsers);
-    final conversationTyping =
-        Map<String, DateTime>.from(updatedTyping[conversationId] ?? {});
+    final updatedTyping = Map<String, Map<String, DateTime>>.from(
+      state.typingUsers,
+    );
+    final conversationTyping = Map<String, DateTime>.from(
+      updatedTyping[conversationId] ?? {},
+    );
     conversationTyping[fromUsername] = DateTime.now();
     updatedTyping[conversationId] = conversationTyping;
 
@@ -393,7 +416,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   void _handleDelivered(Map<String, dynamic> json) {
     final conversationId = json['conversation_id'] as String;
     final messageId = json['message_id'] as String;
-    ref.read(chatProvider.notifier).updateMessageStatus(
+    ref
+        .read(chatProvider.notifier)
+        .updateMessageStatus(
           conversationId,
           messageId,
           MessageStatus.delivered,
@@ -404,8 +429,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   void _cleanupTyping() {
     final now = DateTime.now();
     var changed = false;
-    final updatedTyping =
-        Map<String, Map<String, DateTime>>.from(state.typingUsers);
+    final updatedTyping = Map<String, Map<String, DateTime>>.from(
+      state.typingUsers,
+    );
 
     for (final conversationId in updatedTyping.keys.toList()) {
       final users = Map<String, DateTime>.from(updatedTyping[conversationId]!);
@@ -439,5 +465,5 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
 
 final websocketProvider =
     StateNotifierProvider<WebSocketNotifier, WebSocketState>((ref) {
-  return WebSocketNotifier(ref);
-});
+      return WebSocketNotifier(ref);
+    });

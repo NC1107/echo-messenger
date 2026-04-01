@@ -20,7 +20,8 @@ class Conversation {
   });
 
   factory Conversation.fromJson(Map<String, dynamic> json) {
-    var membersList = (json['members'] as List?)
+    var membersList =
+        (json['members'] as List?)
             ?.map((e) => ConversationMember.fromJson(e as Map<String, dynamic>))
             .toList() ??
         [];
@@ -37,8 +38,7 @@ class Conversation {
 
     // Server returns kind as "direct"/"group", or is_group as bool
     final kind = json['kind'] as String?;
-    final isGroupValue =
-        json['is_group'] as bool? ?? (kind == 'group');
+    final isGroupValue = json['is_group'] as bool? ?? (kind == 'group');
 
     // Server returns last_message as an object with content/sender_username/created_at
     String? lastMsg;
@@ -102,10 +102,7 @@ class ConversationMember {
   final String userId;
   final String username;
 
-  const ConversationMember({
-    required this.userId,
-    required this.username,
-  });
+  const ConversationMember({required this.userId, required this.username});
 
   factory ConversationMember.fromJson(Map<String, dynamic> json) {
     return ConversationMember(

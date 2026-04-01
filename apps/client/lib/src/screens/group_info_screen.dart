@@ -35,8 +35,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   Future<void> _loadGroupInfo() async {
     // Try to find the conversation in the existing state first
     final conversations = ref.read(conversationsProvider).conversations;
-    final existing =
-        conversations.where((c) => c.id == widget.conversationId).firstOrNull;
+    final existing = conversations
+        .where((c) => c.id == widget.conversationId)
+        .firstOrNull;
 
     if (existing != null) {
       setState(() {
@@ -53,8 +54,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     try {
       final serverUrl = ref.read(serverUrlProvider);
       final response = await http.get(
-        Uri.parse(
-            '$serverUrl/api/conversations/${widget.conversationId}'),
+        Uri.parse('$serverUrl/api/conversations/${widget.conversationId}'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -83,8 +83,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final contacts = ref.read(contactsProvider).contacts;
     final existingMemberIds =
         _conversation?.members.map((m) => m.userId).toSet() ?? {};
-    final available =
-        contacts.where((c) => !existingMemberIds.contains(c.userId)).toList();
+    final available = contacts
+        .where((c) => !existingMemberIds.contains(c.userId))
+        .toList();
 
     if (available.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -121,8 +122,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final serverUrl = ref.read(serverUrlProvider);
     try {
       final response = await http.post(
-        Uri.parse(
-            '$serverUrl/api/groups/${widget.conversationId}/members'),
+        Uri.parse('$serverUrl/api/groups/${widget.conversationId}/members'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -133,16 +133,16 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       if (response.statusCode == 200 || response.statusCode == 201) {
         await _loadGroupInfo();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Member added')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Member added')));
         }
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to add member')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Failed to add member')));
       }
     }
   }
@@ -152,8 +152,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Leave Group'),
-        content:
-            const Text('Are you sure you want to leave this group?'),
+        content: const Text('Are you sure you want to leave this group?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -178,8 +177,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final serverUrl = ref.read(serverUrlProvider);
     try {
       final response = await http.post(
-        Uri.parse(
-            '$serverUrl/api/groups/${widget.conversationId}/leave'),
+        Uri.parse('$serverUrl/api/groups/${widget.conversationId}/leave'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -193,9 +191,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to leave group')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Failed to leave group')));
       }
     }
   }
@@ -243,9 +241,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           Center(
             child: Text(
               '${conv.members.length} members',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.grey,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
             ),
           ),
           const SizedBox(height: 24),
@@ -257,8 +255,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 Text(
                   'Members',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
                 const Spacer(),
                 IconButton(
@@ -275,8 +273,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 child: Text(member.username[0].toUpperCase()),
               ),
               title: Text(member.username),
-              subtitle:
-                  member.userId == myUserId ? const Text('You') : null,
+              subtitle: member.userId == myUserId ? const Text('You') : null,
             ),
           ),
           const Divider(),

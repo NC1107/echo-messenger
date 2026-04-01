@@ -108,10 +108,7 @@ void main() {
 
   group('ConversationMember', () {
     test('fromJson parses correctly', () {
-      final json = {
-        'user_id': 'user-1',
-        'username': 'alice',
-      };
+      final json = {'user_id': 'user-1', 'username': 'alice'};
 
       final member = ConversationMember.fromJson(json);
 

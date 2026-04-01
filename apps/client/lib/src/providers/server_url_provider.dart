@@ -12,8 +12,9 @@ const _prefsKeyServerUrl = 'echo_server_url';
 /// All providers and services that need the server URL should read from this
 /// single source of truth. The URL can be changed at runtime via the settings
 /// screen and is persisted in SharedPreferences.
-final serverUrlProvider =
-    StateNotifierProvider<ServerUrlNotifier, String>((ref) {
+final serverUrlProvider = StateNotifierProvider<ServerUrlNotifier, String>((
+  ref,
+) {
   return ServerUrlNotifier();
 });
 
@@ -33,7 +34,9 @@ class ServerUrlNotifier extends StateNotifier<String> {
   /// Update the server URL and persist to SharedPreferences.
   Future<void> setUrl(String url) async {
     // Normalize: remove trailing slash
-    final normalized = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+    final normalized = url.endsWith('/')
+        ? url.substring(0, url.length - 1)
+        : url;
     state = normalized;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefsKeyServerUrl, normalized);

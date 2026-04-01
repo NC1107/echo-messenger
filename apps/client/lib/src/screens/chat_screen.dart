@@ -84,7 +84,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       crypto.setToken(auth.token!);
     }
 
-    ref.read(chatProvider.notifier).loadHistoryWithUserId(
+    ref
+        .read(chatProvider.notifier)
+        .loadHistoryWithUserId(
           convId,
           auth.token!,
           auth.userId!,
@@ -135,7 +137,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       crypto.setToken(auth.token!);
     }
 
-    ref.read(chatProvider.notifier).loadHistoryWithUserId(
+    ref
+        .read(chatProvider.notifier)
+        .loadHistoryWithUserId(
           convId,
           auth.token!,
           auth.userId!,
@@ -151,19 +155,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final myUserId = ref.read(authProvider).userId ?? '';
     final convId = widget.conversationId ?? '';
 
-    ref.read(chatProvider.notifier).addOptimistic(
-          widget.userId,
-          text,
-          myUserId,
-          conversationId: convId,
-        );
+    ref
+        .read(chatProvider.notifier)
+        .addOptimistic(widget.userId, text, myUserId, conversationId: convId);
     _messageController.clear();
     _scrollToBottom();
 
     if (widget.isGroup) {
-      await ref
-          .read(websocketProvider.notifier)
-          .sendGroupMessage(convId, text);
+      await ref.read(websocketProvider.notifier).sendGroupMessage(convId, text);
     } else {
       await ref
           .read(websocketProvider.notifier)
@@ -205,30 +204,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             runSpacing: 12,
             alignment: WrapAlignment.center,
             children: _reactionEmojis.map((emoji) {
-              final alreadyReacted = message.reactions
-                  .any((r) => r.emoji == emoji && r.userId == myUserId);
+              final alreadyReacted = message.reactions.any(
+                (r) => r.emoji == emoji && r.userId == myUserId,
+              );
               return GestureDetector(
                 onTap: () {
                   Navigator.pop(sheetContext);
                   if (alreadyReacted) {
-                    ref.read(websocketProvider.notifier).removeReaction(
-                          convId,
-                          message.id,
-                          emoji,
-                        );
-                    ref.read(chatProvider.notifier).removeReaction(
-                          convId,
-                          message.id,
-                          myUserId,
-                          emoji,
-                        );
+                    ref
+                        .read(websocketProvider.notifier)
+                        .removeReaction(convId, message.id, emoji);
+                    ref
+                        .read(chatProvider.notifier)
+                        .removeReaction(convId, message.id, myUserId, emoji);
                   } else {
-                    ref.read(websocketProvider.notifier).sendReaction(
-                          convId,
-                          message.id,
-                          emoji,
-                        );
-                    ref.read(chatProvider.notifier).addReaction(
+                    ref
+                        .read(websocketProvider.notifier)
+                        .sendReaction(convId, message.id, emoji);
+                    ref
+                        .read(chatProvider.notifier)
+                        .addReaction(
                           convId,
                           Reaction(
                             messageId: message.id,
@@ -243,9 +238,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: alreadyReacted
-                        ? Theme.of(context)
-                            .colorScheme
-                            .primaryContainer
+                        ? Theme.of(context).colorScheme.primaryContainer
                         : null,
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -307,8 +300,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         label = 'Yesterday';
       } else {
         const months = [
-          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec',
         ];
         label = '${months[dt.month - 1]} ${dt.day}';
       }
@@ -394,8 +397,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         convId.isNotEmpty && chatState.isLoadingHistory(convId);
 
     // Typing indicators
-    final typingUsers =
-        convId.isNotEmpty ? wsState.typingIn(convId) : <String>[];
+    final typingUsers = convId.isNotEmpty
+        ? wsState.typingIn(convId)
+        : <String>[];
 
     ref.listen<ChatState>(chatProvider, (prev, next) {
       final prevCount = convId.isNotEmpty
@@ -426,8 +430,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       body: Column(
         children: [
           // Loading indicator for history pagination
-          if (isLoadingHistory)
-            const LinearProgressIndicator(),
+          if (isLoadingHistory) const LinearProgressIndicator(),
           Expanded(
             child: messages.isEmpty && !isLoadingHistory
                 ? Column(
@@ -458,8 +461,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       final msg = messages[msgIndex];
 
                       // Show sender name in group chats
-                      final showSenderName =
-                          widget.isGroup && !msg.isMine;
+                      final showSenderName = widget.isGroup && !msg.isMine;
 
                       // Message grouping: reduce spacing for consecutive
                       // messages from the same sender within 2 minutes
@@ -484,7 +486,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       Widget? dateHeader;
                       if (msgIndex == 0 ||
                           _differentDay(
-                              messages[msgIndex - 1].timestamp, msg.timestamp)) {
+                            messages[msgIndex - 1].timestamp,
+                            msg.timestamp,
+                          )) {
                         dateHeader = _buildDateHeader(msg.timestamp);
                       }
 
@@ -517,13 +521,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           if (typingUsers.isNotEmpty)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Text(
                 widget.isGroup
                     ? (typingUsers.length == 1
-                        ? '${typingUsers.first} is typing...'
-                        : '${typingUsers.join(", ")} are typing...')
+                          ? '${typingUsers.first} is typing...'
+                          : '${typingUsers.join(", ")} are typing...')
                     : 'typing...',
                 style: TextStyle(
                   fontSize: 12,
@@ -619,11 +622,7 @@ class _MessageBubble extends StatelessWidget {
           color: colorScheme.onPrimary.withValues(alpha: 0.7),
         );
       case MessageStatus.failed:
-        return Icon(
-          Icons.error_outline,
-          size: 14,
-          color: colorScheme.error,
-        );
+        return Icon(Icons.error_outline, size: 14, color: colorScheme.error);
     }
   }
 
@@ -641,11 +640,9 @@ class _MessageBubble extends StatelessWidget {
       child: Wrap(
         spacing: 4,
         children: grouped.entries.map((entry) {
-          final hasMyReaction =
-              entry.value.any((r) => r.userId == myUserId);
+          final hasMyReaction = entry.value.any((r) => r.userId == myUserId);
           return Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
               color: hasMyReaction
                   ? colorScheme.primaryContainer
@@ -683,19 +680,20 @@ class _MessageBubble extends StatelessWidget {
     final bubbleColor = isFailed
         ? colorScheme.errorContainer
         : isMine
-            ? colorScheme.primary
-            : const Color(0xFF2A2D3E);
+        ? colorScheme.primary
+        : const Color(0xFF2A2D3E);
     final textColor = isFailed
         ? colorScheme.onErrorContainer
         : isMine
-            ? colorScheme.onPrimary
-            : colorScheme.onSurface;
+        ? colorScheme.onPrimary
+        : colorScheme.onSurface;
 
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Column(
-        crossAxisAlignment:
-            isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: isMine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
           Container(
             constraints: BoxConstraints(
@@ -704,8 +702,7 @@ class _MessageBubble extends StatelessWidget {
             margin: EdgeInsets.symmetric(
               vertical: isGroupedWithPrevious ? 1 : 4,
             ),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: bubbleColor,
               borderRadius: BorderRadius.only(
@@ -730,10 +727,7 @@ class _MessageBubble extends StatelessWidget {
                       ),
                     ),
                   ),
-                Text(
-                  content,
-                  style: TextStyle(color: textColor),
-                ),
+                Text(content, style: TextStyle(color: textColor)),
                 if (showTimestamp) ...[
                   const SizedBox(height: 4),
                   Row(
@@ -745,10 +739,8 @@ class _MessageBubble extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 11,
                           color: isMine
-                              ? colorScheme.onPrimary
-                                  .withValues(alpha: 0.7)
-                              : colorScheme.onSurface
-                                  .withValues(alpha: 0.5),
+                              ? colorScheme.onPrimary.withValues(alpha: 0.7)
+                              : colorScheme.onSurface.withValues(alpha: 0.5),
                         ),
                       ),
                       if (isMine) ...[

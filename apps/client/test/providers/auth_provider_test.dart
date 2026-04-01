@@ -14,7 +14,12 @@ void main() {
     });
 
     test('copyWith preserves values', () {
-      const state = AuthState(isLoggedIn: true, userId: '123', username: 'alice', token: 'tok');
+      const state = AuthState(
+        isLoggedIn: true,
+        userId: '123',
+        username: 'alice',
+        token: 'tok',
+      );
       final copied = state.copyWith(error: 'test');
       expect(copied.isLoggedIn, isTrue);
       expect(copied.userId, '123');

@@ -18,9 +18,7 @@ class UserStatusBar extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: const BoxDecoration(
         color: EchoTheme.mainBg,
-        border: Border(
-          top: BorderSide(color: EchoTheme.border, width: 1),
-        ),
+        border: Border(top: BorderSide(color: EchoTheme.border, width: 1)),
       ),
       child: Row(
         children: [
@@ -48,10 +46,7 @@ class UserStatusBar extends ConsumerWidget {
                   decoration: BoxDecoration(
                     color: EchoTheme.online,
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: EchoTheme.mainBg,
-                      width: 2,
-                    ),
+                    border: Border.all(color: EchoTheme.mainBg, width: 2),
                   ),
                 ),
               ),
@@ -75,10 +70,7 @@ class UserStatusBar extends ConsumerWidget {
                 ),
                 const Text(
                   'Online',
-                  style: TextStyle(
-                    color: EchoTheme.textMuted,
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: EchoTheme.textMuted, fontSize: 11),
                 ),
               ],
             ),

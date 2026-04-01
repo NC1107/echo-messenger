@@ -57,9 +57,7 @@ pub async fn add_reaction(
         .map_err(|_| AppError::internal("Database error"))?;
 
     if !is_member {
-        return Err(AppError::unauthorized(
-            "Not a member of this conversation",
-        ));
+        return Err(AppError::unauthorized("Not a member of this conversation"));
     }
 
     let reaction = db::reactions::add_reaction(&state.pool, message_id, auth.user_id, &body.emoji)
@@ -109,9 +107,7 @@ pub async fn remove_reaction(
         .map_err(|_| AppError::internal("Database error"))?;
 
     if !is_member {
-        return Err(AppError::unauthorized(
-            "Not a member of this conversation",
-        ));
+        return Err(AppError::unauthorized("Not a member of this conversation"));
     }
 
     let removed = db::reactions::remove_reaction(&state.pool, message_id, auth.user_id, &emoji)
@@ -156,9 +152,7 @@ pub async fn mark_read(
         .map_err(|_| AppError::internal("Database error"))?;
 
     if !is_member {
-        return Err(AppError::unauthorized(
-            "Not a member of this conversation",
-        ));
+        return Err(AppError::unauthorized("Not a member of this conversation"));
     }
 
     db::reactions::mark_read(&state.pool, conversation_id, auth.user_id)
@@ -175,14 +169,14 @@ async fn broadcast_to_conversation<T: Serialize>(
     event: &T,
     exclude_user_id: Option<Uuid>,
 ) {
-    let member_ids = match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await
-    {
-        Ok(ids) => ids,
-        Err(e) => {
-            tracing::error!("Failed to get conversation members for broadcast: {:?}", e);
-            return;
-        }
-    };
+    let member_ids =
+        match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await {
+            Ok(ids) => ids,
+            Err(e) => {
+                tracing::error!("Failed to get conversation members for broadcast: {:?}", e);
+                return;
+            }
+        };
 
     let json = match serde_json::to_string(event) {
         Ok(j) => j,

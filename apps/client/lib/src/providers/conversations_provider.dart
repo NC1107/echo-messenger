@@ -44,9 +44,9 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   String? get _token => ref.read(authProvider).token;
 
   Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ${_token ?? ""}',
-      };
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ${_token ?? ""}',
+  };
 
   /// Load all conversations from the server.
   Future<void> loadConversations() async {
@@ -68,7 +68,9 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
-        final List<dynamic> list = body is List ? body : (body['conversations'] as List? ?? []);
+        final List<dynamic> list = body is List
+            ? body
+            : (body['conversations'] as List? ?? []);
         final conversations = list
             .map((e) => Conversation.fromJson(e as Map<String, dynamic>))
             .toList();
@@ -189,17 +191,13 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
       final response = await http.post(
         Uri.parse('$_serverUrl/api/groups'),
         headers: _headers,
-        body: jsonEncode({
-          'name': name,
-          'member_ids': memberIds,
-        }),
+        body: jsonEncode({'name': name, 'member_ids': memberIds}),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final conversationId = data['conversation_id'] as String? ??
-            data['id'] as String? ??
-            '';
+        final conversationId =
+            data['conversation_id'] as String? ?? data['id'] as String? ?? '';
         await loadConversations();
         return conversationId;
       } else {
@@ -218,5 +216,5 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
 
 final conversationsProvider =
     StateNotifierProvider<ConversationsNotifier, ConversationsState>((ref) {
-  return ConversationsNotifier(ref);
-});
+      return ConversationsNotifier(ref);
+    });

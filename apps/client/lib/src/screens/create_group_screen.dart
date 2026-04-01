@@ -102,8 +102,8 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
                 Text(
                   'Select Members',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 if (_selectedUserIds.isNotEmpty)
@@ -119,43 +119,42 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
             child: contactsState.isLoading && contactsState.contacts.isEmpty
                 ? const Center(child: CircularProgressIndicator())
                 : contactsState.contacts.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No contacts available.\nAdd contacts first.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: contactsState.contacts.length,
-                        itemBuilder: (context, index) {
-                          final contact = contactsState.contacts[index];
-                          final isSelected =
-                              _selectedUserIds.contains(contact.userId);
+                ? const Center(
+                    child: Text(
+                      'No contacts available.\nAdd contacts first.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: contactsState.contacts.length,
+                    itemBuilder: (context, index) {
+                      final contact = contactsState.contacts[index];
+                      final isSelected = _selectedUserIds.contains(
+                        contact.userId,
+                      );
 
-                          return CheckboxListTile(
-                            value: isSelected,
-                            onChanged: (checked) {
-                              setState(() {
-                                if (checked == true) {
-                                  _selectedUserIds.add(contact.userId);
-                                } else {
-                                  _selectedUserIds.remove(contact.userId);
-                                }
-                              });
-                            },
-                            secondary: CircleAvatar(
-                              child:
-                                  Text(contact.username[0].toUpperCase()),
-                            ),
-                            title: Text(
-                                contact.displayName ?? contact.username),
-                            subtitle: contact.displayName != null
-                                ? Text('@${contact.username}')
-                                : null,
-                          );
+                      return CheckboxListTile(
+                        value: isSelected,
+                        onChanged: (checked) {
+                          setState(() {
+                            if (checked == true) {
+                              _selectedUserIds.add(contact.userId);
+                            } else {
+                              _selectedUserIds.remove(contact.userId);
+                            }
+                          });
                         },
-                      ),
+                        secondary: CircleAvatar(
+                          child: Text(contact.username[0].toUpperCase()),
+                        ),
+                        title: Text(contact.displayName ?? contact.username),
+                        subtitle: contact.displayName != null
+                            ? Text('@${contact.username}')
+                            : null,
+                      );
+                    },
+                  ),
           ),
         ],
       ),

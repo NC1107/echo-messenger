@@ -85,7 +85,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       crypto.setToken(auth.token!);
     }
 
-    ref.read(chatProvider.notifier).loadHistoryWithUserId(
+    ref
+        .read(chatProvider.notifier)
+        .loadHistoryWithUserId(
           conv.id,
           auth.token!,
           auth.userId!,
@@ -132,7 +134,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       crypto.setToken(auth.token!);
     }
 
-    ref.read(chatProvider.notifier).loadHistoryWithUserId(
+    ref
+        .read(chatProvider.notifier)
+        .loadHistoryWithUserId(
           conv.id,
           auth.token!,
           auth.userId!,
@@ -153,18 +157,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     // Find peer user ID for DMs
     String peerUserId = '';
     if (!conv.isGroup) {
-      final peer = conv.members
-          .where((m) => m.userId != myUserId)
-          .firstOrNull;
+      final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
       peerUserId = peer?.userId ?? '';
     }
 
-    ref.read(chatProvider.notifier).addOptimistic(
-          peerUserId,
-          text,
-          myUserId,
-          conversationId: conv.id,
-        );
+    ref
+        .read(chatProvider.notifier)
+        .addOptimistic(peerUserId, text, myUserId, conversationId: conv.id);
     _messageController.clear();
     _scrollToBottom();
 
@@ -173,11 +172,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           .read(websocketProvider.notifier)
           .sendGroupMessage(conv.id, text);
     } else {
-      await ref.read(websocketProvider.notifier).sendMessage(
-            peerUserId,
-            text,
-            conversationId: conv.id,
-          );
+      await ref
+          .read(websocketProvider.notifier)
+          .sendMessage(peerUserId, text, conversationId: conv.id);
     }
   }
 
@@ -189,7 +186,24 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   }
 
   void _showEmojiPicker() {
-    final emojis = ['😀', '😂', '❤️', '👍', '🔥', '🎉', '😢', '😮', '🤔', '👀', '💪', '✨', '🙏', '💯', '😍', '🤣'];
+    final emojis = [
+      '😀',
+      '😂',
+      '❤️',
+      '👍',
+      '🔥',
+      '🎉',
+      '😢',
+      '😮',
+      '🤔',
+      '👀',
+      '💪',
+      '✨',
+      '🙏',
+      '💯',
+      '😍',
+      '🤣',
+    ];
     showModalBottomSheet(
       context: context,
       backgroundColor: EchoTheme.surface,
@@ -201,16 +215,20 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         child: Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: emojis.map((emoji) => GestureDetector(
-            onTap: () {
-              _messageController.text += emoji;
-              _messageController.selection = TextSelection.fromPosition(
-                TextPosition(offset: _messageController.text.length),
-              );
-              Navigator.pop(ctx);
-            },
-            child: Text(emoji, style: const TextStyle(fontSize: 28)),
-          )).toList(),
+          children: emojis
+              .map(
+                (emoji) => GestureDetector(
+                  onTap: () {
+                    _messageController.text += emoji;
+                    _messageController.selection = TextSelection.fromPosition(
+                      TextPosition(offset: _messageController.text.length),
+                    );
+                    Navigator.pop(ctx);
+                  },
+                  child: Text(emoji, style: const TextStyle(fontSize: 28)),
+                ),
+              )
+              .toList(),
         ),
       ),
     );
@@ -236,9 +254,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('File picker error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('File picker error: $e')));
     }
   }
 
@@ -291,8 +309,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         label = 'Yesterday';
       } else {
         const months = [
-          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec',
         ];
         label = '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
       }
@@ -379,8 +407,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             runSpacing: 12,
             alignment: WrapAlignment.center,
             children: reactionEmojis.map((emoji) {
-              final alreadyReacted = message.reactions
-                  .any((r) => r.emoji == emoji && r.userId == myUserId);
+              final alreadyReacted = message.reactions.any(
+                (r) => r.emoji == emoji && r.userId == myUserId,
+              );
               return GestureDetector(
                 onTap: () {
                   Navigator.pop(sheetContext);
@@ -404,31 +433,25 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     );
   }
 
-  void _toggleReaction(
-      ChatMessage message, String emoji, bool alreadyReacted) {
+  void _toggleReaction(ChatMessage message, String emoji, bool alreadyReacted) {
     final conv = widget.conversation;
     if (conv == null) return;
     final myUserId = ref.read(authProvider).userId ?? '';
 
     if (alreadyReacted) {
-      ref.read(websocketProvider.notifier).removeReaction(
-            conv.id,
-            message.id,
-            emoji,
-          );
-      ref.read(chatProvider.notifier).removeReaction(
-            conv.id,
-            message.id,
-            myUserId,
-            emoji,
-          );
+      ref
+          .read(websocketProvider.notifier)
+          .removeReaction(conv.id, message.id, emoji);
+      ref
+          .read(chatProvider.notifier)
+          .removeReaction(conv.id, message.id, myUserId, emoji);
     } else {
-      ref.read(websocketProvider.notifier).sendReaction(
-            conv.id,
-            message.id,
-            emoji,
-          );
-      ref.read(chatProvider.notifier).addReaction(
+      ref
+          .read(websocketProvider.notifier)
+          .sendReaction(conv.id, message.id, emoji);
+      ref
+          .read(chatProvider.notifier)
+          .addReaction(
             conv.id,
             Reaction(
               messageId: message.id,
@@ -459,10 +482,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               const SizedBox(height: 20),
               const Text(
                 'Select a conversation to start chatting',
-                style: TextStyle(
-                  color: EchoTheme.textMuted,
-                  fontSize: 16,
-                ),
+                style: TextStyle(color: EchoTheme.textMuted, fontSize: 16),
               ),
             ],
           ),
@@ -490,8 +510,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     // Listen for new messages to auto-scroll
     ref.listen<ChatState>(chatProvider, (prev, next) {
-      final prevCount =
-          prev?.messagesForConversation(conv.id).length ?? 0;
+      final prevCount = prev?.messagesForConversation(conv.id).length ?? 0;
       final nextCount = next.messagesForConversation(conv.id).length;
       if (nextCount > prevCount) {
         _scrollToBottom();
@@ -566,8 +585,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   tooltip: 'Search',
                   onPressed: () {},
                   padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 36, minHeight: 36),
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
                 ),
                 if (conv.isGroup)
                   IconButton(
@@ -576,8 +597,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     tooltip: 'Members',
                     onPressed: widget.onGroupInfo,
                     padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 36, minHeight: 36),
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
                   ),
               ],
             ),
@@ -606,8 +629,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                     ? EchoTheme.accent
                                     : _avatarColor(displayName),
                                 child: conv.isGroup
-                                    ? const Icon(Icons.group,
-                                        size: 32, color: Colors.white)
+                                    ? const Icon(
+                                        Icons.group,
+                                        size: 32,
+                                        color: Colors.white,
+                                      )
                                     : Text(
                                         displayName.isNotEmpty
                                             ? displayName[0].toUpperCase()
@@ -662,20 +688,16 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                       if (msgIndex > 0) {
                         final prev = messages[msgIndex - 1];
                         if (prev.fromUserId == msg.fromUserId &&
-                            _withinTwoMinutes(
-                                prev.timestamp, msg.timestamp) &&
-                            !_differentDay(
-                                prev.timestamp, msg.timestamp)) {
+                            _withinTwoMinutes(prev.timestamp, msg.timestamp) &&
+                            !_differentDay(prev.timestamp, msg.timestamp)) {
                           showHeader = false;
                         }
                       }
                       if (msgIndex < messages.length - 1) {
                         final next = messages[msgIndex + 1];
                         if (next.fromUserId == msg.fromUserId &&
-                            _withinTwoMinutes(
-                                msg.timestamp, next.timestamp) &&
-                            !_differentDay(
-                                msg.timestamp, next.timestamp)) {
+                            _withinTwoMinutes(msg.timestamp, next.timestamp) &&
+                            !_differentDay(msg.timestamp, next.timestamp)) {
                           isLastInGroup = false;
                         }
                       }
@@ -683,8 +705,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                       // Date divider
                       Widget? dateDivider;
                       if (msgIndex == 0 ||
-                          _differentDay(messages[msgIndex - 1].timestamp,
-                              msg.timestamp)) {
+                          _differentDay(
+                            messages[msgIndex - 1].timestamp,
+                            msg.timestamp,
+                          )) {
                         dateDivider = _buildDateDivider(msg.timestamp);
                       }
 
@@ -698,12 +722,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                             myUserId: myUserId,
                             onReactionTap: _showReactionPicker,
                             onReactionSelect: (message, emoji) {
-                              final alreadyReacted = message.reactions
-                                  .any((r) =>
-                                      r.emoji == emoji &&
-                                      r.userId == myUserId);
-                              _toggleReaction(
-                                  message, emoji, alreadyReacted);
+                              final alreadyReacted = message.reactions.any(
+                                (r) => r.emoji == emoji && r.userId == myUserId,
+                              );
+                              _toggleReaction(message, emoji, alreadyReacted);
                             },
                           ),
                         ],
@@ -715,13 +737,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           if (typingUsers.isNotEmpty)
             Container(
               width: double.infinity,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
               child: Text(
                 conv.isGroup
                     ? (typingUsers.length == 1
-                        ? '${typingUsers.first} is typing...'
-                        : '${typingUsers.join(", ")} are typing...')
+                          ? '${typingUsers.first} is typing...'
+                          : '${typingUsers.join(", ")} are typing...')
                     : '$displayName is typing...',
                 style: const TextStyle(
                   fontSize: 12,
@@ -753,8 +774,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                       tooltip: 'Attach file',
                       onPressed: _pickFile,
                       padding: EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints(minWidth: 36, minHeight: 36),
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
                     ),
                   ),
                   // Text field
@@ -772,8 +795,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
                         filled: false,
-                        contentPadding:
-                            EdgeInsets.symmetric(vertical: 10),
+                        contentPadding: EdgeInsets.symmetric(vertical: 10),
                       ),
                       onChanged: _onInputChanged,
                       onSubmitted: (_) => _sendMessage(),
@@ -781,14 +803,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   ),
                   // Emoji button
                   IconButton(
-                    icon:
-                        const Icon(Icons.sentiment_satisfied_alt_outlined, size: 18),
+                    icon: const Icon(
+                      Icons.sentiment_satisfied_alt_outlined,
+                      size: 18,
+                    ),
                     color: EchoTheme.textSecondary,
                     tooltip: 'Insert emoji',
                     onPressed: _showEmojiPicker,
                     padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 36, minHeight: 36),
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
                   ),
                   // Send button
                   if (!_isTextEmpty)

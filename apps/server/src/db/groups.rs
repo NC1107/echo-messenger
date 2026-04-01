@@ -108,11 +108,7 @@ pub async fn is_member(
 }
 
 /// Add a member to a group.
-pub async fn add_member(
-    pool: &PgPool,
-    group_id: Uuid,
-    user_id: Uuid,
-) -> Result<(), sqlx::Error> {
+pub async fn add_member(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1, $2)")
         .bind(group_id)
         .bind(user_id)
@@ -141,12 +137,11 @@ pub async fn get_conversation_member_ids(
     pool: &PgPool,
     conversation_id: Uuid,
 ) -> Result<Vec<Uuid>, sqlx::Error> {
-    let rows: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT user_id FROM conversation_members WHERE conversation_id = $1",
-    )
-    .bind(conversation_id)
-    .fetch_all(pool)
-    .await?;
+    let rows: Vec<(Uuid,)> =
+        sqlx::query_as("SELECT user_id FROM conversation_members WHERE conversation_id = $1")
+            .bind(conversation_id)
+            .fetch_all(pool)
+            .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
@@ -155,10 +150,9 @@ pub async fn get_conversation_kind(
     pool: &PgPool,
     conversation_id: Uuid,
 ) -> Result<Option<String>, sqlx::Error> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT kind FROM conversations WHERE id = $1")
-            .bind(conversation_id)
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<(String,)> = sqlx::query_as("SELECT kind FROM conversations WHERE id = $1")
+        .bind(conversation_id)
+        .fetch_optional(pool)
+        .await?;
     Ok(row.map(|(kind,)| kind))
 }

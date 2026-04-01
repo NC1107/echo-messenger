@@ -96,8 +96,10 @@ class ConversationPanel extends ConsumerWidget {
                   tooltip: 'New Chat',
                   onPressed: onNewChat,
                   padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                 ),
               ],
             ),
@@ -114,14 +116,15 @@ class ConversationPanel extends ConsumerWidget {
               child: const Row(
                 children: [
                   SizedBox(width: 12),
-                  Icon(Icons.search_outlined, size: 18, color: EchoTheme.textMuted),
+                  Icon(
+                    Icons.search_outlined,
+                    size: 18,
+                    color: EchoTheme.textMuted,
+                  ),
                   SizedBox(width: 8),
                   Text(
                     'Search conversations',
-                    style: TextStyle(
-                      color: EchoTheme.textMuted,
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: EchoTheme.textMuted, fontSize: 13),
                   ),
                 ],
               ),
@@ -137,58 +140,57 @@ class ConversationPanel extends ConsumerWidget {
                     ),
                   )
                 : conversations.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.forum_outlined,
-                                size: 40,
-                                color: EchoTheme.textMuted
-                                    .withValues(alpha: 0.5),
-                              ),
-                              const SizedBox(height: 16),
-                              const Text(
-                                'No conversations yet',
-                                style: TextStyle(
-                                  color: EchoTheme.textSecondary,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'Start a new chat to get going',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: EchoTheme.textMuted,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.forum_outlined,
+                            size: 40,
+                            color: EchoTheme.textMuted.withValues(alpha: 0.5),
                           ),
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 4, horizontal: 8),
-                        itemCount: conversations.length,
-                        itemBuilder: (context, index) {
-                          final conv = conversations[index];
-                          final isSelected =
-                              conv.id == selectedConversationId;
-                          return _ConversationItem(
-                            conversation: conv,
-                            myUserId: myUserId,
-                            isSelected: isSelected,
-                            timestamp:
-                                _formatTimestamp(conv.lastMessageTimestamp),
-                            onTap: () => onConversationTap(conv),
-                          );
-                        },
+                          const SizedBox(height: 16),
+                          const Text(
+                            'No conversations yet',
+                            style: TextStyle(
+                              color: EchoTheme.textSecondary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Start a new chat to get going',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: EchoTheme.textMuted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 4,
+                      horizontal: 8,
+                    ),
+                    itemCount: conversations.length,
+                    itemBuilder: (context, index) {
+                      final conv = conversations[index];
+                      final isSelected = conv.id == selectedConversationId;
+                      return _ConversationItem(
+                        conversation: conv,
+                        myUserId: myUserId,
+                        isSelected: isSelected,
+                        timestamp: _formatTimestamp(conv.lastMessageTimestamp),
+                        onTap: () => onConversationTap(conv),
+                      );
+                    },
+                  ),
           ),
           // User status bar at bottom
           Container(
@@ -228,10 +230,7 @@ class ConversationPanel extends ConsumerWidget {
                         decoration: BoxDecoration(
                           color: EchoTheme.online,
                           shape: BoxShape.circle,
-                          border: Border.all(
-                            color: EchoTheme.mainBg,
-                            width: 2,
-                          ),
+                          border: Border.all(color: EchoTheme.mainBg, width: 2),
                         ),
                       ),
                     ),
@@ -268,8 +267,10 @@ class ConversationPanel extends ConsumerWidget {
                   tooltip: 'Settings',
                   onPressed: onSettings,
                   padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                 ),
               ],
             ),
@@ -331,8 +332,8 @@ class _ConversationItemState extends State<_ConversationItem> {
             color: widget.isSelected
                 ? EchoTheme.accentLight
                 : _isHovered
-                    ? EchoTheme.surfaceHover
-                    : Colors.transparent,
+                ? EchoTheme.surfaceHover
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12),

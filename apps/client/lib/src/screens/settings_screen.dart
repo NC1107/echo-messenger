@@ -109,7 +109,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: controller,
-              style: const TextStyle(color: EchoTheme.textPrimary, fontSize: 14),
+              style: const TextStyle(
+                color: EchoTheme.textPrimary,
+                fontSize: 14,
+              ),
               decoration: const InputDecoration(
                 labelText: 'Server URL',
                 hintText: 'https://echo-messenger.us',
@@ -135,7 +138,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
             child: const Text('Save'),
           ),
         ],
@@ -150,7 +154,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Server URL updated. Please log out and log in again for changes to take full effect.'),
+              'Server URL updated. Please log out and log in again for changes to take full effect.',
+            ),
           ),
         );
       }
@@ -251,17 +256,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             title: const Text(
               'Connected to',
-              style: TextStyle(
-                color: EchoTheme.textPrimary,
-                fontSize: 15,
-              ),
+              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
             ),
             subtitle: Text(
               displayHost,
-              style: const TextStyle(
-                color: EchoTheme.textMuted,
-                fontSize: 12,
-              ),
+              style: const TextStyle(color: EchoTheme.textMuted, fontSize: 12),
             ),
           ),
           // Status
@@ -275,10 +274,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             title: const Text(
               'Status',
-              style: TextStyle(
-                color: EchoTheme.textPrimary,
-                fontSize: 15,
-              ),
+              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
             ),
             subtitle: Text(
               _checkingHealth
@@ -311,10 +307,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               title: const Text(
                 'Server version',
-                style: TextStyle(
-                  color: EchoTheme.textPrimary,
-                  fontSize: 15,
-                ),
+                style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
               ),
               subtitle: Text(
                 _serverVersion!,
@@ -333,17 +326,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             title: const Text(
               'Change server',
-              style: TextStyle(
-                color: EchoTheme.textPrimary,
-                fontSize: 15,
-              ),
+              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
             ),
             subtitle: const Text(
               'Connect to a different Echo server',
-              style: TextStyle(
-                color: EchoTheme.textMuted,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: EchoTheme.textMuted, fontSize: 12),
             ),
             trailing: const Icon(
               Icons.chevron_right,
@@ -383,10 +370,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             child: Text(
               'Echo Messenger v0.1.0',
-              style: TextStyle(
-                color: EchoTheme.textMuted,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: EchoTheme.textMuted, fontSize: 12),
             ),
           ),
           const SizedBox(height: 16),
@@ -397,7 +381,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               width: double.infinity,
               child: OutlinedButton.icon(
                 onPressed: () => _logout(context, ref),
-                icon: const Icon(Icons.logout, size: 18, color: EchoTheme.danger),
+                icon: const Icon(
+                  Icons.logout,
+                  size: 18,
+                  color: EchoTheme.danger,
+                ),
                 label: const Text(
                   'Log out',
                   style: TextStyle(color: EchoTheme.danger),
@@ -451,13 +439,14 @@ class _SettingsTile extends StatelessWidget {
       ),
       subtitle: Text(
         subtitle,
-        style: const TextStyle(
-          color: EchoTheme.textMuted,
-          fontSize: 12,
-        ),
+        style: const TextStyle(color: EchoTheme.textMuted, fontSize: 12),
       ),
       trailing: enabled
-          ? const Icon(Icons.chevron_right, color: EchoTheme.textMuted, size: 20)
+          ? const Icon(
+              Icons.chevron_right,
+              color: EchoTheme.textMuted,
+              size: 20,
+            )
           : null,
       enabled: enabled,
       onTap: onTap,

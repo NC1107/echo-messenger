@@ -151,7 +151,15 @@ async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str,
             to_user_id,
             content,
         } => {
-            handle_send_message(state, sender_id, sender_username, conversation_id, to_user_id, content).await;
+            handle_send_message(
+                state,
+                sender_id,
+                sender_username,
+                conversation_id,
+                to_user_id,
+                content,
+            )
+            .await;
         }
         ClientMessage::Typing { conversation_id } => {
             handle_typing(state, sender_id, sender_username, conversation_id).await;
@@ -208,12 +216,17 @@ async fn handle_send_message(
             }
         }
     } else {
-        send_error(state, sender_id, "Must provide conversation_id or to_user_id");
+        send_error(
+            state,
+            sender_id,
+            "Must provide conversation_id or to_user_id",
+        );
         return;
     };
 
     // Store message
-    let stored = match db::messages::store_message(&state.pool, conv_id, sender_id, &content).await {
+    let stored = match db::messages::store_message(&state.pool, conv_id, sender_id, &content).await
+    {
         Ok(row) => row,
         Err(_) => {
             send_error(state, sender_id, "Failed to store message");
@@ -258,7 +271,10 @@ async fn handle_send_message(
         if *member_id == sender_id {
             continue;
         }
-        if state.hub.send_to(member_id, WsMessage::Text(json.clone().into())) {
+        if state
+            .hub
+            .send_to(member_id, WsMessage::Text(json.clone().into()))
+        {
             delivered_ids.push(stored.id);
         }
     }

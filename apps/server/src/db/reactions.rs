@@ -40,14 +40,13 @@ pub async fn remove_reaction(
     user_id: Uuid,
     emoji: &str,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        "DELETE FROM reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3",
-    )
-    .bind(message_id)
-    .bind(user_id)
-    .bind(emoji)
-    .execute(pool)
-    .await?;
+    let result =
+        sqlx::query("DELETE FROM reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3")
+            .bind(message_id)
+            .bind(user_id)
+            .bind(emoji)
+            .execute(pool)
+            .await?;
     Ok(result.rows_affected() > 0)
 }
 
@@ -56,11 +55,10 @@ pub async fn get_message_conversation_id(
     pool: &PgPool,
     message_id: Uuid,
 ) -> Result<Option<Uuid>, sqlx::Error> {
-    let row: Option<(Uuid,)> =
-        sqlx::query_as("SELECT conversation_id FROM messages WHERE id = $1")
-            .bind(message_id)
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<(Uuid,)> = sqlx::query_as("SELECT conversation_id FROM messages WHERE id = $1")
+        .bind(message_id)
+        .fetch_optional(pool)
+        .await?;
     Ok(row.map(|(id,)| id))
 }
 

@@ -30,7 +30,9 @@ class EchoTheme {
   static const divider = border;
 
   static ThemeData get darkTheme {
-    final baseTextTheme = GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
+    final baseTextTheme = GoogleFonts.interTextTheme(
+      ThemeData.dark().textTheme,
+    );
     final textTheme = baseTextTheme.copyWith(
       headlineLarge: baseTextTheme.headlineLarge?.copyWith(
         fontSize: 24,
@@ -123,8 +125,10 @@ class EchoTheme {
           borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(color: accent, width: 1),
         ),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
         hintStyle: GoogleFonts.inter(color: textMuted, fontSize: 13),
         labelStyle: GoogleFonts.inter(color: textSecondary, fontSize: 13),
       ),
@@ -186,9 +190,7 @@ class EchoTheme {
       snackBarTheme: SnackBarThemeData(
         backgroundColor: surface,
         contentTextStyle: GoogleFonts.inter(color: textPrimary, fontSize: 13),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         behavior: SnackBarBehavior.floating,
       ),
     );

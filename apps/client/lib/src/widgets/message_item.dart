@@ -96,11 +96,7 @@ class _MessageItemState extends State<MessageItem> {
     if (matches.isEmpty) {
       return Text(
         text,
-        style: TextStyle(
-          fontSize: 15,
-          color: textColor,
-          height: 1.47,
-        ),
+        style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
       );
     }
 
@@ -110,54 +106,50 @@ class _MessageItemState extends State<MessageItem> {
     for (final match in matches) {
       // Text before the URL
       if (match.start > lastEnd) {
-        spans.add(TextSpan(
-          text: text.substring(lastEnd, match.start),
-          style: TextStyle(
-            fontSize: 15,
-            color: textColor,
-            height: 1.47,
+        spans.add(
+          TextSpan(
+            text: text.substring(lastEnd, match.start),
+            style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
           ),
-        ));
+        );
       }
 
       // The URL itself
       final url = match.group(0)!;
-      spans.add(TextSpan(
-        text: url,
-        style: const TextStyle(
-          fontSize: 15,
-          color: EchoTheme.accentHover,
-          decoration: TextDecoration.underline,
-          decorationColor: EchoTheme.accentHover,
-          height: 1.47,
+      spans.add(
+        TextSpan(
+          text: url,
+          style: const TextStyle(
+            fontSize: 15,
+            color: EchoTheme.accentHover,
+            decoration: TextDecoration.underline,
+            decorationColor: EchoTheme.accentHover,
+            height: 1.47,
+          ),
+          recognizer: TapGestureRecognizer()
+            ..onTap = () async {
+              final uri = Uri.tryParse(url);
+              if (uri != null && await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
         ),
-        recognizer: TapGestureRecognizer()
-          ..onTap = () async {
-            final uri = Uri.tryParse(url);
-            if (uri != null && await canLaunchUrl(uri)) {
-              await launchUrl(uri, mode: LaunchMode.externalApplication);
-            }
-          },
-      ));
+      );
 
       lastEnd = match.end;
     }
 
     // Remaining text after last URL
     if (lastEnd < text.length) {
-      spans.add(TextSpan(
-        text: text.substring(lastEnd),
-        style: TextStyle(
-          fontSize: 15,
-          color: textColor,
-          height: 1.47,
+      spans.add(
+        TextSpan(
+          text: text.substring(lastEnd),
+          style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
         ),
-      ));
+      );
     }
 
-    return RichText(
-      text: TextSpan(children: spans),
-    );
+    return RichText(text: TextSpan(children: spans));
   }
 
   Widget _buildReactions(List<Reaction> reactions, bool isMine) {
@@ -179,8 +171,9 @@ class _MessageItemState extends State<MessageItem> {
         runSpacing: 4,
         alignment: isMine ? WrapAlignment.end : WrapAlignment.start,
         children: grouped.entries.map((entry) {
-          final hasMyReaction =
-              entry.value.any((r) => r.userId == widget.myUserId);
+          final hasMyReaction = entry.value.any(
+            (r) => r.userId == widget.myUserId,
+          );
           return InkWell(
             onTap: () {
               widget.onReactionSelect?.call(widget.message, entry.key);
@@ -239,14 +232,16 @@ class _MessageItemState extends State<MessageItem> {
           bottom: 2,
         ),
         child: Column(
-          crossAxisAlignment:
-              isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: isMine
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           children: [
             Stack(
               children: [
                 Row(
-                  mainAxisAlignment:
-                      isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+                  mainAxisAlignment: isMine
+                      ? MainAxisAlignment.end
+                      : MainAxisAlignment.start,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     // Avatar for received messages (first in group only)
@@ -256,8 +251,7 @@ class _MessageItemState extends State<MessageItem> {
                         child: widget.showHeader
                             ? CircleAvatar(
                                 radius: 14,
-                                backgroundColor:
-                                    _getUserColor(msg.fromUserId),
+                                backgroundColor: _getUserColor(msg.fromUserId),
                                 child: Text(
                                   msg.fromUsername.isNotEmpty
                                       ? msg.fromUsername[0].toUpperCase()
@@ -280,20 +274,20 @@ class _MessageItemState extends State<MessageItem> {
                           maxWidth: MediaQuery.of(context).size.width * 0.65,
                         ),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: isFailed
                               ? EchoTheme.danger.withValues(alpha: 0.2)
                               : isMine
-                                  ? EchoTheme.sentBubble
-                                  : EchoTheme.recvBubble,
+                              ? EchoTheme.sentBubble
+                              : EchoTheme.recvBubble,
                           borderRadius: BorderRadius.only(
                             topLeft: const Radius.circular(16),
                             topRight: const Radius.circular(16),
-                            bottomLeft:
-                                Radius.circular(!isMine ? 4 : 16),
-                            bottomRight:
-                                Radius.circular(isMine ? 4 : 16),
+                            bottomLeft: Radius.circular(!isMine ? 4 : 16),
+                            bottomRight: Radius.circular(isMine ? 4 : 16),
                           ),
                         ),
                         child: Column(
@@ -318,8 +312,8 @@ class _MessageItemState extends State<MessageItem> {
                               textColor: isFailed
                                   ? EchoTheme.danger
                                   : isMine
-                                      ? Colors.white
-                                      : EchoTheme.textPrimary,
+                                  ? Colors.white
+                                  : EchoTheme.textPrimary,
                             ),
                           ],
                         ),
@@ -337,10 +331,7 @@ class _MessageItemState extends State<MessageItem> {
                       decoration: BoxDecoration(
                         color: EchoTheme.surface,
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: EchoTheme.border,
-                          width: 1,
-                        ),
+                        border: Border.all(color: EchoTheme.border, width: 1),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -348,8 +339,7 @@ class _MessageItemState extends State<MessageItem> {
                           _HoverActionButton(
                             icon: Icons.add_reaction_outlined,
                             tooltip: 'React',
-                            onPressed: () =>
-                                widget.onReactionTap?.call(msg),
+                            onPressed: () => widget.onReactionTap?.call(msg),
                           ),
                           _HoverActionButton(
                             icon: Icons.reply_outlined,
@@ -365,14 +355,12 @@ class _MessageItemState extends State<MessageItem> {
             // Timestamp (only on last in group)
             if (widget.isLastInGroup)
               Padding(
-                padding: EdgeInsets.only(
-                  top: 4,
-                  left: isMine ? 0 : 36,
-                ),
+                padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment:
-                      isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+                  mainAxisAlignment: isMine
+                      ? MainAxisAlignment.end
+                      : MainAxisAlignment.start,
                   children: [
                     Text(
                       _formatTimestamp(msg.timestamp),

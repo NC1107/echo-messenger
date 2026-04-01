@@ -75,9 +75,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
     });
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Contacts'),
-      ),
+      appBar: AppBar(title: const Text('Contacts')),
       body:
           contactsState.isLoading &&
               contactsState.contacts.isEmpty &&
