@@ -127,7 +127,7 @@ pub async fn upload(
 ///
 /// Returns the file with correct Content-Type and Content-Disposition headers.
 pub async fn download(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
@@ -137,6 +137,14 @@ pub async fn download(
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
         })?;
+
+    // Authorization: only the uploader can download directly
+    if row.uploader_id != auth.user_id {
+        return Err(AppError {
+            status: StatusCode::FORBIDDEN,
+            message: "You do not have access to this media".to_string(),
+        });
+    }
 
     let ext = extension_for_mime(&row.mime_type);
     let disk_path = format!("./uploads/{id}.{ext}");

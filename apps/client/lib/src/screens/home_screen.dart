@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -42,12 +43,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // Collapsible sidebar state
   bool _sidebarCollapsed = false;
 
+  // Search focus node for Ctrl+K shortcut
+  final _searchFocusNode = FocusNode();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initData();
     });
+  }
+
+  @override
+  void dispose() {
+    _searchFocusNode.dispose();
+    super.dispose();
   }
 
   Future<void> _initData() async {
@@ -276,6 +286,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onSettings: _openSettings,
       onShowContacts: _openContacts,
       onMessageContact: _messageContact,
+      externalSearchFocusNode: _searchFocusNode,
     );
   }
 
@@ -462,13 +473,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
 
+    Widget layout;
     if (isNarrow) {
-      return _buildNarrowLayout();
+      layout = _buildNarrowLayout();
+    } else if (isDesktop) {
+      layout = _buildDesktopLayout();
+    } else {
+      layout = _buildWideLayout();
     }
-    if (isDesktop) {
-      return _buildDesktopLayout();
-    }
-    return _buildWideLayout();
+
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
+          _searchFocusNode.requestFocus();
+        },
+      },
+      child: Focus(autofocus: true, child: layout),
+    );
   }
 
   /// Desktop layout: sidebar + flex chat + optional 280px members panel

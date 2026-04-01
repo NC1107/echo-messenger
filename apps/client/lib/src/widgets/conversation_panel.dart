@@ -87,6 +87,9 @@ class ConversationPanel extends ConsumerStatefulWidget {
   /// Should call getOrCreateDm and then select the conversation.
   final void Function(String userId, String username)? onMessageContact;
 
+  /// Optional external focus node for the search bar (e.g. for Ctrl+K shortcut).
+  final FocusNode? externalSearchFocusNode;
+
   const ConversationPanel({
     super.key,
     this.selectedConversationId,
@@ -97,6 +100,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
     this.onSettings,
     this.onShowContacts,
     this.onMessageContact,
+    this.externalSearchFocusNode,
   });
 
   @override
@@ -119,13 +123,37 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   void initState() {
     super.initState();
     _loadPinnedIds();
+    widget.externalSearchFocusNode?.addListener(_onExternalSearchFocus);
+  }
+
+  @override
+  void didUpdateWidget(covariant ConversationPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.externalSearchFocusNode != oldWidget.externalSearchFocusNode) {
+      oldWidget.externalSearchFocusNode?.removeListener(_onExternalSearchFocus);
+      widget.externalSearchFocusNode?.addListener(_onExternalSearchFocus);
+    }
   }
 
   @override
   void dispose() {
+    widget.externalSearchFocusNode?.removeListener(_onExternalSearchFocus);
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onExternalSearchFocus() {
+    if (widget.externalSearchFocusNode?.hasFocus == true) {
+      _activateSearch();
+    }
+  }
+
+  void _activateSearch() {
+    setState(() => _isSearching = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _searchFocusNode.requestFocus();
+    });
   }
 
   Future<void> _loadPinnedIds() async {
@@ -685,7 +713,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               const SizedBox(height: 16),
               Text(
                 _searchQuery.isNotEmpty
-                    ? 'No results found'
+                    ? "No results found for '$_searchQuery'"
                     : 'No conversations yet',
                 style: const TextStyle(
                   color: EchoTheme.textSecondary,
@@ -805,24 +833,33 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.group_outlined,
+                _searchQuery.isNotEmpty
+                    ? Icons.search_off
+                    : Icons.group_outlined,
                 size: 40,
                 color: EchoTheme.textMuted.withValues(alpha: 0.5),
               ),
               const SizedBox(height: 16),
-              const Text(
-                'No groups yet',
-                style: TextStyle(
+              Text(
+                _searchQuery.isNotEmpty
+                    ? "No results found for '$_searchQuery'"
+                    : 'No groups yet',
+                style: const TextStyle(
                   color: EchoTheme.textSecondary,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Create or join a group',
+              Text(
+                _searchQuery.isNotEmpty
+                    ? 'Try a different search term'
+                    : 'Create or join a group',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: EchoTheme.textMuted, fontSize: 13),
+                style: const TextStyle(
+                  color: EchoTheme.textMuted,
+                  fontSize: 13,
+                ),
               ),
             ],
           ),

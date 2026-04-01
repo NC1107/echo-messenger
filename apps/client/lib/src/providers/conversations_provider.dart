@@ -121,19 +121,16 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
 
     if (index >= 0) {
       final conv = updated[index];
-      updated[index] = conv.copyWith(
+      final updatedConv = conv.copyWith(
         lastMessage: content,
         lastMessageTimestamp: timestamp,
         lastMessageSender: senderUsername,
         unreadCount: conv.unreadCount + 1,
       );
 
-      // Re-sort by last activity
-      updated.sort((a, b) {
-        final aTime = a.lastMessageTimestamp ?? '';
-        final bTime = b.lastMessageTimestamp ?? '';
-        return bTime.compareTo(aTime);
-      });
+      // Move to top: O(n) remove + O(1) insert instead of O(n log n) sort
+      updated.removeAt(index);
+      updated.insert(0, updatedConv);
 
       state = state.copyWith(conversations: updated);
     } else {

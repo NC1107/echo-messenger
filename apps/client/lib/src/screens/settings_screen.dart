@@ -12,6 +12,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../providers/theme_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 
@@ -660,27 +661,47 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
   }
 
   Widget _buildAppearanceSection() {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.palette_outlined, size: 48, color: EchoTheme.textMuted),
-          SizedBox(height: 16),
-          Text(
-            'Coming soon',
-            style: TextStyle(
-              color: EchoTheme.textSecondary,
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-            ),
+    final currentMode = ref.watch(themeProvider);
+
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        const Text(
+          'Theme',
+          style: TextStyle(
+            color: EchoTheme.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
           ),
-          SizedBox(height: 8),
-          Text(
-            'Appearance settings will be available in a future update.',
-            style: TextStyle(color: EchoTheme.textMuted, fontSize: 13),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 16),
+        _ThemeOption(
+          label: 'System',
+          subtitle: 'Follow your device settings',
+          icon: Icons.settings_brightness_outlined,
+          isSelected: currentMode == ThemeMode.system,
+          onTap: () =>
+              ref.read(themeProvider.notifier).setThemeMode(ThemeMode.system),
+        ),
+        const SizedBox(height: 8),
+        _ThemeOption(
+          label: 'Dark',
+          subtitle: 'Easy on the eyes',
+          icon: Icons.dark_mode_outlined,
+          isSelected: currentMode == ThemeMode.dark,
+          onTap: () =>
+              ref.read(themeProvider.notifier).setThemeMode(ThemeMode.dark),
+        ),
+        const SizedBox(height: 8),
+        _ThemeOption(
+          label: 'Light',
+          subtitle: 'Classic bright look',
+          icon: Icons.light_mode_outlined,
+          isSelected: currentMode == ThemeMode.light,
+          onTap: () =>
+              ref.read(themeProvider.notifier).setThemeMode(ThemeMode.light),
+        ),
+      ],
     );
   }
 
@@ -847,6 +868,86 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   section: _selectedSection,
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeOption extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ThemeOption({
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: isSelected ? EchoTheme.accentLight : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        hoverColor: EchoTheme.surfaceHover,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? EchoTheme.accent : EchoTheme.border,
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 22,
+                color: isSelected ? EchoTheme.accent : EchoTheme.textSecondary,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: isSelected
+                            ? EchoTheme.accent
+                            : EchoTheme.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: EchoTheme.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isSelected)
+                const Icon(
+                  Icons.check_circle,
+                  size: 20,
+                  color: EchoTheme.accent,
+                ),
             ],
           ),
         ),

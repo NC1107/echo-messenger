@@ -14,7 +14,7 @@ impl Config {
     pub fn from_env() -> Self {
         Self {
             database_url: env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgres://echo:echo@localhost:5432/echo".into()),
+                .expect("DATABASE_URL environment variable must be set"),
             jwt_secret: env::var("JWT_SECRET")
                 .expect("JWT_SECRET environment variable must be set"),
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into()),

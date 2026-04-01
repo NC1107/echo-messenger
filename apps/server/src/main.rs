@@ -8,6 +8,7 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod middleware;
 mod routes;
 mod ws;
 
@@ -53,5 +54,21 @@ async fn main() {
         .await
         .expect("Failed to bind");
 
-    axum::serve(listener, app).await.expect("Server error");
+    // Graceful shutdown via Ctrl+C
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("Shutting down gracefully...");
+        shutdown_tx.send(()).ok();
+    });
+
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        shutdown_rx.await.ok();
+    })
+    .await
+    .expect("Server error");
 }

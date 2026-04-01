@@ -286,6 +286,13 @@ async fn handle_send_message(
         if *member_id == sender_id {
             continue;
         }
+        // Check if recipient has blocked the sender; if so, silently skip delivery
+        if db::contacts::is_blocked(&state.pool, *member_id, sender_id)
+            .await
+            .unwrap_or(false)
+        {
+            continue;
+        }
         if state
             .hub
             .send_to(member_id, WsMessage::Text(json.clone().into()))

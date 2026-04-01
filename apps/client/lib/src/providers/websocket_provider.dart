@@ -9,6 +9,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
+import '../services/sound_service.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
 import 'chat_provider.dart';
@@ -309,6 +310,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
         }
       case 'delivered':
         _handleDelivered(json);
+      case 'message_deleted':
+        _handleMessageDeleted(json);
+      case 'message_edited':
+        _handleMessageEdited(json);
       case 'error':
         break;
     }
@@ -334,6 +339,12 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     final timestamp = json['timestamp'] as String;
     final senderUsername = json['from_username'] as String;
     final cryptoState = ref.read(cryptoProvider);
+
+    // Check if this conversation is already known locally
+    final isKnownConversation = ref
+        .read(conversationsProvider)
+        .conversations
+        .any((c) => c.id == conversationId);
 
     if (cryptoState.isInitialized) {
       final crypto = ref.read(cryptoServiceProvider);
@@ -364,9 +375,16 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
           );
     }
 
-    // Brute-force: always reload conversations from server to ensure the list
-    // is current, regardless of whether the conversation was already known.
-    ref.read(conversationsProvider.notifier).loadConversations();
+    // Only do a full HTTP reload if this is a new conversation we don't have
+    // locally. For existing conversations, onNewMessage() already updates state.
+    if (!isKnownConversation) {
+      ref.read(conversationsProvider.notifier).loadConversations();
+    }
+
+    // Play notification sound for incoming messages (not our own)
+    if (fromUserId != myUserId) {
+      SoundService().playMessageReceived();
+    }
   }
 
   Future<void> _decryptAndDeliverWithPreview(
@@ -470,6 +488,22 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
           messageId,
           MessageStatus.delivered,
         );
+  }
+
+  void _handleMessageDeleted(Map<String, dynamic> json) {
+    final conversationId = json['conversation_id'] as String;
+    final messageId = json['message_id'] as String;
+    ref.read(chatProvider.notifier).deleteMessage(conversationId, messageId);
+  }
+
+  void _handleMessageEdited(Map<String, dynamic> json) {
+    final conversationId = json['conversation_id'] as String;
+    final messageId = json['message_id'] as String;
+    final newContent = json['content'] as String;
+    final editedAt = json['edited_at'] as String?;
+    ref
+        .read(chatProvider.notifier)
+        .editMessage(conversationId, messageId, newContent, editedAt: editedAt);
   }
 
   /// Remove stale typing indicators (older than 5 seconds).

@@ -10,16 +10,19 @@ pub mod ws;
 
 use axum::Json;
 use axum::Router;
-use axum::http::HeaderValue;
+use axum::http::{HeaderValue, Method, header};
+use axum::middleware;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post, put};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::set_header::SetResponseHeaderLayer;
 use uuid::Uuid;
 
+use crate::middleware::rate_limit;
 use crate::ws::hub::Hub;
 
 /// Map from ticket string to (user_id, created_at).
@@ -36,11 +39,20 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let cors_origins = std::env::var("CORS_ORIGINS")
         .unwrap_or_else(|_| "https://echo-messenger.us,http://localhost:8081".into());
 
+    let allowed_methods = [
+        Method::GET,
+        Method::POST,
+        Method::PUT,
+        Method::DELETE,
+        Method::OPTIONS,
+    ];
+    let allowed_headers = [header::CONTENT_TYPE, header::AUTHORIZATION];
+
     let cors = if cors_origins == "*" {
         CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods(Any)
-            .allow_headers(Any)
+            .allow_origin(AllowOrigin::any())
+            .allow_methods(allowed_methods)
+            .allow_headers(allowed_headers)
     } else {
         let origins: Vec<HeaderValue> = cors_origins
             .split(',')
@@ -48,13 +60,22 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             .collect();
         CorsLayer::new()
             .allow_origin(AllowOrigin::list(origins))
-            .allow_methods(Any)
-            .allow_headers(Any)
+            .allow_methods(allowed_methods)
+            .allow_headers(allowed_headers)
     };
 
+    let login_limit = rate_limit::make_rate_limit_layer(rate_limit::login_limiter());
+    let register_limit = rate_limit::make_rate_limit_layer(rate_limit::register_limiter());
+
     let auth_routes = Router::new()
-        .route("/register", post(auth::register))
-        .route("/login", post(auth::login))
+        .route(
+            "/register",
+            post(auth::register).layer(middleware::from_fn(register_limit)),
+        )
+        .route(
+            "/login",
+            post(auth::login).layer(middleware::from_fn(login_limit)),
+        )
         .route("/refresh", post(auth::refresh))
         .route("/logout", post(auth::logout))
         .route("/ws-ticket", post(auth::ws_ticket));
@@ -63,7 +84,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/", get(contacts::list_contacts))
         .route("/request", post(contacts::send_request))
         .route("/accept", post(contacts::accept_request))
-        .route("/pending", get(contacts::list_pending));
+        .route("/pending", get(contacts::list_pending))
+        .route("/block", post(contacts::block_user))
+        .route("/unblock", post(contacts::unblock_user))
+        .route("/blocked", get(contacts::list_blocked));
 
     let message_routes = Router::new()
         .route("/conversations", get(messages::list_conversations))
@@ -73,6 +97,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             post(reactions::mark_read),
         )
         .route("/messages/{conversation_id}", get(messages::get_messages))
+        .route(
+            "/messages/{message_id}",
+            delete(messages::delete_message).put(messages::edit_message),
+        )
         .route(
             "/messages/{message_id}/reactions",
             post(reactions::add_reaction),
@@ -114,6 +142,26 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/health", get(health))
         .route("/ws", get(ws::ws_upgrade))
         .layer(cors)
+        .layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("x-content-type-options"),
+            header::HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("x-frame-options"),
+            header::HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("x-xss-protection"),
+            header::HeaderValue::from_static("1; mode=block"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::STRICT_TRANSPORT_SECURITY,
+            header::HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CONTENT_SECURITY_POLICY,
+            header::HeaderValue::from_static("default-src 'self'"),
+        ))
         .with_state(state)
 }
 

@@ -12,7 +12,7 @@ use sqlx::postgres::PgPoolOptions;
 
 pub async fn create_pool(database_url: &str) -> PgPool {
     PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(50)
         .connect(database_url)
         .await
         .expect("Failed to connect to database")
@@ -28,6 +28,8 @@ pub async fn run_migrations(pool: &PgPool) {
         include_str!("../migrations/006_public_groups.sql"),
         include_str!("../migrations/007_avatars_and_groups.sql"),
         include_str!("../migrations/008_refresh_tokens.sql"),
+        include_str!("../migrations/009_performance_indexes.sql"),
+        include_str!("../migrations/010_message_edit_delete_blocks.sql"),
     ];
 
     // Execute each statement separately (sqlx doesn't support multiple statements in one query)

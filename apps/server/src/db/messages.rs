@@ -22,6 +22,7 @@ pub struct MessageWithSender {
     pub sender_username: String,
     pub content: String,
     pub created_at: DateTime<Utc>,
+    pub edited_at: Option<DateTime<Utc>>,
 }
 
 pub async fn find_or_create_dm_conversation(
@@ -103,10 +104,10 @@ pub async fn get_messages(
         Some(cursor) => {
             sqlx::query_as::<_, MessageWithSender>(
                 "SELECT m.id, m.conversation_id, m.sender_id, u.username AS sender_username, \
-                        m.content, m.created_at \
+                        m.content, m.created_at, m.edited_at \
                  FROM messages m \
                  JOIN users u ON u.id = m.sender_id \
-                 WHERE m.conversation_id = $1 AND m.created_at < $2 \
+                 WHERE m.conversation_id = $1 AND m.created_at < $2 AND m.deleted_at IS NULL \
                  ORDER BY m.created_at DESC \
                  LIMIT $3",
             )
@@ -119,10 +120,10 @@ pub async fn get_messages(
         None => {
             sqlx::query_as::<_, MessageWithSender>(
                 "SELECT m.id, m.conversation_id, m.sender_id, u.username AS sender_username, \
-                        m.content, m.created_at \
+                        m.content, m.created_at, m.edited_at \
                  FROM messages m \
                  JOIN users u ON u.id = m.sender_id \
-                 WHERE m.conversation_id = $1 \
+                 WHERE m.conversation_id = $1 AND m.deleted_at IS NULL \
                  ORDER BY m.created_at DESC \
                  LIMIT $2",
             )
@@ -140,11 +141,11 @@ pub async fn get_undelivered(
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.sender_id, u.username AS sender_username, \
-                m.content, m.created_at \
+                m.content, m.created_at, m.edited_at \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
-         WHERE m.sender_id != $1 AND m.delivered = false \
+         WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
          ORDER BY m.created_at ASC",
     )
     .bind(user_id)
@@ -158,4 +159,46 @@ pub async fn mark_delivered(pool: &PgPool, message_ids: &[Uuid]) -> Result<(), s
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Soft-delete a message. Only the sender can delete their own message.
+/// Returns the conversation_id if the delete was successful, None if no matching row found.
+pub async fn delete_message(
+    pool: &PgPool,
+    message_id: Uuid,
+    sender_id: Uuid,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "UPDATE messages SET deleted_at = now() \
+         WHERE id = $1 AND sender_id = $2 AND deleted_at IS NULL \
+         RETURNING conversation_id",
+    )
+    .bind(message_id)
+    .bind(sender_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|(conv_id,)| conv_id))
+}
+
+/// Edit a message's content. Only the sender can edit their own message.
+/// Returns the conversation_id if the edit was successful, None if no matching row found.
+pub async fn edit_message(
+    pool: &PgPool,
+    message_id: Uuid,
+    sender_id: Uuid,
+    new_content: &str,
+) -> Result<Option<(Uuid, DateTime<Utc>)>, sqlx::Error> {
+    let row: Option<(Uuid, DateTime<Utc>)> = sqlx::query_as(
+        "UPDATE messages SET content = $3, edited_at = now() \
+         WHERE id = $1 AND sender_id = $2 AND deleted_at IS NULL \
+         RETURNING conversation_id, edited_at",
+    )
+    .bind(message_id)
+    .bind(sender_id)
+    .bind(new_content)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row)
 }

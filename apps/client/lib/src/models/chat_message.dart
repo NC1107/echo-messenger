@@ -12,6 +12,7 @@ class ChatMessage {
   final bool isMine;
   final MessageStatus status;
   final List<Reaction> reactions;
+  final String? editedAt;
 
   const ChatMessage({
     required this.id,
@@ -23,6 +24,7 @@ class ChatMessage {
     required this.isMine,
     this.status = MessageStatus.sent,
     this.reactions = const [],
+    this.editedAt,
   });
 
   factory ChatMessage.fromServerJson(
@@ -45,6 +47,7 @@ class ChatMessage {
       isMine: json['from_user_id'] == myUserId,
       status: MessageStatus.sent,
       reactions: reactionsList,
+      editedAt: json['edited_at'] as String?,
     );
   }
 
@@ -58,6 +61,7 @@ class ChatMessage {
     bool? isMine,
     MessageStatus? status,
     List<Reaction>? reactions,
+    String? editedAt,
   }) {
     return ChatMessage(
       id: id ?? this.id,
@@ -69,6 +73,7 @@ class ChatMessage {
       isMine: isMine ?? this.isMine,
       status: status ?? this.status,
       reactions: reactions ?? this.reactions,
+      editedAt: editedAt ?? this.editedAt,
     );
   }
 }

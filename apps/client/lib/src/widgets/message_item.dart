@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/chat_message.dart';
@@ -24,6 +25,8 @@ class MessageItem extends StatefulWidget {
   final String myUserId;
   final void Function(ChatMessage message)? onReactionTap;
   final void Function(ChatMessage message, String emoji)? onReactionSelect;
+  final void Function(ChatMessage message)? onDelete;
+  final void Function(ChatMessage message)? onEdit;
 
   /// Server URL for resolving relative image paths.
   final String? serverUrl;
@@ -39,6 +42,8 @@ class MessageItem extends StatefulWidget {
     required this.myUserId,
     this.onReactionTap,
     this.onReactionSelect,
+    this.onDelete,
+    this.onEdit,
     this.serverUrl,
     this.authToken,
   });
@@ -377,10 +382,37 @@ class _MessageItemState extends State<MessageItem> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             _HoverActionButton(
+                              icon: Icons.copy_outlined,
+                              tooltip: 'Copy',
+                              onPressed: () {
+                                Clipboard.setData(
+                                  ClipboardData(text: msg.content),
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Copied to clipboard'),
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                            ),
+                            _HoverActionButton(
                               icon: Icons.add_reaction_outlined,
                               tooltip: 'React',
                               onPressed: () => widget.onReactionTap?.call(msg),
                             ),
+                            if (isMine && widget.onEdit != null)
+                              _HoverActionButton(
+                                icon: Icons.edit_outlined,
+                                tooltip: 'Edit',
+                                onPressed: () => widget.onEdit?.call(msg),
+                              ),
+                            if (isMine && widget.onDelete != null)
+                              _HoverActionButton(
+                                icon: Icons.delete_outlined,
+                                tooltip: 'Delete',
+                                onPressed: () => widget.onDelete?.call(msg),
+                              ),
                           ],
                         ),
                       ),
@@ -404,6 +436,18 @@ class _MessageItemState extends State<MessageItem> {
                           color: EchoTheme.textMuted,
                         ),
                       ),
+                      if (msg.editedAt != null)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 4),
+                          child: Text(
+                            '(edited)',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontStyle: FontStyle.italic,
+                              color: EchoTheme.textMuted,
+                            ),
+                          ),
+                        ),
                       if (isMine) _buildStatusIcon(msg.status),
                     ],
                   ),

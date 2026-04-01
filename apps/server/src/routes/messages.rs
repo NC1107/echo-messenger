@@ -1,7 +1,9 @@
 //! Message and conversation REST endpoints.
 
 use axum::Json;
+use axum::extract::ws::Message as WsMessage;
 use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -95,7 +97,7 @@ pub async fn list_conversations(
             "SELECT m.content, u.username AS sender_username, m.created_at \
              FROM messages m \
              JOIN users u ON u.id = m.sender_id \
-             WHERE m.conversation_id = $1 \
+             WHERE m.conversation_id = $1 AND m.deleted_at IS NULL \
              ORDER BY m.created_at DESC \
              LIMIT 1",
         )
@@ -173,4 +175,93 @@ pub async fn create_dm(
     Ok(Json(
         serde_json::json!({ "conversation_id": conversation_id }),
     ))
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/messages/:message_id -- soft-delete a message
+// ---------------------------------------------------------------------------
+
+pub async fn delete_message(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(message_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let conversation_id = db::messages::delete_message(&state.pool, message_id, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::bad_request("Message not found or you are not the sender"))?;
+
+    // Broadcast to conversation members via WebSocket
+    let member_ids = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
+        .await
+        .unwrap_or_default();
+
+    let event = serde_json::json!({
+        "type": "message_deleted",
+        "message_id": message_id,
+        "conversation_id": conversation_id,
+    });
+    if let Ok(json) = serde_json::to_string(&event) {
+        for member_id in &member_ids {
+            state
+                .hub
+                .send_to(member_id, WsMessage::Text(json.clone().into()));
+        }
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// PUT /api/messages/:message_id -- edit a message
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct EditMessageRequest {
+    pub content: String,
+}
+
+pub async fn edit_message(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(message_id): Path<Uuid>,
+    Json(body): Json<EditMessageRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    if body.content.is_empty() {
+        return Err(AppError::bad_request("Content cannot be empty"));
+    }
+    if body.content.len() > 10_000 {
+        return Err(AppError::bad_request("Content too long"));
+    }
+
+    let (conversation_id, edited_at) =
+        db::messages::edit_message(&state.pool, message_id, auth.user_id, &body.content)
+            .await
+            .map_err(|_| AppError::internal("Database error"))?
+            .ok_or_else(|| AppError::bad_request("Message not found or you are not the sender"))?;
+
+    // Broadcast to conversation members via WebSocket
+    let member_ids = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
+        .await
+        .unwrap_or_default();
+
+    let event = serde_json::json!({
+        "type": "message_edited",
+        "message_id": message_id,
+        "conversation_id": conversation_id,
+        "content": body.content,
+        "edited_at": edited_at,
+    });
+    if let Ok(json) = serde_json::to_string(&event) {
+        for member_id in &member_ids {
+            state
+                .hub
+                .send_to(member_id, WsMessage::Text(json.clone().into()));
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "message_id": message_id,
+        "edited_at": edited_at,
+    })))
 }

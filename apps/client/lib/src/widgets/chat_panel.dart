@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -15,6 +16,7 @@ import '../providers/crypto_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../services/sound_service.dart';
 import '../theme/echo_theme.dart';
 import 'conversation_panel.dart' show buildAvatar, groupAvatarColor;
 import 'message_item.dart';
@@ -38,8 +40,13 @@ class ChatPanel extends ConsumerStatefulWidget {
 class _ChatPanelState extends ConsumerState<ChatPanel> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
+  final _inputFocusNode = FocusNode();
   bool _isTextEmpty = true;
   String? _loadedConversationId;
+
+  // Edit mode state
+  ChatMessage? _editingMessage;
+  bool get _isEditing => _editingMessage != null;
 
   @override
   void initState() {
@@ -63,6 +70,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     _messageController.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _inputFocusNode.dispose();
     super.dispose();
   }
 
@@ -173,15 +181,24 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         .addOptimistic(peerUserId, text, myUserId, conversationId: conv.id);
     _messageController.clear();
     _scrollToBottom();
+    SoundService().playMessageSent();
 
-    if (conv.isGroup) {
-      await ref
-          .read(websocketProvider.notifier)
-          .sendGroupMessage(conv.id, text);
-    } else {
-      await ref
-          .read(websocketProvider.notifier)
-          .sendMessage(peerUserId, text, conversationId: conv.id);
+    try {
+      if (conv.isGroup) {
+        await ref
+            .read(websocketProvider.notifier)
+            .sendGroupMessage(conv.id, text);
+      } else {
+        await ref
+            .read(websocketProvider.notifier)
+            .sendMessage(peerUserId, text, conversationId: conv.id);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Failed to send message')));
+      }
     }
   }
 
@@ -195,7 +212,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   Future<void> _pickFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
+        type: FileType.any,
         allowMultiple: false,
         withData: true,
       );
@@ -222,12 +239,25 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         Uri.parse('$serverUrl/api/media/upload'),
       );
       request.headers['Authorization'] = 'Bearer $token';
+      // Determine MIME type from file extension
+      final ext = (file.extension ?? '').toLowerCase();
+      final mimeTypes = <String, List<String>>{
+        'jpg': ['image', 'jpeg'],
+        'jpeg': ['image', 'jpeg'],
+        'png': ['image', 'png'],
+        'gif': ['image', 'gif'],
+        'webp': ['image', 'webp'],
+        'mp4': ['video', 'mp4'],
+        'pdf': ['application', 'pdf'],
+      };
+      final mime = mimeTypes[ext] ?? ['application', 'octet-stream'];
+
       request.files.add(
         http.MultipartFile.fromBytes(
           'file',
           file.bytes!,
           filename: file.name,
-          contentType: MediaType('image', file.extension ?? 'png'),
+          contentType: MediaType(mime[0], mime[1]),
         ),
       );
 
@@ -389,6 +419,122 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         ],
       ),
     );
+  }
+
+  void _enterEditMode(ChatMessage message) {
+    setState(() {
+      _editingMessage = message;
+      _messageController.text = message.content;
+      _isTextEmpty = false;
+    });
+    _inputFocusNode.requestFocus();
+  }
+
+  void _cancelEditMode() {
+    setState(() {
+      _editingMessage = null;
+      _messageController.clear();
+      _isTextEmpty = true;
+    });
+  }
+
+  Future<void> _submitEdit() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty || _editingMessage == null) return;
+
+    final conv = widget.conversation;
+    if (conv == null) return;
+
+    final messageId = _editingMessage!.id;
+    final serverUrl = ref.read(serverUrlProvider);
+
+    // Optimistically update local state
+    ref.read(chatProvider.notifier).editMessage(conv.id, messageId, text);
+    _cancelEditMode();
+
+    try {
+      await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.put(
+              Uri.parse('$serverUrl/api/messages/$messageId'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({'content': text}),
+            ),
+          );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Failed to edit message')));
+      }
+    }
+  }
+
+  Future<void> _confirmDelete(ChatMessage message) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: EchoTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: EchoTheme.border),
+        ),
+        title: const Text(
+          'Delete this message?',
+          style: TextStyle(
+            color: EchoTheme.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: const Text(
+          'This action cannot be undone.',
+          style: TextStyle(color: EchoTheme.textSecondary, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final conv = widget.conversation;
+    if (conv == null) return;
+
+    final serverUrl = ref.read(serverUrlProvider);
+
+    // Optimistically remove from local state
+    ref.read(chatProvider.notifier).deleteMessage(conv.id, message.id);
+
+    try {
+      await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.delete(
+              Uri.parse('$serverUrl/api/messages/${message.id}'),
+              headers: {'Authorization': 'Bearer $token'},
+            ),
+          );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to delete message')),
+        );
+      }
+    }
   }
 
   void _showReactionPicker(ChatMessage message) {
@@ -575,17 +721,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.search_outlined, size: 20),
-                  color: EchoTheme.textSecondary,
-                  tooltip: 'Search',
-                  onPressed: () {},
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 36,
-                    minHeight: 36,
-                  ),
-                ),
                 if (conv.isGroup) ...[
                   if (widget.onMembersToggle != null)
                     IconButton(
@@ -730,6 +865,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                               );
                               _toggleReaction(message, emoji, alreadyReacted);
                             },
+                            onDelete: _confirmDelete,
+                            onEdit: _enterEditMode,
                           ),
                         ],
                       );
@@ -754,6 +891,40 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                 ),
               ),
             ),
+          // Edit mode banner
+          if (_isEditing)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+              color: EchoTheme.accent.withValues(alpha: 0.08),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.edit_outlined,
+                    size: 14,
+                    color: EchoTheme.accent,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Editing message...',
+                      style: TextStyle(
+                        color: EchoTheme.accent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: _cancelEditMode,
+                    child: const Icon(
+                      Icons.close,
+                      size: 16,
+                      color: EchoTheme.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Input area
           Container(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -763,62 +934,87 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               decoration: BoxDecoration(
                 color: EchoTheme.surface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: EchoTheme.border, width: 1),
+                border: Border.all(
+                  color: _isEditing ? EchoTheme.accent : EchoTheme.border,
+                  width: 1,
+                ),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Attachment button
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: IconButton(
-                      icon: const Icon(Icons.attach_file_outlined, size: 18),
-                      color: EchoTheme.textSecondary,
-                      tooltip: 'Attach file',
-                      onPressed: _pickFile,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 36,
-                        minHeight: 36,
+                  // Attachment button (hidden in edit mode)
+                  if (!_isEditing)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: IconButton(
+                        icon: const Icon(Icons.attach_file_outlined, size: 18),
+                        color: EchoTheme.textSecondary,
+                        tooltip: 'Attach file',
+                        onPressed: _pickFile,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
                       ),
                     ),
-                  ),
+                  if (_isEditing) const SizedBox(width: 12),
                   // Text field
                   Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      maxLines: 1,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: EchoTheme.textPrimary,
+                    child: KeyboardListener(
+                      focusNode: FocusNode(),
+                      onKeyEvent: (event) {
+                        if (event is KeyDownEvent &&
+                            event.logicalKey == LogicalKeyboardKey.escape &&
+                            _isEditing) {
+                          _cancelEditMode();
+                        }
+                      },
+                      child: TextField(
+                        controller: _messageController,
+                        focusNode: _inputFocusNode,
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: EchoTheme.textPrimary,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: _isEditing
+                              ? 'Edit your message...'
+                              : 'Type a message...',
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          filled: false,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 10,
+                          ),
+                        ),
+                        onChanged: _onInputChanged,
+                        onSubmitted: (_) =>
+                            _isEditing ? _submitEdit() : _sendMessage(),
                       ),
-                      decoration: const InputDecoration(
-                        hintText: 'Type a message...',
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        filled: false,
-                        contentPadding: EdgeInsets.symmetric(vertical: 10),
-                      ),
-                      onChanged: _onInputChanged,
-                      onSubmitted: (_) => _sendMessage(),
                     ),
                   ),
-                  // Send button
+                  // Send / confirm edit button
                   if (!_isTextEmpty)
                     Padding(
                       padding: const EdgeInsets.only(right: 7),
                       child: GestureDetector(
-                        onTap: _sendMessage,
+                        onTap: _isEditing ? _submitEdit : _sendMessage,
                         child: Container(
                           width: 30,
                           height: 30,
-                          decoration: const BoxDecoration(
-                            color: EchoTheme.accent,
+                          decoration: BoxDecoration(
+                            color: _isEditing
+                                ? EchoTheme.online
+                                : EchoTheme.accent,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
-                            Icons.arrow_upward_rounded,
+                          child: Icon(
+                            _isEditing
+                                ? Icons.check_rounded
+                                : Icons.arrow_upward_rounded,
                             size: 18,
                             color: Colors.white,
                           ),

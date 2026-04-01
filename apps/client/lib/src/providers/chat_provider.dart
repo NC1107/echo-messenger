@@ -331,6 +331,55 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
   }
 
+  /// Delete a message from local state.
+  void deleteMessage(String conversationId, String messageId) {
+    final updatedConv = Map<String, List<ChatMessage>>.from(
+      state.messagesByConversation,
+    );
+    final messages = updatedConv[conversationId];
+    if (messages == null) return;
+
+    updatedConv[conversationId] = messages
+        .where((msg) => msg.id != messageId)
+        .toList();
+
+    state = ChatState(
+      messagesByConversation: updatedConv,
+      loadingHistory: state.loadingHistory,
+      hasMore: state.hasMore,
+    );
+  }
+
+  /// Update a message's content and set editedAt.
+  void editMessage(
+    String conversationId,
+    String messageId,
+    String newContent, {
+    String? editedAt,
+  }) {
+    final updatedConv = Map<String, List<ChatMessage>>.from(
+      state.messagesByConversation,
+    );
+    final messages = updatedConv[conversationId];
+    if (messages == null) return;
+
+    updatedConv[conversationId] = messages.map((msg) {
+      if (msg.id == messageId) {
+        return msg.copyWith(
+          content: newContent,
+          editedAt: editedAt ?? DateTime.now().toIso8601String(),
+        );
+      }
+      return msg;
+    }).toList();
+
+    state = ChatState(
+      messagesByConversation: updatedConv,
+      loadingHistory: state.loadingHistory,
+      hasMore: state.hasMore,
+    );
+  }
+
   void clear() {
     state = const ChatState();
   }
