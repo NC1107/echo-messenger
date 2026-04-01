@@ -23,6 +23,7 @@ pub struct AuthRequest {
 pub struct AuthResponse {
     pub user_id: String,
     pub access_token: String,
+    pub avatar_url: Option<String>,
 }
 
 fn validate_username(username: &str) -> Result<(), AppError> {
@@ -65,6 +66,7 @@ pub async fn register(
     let response = AuthResponse {
         user_id: user_id.to_string(),
         access_token,
+        avatar_url: None,
     };
 
     Ok((StatusCode::CREATED, Json(response)))
@@ -88,6 +90,7 @@ pub async fn login(
     let response = AuthResponse {
         user_id: user.id.to_string(),
         access_token,
+        avatar_url: user.avatar_url,
     };
 
     Ok(Json(response))

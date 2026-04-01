@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/conversation.dart';
 import '../theme/echo_theme.dart';
+import 'conversation_panel.dart' show buildAvatar;
 
 class MembersPanel extends StatelessWidget {
   final Conversation? conversation;
@@ -74,20 +75,7 @@ class _MemberRow extends StatelessWidget {
       child: Row(
         children: [
           // Avatar
-          CircleAvatar(
-            radius: 10,
-            backgroundColor: _avatarColor(member.username),
-            child: Text(
-              member.username.isNotEmpty
-                  ? member.username[0].toUpperCase()
-                  : '?',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 9,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
+          buildAvatar(name: member.username, radius: 10),
           const SizedBox(width: 8),
           // Online dot
           Container(
@@ -114,18 +102,5 @@ class _MemberRow extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  Color _avatarColor(String name) {
-    const colors = [
-      Color(0xFFE06666),
-      Color(0xFFF6B05C),
-      Color(0xFF57D28F),
-      Color(0xFF5DADE2),
-      Color(0xFFAF7AC5),
-      Color(0xFFEB984E),
-    ];
-    final index = name.hashCode.abs() % colors.length;
-    return colors[index];
   }
 }

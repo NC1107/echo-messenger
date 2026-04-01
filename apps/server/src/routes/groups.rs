@@ -20,6 +20,7 @@ pub struct CreateGroupRequest {
     pub member_ids: Vec<Uuid>,
     #[serde(default)]
     pub is_public: bool,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,6 +41,7 @@ pub struct GroupResponse {
     pub id: Uuid,
     pub title: Option<String>,
     pub kind: String,
+    pub description: Option<String>,
     pub members: Vec<GroupMemberResponse>,
 }
 
@@ -47,6 +49,7 @@ pub struct GroupResponse {
 pub struct GroupMemberResponse {
     pub user_id: Uuid,
     pub username: String,
+    pub role: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -72,6 +75,7 @@ pub async fn create_group(
         &body.name,
         &body.member_ids,
         body.is_public,
+        body.description.as_deref(),
     )
     .await
     .map_err(|e| {
@@ -87,11 +91,13 @@ pub async fn create_group(
         id: group.id,
         title: group.title,
         kind: group.kind,
+        description: group.description,
         members: members
             .into_iter()
             .map(|m| GroupMemberResponse {
                 user_id: m.user_id,
                 username: m.username,
+                role: m.role,
             })
             .collect(),
     };
@@ -127,11 +133,13 @@ pub async fn get_group(
         id: group.id,
         title: group.title,
         kind: group.kind,
+        description: group.description,
         members: members
             .into_iter()
             .map(|m| GroupMemberResponse {
                 user_id: m.user_id,
                 username: m.username,
+                role: m.role,
             })
             .collect(),
     };
@@ -146,14 +154,11 @@ pub async fn add_member(
     Path(group_id): Path<Uuid>,
     Json(body): Json<AddMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify caller is a member
-    let is_member = db::groups::is_member(&state.pool, group_id, auth.user_id)
+    // Verify caller is a member and get their role
+    let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
-
-    if !is_member {
-        return Err(AppError::unauthorized("Not a member of this group"));
-    }
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
     // Verify it's a group conversation
     let kind = db::groups::get_conversation_kind(&state.pool, group_id)
@@ -162,6 +167,17 @@ pub async fn add_member(
 
     if kind.as_deref() != Some("group") {
         return Err(AppError::bad_request("Not a group conversation"));
+    }
+
+    // For private groups, only owner or admin can add members
+    let is_public = db::groups::is_public(&state.pool, group_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
+    if !is_public && caller_role != "owner" && caller_role != "admin" {
+        return Err(AppError::unauthorized(
+            "Only owners and admins can add members to private groups",
+        ));
     }
 
     // Verify target user exists
@@ -191,13 +207,27 @@ pub async fn remove_member(
     State(state): State<Arc<AppState>>,
     Path((group_id, target_user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify caller is a member
-    let is_member = db::groups::is_member(&state.pool, group_id, auth.user_id)
+    // Verify caller is a member and get their role
+    let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
-    if !is_member {
-        return Err(AppError::unauthorized("Not a member of this group"));
+    // If removing someone else, must be owner or admin
+    if target_user_id != auth.user_id && caller_role != "owner" && caller_role != "admin" {
+        return Err(AppError::unauthorized(
+            "Only owners and admins can remove other members",
+        ));
+    }
+
+    // Prevent removing the owner
+    if target_user_id != auth.user_id {
+        let target_role = db::groups::get_member_role(&state.pool, group_id, target_user_id)
+            .await
+            .map_err(|_| AppError::internal("Database error"))?;
+        if target_role.as_deref() == Some("owner") {
+            return Err(AppError::bad_request("Cannot remove the group owner"));
+        }
     }
 
     let removed = db::groups::remove_member(&state.pool, group_id, target_user_id)

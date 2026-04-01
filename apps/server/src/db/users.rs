@@ -9,6 +9,7 @@ pub struct UserRow {
     #[allow(dead_code)] // Used when listing contacts
     pub username: String,
     pub password_hash: String,
+    pub avatar_url: Option<String>,
 }
 
 pub async fn create_user(
@@ -31,7 +32,7 @@ pub async fn find_by_username(
     username: &str,
 ) -> Result<Option<UserRow>, sqlx::Error> {
     sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash FROM users WHERE username = $1",
+        "SELECT id, username, password_hash, avatar_url FROM users WHERE username = $1",
     )
     .bind(username)
     .fetch_optional(pool)
@@ -39,8 +40,32 @@ pub async fn find_by_username(
 }
 
 pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<UserRow>, sqlx::Error> {
-    sqlx::query_as::<_, UserRow>("SELECT id, username, password_hash FROM users WHERE id = $1")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as::<_, UserRow>(
+        "SELECT id, username, password_hash, avatar_url FROM users WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn set_avatar_url(
+    pool: &PgPool,
+    user_id: Uuid,
+    avatar_url: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET avatar_url = $1 WHERE id = $2")
+        .bind(avatar_url)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn get_avatar_url(pool: &PgPool, user_id: Uuid) -> Result<Option<String>, sqlx::Error> {
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT avatar_url FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.and_then(|(url,)| url))
 }

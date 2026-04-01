@@ -10,6 +10,7 @@ pub struct ContactRow {
     pub user_id: Uuid,
     pub username: String,
     pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
     pub status: String,
     pub created_at: DateTime<Utc>,
 }
@@ -65,6 +66,7 @@ pub async fn list_contacts(pool: &PgPool, user_id: Uuid) -> Result<Vec<ContactRo
                 CASE WHEN c.requester_id = $1 THEN c.target_id ELSE c.requester_id END AS user_id, \
                 u.username, \
                 u.display_name, \
+                u.avatar_url, \
                 c.status, \
                 c.created_at \
          FROM contacts c \
@@ -86,6 +88,7 @@ pub async fn list_pending_requests(
                 c.requester_id AS user_id, \
                 u.username, \
                 u.display_name, \
+                u.avatar_url, \
                 c.status, \
                 c.created_at \
          FROM contacts c \

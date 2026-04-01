@@ -5,13 +5,14 @@ pub mod keys;
 pub mod media;
 pub mod messages;
 pub mod reactions;
+pub mod users;
 pub mod ws;
 
 use axum::Json;
 use axum::Router;
 use axum::http::HeaderValue;
 use axum::response::IntoResponse;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
@@ -88,11 +89,16 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/{id}/join", post(groups::join_group))
         .route("/{id}/leave", post(groups::leave_group));
 
+    let user_routes = Router::new()
+        .route("/me/avatar", put(users::upload_avatar))
+        .route("/{id}/avatar", get(users::get_avatar));
+
     Router::new()
         .nest("/api/auth", auth_routes)
         .nest("/api/contacts", contact_routes)
         .nest("/api/keys", key_routes)
         .nest("/api/groups", group_routes)
+        .nest("/api/users", user_routes)
         .nest("/api/media", media_routes)
         .nest("/api", message_routes)
         .route("/api/health", get(health))

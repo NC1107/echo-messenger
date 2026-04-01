@@ -5,12 +5,16 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../theme/echo_theme.dart';
+import 'conversation_panel.dart' show buildAvatar, avatarColor;
 
 /// Common emojis for the reaction picker.
 const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🎉'];
 
 /// Regex for detecting URLs in message text.
 final _urlRegex = RegExp(r'https?://[^\s]+');
+
+/// Regex for detecting image markers: [img:URL]
+final _imgRegex = RegExp(r'^\[img:(.+)\]$');
 
 class MessageItem extends StatefulWidget {
   final ChatMessage message;
@@ -20,6 +24,12 @@ class MessageItem extends StatefulWidget {
   final void Function(ChatMessage message)? onReactionTap;
   final void Function(ChatMessage message, String emoji)? onReactionSelect;
 
+  /// Server URL for resolving relative image paths.
+  final String? serverUrl;
+
+  /// Auth token for authenticated image requests.
+  final String? authToken;
+
   const MessageItem({
     super.key,
     required this.message,
@@ -28,6 +38,8 @@ class MessageItem extends StatefulWidget {
     required this.myUserId,
     this.onReactionTap,
     this.onReactionSelect,
+    this.serverUrl,
+    this.authToken,
   });
 
   @override
@@ -76,18 +88,46 @@ class _MessageItemState extends State<MessageItem> {
 
   /// Consistent color for a username -- matches sidebar avatar colors.
   Color _getUserColor(String userId) {
-    // Use the username (fromUsername) for color, matching sidebar's _avatarColor
     final name = widget.message.fromUsername;
-    final colors = [
-      const Color(0xFFE06666),
-      const Color(0xFFF6B05C),
-      const Color(0xFF57D28F),
-      const Color(0xFF5DADE2),
-      const Color(0xFFAF7AC5),
-      const Color(0xFFEB984E),
-    ];
-    final index = name.hashCode.abs() % colors.length;
-    return colors[index];
+    return avatarColor(name);
+  }
+
+  /// Check if the message content is an image marker and build the image widget.
+  Widget? _buildImageContent(String content, {required bool isMine}) {
+    final match = _imgRegex.firstMatch(content);
+    if (match == null) return null;
+
+    final url = match.group(1)!;
+    final fullUrl = url.startsWith('/') ? '${widget.serverUrl ?? ""}$url' : url;
+
+    final headers = <String, String>{};
+    if (widget.authToken != null && widget.authToken!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer ${widget.authToken}';
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Image.network(
+        fullUrl,
+        width: 300,
+        fit: BoxFit.cover,
+        headers: headers,
+        errorBuilder: (_, _, _) => Container(
+          width: 300,
+          height: 80,
+          decoration: BoxDecoration(
+            color: EchoTheme.surface,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Center(
+            child: Text(
+              '[Image failed to load]',
+              style: TextStyle(color: EchoTheme.textMuted, fontSize: 13),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Build a RichText widget that renders URLs as tappable, underlined links.
@@ -161,11 +201,7 @@ class _MessageItemState extends State<MessageItem> {
     }
 
     return Padding(
-      padding: EdgeInsets.only(
-        top: 4,
-        left: isMine ? 0 : 36,
-        right: isMine ? 0 : 0,
-      ),
+      padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
       child: Wrap(
         spacing: 4,
         runSpacing: 4,
@@ -221,6 +257,9 @@ class _MessageItemState extends State<MessageItem> {
     final isMine = msg.isMine;
     final isFailed = msg.status == MessageStatus.failed;
 
+    // Check if message is an image
+    final imageWidget = _buildImageContent(msg.content, isMine: isMine);
+
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -249,19 +288,10 @@ class _MessageItemState extends State<MessageItem> {
                       SizedBox(
                         width: 28,
                         child: widget.showHeader
-                            ? CircleAvatar(
+                            ? buildAvatar(
+                                name: msg.fromUsername,
                                 radius: 14,
-                                backgroundColor: _getUserColor(msg.fromUserId),
-                                child: Text(
-                                  msg.fromUsername.isNotEmpty
-                                      ? msg.fromUsername[0].toUpperCase()
-                                      : '?',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
+                                bgColor: _getUserColor(msg.fromUserId),
                               )
                             : const SizedBox.shrink(),
                       ),
@@ -273,10 +303,12 @@ class _MessageItemState extends State<MessageItem> {
                         constraints: BoxConstraints(
                           maxWidth: MediaQuery.of(context).size.width * 0.65,
                         ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
+                        padding: imageWidget != null
+                            ? const EdgeInsets.all(4)
+                            : const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                         decoration: BoxDecoration(
                           color: isFailed
                               ? EchoTheme.danger.withValues(alpha: 0.2)
@@ -296,7 +328,10 @@ class _MessageItemState extends State<MessageItem> {
                             // Sender name for group received messages
                             if (!isMine && widget.showHeader)
                               Padding(
-                                padding: const EdgeInsets.only(bottom: 4),
+                                padding: EdgeInsets.only(
+                                  bottom: 4,
+                                  left: imageWidget != null ? 8 : 0,
+                                ),
                                 child: Text(
                                   msg.fromUsername,
                                   style: TextStyle(
@@ -306,15 +341,18 @@ class _MessageItemState extends State<MessageItem> {
                                   ),
                                 ),
                               ),
-                            // Message text with URL detection
-                            _buildMessageText(
-                              msg.content,
-                              textColor: isFailed
-                                  ? EchoTheme.danger
-                                  : isMine
-                                  ? Colors.white
-                                  : EchoTheme.textPrimary,
-                            ),
+                            // Image or text content
+                            if (imageWidget != null)
+                              imageWidget
+                            else
+                              _buildMessageText(
+                                msg.content,
+                                textColor: isFailed
+                                    ? EchoTheme.danger
+                                    : isMine
+                                    ? Colors.white
+                                    : EchoTheme.textPrimary,
+                              ),
                           ],
                         ),
                       ),

@@ -10,6 +10,7 @@ pub struct GroupInfo {
     pub id: Uuid,
     pub title: Option<String>,
     pub kind: String,
+    pub description: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -18,6 +19,7 @@ pub struct GroupMember {
     pub user_id: Uuid,
     pub username: String,
     pub joined_at: DateTime<Utc>,
+    pub role: String,
 }
 
 /// Create a group conversation and add the creator plus initial members.
@@ -32,18 +34,20 @@ pub async fn create_group(
 
     let group: GroupInfo = sqlx::query_as(
         "INSERT INTO conversations (kind, title) VALUES ('group', $1) \
-         RETURNING id, title, kind, created_at",
+         RETURNING id, title, kind, description, created_at",
     )
     .bind(name)
     .fetch_one(&mut *tx)
     .await?;
 
-    // Add creator
-    sqlx::query("INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1, $2)")
-        .bind(group.id)
-        .bind(creator_id)
-        .execute(&mut *tx)
-        .await?;
+    // Add creator as owner
+    sqlx::query(
+        "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'owner')",
+    )
+    .bind(group.id)
+    .bind(creator_id)
+    .execute(&mut *tx)
+    .await?;
 
     // Add other members
     for member_id in member_ids {
@@ -51,7 +55,7 @@ pub async fn create_group(
             continue; // Skip if creator is also listed
         }
         sqlx::query(
-            "INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1, $2) \
+            "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'member') \
              ON CONFLICT DO NOTHING",
         )
         .bind(group.id)
@@ -71,24 +75,28 @@ pub async fn create_group_with_visibility(
     name: &str,
     member_ids: &[Uuid],
     is_public: bool,
+    description: Option<&str>,
 ) -> Result<GroupInfo, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     let group: GroupInfo = sqlx::query_as(
-        "INSERT INTO conversations (kind, title, is_public) VALUES ('group', $1, $2) \
-         RETURNING id, title, kind, created_at",
+        "INSERT INTO conversations (kind, title, is_public, description) VALUES ('group', $1, $2, $3) \
+         RETURNING id, title, kind, description, created_at",
     )
     .bind(name)
     .bind(is_public)
+    .bind(description)
     .fetch_one(&mut *tx)
     .await?;
 
-    // Add creator
-    sqlx::query("INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1, $2)")
-        .bind(group.id)
-        .bind(creator_id)
-        .execute(&mut *tx)
-        .await?;
+    // Add creator as owner
+    sqlx::query(
+        "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'owner')",
+    )
+    .bind(group.id)
+    .bind(creator_id)
+    .execute(&mut *tx)
+    .await?;
 
     // Add other members
     for member_id in member_ids {
@@ -96,7 +104,7 @@ pub async fn create_group_with_visibility(
             continue;
         }
         sqlx::query(
-            "INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1, $2) \
+            "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'member') \
              ON CONFLICT DO NOTHING",
         )
         .bind(group.id)
@@ -168,7 +176,7 @@ pub async fn join_public_group(
     match row {
         Some((true,)) => {
             sqlx::query(
-                "INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1, $2) \
+                "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'member') \
                  ON CONFLICT DO NOTHING",
             )
             .bind(group_id)
@@ -185,7 +193,7 @@ pub async fn join_public_group(
 /// Get group info by conversation ID.
 pub async fn get_group(pool: &PgPool, group_id: Uuid) -> Result<Option<GroupInfo>, sqlx::Error> {
     sqlx::query_as::<_, GroupInfo>(
-        "SELECT id, title, kind, created_at FROM conversations WHERE id = $1 AND kind = 'group'",
+        "SELECT id, title, kind, description, created_at FROM conversations WHERE id = $1 AND kind = 'group'",
     )
     .bind(group_id)
     .fetch_optional(pool)
@@ -198,7 +206,7 @@ pub async fn get_group_members(
     group_id: Uuid,
 ) -> Result<Vec<GroupMember>, sqlx::Error> {
     sqlx::query_as::<_, GroupMember>(
-        "SELECT cm.user_id, u.username, cm.joined_at \
+        "SELECT cm.user_id, u.username, cm.joined_at, cm.role \
          FROM conversation_members cm \
          JOIN users u ON u.id = cm.user_id \
          WHERE cm.conversation_id = $1 \
@@ -226,13 +234,32 @@ pub async fn is_member(
     Ok(row.0)
 }
 
+/// Get a member's role in a conversation. Returns None if not a member.
+pub async fn get_member_role(
+    pool: &PgPool,
+    group_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT role FROM conversation_members \
+         WHERE conversation_id = $1 AND user_id = $2",
+    )
+    .bind(group_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(role,)| role))
+}
+
 /// Add a member to a group.
 pub async fn add_member(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query("INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1, $2)")
-        .bind(group_id)
-        .bind(user_id)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'member')",
+    )
+    .bind(group_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -274,4 +301,13 @@ pub async fn get_conversation_kind(
         .fetch_optional(pool)
         .await?;
     Ok(row.map(|(kind,)| kind))
+}
+
+/// Check if a group is public.
+pub async fn is_public(pool: &PgPool, group_id: Uuid) -> Result<bool, sqlx::Error> {
+    let row: Option<(bool,)> = sqlx::query_as("SELECT is_public FROM conversations WHERE id = $1")
+        .bind(group_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.map(|(p,)| p).unwrap_or(false))
 }

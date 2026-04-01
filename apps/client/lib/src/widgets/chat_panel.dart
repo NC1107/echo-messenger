@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
@@ -9,8 +13,10 @@ import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
+import 'conversation_panel.dart' show buildAvatar;
 import 'message_item.dart';
 
 class ChatPanel extends ConsumerStatefulWidget {
@@ -239,24 +245,69 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
         allowMultiple: false,
+        withData: true,
       );
       if (result == null || result.files.isEmpty) return;
       if (!mounted) return;
 
       final file = result.files.first;
-      if (file.name.isNotEmpty) {
+      if (file.bytes == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not read file data')),
+          );
+        }
+        return;
+      }
+
+      // Upload to server
+      final serverUrl = ref.read(serverUrlProvider);
+      final token = ref.read(authProvider).token;
+      if (token == null) return;
+
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$serverUrl/api/media/upload'),
+      );
+      request.headers['Authorization'] = 'Bearer $token';
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          file.bytes!,
+          filename: file.name,
+          contentType: MediaType('image', file.extension ?? 'png'),
+        ),
+      );
+
+      final response = await request.send();
+      final body = await response.stream.bytesToString();
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(body);
+        final mediaUrl = data['url'] as String?;
+        if (mediaUrl != null) {
+          // Send as message with image marker
+          _messageController.text = '[img:$mediaUrl]';
+          _sendMessage();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Upload succeeded but no URL returned'),
+            ),
+          );
+        }
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Selected: ${file.name} (upload coming soon)'),
-            duration: const Duration(seconds: 3),
-          ),
+          SnackBar(content: Text('Upload failed (${response.statusCode})')),
         );
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('File picker error: $e')));
+      ).showSnackBar(SnackBar(content: Text('File upload error: $e')));
     }
   }
 
@@ -500,7 +551,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     final chatState = ref.watch(chatProvider);
     final wsState = ref.watch(websocketProvider);
-    final myUserId = ref.watch(authProvider).userId ?? '';
+    final authState = ref.watch(authProvider);
+    final myUserId = authState.userId ?? '';
+    final serverUrl = ref.watch(serverUrlProvider);
+    final authToken = authState.token ?? '';
 
     final messages = chatState.messagesForConversation(conv.id);
     final isLoadingHistory = chatState.isLoadingHistory(conv.id);
@@ -534,23 +588,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             child: Row(
               children: [
                 // Avatar
-                CircleAvatar(
+                buildAvatar(
+                  name: displayName,
                   radius: 16,
-                  backgroundColor: conv.isGroup
-                      ? EchoTheme.accent
-                      : _avatarColor(displayName),
-                  child: conv.isGroup
+                  bgColor: conv.isGroup ? EchoTheme.accent : null,
+                  fallbackIcon: conv.isGroup
                       ? const Icon(Icons.group, size: 14, color: Colors.white)
-                      : Text(
-                          displayName.isNotEmpty
-                              ? displayName[0].toUpperCase()
-                              : '?',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                      : null,
                 ),
                 const SizedBox(width: 12),
                 // Name + status
@@ -636,27 +680,17 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              CircleAvatar(
+                              buildAvatar(
+                                name: displayName,
                                 radius: 36,
-                                backgroundColor: conv.isGroup
-                                    ? EchoTheme.accent
-                                    : _avatarColor(displayName),
-                                child: conv.isGroup
+                                bgColor: conv.isGroup ? EchoTheme.accent : null,
+                                fallbackIcon: conv.isGroup
                                     ? const Icon(
                                         Icons.group,
                                         size: 32,
                                         color: Colors.white,
                                       )
-                                    : Text(
-                                        displayName.isNotEmpty
-                                            ? displayName[0].toUpperCase()
-                                            : '?',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 28,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
+                                    : null,
                               ),
                               const SizedBox(height: 16),
                               Text(
@@ -733,6 +767,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                             showHeader: showHeader,
                             isLastInGroup: isLastInGroup,
                             myUserId: myUserId,
+                            serverUrl: serverUrl,
+                            authToken: authToken,
                             onReactionTap: _showReactionPicker,
                             onReactionSelect: (message, emoji) {
                               final alreadyReacted = message.reactions.any(
@@ -859,18 +895,5 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         ],
       ),
     );
-  }
-
-  Color _avatarColor(String name) {
-    final colors = [
-      const Color(0xFFE06666),
-      const Color(0xFFF6B05C),
-      const Color(0xFF57D28F),
-      const Color(0xFF5DADE2),
-      const Color(0xFFAF7AC5),
-      const Color(0xFFEB984E),
-    ];
-    final index = name.hashCode.abs() % colors.length;
-    return colors[index];
   }
 }

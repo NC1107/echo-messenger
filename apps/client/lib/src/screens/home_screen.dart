@@ -116,178 +116,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   bool get _isDesktop => MediaQuery.of(context).size.width >= 900;
 
-  void _showNewChatOptions() {
-    if (_isDesktop) {
-      _showNewChatPopupMenu();
-    } else {
-      _showNewChatBottomSheet();
-    }
-  }
-
-  void _showNewChatPopupMenu() {
-    // Position the menu below the header area, aligned to the right of the sidebar
-    const sidebarWidth = 320.0;
-    const headerHeight = 56.0;
-
-    showMenu<String>(
-      context: context,
-      position: const RelativeRect.fromLTRB(
-        sidebarWidth - 200,
-        headerHeight + 4,
-        0,
-        0,
-      ),
-      color: EchoTheme.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: EchoTheme.border),
-      ),
-      items: [
-        const PopupMenuItem<String>(
-          value: 'contacts',
-          child: ListTile(
-            dense: true,
-            leading: Icon(Icons.person_outline, color: EchoTheme.textSecondary),
-            title: Text(
-              'New Chat',
-              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 14),
-            ),
-            subtitle: Text(
-              'Start a conversation with a contact',
-              style: TextStyle(color: EchoTheme.textMuted, fontSize: 12),
-            ),
-            contentPadding: EdgeInsets.zero,
-          ),
-        ),
-        const PopupMenuItem<String>(
-          value: 'group',
-          child: ListTile(
-            dense: true,
-            leading: Icon(
-              Icons.group_add_outlined,
-              color: EchoTheme.textSecondary,
-            ),
-            title: Text(
-              'New Group',
-              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 14),
-            ),
-            subtitle: Text(
-              'Create a group conversation',
-              style: TextStyle(color: EchoTheme.textMuted, fontSize: 12),
-            ),
-            contentPadding: EdgeInsets.zero,
-          ),
-        ),
-        const PopupMenuItem<String>(
-          value: 'discover',
-          child: ListTile(
-            dense: true,
-            leading: Icon(
-              Icons.explore_outlined,
-              color: EchoTheme.textSecondary,
-            ),
-            title: Text(
-              'Discover Groups',
-              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 14),
-            ),
-            subtitle: Text(
-              'Find and join public groups',
-              style: TextStyle(color: EchoTheme.textMuted, fontSize: 12),
-            ),
-            contentPadding: EdgeInsets.zero,
-          ),
-        ),
-      ],
-    ).then((value) {
-      if (value == null) return;
-      switch (value) {
-        case 'contacts':
-          _openContacts();
-        case 'group':
-          _openCreateGroup();
-        case 'discover':
-          if (mounted) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('Coming soon')));
-          }
-      }
-    });
-  }
-
-  void _showNewChatBottomSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: EchoTheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(
-                Icons.person_outline,
-                color: EchoTheme.textSecondary,
-              ),
-              title: const Text(
-                'New Chat',
-                style: TextStyle(color: EchoTheme.textPrimary),
-              ),
-              subtitle: const Text(
-                'Start a conversation with a contact',
-                style: TextStyle(color: EchoTheme.textMuted),
-              ),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _openContacts();
-              },
-            ),
-            ListTile(
-              leading: const Icon(
-                Icons.group_add_outlined,
-                color: EchoTheme.textSecondary,
-              ),
-              title: const Text(
-                'New Group',
-                style: TextStyle(color: EchoTheme.textPrimary),
-              ),
-              subtitle: const Text(
-                'Create a group conversation',
-                style: TextStyle(color: EchoTheme.textMuted),
-              ),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _openCreateGroup();
-              },
-            ),
-            ListTile(
-              leading: const Icon(
-                Icons.explore_outlined,
-                color: EchoTheme.textSecondary,
-              ),
-              title: const Text(
-                'Discover Groups',
-                style: TextStyle(color: EchoTheme.textPrimary),
-              ),
-              subtitle: const Text(
-                'Find and join public groups',
-                style: TextStyle(color: EchoTheme.textMuted),
-              ),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('Coming soon')));
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _openContacts() {
     if (_isDesktop) {
       _showContactsDialog();
@@ -301,6 +129,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _showCreateGroupDialog();
     } else {
       context.push('/create-group');
+    }
+  }
+
+  void _showDiscoverSnackbar() {
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Coming soon')));
+    }
+  }
+
+  /// Called from the Contacts tab in the sidebar when "Message" is tapped.
+  Future<void> _messageContact(String userId, String username) async {
+    final conv = await ref
+        .read(conversationsProvider.notifier)
+        .getOrCreateDm(userId, username);
+    if (!mounted) return;
+    if (conv != null) {
+      _selectConversation(conv);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not start conversation')),
+      );
     }
   }
 
@@ -363,6 +214,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  ConversationPanel _buildConversationPanel() {
+    return ConversationPanel(
+      selectedConversationId: _selectedConversation?.id,
+      onConversationTap: _selectConversation,
+      onNewChat: _openContacts,
+      onNewGroup: _openCreateGroup,
+      onDiscover: _showDiscoverSnackbar,
+      onSettings: () => context.push('/settings'),
+      onShowContacts: _openContacts,
+      onMessageContact: _messageContact,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
@@ -405,16 +269,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: Row(
         children: [
           // Left sidebar: conversations (320px)
-          SizedBox(
-            width: 320,
-            child: ConversationPanel(
-              selectedConversationId: _selectedConversation?.id,
-              onConversationTap: _selectConversation,
-              onNewChat: _showNewChatOptions,
-              onSettings: () => context.push('/settings'),
-              onShowContacts: _openContacts,
-            ),
-          ),
+          SizedBox(width: 320, child: _buildConversationPanel()),
           // Thin vertical divider
           Container(width: 1, color: EchoTheme.border),
           // Center: chat area (flex)
@@ -447,16 +302,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: Row(
         children: [
           // Left sidebar: conversations
-          SizedBox(
-            width: 300,
-            child: ConversationPanel(
-              selectedConversationId: _selectedConversation?.id,
-              onConversationTap: _selectConversation,
-              onNewChat: _showNewChatOptions,
-              onSettings: () => context.push('/settings'),
-              onShowContacts: _openContacts,
-            ),
-          ),
+          SizedBox(width: 300, child: _buildConversationPanel()),
           // Thin vertical divider
           Container(width: 1, color: EchoTheme.border),
           // Right: chat area
@@ -505,15 +351,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    return Scaffold(
-      body: ConversationPanel(
-        selectedConversationId: _selectedConversation?.id,
-        onConversationTap: _selectConversation,
-        onNewChat: _showNewChatOptions,
-        onSettings: () => context.push('/settings'),
-        onShowContacts: _openContacts,
-      ),
-    );
+    return Scaffold(body: _buildConversationPanel());
   }
 
   Widget _buildEmptyState() {
