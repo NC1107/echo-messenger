@@ -114,8 +114,10 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Contacts')),
-      body:
-          contactsState.isLoading &&
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: contactsState.isLoading &&
               contactsState.contacts.isEmpty &&
               contactsState.pendingRequests.isEmpty
           ? const Center(child: CircularProgressIndicator())
@@ -222,6 +224,8 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                 ],
               ),
             ),
+        ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddContactDialog,
         child: const Icon(Icons.person_add_outlined),

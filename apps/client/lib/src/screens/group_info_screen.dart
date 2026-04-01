@@ -221,7 +221,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Group Info')),
-      body: ListView(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: ListView(
         children: [
           const SizedBox(height: 24),
           Center(
@@ -291,6 +294,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           ),
           const SizedBox(height: 24),
         ],
+      ),
+        ),
       ),
     );
   }

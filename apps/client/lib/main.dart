@@ -15,6 +15,14 @@ void main() async {
   // Load persisted server URL before any network calls
   await container.read(serverUrlProvider.notifier).load();
 
+  // For web: check URL query params to allow overriding the server URL
+  if (kIsWeb) {
+    final serverParam = Uri.base.queryParameters['server'];
+    if (serverParam != null && serverParam.isNotEmpty) {
+      await container.read(serverUrlProvider.notifier).setUrl(serverParam);
+    }
+  }
+
   final auth = container.read(authProvider.notifier);
 
   // Try auto-login from stored credentials (SharedPreferences)

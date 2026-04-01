@@ -35,13 +35,11 @@ class CryptoService {
 
   /// Initialize: load or generate identity key pair.
   Future<void> init() async {
-    debugPrint('[CryptoService] init() starting...');
     try {
       final prefs = await SharedPreferences.getInstance();
       final storedPrivate = prefs.getString(_identityKeyPref);
 
       if (storedPrivate != null) {
-        debugPrint('[CryptoService] Loading existing keypair from prefs');
         final privateBytes = base64Decode(storedPrivate);
         final publicBytes = base64Decode(prefs.getString(_identityPubKeyPref)!);
         _identityKeyPair = SimpleKeyPairData(
@@ -50,7 +48,6 @@ class CryptoService {
           type: KeyPairType.x25519,
         );
       } else {
-        debugPrint('[CryptoService] Generating new X25519 keypair...');
         _identityKeyPair = await _x25519.newKeyPair();
         final privateBytes = await (_identityKeyPair as SimpleKeyPairData)
             .extractPrivateKeyBytes();
@@ -60,9 +57,6 @@ class CryptoService {
         await prefs.setString(
           _identityPubKeyPref,
           base64Encode(publicKey.bytes),
-        );
-        debugPrint(
-          '[CryptoService] Keypair generated and saved (${publicKey.bytes.length} bytes)',
         );
       }
 
@@ -74,24 +68,17 @@ class CryptoService {
           _sessionKeys[userId] = SecretKeyData(secretBytes);
         }
       }
-      debugPrint(
-        '[CryptoService] init() complete. ${_sessionKeys.length} cached session keys.',
-      );
-    } catch (e, st) {
-      debugPrint('[CryptoService] init() FAILED: $e');
-      debugPrint('[CryptoService] $st');
+    } catch (e) {
       rethrow;
     }
   }
 
   /// Upload our public key to the server as a PreKey bundle.
   Future<void> uploadKeys() async {
-    debugPrint('[CryptoService] uploadKeys() starting...');
     if (_identityKeyPair == null) await init();
 
     final publicKey = await _identityKeyPair!.extractPublicKey();
     final pubKeyB64 = base64Encode(publicKey.bytes);
-    debugPrint('[CryptoService] Public key: $pubKeyB64');
 
     // For the prototype, we use the same key as identity, signed prekey,
     // and generate a few one-time prekeys.
@@ -121,15 +108,11 @@ class CryptoService {
       body: body,
     );
 
-    debugPrint(
-      '[CryptoService] uploadKeys response: ${response.statusCode} ${response.body}',
-    );
     if (response.statusCode != 201) {
       throw Exception(
         'Failed to upload keys: HTTP ${response.statusCode} ${response.body}',
       );
     }
-    debugPrint('[CryptoService] Keys uploaded successfully');
   }
 
   /// Fetch a peer's public key and derive a shared secret via X25519 DH.
