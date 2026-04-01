@@ -87,3 +87,6 @@ package-lock.json
 
 # Playwright
 tests/e2e/test-results/
+
+# Uploaded media files
+uploads/

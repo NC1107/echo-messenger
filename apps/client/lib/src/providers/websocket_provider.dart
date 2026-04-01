@@ -75,6 +75,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     _channel = WebSocketChannel.connect(uri);
     state = state.copyWith(isConnected: true);
 
+    // Reload conversations now that WebSocket is connected -- ensures the
+    // list is up-to-date even if the initial REST call raced with connection.
+    ref.read(conversationsProvider.notifier).loadConversations();
+
     _subscription = _channel!.stream.listen(
       (data) => _onMessage(data as String),
       onDone: () {

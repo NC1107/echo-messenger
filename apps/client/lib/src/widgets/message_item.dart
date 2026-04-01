@@ -35,37 +35,11 @@ class _MessageItemState extends State<MessageItem> {
   String _formatTimestamp(String timestamp) {
     try {
       final dt = DateTime.parse(timestamp).toLocal();
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final messageDay = DateTime(dt.year, dt.month, dt.day);
-      final diff = today.difference(messageDay).inDays;
-
-      final hour = dt.hour.toString().padLeft(2, '0');
+      final hour = dt.hour;
       final minute = dt.minute.toString().padLeft(2, '0');
-      final time = '$hour:$minute';
-
-      if (diff == 0) {
-        return 'Today at $time';
-      } else if (diff == 1) {
-        return 'Yesterday at $time';
-      } else {
-        const months = [
-          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-        ];
-        return '${months[dt.month - 1]} ${dt.day}, ${dt.year} at $time';
-      }
-    } catch (_) {
-      return '';
-    }
-  }
-
-  String _formatShortTime(String timestamp) {
-    try {
-      final dt = DateTime.parse(timestamp).toLocal();
-      final hour = dt.hour.toString().padLeft(2, '0');
-      final minute = dt.minute.toString().padLeft(2, '0');
-      return '$hour:$minute';
+      final ampm = hour >= 12 ? 'PM' : 'AM';
+      final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+      return '$displayHour:$minute $ampm';
     } catch (_) {
       return '';
     }
@@ -103,14 +77,12 @@ class _MessageItemState extends State<MessageItem> {
       const Color(0xFF5DADE2),
       const Color(0xFFAF7AC5),
       const Color(0xFFEB984E),
-      const Color(0xFF5DADE2),
-      const Color(0xFFE74C3C),
     ];
     final index = userId.hashCode.abs() % colors.length;
     return colors[index];
   }
 
-  Widget _buildReactions(List<Reaction> reactions) {
+  Widget _buildReactions(List<Reaction> reactions, bool isMine) {
     if (reactions.isEmpty) return const SizedBox.shrink();
 
     final grouped = <String, List<Reaction>>{};
@@ -119,10 +91,15 @@ class _MessageItemState extends State<MessageItem> {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(left: 48, top: 4),
+      padding: EdgeInsets.only(
+        top: 4,
+        left: isMine ? 0 : 40,
+        right: isMine ? 0 : 0,
+      ),
       child: Wrap(
         spacing: 4,
         runSpacing: 4,
+        alignment: isMine ? WrapAlignment.end : WrapAlignment.start,
         children: grouped.entries.map((entry) {
           final hasMyReaction =
               entry.value.any((r) => r.userId == widget.myUserId);
@@ -130,14 +107,14 @@ class _MessageItemState extends State<MessageItem> {
             onTap: () {
               widget.onReactionSelect?.call(widget.message, entry.key);
             },
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(10),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
                 color: hasMyReaction
-                    ? EchoTheme.accent.withValues(alpha: 0.3)
-                    : EchoTheme.inputBg,
-                borderRadius: BorderRadius.circular(4),
+                    ? EchoTheme.accent.withValues(alpha: 0.2)
+                    : EchoTheme.surface,
+                borderRadius: BorderRadius.circular(10),
                 border: hasMyReaction
                     ? Border.all(color: EchoTheme.accent, width: 1)
                     : null,
@@ -170,106 +147,101 @@ class _MessageItemState extends State<MessageItem> {
   @override
   Widget build(BuildContext context) {
     final msg = widget.message;
+    final isMine = msg.isMine;
     final isFailed = msg.status == MessageStatus.failed;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: Container(
-        color: _isHovered ? EchoTheme.hoverBg : Colors.transparent,
         padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: widget.showHeader ? 8 : 1,
-          bottom: 1,
+          left: 24,
+          right: 24,
+          top: widget.showHeader ? 8 : 2,
+          bottom: 2,
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment:
+              isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             Stack(
               children: [
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment:
+                      isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    // Avatar column (32px wide + 16px gap)
-                    SizedBox(
-                      width: 40,
-                      child: widget.showHeader
-                          ? CircleAvatar(
-                              radius: 16,
-                              backgroundColor:
-                                  _getUserColor(msg.fromUserId),
-                              child: Text(
-                                msg.fromUsername.isNotEmpty
-                                    ? msg.fromUsername[0].toUpperCase()
-                                    : '?',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+                    // Avatar for received messages (first in group only)
+                    if (!isMine) ...[
+                      SizedBox(
+                        width: 28,
+                        child: widget.showHeader
+                            ? CircleAvatar(
+                                radius: 14,
+                                backgroundColor:
+                                    _getUserColor(msg.fromUserId),
+                                child: Text(
+                                  msg.fromUsername.isNotEmpty
+                                      ? msg.fromUsername[0].toUpperCase()
+                                      : '?',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    // Bubble
+                    Flexible(
+                      child: Container(
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.of(context).size.width * 0.65,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isFailed
+                              ? EchoTheme.danger.withValues(alpha: 0.2)
+                              : isMine
+                                  ? EchoTheme.sentBubble
+                                  : EchoTheme.recvBubble,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Sender name for group received messages
+                            if (!isMine && widget.showHeader)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Text(
+                                  msg.fromUsername,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: _getUserColor(msg.fromUserId),
+                                  ),
                                 ),
                               ),
-                            )
-                          : _isHovered
-                              ? SizedBox(
-                                  width: 40,
-                                  child: Center(
-                                    child: Text(
-                                      _formatShortTime(msg.timestamp),
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        color: EchoTheme.textMuted,
-                                      ),
-                                    ),
-                                  ),
-                                )
-                              : const SizedBox(width: 40),
-                    ),
-                    const SizedBox(width: 8),
-                    // Content
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (widget.showHeader)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 2),
-                              child: Row(
-                                children: [
-                                  Text(
-                                    msg.isMine
-                                        ? 'You'
-                                        : msg.fromUsername,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color:
-                                          _getUserColor(msg.fromUserId),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    _formatTimestamp(msg.timestamp),
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: EchoTheme.textMuted,
-                                    ),
-                                  ),
-                                  if (msg.isMine)
-                                    _buildStatusIcon(msg.status),
-                                ],
+                            // Message text
+                            Text(
+                              msg.content,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: isFailed
+                                    ? EchoTheme.danger
+                                    : isMine
+                                        ? Colors.white
+                                        : EchoTheme.textPrimary,
+                                height: 1.4,
                               ),
                             ),
-                          Text(
-                            msg.content,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: isFailed
-                                  ? EchoTheme.danger
-                                  : EchoTheme.textPrimary,
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -278,13 +250,14 @@ class _MessageItemState extends State<MessageItem> {
                 if (_isHovered)
                   Positioned(
                     top: 0,
-                    right: 0,
+                    right: isMine ? null : 0,
+                    left: isMine ? 0 : null,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: EchoTheme.panelBg,
-                        borderRadius: BorderRadius.circular(4),
+                        color: EchoTheme.surface,
+                        borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: EchoTheme.divider,
+                          color: EchoTheme.border,
                           width: 1,
                         ),
                       ),
@@ -293,7 +266,7 @@ class _MessageItemState extends State<MessageItem> {
                         children: [
                           _HoverActionButton(
                             icon: Icons.add_reaction_outlined,
-                            tooltip: 'Add Reaction',
+                            tooltip: 'React',
                             onPressed: () =>
                                 widget.onReactionTap?.call(msg),
                           ),
@@ -302,18 +275,36 @@ class _MessageItemState extends State<MessageItem> {
                             tooltip: 'Reply',
                             onPressed: () {},
                           ),
-                          _HoverActionButton(
-                            icon: Icons.more_horiz,
-                            tooltip: 'More',
-                            onPressed: () {},
-                          ),
                         ],
                       ),
                     ),
                   ),
               ],
             ),
-            _buildReactions(msg.reactions),
+            // Timestamp (only on last in group)
+            if (widget.isLastInGroup)
+              Padding(
+                padding: EdgeInsets.only(
+                  top: 4,
+                  left: isMine ? 0 : 36,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment:
+                      isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+                  children: [
+                    Text(
+                      _formatTimestamp(msg.timestamp),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: EchoTheme.textMuted,
+                      ),
+                    ),
+                    if (isMine) _buildStatusIcon(msg.status),
+                  ],
+                ),
+              ),
+            _buildReactions(msg.reactions, isMine),
           ],
         ),
       ),
@@ -340,7 +331,7 @@ class _HoverActionButton extends StatelessWidget {
         onTap: onPressed,
         child: Padding(
           padding: const EdgeInsets.all(6),
-          child: Icon(icon, size: 18, color: EchoTheme.textSecondary),
+          child: Icon(icon, size: 16, color: EchoTheme.textSecondary),
         ),
       ),
     );

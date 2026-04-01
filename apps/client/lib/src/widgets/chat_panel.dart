@@ -243,25 +243,25 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       }
 
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
         child: Row(
           children: [
             const Expanded(
-              child: Divider(color: EchoTheme.divider, thickness: 1),
+              child: Divider(color: EchoTheme.border, thickness: 1),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
                 label,
                 style: const TextStyle(
                   fontSize: 11,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w600,
                   color: EchoTheme.textMuted,
                 ),
               ),
             ),
             const Expanded(
-              child: Divider(color: EchoTheme.divider, thickness: 1),
+              child: Divider(color: EchoTheme.border, thickness: 1),
             ),
           ],
         ),
@@ -273,13 +273,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
   Widget _buildEncryptionBanner(bool isGroup) {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: isGroup
-            ? EchoTheme.warning.withValues(alpha: 0.1)
-            : EchoTheme.online.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(4),
+            ? EchoTheme.warning.withValues(alpha: 0.08)
+            : EchoTheme.online.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -290,7 +290,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             size: 14,
             color: isGroup ? EchoTheme.warning : EchoTheme.online,
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
           Text(
             isGroup
                 ? 'Group messages are not encrypted'
@@ -312,10 +312,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: EchoTheme.panelBg,
+      backgroundColor: EchoTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
       builder: (sheetContext) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
           child: Wrap(
             spacing: 12,
             runSpacing: 12,
@@ -329,10 +332,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   _toggleReaction(message, emoji, alreadyReacted);
                 },
                 child: Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: alreadyReacted
-                        ? EchoTheme.accent.withValues(alpha: 0.3)
+                        ? EchoTheme.accent.withValues(alpha: 0.2)
                         : null,
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -394,11 +397,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.chat_bubble_outline,
-                size: 48,
-                color: EchoTheme.textMuted.withValues(alpha: 0.5),
+                Icons.chat_bubble_outline_rounded,
+                size: 56,
+                color: EchoTheme.textMuted.withValues(alpha: 0.4),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               const Text(
                 'Select a conversation to start chatting',
                 style: TextStyle(
@@ -444,75 +447,82 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       color: EchoTheme.chatBg,
       child: Column(
         children: [
-          // Header bar
+          // Header bar -- 56px
           Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            height: 56,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             decoration: const BoxDecoration(
               color: EchoTheme.chatBg,
               border: Border(
-                bottom: BorderSide(color: EchoTheme.background, width: 1),
+                bottom: BorderSide(color: EchoTheme.border, width: 1),
               ),
             ),
             child: Row(
               children: [
-                if (conv.isGroup)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 6),
-                    child: Icon(Icons.tag, size: 20, color: EchoTheme.textMuted),
-                  ),
-                Text(
-                  displayName,
-                  style: const TextStyle(
-                    color: EchoTheme.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
+                // Avatar
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: conv.isGroup
+                      ? EchoTheme.accent
+                      : _avatarColor(displayName),
+                  child: conv.isGroup
+                      ? const Icon(Icons.group, size: 14, color: Colors.white)
+                      : Text(
+                          displayName.isNotEmpty
+                              ? displayName[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                ),
+                const SizedBox(width: 12),
+                // Name + status
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayName,
+                        style: const TextStyle(
+                          color: EchoTheme.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        conv.isGroup
+                            ? '${conv.members.length} members'
+                            : 'Online',
+                        style: const TextStyle(
+                          color: EchoTheme.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                if (conv.isGroup) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    width: 1,
-                    height: 20,
-                    color: EchoTheme.divider,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${conv.members.length} Members',
-                    style: const TextStyle(
-                      color: EchoTheme.textMuted,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-                const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.push_pin_outlined, size: 18),
-                  color: EchoTheme.textSecondary,
-                  tooltip: 'Pinned Messages',
-                  onPressed: () {},
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.search, size: 18),
+                  icon: const Icon(Icons.search, size: 20),
                   color: EchoTheme.textSecondary,
                   tooltip: 'Search',
                   onPressed: () {},
                   padding: EdgeInsets.zero,
                   constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                      const BoxConstraints(minWidth: 36, minHeight: 36),
                 ),
                 if (conv.isGroup)
                   IconButton(
-                    icon: const Icon(Icons.people, size: 18),
+                    icon: const Icon(Icons.people_outline, size: 20),
                     color: EchoTheme.textSecondary,
                     tooltip: 'Members',
                     onPressed: widget.onGroupInfo,
                     padding: EdgeInsets.zero,
                     constraints:
-                        const BoxConstraints(minWidth: 32, minHeight: 32),
+                        const BoxConstraints(minWidth: 36, minHeight: 36),
                   ),
               ],
             ),
@@ -536,10 +546,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               CircleAvatar(
-                                radius: 32,
-                                backgroundColor: EchoTheme.accent,
+                                radius: 36,
+                                backgroundColor: conv.isGroup
+                                    ? EchoTheme.accent
+                                    : _avatarColor(displayName),
                                 child: conv.isGroup
-                                    ? const Icon(Icons.tag,
+                                    ? const Icon(Icons.group,
                                         size: 32, color: Colors.white)
                                     : Text(
                                         displayName.isNotEmpty
@@ -552,7 +564,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                         ),
                                       ),
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 16),
                               Text(
                                 displayName,
                                 style: const TextStyle(
@@ -561,14 +573,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 6),
                               Text(
                                 conv.isGroup
                                     ? 'This is the start of #$displayName'
-                                    : 'This is the beginning of your conversation with $displayName',
+                                    : 'Start your conversation with $displayName',
                                 style: const TextStyle(
                                   color: EchoTheme.textMuted,
-                                  fontSize: 13,
+                                  fontSize: 14,
                                 ),
                               ),
                             ],
@@ -589,7 +601,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                       final msgIndex = index - 1;
                       final msg = messages[msgIndex];
 
-                      // Determine if we should show a header (avatar + name)
+                      // Determine grouping
                       bool showHeader = true;
                       bool isLastInGroup = true;
                       if (msgIndex > 0) {
@@ -649,7 +661,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             Container(
               width: double.infinity,
               padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
               child: Text(
                 conv.isGroup
                     ? (typingUsers.length == 1
@@ -665,66 +677,87 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             ),
           // Input area
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
             color: EchoTheme.chatBg,
             child: Container(
+              height: 48,
               decoration: BoxDecoration(
-                color: EchoTheme.inputBg,
+                color: EchoTheme.surface,
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: EchoTheme.border, width: 1),
               ),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   // Attachment button
-                  IconButton(
-                    icon: const Icon(Icons.add_circle_outline, size: 22),
-                    color: EchoTheme.textSecondary,
-                    tooltip: 'Attach',
-                    onPressed: () {},
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: IconButton(
+                      icon: const Icon(Icons.attach_file_rounded, size: 20),
+                      color: EchoTheme.textSecondary,
+                      tooltip: 'Attach',
+                      onPressed: () {},
+                      padding: EdgeInsets.zero,
+                      constraints:
+                          const BoxConstraints(minWidth: 36, minHeight: 36),
+                    ),
                   ),
                   // Text field
                   Expanded(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      child: TextField(
-                        controller: _messageController,
-                        maxLines: null,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: EchoTheme.textPrimary,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: conv.isGroup
-                              ? 'Message #$displayName'
-                              : 'Message @$displayName',
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          filled: false,
-                          contentPadding:
-                              const EdgeInsets.symmetric(vertical: 10),
-                        ),
-                        onChanged: _onInputChanged,
-                        onSubmitted: (_) => _sendMessage(),
+                    child: TextField(
+                      controller: _messageController,
+                      maxLines: 1,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: EchoTheme.textPrimary,
                       ),
+                      decoration: const InputDecoration(
+                        hintText: 'Type a message...',
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        filled: false,
+                        contentPadding:
+                            EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onChanged: _onInputChanged,
+                      onSubmitted: (_) => _sendMessage(),
                     ),
                   ),
                   // Emoji button
                   IconButton(
                     icon:
-                        const Icon(Icons.emoji_emotions_outlined, size: 22),
+                        const Icon(Icons.emoji_emotions_outlined, size: 20),
                     color: EchoTheme.textSecondary,
                     tooltip: 'Emoji',
                     onPressed: () {},
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 36, minHeight: 36),
                   ),
-                  // Send button (only when text is not empty)
+                  // Send button
                   if (!_isTextEmpty)
-                    IconButton(
-                      icon: const Icon(Icons.send, size: 20),
-                      color: EchoTheme.accent,
-                      tooltip: 'Send',
-                      onPressed: _sendMessage,
-                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: GestureDetector(
+                        onTap: _sendMessage,
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: const BoxDecoration(
+                            color: EchoTheme.accent,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.arrow_upward,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    const SizedBox(width: 8),
                 ],
               ),
             ),
@@ -732,5 +765,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         ],
       ),
     );
+  }
+
+  Color _avatarColor(String name) {
+    final colors = [
+      const Color(0xFFE06666),
+      const Color(0xFFF6B05C),
+      const Color(0xFF57D28F),
+      const Color(0xFF5DADE2),
+      const Color(0xFFAF7AC5),
+      const Color(0xFFEB984E),
+    ];
+    final index = name.hashCode.abs() % colors.length;
+    return colors[index];
   }
 }

@@ -14,10 +14,13 @@ class UserStatusBar extends ConsumerWidget {
     final initial = username.isNotEmpty ? username[0].toUpperCase() : '?';
 
     return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: const BoxDecoration(
-        color: EchoTheme.background,
+        color: EchoTheme.mainBg,
+        border: Border(
+          top: BorderSide(color: EchoTheme.border, width: 1),
+        ),
       ),
       child: Row(
         children: [
@@ -46,7 +49,7 @@ class UserStatusBar extends ConsumerWidget {
                     color: EchoTheme.online,
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: EchoTheme.background,
+                      color: EchoTheme.mainBg,
                       width: 2,
                     ),
                   ),
@@ -54,7 +57,7 @@ class UserStatusBar extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           // Username and status
           Expanded(
             child: Column(
@@ -80,29 +83,11 @@ class UserStatusBar extends ConsumerWidget {
               ],
             ),
           ),
-          // Mic icon (placeholder)
-          IconButton(
-            icon: const Icon(Icons.mic_none, size: 18),
-            color: EchoTheme.textSecondary,
-            tooltip: 'Mute',
-            onPressed: () {},
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-          // Headphone icon (placeholder)
-          IconButton(
-            icon: const Icon(Icons.headphones, size: 18),
-            color: EchoTheme.textSecondary,
-            tooltip: 'Deafen',
-            onPressed: () {},
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
           // Settings gear
           IconButton(
-            icon: const Icon(Icons.settings, size: 18),
+            icon: const Icon(Icons.settings_outlined, size: 18),
             color: EchoTheme.textSecondary,
-            tooltip: 'User Settings',
+            tooltip: 'Settings',
             onPressed: () {},
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),

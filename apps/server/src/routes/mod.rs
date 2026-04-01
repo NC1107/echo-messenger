@@ -2,6 +2,7 @@ pub mod auth;
 pub mod contacts;
 pub mod groups;
 pub mod keys;
+pub mod media;
 pub mod messages;
 pub mod reactions;
 pub mod ws;
@@ -56,6 +57,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/upload", post(keys::upload_bundle))
         .route("/bundle/{user_id}", get(keys::get_bundle));
 
+    let media_routes = Router::new()
+        .route("/upload", post(media::upload))
+        .route("/{id}", get(media::download));
+
     let group_routes = Router::new()
         .route("/", post(groups::create_group))
         .route("/{id}", get(groups::get_group))
@@ -68,6 +73,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api/contacts", contact_routes)
         .nest("/api/keys", key_routes)
         .nest("/api/groups", group_routes)
+        .nest("/api/media", media_routes)
         .nest("/api", message_routes)
         .route("/ws", get(ws::ws_upgrade))
         .layer(cors)

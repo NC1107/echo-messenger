@@ -11,7 +11,6 @@ import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/chat_panel.dart';
 import '../widgets/conversation_panel.dart';
-import '../widgets/server_rail.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -22,8 +21,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   Conversation? _selectedConversation;
-  String? _selectedGroupId;
-  bool _dmSelected = true;
 
   // For narrow screen navigation
   int _narrowPanelIndex = 0; // 0 = conv list, 1 = chat
@@ -37,18 +34,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _initData() async {
-    // Initialize crypto
+    // 1. Initialize crypto (awaited -- must complete before anything else)
     final cryptoNotifier = ref.read(cryptoProvider.notifier);
     await cryptoNotifier.initAndUploadKeys();
 
-    // Load conversations
-    ref.read(conversationsProvider.notifier).loadConversations();
-
-    // Connect WebSocket
+    // 2. Connect WebSocket
     final wsState = ref.read(websocketProvider);
     if (!wsState.isConnected) {
       ref.read(websocketProvider.notifier).connect();
     }
+
+    // 3. Load conversations AFTER crypto and WS are set up
+    await ref.read(conversationsProvider.notifier).loadConversations();
   }
 
   void _logout() {
@@ -64,26 +61,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
-  void _selectDm() {
-    setState(() {
-      _dmSelected = true;
-      _selectedGroupId = null;
-    });
-  }
-
-  void _selectGroup(Conversation group) {
-    setState(() {
-      _dmSelected = false;
-      _selectedGroupId = group.id;
-      _selectedConversation = group;
-      _narrowPanelIndex = 1;
-    });
-  }
-
   void _showNewChatOptions() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: EchoTheme.panelBg,
+      backgroundColor: EchoTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
       builder: (sheetContext) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -159,28 +143,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       body: Row(
         children: [
-          // Server rail
-          ServerRail(
-            dmSelected: _dmSelected,
-            selectedGroupId: _selectedGroupId,
-            onDmTap: _selectDm,
-            onGroupTap: _selectGroup,
-            onCreateTap: _showNewChatOptions,
-            onSettingsTap: _logout,
-          ),
-          // Conversation panel
-          ConversationPanel(
-            selectedConversationId: _selectedConversation?.id,
-            filterGroupId: _dmSelected ? null : _selectedGroupId,
-            onConversationTap: _selectConversation,
-            onNewChat: _showNewChatOptions,
-          ),
-          // Chat panel
-          Expanded(
-            child: ChatPanel(
-              conversation: _selectedConversation,
-              onGroupInfo: _showGroupInfo,
+          // Left sidebar: conversations
+          SizedBox(
+            width: 300,
+            child: ConversationPanel(
+              selectedConversationId: _selectedConversation?.id,
+              onConversationTap: _selectConversation,
+              onNewChat: _showNewChatOptions,
+              onLogout: _logout,
             ),
+          ),
+          // Thin vertical divider
+          Container(width: 1, color: EchoTheme.border),
+          // Right: chat area
+          Expanded(
+            child: _selectedConversation != null
+                ? ChatPanel(
+                    conversation: _selectedConversation,
+                    onGroupInfo: _showGroupInfo,
+                  )
+                : _buildEmptyState(),
           ),
         ],
       ),
@@ -189,13 +171,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Widget _buildNarrowLayout() {
     if (_narrowPanelIndex == 1 && _selectedConversation != null) {
-      // Show chat with back button
       return Scaffold(
         body: Column(
           children: [
-            // Custom back bar
             Container(
-              height: 48,
+              height: 56,
               color: EchoTheme.chatBg,
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
@@ -221,27 +201,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    // Show conversation list
     return Scaffold(
-      body: Row(
-        children: [
-          ServerRail(
-            dmSelected: _dmSelected,
-            selectedGroupId: _selectedGroupId,
-            onDmTap: _selectDm,
-            onGroupTap: _selectGroup,
-            onCreateTap: _showNewChatOptions,
-            onSettingsTap: _logout,
-          ),
-          Expanded(
-            child: ConversationPanel(
-              selectedConversationId: _selectedConversation?.id,
-              filterGroupId: _dmSelected ? null : _selectedGroupId,
-              onConversationTap: _selectConversation,
-              onNewChat: _showNewChatOptions,
+      body: ConversationPanel(
+        selectedConversationId: _selectedConversation?.id,
+        onConversationTap: _selectConversation,
+        onNewChat: _showNewChatOptions,
+        onLogout: _logout,
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Container(
+      color: EchoTheme.chatBg,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.chat_bubble_outline_rounded,
+              size: 56,
+              color: EchoTheme.textMuted.withValues(alpha: 0.4),
             ),
-          ),
-        ],
+            const SizedBox(height: 20),
+            const Text(
+              'Select a conversation',
+              style: TextStyle(
+                color: EchoTheme.textSecondary,
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Pick someone from the left to start chatting',
+              style: TextStyle(
+                color: EchoTheme.textMuted,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
