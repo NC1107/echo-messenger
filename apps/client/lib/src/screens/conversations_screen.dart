@@ -72,7 +72,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.person),
+              leading: const Icon(Icons.person_outline),
               title: const Text('New Chat'),
               subtitle: const Text('Start a conversation with a contact'),
               onTap: () {
@@ -81,7 +81,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.group_add),
+              leading: const Icon(Icons.group_add_outlined),
               title: const Text('New Group'),
               subtitle: const Text('Create a group conversation'),
               onTap: () {
@@ -160,7 +160,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
             ),
             const SizedBox(width: 4),
             Icon(
-              cryptoState.isInitialized ? Icons.lock : Icons.lock_open,
+              cryptoState.isInitialized ? Icons.lock_outlined : Icons.lock_open_outlined,
               size: 14,
               color: cryptoState.isInitialized ? Colors.green : Colors.orange,
             ),
@@ -168,12 +168,12 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.people),
+            icon: const Icon(Icons.people_outline),
             tooltip: 'Contacts',
             onPressed: () => context.push('/contacts'),
           ),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert),
+            icon: const Icon(Icons.more_vert_outlined),
             tooltip: 'More',
             onSelected: (value) {
               switch (value) {
@@ -200,7 +200,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                 value: 'refresh',
                 child: Row(
                   children: [
-                    Icon(Icons.refresh, size: 20),
+                    Icon(Icons.refresh_outlined, size: 20),
                     SizedBox(width: 8),
                     Text('Refresh'),
                   ],
@@ -210,7 +210,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
                 value: 'logout',
                 child: Row(
                   children: [
-                    Icon(Icons.logout, size: 20),
+                    Icon(Icons.logout_outlined, size: 20),
                     SizedBox(width: 8),
                     Text('Logout'),
                   ],
@@ -365,7 +365,7 @@ class _ConversationsScreenState extends ConsumerState<ConversationsScreen> {
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showNewChatOptions,
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.add_outlined),
       ),
     );
   }

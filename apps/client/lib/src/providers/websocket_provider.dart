@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -226,9 +227,12 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
       case 'typing':
         _handleTyping(json, myUserId);
       case 'reaction':
-        _handleReaction(json);
-      case 'remove_reaction':
-        _handleRemoveReaction(json);
+        final action = json['action'] as String?;
+        if (action == 'remove') {
+          _handleRemoveReaction(json);
+        } else {
+          _handleReaction(json);
+        }
       case 'delivered':
         _handleDelivered(json);
       case 'error':
@@ -287,6 +291,14 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     ref.read(conversationsProvider.notifier).loadConversations();
   }
 
+  /// Heuristic: returns true if the text looks like base64-encoded ciphertext
+  /// (at least 20 chars of only base64 alphabet). Plaintext group messages
+  /// will almost never match this pattern.
+  bool _looksEncrypted(String text) {
+    if (text.length < 20) return false;
+    return RegExp(r'^[A-Za-z0-9+/=]{20,}$').hasMatch(text);
+  }
+
   Future<void> _decryptAndDeliverWithPreview(
     CryptoService crypto,
     Map<String, dynamic> json,
@@ -298,10 +310,30 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     String senderUsername,
   ) async {
     String decryptedContent;
-    try {
-      decryptedContent = await crypto.decryptMessage(fromUserId, rawContent);
-    } catch (_) {
-      decryptedContent = '[Could not decrypt]';
+
+    if (!_looksEncrypted(rawContent)) {
+      // Content does not look encrypted (e.g. plaintext group messages) --
+      // deliver as-is without attempting decryption.
+      decryptedContent = rawContent;
+    } else {
+      try {
+        decryptedContent = await crypto.decryptMessage(fromUserId, rawContent);
+      } catch (firstError) {
+        // First attempt failed -- invalidate cached session key and retry once
+        // with a fresh key fetch.
+        try {
+          await crypto.invalidateSessionKey(fromUserId);
+          decryptedContent =
+              await crypto.decryptMessage(fromUserId, rawContent);
+        } catch (retryError) {
+          debugPrint(
+            '[WebSocket] Decryption failed for message in $conversationId '
+            'from $fromUserId. First error: $firstError, '
+            'Retry error: $retryError',
+          );
+          decryptedContent = '[Could not decrypt]';
+        }
+      }
     }
 
     final decryptedJson = Map<String, dynamic>.from(json);

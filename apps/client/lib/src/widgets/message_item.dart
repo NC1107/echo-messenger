@@ -1,4 +1,6 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
@@ -6,6 +8,9 @@ import '../theme/echo_theme.dart';
 
 /// Common emojis for the reaction picker.
 const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🎉'];
+
+/// Regex for detecting URLs in message text.
+final _urlRegex = RegExp(r'https?://[^\s]+');
 
 class MessageItem extends StatefulWidget {
   final ChatMessage message;
@@ -51,13 +56,13 @@ class _MessageItemState extends State<MessageItem> {
     Color color;
     switch (status) {
       case MessageStatus.sending:
-        icon = Icons.access_time;
+        icon = Icons.schedule_outlined;
         color = EchoTheme.textMuted;
       case MessageStatus.sent:
-        icon = Icons.check;
+        icon = Icons.check_outlined;
         color = EchoTheme.textMuted;
       case MessageStatus.delivered:
-        icon = Icons.done_all;
+        icon = Icons.done_all_outlined;
         color = EchoTheme.online;
       case MessageStatus.failed:
         icon = Icons.error_outline;
@@ -82,6 +87,76 @@ class _MessageItemState extends State<MessageItem> {
     return colors[index];
   }
 
+  /// Build a RichText widget that renders URLs as tappable, underlined links.
+  Widget _buildMessageText(String text, {required Color textColor}) {
+    final matches = _urlRegex.allMatches(text).toList();
+    if (matches.isEmpty) {
+      return Text(
+        text,
+        style: TextStyle(
+          fontSize: 15,
+          color: textColor,
+          height: 1.47,
+        ),
+      );
+    }
+
+    final spans = <InlineSpan>[];
+    int lastEnd = 0;
+
+    for (final match in matches) {
+      // Text before the URL
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: text.substring(lastEnd, match.start),
+          style: TextStyle(
+            fontSize: 15,
+            color: textColor,
+            height: 1.47,
+          ),
+        ));
+      }
+
+      // The URL itself
+      final url = match.group(0)!;
+      spans.add(TextSpan(
+        text: url,
+        style: const TextStyle(
+          fontSize: 15,
+          color: EchoTheme.accentHover,
+          decoration: TextDecoration.underline,
+          decorationColor: EchoTheme.accentHover,
+          height: 1.47,
+        ),
+        recognizer: TapGestureRecognizer()
+          ..onTap = () async {
+            final uri = Uri.tryParse(url);
+            if (uri != null && await canLaunchUrl(uri)) {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            }
+          },
+      ));
+
+      lastEnd = match.end;
+    }
+
+    // Remaining text after last URL
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastEnd),
+        style: TextStyle(
+          fontSize: 15,
+          color: textColor,
+          height: 1.47,
+        ),
+      ));
+    }
+
+    return RichText(
+      text: TextSpan(children: spans),
+    );
+  }
+
   Widget _buildReactions(List<Reaction> reactions, bool isMine) {
     if (reactions.isEmpty) return const SizedBox.shrink();
 
@@ -93,7 +168,7 @@ class _MessageItemState extends State<MessageItem> {
     return Padding(
       padding: EdgeInsets.only(
         top: 4,
-        left: isMine ? 0 : 40,
+        left: isMine ? 0 : 36,
         right: isMine ? 0 : 0,
       ),
       child: Wrap(
@@ -202,14 +277,21 @@ class _MessageItemState extends State<MessageItem> {
                           maxWidth: MediaQuery.of(context).size.width * 0.65,
                         ),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
+                            horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: isFailed
                               ? EchoTheme.danger.withValues(alpha: 0.2)
                               : isMine
                                   ? EchoTheme.sentBubble
                                   : EchoTheme.recvBubble,
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(16),
+                            topRight: const Radius.circular(16),
+                            bottomLeft:
+                                Radius.circular(!isMine ? 4 : 16),
+                            bottomRight:
+                                Radius.circular(isMine ? 4 : 16),
+                          ),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -227,18 +309,14 @@ class _MessageItemState extends State<MessageItem> {
                                   ),
                                 ),
                               ),
-                            // Message text
-                            Text(
+                            // Message text with URL detection
+                            _buildMessageText(
                               msg.content,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: isFailed
-                                    ? EchoTheme.danger
-                                    : isMine
-                                        ? Colors.white
-                                        : EchoTheme.textPrimary,
-                                height: 1.4,
-                              ),
+                              textColor: isFailed
+                                  ? EchoTheme.danger
+                                  : isMine
+                                      ? Colors.white
+                                      : EchoTheme.textPrimary,
                             ),
                           ],
                         ),
@@ -271,7 +349,7 @@ class _MessageItemState extends State<MessageItem> {
                                 widget.onReactionTap?.call(msg),
                           ),
                           _HoverActionButton(
-                            icon: Icons.reply,
+                            icon: Icons.reply_outlined,
                             tooltip: 'Reply',
                             onPressed: () {},
                           ),

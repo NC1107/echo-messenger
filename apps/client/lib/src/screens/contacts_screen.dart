@@ -139,7 +139,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                         subtitle: contact.displayName != null
                             ? Text('@${contact.username}')
                             : null,
-                        trailing: const Icon(Icons.chevron_right),
+                        trailing: const Icon(Icons.chevron_right_outlined),
                         onTap: () {
                           // Navigate back to home -- the user can select the conversation there
                           context.go('/home');
@@ -164,7 +164,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
             ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddContactDialog,
-        child: const Icon(Icons.person_add),
+        child: const Icon(Icons.person_add_outlined),
       ),
     );
   }

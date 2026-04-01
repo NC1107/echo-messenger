@@ -11,14 +11,14 @@ class ConversationPanel extends ConsumerWidget {
   final String? selectedConversationId;
   final void Function(Conversation conversation) onConversationTap;
   final VoidCallback? onNewChat;
-  final VoidCallback? onLogout;
+  final VoidCallback? onSettings;
 
   const ConversationPanel({
     super.key,
     this.selectedConversationId,
     required this.onConversationTap,
     this.onNewChat,
-    this.onLogout,
+    this.onSettings,
   });
 
   String _formatTimestamp(String? timestamp) {
@@ -91,7 +91,7 @@ class ConversationPanel extends ConsumerWidget {
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.edit_square, size: 18),
+                  icon: const Icon(Icons.edit_outlined, size: 18),
                   color: EchoTheme.textSecondary,
                   tooltip: 'New Chat',
                   onPressed: onNewChat,
@@ -109,12 +109,12 @@ class ConversationPanel extends ConsumerWidget {
               height: 36,
               decoration: BoxDecoration(
                 color: EchoTheme.surface,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(10),
               ),
               child: const Row(
                 children: [
                   SizedBox(width: 12),
-                  Icon(Icons.search, size: 18, color: EchoTheme.textMuted),
+                  Icon(Icons.search_outlined, size: 18, color: EchoTheme.textMuted),
                   SizedBox(width: 8),
                   Text(
                     'Search conversations',
@@ -265,8 +265,8 @@ class ConversationPanel extends ConsumerWidget {
                 IconButton(
                   icon: const Icon(Icons.settings_outlined, size: 18),
                   color: EchoTheme.textSecondary,
-                  tooltip: 'Settings / Logout',
-                  onPressed: onLogout,
+                  tooltip: 'Settings',
+                  onPressed: onSettings,
                   padding: EdgeInsets.zero,
                   constraints:
                       const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -309,6 +309,12 @@ class _ConversationItemState extends State<_ConversationItem> {
     final hasUnread = conv.unreadCount > 0;
 
     String? snippet = conv.lastMessage;
+    // Mask encrypted / undecryptable previews with a friendly fallback
+    if (snippet != null &&
+        (snippet.startsWith('[Could not decrypt]') ||
+            snippet.startsWith('[Encrypted'))) {
+      snippet = '\u{1F512} Encrypted message';
+    }
     if (snippet != null && conv.isGroup && conv.lastMessageSender != null) {
       snippet = '${conv.lastMessageSender}: $snippet';
     }
@@ -319,15 +325,15 @@ class _ConversationItemState extends State<_ConversationItem> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: Container(
-          height: 72,
+          height: 68,
           margin: const EdgeInsets.symmetric(vertical: 1),
           decoration: BoxDecoration(
             color: widget.isSelected
                 ? EchoTheme.accentLight
                 : _isHovered
-                    ? EchoTheme.hoverBg
+                    ? EchoTheme.surfaceHover
                     : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
@@ -365,7 +371,7 @@ class _ConversationItemState extends State<_ConversationItem> {
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: widget.isSelected
-                                ? const Color(0xFF1A2A4A)
+                                ? EchoTheme.sidebarBg
                                 : EchoTheme.sidebarBg,
                             width: 2,
                           ),

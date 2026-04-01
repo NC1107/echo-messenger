@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../models/conversation.dart';
-import '../providers/auth_provider.dart';
-import '../providers/chat_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/websocket_provider.dart';
@@ -48,12 +46,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     await ref.read(conversationsProvider.notifier).loadConversations();
   }
 
-  void _logout() {
-    ref.read(websocketProvider.notifier).disconnect();
-    ref.read(chatProvider.notifier).clear();
-    ref.read(authProvider.notifier).logout();
-  }
-
   void _selectConversation(Conversation conv) {
     setState(() {
       _selectedConversation = conv;
@@ -74,7 +66,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           children: [
             ListTile(
               leading:
-                  const Icon(Icons.person, color: EchoTheme.textSecondary),
+                  const Icon(Icons.person_outline, color: EchoTheme.textSecondary),
               title: const Text('New Chat',
                   style: TextStyle(color: EchoTheme.textPrimary)),
               subtitle: const Text('Start a conversation with a contact',
@@ -85,7 +77,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.group_add,
+              leading: const Icon(Icons.group_add_outlined,
                   color: EchoTheme.textSecondary),
               title: const Text('New Group',
                   style: TextStyle(color: EchoTheme.textPrimary)),
@@ -150,7 +142,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               selectedConversationId: _selectedConversation?.id,
               onConversationTap: _selectConversation,
               onNewChat: _showNewChatOptions,
-              onLogout: _logout,
+              onSettings: () => context.push('/settings'),
             ),
           ),
           // Thin vertical divider
@@ -181,7 +173,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back, size: 20),
+                    icon: const Icon(Icons.arrow_back_outlined, size: 20),
                     color: EchoTheme.textSecondary,
                     onPressed: () {
                       setState(() => _narrowPanelIndex = 0);
@@ -206,7 +198,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         selectedConversationId: _selectedConversation?.id,
         onConversationTap: _selectConversation,
         onNewChat: _showNewChatOptions,
-        onLogout: _logout,
+        onSettings: () => context.push('/settings'),
       ),
     );
   }

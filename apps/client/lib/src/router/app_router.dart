@@ -8,6 +8,7 @@ import '../screens/group_info_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/register_screen.dart';
+import '../screens/settings_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -51,6 +52,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => GroupInfoScreen(
           conversationId: state.pathParameters['conversationId']!,
         ),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (context, state) => const SettingsScreen(),
       ),
     ],
   );

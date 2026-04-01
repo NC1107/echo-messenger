@@ -25,6 +25,7 @@ pub struct ReactionEvent {
     #[serde(rename = "type")]
     pub event_type: String,
     pub message_id: Uuid,
+    pub conversation_id: Uuid,
     pub user_id: Uuid,
     pub username: String,
     pub emoji: String,
@@ -75,6 +76,7 @@ pub async fn add_reaction(
     let event = ReactionEvent {
         event_type: "reaction".to_string(),
         message_id,
+        conversation_id,
         user_id: auth.user_id,
         username: user.username,
         emoji: body.emoji,
@@ -130,6 +132,7 @@ pub async fn remove_reaction(
     let event = ReactionEvent {
         event_type: "reaction".to_string(),
         message_id,
+        conversation_id,
         user_id: auth.user_id,
         username: user.username,
         emoji,

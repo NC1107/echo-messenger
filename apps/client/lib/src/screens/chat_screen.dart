@@ -344,7 +344,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.warning_amber_rounded, size: 14, color: Colors.orange),
+            Icon(Icons.shield_outlined, size: 14, color: Colors.orange),
             SizedBox(width: 6),
             Text(
               'Group messages are not encrypted',
@@ -366,7 +366,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.lock, size: 14, color: Colors.green[400]),
+          Icon(Icons.lock_outlined, size: 14, color: Colors.green[400]),
           const SizedBox(width: 6),
           Text(
             'Messages are end-to-end encrypted',
@@ -560,7 +560,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 const SizedBox(width: 8),
                 IconButton.filled(
                   onPressed: _isTextEmpty ? null : _sendMessage,
-                  icon: const Icon(Icons.send),
+                  icon: const Icon(Icons.send_outlined),
                 ),
               ],
             ),
@@ -602,19 +602,19 @@ class _MessageBubble extends StatelessWidget {
     switch (status!) {
       case MessageStatus.sending:
         return Icon(
-          Icons.access_time,
+          Icons.schedule_outlined,
           size: 14,
           color: colorScheme.onPrimary.withValues(alpha: 0.7),
         );
       case MessageStatus.sent:
         return Icon(
-          Icons.check,
+          Icons.check_outlined,
           size: 14,
           color: colorScheme.onPrimary.withValues(alpha: 0.7),
         );
       case MessageStatus.delivered:
         return Icon(
-          Icons.done_all,
+          Icons.done_all_outlined,
           size: 14,
           color: colorScheme.onPrimary.withValues(alpha: 0.7),
         );

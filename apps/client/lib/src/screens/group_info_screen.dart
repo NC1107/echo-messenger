@@ -226,7 +226,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
             child: CircleAvatar(
               radius: 40,
               backgroundColor: Theme.of(context).colorScheme.tertiary,
-              child: const Icon(Icons.group, size: 40),
+              child: const Icon(Icons.group_outlined, size: 40),
             ),
           ),
           const SizedBox(height: 16),
@@ -258,7 +258,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.person_add),
+                  icon: const Icon(Icons.person_add_outlined),
                   tooltip: 'Add member',
                   onPressed: _addMember,
                 ),
@@ -281,7 +281,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: OutlinedButton.icon(
               onPressed: _leaveGroup,
-              icon: const Icon(Icons.exit_to_app),
+              icon: const Icon(Icons.logout_outlined),
               label: const Text('Leave Group'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: Theme.of(context).colorScheme.error,

@@ -90,7 +90,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
               decoration: const InputDecoration(
                 labelText: 'Group Name',
                 border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.group),
+                prefixIcon: Icon(Icons.group_outlined),
               ),
               textInputAction: TextInputAction.done,
             ),

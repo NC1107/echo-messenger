@@ -277,7 +277,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: isGroup
-            ? EchoTheme.warning.withValues(alpha: 0.08)
+            ? EchoTheme.surface
             : EchoTheme.online.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -286,9 +286,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            isGroup ? Icons.warning_amber_rounded : Icons.lock,
+            isGroup ? Icons.shield_outlined : Icons.lock_outlined,
             size: 14,
-            color: isGroup ? EchoTheme.warning : EchoTheme.online,
+            color: isGroup ? EchoTheme.textMuted : EchoTheme.online,
           ),
           const SizedBox(width: 8),
           Text(
@@ -296,8 +296,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                 ? 'Group messages are not encrypted'
                 : 'Messages are end-to-end encrypted',
             style: TextStyle(
-              fontSize: 12,
-              color: isGroup ? EchoTheme.warning : EchoTheme.online,
+              fontSize: isGroup ? 11 : 12,
+              color: isGroup ? EchoTheme.textMuted : EchoTheme.online,
             ),
           ),
         ],
@@ -506,7 +506,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.search, size: 20),
+                  icon: const Icon(Icons.search_outlined, size: 20),
                   color: EchoTheme.textSecondary,
                   tooltip: 'Search',
                   onPressed: () {},
@@ -680,10 +680,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
             color: EchoTheme.chatBg,
             child: Container(
-              height: 48,
+              height: 44,
               decoration: BoxDecoration(
                 color: EchoTheme.surface,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: EchoTheme.border, width: 1),
               ),
               child: Row(
@@ -693,7 +693,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   Padding(
                     padding: const EdgeInsets.only(left: 4),
                     child: IconButton(
-                      icon: const Icon(Icons.attach_file_rounded, size: 20),
+                      icon: const Icon(Icons.attach_file_outlined, size: 18),
                       color: EchoTheme.textSecondary,
                       tooltip: 'Attach',
                       onPressed: () {},
@@ -718,7 +718,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                         focusedBorder: InputBorder.none,
                         filled: false,
                         contentPadding:
-                            EdgeInsets.symmetric(vertical: 12),
+                            EdgeInsets.symmetric(vertical: 10),
                       ),
                       onChanged: _onInputChanged,
                       onSubmitted: (_) => _sendMessage(),
@@ -727,7 +727,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   // Emoji button
                   IconButton(
                     icon:
-                        const Icon(Icons.emoji_emotions_outlined, size: 20),
+                        const Icon(Icons.sentiment_satisfied_alt_outlined, size: 18),
                     color: EchoTheme.textSecondary,
                     tooltip: 'Emoji',
                     onPressed: () {},
@@ -738,18 +738,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   // Send button
                   if (!_isTextEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(right: 6),
+                      padding: const EdgeInsets.only(right: 7),
                       child: GestureDetector(
                         onTap: _sendMessage,
                         child: Container(
-                          width: 32,
-                          height: 32,
+                          width: 30,
+                          height: 30,
                           decoration: const BoxDecoration(
                             color: EchoTheme.accent,
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
-                            Icons.arrow_upward,
+                            Icons.arrow_upward_rounded,
                             size: 18,
                             color: Colors.white,
                           ),

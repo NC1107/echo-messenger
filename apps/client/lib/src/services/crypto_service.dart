@@ -253,6 +253,14 @@ class CryptoService {
     return _sessionKeys.containsKey(peerUserId);
   }
 
+  /// Invalidate the cached session key for a peer so the next call to
+  /// [getOrCreateSessionKey] will re-fetch from the server.
+  Future<void> invalidateSessionKey(String peerUserId) async {
+    _sessionKeys.remove(peerUserId);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('$_sessionKeyPrefix$peerUserId');
+  }
+
   /// Clear all stored keys (for logout).
   Future<void> clearKeys() async {
     _identityKeyPair = null;
