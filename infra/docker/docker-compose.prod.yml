@@ -15,7 +15,8 @@ services:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.echo-api.rule=Host(`echo-messenger.us`) && PathPrefix(`/api`, `/ws`)"
+      - "traefik.http.routers.echo-api.rule=Host(`echo-messenger.us`) && (PathPrefix(`/api`) || PathPrefix(`/ws`))"
+      - "traefik.http.routers.echo-api.priority=100"
       - "traefik.http.routers.echo-api.tls=true"
       - "traefik.http.routers.echo-api.tls.certresolver=cloudflare"
       - "traefik.http.services.echo-api.loadbalancer.server.port=8080"
@@ -29,6 +30,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.echo-web.rule=Host(`echo-messenger.us`)"
+      - "traefik.http.routers.echo-web.priority=1"
       - "traefik.http.routers.echo-web.tls=true"
       - "traefik.http.routers.echo-web.tls.certresolver=cloudflare"
       - "traefik.http.services.echo-web.loadbalancer.server.port=80"
