@@ -60,7 +60,9 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
       final crypto = ref.read(cryptoServiceProvider);
       crypto.setToken(token);
       await crypto.init();
-      await crypto.uploadKeys();
+      if (crypto.keysAreFresh) {
+        await crypto.uploadKeys();
+      }
       state = state.copyWith(isInitialized: true, isUploading: false);
     } catch (e) {
       state = state.copyWith(
@@ -68,6 +70,13 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
         error: 'Crypto init failed: $e',
       );
     }
+  }
+
+  /// Reset all encryption keys (regenerate identity + session keys).
+  Future<void> resetKeys() async {
+    final crypto = ref.read(cryptoServiceProvider);
+    await crypto.resetAllKeys();
+    state = state.copyWith(isInitialized: true);
   }
 
   /// Clear crypto state on logout.

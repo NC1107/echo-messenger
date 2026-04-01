@@ -17,6 +17,7 @@ use super::AppState;
 #[derive(Debug, Deserialize)]
 pub struct CreateGroupRequest {
     pub name: String,
+    #[serde(default)]
     pub member_ids: Vec<Uuid>,
     #[serde(default)]
     pub is_public: bool,

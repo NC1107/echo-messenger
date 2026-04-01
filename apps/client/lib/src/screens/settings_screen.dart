@@ -11,6 +11,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
+import '../providers/crypto_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/websocket_provider.dart';
@@ -561,28 +562,107 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
     );
   }
 
-  Widget _buildPrivacySection() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.lock_outline, size: 48, color: context.textMuted),
-          const SizedBox(height: 16),
-          Text(
-            'Coming soon',
-            style: TextStyle(
-              color: context.textSecondary,
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-            ),
+  Future<void> _resetEncryptionKeys() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: Text(
+          'Reset Encryption Keys',
+          style: TextStyle(
+            color: EchoTheme.danger,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Privacy settings will be available in a future update.',
-            style: TextStyle(color: context.textMuted, fontSize: 13),
+        ),
+        content: Text(
+          'This will regenerate your encryption keys. You won\'t be able '
+          'to read old encrypted messages. Both you and your contacts will '
+          'need to exchange new messages.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Reset Keys'),
           ),
         ],
       ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await ref.read(cryptoProvider.notifier).resetKeys();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Encryption keys have been reset successfully.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to reset keys: $e')));
+      }
+    }
+  }
+
+  Widget _buildPrivacySection() {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        Text(
+          'Encryption',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Echo uses end-to-end encryption for direct messages. '
+          'Your encryption keys are stored locally on this device.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _resetEncryptionKeys,
+            icon: const Icon(Icons.warning_amber_outlined, size: 18),
+            label: const Text('Reset Encryption Keys'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: EchoTheme.danger,
+              side: const BorderSide(color: EchoTheme.danger),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

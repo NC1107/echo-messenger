@@ -43,13 +43,6 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
       );
       return;
     }
-    if (_selectedUserIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least one member')),
-      );
-      return;
-    }
-
     setState(() => _isCreating = true);
 
     final description = _descriptionController.text.trim();

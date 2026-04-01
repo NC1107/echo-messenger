@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation.dart';
@@ -240,12 +241,103 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ],
           ),
         ),
+        if (conv.isGroup)
+          PopupMenuItem<String>(
+            value: 'leave_group',
+            child: Row(
+              children: [
+                Icon(Icons.exit_to_app, size: 16, color: EchoTheme.danger),
+                const SizedBox(width: 8),
+                Text(
+                  'Leave Group',
+                  style: TextStyle(color: EchoTheme.danger, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
       ],
     ).then((value) {
       if (value == 'pin') {
         _togglePin(conv.id);
+      } else if (value == 'leave_group') {
+        _leaveGroup(conv);
       }
     });
+  }
+
+  Future<void> _leaveGroup(Conversation conv) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: Text(
+          'Leave Group',
+          style: TextStyle(
+            color: EchoTheme.danger,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to leave "${conv.name ?? "this group"}"?',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final serverUrl = ref.read(serverUrlProvider);
+      final token = ref.read(authProvider).token;
+      if (token == null) return;
+
+      final response = await http.post(
+        Uri.parse('$serverUrl/api/groups/${conv.id}/leave'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        await ref.read(conversationsProvider.notifier).loadConversations();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You have left the group.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to leave group (${response.statusCode})'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error leaving group: $e')));
+      }
+    }
   }
 
   @override

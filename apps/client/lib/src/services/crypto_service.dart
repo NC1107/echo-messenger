@@ -21,6 +21,7 @@ class CryptoService {
 
   SimpleKeyPair? _identityKeyPair;
   final Map<String, SecretKey> _sessionKeys = {};
+  bool _keysAreFresh = false;
 
   final _x25519 = X25519();
   final _aesGcm = AesGcm.with256bits();
@@ -32,6 +33,7 @@ class CryptoService {
   }
 
   bool get isInitialized => _identityKeyPair != null;
+  bool get keysAreFresh => _keysAreFresh;
 
   /// Initialize: load or generate identity key pair.
   Future<void> init() async {
@@ -47,6 +49,7 @@ class CryptoService {
           publicKey: SimplePublicKey(publicBytes, type: KeyPairType.x25519),
           type: KeyPairType.x25519,
         );
+        _keysAreFresh = false;
       } else {
         _identityKeyPair = await _x25519.newKeyPair();
         final privateBytes = await (_identityKeyPair as SimpleKeyPairData)
@@ -58,14 +61,14 @@ class CryptoService {
           _identityPubKeyPref,
           base64Encode(publicKey.bytes),
         );
+        _keysAreFresh = true;
       }
 
-      // Load cached session keys
+      // Clear all cached session keys to force fresh DH derivation
+      _sessionKeys.clear();
       for (final key in prefs.getKeys()) {
         if (key.startsWith(_sessionKeyPrefix)) {
-          final userId = key.substring(_sessionKeyPrefix.length);
-          final secretBytes = base64Decode(prefs.getString(key)!);
-          _sessionKeys[userId] = SecretKeyData(secretBytes);
+          await prefs.remove(key);
         }
       }
     } catch (e) {
@@ -242,6 +245,22 @@ class CryptoService {
     _sessionKeys.remove(peerUserId);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('$_sessionKeyPrefix$peerUserId');
+  }
+
+  /// Reset all keys: delete identity + session keys, regenerate, and upload.
+  Future<void> resetAllKeys() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_identityKeyPref);
+    await prefs.remove(_identityPubKeyPref);
+    for (final key in prefs.getKeys()) {
+      if (key.startsWith(_sessionKeyPrefix)) {
+        await prefs.remove(key);
+      }
+    }
+    _sessionKeys.clear();
+    _identityKeyPair = null;
+    await init(); // Generates new keys, sets _keysAreFresh = true
+    await uploadKeys();
   }
 
   /// Clear all stored keys (for logout).
