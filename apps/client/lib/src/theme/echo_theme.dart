@@ -81,12 +81,14 @@ class EchoTheme {
 
     return ThemeData(
       brightness: Brightness.dark,
+      extensions: const [EchoColorExtension.dark],
       scaffoldBackgroundColor: mainBg,
       textTheme: textTheme,
       colorScheme: const ColorScheme.dark(
         primary: accent,
         secondary: accentHover,
         surface: surface,
+        onSurfaceVariant: textSecondary,
         error: danger,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
@@ -262,12 +264,14 @@ class EchoTheme {
 
     return ThemeData(
       brightness: Brightness.light,
+      extensions: const [EchoColorExtension.light],
       scaffoldBackgroundColor: lightMainBg,
       textTheme: textTheme,
       colorScheme: const ColorScheme.light(
         primary: accent,
         secondary: accentHover,
         surface: lightSurface,
+        onSurfaceVariant: lightTextSecondary,
         error: danger,
         onPrimary: Colors.white,
         onSecondary: Colors.white,
@@ -388,30 +392,109 @@ class EchoTheme {
   }
 }
 
-/// Theme-aware color accessors. Use `context.mainBg` instead of `EchoTheme.mainBg`.
-extension EchoColors on BuildContext {
-  bool get isDark => Theme.of(this).brightness == Brightness.dark;
+/// Custom theme extension for Echo-specific colors not in Material's ColorScheme.
+/// To add a new theme: define a new `const EchoColorExtension(...)` and register it
+/// in a new `ThemeData(extensions: [...])`.
+@immutable
+class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
+  final Color sidebarBg;
+  final Color chatBg;
+  final Color surfaceHover;
+  final Color accentLight;
+  final Color textMuted;
+  final Color sentBubble;
+  final Color recvBubble;
 
-  Color get mainBg => isDark ? EchoTheme.mainBg : EchoTheme.lightMainBg;
-  Color get sidebarBg =>
-      isDark ? EchoTheme.sidebarBg : EchoTheme.lightSidebarBg;
-  Color get chatBg => isDark ? EchoTheme.chatBg : EchoTheme.lightChatBg;
-  Color get surface => isDark ? EchoTheme.surface : EchoTheme.lightSurface;
-  Color get surfaceHover =>
-      isDark ? EchoTheme.surfaceHover : EchoTheme.lightSurfaceHover;
-  Color get accent => EchoTheme.accent; // same in both
-  Color get accentHover => EchoTheme.accentHover;
-  Color get accentLight =>
-      isDark ? EchoTheme.accentLight : EchoTheme.lightAccentLight;
-  Color get textPrimary =>
-      isDark ? EchoTheme.textPrimary : EchoTheme.lightTextPrimary;
-  Color get textSecondary =>
-      isDark ? EchoTheme.textSecondary : EchoTheme.lightTextSecondary;
-  Color get textMuted =>
-      isDark ? EchoTheme.textMuted : EchoTheme.lightTextMuted;
-  Color get sentBubble =>
-      isDark ? EchoTheme.sentBubble : EchoTheme.lightSentBubble;
-  Color get recvBubble =>
-      isDark ? EchoTheme.recvBubble : EchoTheme.lightRecvBubble;
-  Color get border => isDark ? EchoTheme.border : EchoTheme.lightBorder;
+  const EchoColorExtension({
+    required this.sidebarBg,
+    required this.chatBg,
+    required this.surfaceHover,
+    required this.accentLight,
+    required this.textMuted,
+    required this.sentBubble,
+    required this.recvBubble,
+  });
+
+  /// Dark theme colors
+  static const dark = EchoColorExtension(
+    sidebarBg: EchoTheme.sidebarBg,
+    chatBg: EchoTheme.chatBg,
+    surfaceHover: EchoTheme.surfaceHover,
+    accentLight: EchoTheme.accentLight,
+    textMuted: EchoTheme.textMuted,
+    sentBubble: EchoTheme.sentBubble,
+    recvBubble: EchoTheme.recvBubble,
+  );
+
+  /// Light theme colors
+  static const light = EchoColorExtension(
+    sidebarBg: EchoTheme.lightSidebarBg,
+    chatBg: EchoTheme.lightChatBg,
+    surfaceHover: EchoTheme.lightSurfaceHover,
+    accentLight: EchoTheme.lightAccentLight,
+    textMuted: EchoTheme.lightTextMuted,
+    sentBubble: EchoTheme.lightSentBubble,
+    recvBubble: EchoTheme.lightRecvBubble,
+  );
+
+  @override
+  EchoColorExtension copyWith({
+    Color? sidebarBg,
+    Color? chatBg,
+    Color? surfaceHover,
+    Color? accentLight,
+    Color? textMuted,
+    Color? sentBubble,
+    Color? recvBubble,
+  }) {
+    return EchoColorExtension(
+      sidebarBg: sidebarBg ?? this.sidebarBg,
+      chatBg: chatBg ?? this.chatBg,
+      surfaceHover: surfaceHover ?? this.surfaceHover,
+      accentLight: accentLight ?? this.accentLight,
+      textMuted: textMuted ?? this.textMuted,
+      sentBubble: sentBubble ?? this.sentBubble,
+      recvBubble: recvBubble ?? this.recvBubble,
+    );
+  }
+
+  @override
+  EchoColorExtension lerp(EchoColorExtension? other, double t) {
+    if (other is! EchoColorExtension) return this;
+    return EchoColorExtension(
+      sidebarBg: Color.lerp(sidebarBg, other.sidebarBg, t)!,
+      chatBg: Color.lerp(chatBg, other.chatBg, t)!,
+      surfaceHover: Color.lerp(surfaceHover, other.surfaceHover, t)!,
+      accentLight: Color.lerp(accentLight, other.accentLight, t)!,
+      textMuted: Color.lerp(textMuted, other.textMuted, t)!,
+      sentBubble: Color.lerp(sentBubble, other.sentBubble, t)!,
+      recvBubble: Color.lerp(recvBubble, other.recvBubble, t)!,
+    );
+  }
+}
+
+/// Theme-aware color accessors. Use `context.mainBg` instead of `EchoTheme.mainBg`.
+/// Standard Material colors read from ColorScheme. Echo-specific colors read from
+/// [EchoColorExtension]. Adding a new theme = define one new extension + ThemeData.
+extension EchoColors on BuildContext {
+  EchoColorExtension get echo =>
+      Theme.of(this).extension<EchoColorExtension>()!;
+
+  // Standard Material colors (from ThemeData / ColorScheme)
+  Color get mainBg => Theme.of(this).scaffoldBackgroundColor;
+  Color get surface => Theme.of(this).colorScheme.surface;
+  Color get accent => Theme.of(this).colorScheme.primary;
+  Color get accentHover => EchoTheme.accentHover; // static across all themes
+  Color get textPrimary => Theme.of(this).colorScheme.onSurface;
+  Color get textSecondary => Theme.of(this).colorScheme.onSurfaceVariant;
+  Color get border => Theme.of(this).dividerColor;
+
+  // Echo-specific colors (from ThemeExtension)
+  Color get sidebarBg => echo.sidebarBg;
+  Color get chatBg => echo.chatBg;
+  Color get surfaceHover => echo.surfaceHover;
+  Color get accentLight => echo.accentLight;
+  Color get textMuted => echo.textMuted;
+  Color get sentBubble => echo.sentBubble;
+  Color get recvBubble => echo.recvBubble;
 }
