@@ -27,6 +27,11 @@ pub struct UploadBundleRequest {
     pub signed_prekey_id: i32,
     /// List of one-time prekeys: (id, base64-encoded X25519 public key).
     pub one_time_prekeys: Vec<OneTimePreKeyUpload>,
+    /// Device ID for multi-device support. Defaults to 0 for backward compatibility.
+    #[serde(default)]
+    pub device_id: i32,
+    /// Ed25519 signing public key, base64-encoded. Optional for backward compatibility.
+    pub signing_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -51,6 +56,13 @@ pub struct OneTimePreKeyResponse {
     pub public_key: String,
 }
 
+/// Response body for device list query.
+#[derive(Debug, Serialize)]
+pub struct DeviceListResponse {
+    pub user_id: Uuid,
+    pub device_ids: Vec<i32>,
+}
+
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
@@ -70,6 +82,21 @@ pub async fn upload_bundle(
         .decode(&body.signed_prekey_signature)
         .map_err(|_| AppError::bad_request("Invalid base64 for signed_prekey_signature"))?;
 
+    let device_id = body.device_id;
+
+    // Decode and optionally verify signing_key + signature
+    let signing_key_bytes: Option<Vec<u8>> = match &body.signing_key {
+        Some(sk_b64) => {
+            let sk = BASE64
+                .decode(sk_b64)
+                .map_err(|_| AppError::bad_request("Invalid base64 for signing_key"))?;
+            // Verify the signed_prekey_signature using the Ed25519 signing key
+            verify_signed_prekey_signature(&sk, &signed_prekey, &signed_prekey_signature)?;
+            Some(sk)
+        }
+        None => None,
+    };
+
     let one_time_prekeys: Vec<(i32, Vec<u8>)> = body
         .one_time_prekeys
         .iter()
@@ -81,10 +108,18 @@ pub async fn upload_bundle(
         })
         .collect::<Result<Vec<_>, AppError>>()?;
 
-    db::keys::store_identity_key(&state.pool, auth_user.user_id, &identity_key).await?;
+    db::keys::store_identity_key(
+        &state.pool,
+        auth_user.user_id,
+        device_id,
+        &identity_key,
+        signing_key_bytes.as_deref(),
+    )
+    .await?;
     db::keys::store_signed_prekey(
         &state.pool,
         auth_user.user_id,
+        device_id,
         body.signed_prekey_id,
         &signed_prekey,
         &signed_prekey_signature,
@@ -92,25 +127,60 @@ pub async fn upload_bundle(
     .await?;
 
     if !one_time_prekeys.is_empty() {
-        db::keys::store_one_time_prekeys(&state.pool, auth_user.user_id, &one_time_prekeys).await?;
+        db::keys::store_one_time_prekeys(
+            &state.pool,
+            auth_user.user_id,
+            device_id,
+            &one_time_prekeys,
+        )
+        .await?;
     }
 
     tracing::info!(
-        "PreKey bundle uploaded for user {} ({} OTPs)",
+        "PreKey bundle uploaded for user {} device {} ({} OTPs)",
         auth_user.user_id,
+        device_id,
         one_time_prekeys.len()
     );
 
     Ok(StatusCode::CREATED)
 }
 
-/// GET /api/keys/bundle/:user_id -- Fetch a user's PreKey bundle.
+/// Verify that the signed_prekey_signature was produced by the given Ed25519 signing key
+/// over the signed_prekey bytes.
+fn verify_signed_prekey_signature(
+    signing_key_bytes: &[u8],
+    signed_prekey_bytes: &[u8],
+    signature_bytes: &[u8],
+) -> Result<(), AppError> {
+    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+
+    let key_array: [u8; 32] = signing_key_bytes
+        .try_into()
+        .map_err(|_| AppError::bad_request("signing_key must be exactly 32 bytes"))?;
+    let verifying_key = VerifyingKey::from_bytes(&key_array)
+        .map_err(|_| AppError::bad_request("Invalid Ed25519 signing key"))?;
+
+    let sig_array: [u8; 64] = signature_bytes
+        .try_into()
+        .map_err(|_| AppError::bad_request("signed_prekey_signature must be exactly 64 bytes"))?;
+    let signature = Signature::from_bytes(&sig_array);
+
+    verifying_key
+        .verify(signed_prekey_bytes, &signature)
+        .map_err(|_| AppError::bad_request("Signed prekey signature verification failed"))?;
+
+    Ok(())
+}
+
+/// GET /api/keys/bundle/:user_id -- Fetch a user's PreKey bundle (device 0 default).
 pub async fn get_bundle(
     State(state): State<Arc<AppState>>,
     _auth_user: AuthUser,
     Path(user_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let bundle = db::keys::get_prekey_bundle(&state.pool, user_id)
+    // Backward compatible: fetch device 0
+    let bundle = db::keys::get_prekey_bundle(&state.pool, user_id, 0)
         .await?
         .ok_or_else(|| AppError::bad_request("No PreKey bundle found for this user"))?;
 
@@ -126,4 +196,43 @@ pub async fn get_bundle(
     };
 
     Ok(Json(response))
+}
+
+/// GET /api/keys/bundle/:user_id/:device_id -- Fetch a PreKey bundle for a specific device.
+pub async fn get_device_bundle(
+    State(state): State<Arc<AppState>>,
+    _auth_user: AuthUser,
+    Path((user_id, device_id)): Path<(Uuid, i32)>,
+) -> Result<impl IntoResponse, AppError> {
+    let bundle = db::keys::get_prekey_bundle(&state.pool, user_id, device_id)
+        .await?
+        .ok_or_else(|| {
+            AppError::bad_request("No PreKey bundle found for this user/device combination")
+        })?;
+
+    let response = PreKeyBundleResponse {
+        identity_key: BASE64.encode(&bundle.identity_key),
+        signed_prekey: BASE64.encode(&bundle.signed_prekey),
+        signed_prekey_signature: BASE64.encode(&bundle.signed_prekey_signature),
+        signed_prekey_id: bundle.signed_prekey_id,
+        one_time_prekey: bundle.one_time_prekey.map(|otk| OneTimePreKeyResponse {
+            key_id: otk.key_id,
+            public_key: BASE64.encode(&otk.public_key),
+        }),
+    };
+
+    Ok(Json(response))
+}
+
+/// GET /api/keys/devices/:user_id -- List all device_ids for a user.
+pub async fn get_devices(
+    State(state): State<Arc<AppState>>,
+    _auth_user: AuthUser,
+    Path(user_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let device_ids = db::keys::get_user_devices(&state.pool, user_id).await?;
+    Ok(Json(DeviceListResponse {
+        user_id,
+        device_ids,
+    }))
 }

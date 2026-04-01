@@ -42,5 +42,8 @@ base64 = "0.22"
 sha2 = "0.10"
 rand = "0.9"
 
+# Signal Protocol signature verification
+ed25519-dalek = { version = "2", features = ["std"] }
+
 # Tracing
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

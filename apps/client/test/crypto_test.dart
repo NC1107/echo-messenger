@@ -1,162 +1,372 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:echo_app/src/services/signal_protocol.dart';
+import 'package:echo_app/src/services/signal_session.dart';
+import 'package:echo_app/src/services/signal_x3dh.dart';
+
 void main() {
-  group('Cryptography package on Linux', () {
+  group('Signal Protocol primitives', () {
     test('X25519 key generation works', () async {
       final x25519 = X25519();
       final keyPair = await x25519.newKeyPair();
       final publicKey = await keyPair.extractPublicKey();
       expect(publicKey.bytes.length, equals(32));
-      debugPrint('X25519 public key: ${base64Encode(publicKey.bytes)}');
     });
 
-    test('X25519 key exchange works', () async {
+    test('HKDF key derivation produces 32 bytes', () async {
+      final input = Uint8List(64)..fillRange(0, 64, 0xAB);
+      final result = await x3dhKdf(input);
+      expect(result.length, equals(32));
+    });
+
+    test('kdfRk produces 32-byte root key and chain key', () async {
+      final rootKey = Uint8List(32)..fillRange(0, 32, 0x42);
+      final dhOutput = Uint8List(32)..fillRange(0, 32, 0x13);
+      final (newRoot, newChain) = await kdfRk(rootKey, dhOutput);
+      expect(newRoot.length, equals(32));
+      expect(newChain.length, equals(32));
+      // Root and chain should be different
+      expect(newRoot, isNot(equals(newChain)));
+    });
+
+    test('kdfCk produces distinct message key and next chain key', () async {
+      final chainKey = Uint8List(32)..fillRange(0, 32, 0x55);
+      final (nextChain, messageKey) = await kdfCk(chainKey);
+      expect(nextChain.length, equals(32));
+      expect(messageKey.length, equals(32));
+      expect(nextChain, isNot(equals(messageKey)));
+      // Chain key should have advanced
+      expect(nextChain, isNot(equals(chainKey)));
+    });
+
+    test('encryptWithAd / decryptWithAd roundtrip', () async {
+      final key = Uint8List(32)..fillRange(0, 32, 0x99);
+      final plaintext = Uint8List.fromList(utf8.encode('Hello, Signal!'));
+      final ad = Uint8List.fromList(utf8.encode('associated data'));
+
+      final ciphertext = await encryptWithAd(key, plaintext, ad);
+      expect(ciphertext.length, greaterThan(plaintext.length));
+
+      final decrypted = await decryptWithAd(key, ciphertext, ad);
+      expect(decrypted, equals(plaintext));
+    });
+
+    test('decryptWithAd rejects wrong AAD', () async {
+      final key = Uint8List(32)..fillRange(0, 32, 0x99);
+      final plaintext = Uint8List.fromList(utf8.encode('secret'));
+      final ad = Uint8List.fromList(utf8.encode('correct ad'));
+      final wrongAd = Uint8List.fromList(utf8.encode('wrong ad'));
+
+      final ciphertext = await encryptWithAd(key, plaintext, ad);
+      expect(() => decryptWithAd(key, ciphertext, wrongAd), throwsA(anything));
+    });
+
+    test('MessageHeader serialize/deserialize roundtrip', () {
+      final header = MessageHeader(
+        ratchetPublicKey: Uint8List(32)..fillRange(0, 32, 0xAB),
+        prevChainLength: 42,
+        messageNumber: 7,
+      );
+
+      final data = header.serialize();
+      expect(data.length, equals(40));
+
+      final restored = MessageHeader.deserialize(data);
+      expect(restored.ratchetPublicKey, equals(header.ratchetPublicKey));
+      expect(restored.prevChainLength, equals(42));
+      expect(restored.messageNumber, equals(7));
+    });
+  });
+
+  group('X3DH key agreement', () {
+    test('Alice and Bob derive the same shared secret', () async {
       final x25519 = X25519();
-      final aliceKeyPair = await x25519.newKeyPair();
-      final bobKeyPair = await x25519.newKeyPair();
+      final aliceIdentity = await x25519.newKeyPair();
+      final bobIdentity = await x25519.newKeyPair();
+      final bobSignedPrekey = await x25519.newKeyPair();
+      final bobOneTimePrekey = await x25519.newKeyPair();
 
-      final alicePub = await aliceKeyPair.extractPublicKey();
-      final bobPub = await bobKeyPair.extractPublicKey();
+      final bobIdentityPub = await bobIdentity.extractPublicKey();
+      final bobSignedPrekeyPub = await bobSignedPrekey.extractPublicKey();
+      final bobOneTimePrekeyPub = await bobOneTimePrekey.extractPublicKey();
+      final aliceIdentityPub = await aliceIdentity.extractPublicKey();
 
-      final aliceShared = await x25519.sharedSecretKey(
-        keyPair: aliceKeyPair,
-        remotePublicKey: bobPub,
+      // Alice initiates
+      final initResult = await X3DH.initiate(
+        aliceIdentity: aliceIdentity,
+        bobIdentityKey: bobIdentityPub,
+        bobSignedPrekey: bobSignedPrekeyPub,
+        bobOneTimePrekey: bobOneTimePrekeyPub,
       );
-      final bobShared = await x25519.sharedSecretKey(
-        keyPair: bobKeyPair,
-        remotePublicKey: alicePub,
+
+      // Bob responds
+      final bobSecret = await X3DH.respond(
+        bobIdentity: bobIdentity,
+        bobSignedPrekey: bobSignedPrekey,
+        bobOneTimePrekey: bobOneTimePrekey,
+        aliceIdentityKey: aliceIdentityPub,
+        aliceEphemeralKey: initResult.ephemeralPublic,
       );
 
-      final aliceBytes = await aliceShared.extractBytes();
-      final bobBytes = await bobShared.extractBytes();
-      expect(aliceBytes, equals(bobBytes));
-      debugPrint('Shared secret: ${base64Encode(aliceBytes)}');
+      expect(initResult.sharedSecret, equals(bobSecret));
     });
 
-    test('AES-GCM encrypt/decrypt works', () async {
-      final aes = AesGcm.with256bits();
-      final key = await aes.newSecretKey();
-      final plaintext = utf8.encode('Hello, encrypted world!');
-
-      final secretBox = await aes.encrypt(plaintext, secretKey: key);
-      final decrypted = await aes.decrypt(secretBox, secretKey: key);
-
-      expect(utf8.decode(decrypted), equals('Hello, encrypted world!'));
-    });
-
-    test('HKDF key derivation works', () async {
+    test('X3DH works without one-time prekey', () async {
       final x25519 = X25519();
-      final keyPair = await x25519.newKeyPair();
-      final otherKeyPair = await x25519.newKeyPair();
-      final otherPub = await otherKeyPair.extractPublicKey();
+      final aliceIdentity = await x25519.newKeyPair();
+      final bobIdentity = await x25519.newKeyPair();
+      final bobSignedPrekey = await x25519.newKeyPair();
 
-      final sharedSecret = await x25519.sharedSecretKey(
-        keyPair: keyPair,
-        remotePublicKey: otherPub,
+      final bobIdentityPub = await bobIdentity.extractPublicKey();
+      final bobSignedPrekeyPub = await bobSignedPrekey.extractPublicKey();
+      final aliceIdentityPub = await aliceIdentity.extractPublicKey();
+
+      final initResult = await X3DH.initiate(
+        aliceIdentity: aliceIdentity,
+        bobIdentityKey: bobIdentityPub,
+        bobSignedPrekey: bobSignedPrekeyPub,
       );
 
-      final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
-      final derivedKey = await hkdf.deriveKey(
-        secretKey: sharedSecret,
-        nonce: utf8.encode('EchoE2EE'),
-        info: utf8.encode('echo-session-test'),
+      final bobSecret = await X3DH.respond(
+        bobIdentity: bobIdentity,
+        bobSignedPrekey: bobSignedPrekey,
+        aliceIdentityKey: aliceIdentityPub,
+        aliceEphemeralKey: initResult.ephemeralPublic,
       );
 
-      final bytes = await derivedKey.extractBytes();
-      expect(bytes.length, equals(32));
-      debugPrint('Derived key: ${base64Encode(bytes)}');
+      expect(initResult.sharedSecret, equals(bobSecret));
     });
 
-    test('Full encrypt/decrypt flow (simulating CryptoService)', () async {
+    test('Different initiators produce different secrets', () async {
       final x25519 = X25519();
-      final aes = AesGcm.with256bits();
+      final alice = await x25519.newKeyPair();
+      final eve = await x25519.newKeyPair();
+      final bobIdentity = await x25519.newKeyPair();
+      final bobSignedPrekey = await x25519.newKeyPair();
 
-      // Generate keypairs for alice and bob
-      final aliceKP = await x25519.newKeyPair();
-      final bobKP = await x25519.newKeyPair();
-      final alicePub = await aliceKP.extractPublicKey();
-      final bobPub = await bobKP.extractPublicKey();
+      final bobIdentityPub = await bobIdentity.extractPublicKey();
+      final bobSignedPrekeyPub = await bobSignedPrekey.extractPublicKey();
 
-      // Create canonical session info (sorted public keys)
-      final alicePubB64 = base64Encode(alicePub.bytes);
-      final bobPubB64 = base64Encode(bobPub.bytes);
-      final sortedKeys = [alicePubB64, bobPubB64]..sort();
-      final sessionInfo = 'echo-session-${sortedKeys[0]}-${sortedKeys[1]}';
-
-      // DH + HKDF to derive shared key (alice's perspective)
-      final aliceShared = await x25519.sharedSecretKey(
-        keyPair: aliceKP,
-        remotePublicKey: bobPub,
+      final aliceResult = await X3DH.initiate(
+        aliceIdentity: alice,
+        bobIdentityKey: bobIdentityPub,
+        bobSignedPrekey: bobSignedPrekeyPub,
       );
-      final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
-      final aliceSessionKey = await hkdf.deriveKey(
-        secretKey: aliceShared,
-        nonce: utf8.encode('EchoE2EE'),
-        info: utf8.encode(sessionInfo),
+      final eveResult = await X3DH.initiate(
+        aliceIdentity: eve,
+        bobIdentityKey: bobIdentityPub,
+        bobSignedPrekey: bobSignedPrekeyPub,
       );
 
-      // Same from bob's perspective
-      final bobShared = await x25519.sharedSecretKey(
-        keyPair: bobKP,
-        remotePublicKey: alicePub,
-      );
-      final bobSessionKey = await hkdf.deriveKey(
-        secretKey: bobShared,
-        nonce: utf8.encode('EchoE2EE'),
-        info: utf8.encode(sessionInfo),
-      );
+      expect(aliceResult.sharedSecret, isNot(equals(eveResult.sharedSecret)));
+    });
+  });
 
-      // Verify keys match
-      final aliceKeyBytes = await aliceSessionKey.extractBytes();
-      final bobKeyBytes = await bobSessionKey.extractBytes();
-      expect(aliceKeyBytes, equals(bobKeyBytes));
+  group('Double Ratchet (SignalSession)', () {
+    /// Helper: create an Alice/Bob session pair from X3DH.
+    Future<(SignalSession, SignalSession)> setupSessionPair() async {
+      final x25519 = X25519();
+      final aliceIdentity = await x25519.newKeyPair();
+      final bobIdentity = await x25519.newKeyPair();
+      final bobSignedPrekey = await x25519.newKeyPair();
 
-      // Alice encrypts
-      final plaintext = utf8.encode('Secret message from Alice');
-      final secretBox = await aes.encrypt(
-        plaintext,
-        secretKey: aliceSessionKey,
-      );
+      final bobIdentityPub = await bobIdentity.extractPublicKey();
+      final bobSignedPrekeyPub = await bobSignedPrekey.extractPublicKey();
+      final aliceIdentityPub = await aliceIdentity.extractPublicKey();
 
-      // Pack as CryptoService does: nonce || ciphertext || mac
-      final packed = Uint8List(
-        secretBox.nonce.length +
-            secretBox.cipherText.length +
-            secretBox.mac.bytes.length,
-      );
-      var offset = 0;
-      packed.setRange(offset, offset + secretBox.nonce.length, secretBox.nonce);
-      offset += secretBox.nonce.length;
-      packed.setRange(
-        offset,
-        offset + secretBox.cipherText.length,
-        secretBox.cipherText,
-      );
-      offset += secretBox.cipherText.length;
-      packed.setRange(
-        offset,
-        offset + secretBox.mac.bytes.length,
-        secretBox.mac.bytes,
+      // X3DH
+      final initResult = await X3DH.initiate(
+        aliceIdentity: aliceIdentity,
+        bobIdentityKey: bobIdentityPub,
+        bobSignedPrekey: bobSignedPrekeyPub,
       );
 
-      final ciphertextB64 = base64Encode(packed);
-      debugPrint('Ciphertext: $ciphertextB64');
+      final bobSecret = await X3DH.respond(
+        bobIdentity: bobIdentity,
+        bobSignedPrekey: bobSignedPrekey,
+        aliceIdentityKey: aliceIdentityPub,
+        aliceEphemeralKey: initResult.ephemeralPublic,
+      );
 
-      // Bob decrypts
-      final unpacked = base64Decode(ciphertextB64);
-      final nonce = unpacked.sublist(0, 12);
-      final cipherText = unpacked.sublist(12, unpacked.length - 16);
-      final mac = Mac(unpacked.sublist(unpacked.length - 16));
+      // Initialize ratchets
+      final alice = await SignalSession.initAlice(
+        initResult.sharedSecret,
+        bobSignedPrekeyPub,
+      );
+      final bob = await SignalSession.initBob(bobSecret, bobSignedPrekey);
 
-      final recovered = SecretBox(cipherText, nonce: nonce, mac: mac);
-      final decrypted = await aes.decrypt(recovered, secretKey: bobSessionKey);
+      return (alice, bob);
+    }
 
-      expect(utf8.decode(decrypted), equals('Secret message from Alice'));
-      debugPrint('Decrypted: ${utf8.decode(decrypted)}');
+    test('Encrypt and decrypt a single message', () async {
+      final (alice, bob) = await setupSessionPair();
+
+      final plaintext = Uint8List.fromList(utf8.encode('Hello Bob!'));
+      final wire = await alice.encrypt(plaintext);
+      final decrypted = await bob.decrypt(wire);
+
+      expect(utf8.decode(decrypted), equals('Hello Bob!'));
+    });
+
+    test('Multiple messages in one direction', () async {
+      final (alice, bob) = await setupSessionPair();
+
+      for (var i = 0; i < 10; i++) {
+        final msg = 'Message $i';
+        final wire = await alice.encrypt(Uint8List.fromList(utf8.encode(msg)));
+        final pt = await bob.decrypt(wire);
+        expect(utf8.decode(pt), equals(msg));
+      }
+    });
+
+    test('Ping-pong conversation', () async {
+      final (alice, bob) = await setupSessionPair();
+
+      // Alice -> Bob
+      var wire = await alice.encrypt(Uint8List.fromList(utf8.encode('Hi Bob')));
+      var pt = await bob.decrypt(wire);
+      expect(utf8.decode(pt), equals('Hi Bob'));
+
+      // Bob -> Alice
+      wire = await bob.encrypt(Uint8List.fromList(utf8.encode('Hi Alice')));
+      pt = await alice.decrypt(wire);
+      expect(utf8.decode(pt), equals('Hi Alice'));
+
+      // Alice -> Bob again
+      wire = await alice.encrypt(
+        Uint8List.fromList(utf8.encode('How are you?')),
+      );
+      pt = await bob.decrypt(wire);
+      expect(utf8.decode(pt), equals('How are you?'));
+
+      // Bob -> Alice again
+      wire = await bob.encrypt(Uint8List.fromList(utf8.encode('Good, you?')));
+      pt = await alice.decrypt(wire);
+      expect(utf8.decode(pt), equals('Good, you?'));
+    });
+
+    test('Out-of-order message delivery', () async {
+      final (alice, bob) = await setupSessionPair();
+
+      // Alice sends 3 messages
+      final wire0 = await alice.encrypt(
+        Uint8List.fromList(utf8.encode('msg 0')),
+      );
+      final wire1 = await alice.encrypt(
+        Uint8List.fromList(utf8.encode('msg 1')),
+      );
+      final wire2 = await alice.encrypt(
+        Uint8List.fromList(utf8.encode('msg 2')),
+      );
+
+      // Bob receives them out of order: 2, 0, 1
+      expect(utf8.decode(await bob.decrypt(wire2)), equals('msg 2'));
+      expect(utf8.decode(await bob.decrypt(wire0)), equals('msg 0'));
+      expect(utf8.decode(await bob.decrypt(wire1)), equals('msg 1'));
+    });
+
+    test('Empty plaintext', () async {
+      final (alice, bob) = await setupSessionPair();
+
+      final wire = await alice.encrypt(Uint8List(0));
+      final pt = await bob.decrypt(wire);
+      expect(pt, isEmpty);
+    });
+
+    test('Large message (64KB)', () async {
+      final (alice, bob) = await setupSessionPair();
+
+      final bigMsg = Uint8List(64 * 1024)..fillRange(0, 64 * 1024, 0xCD);
+      final wire = await alice.encrypt(bigMsg);
+      final pt = await bob.decrypt(wire);
+      expect(pt, equals(bigMsg));
+    });
+
+    test('Wrong session cannot decrypt', () async {
+      final (alice, _) = await setupSessionPair();
+      final (_, eve) = await setupSessionPair();
+
+      final wire = await alice.encrypt(
+        Uint8List.fromList(utf8.encode('secret')),
+      );
+      expect(() => eve.decrypt(wire), throwsA(anything));
+    });
+
+    test('Forward secrecy: consumed keys are not reusable', () async {
+      final (alice, bob) = await setupSessionPair();
+
+      final wire0 = await alice.encrypt(
+        Uint8List.fromList(utf8.encode('msg 0')),
+      );
+      final wire1 = await alice.encrypt(
+        Uint8List.fromList(utf8.encode('msg 1')),
+      );
+
+      // Decrypt in order
+      await bob.decrypt(wire0);
+      await bob.decrypt(wire1);
+
+      // Replaying should fail
+      expect(() => bob.decrypt(wire0), throwsA(anything));
+    });
+
+    test('Session serialize/deserialize roundtrip', () async {
+      final (alice, bob) = await setupSessionPair();
+
+      // Exchange a message
+      final wire = await alice.encrypt(
+        Uint8List.fromList(utf8.encode('before serialize')),
+      );
+      await bob.decrypt(wire);
+
+      // Serialize and restore Alice
+      final aliceJson = await alice.toJson();
+      final alice2 = SignalSession.fromJson(aliceJson);
+
+      // Continue the conversation from restored state
+      final wire2 = await alice2.encrypt(
+        Uint8List.fromList(utf8.encode('after serialize')),
+      );
+      final pt2 = await bob.decrypt(wire2);
+      expect(utf8.decode(pt2), equals('after serialize'));
+    });
+
+    test('Session JSON is SharedPreferences-compatible', () async {
+      final (alice, _) = await setupSessionPair();
+
+      final json = await alice.toJson();
+      final jsonStr = jsonEncode(json);
+
+      // Verify it round-trips through JSON string encoding
+      final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
+      final restored = SignalSession.fromJson(decoded);
+
+      // Verify restored session can still encrypt
+      final wire = await restored.encrypt(
+        Uint8List.fromList(utf8.encode('test')),
+      );
+      expect(wire.length, greaterThan(44)); // 4 + 40 header + ciphertext
+    });
+
+    test('Multiple roundtrips (20 exchanges)', () async {
+      final (alice, bob) = await setupSessionPair();
+
+      for (var i = 0; i < 20; i++) {
+        final msgAB = 'Alice to Bob $i';
+        var wire = await alice.encrypt(Uint8List.fromList(utf8.encode(msgAB)));
+        var pt = await bob.decrypt(wire);
+        expect(utf8.decode(pt), equals(msgAB));
+
+        final msgBA = 'Bob to Alice $i';
+        wire = await bob.encrypt(Uint8List.fromList(utf8.encode(msgBA)));
+        pt = await alice.decrypt(wire);
+        expect(utf8.decode(pt), equals(msgBA));
+      }
     });
   });
 }

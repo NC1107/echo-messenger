@@ -110,7 +110,12 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let key_routes = Router::new()
         .route("/upload", post(keys::upload_bundle))
-        .route("/bundle/{user_id}", get(keys::get_bundle));
+        .route("/bundle/{user_id}", get(keys::get_bundle))
+        .route(
+            "/bundle/{user_id}/{device_id}",
+            get(keys::get_device_bundle),
+        )
+        .route("/devices/{user_id}", get(keys::get_devices));
 
     let media_routes = Router::new()
         .route("/upload", post(media::upload))

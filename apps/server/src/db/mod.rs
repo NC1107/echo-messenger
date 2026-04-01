@@ -32,6 +32,7 @@ pub async fn run_migrations(pool: &PgPool) {
         include_str!("../migrations/010_message_edit_delete_blocks.sql"),
         include_str!("../migrations/011_cascade_user_deletes.sql"),
         include_str!("../migrations/012_user_profile.sql"),
+        include_str!("../migrations/013_signal_device_keys.sql"),
     ];
 
     // Execute each statement separately (sqlx doesn't support multiple statements in one query)

@@ -1,30 +1,42 @@
-/// End-to-end encryption service using X25519 + AES-GCM.
+/// End-to-end encryption service using the Signal Protocol (X3DH + Double Ratchet).
 ///
-/// Handles key generation, key exchange, and message encryption/decryption.
-/// Keys are persisted via SharedPreferences for prototype simplicity.
+/// Replaces the previous static DH key exchange with proper Signal Protocol
+/// sessions providing per-message forward secrecy and break-in recovery.
+///
+/// Keys and session state are persisted via SharedPreferences for prototype
+/// simplicity. In production, use platform-specific secure storage.
 library;
 
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'signal_session.dart';
+import 'signal_x3dh.dart';
 
 class CryptoService {
   static const _identityKeyPref = 'echo_identity_key';
   static const _identityPubKeyPref = 'echo_identity_pub_key';
-  static const _sessionKeyPrefix = 'echo_session_';
+  static const _signingKeyPref = 'echo_signing_key';
+  static const _signingPubKeyPref = 'echo_signing_pub_key';
+  static const _signedPrekeyPref = 'echo_signed_prekey';
+  static const _signedPrekeyPubPref = 'echo_signed_prekey_pub';
+  static const _sessionPrefix = 'echo_signal_session_';
 
   final String serverUrl;
   String _token = '';
 
   SimpleKeyPair? _identityKeyPair;
-  final Map<String, SecretKey> _sessionKeys = {};
+  SimpleKeyPair? _signedPrekeyPair;
+  SimpleKeyPair? _signingKeyPair;
+  final Map<String, SignalSession> _sessions = {};
   bool _keysAreFresh = false;
 
   final _x25519 = X25519();
-  final _aesGcm = AesGcm.with256bits();
+  final _ed25519 = Ed25519();
 
   CryptoService({required this.serverUrl});
 
@@ -35,13 +47,14 @@ class CryptoService {
   bool get isInitialized => _identityKeyPair != null;
   bool get keysAreFresh => _keysAreFresh;
 
-  /// Initialize: load or generate identity key pair.
+  /// Initialize: load or generate identity key pair, signing key, and signed prekey.
   Future<void> init() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final storedPrivate = prefs.getString(_identityKeyPref);
 
       if (storedPrivate != null) {
+        // Restore identity key pair
         final privateBytes = base64Decode(storedPrivate);
         final publicBytes = base64Decode(prefs.getString(_identityPubKeyPref)!);
         _identityKeyPair = SimpleKeyPairData(
@@ -49,9 +62,57 @@ class CryptoService {
           publicKey: SimplePublicKey(publicBytes, type: KeyPairType.x25519),
           type: KeyPairType.x25519,
         );
-        _keysAreFresh = false;
+
+        // Restore Ed25519 signing key pair
+        final sigPriv = prefs.getString(_signingKeyPref);
+        final sigPub = prefs.getString(_signingPubKeyPref);
+        if (sigPriv != null && sigPub != null) {
+          _signingKeyPair = SimpleKeyPairData(
+            base64Decode(sigPriv),
+            publicKey: SimplePublicKey(
+              base64Decode(sigPub),
+              type: KeyPairType.ed25519,
+            ),
+            type: KeyPairType.ed25519,
+          );
+        } else {
+          // Legacy migration: generate signing key if missing
+          _signingKeyPair = await _ed25519.newKeyPair();
+          await _saveSigningKey(prefs);
+          _keysAreFresh = true;
+        }
+
+        // Restore signed prekey pair
+        final spkPriv = prefs.getString(_signedPrekeyPref);
+        final spkPub = prefs.getString(_signedPrekeyPubPref);
+        if (spkPriv != null && spkPub != null) {
+          _signedPrekeyPair = SimpleKeyPairData(
+            base64Decode(spkPriv),
+            publicKey: SimplePublicKey(
+              base64Decode(spkPub),
+              type: KeyPairType.x25519,
+            ),
+            type: KeyPairType.x25519,
+          );
+        } else {
+          // Legacy migration: generate signed prekey if missing
+          _signedPrekeyPair = await _x25519.newKeyPair();
+          await _saveSignedPrekey(prefs);
+          _keysAreFresh = true;
+        }
+
+        if (!_keysAreFresh) {
+          _keysAreFresh = false;
+        }
+
+        // Load persisted sessions
+        await _loadSessions(prefs);
       } else {
+        // Generate all keys fresh
         _identityKeyPair = await _x25519.newKeyPair();
+        _signingKeyPair = await _ed25519.newKeyPair();
+        _signedPrekeyPair = await _x25519.newKeyPair();
+
         final privateBytes = await (_identityKeyPair as SimpleKeyPairData)
             .extractPrivateKeyBytes();
         final publicKey = await _identityKeyPair!.extractPublicKey();
@@ -61,30 +122,88 @@ class CryptoService {
           _identityPubKeyPref,
           base64Encode(publicKey.bytes),
         );
-        _keysAreFresh = true;
-      }
+        await _saveSigningKey(prefs);
+        await _saveSignedPrekey(prefs);
 
-      // Clear all cached session keys to force fresh DH derivation
-      _sessionKeys.clear();
-      for (final key in prefs.getKeys()) {
-        if (key.startsWith(_sessionKeyPrefix)) {
-          await prefs.remove(key);
-        }
+        _keysAreFresh = true;
       }
     } catch (e) {
       rethrow;
     }
   }
 
-  /// Upload our public key to the server as a PreKey bundle.
+  Future<void> _saveSigningKey(SharedPreferences prefs) async {
+    final sigPrivBytes = await (_signingKeyPair as SimpleKeyPairData)
+        .extractPrivateKeyBytes();
+    final sigPubKey = await _signingKeyPair!.extractPublicKey();
+    await prefs.setString(_signingKeyPref, base64Encode(sigPrivBytes));
+    await prefs.setString(_signingPubKeyPref, base64Encode(sigPubKey.bytes));
+  }
+
+  Future<void> _saveSignedPrekey(SharedPreferences prefs) async {
+    final spkPrivBytes = await (_signedPrekeyPair as SimpleKeyPairData)
+        .extractPrivateKeyBytes();
+    final spkPubKey = await _signedPrekeyPair!.extractPublicKey();
+    await prefs.setString(_signedPrekeyPref, base64Encode(spkPrivBytes));
+    await prefs.setString(_signedPrekeyPubPref, base64Encode(spkPubKey.bytes));
+  }
+
+  /// Load persisted Signal sessions from SharedPreferences.
+  Future<void> _loadSessions(SharedPreferences prefs) async {
+    _sessions.clear();
+    for (final key in prefs.getKeys()) {
+      if (key.startsWith(_sessionPrefix)) {
+        final peerId = key.substring(_sessionPrefix.length);
+        final jsonStr = prefs.getString(key);
+        if (jsonStr != null) {
+          try {
+            final json = jsonDecode(jsonStr) as Map<String, dynamic>;
+            _sessions[peerId] = SignalSession.fromJson(json);
+          } catch (e) {
+            debugPrint('[Crypto] Failed to load session for $peerId: $e');
+            await prefs.remove(key);
+          }
+        }
+      }
+    }
+  }
+
+  /// Persist a Signal session to SharedPreferences.
+  Future<void> _saveSession(String peerId, SignalSession session) async {
+    final prefs = await SharedPreferences.getInstance();
+    final json = await session.toJson();
+    await prefs.setString('$_sessionPrefix$peerId', jsonEncode(json));
+  }
+
+  /// Upload our public keys to the server as a PreKey bundle.
+  ///
+  /// Includes:
+  /// - X25519 identity key
+  /// - Ed25519 signing key (for prekey signature verification)
+  /// - Signed prekey with real Ed25519 signature
+  /// - One-time prekeys
   Future<void> uploadKeys() async {
     if (_identityKeyPair == null) await init();
 
     final publicKey = await _identityKeyPair!.extractPublicKey();
     final pubKeyB64 = base64Encode(publicKey.bytes);
 
-    // For the prototype, we use the same key as identity, signed prekey,
-    // and generate a few one-time prekeys.
+    // Get the signed prekey public key
+    final spkPub = await _signedPrekeyPair!.extractPublicKey();
+    final spkPubB64 = base64Encode(spkPub.bytes);
+
+    // Sign the signed prekey with Ed25519
+    final signature = await _ed25519.sign(
+      spkPub.bytes,
+      keyPair: _signingKeyPair!,
+    );
+    final sigB64 = base64Encode(signature.bytes);
+
+    // Get Ed25519 signing public key
+    final signingPub = await _signingKeyPair!.extractPublicKey();
+    final signingPubB64 = base64Encode(signingPub.bytes);
+
+    // Generate one-time prekeys
     final otps = <Map<String, dynamic>>[];
     for (var i = 0; i < 10; i++) {
       final otpPair = await _x25519.newKeyPair();
@@ -94,10 +213,9 @@ class CryptoService {
 
     final body = jsonEncode({
       'identity_key': pubKeyB64,
-      'signed_prekey': pubKeyB64,
-      'signed_prekey_signature': base64Encode(
-        Uint8List(64),
-      ), // Placeholder for prototype
+      'signing_key': signingPubB64,
+      'signed_prekey': spkPubB64,
+      'signed_prekey_signature': sigB64,
       'signed_prekey_id': 1,
       'one_time_prekeys': otps,
     });
@@ -118,10 +236,14 @@ class CryptoService {
     }
   }
 
-  /// Fetch a peer's public key and derive a shared secret via X25519 DH.
-  Future<SecretKey> getOrCreateSessionKey(String peerUserId) async {
-    if (_sessionKeys.containsKey(peerUserId)) {
-      return _sessionKeys[peerUserId]!;
+  /// Get or create a Signal session with a peer.
+  ///
+  /// If a session already exists in memory or was loaded from storage, returns it.
+  /// Otherwise, fetches the peer's prekey bundle from the server, performs X3DH
+  /// to establish a shared secret, and initializes a new Double Ratchet session.
+  Future<SignalSession> getOrCreateSession(String peerUserId) async {
+    if (_sessions.containsKey(peerUserId)) {
+      return _sessions[peerUserId]!;
     }
 
     if (_identityKeyPair == null) await init();
@@ -137,114 +259,88 @@ class CryptoService {
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final theirPubKeyBytes = base64Decode(data['identity_key'] as String);
-    final theirPubKey = SimplePublicKey(
-      theirPubKeyBytes,
+    final bobIdentityKeyBytes = base64Decode(data['identity_key'] as String);
+    final bobSignedPrekeyBytes = base64Decode(data['signed_prekey'] as String);
+
+    final bobIdentityKey = SimplePublicKey(
+      bobIdentityKeyBytes,
+      type: KeyPairType.x25519,
+    );
+    final bobSignedPrekey = SimplePublicKey(
+      bobSignedPrekeyBytes,
       type: KeyPairType.x25519,
     );
 
-    // Perform X25519 DH to derive shared secret
-    final sharedSecret = await _x25519.sharedSecretKey(
-      keyPair: _identityKeyPair!,
-      remotePublicKey: theirPubKey,
+    // Parse optional one-time prekey
+    SimplePublicKey? bobOneTimePrekey;
+    if (data['one_time_prekey'] != null) {
+      final otpBytes = base64Decode(data['one_time_prekey'] as String);
+      bobOneTimePrekey = SimplePublicKey(otpBytes, type: KeyPairType.x25519);
+    }
+
+    // Perform X3DH as Alice (initiator)
+    final x3dhResult = await X3DH.initiate(
+      aliceIdentity: _identityKeyPair!,
+      bobIdentityKey: bobIdentityKey,
+      bobSignedPrekey: bobSignedPrekey,
+      bobOneTimePrekey: bobOneTimePrekey,
     );
 
-    // Use HKDF to derive a proper 256-bit key from the shared secret.
-    // CRITICAL: both parties must use the same info string, so we sort
-    // the user IDs to create a canonical session identifier.
-    final myPubKey = await _identityKeyPair!.extractPublicKey();
-    final myPubB64 = base64Encode(myPubKey.bytes);
-    final theirPubB64 = base64Encode(theirPubKeyBytes);
-    final sortedKeys = [myPubB64, theirPubB64]..sort();
-    final sessionInfo = 'echo-session-${sortedKeys[0]}-${sortedKeys[1]}';
-
-    final hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
-    final derivedKey = await hkdf.deriveKey(
-      secretKey: sharedSecret,
-      nonce: utf8.encode('EchoE2EE'),
-      info: utf8.encode(sessionInfo),
+    // Initialize Double Ratchet as Alice.
+    // Bob's signed prekey serves as his initial ratchet public key.
+    final session = await SignalSession.initAlice(
+      x3dhResult.sharedSecret,
+      bobSignedPrekey,
     );
 
-    _sessionKeys[peerUserId] = derivedKey;
+    _sessions[peerUserId] = session;
+    await _saveSession(peerUserId, session);
 
-    // Persist the session key
-    final prefs = await SharedPreferences.getInstance();
-    final derivedBytes = await derivedKey.extractBytes();
-    await prefs.setString(
-      '$_sessionKeyPrefix$peerUserId',
-      base64Encode(derivedBytes),
-    );
-
-    return derivedKey;
+    return session;
   }
 
   /// Encrypt a plaintext message for a specific peer.
   ///
-  /// Returns a base64-encoded string containing nonce + ciphertext + tag.
+  /// Returns a base64-encoded string containing the Signal Protocol wire format:
+  /// header_len (4 LE) || header (40) || nonce (12) || ciphertext || tag (16).
   Future<String> encryptMessage(String peerUserId, String plaintext) async {
-    final sessionKey = await getOrCreateSessionKey(peerUserId);
-    final plaintextBytes = utf8.encode(plaintext);
+    final session = await getOrCreateSession(peerUserId);
+    final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
 
-    final secretBox = await _aesGcm.encrypt(
-      plaintextBytes,
-      secretKey: sessionKey,
-    );
+    final wire = await session.encrypt(plaintextBytes);
 
-    // Pack: nonce (12) || ciphertext || mac (16)
-    final packed = Uint8List(
-      secretBox.nonce.length +
-          secretBox.cipherText.length +
-          secretBox.mac.bytes.length,
-    );
-    var offset = 0;
-    packed.setRange(offset, offset + secretBox.nonce.length, secretBox.nonce);
-    offset += secretBox.nonce.length;
-    packed.setRange(
-      offset,
-      offset + secretBox.cipherText.length,
-      secretBox.cipherText,
-    );
-    offset += secretBox.cipherText.length;
-    packed.setRange(
-      offset,
-      offset + secretBox.mac.bytes.length,
-      secretBox.mac.bytes,
-    );
+    // Persist updated session state after encryption advances the chain
+    await _saveSession(peerUserId, session);
 
-    return base64Encode(packed);
+    return base64Encode(wire);
   }
 
   /// Decrypt a base64-encoded ciphertext from a specific peer.
+  ///
+  /// Handles DH ratchet steps and out-of-order message delivery automatically.
   Future<String> decryptMessage(String peerUserId, String ciphertextB64) async {
-    final sessionKey = await getOrCreateSessionKey(peerUserId);
-    final packed = base64Decode(ciphertextB64);
+    final session = await getOrCreateSession(peerUserId);
+    final wire = base64Decode(ciphertextB64);
 
-    if (packed.length < 12 + 16) {
-      throw Exception('Ciphertext too short');
-    }
+    final plainBytes = await session.decrypt(Uint8List.fromList(wire));
 
-    final nonce = packed.sublist(0, 12);
-    final cipherText = packed.sublist(12, packed.length - 16);
-    final mac = Mac(packed.sublist(packed.length - 16));
-
-    final secretBox = SecretBox(cipherText, nonce: nonce, mac: mac);
-
-    final plainBytes = await _aesGcm.decrypt(secretBox, secretKey: sessionKey);
+    // Persist updated session state after decryption may advance the chain
+    await _saveSession(peerUserId, session);
 
     return utf8.decode(plainBytes);
   }
 
-  /// Check if we have a session key for a peer (no network call needed).
+  /// Check if we have a session for a peer (no network call needed).
   bool hasSessionKey(String peerUserId) {
-    return _sessionKeys.containsKey(peerUserId);
+    return _sessions.containsKey(peerUserId);
   }
 
-  /// Invalidate the cached session key for a peer so the next call to
-  /// [getOrCreateSessionKey] will re-fetch from the server.
+  /// Invalidate the cached session for a peer so the next call to
+  /// [getOrCreateSession] will re-fetch from the server and create a new session.
   Future<void> invalidateSessionKey(String peerUserId) async {
-    _sessionKeys.remove(peerUserId);
+    _sessions.remove(peerUserId);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('$_sessionKeyPrefix$peerUserId');
+    await prefs.remove('$_sessionPrefix$peerUserId');
   }
 
   /// Reset all keys: delete identity + session keys, regenerate, and upload.
@@ -252,13 +348,19 @@ class CryptoService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_identityKeyPref);
     await prefs.remove(_identityPubKeyPref);
+    await prefs.remove(_signingKeyPref);
+    await prefs.remove(_signingPubKeyPref);
+    await prefs.remove(_signedPrekeyPref);
+    await prefs.remove(_signedPrekeyPubPref);
     for (final key in prefs.getKeys()) {
-      if (key.startsWith(_sessionKeyPrefix)) {
+      if (key.startsWith(_sessionPrefix)) {
         await prefs.remove(key);
       }
     }
-    _sessionKeys.clear();
+    _sessions.clear();
     _identityKeyPair = null;
+    _signingKeyPair = null;
+    _signedPrekeyPair = null;
     await init(); // Generates new keys, sets _keysAreFresh = true
     await uploadKeys();
   }
@@ -266,12 +368,18 @@ class CryptoService {
   /// Clear all stored keys (for logout).
   Future<void> clearKeys() async {
     _identityKeyPair = null;
-    _sessionKeys.clear();
+    _signingKeyPair = null;
+    _signedPrekeyPair = null;
+    _sessions.clear();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_identityKeyPref);
     await prefs.remove(_identityPubKeyPref);
+    await prefs.remove(_signingKeyPref);
+    await prefs.remove(_signingPubKeyPref);
+    await prefs.remove(_signedPrekeyPref);
+    await prefs.remove(_signedPrekeyPubPref);
     for (final key in prefs.getKeys()) {
-      if (key.startsWith(_sessionKeyPrefix)) {
+      if (key.startsWith(_sessionPrefix)) {
         await prefs.remove(key);
       }
     }

@@ -18,37 +18,46 @@ pub struct OneTimePreKeyRow {
     pub public_key: Vec<u8>,
 }
 
-/// Store or replace a user's identity key.
+/// Store or replace a user's identity key for a specific device.
 pub async fn store_identity_key(
     pool: &PgPool,
     user_id: Uuid,
+    device_id: i32,
     identity_key: &[u8],
+    signing_key: Option<&[u8]>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO identity_keys (user_id, identity_key) VALUES ($1, $2) \
-         ON CONFLICT (user_id) DO UPDATE SET identity_key = $2",
+        "INSERT INTO identity_keys (user_id, device_id, identity_key, signing_key) \
+         VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (user_id, device_id) DO UPDATE \
+         SET identity_key = $3, signing_key = $4",
     )
     .bind(user_id)
+    .bind(device_id)
     .bind(identity_key)
+    .bind(signing_key)
     .execute(pool)
     .await?;
     Ok(())
 }
 
-/// Store or replace a user's signed prekey.
+/// Store or replace a user's signed prekey for a specific device.
 pub async fn store_signed_prekey(
     pool: &PgPool,
     user_id: Uuid,
+    device_id: i32,
     key_id: i32,
     public_key: &[u8],
     signature: &[u8],
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO signed_prekeys (user_id, key_id, public_key, signature) \
-         VALUES ($1, $2, $3, $4) \
-         ON CONFLICT (user_id) DO UPDATE SET key_id = $2, public_key = $3, signature = $4, created_at = now()",
+        "INSERT INTO signed_prekeys (user_id, device_id, key_id, public_key, signature) \
+         VALUES ($1, $2, $3, $4, $5) \
+         ON CONFLICT (user_id, device_id) DO UPDATE \
+         SET key_id = $3, public_key = $4, signature = $5, created_at = now()",
     )
     .bind(user_id)
+    .bind(device_id)
     .bind(key_id)
     .bind(public_key)
     .bind(signature)
@@ -57,19 +66,21 @@ pub async fn store_signed_prekey(
     Ok(())
 }
 
-/// Store one-time prekeys for a user (appends, does not replace).
+/// Store one-time prekeys for a user's device (appends, does not replace).
 pub async fn store_one_time_prekeys(
     pool: &PgPool,
     user_id: Uuid,
+    device_id: i32,
     prekeys: &[(i32, Vec<u8>)],
 ) -> Result<(), sqlx::Error> {
     for (key_id, public_key) in prekeys {
         sqlx::query(
-            "INSERT INTO one_time_prekeys (user_id, key_id, public_key) \
-             VALUES ($1, $2, $3) \
+            "INSERT INTO one_time_prekeys (user_id, device_id, key_id, public_key) \
+             VALUES ($1, $2, $3, $4) \
              ON CONFLICT (user_id, key_id) DO NOTHING",
         )
         .bind(user_id)
+        .bind(device_id)
         .bind(key_id)
         .bind(public_key)
         .execute(pool)
@@ -78,28 +89,33 @@ pub async fn store_one_time_prekeys(
     Ok(())
 }
 
-/// Fetch a user's PreKey bundle, consuming one one-time prekey if available.
+/// Fetch a user's PreKey bundle for a specific device, consuming one one-time prekey if available.
 pub async fn get_prekey_bundle(
     pool: &PgPool,
     user_id: Uuid,
+    device_id: i32,
 ) -> Result<Option<PreKeyBundleRow>, sqlx::Error> {
-    // Fetch identity key
-    let identity_row: Option<(Vec<u8>,)> =
-        sqlx::query_as("SELECT identity_key FROM identity_keys WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await?;
+    // Fetch identity key for this device
+    let identity_row: Option<(Vec<u8>,)> = sqlx::query_as(
+        "SELECT identity_key FROM identity_keys WHERE user_id = $1 AND device_id = $2",
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .fetch_optional(pool)
+    .await?;
 
     let identity_key = match identity_row {
         Some((k,)) => k,
         None => return Ok(None),
     };
 
-    // Fetch signed prekey
+    // Fetch signed prekey for this device
     let spk_row: Option<(i32, Vec<u8>, Vec<u8>)> = sqlx::query_as(
-        "SELECT key_id, public_key, signature FROM signed_prekeys WHERE user_id = $1",
+        "SELECT key_id, public_key, signature FROM signed_prekeys \
+         WHERE user_id = $1 AND device_id = $2",
     )
     .bind(user_id)
+    .bind(device_id)
     .fetch_optional(pool)
     .await?;
 
@@ -108,17 +124,18 @@ pub async fn get_prekey_bundle(
         None => return Ok(None),
     };
 
-    // Consume one one-time prekey (atomically mark as used and return it)
+    // Consume one one-time prekey for this device (atomically)
     let otp_row: Option<(i32, Vec<u8>)> = sqlx::query_as(
         "UPDATE one_time_prekeys SET used = true \
          WHERE id = ( \
              SELECT id FROM one_time_prekeys \
-             WHERE user_id = $1 AND NOT used \
+             WHERE user_id = $1 AND device_id = $2 AND NOT used \
              ORDER BY id ASC LIMIT 1 \
              FOR UPDATE SKIP LOCKED \
          ) RETURNING key_id, public_key",
     )
     .bind(user_id)
+    .bind(device_id)
     .fetch_optional(pool)
     .await?;
 
@@ -132,6 +149,16 @@ pub async fn get_prekey_bundle(
         signed_prekey_id,
         one_time_prekey,
     }))
+}
+
+/// Return all device_ids registered for a given user.
+pub async fn get_user_devices(pool: &PgPool, user_id: Uuid) -> Result<Vec<i32>, sqlx::Error> {
+    let rows: Vec<(i32,)> =
+        sqlx::query_as("SELECT device_id FROM identity_keys WHERE user_id = $1 ORDER BY device_id")
+            .bind(user_id)
+            .fetch_all(pool)
+            .await?;
+    Ok(rows.into_iter().map(|(d,)| d).collect())
 }
 
 /// Count available (unused) one-time prekeys for a user.
