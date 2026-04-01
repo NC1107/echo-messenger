@@ -334,8 +334,17 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
 
     try {
       final streamedResponse = await request.send();
+      final body = await streamedResponse.stream.bytesToString();
       if (mounted) {
         if (streamedResponse.statusCode == 200) {
+          // Parse avatar URL from response and update auth state
+          try {
+            final data = jsonDecode(body) as Map<String, dynamic>;
+            final avatarUrl = data['avatar_url'] as String?;
+            if (avatarUrl != null) {
+              ref.read(authProvider.notifier).updateAvatarUrl(avatarUrl);
+            }
+          } catch (_) {}
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text('Avatar updated')));
@@ -463,14 +472,24 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
                 CircleAvatar(
                   radius: 32,
                   backgroundColor: EchoTheme.accent,
-                  child: Text(
-                    username.isNotEmpty ? username[0].toUpperCase() : '?',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  backgroundImage: authState.avatarUrl != null
+                      ? NetworkImage(
+                          '${ref.read(serverUrlProvider)}${authState.avatarUrl}',
+                          headers: {
+                            'Authorization': 'Bearer ${authState.token}',
+                          },
+                        )
+                      : null,
+                  child: authState.avatarUrl == null
+                      ? Text(
+                          username.isNotEmpty ? username[0].toUpperCase() : '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        )
+                      : null,
                 ),
                 Positioned(
                   bottom: 0,

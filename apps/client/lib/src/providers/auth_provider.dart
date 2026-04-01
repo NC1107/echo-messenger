@@ -13,6 +13,7 @@ class AuthState {
   final String? username;
   final String? token;
   final String? refreshToken;
+  final String? avatarUrl;
   final String? error;
   final bool isLoading;
 
@@ -22,6 +23,7 @@ class AuthState {
     this.username,
     this.token,
     this.refreshToken,
+    this.avatarUrl,
     this.error,
     this.isLoading = false,
   });
@@ -32,6 +34,7 @@ class AuthState {
     String? username,
     String? token,
     String? refreshToken,
+    String? avatarUrl,
     String? error,
     bool? isLoading,
   }) {
@@ -41,6 +44,7 @@ class AuthState {
       username: username ?? this.username,
       token: token ?? this.token,
       refreshToken: refreshToken ?? this.refreshToken,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
       error: error,
       isLoading: isLoading ?? this.isLoading,
     );
@@ -323,9 +327,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final accessToken = data['access_token'] as String;
-        // Server may or may not return refresh_token (backward compat)
         final refreshToken = data['refresh_token'] as String?;
         final userId = data['user_id'] as String;
+        final avatarUrl = data['avatar_url'] as String?;
 
         state = AuthState(
           isLoggedIn: true,
@@ -333,6 +337,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           username: username,
           token: accessToken,
           refreshToken: refreshToken,
+          avatarUrl: avatarUrl,
         );
 
         await _storeTokens(
@@ -357,6 +362,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
           : e.toString();
       state = state.copyWith(isLoading: false, error: msg);
     }
+  }
+
+  void updateAvatarUrl(String url) {
+    state = state.copyWith(avatarUrl: url);
   }
 
   void logout() {
