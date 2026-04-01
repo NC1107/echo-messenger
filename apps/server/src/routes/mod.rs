@@ -96,15 +96,13 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/conversations/{conversation_id}/read",
             post(reactions::mark_read),
         )
-        .route("/messages/{conversation_id}", get(messages::get_messages))
         .route(
-            "/messages/{message_id}",
-            delete(messages::delete_message).put(messages::edit_message),
+            "/messages/{id}",
+            get(messages::get_messages)
+                .delete(messages::delete_message)
+                .put(messages::edit_message),
         )
-        .route(
-            "/messages/{message_id}/reactions",
-            post(reactions::add_reaction),
-        )
+        .route("/messages/{id}/reactions", post(reactions::add_reaction))
         .route(
             "/messages/{message_id}/reactions/{emoji}",
             delete(reactions::remove_reaction),
