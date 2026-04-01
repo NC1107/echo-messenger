@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -184,6 +185,60 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     final conv = widget.conversation;
     if (conv != null && text.isNotEmpty) {
       ref.read(websocketProvider.notifier).sendTyping(conv.id);
+    }
+  }
+
+  void _showEmojiPicker() {
+    final emojis = ['😀', '😂', '❤️', '👍', '🔥', '🎉', '😢', '😮', '🤔', '👀', '💪', '✨', '🙏', '💯', '😍', '🤣'];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: EchoTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: emojis.map((emoji) => GestureDetector(
+            onTap: () {
+              _messageController.text += emoji;
+              _messageController.selection = TextSelection.fromPosition(
+                TextPosition(offset: _messageController.text.length),
+              );
+              Navigator.pop(ctx);
+            },
+            child: Text(emoji, style: const TextStyle(fontSize: 28)),
+          )).toList(),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickFile() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      if (!mounted) return;
+
+      final file = result.files.first;
+      if (file.name.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Selected: ${file.name} (upload coming soon)'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('File picker error: $e')),
+      );
     }
   }
 
@@ -695,8 +750,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     child: IconButton(
                       icon: const Icon(Icons.attach_file_outlined, size: 18),
                       color: EchoTheme.textSecondary,
-                      tooltip: 'Attach',
-                      onPressed: () {},
+                      tooltip: 'Attach file',
+                      onPressed: _pickFile,
                       padding: EdgeInsets.zero,
                       constraints:
                           const BoxConstraints(minWidth: 36, minHeight: 36),
@@ -729,8 +784,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     icon:
                         const Icon(Icons.sentiment_satisfied_alt_outlined, size: 18),
                     color: EchoTheme.textSecondary,
-                    tooltip: 'Emoji',
-                    onPressed: () {},
+                    tooltip: 'Insert emoji',
+                    onPressed: _showEmojiPicker,
                     padding: EdgeInsets.zero,
                     constraints:
                         const BoxConstraints(minWidth: 36, minHeight: 36),

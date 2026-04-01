@@ -74,7 +74,10 @@ class _MessageItemState extends State<MessageItem> {
     );
   }
 
+  /// Consistent color for a username -- matches sidebar avatar colors.
   Color _getUserColor(String userId) {
+    // Use the username (fromUsername) for color, matching sidebar's _avatarColor
+    final name = widget.message.fromUsername;
     final colors = [
       const Color(0xFFE06666),
       const Color(0xFFF6B05C),
@@ -83,7 +86,7 @@ class _MessageItemState extends State<MessageItem> {
       const Color(0xFFAF7AC5),
       const Color(0xFFEB984E),
     ];
-    final index = userId.hashCode.abs() % colors.length;
+    final index = name.hashCode.abs() % colors.length;
     return colors[index];
   }
 
