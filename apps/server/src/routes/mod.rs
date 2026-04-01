@@ -14,15 +14,22 @@ use axum::http::HeaderValue;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post, put};
 use sqlx::PgPool;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use uuid::Uuid;
 
 use crate::ws::hub::Hub;
+
+/// Map from ticket string to (user_id, created_at).
+pub type TicketStore = Mutex<HashMap<String, (Uuid, Instant)>>;
 
 pub struct AppState {
     pub pool: PgPool,
     pub jwt_secret: String,
     pub hub: Hub,
+    pub ticket_store: TicketStore,
 }
 
 pub fn create_router(state: Arc<AppState>) -> Router {
@@ -47,7 +54,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let auth_routes = Router::new()
         .route("/register", post(auth::register))
-        .route("/login", post(auth::login));
+        .route("/login", post(auth::login))
+        .route("/refresh", post(auth::refresh))
+        .route("/logout", post(auth::logout))
+        .route("/ws-ticket", post(auth::ws_ticket));
 
     let contact_routes = Router::new()
         .route("/", get(contacts::list_contacts))

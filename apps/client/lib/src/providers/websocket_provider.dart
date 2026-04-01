@@ -65,15 +65,63 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     );
   }
 
+  /// Request a short-lived WebSocket ticket from the server.
+  ///
+  /// Returns the ticket string on success, or null on failure. If the
+  /// request returns 401, attempts to refresh the access token once and
+  /// retries.
+  Future<String?> _fetchWsTicket() async {
+    final serverUrl = ref.read(serverUrlProvider);
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.post(
+              Uri.parse('$serverUrl/api/auth/ws-ticket'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+            ),
+          );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['ticket'] as String?;
+      }
+    } catch (e) {
+      debugPrint('[WebSocket] Failed to fetch ws ticket: $e');
+    }
+    return null;
+  }
+
   void connect() {
     final token = ref.read(authProvider).token;
     if (token == null) return;
 
     disconnect();
 
+    // Attempt ticket-based connection, falling back to token-based for
+    // backward compatibility with servers that don't support ws-ticket.
+    _connectWithTicketOrFallback();
+  }
+
+  Future<void> _connectWithTicketOrFallback() async {
     final serverUrl = ref.read(serverUrlProvider);
     final wsBase = wsUrlFromHttpUrl(serverUrl);
-    final uri = Uri.parse('$wsBase/ws?token=$token');
+
+    // Try to get a WebSocket ticket first
+    final ticket = await _fetchWsTicket();
+
+    final Uri uri;
+    if (ticket != null && ticket.isNotEmpty) {
+      uri = Uri.parse('$wsBase/ws?ticket=$ticket');
+    } else {
+      // Fallback: use JWT token directly (old server behavior)
+      final token = ref.read(authProvider).token ?? '';
+      uri = Uri.parse('$wsBase/ws?token=$token');
+    }
+
     _channel = WebSocketChannel.connect(uri);
     state = state.copyWith(isConnected: true);
 
@@ -197,17 +245,20 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     String messageId,
     String emoji,
   ) async {
-    final token = ref.read(authProvider).token ?? '';
     final serverUrl = ref.read(serverUrlProvider);
     try {
-      await http.post(
-        Uri.parse('$serverUrl/api/messages/$messageId/reactions'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({'emoji': emoji}),
-      );
+      await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.post(
+              Uri.parse('$serverUrl/api/messages/$messageId/reactions'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+              body: jsonEncode({'emoji': emoji}),
+            ),
+          );
     } catch (_) {}
   }
 
@@ -217,13 +268,16 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     String messageId,
     String emoji,
   ) async {
-    final token = ref.read(authProvider).token ?? '';
     final serverUrl = ref.read(serverUrlProvider);
     try {
-      await http.delete(
-        Uri.parse('$serverUrl/api/messages/$messageId/reactions/$emoji'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
+      await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.delete(
+              Uri.parse('$serverUrl/api/messages/$messageId/reactions/$emoji'),
+              headers: {'Authorization': 'Bearer $token'},
+            ),
+          );
     } catch (_) {}
   }
 

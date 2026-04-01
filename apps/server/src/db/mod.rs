@@ -4,6 +4,7 @@ pub mod keys;
 pub mod media;
 pub mod messages;
 pub mod reactions;
+pub mod tokens;
 pub mod users;
 
 use sqlx::PgPool;
@@ -26,6 +27,7 @@ pub async fn run_migrations(pool: &PgPool) {
         include_str!("../migrations/005_media.sql"),
         include_str!("../migrations/006_public_groups.sql"),
         include_str!("../migrations/007_avatars_and_groups.sql"),
+        include_str!("../migrations/008_refresh_tokens.sql"),
     ];
 
     // Execute each statement separately (sqlx doesn't support multiple statements in one query)

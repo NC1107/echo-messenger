@@ -1,4 +1,4 @@
-//! WebSocket upgrade endpoint.
+//! WebSocket upgrade endpoint using single-use ticket authentication.
 
 use axum::{
     extract::{Query, State, ws::WebSocketUpgrade},
@@ -6,18 +6,20 @@ use axum::{
 };
 use serde::Deserialize;
 use std::sync::Arc;
-use uuid::Uuid;
+use std::time::{Duration, Instant};
 
-use crate::auth::jwt;
 use crate::db;
 use crate::error::AppError;
 use crate::ws::handler;
 
 use super::AppState;
 
+/// Ticket validity window.
+const TICKET_TTL: Duration = Duration::from_secs(30);
+
 #[derive(Deserialize)]
 pub struct WsParams {
-    pub token: String,
+    pub ticket: String,
 }
 
 pub async fn ws_upgrade(
@@ -25,9 +27,28 @@ pub async fn ws_upgrade(
     State(state): State<Arc<AppState>>,
     Query(params): Query<WsParams>,
 ) -> Result<impl IntoResponse, AppError> {
-    let claims = jwt::validate_token(&params.token, &state.jwt_secret)?;
-    let user_id =
-        Uuid::parse_str(&claims.sub).map_err(|_| AppError::unauthorized("Invalid token"))?;
+    // Look up and consume the ticket (single-use).
+    let (user_id, created_at) = {
+        let mut store = state
+            .ticket_store
+            .lock()
+            .expect("ticket store lock poisoned");
+
+        // Opportunistic cleanup of expired tickets.
+        let now = Instant::now();
+        store.retain(|_, (_, ts)| now.duration_since(*ts) < TICKET_TTL);
+
+        store
+            .remove(&params.ticket)
+            .ok_or_else(|| AppError::unauthorized("Invalid or expired WebSocket ticket"))?
+    };
+
+    // Verify the ticket hasn't expired (belt-and-suspenders after cleanup).
+    if Instant::now().duration_since(created_at) >= TICKET_TTL {
+        return Err(AppError::unauthorized(
+            "Invalid or expired WebSocket ticket",
+        ));
+    }
 
     let user = db::users::find_by_id(&state.pool, user_id)
         .await

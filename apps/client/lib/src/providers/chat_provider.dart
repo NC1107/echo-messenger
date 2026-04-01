@@ -9,6 +9,7 @@ import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
 import '../utils/crypto_utils.dart';
+import 'auth_provider.dart';
 import 'server_url_provider.dart';
 
 class ChatState {
@@ -148,13 +149,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
         url += '&before=${Uri.encodeComponent(before)}';
       }
 
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (currentToken) => http.get(
+              Uri.parse(url),
+              headers: {
+                'Authorization': 'Bearer $currentToken',
+                'Content-Type': 'application/json',
+              },
+            ),
+          );
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);

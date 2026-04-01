@@ -42,20 +42,28 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   ConversationsNotifier(this.ref) : super(const ConversationsState());
 
   String get _serverUrl => ref.read(serverUrlProvider);
-  String? get _token => ref.read(authProvider).token;
 
-  Map<String, String> get _headers => {
+  Map<String, String> _headersWithToken(String token) => {
     'Content-Type': 'application/json',
-    'Authorization': 'Bearer ${_token ?? ""}',
+    'Authorization': 'Bearer $token',
   };
+
+  /// Make an authenticated request with automatic 401 refresh-and-retry.
+  Future<http.Response> _authenticatedRequest(
+    Future<http.Response> Function(String token) requestFn,
+  ) async {
+    return ref.read(authProvider.notifier).authenticatedRequest(requestFn);
+  }
 
   /// Load all conversations from the server.
   Future<void> loadConversations() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await http.get(
-        Uri.parse('$_serverUrl/api/conversations'),
-        headers: _headers,
+      final response = await _authenticatedRequest(
+        (token) => http.get(
+          Uri.parse('$_serverUrl/api/conversations'),
+          headers: _headersWithToken(token),
+        ),
       );
 
       if (response.statusCode == 200) {
@@ -149,9 +157,11 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   Future<void> sendReadReceipt(String conversationId) async {
     markAsRead(conversationId);
     try {
-      await http.post(
-        Uri.parse('$_serverUrl/api/conversations/$conversationId/read'),
-        headers: _headers,
+      await _authenticatedRequest(
+        (token) => http.post(
+          Uri.parse('$_serverUrl/api/conversations/$conversationId/read'),
+          headers: _headersWithToken(token),
+        ),
       );
     } catch (e) {
       debugPrint(
@@ -176,10 +186,12 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
 
     // Not found -- create a new DM conversation via the server endpoint.
     try {
-      final response = await http.post(
-        Uri.parse('$_serverUrl/api/conversations/dm'),
-        headers: _headers,
-        body: jsonEncode({'peer_user_id': peerUserId}),
+      final response = await _authenticatedRequest(
+        (token) => http.post(
+          Uri.parse('$_serverUrl/api/conversations/dm'),
+          headers: _headersWithToken(token),
+          body: jsonEncode({'peer_user_id': peerUserId}),
+        ),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -213,10 +225,12 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
       if (description != null) {
         body['description'] = description;
       }
-      final response = await http.post(
-        Uri.parse('$_serverUrl/api/groups'),
-        headers: _headers,
-        body: jsonEncode(body),
+      final response = await _authenticatedRequest(
+        (token) => http.post(
+          Uri.parse('$_serverUrl/api/groups'),
+          headers: _headersWithToken(token),
+          body: jsonEncode(body),
+        ),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {

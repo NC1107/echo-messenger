@@ -1,7 +1,11 @@
-//! JWT token creation and validation.
+//! JWT token creation and validation, plus refresh token utilities.
 
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -12,9 +16,10 @@ pub struct Claims {
     pub exp: usize,
 }
 
+/// Create a short-lived access token (15 minutes).
 pub fn create_token(user_id: Uuid, secret: &str) -> Result<String, AppError> {
     let exp = chrono::Utc::now()
-        .checked_add_signed(chrono::Duration::days(7))
+        .checked_add_signed(chrono::Duration::minutes(15))
         .expect("valid timestamp")
         .timestamp() as usize;
 
@@ -41,6 +46,26 @@ pub fn validate_token(token: &str, secret: &str) -> Result<Claims, AppError> {
     )?;
 
     Ok(token_data.claims)
+}
+
+/// Generate a cryptographically random 64-byte refresh token, returned as base64url.
+pub fn create_refresh_token() -> String {
+    let mut bytes = [0u8; 64];
+    rand::rng().fill_bytes(&mut bytes);
+    URL_SAFE_NO_PAD.encode(bytes)
+}
+
+/// Hash a refresh token with SHA-256, returning hex-encoded digest.
+pub fn hash_refresh_token(token: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(token.as_bytes());
+    let result = hasher.finalize();
+    // Manual hex encoding to avoid adding the `hex` crate
+    result.iter().fold(String::new(), |mut acc, byte| {
+        use std::fmt::Write;
+        let _ = write!(acc, "{byte:02x}");
+        acc
+    })
 }
 
 #[cfg(test)]
@@ -71,9 +96,33 @@ mod tests {
         let token = create_token(user_id, TEST_SECRET).unwrap();
         let claims = validate_token(&token, TEST_SECRET).unwrap();
         assert_eq!(claims.sub, user_id.to_string());
-        // Expiry should be roughly 7 days from now
+        // Expiry should be roughly 15 minutes from now
         let now = chrono::Utc::now().timestamp() as usize;
         assert!(claims.exp > now);
-        assert!(claims.exp <= now + 7 * 24 * 3600 + 5); // within 7d + small margin
+        assert!(claims.exp <= now + 15 * 60 + 5); // within 15m + small margin
+    }
+
+    #[test]
+    fn test_create_refresh_token_is_unique() {
+        let t1 = create_refresh_token();
+        let t2 = create_refresh_token();
+        assert_ne!(t1, t2);
+        // 64 bytes base64url-encoded is 86 characters
+        assert!(t1.len() >= 80);
+    }
+
+    #[test]
+    fn test_hash_refresh_token_deterministic() {
+        let token = "some-test-token";
+        let h1 = hash_refresh_token(token);
+        let h2 = hash_refresh_token(token);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_hash_refresh_token_different_inputs() {
+        let h1 = hash_refresh_token("token_a");
+        let h2 = hash_refresh_token("token_b");
+        assert_ne!(h1, h2);
     }
 }

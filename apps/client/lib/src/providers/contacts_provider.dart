@@ -42,19 +42,27 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   ContactsNotifier(this.ref) : super(const ContactsState());
 
   String get _serverUrl => ref.read(serverUrlProvider);
-  String? get _token => ref.read(authProvider).token;
 
-  Map<String, String> get _headers => {
+  Map<String, String> _headersWithToken(String token) => {
     'Content-Type': 'application/json',
-    'Authorization': 'Bearer ${_token ?? ""}',
+    'Authorization': 'Bearer $token',
   };
+
+  /// Make an authenticated request with automatic 401 refresh-and-retry.
+  Future<http.Response> _authenticatedRequest(
+    Future<http.Response> Function(String token) requestFn,
+  ) async {
+    return ref.read(authProvider.notifier).authenticatedRequest(requestFn);
+  }
 
   Future<void> loadContacts() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await http.get(
-        Uri.parse('$_serverUrl/api/contacts'),
-        headers: _headers,
+      final response = await _authenticatedRequest(
+        (token) => http.get(
+          Uri.parse('$_serverUrl/api/contacts'),
+          headers: _headersWithToken(token),
+        ),
       );
       if (response.statusCode == 200) {
         final list = (jsonDecode(response.body) as List)
@@ -74,9 +82,11 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
 
   Future<void> loadPending() async {
     try {
-      final response = await http.get(
-        Uri.parse('$_serverUrl/api/contacts/pending'),
-        headers: _headers,
+      final response = await _authenticatedRequest(
+        (token) => http.get(
+          Uri.parse('$_serverUrl/api/contacts/pending'),
+          headers: _headersWithToken(token),
+        ),
       );
       if (response.statusCode == 200) {
         final list = (jsonDecode(response.body) as List)
@@ -91,10 +101,12 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
 
   Future<void> sendRequest(String username) async {
     try {
-      final response = await http.post(
-        Uri.parse('$_serverUrl/api/contacts/request'),
-        headers: _headers,
-        body: jsonEncode({'username': username}),
+      final response = await _authenticatedRequest(
+        (token) => http.post(
+          Uri.parse('$_serverUrl/api/contacts/request'),
+          headers: _headersWithToken(token),
+          body: jsonEncode({'username': username}),
+        ),
       );
       if (response.statusCode == 201 || response.statusCode == 200) {
         await loadContacts();
@@ -112,10 +124,12 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
 
   Future<void> acceptRequest(String contactId) async {
     try {
-      await http.post(
-        Uri.parse('$_serverUrl/api/contacts/accept'),
-        headers: _headers,
-        body: jsonEncode({'contact_id': contactId}),
+      await _authenticatedRequest(
+        (token) => http.post(
+          Uri.parse('$_serverUrl/api/contacts/accept'),
+          headers: _headersWithToken(token),
+          body: jsonEncode({'contact_id': contactId}),
+        ),
       );
       await loadContacts();
       await loadPending();

@@ -1,5 +1,6 @@
+use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use tracing_subscriber::EnvFilter;
 
@@ -35,6 +36,7 @@ async fn main() {
         pool,
         jwt_secret: config.jwt_secret,
         hub,
+        ticket_store: Mutex::new(HashMap::new()),
     });
     let app = routes::create_router(state);
 
