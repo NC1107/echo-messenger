@@ -128,7 +128,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/{id}/leave", post(groups::leave_group));
 
     let user_routes = Router::new()
+        .route("/me", delete(users::delete_account))
         .route("/me/avatar", put(users::upload_avatar))
+        .route("/online", get(users::online_users))
         .route("/{id}/avatar", get(users::get_avatar));
 
     Router::new()

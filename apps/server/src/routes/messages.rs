@@ -32,97 +32,100 @@ pub struct ConversationListItem {
     pub unread_count: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MemberInfo {
     pub user_id: Uuid,
     pub username: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LastMessageInfo {
     pub content: String,
     pub sender_username: String,
     pub created_at: DateTime<Utc>,
 }
 
+/// Raw row returned by the single optimized list_conversations query.
 #[derive(Debug, sqlx::FromRow)]
-struct ConversationRow {
+struct ConversationFullRow {
     conversation_id: Uuid,
     kind: String,
     title: Option<String>,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct LastMessageRow {
-    content: String,
-    sender_username: String,
-    created_at: DateTime<Utc>,
+    members_json: Option<serde_json::Value>,
+    last_message_json: Option<serde_json::Value>,
+    unread_count: i64,
 }
 
 pub async fn list_conversations(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Get all conversations the user is a member of
-    let conversations = sqlx::query_as::<_, ConversationRow>(
-        "SELECT c.id AS conversation_id, c.kind, c.title \
+    // Single query with subqueries for members, last message, and unread count.
+    // This replaces the previous 3N+1 query pattern.
+    let rows = sqlx::query_as::<_, ConversationFullRow>(
+        "SELECT \
+            c.id AS conversation_id, \
+            c.kind, \
+            c.title, \
+            (SELECT json_agg(json_build_object( \
+                'user_id', u.id, 'username', u.username \
+            )) FROM conversation_members cm2 \
+            JOIN users u ON cm2.user_id = u.id \
+            WHERE cm2.conversation_id = c.id) AS members_json, \
+            (SELECT row_to_json(sub) FROM ( \
+                SELECT m.content, m.created_at, u2.username AS sender_username \
+                FROM messages m \
+                JOIN users u2 ON m.sender_id = u2.id \
+                WHERE m.conversation_id = c.id AND m.deleted_at IS NULL \
+                ORDER BY m.created_at DESC LIMIT 1 \
+            ) sub) AS last_message_json, \
+            (SELECT COUNT(*) FROM messages m2 \
+                WHERE m2.conversation_id = c.id \
+                AND m2.sender_id != $1 \
+                AND m2.deleted_at IS NULL \
+                AND m2.created_at > COALESCE( \
+                    (SELECT last_read_at FROM read_receipts \
+                     WHERE conversation_id = c.id AND user_id = $1), \
+                    '1970-01-01'::timestamptz \
+                ) \
+            ) AS unread_count \
          FROM conversations c \
          JOIN conversation_members cm ON cm.conversation_id = c.id \
          WHERE cm.user_id = $1 \
-         ORDER BY c.created_at DESC",
+         ORDER BY ( \
+            SELECT MAX(m3.created_at) FROM messages m3 \
+            WHERE m3.conversation_id = c.id \
+         ) DESC NULLS LAST",
     )
     .bind(auth.user_id)
     .fetch_all(&state.pool)
     .await
-    .map_err(|_| AppError::internal("Database error"))?;
+    .map_err(|e| {
+        tracing::error!("list_conversations query error: {e}");
+        AppError::internal("Database error")
+    })?;
 
-    let mut result = Vec::with_capacity(conversations.len());
+    let mut result = Vec::with_capacity(rows.len());
 
-    for conv in conversations {
-        // Get members
-        let members = db::groups::get_group_members(&state.pool, conv.conversation_id)
-            .await
-            .map_err(|_| AppError::internal("Database error"))?;
+    for row in rows {
+        // Parse members from JSON array
+        let members: Vec<MemberInfo> = row
+            .members_json
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
 
-        let member_infos: Vec<MemberInfo> = members
-            .into_iter()
-            .map(|m| MemberInfo {
-                user_id: m.user_id,
-                username: m.username,
-            })
-            .collect();
-
-        // Get last message
-        let last_message = sqlx::query_as::<_, LastMessageRow>(
-            "SELECT m.content, u.username AS sender_username, m.created_at \
-             FROM messages m \
-             JOIN users u ON u.id = m.sender_id \
-             WHERE m.conversation_id = $1 AND m.deleted_at IS NULL \
-             ORDER BY m.created_at DESC \
-             LIMIT 1",
-        )
-        .bind(conv.conversation_id)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(|_| AppError::internal("Database error"))?;
-
-        // Get unread count
-        let unread_count =
-            db::reactions::get_unread_count(&state.pool, conv.conversation_id, auth.user_id)
-                .await
-                .unwrap_or(0);
+        // Parse last message from JSON object
+        let last_message: Option<LastMessageInfo> = row
+            .last_message_json
+            .and_then(|v| serde_json::from_value(v).ok());
 
         result.push(ConversationListItem {
-            conversation_id: conv.conversation_id,
-            kind: conv.kind,
-            title: conv.title,
-            members: member_infos,
-            last_message: last_message.map(|lm| LastMessageInfo {
-                content: lm.content,
-                sender_username: lm.sender_username,
-                created_at: lm.created_at,
-            }),
-            unread_count,
+            conversation_id: row.conversation_id,
+            kind: row.kind,
+            title: row.title,
+            members,
+            last_message,
+            unread_count: row.unread_count,
         });
     }
 

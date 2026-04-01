@@ -81,6 +81,7 @@ pub async fn mark_read(
 }
 
 /// Get the unread message count for a user in a specific conversation.
+#[allow(dead_code)]
 pub async fn get_unread_count(
     pool: &PgPool,
     conversation_id: Uuid,

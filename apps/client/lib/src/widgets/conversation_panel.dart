@@ -747,11 +747,17 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         final conv = sorted[index];
         final isSelected = conv.id == widget.selectedConversationId;
         final isPinned = _pinnedIds.contains(conv.id);
+        final wsState = ref.watch(websocketProvider);
+        final peer = conv.isGroup
+            ? null
+            : conv.members.where((m) => m.userId != myUserId).firstOrNull;
+        final isPeerOnline = peer != null && wsState.isUserOnline(peer.userId);
         return _ConversationItem(
           conversation: conv,
           myUserId: myUserId,
           isSelected: isSelected,
           isPinned: isPinned,
+          isPeerOnline: isPeerOnline,
           timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
           onTap: () => widget.onConversationTap(conv),
           onContextMenu: (position) =>
@@ -876,11 +882,13 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         final conv = sorted[index];
         final isSelected = conv.id == widget.selectedConversationId;
         final isPinned = _pinnedIds.contains(conv.id);
+        // Groups don't have a single peer, so isPeerOnline is always false
         return _ConversationItem(
           conversation: conv,
           myUserId: myUserId,
           isSelected: isSelected,
           isPinned: isPinned,
+          isPeerOnline: false,
           timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
           onTap: () => widget.onConversationTap(conv),
           onContextMenu: (position) =>
@@ -1006,6 +1014,7 @@ class _ConversationItem extends StatefulWidget {
   final String myUserId;
   final bool isSelected;
   final bool isPinned;
+  final bool isPeerOnline;
   final String timestamp;
   final VoidCallback onTap;
   final void Function(Offset position)? onContextMenu;
@@ -1015,6 +1024,7 @@ class _ConversationItem extends StatefulWidget {
     required this.myUserId,
     required this.isSelected,
     required this.isPinned,
+    required this.isPeerOnline,
     required this.timestamp,
     required this.onTap,
     this.onContextMenu,
@@ -1090,7 +1100,9 @@ class _ConversationItemState extends State<_ConversationItem> {
                         width: 12,
                         height: 12,
                         decoration: BoxDecoration(
-                          color: EchoTheme.online,
+                          color: widget.isPeerOnline
+                              ? EchoTheme.online
+                              : EchoTheme.textMuted,
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: EchoTheme.sidebarBg,

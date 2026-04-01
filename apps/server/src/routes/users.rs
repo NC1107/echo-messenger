@@ -1,5 +1,6 @@
 //! User profile endpoints: avatar upload and serving.
 
+use axum::Json;
 use axum::body::Body;
 use axum::extract::{Multipart, Path, State};
 use axum::http::StatusCode;
@@ -15,6 +16,51 @@ use crate::db;
 use crate::error::AppError;
 
 use super::AppState;
+
+/// DELETE /api/users/me
+///
+/// Deletes the authenticated user's account. Revokes all refresh tokens first,
+/// then deletes the user row (FK CASCADE handles contacts, messages, etc.).
+pub async fn delete_account(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    // Revoke all refresh tokens
+    db::tokens::revoke_all_user_tokens(&state.pool, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Failed to revoke tokens"))?;
+
+    // Disconnect from WebSocket hub if online
+    state.hub.unregister(auth.user_id);
+
+    // Delete user row (CASCADE handles related tables)
+    let deleted = db::users::delete_user(&state.pool, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Failed to delete account"))?;
+
+    if !deleted {
+        return Err(AppError::internal("User not found"));
+    }
+
+    // Clean up avatar files from disk
+    for ext in &["jpg", "png", "webp"] {
+        let path = format!("./uploads/avatars/{}.{}", auth.user_id, ext);
+        let _ = fs::remove_file(&path).await;
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// GET /api/users/online
+///
+/// Returns the list of currently connected user IDs.
+pub async fn online_users(
+    _auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let online_ids = state.hub.get_online_user_ids();
+    Ok(Json(serde_json::json!({ "online_user_ids": online_ids })))
+}
 
 /// Maximum avatar size: 2 MB.
 const MAX_AVATAR_SIZE: usize = 2 * 1024 * 1024;

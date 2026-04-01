@@ -709,14 +709,33 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      Text(
-                        conv.isGroup
-                            ? '${conv.members.length} members'
-                            : 'Online',
-                        style: const TextStyle(
-                          color: EchoTheme.textMuted,
-                          fontSize: 12,
-                        ),
+                      Builder(
+                        builder: (context) {
+                          if (conv.isGroup) {
+                            return Text(
+                              '${conv.members.length} members',
+                              style: const TextStyle(
+                                color: EchoTheme.textMuted,
+                                fontSize: 12,
+                              ),
+                            );
+                          }
+                          // For DMs, check peer presence
+                          final peer = conv.members
+                              .where((m) => m.userId != myUserId)
+                              .firstOrNull;
+                          final peerOnline =
+                              peer != null && wsState.isUserOnline(peer.userId);
+                          return Text(
+                            peerOnline ? 'Online' : 'Offline',
+                            style: TextStyle(
+                              color: peerOnline
+                                  ? EchoTheme.online
+                                  : EchoTheme.textMuted,
+                              fontSize: 12,
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),

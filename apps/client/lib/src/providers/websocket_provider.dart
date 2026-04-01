@@ -9,6 +9,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
+import '../services/notification_service.dart';
 import '../services/sound_service.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
@@ -24,17 +25,29 @@ class WebSocketState {
   /// Map of conversationId -> set of usernames currently typing.
   final Map<String, Map<String, DateTime>> typingUsers;
 
-  const WebSocketState({this.isConnected = false, this.typingUsers = const {}});
+  /// Set of user IDs currently known to be online (from presence events).
+  final Set<String> onlineUsers;
+
+  const WebSocketState({
+    this.isConnected = false,
+    this.typingUsers = const {},
+    this.onlineUsers = const {},
+  });
 
   WebSocketState copyWith({
     bool? isConnected,
     Map<String, Map<String, DateTime>>? typingUsers,
+    Set<String>? onlineUsers,
   }) {
     return WebSocketState(
       isConnected: isConnected ?? this.isConnected,
       typingUsers: typingUsers ?? this.typingUsers,
+      onlineUsers: onlineUsers ?? this.onlineUsers,
     );
   }
+
+  /// Check if a specific user is online.
+  bool isUserOnline(String userId) => onlineUsers.contains(userId);
 
   /// Get list of usernames typing in a given conversation.
   List<String> typingIn(String conversationId) {
@@ -314,6 +327,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
         _handleMessageDeleted(json);
       case 'message_edited':
         _handleMessageEdited(json);
+      case 'presence':
+        _handlePresence(json);
+      case 'presence_list':
+        _handlePresenceList(json);
       case 'error':
         break;
     }
@@ -381,9 +398,16 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
       ref.read(conversationsProvider.notifier).loadConversations();
     }
 
-    // Play notification sound for incoming messages (not our own)
+    // Play notification sound and show push notification for incoming messages
     if (fromUserId != myUserId) {
       SoundService().playMessageReceived();
+      // Fire browser/desktop notification (only shows when app not focused)
+      NotificationService().showMessageNotification(
+        senderUsername: senderUsername,
+        body: rawContent.length > 100
+            ? '${rawContent.substring(0, 100)}...'
+            : rawContent,
+      );
     }
   }
 
@@ -504,6 +528,25 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     ref
         .read(chatProvider.notifier)
         .editMessage(conversationId, messageId, newContent, editedAt: editedAt);
+  }
+
+  void _handlePresence(Map<String, dynamic> json) {
+    final userId = json['user_id'] as String? ?? '';
+    final status = json['status'] as String? ?? '';
+    if (userId.isEmpty) return;
+
+    final updated = Set<String>.from(state.onlineUsers);
+    if (status == 'online') {
+      updated.add(userId);
+    } else {
+      updated.remove(userId);
+    }
+    state = state.copyWith(onlineUsers: updated);
+  }
+
+  void _handlePresenceList(Map<String, dynamic> json) {
+    final users = (json['users'] as List?)?.cast<String>() ?? [];
+    state = state.copyWith(onlineUsers: users.toSet());
   }
 
   /// Remove stale typing indicators (older than 5 seconds).

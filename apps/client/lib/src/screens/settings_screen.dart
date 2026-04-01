@@ -705,6 +705,91 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
     );
   }
 
+  Future<void> _deleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: EchoTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: EchoTheme.border),
+        ),
+        title: const Text(
+          'Delete Account',
+          style: TextStyle(
+            color: EchoTheme.danger,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: const Text(
+          'This will permanently delete your account and all data. '
+          'This cannot be undone.',
+          style: TextStyle(
+            color: EchoTheme.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Delete My Account'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final serverUrl = ref.read(serverUrlProvider);
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.delete(
+              Uri.parse('$serverUrl/api/users/me'),
+              headers: {'Authorization': 'Bearer $token'},
+            ),
+          );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        // Clear all local data and navigate to login
+        ref.read(websocketProvider.notifier).disconnect();
+        ref.read(chatProvider.notifier).clear();
+        ref.read(authProvider.notifier).logout();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Account deleted successfully.')),
+          );
+          context.go('/login');
+        }
+      } else {
+        String errorMsg = 'Failed to delete account';
+        try {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          errorMsg = data['error'] as String? ?? errorMsg;
+        } catch (_) {}
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(errorMsg)));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Network error. Please try again.')),
+        );
+      }
+    }
+  }
+
   Widget _buildAboutSection() {
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -739,6 +824,25 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
             color: EchoTheme.textSecondary,
             fontSize: 13,
             height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 32),
+        const Divider(color: EchoTheme.border),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _deleteAccount,
+            icon: const Icon(Icons.delete_forever_outlined, size: 18),
+            label: const Text('Delete Account'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: EchoTheme.danger,
+              side: const BorderSide(color: EchoTheme.danger),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
           ),
         ),
       ],

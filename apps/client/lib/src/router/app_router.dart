@@ -7,6 +7,7 @@ import '../screens/create_group_screen.dart';
 import '../screens/discover_groups_screen.dart';
 import '../screens/group_info_screen.dart';
 import '../screens/home_screen.dart';
+import '../screens/join_group_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/register_screen.dart';
 import '../screens/settings_screen.dart';
@@ -55,6 +56,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/join/:groupId',
+        builder: (_, state) =>
+            JoinGroupScreen(groupId: state.pathParameters['groupId']!),
       ),
     ],
   );

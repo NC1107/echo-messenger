@@ -27,6 +27,10 @@ impl Hub {
         self.connections.remove(&user_id);
     }
 
+    pub fn get_online_user_ids(&self) -> Vec<Uuid> {
+        self.connections.iter().map(|entry| *entry.key()).collect()
+    }
+
     pub fn send_to(&self, user_id: &Uuid, msg: WsMessage) -> bool {
         if let Some(tx) = self.connections.get(user_id) {
             tx.send(msg).is_ok()

@@ -6,6 +6,7 @@ import 'src/app.dart';
 import 'src/providers/auth_provider.dart';
 import 'src/providers/crypto_provider.dart';
 import 'src/providers/server_url_provider.dart';
+import 'src/services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +45,9 @@ void main() async {
       }
     }
   }
+
+  // Request browser notification permission (no-op on non-web platforms)
+  NotificationService().requestPermission();
 
   runApp(
     UncontrolledProviderScope(container: container, child: const EchoApp()),

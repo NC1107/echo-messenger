@@ -76,6 +76,9 @@ pub async fn handle_socket(
     // Register in hub
     state.hub.register(user_id, tx);
 
+    // Broadcast online presence to contacts
+    broadcast_presence(&state, user_id, &username, "online").await;
+
     // Task: forward hub messages to WebSocket sink
     let send_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
@@ -133,6 +136,10 @@ pub async fn handle_socket(
     // Cleanup
     state.hub.unregister(user_id);
     send_task.abort();
+
+    // Broadcast offline presence to contacts
+    broadcast_presence(&state, user_id, &username, "offline").await;
+
     tracing::info!("WebSocket disconnected: {} ({})", username, user_id);
 }
 
@@ -394,6 +401,33 @@ async fn handle_read_receipt(state: &AppState, sender_id: Uuid, conversation_id:
         state
             .hub
             .send_to(member_id, WsMessage::Text(json.clone().into()));
+    }
+}
+
+async fn broadcast_presence(state: &AppState, user_id: Uuid, username: &str, status: &str) {
+    let contacts = match db::contacts::list_contacts(&state.pool, user_id).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("Failed to fetch contacts for presence broadcast: {e}");
+            return;
+        }
+    };
+
+    let presence = serde_json::json!({
+        "type": "presence",
+        "user_id": user_id,
+        "username": username,
+        "status": status,
+    });
+    let json = match serde_json::to_string(&presence) {
+        Ok(j) => j,
+        Err(_) => return,
+    };
+
+    for contact in &contacts {
+        state
+            .hub
+            .send_to(&contact.user_id, WsMessage::Text(json.clone().into()));
     }
 }
 

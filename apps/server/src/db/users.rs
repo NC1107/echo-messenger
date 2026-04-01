@@ -61,6 +61,15 @@ pub async fn set_avatar_url(
     Ok(())
 }
 
+/// Delete a user by ID. FK CASCADE constraints handle cleanup of related rows.
+pub async fn delete_user(pool: &PgPool, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 pub async fn get_avatar_url(pool: &PgPool, user_id: Uuid) -> Result<Option<String>, sqlx::Error> {
     let row: Option<(Option<String>,)> =
         sqlx::query_as("SELECT avatar_url FROM users WHERE id = $1")

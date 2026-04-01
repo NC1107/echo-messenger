@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
@@ -283,6 +284,24 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
               ),
               const Divider(),
               const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    final link =
+                        'https://echo-messenger.us/#/join/${widget.conversationId}';
+                    Clipboard.setData(ClipboardData(text: link));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Invite link copied to clipboard'),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.link_outlined),
+                  label: const Text('Copy Invite Link'),
+                ),
+              ),
+              const SizedBox(height: 12),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: OutlinedButton.icon(
