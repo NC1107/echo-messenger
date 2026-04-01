@@ -178,6 +178,21 @@ async fn handle_send_message(
     to_user_id: Option<Uuid>,
     content: String,
 ) {
+    // Validate message content length
+    const MAX_MESSAGE_LENGTH: usize = 10_000;
+    if content.len() > MAX_MESSAGE_LENGTH {
+        send_error(
+            state,
+            sender_id,
+            &format!(
+                "Message too long: {} characters (max {})",
+                content.len(),
+                MAX_MESSAGE_LENGTH
+            ),
+        );
+        return;
+    }
+
     // Determine the conversation to send to.
     // If conversation_id is provided, use it (for group messages or explicit DM).
     // If to_user_id is provided without conversation_id, find/create DM conversation (backward compat).

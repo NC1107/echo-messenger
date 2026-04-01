@@ -149,12 +149,24 @@ pub async fn download(
         }
     })?;
 
+    // Sanitize filename: strip characters that could break Content-Disposition header
+    let safe_filename: String = row
+        .filename
+        .chars()
+        .filter(|c| *c != '"' && *c != '\\' && *c != '\r' && *c != '\n' && *c != '/' && *c != '\0')
+        .collect();
+    let safe_filename = if safe_filename.is_empty() {
+        id.to_string()
+    } else {
+        safe_filename
+    };
+
     let response = Response::builder()
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, &row.mime_type)
         .header(
             CONTENT_DISPOSITION,
-            format!("inline; filename=\"{}\"", row.filename),
+            format!("inline; filename=\"{}\"", safe_filename),
         )
         .body(Body::from(data))
         .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))?;

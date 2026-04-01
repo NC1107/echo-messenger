@@ -93,3 +93,4 @@ test-results/
 # Uploaded media files
 uploads/
 tests/selenium/screenshots/
+apps/client/.idea/

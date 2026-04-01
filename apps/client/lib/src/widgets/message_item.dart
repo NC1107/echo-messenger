@@ -341,11 +341,6 @@ class _MessageItemState extends State<MessageItem> {
                             tooltip: 'React',
                             onPressed: () => widget.onReactionTap?.call(msg),
                           ),
-                          _HoverActionButton(
-                            icon: Icons.reply_outlined,
-                            tooltip: 'Reply',
-                            onPressed: () {},
-                          ),
                         ],
                       ),
                     ),

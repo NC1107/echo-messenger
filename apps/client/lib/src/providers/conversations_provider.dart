@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:developer' as developer;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -52,18 +51,9 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   Future<void> loadConversations() async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      developer.log(
-        'loadConversations: fetching from $_serverUrl/api/conversations',
-        name: 'ConversationsProvider',
-      );
       final response = await http.get(
         Uri.parse('$_serverUrl/api/conversations'),
         headers: _headers,
-      );
-
-      developer.log(
-        'loadConversations: status=${response.statusCode} body=${response.body}',
-        name: 'ConversationsProvider',
       );
 
       if (response.statusCode == 200) {
@@ -74,11 +64,6 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         final conversations = list
             .map((e) => Conversation.fromJson(e as Map<String, dynamic>))
             .toList();
-
-        developer.log(
-          'loadConversations: parsed ${conversations.length} conversations',
-          name: 'ConversationsProvider',
-        );
 
         // Replace encrypted previews with cached decrypted text or placeholder
         for (var i = 0; i < conversations.length; i++) {
@@ -100,20 +85,12 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
 
         state = state.copyWith(conversations: conversations, isLoading: false);
       } else {
-        developer.log(
-          'loadConversations: failed with status ${response.statusCode}',
-          name: 'ConversationsProvider',
-        );
         state = state.copyWith(
           isLoading: false,
           error: 'Failed to load conversations',
         );
       }
     } catch (e) {
-      developer.log(
-        'loadConversations: exception $e',
-        name: 'ConversationsProvider',
-      );
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
@@ -198,17 +175,15 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
       }
     }
 
-    // Not found -- send a greeting message via WebSocket which auto-creates
-    // the conversation. We use the REST endpoint to send a one-off message.
+    // Not found -- create a new DM conversation via the server endpoint.
     try {
       final response = await http.post(
-        Uri.parse('$_serverUrl/api/messages'),
+        Uri.parse('$_serverUrl/api/conversations/dm'),
         headers: _headers,
-        body: jsonEncode({'to_user_id': peerUserId, 'content': 'Hey!'}),
+        body: jsonEncode({'peer_user_id': peerUserId}),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // The server may return the conversation_id in the response
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final convId = data['conversation_id'] as String?;
         if (convId != null && convId.isNotEmpty) {
@@ -217,19 +192,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         }
       }
     } catch (_) {
-      // Fall through to reload approach
-    }
-
-    // Wait briefly for the server to process, then reload
-    await Future<void>.delayed(const Duration(seconds: 2));
-    await loadConversations();
-
-    // Try to find the new conversation
-    for (final conv in state.conversations) {
-      if (!conv.isGroup) {
-        final hasPeer = conv.members.any((m) => m.userId == peerUserId);
-        if (hasPeer) return conv;
-      }
+      // Fall through
     }
 
     return null;

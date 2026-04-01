@@ -184,6 +184,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                                 : null,
                             trailing: SizedBox(
                               height: 32,
+                              width: 90,
                               child: Material(
                                 color: EchoTheme.accentLight,
                                 borderRadius: BorderRadius.circular(6),

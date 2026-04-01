@@ -9,11 +9,12 @@ pub mod ws;
 
 use axum::Json;
 use axum::Router;
+use axum::http::HeaderValue;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use sqlx::PgPool;
 use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 
 use crate::ws::hub::Hub;
 
@@ -24,10 +25,24 @@ pub struct AppState {
 }
 
 pub fn create_router(state: Arc<AppState>) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors_origins = std::env::var("CORS_ORIGINS")
+        .unwrap_or_else(|_| "https://echo-messenger.us,http://localhost:8081".into());
+
+    let cors = if cors_origins == "*" {
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any)
+    } else {
+        let origins: Vec<HeaderValue> = cors_origins
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::list(origins))
+            .allow_methods(Any)
+            .allow_headers(Any)
+    };
 
     let auth_routes = Router::new()
         .route("/register", post(auth::register))
@@ -41,6 +56,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let message_routes = Router::new()
         .route("/conversations", get(messages::list_conversations))
+        .route("/conversations/dm", post(messages::create_dm))
         .route(
             "/conversations/{conversation_id}/read",
             post(reactions::mark_read),

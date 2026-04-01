@@ -149,3 +149,28 @@ pub async fn get_messages(
 
     Ok(Json(messages))
 }
+
+#[derive(Debug, Deserialize)]
+pub struct CreateDmRequest {
+    pub peer_user_id: Uuid,
+}
+
+pub async fn create_dm(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CreateDmRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let are_contacts = db::contacts::are_contacts(&state.pool, auth.user_id, req.peer_user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+    if !are_contacts {
+        return Err(AppError::bad_request("Not a contact"));
+    }
+    let conversation_id =
+        db::messages::find_or_create_dm_conversation(&state.pool, auth.user_id, req.peer_user_id)
+            .await
+            .map_err(|_| AppError::internal("Failed to create conversation"))?;
+    Ok(Json(
+        serde_json::json!({ "conversation_id": conversation_id }),
+    ))
+}

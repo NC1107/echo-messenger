@@ -15,6 +15,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmController = TextEditingController();
+  String? _passwordError;
 
   @override
   void dispose() {
@@ -26,9 +27,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   Future<void> _register() async {
     if (_passwordController.text != _confirmController.text) {
-      ref.read(authProvider.notifier);
+      setState(() {
+        _passwordError = 'Passwords do not match';
+      });
       return;
     }
+    setState(() {
+      _passwordError = null;
+    });
     final auth = ref.read(authProvider.notifier);
     await auth.register(
       _usernameController.text.trim(),
@@ -84,6 +90,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   ),
                   onSubmitted: (_) => _register(),
                 ),
+                if (_passwordError != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _passwordError!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
                 if (authState.error != null) ...[
                   const SizedBox(height: 12),
                   Text(
