@@ -190,222 +190,234 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 600),
           child: ListView(
-        children: [
-          const SizedBox(height: 16),
-          // User info
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: EchoTheme.accent,
-                  child: Text(
-                    username.isNotEmpty ? username[0].toUpperCase() : '?',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 16),
+              // User info
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
                   children: [
-                    Text(
-                      username,
-                      style: const TextStyle(
-                        color: EchoTheme.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: EchoTheme.accent,
+                      child: Text(
+                        username.isNotEmpty ? username[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'Online',
-                      style: TextStyle(
-                        color: EchoTheme.textMuted,
-                        fontSize: 13,
-                      ),
+                    const SizedBox(width: 16),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          username,
+                          style: const TextStyle(
+                            color: EchoTheme.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Online',
+                          style: TextStyle(
+                            color: EchoTheme.textMuted,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Divider(color: EchoTheme.border, height: 1),
+              ),
+              const SizedBox(height: 24),
+              const Divider(color: EchoTheme.border, height: 1),
 
-          // --- Server section ---
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-            child: Text(
-              'SERVER',
-              style: TextStyle(
-                color: EchoTheme.textMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ),
-          // Connected to
-          ListTile(
-            leading: const Icon(
-              Icons.dns_outlined,
-              color: EchoTheme.textSecondary,
-              size: 22,
-            ),
-            title: const Text(
-              'Connected to',
-              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
-            ),
-            subtitle: Text(
-              displayHost,
-              style: const TextStyle(color: EchoTheme.textMuted, fontSize: 12),
-            ),
-          ),
-          // Status
-          ListTile(
-            leading: Icon(
-              Icons.circle,
-              color: _checkingHealth
-                  ? EchoTheme.warning
-                  : (_serverOnline ? EchoTheme.online : EchoTheme.danger),
-              size: 12,
-            ),
-            title: const Text(
-              'Status',
-              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
-            ),
-            subtitle: Text(
-              _checkingHealth
-                  ? 'Checking...'
-                  : (_serverOnline ? 'Online' : 'Offline'),
-              style: TextStyle(
-                color: _checkingHealth
-                    ? EchoTheme.warning
-                    : (_serverOnline ? EchoTheme.online : EchoTheme.danger),
-                fontSize: 12,
-              ),
-            ),
-            trailing: IconButton(
-              icon: const Icon(
-                Icons.refresh,
-                color: EchoTheme.textMuted,
-                size: 20,
-              ),
-              tooltip: 'Refresh status',
-              onPressed: _checkServerHealth,
-            ),
-          ),
-          // Server version (if available)
-          if (_serverVersion != null)
-            ListTile(
-              leading: const Icon(
-                Icons.info_outline,
-                color: EchoTheme.textSecondary,
-                size: 22,
-              ),
-              title: const Text(
-                'Server version',
-                style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
-              ),
-              subtitle: Text(
-                _serverVersion!,
-                style: const TextStyle(
-                  color: EchoTheme.textMuted,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          // Change server
-          ListTile(
-            leading: const Icon(
-              Icons.swap_horiz_outlined,
-              color: EchoTheme.textSecondary,
-              size: 22,
-            ),
-            title: const Text(
-              'Change server',
-              style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
-            ),
-            subtitle: const Text(
-              'Connect to a different Echo server',
-              style: TextStyle(color: EchoTheme.textMuted, fontSize: 12),
-            ),
-            trailing: const Icon(
-              Icons.chevron_right,
-              color: EchoTheme.textMuted,
-              size: 20,
-            ),
-            onTap: _showChangeServerDialog,
-          ),
-          const Divider(color: EchoTheme.border, height: 1),
-
-          // Appearance
-          _SettingsTile(
-            icon: Icons.palette_outlined,
-            title: 'Appearance',
-            subtitle: 'Coming soon',
-            enabled: false,
-          ),
-          // Notifications
-          _SettingsTile(
-            icon: Icons.notifications_outlined,
-            title: 'Notifications',
-            subtitle: 'Coming soon',
-            enabled: false,
-          ),
-          // Privacy
-          _SettingsTile(
-            icon: Icons.lock_outline,
-            title: 'Privacy',
-            subtitle: 'Coming soon',
-            enabled: false,
-          ),
-          const SizedBox(height: 16),
-          const Divider(color: EchoTheme.border, height: 1),
-          const SizedBox(height: 8),
-          // Version info
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            child: Text(
-              'Echo Messenger v${_serverVersion ?? "0.1.0"}',
-              style: const TextStyle(color: EchoTheme.textMuted, fontSize: 12),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Logout button
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => _logout(context, ref),
-                icon: const Icon(
-                  Icons.logout,
-                  size: 18,
-                  color: EchoTheme.danger,
-                ),
-                label: const Text(
-                  'Log out',
-                  style: TextStyle(color: EchoTheme.danger),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: EchoTheme.danger),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+              // --- Server section ---
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Text(
+                  'SERVER',
+                  style: TextStyle(
+                    color: EchoTheme.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
                   ),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
-            ),
+              // Connected to
+              ListTile(
+                leading: const Icon(
+                  Icons.dns_outlined,
+                  color: EchoTheme.textSecondary,
+                  size: 22,
+                ),
+                title: const Text(
+                  'Connected to',
+                  style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
+                ),
+                subtitle: Text(
+                  displayHost,
+                  style: const TextStyle(
+                    color: EchoTheme.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              // Status
+              ListTile(
+                leading: Icon(
+                  Icons.circle,
+                  color: _checkingHealth
+                      ? EchoTheme.warning
+                      : (_serverOnline ? EchoTheme.online : EchoTheme.danger),
+                  size: 12,
+                ),
+                title: const Text(
+                  'Status',
+                  style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
+                ),
+                subtitle: Text(
+                  _checkingHealth
+                      ? 'Checking...'
+                      : (_serverOnline ? 'Online' : 'Offline'),
+                  style: TextStyle(
+                    color: _checkingHealth
+                        ? EchoTheme.warning
+                        : (_serverOnline ? EchoTheme.online : EchoTheme.danger),
+                    fontSize: 12,
+                  ),
+                ),
+                trailing: IconButton(
+                  icon: const Icon(
+                    Icons.refresh,
+                    color: EchoTheme.textMuted,
+                    size: 20,
+                  ),
+                  tooltip: 'Refresh status',
+                  onPressed: _checkServerHealth,
+                ),
+              ),
+              // Server version (if available)
+              if (_serverVersion != null)
+                ListTile(
+                  leading: const Icon(
+                    Icons.info_outline,
+                    color: EchoTheme.textSecondary,
+                    size: 22,
+                  ),
+                  title: const Text(
+                    'Server version',
+                    style: TextStyle(
+                      color: EchoTheme.textPrimary,
+                      fontSize: 15,
+                    ),
+                  ),
+                  subtitle: Text(
+                    _serverVersion!,
+                    style: const TextStyle(
+                      color: EchoTheme.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              // Change server
+              ListTile(
+                leading: const Icon(
+                  Icons.swap_horiz_outlined,
+                  color: EchoTheme.textSecondary,
+                  size: 22,
+                ),
+                title: const Text(
+                  'Change server',
+                  style: TextStyle(color: EchoTheme.textPrimary, fontSize: 15),
+                ),
+                subtitle: const Text(
+                  'Connect to a different Echo server',
+                  style: TextStyle(color: EchoTheme.textMuted, fontSize: 12),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  color: EchoTheme.textMuted,
+                  size: 20,
+                ),
+                onTap: _showChangeServerDialog,
+              ),
+              const Divider(color: EchoTheme.border, height: 1),
+
+              // Appearance
+              _SettingsTile(
+                icon: Icons.palette_outlined,
+                title: 'Appearance',
+                subtitle: 'Coming soon',
+                enabled: false,
+              ),
+              // Notifications
+              _SettingsTile(
+                icon: Icons.notifications_outlined,
+                title: 'Notifications',
+                subtitle: 'Coming soon',
+                enabled: false,
+              ),
+              // Privacy
+              _SettingsTile(
+                icon: Icons.lock_outline,
+                title: 'Privacy',
+                subtitle: 'Coming soon',
+                enabled: false,
+              ),
+              const SizedBox(height: 16),
+              const Divider(color: EchoTheme.border, height: 1),
+              const SizedBox(height: 8),
+              // Version info
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
+                child: Text(
+                  'Echo Messenger v${_serverVersion ?? "0.1.0"}',
+                  style: const TextStyle(
+                    color: EchoTheme.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Logout button
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _logout(context, ref),
+                    icon: const Icon(
+                      Icons.logout,
+                      size: 18,
+                      color: EchoTheme.danger,
+                    ),
+                    label: const Text(
+                      'Log out',
+                      style: TextStyle(color: EchoTheme.danger),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: EchoTheme.danger),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+            ],
           ),
-          const SizedBox(height: 32),
-        ],
-      ),
         ),
       ),
     );

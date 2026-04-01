@@ -117,88 +117,97 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 600),
-          child: contactsState.isLoading &&
-              contactsState.contacts.isEmpty &&
-              contactsState.pendingRequests.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: () async {
-                await ref.read(contactsProvider.notifier).loadContacts();
-                await ref.read(contactsProvider.notifier).loadPending();
-              },
-              child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                children: [
-                  if (contactsState.pendingRequests.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                      child: Text(
-                        'Pending Requests',
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
+          child:
+              contactsState.isLoading &&
+                  contactsState.contacts.isEmpty &&
+                  contactsState.pendingRequests.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: () async {
+                    await ref.read(contactsProvider.notifier).loadContacts();
+                    await ref.read(contactsProvider.notifier).loadPending();
+                  },
+                  child: ListView(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    children: [
+                      if (contactsState.pendingRequests.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                          child: Text(
+                            'Pending Requests',
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                          ),
                         ),
-                      ),
-                    ),
-                    ...contactsState.pendingRequests.map(
-                      (contact) => ListTile(
-                        leading: CircleAvatar(
-                          child: Text(contact.username[0].toUpperCase()),
+                        ...contactsState.pendingRequests.map(
+                          (contact) => ListTile(
+                            leading: CircleAvatar(
+                              child: Text(contact.username[0].toUpperCase()),
+                            ),
+                            title: Text(contact.username),
+                            subtitle: const Text('Wants to connect'),
+                            trailing: FilledButton.tonal(
+                              onPressed: () {
+                                ref
+                                    .read(contactsProvider.notifier)
+                                    .acceptRequest(contact.id);
+                              },
+                              child: const Text('Accept'),
+                            ),
+                          ),
                         ),
-                        title: Text(contact.username),
-                        subtitle: const Text('Wants to connect'),
-                        trailing: FilledButton.tonal(
-                          onPressed: () {
-                            ref
-                                .read(contactsProvider.notifier)
-                                .acceptRequest(contact.id);
-                          },
-                          child: const Text('Accept'),
+                        const Divider(indent: 16, endIndent: 16),
+                      ],
+                      if (contactsState.contacts.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                          child: Text(
+                            'Contacts',
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                          ),
                         ),
-                      ),
-                    ),
-                    const Divider(indent: 16, endIndent: 16),
-                  ],
-                  if (contactsState.contacts.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                      child: Text(
-                        'Contacts',
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                    ),
-                    ...contactsState.contacts.map(
-                      (contact) => ListTile(
-                        leading: CircleAvatar(
-                          child: Text(contact.username[0].toUpperCase()),
-                        ),
-                        title: Text(contact.displayName ?? contact.username),
-                        subtitle: contact.displayName != null
-                            ? Text('@${contact.username}')
-                            : null,
-                        trailing: SizedBox(
-                          height: 32,
-                          child: Material(
-                            color: EchoTheme.accentLight,
-                            borderRadius: BorderRadius.circular(6),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(6),
-                              onTap: _isStartingDm
-                                  ? null
-                                  : () => _messageContact(
-                                      contact.userId,
-                                      contact.username,
+                        ...contactsState.contacts.map(
+                          (contact) => ListTile(
+                            leading: CircleAvatar(
+                              child: Text(contact.username[0].toUpperCase()),
+                            ),
+                            title: Text(
+                              contact.displayName ?? contact.username,
+                            ),
+                            subtitle: contact.displayName != null
+                                ? Text('@${contact.username}')
+                                : null,
+                            trailing: SizedBox(
+                              height: 32,
+                              child: Material(
+                                color: EchoTheme.accentLight,
+                                borderRadius: BorderRadius.circular(6),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(6),
+                                  onTap: _isStartingDm
+                                      ? null
+                                      : () => _messageContact(
+                                          contact.userId,
+                                          contact.username,
+                                        ),
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 12,
                                     ),
-                              child: const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 12),
-                                child: Center(
-                                  child: Text(
-                                    'Message',
-                                    style: TextStyle(
-                                      color: EchoTheme.accent,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
+                                    child: Center(
+                                      child: Text(
+                                        'Message',
+                                        style: TextStyle(
+                                          color: EchoTheme.accent,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -206,24 +215,22 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  ],
-                  if (contactsState.contacts.isEmpty &&
-                      contactsState.pendingRequests.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(48),
-                      child: Center(
-                        child: Text(
-                          'No contacts yet.\nTap + to add someone.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey),
+                      ],
+                      if (contactsState.contacts.isEmpty &&
+                          contactsState.pendingRequests.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(48),
+                          child: Center(
+                            child: Text(
+                              'No contacts yet.\nTap + to add someone.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
+                    ],
+                  ),
+                ),
         ),
       ),
       floatingActionButton: FloatingActionButton(

@@ -85,82 +85,84 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 600),
           child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Group Name',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.group_outlined),
-              ),
-              textInputAction: TextInputAction.done,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Text(
-                  'Select Members',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: TextField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Group Name',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.group_outlined),
                   ),
+                  textInputAction: TextInputAction.done,
                 ),
-                const SizedBox(width: 8),
-                if (_selectedUserIds.isNotEmpty)
-                  Chip(
-                    label: Text('${_selectedUserIds.length} selected'),
-                    visualDensity: VisualDensity.compact,
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: contactsState.isLoading && contactsState.contacts.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : contactsState.contacts.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No contacts available.\nAdd contacts first.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Text(
+                      'Select Members',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
-                  )
-                : ListView.builder(
-                    itemCount: contactsState.contacts.length,
-                    itemBuilder: (context, index) {
-                      final contact = contactsState.contacts[index];
-                      final isSelected = _selectedUserIds.contains(
-                        contact.userId,
-                      );
-
-                      return CheckboxListTile(
-                        value: isSelected,
-                        onChanged: (checked) {
-                          setState(() {
-                            if (checked == true) {
-                              _selectedUserIds.add(contact.userId);
-                            } else {
-                              _selectedUserIds.remove(contact.userId);
-                            }
-                          });
-                        },
-                        secondary: CircleAvatar(
-                          child: Text(contact.username[0].toUpperCase()),
+                    const SizedBox(width: 8),
+                    if (_selectedUserIds.isNotEmpty)
+                      Chip(
+                        label: Text('${_selectedUserIds.length} selected'),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: contactsState.isLoading && contactsState.contacts.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : contactsState.contacts.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No contacts available.\nAdd contacts first.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey),
                         ),
-                        title: Text(contact.displayName ?? contact.username),
-                        subtitle: contact.displayName != null
-                            ? Text('@${contact.username}')
-                            : null,
-                      );
-                    },
-                  ),
+                      )
+                    : ListView.builder(
+                        itemCount: contactsState.contacts.length,
+                        itemBuilder: (context, index) {
+                          final contact = contactsState.contacts[index];
+                          final isSelected = _selectedUserIds.contains(
+                            contact.userId,
+                          );
+
+                          return CheckboxListTile(
+                            value: isSelected,
+                            onChanged: (checked) {
+                              setState(() {
+                                if (checked == true) {
+                                  _selectedUserIds.add(contact.userId);
+                                } else {
+                                  _selectedUserIds.remove(contact.userId);
+                                }
+                              });
+                            },
+                            secondary: CircleAvatar(
+                              child: Text(contact.username[0].toUpperCase()),
+                            ),
+                            title: Text(
+                              contact.displayName ?? contact.username,
+                            ),
+                            subtitle: contact.displayName != null
+                                ? Text('@${contact.username}')
+                                : null,
+                          );
+                        },
+                      ),
+              ),
+            ],
           ),
-        ],
-      ),
         ),
       ),
     );

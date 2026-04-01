@@ -225,76 +225,78 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 600),
           child: ListView(
-        children: [
-          const SizedBox(height: 24),
-          Center(
-            child: CircleAvatar(
-              radius: 40,
-              backgroundColor: Theme.of(context).colorScheme.tertiary,
-              child: const Icon(Icons.group_outlined, size: 40),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Center(
-            child: Text(
-              displayName,
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-          ),
-          Center(
-            child: Text(
-              '${conv.members.length} members',
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
-            ),
-          ),
-          const SizedBox(height: 24),
-          const Divider(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Row(
-              children: [
-                Text(
-                  'Members',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
+            children: [
+              const SizedBox(height: 24),
+              Center(
+                child: CircleAvatar(
+                  radius: 40,
+                  backgroundColor: Theme.of(context).colorScheme.tertiary,
+                  child: const Icon(Icons.group_outlined, size: 40),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Center(
+                child: Text(
+                  displayName,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+              ),
+              Center(
+                child: Text(
+                  '${conv.members.length} members',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Row(
+                  children: [
+                    Text(
+                      'Members',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.person_add_outlined),
+                      tooltip: 'Add member',
+                      onPressed: _addMember,
+                    ),
+                  ],
+                ),
+              ),
+              ...conv.members.map(
+                (member) => ListTile(
+                  leading: CircleAvatar(
+                    child: Text(member.username[0].toUpperCase()),
+                  ),
+                  title: Text(member.username),
+                  subtitle: member.userId == myUserId
+                      ? const Text('You')
+                      : null,
+                ),
+              ),
+              const Divider(),
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: OutlinedButton.icon(
+                  onPressed: _leaveGroup,
+                  icon: const Icon(Icons.logout_outlined),
+                  label: const Text('Leave Group'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
                   ),
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.person_add_outlined),
-                  tooltip: 'Add member',
-                  onPressed: _addMember,
-                ),
-              ],
-            ),
-          ),
-          ...conv.members.map(
-            (member) => ListTile(
-              leading: CircleAvatar(
-                child: Text(member.username[0].toUpperCase()),
               ),
-              title: Text(member.username),
-              subtitle: member.userId == myUserId ? const Text('You') : null,
-            ),
+              const SizedBox(height: 24),
+            ],
           ),
-          const Divider(),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: OutlinedButton.icon(
-              onPressed: _leaveGroup,
-              icon: const Icon(Icons.logout_outlined),
-              label: const Text('Leave Group'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.error,
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-        ],
-      ),
         ),
       ),
     );
