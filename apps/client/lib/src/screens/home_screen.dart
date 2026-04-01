@@ -13,7 +13,8 @@ import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/chat_panel.dart';
-import '../widgets/conversation_panel.dart';
+import '../widgets/conversation_panel.dart'
+    show ConversationPanel, buildAvatar, groupAvatarColor;
 import '../widgets/members_panel.dart';
 import 'contacts_screen.dart';
 import 'create_group_screen.dart';
@@ -336,7 +337,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           child: buildAvatar(
                             name: displayName,
                             radius: 18,
-                            bgColor: conv.isGroup ? EchoTheme.accent : null,
+                            bgColor: conv.isGroup
+                                ? groupAvatarColor(displayName)
+                                : null,
                             fallbackIcon: conv.isGroup
                                 ? const Icon(
                                     Icons.group,
@@ -534,7 +537,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               _selectedConversation != null &&
               _selectedConversation!.isGroup) ...[
             Container(width: 1, color: EchoTheme.border),
-            MembersPanel(conversation: _selectedConversation),
+            MembersPanel(
+              conversation: _selectedConversation,
+              onGroupLeft: () {
+                setState(() {
+                  _selectedConversation = null;
+                  _showMembers = false;
+                  _narrowPanelIndex = 0;
+                });
+              },
+            ),
           ],
         ],
       ),

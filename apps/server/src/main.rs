@@ -23,6 +23,9 @@ async fn main() {
 
     tracing::info!("Starting Echo server");
 
+    // Ensure upload directories exist (Docker volume mounts may override build-time mkdir)
+    std::fs::create_dir_all("./uploads/avatars").expect("Failed to create uploads directory");
+
     // Load configuration
     let config = config::Config::from_env();
 

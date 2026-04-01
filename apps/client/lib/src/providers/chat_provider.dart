@@ -126,12 +126,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   /// Load history with the user's own ID for isMine determination.
   /// If [crypto] is provided, attempts to decrypt encrypted messages.
+  /// Set [isGroup] to true to skip decryption (group messages are plaintext).
   Future<void> loadHistoryWithUserId(
     String conversationId,
     String token,
     String myUserId, {
     String? before,
     CryptoService? crypto,
+    bool isGroup = false,
   }) async {
     if (state.isLoadingHistory(conversationId)) return;
 
@@ -174,8 +176,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
             myUserId,
           );
 
-          // Attempt to decrypt encrypted history messages
-          if (looksEncrypted(msg.content)) {
+          // Attempt to decrypt encrypted history messages (skip for groups
+          // since group messages are sent as plaintext).
+          if (!isGroup && looksEncrypted(msg.content)) {
             if (crypto != null) {
               try {
                 final decrypted = await crypto.decryptMessage(

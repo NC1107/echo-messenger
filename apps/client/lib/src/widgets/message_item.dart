@@ -180,59 +180,49 @@ class _MessageItemState extends State<MessageItem> {
     return RichText(text: TextSpan(children: spans));
   }
 
-  Widget _buildReactions(List<Reaction> reactions, bool isMine) {
+  Widget _buildReactionPill(List<Reaction> reactions, bool isMine) {
     if (reactions.isEmpty) return const SizedBox.shrink();
 
-    final grouped = <String, List<Reaction>>{};
+    // Collect unique emojis preserving order of first appearance.
+    final seen = <String>{};
+    final uniqueEmojis = <String>[];
     for (final r in reactions) {
-      grouped.putIfAbsent(r.emoji, () => []).add(r);
+      if (seen.add(r.emoji)) uniqueEmojis.add(r.emoji);
     }
 
-    return Wrap(
-      spacing: 3,
-      runSpacing: 3,
-      children: grouped.entries.map((entry) {
-        final hasMyReaction = entry.value.any(
-          (r) => r.userId == widget.myUserId,
-        );
-        return InkWell(
-          onTap: () {
-            widget.onReactionSelect?.call(widget.message, entry.key);
-          },
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            height: 20,
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              color: hasMyReaction
-                  ? EchoTheme.accent.withValues(alpha: 0.2)
-                  : EchoTheme.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: hasMyReaction
-                  ? Border.all(color: EchoTheme.accent, width: 1)
-                  : null,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(entry.key, style: const TextStyle(fontSize: 12)),
-                if (entry.value.length > 1) ...[
-                  const SizedBox(width: 2),
-                  Text(
-                    '${entry.value.length}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: hasMyReaction
-                          ? EchoTheme.accent
-                          : EchoTheme.textSecondary,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      }).toList(),
+    final totalCount = reactions.length;
+
+    return GestureDetector(
+      onTap: () => widget.onReactionTap?.call(widget.message),
+      child: Container(
+        height: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        decoration: BoxDecoration(
+          color: EchoTheme.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: EchoTheme.border, width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final emoji in uniqueEmojis)
+              Padding(
+                padding: const EdgeInsets.only(right: 2),
+                child: Text(emoji, style: const TextStyle(fontSize: 14)),
+              ),
+            if (totalCount > 1) ...[
+              const SizedBox(width: 2),
+              Text(
+                '$totalCount',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: EchoTheme.textMuted,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -246,7 +236,7 @@ class _MessageItemState extends State<MessageItem> {
     final imageWidget = _buildImageContent(msg.content, isMine: isMine);
 
     final hasReactions = msg.reactions.isNotEmpty;
-    final reactionsWidget = _buildReactions(msg.reactions, isMine);
+    final reactionPill = _buildReactionPill(msg.reactions, isMine);
 
     // The bubble widget
     final bubble = Container(
@@ -304,36 +294,23 @@ class _MessageItemState extends State<MessageItem> {
       ),
     );
 
-    // Bubble + reactions row: reactions on the left of the bubble
+    // Bubble with reaction pill overlapping bottom via Stack
     Widget bubbleWithReactions;
     if (hasReactions) {
-      if (isMine) {
-        bubbleWithReactions = Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(right: 4, bottom: 2),
-              child: reactionsWidget,
-            ),
-            Flexible(child: bubble),
-          ],
-        );
-      } else {
-        bubbleWithReactions = Row(
-          mainAxisAlignment: MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Flexible(child: bubble),
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 2),
-              child: reactionsWidget,
-            ),
-          ],
-        );
-      }
+      bubbleWithReactions = Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Add bottom padding so the pill has room to overlap
+          Padding(padding: const EdgeInsets.only(bottom: 14), child: bubble),
+          // Reaction pill overlapping bottom of the bubble
+          Positioned(
+            bottom: 0,
+            left: isMine ? null : 8,
+            right: isMine ? 8 : null,
+            child: reactionPill,
+          ),
+        ],
+      );
     } else {
       bubbleWithReactions = bubble;
     }
@@ -341,92 +318,98 @@ class _MessageItemState extends State<MessageItem> {
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
-      child: Container(
-        padding: EdgeInsets.only(
-          left: 24,
-          right: 24,
-          top: widget.showHeader ? 8 : 2,
-          bottom: 2,
-        ),
-        child: Column(
-          crossAxisAlignment: isMine
-              ? CrossAxisAlignment.end
-              : CrossAxisAlignment.start,
-          children: [
-            Stack(
-              children: [
-                Row(
-                  mainAxisAlignment: isMine
-                      ? MainAxisAlignment.end
-                      : MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    // Avatar for received messages (first in group only)
-                    if (!isMine) ...[
-                      SizedBox(
-                        width: 28,
-                        child: widget.showHeader
-                            ? buildAvatar(
-                                name: msg.fromUsername,
-                                radius: 14,
-                                bgColor: _getUserColor(msg.fromUserId),
-                              )
-                            : const SizedBox.shrink(),
-                      ),
-                      const SizedBox(width: 8),
+      child: GestureDetector(
+        onLongPress: !hasReactions
+            ? () => widget.onReactionTap?.call(msg)
+            : null,
+        child: Container(
+          padding: EdgeInsets.only(
+            left: 24,
+            right: 24,
+            top: widget.showHeader ? 8 : 2,
+            bottom: hasReactions ? 4 : 2,
+          ),
+          child: Column(
+            crossAxisAlignment: isMine
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
+            children: [
+              Stack(
+                children: [
+                  Row(
+                    mainAxisAlignment: isMine
+                        ? MainAxisAlignment.end
+                        : MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      // Avatar for received messages (first in group only)
+                      if (!isMine) ...[
+                        SizedBox(
+                          width: 28,
+                          child: widget.showHeader
+                              ? buildAvatar(
+                                  name: msg.fromUsername,
+                                  radius: 14,
+                                  bgColor: _getUserColor(msg.fromUserId),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      // Bubble with reactions
+                      Flexible(child: bubbleWithReactions),
                     ],
-                    // Bubble with reactions
-                    Flexible(child: bubbleWithReactions),
-                  ],
-                ),
-                // Hover action buttons
-                if (_isHovered)
-                  Positioned(
-                    top: 0,
-                    right: isMine ? null : 0,
-                    left: isMine ? 0 : null,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: EchoTheme.surface,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: EchoTheme.border, width: 1),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _HoverActionButton(
-                            icon: Icons.add_reaction_outlined,
-                            tooltip: 'React',
-                            onPressed: () => widget.onReactionTap?.call(msg),
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
-              ],
-            ),
-            // Timestamp (only on last in group)
-            if (widget.isLastInGroup)
-              Padding(
-                padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: isMine
-                      ? MainAxisAlignment.end
-                      : MainAxisAlignment.start,
-                  children: [
-                    Text(
-                      formatMessageTimestamp(msg.timestamp),
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: EchoTheme.textMuted,
+                  // Hover action: show reaction picker for messages without
+                  // reactions (messages with reactions use the pill tap instead)
+                  if (_isHovered && !hasReactions)
+                    Positioned(
+                      top: 0,
+                      right: isMine ? null : 0,
+                      left: isMine ? 0 : null,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: EchoTheme.surface,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: EchoTheme.border, width: 1),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _HoverActionButton(
+                              icon: Icons.add_reaction_outlined,
+                              tooltip: 'React',
+                              onPressed: () => widget.onReactionTap?.call(msg),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    if (isMine) _buildStatusIcon(msg.status),
-                  ],
-                ),
+                ],
               ),
-          ],
+              // Timestamp (only on last in group)
+              if (widget.isLastInGroup)
+                Padding(
+                  padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: isMine
+                        ? MainAxisAlignment.end
+                        : MainAxisAlignment.start,
+                    children: [
+                      Text(
+                        formatMessageTimestamp(msg.timestamp),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: EchoTheme.textMuted,
+                        ),
+                      ),
+                      if (isMine) _buildStatusIcon(msg.status),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

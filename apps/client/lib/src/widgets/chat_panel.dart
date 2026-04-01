@@ -16,7 +16,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
-import 'conversation_panel.dart' show buildAvatar;
+import 'conversation_panel.dart' show buildAvatar, groupAvatarColor;
 import 'message_item.dart';
 
 class ChatPanel extends ConsumerStatefulWidget {
@@ -98,6 +98,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           auth.token!,
           auth.userId!,
           crypto: crypto,
+          isGroup: conv.isGroup,
         );
   }
 
@@ -542,7 +543,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                 buildAvatar(
                   name: displayName,
                   radius: 16,
-                  bgColor: conv.isGroup ? EchoTheme.accent : null,
+                  bgColor: conv.isGroup ? groupAvatarColor(displayName) : null,
                   fallbackIcon: conv.isGroup
                       ? const Icon(Icons.group, size: 14, color: Colors.white)
                       : null,
@@ -634,7 +635,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                               buildAvatar(
                                 name: displayName,
                                 radius: 36,
-                                bgColor: conv.isGroup ? EchoTheme.accent : null,
+                                bgColor: conv.isGroup
+                                    ? groupAvatarColor(displayName)
+                                    : null,
                                 fallbackIcon: conv.isGroup
                                     ? const Icon(
                                         Icons.group,

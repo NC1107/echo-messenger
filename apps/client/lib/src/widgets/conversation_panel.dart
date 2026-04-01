@@ -55,6 +55,25 @@ Color avatarColor(String name) {
   return colors[index];
 }
 
+/// Wider palette for group avatars, derived from group name hash.
+const _groupColors = [
+  Color(0xFF22C55E), // green
+  Color(0xFFEF4444), // red
+  Color(0xFF3B82F6), // blue
+  Color(0xFFF59E0B), // amber
+  Color(0xFF8B5CF6), // violet
+  Color(0xFFEC4899), // pink
+  Color(0xFF14B8A6), // teal
+  Color(0xFFF97316), // orange
+  Color(0xFF6366F1), // indigo
+  Color(0xFF06B6D4), // cyan
+];
+
+/// Deterministic color for group avatars.
+Color groupAvatarColor(String name) {
+  return _groupColors[name.hashCode.abs() % _groupColors.length];
+}
+
 class ConversationPanel extends ConsumerStatefulWidget {
   final String? selectedConversationId;
   final void Function(Conversation conversation) onConversationTap;
@@ -1019,7 +1038,9 @@ class _ConversationItemState extends State<_ConversationItem> {
                   buildAvatar(
                     name: displayName,
                     radius: 20,
-                    bgColor: conv.isGroup ? EchoTheme.accent : null,
+                    bgColor: conv.isGroup
+                        ? groupAvatarColor(displayName)
+                        : null,
                     fallbackIcon: conv.isGroup
                         ? const Icon(Icons.group, size: 18, color: Colors.white)
                         : null,

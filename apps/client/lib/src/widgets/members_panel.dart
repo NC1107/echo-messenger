@@ -12,7 +12,10 @@ import 'conversation_panel.dart' show buildAvatar;
 class MembersPanel extends ConsumerWidget {
   final Conversation? conversation;
 
-  const MembersPanel({super.key, this.conversation});
+  /// Called after a leave or delete operation to clear the selected conversation.
+  final VoidCallback? onGroupLeft;
+
+  const MembersPanel({super.key, this.conversation, this.onGroupLeft});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,7 +31,8 @@ class MembersPanel extends ConsumerWidget {
     // Determine if current user is owner or admin
     final myMember = members.where((m) => m.userId == myUserId).firstOrNull;
     final myRole = myMember?.role;
-    final canRemove = myRole == 'owner' || myRole == 'admin';
+    final isOwner = myRole == 'owner';
+    final canRemove = isOwner || myRole == 'admin';
 
     return Container(
       width: 280,
@@ -70,6 +74,30 @@ class MembersPanel extends ConsumerWidget {
                   isMe: member.userId == myUserId,
                 );
               },
+            ),
+          ),
+          // Leave / Delete group buttons
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            decoration: const BoxDecoration(
+              border: Border(
+                top: BorderSide(color: EchoTheme.border, width: 1),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (isOwner)
+                  _DeleteGroupButton(
+                    conversationId: conv.id,
+                    onDeleted: onGroupLeft,
+                  )
+                else
+                  _LeaveGroupButton(
+                    conversationId: conv.id,
+                    onLeft: onGroupLeft,
+                  ),
+              ],
             ),
           ),
         ],
@@ -296,6 +324,219 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LeaveGroupButton extends ConsumerStatefulWidget {
+  final String conversationId;
+  final VoidCallback? onLeft;
+
+  const _LeaveGroupButton({required this.conversationId, this.onLeft});
+
+  @override
+  ConsumerState<_LeaveGroupButton> createState() => _LeaveGroupButtonState();
+}
+
+class _LeaveGroupButtonState extends ConsumerState<_LeaveGroupButton> {
+  bool _isLoading = false;
+
+  Future<void> _leaveGroup() async {
+    final serverUrl = ref.read(serverUrlProvider);
+    final token = ref.read(authProvider).token;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$serverUrl/api/groups/${widget.conversationId}/leave'),
+            headers: {
+              'Authorization': 'Bearer ${token ?? ""}',
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        await ref.read(conversationsProvider.notifier).loadConversations();
+        widget.onLeft?.call();
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Left group')));
+        }
+      } else {
+        setState(() => _isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to leave group (${response.statusCode})'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Failed to leave group')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 36,
+      child: OutlinedButton.icon(
+        onPressed: _isLoading ? null : _leaveGroup,
+        icon: _isLoading
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: EchoTheme.danger,
+                ),
+              )
+            : const Icon(Icons.logout, size: 16),
+        label: const Text('Leave Group'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: EchoTheme.danger,
+          side: const BorderSide(color: EchoTheme.danger),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        ),
+      ),
+    );
+  }
+}
+
+class _DeleteGroupButton extends ConsumerStatefulWidget {
+  final String conversationId;
+  final VoidCallback? onDeleted;
+
+  const _DeleteGroupButton({required this.conversationId, this.onDeleted});
+
+  @override
+  ConsumerState<_DeleteGroupButton> createState() => _DeleteGroupButtonState();
+}
+
+class _DeleteGroupButtonState extends ConsumerState<_DeleteGroupButton> {
+  bool _isLoading = false;
+
+  Future<void> _confirmAndDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: EchoTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: EchoTheme.border),
+        ),
+        title: const Text(
+          'Delete group',
+          style: TextStyle(
+            color: EchoTheme.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: const Text(
+          'This will permanently delete the group and all its messages. '
+          'This action cannot be undone.',
+          style: TextStyle(color: EchoTheme.textSecondary, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final serverUrl = ref.read(serverUrlProvider);
+    final token = ref.read(authProvider).token;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await http
+          .delete(
+            Uri.parse('$serverUrl/api/groups/${widget.conversationId}'),
+            headers: {
+              'Authorization': 'Bearer ${token ?? ""}',
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        await ref.read(conversationsProvider.notifier).loadConversations();
+        widget.onDeleted?.call();
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Group deleted')));
+        }
+      } else {
+        setState(() => _isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to delete group (${response.statusCode})'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Failed to delete group')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 36,
+      child: FilledButton.icon(
+        onPressed: _isLoading ? null : _confirmAndDelete,
+        icon: _isLoading
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : const Icon(Icons.delete_outline, size: 16),
+        label: const Text('Delete Group'),
+        style: FilledButton.styleFrom(
+          backgroundColor: EchoTheme.danger,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
         ),
       ),
     );

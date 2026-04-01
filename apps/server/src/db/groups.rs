@@ -323,6 +323,26 @@ pub async fn user_has_public_group_named(
     Ok(row.0)
 }
 
+/// Delete a group conversation. Only the owner can delete it.
+/// Deleting the conversation cascades to members and messages via FK constraints.
+pub async fn delete_group(
+    pool: &PgPool,
+    group_id: Uuid,
+    owner_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    // Verify the caller is the owner
+    let role = get_member_role(pool, group_id, owner_id).await?;
+    if role.as_deref() != Some("owner") {
+        return Ok(false);
+    }
+    // Delete conversation (cascades to members, messages via FK)
+    sqlx::query("DELETE FROM conversations WHERE id = $1")
+        .bind(group_id)
+        .execute(pool)
+        .await?;
+    Ok(true)
+}
+
 /// Check if a group is public.
 pub async fn is_public(pool: &PgPool, group_id: Uuid) -> Result<bool, sqlx::Error> {
     let row: Option<(bool,)> = sqlx::query_as("SELECT is_public FROM conversations WHERE id = $1")

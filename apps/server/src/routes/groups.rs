@@ -319,3 +319,20 @@ pub async fn leave_group(
 
     Ok(Json(serde_json::json!({ "status": "left" })))
 }
+
+/// DELETE /api/groups/:id -- Delete a group (owner only).
+pub async fn delete_group(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let deleted = db::groups::delete_group(&state.pool, group_id, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Failed to delete group"))?;
+    if !deleted {
+        return Err(AppError::unauthorized(
+            "Only the group owner can delete this group",
+        ));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
