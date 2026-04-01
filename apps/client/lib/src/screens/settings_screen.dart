@@ -369,7 +369,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             child: Text(
-              'Echo Messenger v0.1.0',
+              'Echo Messenger v${_serverVersion ?? "0.1.0"}',
               style: TextStyle(color: EchoTheme.textMuted, fontSize: 12),
             ),
           ),

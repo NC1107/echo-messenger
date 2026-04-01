@@ -201,6 +201,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Set version in Cargo.toml
+        run: |
+          sed -i 's/^version = ".*"/version = "${{ needs.version.outputs.version }}"/' apps/server/Cargo.toml
+          sed -i 's/^version = ".*"/version = "${{ needs.version.outputs.version }}"/' core/rust-core/Cargo.toml
       - name: Build
         run: cargo build --release --package echo-server
       - name: Package

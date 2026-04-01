@@ -88,7 +88,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 pub async fn health() -> impl IntoResponse {
     Json(serde_json::json!({
         "status": "ok",
-        "version": "0.1.0",
+        "version": env!("CARGO_PKG_VERSION"),
         "server": "Echo Messenger"
     }))
 }
