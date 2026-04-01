@@ -85,8 +85,10 @@ node_modules/
 package.json
 package-lock.json
 
-# Playwright
+# Playwright & test artifacts
 tests/e2e/test-results/
+tests/e2e/*.spec.ts
+test-results/
 
 # Uploaded media files
 uploads/
