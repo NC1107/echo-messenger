@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
+import 'server_url_provider.dart';
 
 class ChatState {
   /// Messages keyed by conversation ID.
@@ -69,9 +70,11 @@ class ChatState {
 }
 
 class ChatNotifier extends StateNotifier<ChatState> {
-  ChatNotifier() : super(const ChatState());
+  final Ref ref;
 
-  static const String _serverUrl = 'http://localhost:8080';
+  ChatNotifier(this.ref) : super(const ChatState());
+
+  String get _serverUrl => ref.read(serverUrlProvider);
 
   void addMessage(ChatMessage msg) {
     final peerKey = msg.isMine
@@ -410,5 +413,5 @@ class ChatNotifier extends StateNotifier<ChatState> {
 }
 
 final chatProvider = StateNotifierProvider<ChatNotifier, ChatState>((ref) {
-  return ChatNotifier();
+  return ChatNotifier(ref);
 });

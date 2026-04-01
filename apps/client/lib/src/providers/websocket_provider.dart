@@ -13,6 +13,7 @@ import 'auth_provider.dart';
 import 'chat_provider.dart';
 import 'conversations_provider.dart';
 import 'crypto_provider.dart';
+import 'server_url_provider.dart';
 
 /// State that tracks both connection status and typing indicators.
 class WebSocketState {
@@ -72,7 +73,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
 
     disconnect();
 
-    final uri = Uri.parse('ws://localhost:8080/ws?token=$token');
+    final serverUrl = ref.read(serverUrlProvider);
+    final wsBase = wsUrlFromHttpUrl(serverUrl);
+    final uri = Uri.parse('$wsBase/ws?token=$token');
     _channel = WebSocketChannel.connect(uri);
     state = state.copyWith(isConnected: true);
 
@@ -181,9 +184,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   Future<void> sendReaction(
       String conversationId, String messageId, String emoji) async {
     final token = ref.read(authProvider).token ?? '';
+    final serverUrl = ref.read(serverUrlProvider);
     try {
       await http.post(
-        Uri.parse('http://localhost:8080/api/messages/$messageId/reactions'),
+        Uri.parse('$serverUrl/api/messages/$messageId/reactions'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -197,10 +201,11 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   Future<void> removeReaction(
       String conversationId, String messageId, String emoji) async {
     final token = ref.read(authProvider).token ?? '';
+    final serverUrl = ref.read(serverUrlProvider);
     try {
       await http.delete(
         Uri.parse(
-            'http://localhost:8080/api/messages/$messageId/reactions/$emoji'),
+            '$serverUrl/api/messages/$messageId/reactions/$emoji'),
         headers: {'Authorization': 'Bearer $token'},
       );
     } catch (_) {}

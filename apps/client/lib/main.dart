@@ -5,11 +5,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'src/app.dart';
 import 'src/providers/auth_provider.dart';
 import 'src/providers/crypto_provider.dart';
+import 'src/providers/server_url_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final container = ProviderContainer();
+
+  // Load persisted server URL before any network calls
+  await container.read(serverUrlProvider.notifier).load();
+
   final auth = container.read(authProvider.notifier);
 
   // Try auto-login from stored credentials (SharedPreferences)

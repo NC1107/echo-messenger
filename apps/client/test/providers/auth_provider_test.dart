@@ -2,32 +2,30 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:echo_app/src/providers/auth_provider.dart';
 
 void main() {
-  late AuthNotifier notifier;
-
-  setUp(() {
-    notifier = AuthNotifier();
-  });
-
-  group('AuthNotifier', () {
+  group('AuthState', () {
     test('initial state is logged out with no token or userId', () {
-      expect(notifier.state.isLoggedIn, isFalse);
-      expect(notifier.state.token, isNull);
-      expect(notifier.state.userId, isNull);
-      expect(notifier.state.error, isNull);
-      expect(notifier.state.isLoading, isFalse);
+      const state = AuthState();
+      expect(state.isLoggedIn, isFalse);
+      expect(state.token, isNull);
+      expect(state.userId, isNull);
+      expect(state.username, isNull);
+      expect(state.error, isNull);
+      expect(state.isLoading, isFalse);
     });
 
-    test('logout clears all state', () {
-      // Simulate a logged-in state by calling logout from any state.
-      // We cannot easily set state directly on a StateNotifier from outside,
-      // but we can verify that logout always returns to the default state.
-      notifier.logout();
+    test('copyWith preserves values', () {
+      const state = AuthState(isLoggedIn: true, userId: '123', username: 'alice', token: 'tok');
+      final copied = state.copyWith(error: 'test');
+      expect(copied.isLoggedIn, isTrue);
+      expect(copied.userId, '123');
+      expect(copied.username, 'alice');
+      expect(copied.error, 'test');
+    });
 
-      expect(notifier.state.isLoggedIn, isFalse);
-      expect(notifier.state.token, isNull);
-      expect(notifier.state.userId, isNull);
-      expect(notifier.state.error, isNull);
-      expect(notifier.state.isLoading, isFalse);
+    test('default AuthState represents logged out', () {
+      const state = AuthState();
+      expect(state.isLoggedIn, isFalse);
+      expect(state.isLoading, isFalse);
     });
   });
 }

@@ -1,0 +1,73 @@
+services:
+  server:
+    image: ghcr.io/nc1107/echo-messenger/server:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://echo:${DB_PASSWORD}@postgres:5432/echo_prod
+      JWT_SECRET: ${JWT_SECRET}
+      RUST_LOG: echo_server=info
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.echo-api.rule=Host(`echo-messenger.us`) && PathPrefix(`/api`, `/ws`)"
+      - "traefik.http.routers.echo-api.tls=true"
+      - "traefik.http.routers.echo-api.tls.certresolver=cloudflare"
+      - "traefik.http.services.echo-api.loadbalancer.server.port=8080"
+    networks:
+      - traefik
+      - echo-internal
+
+  web:
+    image: ghcr.io/nc1107/echo-messenger/web:latest
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.echo-web.rule=Host(`echo-messenger.us`)"
+      - "traefik.http.routers.echo-web.tls=true"
+      - "traefik.http.routers.echo-web.tls.certresolver=cloudflare"
+      - "traefik.http.services.echo-web.loadbalancer.server.port=80"
+    networks:
+      - traefik
+
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: echo_prod
+      POSTGRES_USER: echo
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U echo -d echo_prod"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - echo-internal
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    environment:
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_POLL_INTERVAL: 300
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - echo-internal
+
+volumes:
+  pgdata:
+  uploads:
+
+networks:
+  traefik:
+    external: true
+  echo-internal:

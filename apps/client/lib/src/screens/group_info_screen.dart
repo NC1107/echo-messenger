@@ -9,6 +9,7 @@ import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/server_url_provider.dart';
 
 class GroupInfoScreen extends ConsumerStatefulWidget {
   final String conversationId;
@@ -50,9 +51,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     if (token == null) return;
 
     try {
+      final serverUrl = ref.read(serverUrlProvider);
       final response = await http.get(
         Uri.parse(
-            'http://localhost:8080/api/conversations/${widget.conversationId}'),
+            '$serverUrl/api/conversations/${widget.conversationId}'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -116,10 +118,11 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final token = ref.read(authProvider).token;
     if (token == null) return;
 
+    final serverUrl = ref.read(serverUrlProvider);
     try {
       final response = await http.post(
         Uri.parse(
-            'http://localhost:8080/api/groups/${widget.conversationId}/members'),
+            '$serverUrl/api/groups/${widget.conversationId}/members'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -172,10 +175,11 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final token = ref.read(authProvider).token;
     if (token == null) return;
 
+    final serverUrl = ref.read(serverUrlProvider);
     try {
       final response = await http.post(
         Uri.parse(
-            'http://localhost:8080/api/groups/${widget.conversationId}/leave'),
+            '$serverUrl/api/groups/${widget.conversationId}/leave'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',

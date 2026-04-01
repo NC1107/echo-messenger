@@ -2,13 +2,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/crypto_service.dart';
 import 'auth_provider.dart';
+import 'server_url_provider.dart';
 
 /// Provider for the CryptoService singleton.
 ///
 /// Initialized after login/register, used by the websocket provider
 /// to encrypt outgoing and decrypt incoming messages.
 final cryptoServiceProvider = Provider<CryptoService>((ref) {
-  return CryptoService(serverUrl: 'http://localhost:8080');
+  return CryptoService(serverUrl: ref.watch(serverUrlProvider));
 });
 
 /// State for tracking crypto initialization.

@@ -7,7 +7,9 @@ pub mod messages;
 pub mod reactions;
 pub mod ws;
 
+use axum::Json;
 use axum::Router;
+use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -75,7 +77,16 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api/groups", group_routes)
         .nest("/api/media", media_routes)
         .nest("/api", message_routes)
+        .route("/api/health", get(health))
         .route("/ws", get(ws::ws_upgrade))
         .layer(cors)
         .with_state(state)
+}
+
+pub async fn health() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "status": "ok",
+        "version": "0.1.0",
+        "server": "Echo Messenger"
+    }))
 }

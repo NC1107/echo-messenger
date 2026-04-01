@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/crypto_provider.dart';
+import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/chat_panel.dart';
@@ -44,6 +46,56 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     // 3. Load conversations AFTER crypto and WS are set up
     await ref.read(conversationsProvider.notifier).loadConversations();
+
+    // 4. Show first-login server notice
+    await _showServerNoticeIfNeeded();
+  }
+
+  Future<void> _showServerNoticeIfNeeded() async {
+    final prefs = await SharedPreferences.getInstance();
+    final seen = prefs.getBool('seen_server_notice') ?? false;
+    if (seen || !mounted) return;
+
+    final serverUrl = ref.read(serverUrlProvider);
+    final displayHost = Uri.tryParse(serverUrl)?.host ?? serverUrl;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: EchoTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: EchoTheme.border),
+        ),
+        title: const Text(
+          'Welcome to Echo',
+          style: TextStyle(
+            color: EchoTheme.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'You\'re connected to the official Echo server at $displayHost\n\n'
+          'Your messages are end-to-end encrypted. The server cannot read your messages.\n\n'
+          'In the future, you\'ll be able to self-host your own Echo server.',
+          style: const TextStyle(
+            color: EchoTheme.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+
+    await prefs.setBool('seen_server_notice', true);
   }
 
   void _selectConversation(Conversation conv) {

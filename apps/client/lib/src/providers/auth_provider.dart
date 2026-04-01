@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'server_url_provider.dart';
+
 class AuthState {
   final bool isLoggedIn;
   final String? userId;
@@ -41,14 +43,14 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  AuthNotifier() : super(const AuthState());
+  final Ref ref;
+
+  AuthNotifier(this.ref) : super(const AuthState());
 
   static const _keyUsername = 'echo_auth_username';
   static const _keyPassword = 'echo_auth_password';
 
-  String _serverUrl = 'http://localhost:8080';
-
-  void setServerUrl(String url) => _serverUrl = url;
+  String get _serverUrl => ref.read(serverUrlProvider);
 
   /// Try to auto-login using stored credentials from SharedPreferences.
   Future<bool> tryAutoLogin() async {
@@ -155,5 +157,5 @@ class AuthNotifier extends StateNotifier<AuthState> {
 }
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier();
+  return AuthNotifier(ref);
 });

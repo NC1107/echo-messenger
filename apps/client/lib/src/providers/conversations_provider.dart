@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
 import 'auth_provider.dart';
+import 'server_url_provider.dart';
 
 class ConversationsState {
   final List<Conversation> conversations;
@@ -39,7 +40,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
 
   ConversationsNotifier(this.ref) : super(const ConversationsState());
 
-  String get _serverUrl => 'http://localhost:8080';
+  String get _serverUrl => ref.read(serverUrlProvider);
   String? get _token => ref.read(authProvider).token;
 
   Map<String, String> get _headers => {
