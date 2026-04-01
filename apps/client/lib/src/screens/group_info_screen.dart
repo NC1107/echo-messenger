@@ -11,6 +11,7 @@ import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../widgets/conversation_panel.dart' show buildAvatar;
 
 class GroupInfoScreen extends ConsumerStatefulWidget {
   final String conversationId;
@@ -99,19 +100,22 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       context: context,
       builder: (dialogContext) => SimpleDialog(
         title: const Text('Add Member'),
-        children: available
-            .map(
-              (contact) => SimpleDialogOption(
-                onPressed: () => Navigator.pop(dialogContext, contact.userId),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    child: Text(contact.username[0].toUpperCase()),
-                  ),
-                  title: Text(contact.displayName ?? contact.username),
-                ),
+        children: available.map((contact) {
+          final serverUrl = ref.read(serverUrlProvider);
+          return SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, contact.userId),
+            child: ListTile(
+              leading: buildAvatar(
+                name: contact.username,
+                radius: 20,
+                imageUrl: contact.avatarUrl != null
+                    ? '$serverUrl${contact.avatarUrl}'
+                    : null,
               ),
-            )
-            .toList(),
+              title: Text(contact.displayName ?? contact.username),
+            ),
+          );
+        }).toList(),
       ),
     );
 
@@ -271,17 +275,22 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                   ],
                 ),
               ),
-              ...conv.members.map(
-                (member) => ListTile(
-                  leading: CircleAvatar(
-                    child: Text(member.username[0].toUpperCase()),
+              ...conv.members.map((member) {
+                final serverUrl = ref.read(serverUrlProvider);
+                return ListTile(
+                  leading: buildAvatar(
+                    name: member.username,
+                    radius: 20,
+                    imageUrl: member.avatarUrl != null
+                        ? '$serverUrl${member.avatarUrl}'
+                        : null,
                   ),
                   title: Text(member.username),
                   subtitle: member.userId == myUserId
                       ? const Text('You')
                       : null,
-                ),
-              ),
+                );
+              }),
               const Divider(),
               const SizedBox(height: 16),
               Padding(

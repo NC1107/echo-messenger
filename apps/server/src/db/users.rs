@@ -1,5 +1,6 @@
 //! User database queries.
 
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -10,6 +11,12 @@ pub struct UserRow {
     pub username: String,
     pub password_hash: String,
     pub avatar_url: Option<String>,
+    #[allow(dead_code)]
+    pub display_name: Option<String>,
+    #[allow(dead_code)]
+    pub bio: Option<String>,
+    #[allow(dead_code)]
+    pub status_message: Option<String>,
 }
 
 pub async fn create_user(
@@ -32,7 +39,7 @@ pub async fn find_by_username(
     username: &str,
 ) -> Result<Option<UserRow>, sqlx::Error> {
     sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash, avatar_url FROM users WHERE username = $1",
+        "SELECT id, username, password_hash, avatar_url, display_name, bio, status_message FROM users WHERE username = $1",
     )
     .bind(username)
     .fetch_optional(pool)
@@ -41,7 +48,7 @@ pub async fn find_by_username(
 
 pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<UserRow>, sqlx::Error> {
     sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash, avatar_url FROM users WHERE id = $1",
+        "SELECT id, username, password_hash, avatar_url, display_name, bio, status_message FROM users WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -68,6 +75,29 @@ pub async fn delete_user(pool: &PgPool, user_id: Uuid) -> Result<bool, sqlx::Err
         .execute(pool)
         .await?;
     Ok(result.rows_affected() > 0)
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct UserProfileRow {
+    pub id: Uuid,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub bio: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Fetch the public profile for a user by ID.
+pub async fn find_public_profile(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<UserProfileRow>, sqlx::Error> {
+    sqlx::query_as::<_, UserProfileRow>(
+        "SELECT id, username, display_name, avatar_url, bio, created_at FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn get_avatar_url(pool: &PgPool, user_id: Uuid) -> Result<Option<String>, sqlx::Error> {

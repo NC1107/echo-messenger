@@ -20,6 +20,7 @@ pub struct GroupMember {
     pub username: String,
     pub joined_at: DateTime<Utc>,
     pub role: String,
+    pub avatar_url: Option<String>,
 }
 
 /// Create a group conversation and add the creator plus initial members.
@@ -206,7 +207,7 @@ pub async fn get_group_members(
     group_id: Uuid,
 ) -> Result<Vec<GroupMember>, sqlx::Error> {
     sqlx::query_as::<_, GroupMember>(
-        "SELECT cm.user_id, u.username, cm.joined_at, cm.role \
+        "SELECT cm.user_id, u.username, cm.joined_at, cm.role, u.avatar_url \
          FROM conversation_members cm \
          JOIN users u ON u.id = cm.user_id \
          WHERE cm.conversation_id = $1 \

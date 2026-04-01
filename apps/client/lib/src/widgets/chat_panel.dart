@@ -16,6 +16,7 @@ import '../providers/crypto_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../screens/user_profile_screen.dart';
 import '../services/sound_service.dart';
 import '../theme/echo_theme.dart';
 import 'conversation_panel.dart' show buildAvatar, groupAvatarColor;
@@ -686,13 +687,33 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             child: Row(
               children: [
                 // Avatar
-                buildAvatar(
-                  name: displayName,
-                  radius: 16,
-                  bgColor: conv.isGroup ? groupAvatarColor(displayName) : null,
-                  fallbackIcon: conv.isGroup
-                      ? const Icon(Icons.group, size: 14, color: Colors.white)
-                      : null,
+                Builder(
+                  builder: (_) {
+                    String? headerAvatarUrl;
+                    if (!conv.isGroup) {
+                      final peer = conv.members
+                          .where((m) => m.userId != myUserId)
+                          .firstOrNull;
+                      if (peer?.avatarUrl != null) {
+                        headerAvatarUrl = '$serverUrl${peer!.avatarUrl}';
+                      }
+                    }
+                    return buildAvatar(
+                      name: displayName,
+                      radius: 16,
+                      imageUrl: headerAvatarUrl,
+                      bgColor: conv.isGroup
+                          ? groupAvatarColor(displayName)
+                          : null,
+                      fallbackIcon: conv.isGroup
+                          ? const Icon(
+                              Icons.group,
+                              size: 14,
+                              color: Colors.white,
+                            )
+                          : null,
+                    );
+                  },
                 ),
                 const SizedBox(width: 12),
                 // Name + status
@@ -867,6 +888,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                         dateDivider = _buildDateDivider(msg.timestamp);
                       }
 
+                      // Look up sender avatar from conversation members
+                      final senderMember = conv.members
+                          .where((m) => m.userId == msg.fromUserId)
+                          .firstOrNull;
+                      final senderAvatarUrl = senderMember?.avatarUrl;
+
                       return Column(
                         children: [
                           ?dateDivider,
@@ -877,6 +904,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                             myUserId: myUserId,
                             serverUrl: serverUrl,
                             authToken: authToken,
+                            senderAvatarUrl: senderAvatarUrl,
                             onReactionTap: _showReactionPicker,
                             onReactionSelect: (message, emoji) {
                               final alreadyReacted = message.reactions.any(
@@ -886,6 +914,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                             },
                             onDelete: _confirmDelete,
                             onEdit: _enterEditMode,
+                            onAvatarTap: (userId) {
+                              UserProfileScreen.show(context, ref, userId);
+                            },
                           ),
                         ],
                       );

@@ -187,7 +187,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
                 );
                 msg = msg.copyWith(content: decrypted);
               } catch (_) {
-                msg = msg.copyWith(content: '[Encrypted history]');
+                // Retry with fresh key
+                await crypto.invalidateSessionKey(msg.fromUserId);
+                try {
+                  final decrypted = await crypto.decryptMessage(
+                    msg.fromUserId,
+                    msg.content,
+                  );
+                  msg = msg.copyWith(content: decrypted);
+                } catch (e) {
+                  debugPrint('[Chat] Decrypt retry failed for ${msg.id}: $e');
+                  msg = msg.copyWith(content: '[Could not decrypt]');
+                }
               }
             } else {
               msg = msg.copyWith(content: '[Encrypted history]');

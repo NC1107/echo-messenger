@@ -758,12 +758,19 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ? null
             : conv.members.where((m) => m.userId != myUserId).firstOrNull;
         final isPeerOnline = peer != null && wsState.isUserOnline(peer.userId);
+        final serverUrl = ref.watch(serverUrlProvider);
+        // For DMs, resolve peer avatar URL
+        String? peerAvatarUrl;
+        if (!conv.isGroup && peer != null && peer.avatarUrl != null) {
+          peerAvatarUrl = '$serverUrl${peer.avatarUrl}';
+        }
         return _ConversationItem(
           conversation: conv,
           myUserId: myUserId,
           isSelected: isSelected,
           isPinned: isPinned,
           isPeerOnline: isPeerOnline,
+          peerAvatarUrl: peerAvatarUrl,
           timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
           onTap: () => widget.onConversationTap(conv),
           onContextMenu: (position) =>
@@ -823,8 +830,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       itemCount: contacts.length,
       itemBuilder: (context, index) {
         final contact = contacts[index];
+        final serverUrl = ref.watch(serverUrlProvider);
         return _ContactItem(
           contact: contact,
+          serverUrl: serverUrl,
           onMessage: () {
             widget.onMessageContact?.call(contact.userId, contact.username);
           },
@@ -907,9 +916,14 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
 class _ContactItem extends StatefulWidget {
   final dynamic contact;
+  final String serverUrl;
   final VoidCallback onMessage;
 
-  const _ContactItem({required this.contact, required this.onMessage});
+  const _ContactItem({
+    required this.contact,
+    required this.serverUrl,
+    required this.onMessage,
+  });
 
   @override
   State<_ContactItem> createState() => _ContactItemState();
@@ -923,6 +937,10 @@ class _ContactItemState extends State<_ContactItem> {
     final contact = widget.contact;
     final username = contact.username as String;
     final displayName = contact.displayName as String?;
+    final avatarUrl = contact.avatarUrl as String?;
+    final fullAvatarUrl = avatarUrl != null
+        ? '${widget.serverUrl}$avatarUrl'
+        : null;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -940,7 +958,11 @@ class _ContactItemState extends State<_ContactItem> {
             // Avatar with online dot
             Stack(
               children: [
-                buildAvatar(name: username, radius: 18),
+                buildAvatar(
+                  name: username,
+                  radius: 18,
+                  imageUrl: fullAvatarUrl,
+                ),
                 Positioned(
                   bottom: 0,
                   right: 0,
@@ -1021,6 +1043,7 @@ class _ConversationItem extends StatefulWidget {
   final bool isSelected;
   final bool isPinned;
   final bool isPeerOnline;
+  final String? peerAvatarUrl;
   final String timestamp;
   final VoidCallback onTap;
   final void Function(Offset position)? onContextMenu;
@@ -1031,6 +1054,7 @@ class _ConversationItem extends StatefulWidget {
     required this.isSelected,
     required this.isPinned,
     required this.isPeerOnline,
+    this.peerAvatarUrl,
     required this.timestamp,
     required this.onTap,
     this.onContextMenu,
@@ -1091,6 +1115,7 @@ class _ConversationItemState extends State<_ConversationItem> {
                   buildAvatar(
                     name: displayName,
                     radius: 20,
+                    imageUrl: conv.isGroup ? null : widget.peerAvatarUrl,
                     bgColor: conv.isGroup
                         ? groupAvatarColor(displayName)
                         : null,

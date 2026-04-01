@@ -50,6 +50,7 @@ pub struct GroupMemberResponse {
     pub user_id: Uuid,
     pub username: String,
     pub role: String,
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,6 +115,7 @@ pub async fn create_group(
                 user_id: m.user_id,
                 username: m.username,
                 role: m.role,
+                avatar_url: m.avatar_url,
             })
             .collect(),
     };
@@ -156,6 +158,7 @@ pub async fn get_group(
                 user_id: m.user_id,
                 username: m.username,
                 role: m.role,
+                avatar_url: m.avatar_url,
             })
             .collect(),
     };

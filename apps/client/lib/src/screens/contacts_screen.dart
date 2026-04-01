@@ -5,7 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../models/conversation.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
+import '../widgets/conversation_panel.dart' show buildAvatar;
+import 'user_profile_screen.dart';
 
 class ContactsScreen extends ConsumerStatefulWidget {
   /// When provided, tapping "Message" on a contact will call this callback
@@ -141,10 +144,15 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                                 ),
                           ),
                         ),
-                        ...contactsState.pendingRequests.map(
-                          (contact) => ListTile(
-                            leading: CircleAvatar(
-                              child: Text(contact.username[0].toUpperCase()),
+                        ...contactsState.pendingRequests.map((contact) {
+                          final serverUrl = ref.watch(serverUrlProvider);
+                          return ListTile(
+                            leading: buildAvatar(
+                              name: contact.username,
+                              radius: 20,
+                              imageUrl: contact.avatarUrl != null
+                                  ? '$serverUrl${contact.avatarUrl}'
+                                  : null,
                             ),
                             title: Text(contact.username),
                             subtitle: const Text('Wants to connect'),
@@ -156,8 +164,8 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                               },
                               child: const Text('Accept'),
                             ),
-                          ),
-                        ),
+                          );
+                        }),
                         const Divider(indent: 16, endIndent: 16),
                       ],
                       if (contactsState.contacts.isNotEmpty) ...[
@@ -171,13 +179,25 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                                 ),
                           ),
                         ),
-                        ...contactsState.contacts.map(
-                          (contact) => ListTile(
-                            leading: CircleAvatar(
-                              child: Text(contact.username[0].toUpperCase()),
+                        ...contactsState.contacts.map((contact) {
+                          final serverUrl = ref.watch(serverUrlProvider);
+                          return ListTile(
+                            leading: buildAvatar(
+                              name: contact.username,
+                              radius: 20,
+                              imageUrl: contact.avatarUrl != null
+                                  ? '$serverUrl${contact.avatarUrl}'
+                                  : null,
                             ),
-                            title: Text(
-                              contact.displayName ?? contact.username,
+                            title: GestureDetector(
+                              onTap: () => UserProfileScreen.show(
+                                context,
+                                ref,
+                                contact.userId,
+                              ),
+                              child: Text(
+                                contact.displayName ?? contact.username,
+                              ),
                             ),
                             subtitle: contact.displayName != null
                                 ? Text('@${contact.username}')
@@ -214,8 +234,8 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                                 ),
                               ),
                             ),
-                          ),
-                        ),
+                          );
+                        }),
                       ],
                       if (contactsState.contacts.isEmpty &&
                           contactsState.pendingRequests.isEmpty)

@@ -27,12 +27,16 @@ class MessageItem extends StatefulWidget {
   final void Function(ChatMessage message, String emoji)? onReactionSelect;
   final void Function(ChatMessage message)? onDelete;
   final void Function(ChatMessage message)? onEdit;
+  final void Function(String userId)? onAvatarTap;
 
   /// Server URL for resolving relative image paths.
   final String? serverUrl;
 
   /// Auth token for authenticated image requests.
   final String? authToken;
+
+  /// Avatar URL path for the message sender (relative, e.g. /api/users/.../avatar).
+  final String? senderAvatarUrl;
 
   const MessageItem({
     super.key,
@@ -44,8 +48,10 @@ class MessageItem extends StatefulWidget {
     this.onReactionSelect,
     this.onDelete,
     this.onEdit,
+    this.onAvatarTap,
     this.serverUrl,
     this.authToken,
+    this.senderAvatarUrl,
   });
 
   @override
@@ -349,15 +355,23 @@ class _MessageItemState extends State<MessageItem> {
                     children: [
                       // Avatar for received messages (first in group only)
                       if (!isMine) ...[
-                        SizedBox(
-                          width: 28,
-                          child: widget.showHeader
-                              ? buildAvatar(
-                                  name: msg.fromUsername,
-                                  radius: 14,
-                                  bgColor: _getUserColor(msg.fromUserId),
-                                )
-                              : const SizedBox.shrink(),
+                        GestureDetector(
+                          onTap: widget.onAvatarTap != null
+                              ? () => widget.onAvatarTap!(msg.fromUserId)
+                              : null,
+                          child: SizedBox(
+                            width: 28,
+                            child: widget.showHeader
+                                ? buildAvatar(
+                                    name: msg.fromUsername,
+                                    radius: 14,
+                                    bgColor: _getUserColor(msg.fromUserId),
+                                    imageUrl: widget.senderAvatarUrl != null
+                                        ? '${widget.serverUrl ?? ""}${widget.senderAvatarUrl}'
+                                        : null,
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
                         ),
                         const SizedBox(width: 8),
                       ],

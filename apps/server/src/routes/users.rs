@@ -6,6 +6,8 @@ use axum::extract::{Multipart, Path, State};
 use axum::http::StatusCode;
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
+use chrono::{DateTime, Utc};
+use serde::Serialize;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::fs;
@@ -16,6 +18,39 @@ use crate::db;
 use crate::error::AppError;
 
 use super::AppState;
+
+#[derive(Serialize)]
+pub struct UserProfile {
+    pub user_id: Uuid,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub bio: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// GET /api/users/:id/profile
+///
+/// Returns the public profile for a user.
+pub async fn get_profile(
+    _auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(user_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let profile = db::users::find_public_profile(&state.pool, user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::bad_request("User not found"))?;
+
+    Ok(Json(UserProfile {
+        user_id: profile.id,
+        username: profile.username,
+        display_name: profile.display_name,
+        avatar_url: profile.avatar_url,
+        bio: profile.bio,
+        created_at: profile.created_at,
+    }))
+}
 
 /// DELETE /api/users/me
 ///

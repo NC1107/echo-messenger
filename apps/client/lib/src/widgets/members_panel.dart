@@ -6,6 +6,7 @@ import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../screens/user_profile_screen.dart';
 import '../theme/echo_theme.dart';
 import 'conversation_panel.dart' show buildAvatar;
 
@@ -255,75 +256,86 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
     final showRemove =
         widget.canRemove && !widget.isMe && _isHovered && !_isRemoving;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: Container(
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: [
-            // Avatar
-            buildAvatar(name: member.username, radius: 10),
-            const SizedBox(width: 8),
-            // Online dot
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: EchoTheme.online,
-                shape: BoxShape.circle,
-                border: Border.all(color: EchoTheme.sidebarBg, width: 1.5),
+    return GestureDetector(
+      onTap: () {
+        UserProfileScreen.show(context, ref, member.userId);
+      },
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              // Avatar
+              buildAvatar(
+                name: member.username,
+                radius: 10,
+                imageUrl: member.avatarUrl != null
+                    ? '${ref.watch(serverUrlProvider)}${member.avatarUrl}'
+                    : null,
               ),
-            ),
-            const SizedBox(width: 8),
-            // Username
-            Expanded(
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      member.username,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: EchoTheme.textSecondary,
-                        fontSize: 13,
+              const SizedBox(width: 8),
+              // Online dot
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: EchoTheme.online,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: EchoTheme.sidebarBg, width: 1.5),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Username
+              Expanded(
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        member.username,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: EchoTheme.textSecondary,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
-                  ),
-                  if (member.role != null &&
-                      (member.role == 'owner' || member.role == 'admin'))
-                    _buildRoleBadge(member.role!),
-                ],
-              ),
-            ),
-            // Remove button
-            if (showRemove)
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: IconButton(
-                  icon: const Icon(Icons.close, size: 14),
-                  color: EchoTheme.textMuted,
-                  tooltip: 'Remove member',
-                  onPressed: _removeMember,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 24,
-                    minHeight: 24,
-                  ),
+                    if (member.role != null &&
+                        (member.role == 'owner' || member.role == 'admin'))
+                      _buildRoleBadge(member.role!),
+                  ],
                 ),
               ),
-            if (_isRemoving)
-              const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: EchoTheme.textMuted,
+              // Remove button
+              if (showRemove)
+                SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: IconButton(
+                    icon: const Icon(Icons.close, size: 14),
+                    color: EchoTheme.textMuted,
+                    tooltip: 'Remove member',
+                    onPressed: _removeMember,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 24,
+                      minHeight: 24,
+                    ),
+                  ),
                 ),
-              ),
-          ],
+              if (_isRemoving)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: EchoTheme.textMuted,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

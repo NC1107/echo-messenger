@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -11,6 +12,7 @@ import '../screens/join_group_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/register_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/user_profile_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
@@ -61,6 +63,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/join/:groupId',
         builder: (_, state) =>
             JoinGroupScreen(groupId: state.pathParameters['groupId']!),
+      ),
+      GoRoute(
+        path: '/profile/:userId',
+        builder: (_, state) => Scaffold(
+          appBar: AppBar(title: const Text('Profile')),
+          body: UserProfileScreen(userId: state.pathParameters['userId']!),
+        ),
       ),
     ],
   );

@@ -86,8 +86,8 @@ jobs:
           EOF
           cp Echo.AppDir/echo.desktop Echo.AppDir/usr/share/applications/
           # Placeholder icon
-          magick public/black_echo_icon.png -gravity center -background none -extent 1408x1408 -resize 256x256 Echo.AppDir/echo.png || \
-          cp public/black_echo_icon.png Echo.AppDir/echo.png
+          magick public/white_echo_icon.png -gravity center -background none -extent 1408x1408 -resize 256x256 Echo.AppDir/echo.png || \
+          cp public/white_echo_icon.png Echo.AppDir/echo.png
           cp Echo.AppDir/echo.png Echo.AppDir/usr/share/icons/hicolor/256x256/apps/
           cat > Echo.AppDir/AppRun << 'APPRUN'
           #!/bin/bash
@@ -169,31 +169,6 @@ jobs:
             Echo-Setup-x64.exe
             echo-windows-x64-portable.zip
 
-  build-web:
-    name: Build Web
-    runs-on: ubuntu-latest
-    needs: version
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-      - name: Build
-        working-directory: apps/client
-        run: flutter build web --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
-      - name: Package
-        run: |
-          cd apps/client/build/web
-          tar czf ${{ github.workspace }}/echo-web.tar.gz .
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          name: Echo ${{ needs.version.outputs.tag }}
-          files: echo-web.tar.gz
-
   build-server:
     name: Build Server Binary
     runs-on: ubuntu-latest
@@ -256,8 +231,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  docker-web:
-    name: Build Web Docker Image
+  build-web:
+    name: Build Web
     runs-on: ubuntu-latest
     needs: version
     steps:
@@ -267,9 +242,19 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-      - name: Build web
+      - name: Build
         working-directory: apps/client
         run: flutter build web --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
+      - name: Package tar.gz
+        run: |
+          cd apps/client/build/web
+          tar czf ${{ github.workspace }}/echo-web.tar.gz .
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Echo ${{ needs.version.outputs.tag }}
+          files: echo-web.tar.gz
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -291,8 +276,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: BUILD_ID=${{ github.run_id }}
 
   tag:
     name: Create Git Tag
