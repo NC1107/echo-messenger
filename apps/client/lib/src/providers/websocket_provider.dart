@@ -343,6 +343,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
         _handleMessageDeleted(json);
       case 'message_edited':
         _handleMessageEdited(json);
+      case 'encryption_toggled':
+        _handleEncryptionToggled(json);
       case 'presence':
         _handlePresence(json);
       case 'presence_list':
@@ -438,8 +440,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     String senderUsername,
   ) async {
     String decryptedContent;
+    final wasEncrypted = looksEncrypted(rawContent);
 
-    if (!looksEncrypted(rawContent)) {
+    if (!wasEncrypted) {
       // Content does not look encrypted (e.g. plaintext group messages) --
       // deliver as-is without attempting decryption.
       decryptedContent = rawContent;
@@ -477,7 +480,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
 
     final decryptedJson = Map<String, dynamic>.from(json);
     decryptedJson['content'] = decryptedContent;
-    final msg = ChatMessage.fromServerJson(decryptedJson, myUserId);
+    var msg = ChatMessage.fromServerJson(decryptedJson, myUserId);
+    if (wasEncrypted) {
+      msg = msg.copyWith(isEncrypted: true);
+    }
     ref.read(chatProvider.notifier).addMessage(msg);
 
     // Update conversations list with decrypted preview
@@ -560,6 +566,14 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
           conversationId: conversationId,
           newContent: newContent,
         );
+  }
+
+  void _handleEncryptionToggled(Map<String, dynamic> json) {
+    final conversationId = json['conversation_id'] as String;
+    final isEncrypted = json['is_encrypted'] as bool;
+    ref
+        .read(conversationsProvider.notifier)
+        .updateEncryption(conversationId, isEncrypted);
   }
 
   void _handlePresence(Map<String, dynamic> json) {

@@ -447,6 +447,15 @@ class _MessageItemState extends State<MessageItem> {
                           color: context.textMuted,
                         ),
                       ),
+                      if (msg.isEncrypted)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 3),
+                          child: Icon(
+                            Icons.lock,
+                            size: 10,
+                            color: EchoTheme.online,
+                          ),
+                        ),
                       if (msg.editedAt != null)
                         Padding(
                           padding: const EdgeInsets.only(left: 4),

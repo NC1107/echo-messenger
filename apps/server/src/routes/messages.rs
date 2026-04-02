@@ -329,6 +329,23 @@ pub async fn toggle_encryption(
         .await
         .map_err(|_| AppError::internal("Failed to update encryption setting"))?;
 
+    // Broadcast to all conversation members so both sides update immediately.
+    let member_ids = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
+        .await
+        .unwrap_or_default();
+    let event = serde_json::json!({
+        "type": "encryption_toggled",
+        "conversation_id": conversation_id,
+        "is_encrypted": body.is_encrypted,
+    });
+    if let Ok(json) = serde_json::to_string(&event) {
+        for member_id in &member_ids {
+            state
+                .hub
+                .send_to(member_id, WsMessage::Text(json.clone().into()));
+        }
+    }
+
     Ok(Json(serde_json::json!({
         "conversation_id": conversation_id,
         "is_encrypted": body.is_encrypted,

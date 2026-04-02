@@ -477,6 +477,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
 
+    // Keep the selected conversation in sync with provider state so that
+    // changes (e.g. encryption toggle) propagate to ChatPanel immediately.
+    if (_selectedConversation != null) {
+      final convs = ref.watch(conversationsProvider).conversations;
+      final fresh = convs
+          .where((c) => c.id == _selectedConversation!.id)
+          .firstOrNull;
+      if (fresh != null) {
+        _selectedConversation = fresh;
+      }
+    }
+
     ref.listen<CryptoState>(cryptoProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
         ScaffoldMessenger.of(context).showSnackBar(

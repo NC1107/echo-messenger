@@ -185,15 +185,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
                   msg.fromUserId,
                   msg.content,
                 );
-                msg = msg.copyWith(content: decrypted);
+                msg = msg.copyWith(content: decrypted, isEncrypted: true);
               } catch (e) {
                 // History messages are immutable artifacts -- don't
                 // invalidate the live session for a past message.
                 debugPrint('[Chat] History decrypt failed for ${msg.id}: $e');
-                msg = msg.copyWith(content: '[Could not decrypt]');
+                msg = msg.copyWith(
+                  content: '[Could not decrypt]',
+                  isEncrypted: true,
+                );
               }
             } else {
-              msg = msg.copyWith(content: '[Encrypted history]');
+              msg = msg.copyWith(
+                content: '[Encrypted history]',
+                isEncrypted: true,
+              );
             }
           }
 

@@ -42,8 +42,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   final _inputFocusNode = FocusNode();
+  static const _defaultTextChannels = ['general', 'announcements', 'random'];
+  static const _defaultVoiceChannels = ['Lounge', 'Game Room'];
+
   bool _isTextEmpty = true;
   bool _hideEncryptionBanner = false;
+  String _selectedTextChannel = _defaultTextChannels.first;
+  String? _activeVoiceChannel;
   String? _loadedConversationId;
 
   // Edit mode state
@@ -62,6 +67,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     super.didUpdateWidget(oldWidget);
     if (widget.conversation?.id != oldWidget.conversation?.id) {
       _hideEncryptionBanner = false;
+      _selectedTextChannel = _defaultTextChannels.first;
+      _activeVoiceChannel = null;
       _loadHistory();
       _markAsRead();
     }
@@ -632,140 +639,172 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     );
   }
 
-  Widget _buildChannelPreviewTile({
-    required IconData icon,
-    required String label,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildTextChannelChip(String channelName) {
+    final isSelected = _selectedTextChannel == channelName;
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
+        onTap: () {
+          setState(() {
+            _selectedTextChannel = channelName;
+          });
+        },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          child: Row(
-            children: [
-              Icon(icon, size: 16, color: context.textSecondary),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: context.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(color: context.textMuted, fontSize: 12),
-                    ),
-                  ],
-                ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? context.accent.withValues(alpha: 0.18)
+                  : context.surface,
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(
+                color: isSelected
+                    ? context.accent.withValues(alpha: 0.6)
+                    : context.border,
+                width: 1,
               ),
-              Icon(Icons.chevron_right, size: 16, color: context.textMuted),
-            ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.tag, size: 13, color: context.textSecondary),
+                const SizedBox(width: 6),
+                Text(
+                  channelName,
+                  style: TextStyle(
+                    color: isSelected ? context.accent : context.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  void _showGroupChannelsPreview(Conversation conv) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: context.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+  Widget _buildVoiceChannelTile(String channelName) {
+    final isActive = _activeVoiceChannel == channelName;
+    final participantCount = isActive ? 1 : 0;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: context.border, width: 1),
       ),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Channels',
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+      child: Row(
+        children: [
+          Icon(Icons.graphic_eq, size: 16, color: context.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  channelName,
+                  style: TextStyle(
+                    color: context.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
+                Text(
+                  '$participantCount connected',
+                  style: TextStyle(color: context.textMuted, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _activeVoiceChannel = isActive ? null : channelName;
+              });
+            },
+            child: Text(isActive ? 'Leave' : 'Join'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInlineGroupChannels() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      decoration: BoxDecoration(
+        color: context.sidebarBg,
+        border: Border(bottom: BorderSide(color: context.border, width: 1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.forum_outlined,
+                size: 14,
+                color: context.textSecondary,
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Preview for ${conv.name ?? 'this group'}',
-                style: TextStyle(color: context.textMuted, fontSize: 12),
-              ),
-              const SizedBox(height: 14),
+              const SizedBox(width: 6),
               Text(
                 'Text Channels',
                 style: TextStyle(
                   color: context.textSecondary,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 6),
-              _buildChannelPreviewTile(
-                icon: Icons.tag,
-                label: '# general',
-                subtitle: 'Main discussion channel',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Text channel routing preview enabled.'),
-                    ),
-                  );
-                },
+              const Spacer(),
+              Text(
+                '#$_selectedTextChannel',
+                style: TextStyle(
+                  color: context.accent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              _buildChannelPreviewTile(
-                icon: Icons.tag,
-                label: '# announcements',
-                subtitle: 'Broadcast updates for the group',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Channel creation flow comes next.'),
-                    ),
-                  );
-                },
+            ],
+          ),
+          const SizedBox(height: 4),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _defaultTextChannels
+                  .map((channelName) => _buildTextChannelChip(channelName))
+                  .toList(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(
+                Icons.headset_mic_outlined,
+                size: 14,
+                color: context.textSecondary,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(width: 6),
               Text(
                 'Voice Channels',
                 style: TextStyle(
                   color: context.textSecondary,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 6),
-              _buildChannelPreviewTile(
-                icon: Icons.graphic_eq,
-                label: 'Lounge',
-                subtitle: '0 connected',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Voice channel presence preview enabled.'),
-                    ),
-                  );
-                },
-              ),
             ],
           ),
-        ),
+          for (final voiceChannel in _defaultVoiceChannels)
+            _buildVoiceChannelTile(voiceChannel),
+        ],
       ),
     );
   }
@@ -980,17 +1019,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     ),
                   ),
                 if (conv.isGroup) ...[
-                  IconButton(
-                    icon: const Icon(Icons.view_list_outlined, size: 20),
-                    color: context.textSecondary,
-                    tooltip: 'Channels',
-                    onPressed: () => _showGroupChannelsPreview(conv),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
-                    ),
-                  ),
                   if (widget.onMembersToggle != null)
                     IconButton(
                       icon: const Icon(Icons.people_outline, size: 20),
@@ -1018,6 +1046,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               ],
             ),
           ),
+          if (conv.isGroup) _buildInlineGroupChannels(),
           // Loading indicator for history
           if (isLoadingHistory)
             LinearProgressIndicator(

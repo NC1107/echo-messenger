@@ -13,6 +13,7 @@ class ChatMessage {
   final MessageStatus status;
   final List<Reaction> reactions;
   final String? editedAt;
+  final bool isEncrypted;
 
   const ChatMessage({
     required this.id,
@@ -25,6 +26,7 @@ class ChatMessage {
     this.status = MessageStatus.sent,
     this.reactions = const [],
     this.editedAt,
+    this.isEncrypted = false,
   });
 
   factory ChatMessage.fromServerJson(
@@ -76,6 +78,7 @@ class ChatMessage {
     MessageStatus? status,
     List<Reaction>? reactions,
     String? editedAt,
+    bool? isEncrypted,
   }) {
     return ChatMessage(
       id: id ?? this.id,
@@ -88,6 +91,7 @@ class ChatMessage {
       status: status ?? this.status,
       reactions: reactions ?? this.reactions,
       editedAt: editedAt ?? this.editedAt,
+      isEncrypted: isEncrypted ?? this.isEncrypted,
     );
   }
 }
