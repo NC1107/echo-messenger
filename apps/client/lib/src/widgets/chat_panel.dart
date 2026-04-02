@@ -463,11 +463,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     final serverUrl = ref.read(serverUrlProvider);
 
     try {
-      await ref.read(authProvider.notifier).authenticatedRequest(
+      await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
             (token) => http.put(
-              Uri.parse(
-                '$serverUrl/api/conversations/${conv.id}/encryption',
-              ),
+              Uri.parse('$serverUrl/api/conversations/${conv.id}/encryption'),
               headers: {
                 'Authorization': 'Bearer $token',
                 'Content-Type': 'application/json',
@@ -664,10 +664,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      style: TextStyle(
-                        color: context.textMuted,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: context.textMuted, fontSize: 12),
                     ),
                   ],
                 ),
@@ -705,10 +702,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               const SizedBox(height: 4),
               Text(
                 'Preview for ${conv.name ?? 'this group'}',
-                style: TextStyle(
-                  color: context.textMuted,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: context.textMuted, fontSize: 12),
               ),
               const SizedBox(height: 14),
               Text(
@@ -854,14 +848,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     final displayName = conv.displayName(myUserId);
     final typingText = conv.isGroup
-      ? (typingUsers.length == 1
-          ? '${typingUsers.first} is typing...'
-          : '${typingUsers.join(", ")} are typing...')
-      : '$displayName is typing...';
+        ? (typingUsers.length == 1
+              ? '${typingUsers.first} is typing...'
+              : '${typingUsers.join(", ")} are typing...')
+        : '$displayName is typing...';
     final showInputStatus = _isEditing || typingUsers.isNotEmpty;
     final inputStatusText = _isEditing && typingUsers.isNotEmpty
-      ? 'Editing message • $typingText'
-      : (_isEditing ? 'Editing message...' : typingText);
+        ? 'Editing message • $typingText'
+        : (_isEditing ? 'Editing message...' : typingText);
 
     // Listen for new messages to auto-scroll
     ref.listen<ChatState>(chatProvider, (prev, next) {
@@ -1036,7 +1030,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             child: messages.isEmpty && !isLoadingHistory
                 ? Column(
                     children: [
-                      _buildEncryptionBanner(conv.isGroup, isEncrypted: conv.isEncrypted),
+                      _buildEncryptionBanner(
+                        conv.isGroup,
+                        isEncrypted: conv.isEncrypted,
+                      ),
                       Expanded(
                         child: Center(
                           child: Column(
@@ -1087,7 +1084,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     itemCount: messages.length + 1,
                     itemBuilder: (context, index) {
                       if (index == 0) {
-                        return _buildEncryptionBanner(conv.isGroup, isEncrypted: conv.isEncrypted);
+                        return _buildEncryptionBanner(
+                          conv.isGroup,
+                          isEncrypted: conv.isEncrypted,
+                        );
                       }
 
                       final msgIndex = index - 1;
@@ -1192,7 +1192,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                               ? Icons.edit_outlined
                               : Icons.more_horiz_rounded,
                           size: 12,
-                          color: _isEditing ? context.accent : context.textMuted,
+                          color: _isEditing
+                              ? context.accent
+                              : context.textMuted,
                         ),
                         const SizedBox(width: 6),
                         Expanded(
@@ -1261,8 +1263,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                           focusNode: FocusNode(),
                           onKeyEvent: (event) {
                             if (event is KeyDownEvent &&
-                                event.logicalKey ==
-                                    LogicalKeyboardKey.escape &&
+                                event.logicalKey == LogicalKeyboardKey.escape &&
                                 _isEditing) {
                               _cancelEditMode();
                             }

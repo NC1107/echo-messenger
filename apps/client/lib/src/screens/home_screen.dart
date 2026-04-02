@@ -351,30 +351,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 ? Border.all(color: context.accent, width: 2)
                                 : null,
                           ),
-                          child: Builder(builder: (_) {
-                            final peer = conv.members
-                                .where((m) => m.userId != myUserId)
-                                .firstOrNull;
-                            final peerAvatarUrl =
-                                (!conv.isGroup && peer?.avatarUrl != null)
-                                    ? '$serverUrl${peer!.avatarUrl}'
-                                    : null;
-                            return buildAvatar(
-                              name: displayName,
-                              radius: 18,
-                              imageUrl: peerAvatarUrl,
-                              bgColor: conv.isGroup
-                                  ? groupAvatarColor(displayName)
-                                  : null,
-                              fallbackIcon: conv.isGroup
-                                  ? const Icon(
-                                      Icons.group,
-                                      size: 16,
-                                      color: Colors.white,
-                                    )
-                                  : null,
-                            );
-                          }),
+                          child: Builder(
+                            builder: (_) {
+                              final peer = conv.members
+                                  .where((m) => m.userId != myUserId)
+                                  .firstOrNull;
+                              final peerAvatarUrl =
+                                  (!conv.isGroup && peer?.avatarUrl != null)
+                                  ? '$serverUrl${peer!.avatarUrl}'
+                                  : null;
+                              return buildAvatar(
+                                name: displayName,
+                                radius: 18,
+                                imageUrl: peerAvatarUrl,
+                                bgColor: conv.isGroup
+                                    ? groupAvatarColor(displayName)
+                                    : null,
+                                fallbackIcon: conv.isGroup
+                                    ? const Icon(
+                                        Icons.group,
+                                        size: 16,
+                                        color: Colors.white,
+                                      )
+                                    : null,
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ),
@@ -681,9 +683,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: context.surface,
-        border: Border(
-          bottom: BorderSide(color: context.border, width: 1),
-        ),
+        border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
       child: Row(
         children: [

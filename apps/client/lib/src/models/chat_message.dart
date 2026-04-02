@@ -38,13 +38,17 @@ class ChatMessage {
         [];
 
     final id = (json['message_id'] ?? json['id'] ?? '').toString();
-    final fromUserId = (json['from_user_id'] ?? json['sender_id'] ?? '').toString();
+    final fromUserId = (json['from_user_id'] ?? json['sender_id'] ?? '')
+        .toString();
     final fromUsername =
-        (json['from_username'] ?? json['sender_username'] ?? 'Unknown').toString();
+        (json['from_username'] ?? json['sender_username'] ?? 'Unknown')
+            .toString();
     final conversationId = (json['conversation_id'] ?? '').toString();
     final content = (json['content'] ?? '').toString();
     final timestamp =
-        (json['timestamp'] ?? json['created_at'] ?? DateTime.now().toIso8601String())
+        (json['timestamp'] ??
+                json['created_at'] ??
+                DateTime.now().toIso8601String())
             .toString();
 
     return ChatMessage(

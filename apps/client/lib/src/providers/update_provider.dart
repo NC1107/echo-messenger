@@ -93,10 +93,12 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
         }
       }
 
-      final response = await http.get(
-        Uri.parse(_releaseApiUrl),
-        headers: {'Accept': 'application/vnd.github.v3+json'},
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse(_releaseApiUrl),
+            headers: {'Accept': 'application/vnd.github.v3+json'},
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode != 200) {
         state = state.copyWith(checking: false);
@@ -113,10 +115,7 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
         _cacheKey,
         jsonEncode({'version': version, 'url': url}),
       );
-      await prefs.setInt(
-        _cacheTimeKey,
-        DateTime.now().millisecondsSinceEpoch,
-      );
+      await prefs.setInt(_cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
 
       final dismissed = prefs.getString(_dismissedVersionKey) == version;
       state = UpdateState(

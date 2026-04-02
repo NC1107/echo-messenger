@@ -243,9 +243,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       if (response.statusCode == 200 && mounted) {
         await _loadGroupInfo();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${member.username} removed')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('${member.username} removed')));
         }
       }
     } catch (_) {
@@ -352,8 +352,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                       ),
                       IconButton(
                         icon: const Icon(Icons.close),
-                        onPressed: () =>
-                            setState(() => _isEditingName = false),
+                        onPressed: () => setState(() => _isEditingName = false),
                       ),
                     ],
                   ),
@@ -431,10 +430,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                             vertical: 1,
                           ),
                           decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .primary
-                                .withValues(alpha: 0.15),
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -470,9 +468,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                     ],
                   ),
                   subtitle: isMe ? const Text('You') : null,
-                  trailing: (isOwnerOrAdmin &&
-                          !isMe &&
-                          role != 'owner')
+                  trailing: (isOwnerOrAdmin && !isMe && role != 'owner')
                       ? IconButton(
                           icon: Icon(
                             Icons.person_remove_outlined,

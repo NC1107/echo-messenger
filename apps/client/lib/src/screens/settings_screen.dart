@@ -780,10 +780,9 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
           subtitle: 'Follow your device settings',
           icon: Icons.settings_brightness_outlined,
           isSelected: currentTheme == AppThemeSelection.system,
-          onTap: () =>
-              ref
-                  .read(themeProvider.notifier)
-                  .setTheme(AppThemeSelection.system),
+          onTap: () => ref
+              .read(themeProvider.notifier)
+              .setTheme(AppThemeSelection.system),
         ),
         const SizedBox(height: 8),
         _ThemeOption(
@@ -800,10 +799,9 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
           subtitle: 'Classic bright look',
           icon: Icons.light_mode_outlined,
           isSelected: currentTheme == AppThemeSelection.light,
-          onTap: () =>
-              ref
-                  .read(themeProvider.notifier)
-                  .setTheme(AppThemeSelection.light),
+          onTap: () => ref
+              .read(themeProvider.notifier)
+              .setTheme(AppThemeSelection.light),
         ),
         const SizedBox(height: 8),
         _ThemeOption(
@@ -811,10 +809,9 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
           subtitle: 'High-contrast dark with teal accents',
           icon: Icons.water_drop_outlined,
           isSelected: currentTheme == AppThemeSelection.graphite,
-          onTap: () =>
-              ref
-                  .read(themeProvider.notifier)
-                  .setTheme(AppThemeSelection.graphite),
+          onTap: () => ref
+              .read(themeProvider.notifier)
+              .setTheme(AppThemeSelection.graphite),
         ),
       ],
     );

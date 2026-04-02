@@ -174,13 +174,15 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     String? conversationId,
   }) async {
     // Check if encryption is enabled for this conversation.
-    final isEncrypted = conversationId != null &&
+    final isEncrypted =
+        conversationId != null &&
         ref
-            .read(conversationsProvider)
-            .conversations
-            .where((c) => c.id == conversationId)
-            .firstOrNull
-            ?.isEncrypted == true;
+                .read(conversationsProvider)
+                .conversations
+                .where((c) => c.id == conversationId)
+                .firstOrNull
+                ?.isEncrypted ==
+            true;
 
     String payload;
     if (isEncrypted) {
@@ -552,7 +554,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
         .read(chatProvider.notifier)
         .editMessage(conversationId, messageId, newContent, editedAt: editedAt);
     // Update conversation list preview in case this was the last message.
-    ref.read(conversationsProvider.notifier).onMessageEdited(
+    ref
+        .read(conversationsProvider.notifier)
+        .onMessageEdited(
           conversationId: conversationId,
           newContent: newContent,
         );

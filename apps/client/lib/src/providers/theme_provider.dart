@@ -40,6 +40,8 @@ class ThemeNotifier extends StateNotifier<AppThemeSelection> {
   }
 }
 
-final themeProvider = StateNotifierProvider<ThemeNotifier, AppThemeSelection>((ref) {
+final themeProvider = StateNotifierProvider<ThemeNotifier, AppThemeSelection>((
+  ref,
+) {
   return ThemeNotifier();
 });
