@@ -1,11 +1,13 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../theme/echo_theme.dart';
+import '../utils/download_helper.dart';
 import '../utils/time_utils.dart';
 import 'conversation_panel.dart' show buildAvatar, avatarColor;
 
@@ -17,6 +19,12 @@ final _urlRegex = RegExp(r'https?://[^\s]+');
 
 /// Regex for detecting image markers: [img:URL]
 final _imgRegex = RegExp(r'^\[img:(.+)\]$');
+
+/// Regex for detecting video markers: [video:URL]
+final _videoRegex = RegExp(r'^\[video:(.+)\]$');
+
+/// Regex for detecting generic file markers: [file:URL]
+final _fileRegex = RegExp(r'^\[file:(.+)\]$');
 
 class MessageItem extends StatefulWidget {
   final ChatMessage message;
@@ -61,6 +69,155 @@ class MessageItem extends StatefulWidget {
 class _MessageItemState extends State<MessageItem> {
   bool _isHovered = false;
 
+  String _resolveMediaUrl(String url) {
+    return url.startsWith('/') ? '${widget.serverUrl ?? ""}$url' : url;
+  }
+
+  Map<String, String> _mediaHeaders() {
+    final headers = <String, String>{};
+    if (widget.authToken != null && widget.authToken!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer ${widget.authToken}';
+    }
+    return headers;
+  }
+
+  String? _extractMediaUrl(String content) {
+    final imageMatch = _imgRegex.firstMatch(content);
+    if (imageMatch != null) return imageMatch.group(1);
+
+    final videoMatch = _videoRegex.firstMatch(content);
+    if (videoMatch != null) return videoMatch.group(1);
+
+    final fileMatch = _fileRegex.firstMatch(content);
+    if (fileMatch != null) return fileMatch.group(1);
+
+    return null;
+  }
+
+  String _filenameFromUrl(String url) {
+    final parsed = Uri.tryParse(url);
+    final lastSegment = (parsed?.pathSegments.isNotEmpty ?? false)
+        ? parsed!.pathSegments.last
+        : '';
+    if (lastSegment.isEmpty) {
+      return 'media.bin';
+    }
+    return lastSegment;
+  }
+
+  Future<void> _openMedia(String rawUrl) async {
+    final uri = Uri.tryParse(_resolveMediaUrl(rawUrl));
+    if (uri != null) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _downloadMedia(String rawUrl) async {
+    final mediaUrl = _resolveMediaUrl(rawUrl);
+    try {
+      final response = await http.get(
+        Uri.parse(mediaUrl),
+        headers: _mediaHeaders(),
+      );
+      if (!mounted) return;
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download failed (${response.statusCode})'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      final contentType =
+          response.headers['content-type'] ?? 'application/octet-stream';
+      final downloaded = await saveBytesAsFile(
+        fileName: _filenameFromUrl(mediaUrl),
+        bytes: response.bodyBytes,
+        mimeType: contentType,
+      );
+
+      if (!mounted) return;
+      if (downloaded) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Download started'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      await Clipboard.setData(ClipboardData(text: mediaUrl));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Save not supported here yet. Link copied.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not download media'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _showImageViewer({required String imageUrl, required bool isMine}) {
+    final headers = _mediaHeaders();
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.black.withValues(alpha: 0.85),
+        insetPadding: const EdgeInsets.all(20),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: InteractiveViewer(
+                minScale: 0.8,
+                maxScale: 4,
+                child: Center(
+                  child: Image.network(
+                    imageUrl,
+                    headers: headers,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.download_outlined),
+                    color: Colors.white,
+                    tooltip: 'Download',
+                    onPressed: () => _downloadMedia(imageUrl),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    color: Colors.white,
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatusIcon(MessageStatus? status) {
     if (status == null) return const SizedBox.shrink();
     IconData icon;
@@ -92,39 +249,218 @@ class _MessageItemState extends State<MessageItem> {
   }
 
   /// Check if the message content is an image marker and build the image widget.
-  Widget? _buildImageContent(String content, {required bool isMine}) {
-    final match = _imgRegex.firstMatch(content);
-    if (match == null) return null;
+  Widget? _buildMediaContent(String content, {required bool isMine}) {
+    final headers = _mediaHeaders();
+    final imageMatch = _imgRegex.firstMatch(content);
+    if (imageMatch != null) {
+      final rawUrl = imageMatch.group(1)!;
+      final fullUrl = _resolveMediaUrl(rawUrl);
 
-    final url = match.group(1)!;
-    final fullUrl = url.startsWith('/') ? '${widget.serverUrl ?? ""}$url' : url;
-
-    final headers = <String, String>{};
-    if (widget.authToken != null && widget.authToken!.isNotEmpty) {
-      headers['Authorization'] = 'Bearer ${widget.authToken}';
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Image.network(
-        fullUrl,
-        width: 300,
-        fit: BoxFit.cover,
-        headers: headers,
-        errorBuilder: (_, _, _) => Container(
-          width: 300,
-          height: 80,
-          decoration: BoxDecoration(
-            color: context.surface,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Center(
-            child: Text(
-              '[Image failed to load]',
-              style: TextStyle(color: context.textMuted, fontSize: 13),
-            ),
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: GestureDetector(
+          onTap: () => _showImageViewer(imageUrl: fullUrl, isMine: isMine),
+          child: Stack(
+            children: [
+              Image.network(
+                fullUrl,
+                width: 300,
+                fit: BoxFit.cover,
+                headers: headers,
+                errorBuilder: (_, _, _) => Container(
+                  width: 300,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: context.surface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '[Image failed to load]',
+                      style: TextStyle(color: context.textMuted, fontSize: 13),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 8,
+                bottom: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.open_in_full,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
+      );
+    }
+
+    final videoMatch = _videoRegex.firstMatch(content);
+    if (videoMatch != null) {
+      final rawUrl = videoMatch.group(1)!;
+      return Container(
+        width: 300,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: context.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 140,
+              decoration: BoxDecoration(
+                color: context.mainBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: Icon(
+                  Icons.play_circle_outline,
+                  size: 44,
+                  color: context.textMuted,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Video attachment',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _openMedia(rawUrl),
+                  icon: const Icon(Icons.open_in_new, size: 14),
+                  label: const Text('Open'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _downloadMedia(rawUrl),
+                  icon: const Icon(Icons.download_outlined, size: 14),
+                  label: const Text('Download'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    final fileMatch = _fileRegex.firstMatch(content);
+    if (fileMatch != null) {
+      final rawUrl = fileMatch.group(1)!;
+      final displayName = _filenameFromUrl(rawUrl);
+      return Container(
+        width: 300,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: context.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: context.mainBg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.insert_drive_file_outlined, color: context.textMuted),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                displayName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.download_outlined, size: 18),
+              onPressed: () => _downloadMedia(rawUrl),
+              tooltip: 'Download',
+            ),
+          ],
+        ),
+      );
+    }
+
+    return null;
+  }
+
+  Widget _buildHoverActions(ChatMessage msg, bool isMine, {String? mediaUrl}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: context.surface,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: context.border, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _HoverActionButton(
+            icon: Icons.copy_outlined,
+            tooltip: 'Copy',
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: msg.content));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Copied to clipboard'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+          ),
+          if (mediaUrl != null)
+            _HoverActionButton(
+              icon: Icons.download_outlined,
+              tooltip: 'Download',
+              onPressed: () => _downloadMedia(mediaUrl),
+            ),
+          _HoverActionButton(
+            icon: Icons.add_reaction_outlined,
+            tooltip: 'React',
+            onPressed: () => widget.onReactionTap?.call(msg),
+          ),
+          if (isMine && widget.onEdit != null)
+            _HoverActionButton(
+              icon: Icons.edit_outlined,
+              tooltip: 'Edit',
+              onPressed: () => widget.onEdit?.call(msg),
+            ),
+          if (isMine && widget.onDelete != null)
+            _HoverActionButton(
+              icon: Icons.delete_outlined,
+              tooltip: 'Delete',
+              onPressed: () => widget.onDelete?.call(msg),
+            ),
+        ],
       ),
     );
   }
@@ -240,8 +576,8 @@ class _MessageItemState extends State<MessageItem> {
     final isMine = msg.isMine;
     final isFailed = msg.status == MessageStatus.failed;
 
-    // Check if message is an image
-    final imageWidget = _buildImageContent(msg.content, isMine: isMine);
+    final mediaWidget = _buildMediaContent(msg.content, isMine: isMine);
+    final mediaUrl = _extractMediaUrl(msg.content);
 
     final hasReactions = msg.reactions.isNotEmpty;
     final reactionPill = _buildReactionPill(msg.reactions, isMine);
@@ -251,7 +587,7 @@ class _MessageItemState extends State<MessageItem> {
       constraints: BoxConstraints(
         maxWidth: MediaQuery.of(context).size.width * 0.65,
       ),
-      padding: imageWidget != null
+      padding: mediaWidget != null
           ? const EdgeInsets.all(4)
           : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -287,8 +623,8 @@ class _MessageItemState extends State<MessageItem> {
               ),
             ),
           // Image or text content
-          if (imageWidget != null)
-            imageWidget
+          if (mediaWidget != null)
+            mediaWidget
           else
             _buildMessageText(
               msg.content,
@@ -342,92 +678,49 @@ class _MessageItemState extends State<MessageItem> {
                 ? CrossAxisAlignment.end
                 : CrossAxisAlignment.start,
             children: [
-              Stack(
-                children: [
-                  Row(
-                    mainAxisAlignment: isMine
-                        ? MainAxisAlignment.end
-                        : MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      // Avatar for received messages (first in group only)
-                      if (!isMine) ...[
-                        GestureDetector(
-                          onTap: widget.onAvatarTap != null
-                              ? () => widget.onAvatarTap!(msg.fromUserId)
-                              : null,
-                          child: SizedBox(
-                            width: 28,
-                            child: widget.showHeader
-                                ? buildAvatar(
-                                    name: msg.fromUsername,
-                                    radius: 14,
-                                    bgColor: _getUserColor(msg.fromUserId),
-                                    imageUrl: widget.senderAvatarUrl != null
-                                        ? '${widget.serverUrl ?? ""}${widget.senderAvatarUrl}'
-                                        : null,
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      // Bubble with reactions
-                      Flexible(child: bubbleWithReactions),
-                    ],
+              if (_isHovered && !hasReactions)
+                Padding(
+                  padding: EdgeInsets.only(
+                    bottom: 6,
+                    left: isMine ? 0 : 36,
                   ),
-                  // Hover action: show reaction picker for messages without
-                  // reactions (messages with reactions use the pill tap instead)
-                  if (_isHovered && !hasReactions)
-                    Positioned(
-                      top: 0,
-                      right: isMine ? null : 0,
-                      left: isMine ? 0 : null,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: context.surface,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: context.border, width: 1),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _HoverActionButton(
-                              icon: Icons.copy_outlined,
-                              tooltip: 'Copy',
-                              onPressed: () {
-                                Clipboard.setData(
-                                  ClipboardData(text: msg.content),
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Copied to clipboard'),
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                              },
-                            ),
-                            _HoverActionButton(
-                              icon: Icons.add_reaction_outlined,
-                              tooltip: 'React',
-                              onPressed: () => widget.onReactionTap?.call(msg),
-                            ),
-                            if (isMine && widget.onEdit != null)
-                              _HoverActionButton(
-                                icon: Icons.edit_outlined,
-                                tooltip: 'Edit',
-                                onPressed: () => widget.onEdit?.call(msg),
-                              ),
-                            if (isMine && widget.onDelete != null)
-                              _HoverActionButton(
-                                icon: Icons.delete_outlined,
-                                tooltip: 'Delete',
-                                onPressed: () => widget.onDelete?.call(msg),
-                              ),
-                          ],
-                        ),
+                  child: Align(
+                    alignment: isMine
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    child: _buildHoverActions(msg, isMine, mediaUrl: mediaUrl),
+                  ),
+                ),
+              Row(
+                mainAxisAlignment: isMine
+                    ? MainAxisAlignment.end
+                    : MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  // Avatar for received messages (first in group only)
+                  if (!isMine) ...[
+                    GestureDetector(
+                      onTap: widget.onAvatarTap != null
+                          ? () => widget.onAvatarTap!(msg.fromUserId)
+                          : null,
+                      child: SizedBox(
+                        width: 28,
+                        child: widget.showHeader
+                            ? buildAvatar(
+                                name: msg.fromUsername,
+                                radius: 14,
+                                bgColor: _getUserColor(msg.fromUserId),
+                                imageUrl: widget.senderAvatarUrl != null
+                                    ? '${widget.serverUrl ?? ""}${widget.senderAvatarUrl}'
+                                    : null,
+                              )
+                            : const SizedBox.shrink(),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                  ],
+                  // Bubble with reactions
+                  Flexible(child: bubbleWithReactions),
                 ],
               ),
               // Timestamp (only on last in group)

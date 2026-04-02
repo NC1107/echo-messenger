@@ -38,6 +38,8 @@ class ContactsState {
 
 class ContactsNotifier extends StateNotifier<ContactsState> {
   final Ref ref;
+  bool _isPendingLoadInFlight = false;
+  DateTime? _lastPendingLoadedAt;
 
   ContactsNotifier(this.ref) : super(const ContactsState());
 
@@ -80,7 +82,18 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
     }
   }
 
-  Future<void> loadPending() async {
+  Future<void> loadPending({bool force = false}) async {
+    if (_isPendingLoadInFlight) {
+      return;
+    }
+    if (!force &&
+        _lastPendingLoadedAt != null &&
+        DateTime.now().difference(_lastPendingLoadedAt!) <
+            const Duration(seconds: 8)) {
+      return;
+    }
+
+    _isPendingLoadInFlight = true;
     try {
       final response = await _authenticatedRequest(
         (token) => http.get(
@@ -96,6 +109,9 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
       }
     } catch (e) {
       debugPrint('[Contacts] loadPending failed: $e');
+    } finally {
+      _isPendingLoadInFlight = false;
+      _lastPendingLoadedAt = DateTime.now();
     }
   }
 

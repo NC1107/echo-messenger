@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -114,6 +116,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   bool _isSearching = false;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  Timer? _pendingRefreshTimer;
 
   /// 0 = Chats, 1 = Contacts, 2 = Groups
   int _selectedTab = 0;
@@ -125,6 +128,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   void initState() {
     super.initState();
     _loadPinnedIds();
+    _startPendingRefreshLoop();
     widget.externalSearchFocusNode?.addListener(_onExternalSearchFocus);
   }
 
@@ -139,10 +143,34 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
   @override
   void dispose() {
+    _pendingRefreshTimer?.cancel();
     widget.externalSearchFocusNode?.removeListener(_onExternalSearchFocus);
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _startPendingRefreshLoop() {
+    _refreshPendingRequests(force: true);
+    _pendingRefreshTimer?.cancel();
+    _pendingRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _refreshPendingRequests();
+    });
+  }
+
+  void _refreshPendingRequests({bool force = false}) {
+    final authState = ref.read(authProvider);
+    if (!authState.isLoggedIn) {
+      return;
+    }
+    ref.read(contactsProvider.notifier).loadPending(force: force);
+  }
+
+  void _onTabSelected(int index) {
+    setState(() => _selectedTab = index);
+    if (index <= 1) {
+      _refreshPendingRequests(force: true);
+    }
   }
 
   void _onExternalSearchFocus() {
@@ -730,7 +758,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final isSelected = _selectedTab == index;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _selectedTab = index),
+        onTap: () => _onTabSelected(index),
         child: Container(
           height: 30,
           decoration: BoxDecoration(
@@ -897,6 +925,15 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 textAlign: TextAlign.center,
                 style: TextStyle(color: context.textMuted, fontSize: 13),
               ),
+              const SizedBox(height: 14),
+              SizedBox(
+                height: 34,
+                child: FilledButton.icon(
+                  onPressed: widget.onNewChat,
+                  icon: const Icon(Icons.person_add_alt_1, size: 16),
+                  label: const Text('Add Contact'),
+                ),
+              ),
             ],
           ),
         ),
@@ -957,6 +994,32 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 textAlign: TextAlign.center,
                 style: TextStyle(color: context.textMuted, fontSize: 13),
               ),
+              if (_searchQuery.isEmpty) ...[
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    SizedBox(
+                      height: 34,
+                      child: FilledButton.icon(
+                        onPressed: widget.onNewGroup,
+                        icon: const Icon(Icons.group_add, size: 16),
+                        label: const Text('Create Group'),
+                      ),
+                    ),
+                    SizedBox(
+                      height: 34,
+                      child: OutlinedButton.icon(
+                        onPressed: widget.onDiscover,
+                        icon: const Icon(Icons.explore_outlined, size: 16),
+                        label: const Text('Discover'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

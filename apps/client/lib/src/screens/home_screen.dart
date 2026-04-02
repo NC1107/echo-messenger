@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,9 +33,11 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   Conversation? _selectedConversation;
   bool _showMembers = false;
+  Timer? _pendingRefreshTimer;
 
   // For narrow screen navigation
   int _narrowPanelIndex = 0; // 0 = conv list, 1 = chat
@@ -51,6 +55,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initData();
     });
@@ -58,8 +63,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pendingRefreshTimer?.cancel();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(contactsProvider.notifier).loadPending(force: true);
+    }
   }
 
   Future<void> _initData() async {
@@ -78,13 +92,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     // 4. Load contacts for pending badge
     ref.read(contactsProvider.notifier).loadContacts();
-    ref.read(contactsProvider.notifier).loadPending();
+    ref.read(contactsProvider.notifier).loadPending(force: true);
+    _startPendingRefreshLoop();
 
     // 5. Check for app updates (non-blocking)
     ref.read(updateProvider.notifier).check();
 
     // 6. Show first-login server notice
     await _showServerNoticeIfNeeded();
+  }
+
+  void _startPendingRefreshLoop() {
+    _pendingRefreshTimer?.cancel();
+    _pendingRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      ref.read(contactsProvider.notifier).loadPending();
+    });
   }
 
   Future<void> _showServerNoticeIfNeeded() async {
@@ -692,54 +715,70 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: context.surface,
-        border: Border(bottom: BorderSide(color: context.border, width: 1)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 24,
-            height: 24,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: context.accent.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(8),
+              color: context.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: context.border),
             ),
-            child: Icon(Icons.system_update, size: 14, color: context.accent),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Echo v${update.latestVersion} is available',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
+            child: Row(
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: context.accent.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.system_update,
+                    size: 14,
+                    color: context.accent,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Echo v${update.latestVersion} is available',
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    final url = update.downloadUrl;
+                    if (url != null) launchUrl(Uri.parse(url));
+                  },
+                  child: Text(
+                    'Download',
+                    style: TextStyle(
+                      color: context.accent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close, size: 16, color: context.textMuted),
+                  onPressed: () => ref.read(updateProvider.notifier).dismiss(),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 24,
+                    minHeight: 24,
+                  ),
+                ),
+              ],
             ),
           ),
-          TextButton(
-            onPressed: () {
-              final url = update.downloadUrl;
-              if (url != null) launchUrl(Uri.parse(url));
-            },
-            child: Text(
-              'Download',
-              style: TextStyle(
-                color: context.accent,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          IconButton(
-            icon: Icon(Icons.close, size: 16, color: context.textMuted),
-            onPressed: () => ref.read(updateProvider.notifier).dismiss(),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-          ),
-        ],
+        ),
       ),
     );
   }

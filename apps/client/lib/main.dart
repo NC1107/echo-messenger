@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/app.dart';
@@ -18,6 +19,8 @@ void main() async {
 
   // For web: check URL query params to allow overriding the server URL
   if (kIsWeb) {
+    await BrowserContextMenu.disableContextMenu();
+
     final serverParam = Uri.base.queryParameters['server'];
     if (serverParam != null && serverParam.isNotEmpty) {
       await container.read(serverUrlProvider.notifier).setUrl(serverParam);

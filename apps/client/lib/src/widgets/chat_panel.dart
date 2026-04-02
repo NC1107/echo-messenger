@@ -220,6 +220,20 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     }
   }
 
+  String _buildMediaMarker({required String extension, required String url}) {
+    const imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
+    const videoExts = {'mp4', 'webm', 'mov'};
+
+    final ext = extension.toLowerCase();
+    if (imageExts.contains(ext)) {
+      return '[img:$url]';
+    }
+    if (videoExts.contains(ext)) {
+      return '[video:$url]';
+    }
+    return '[file:$url]';
+  }
+
   Future<void> _pickFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -281,8 +295,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         final data = jsonDecode(body);
         final mediaUrl = data['url'] as String?;
         if (mediaUrl != null) {
-          // Send as message with image marker
-          _messageController.text = '[img:$mediaUrl]';
+          _messageController.text =
+              _buildMediaMarker(extension: ext, url: mediaUrl);
           _sendMessage();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
