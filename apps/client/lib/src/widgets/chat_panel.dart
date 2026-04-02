@@ -316,8 +316,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       final data = jsonDecode(body);
       final mediaUrl = data['url'] as String?;
       if (mediaUrl != null) {
-        _messageController.text =
-            _buildMediaMarker(extension: extension, url: mediaUrl);
+        _messageController.text = _buildMediaMarker(
+          extension: extension,
+          url: mediaUrl,
+        );
         _sendMessage();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -358,9 +360,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Clipboard upload failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Clipboard upload failed: $e')));
     }
   }
 
@@ -1399,7 +1401,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                           focusNode: FocusNode(),
                           onKeyEvent: (event) {
                             if (event is KeyDownEvent) {
-                              if (event.logicalKey == LogicalKeyboardKey.escape &&
+                              if (event.logicalKey ==
+                                      LogicalKeyboardKey.escape &&
                                   _isEditing) {
                                 _cancelEditMode();
                               }

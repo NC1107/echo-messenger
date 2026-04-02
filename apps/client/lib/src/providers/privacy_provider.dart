@@ -72,8 +72,7 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         state = state.copyWith(
           readReceiptsEnabled: data['read_receipts_enabled'] as bool? ?? true,
-          allowUnencryptedDm:
-              data['allow_unencrypted_dm'] as bool? ?? true,
+          allowUnencryptedDm: data['allow_unencrypted_dm'] as bool? ?? true,
           isLoading: false,
           error: null,
         );
@@ -119,8 +118,7 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         state = state.copyWith(
           readReceiptsEnabled: data['read_receipts_enabled'] as bool? ?? true,
-          allowUnencryptedDm:
-              data['allow_unencrypted_dm'] as bool? ?? true,
+          allowUnencryptedDm: data['allow_unencrypted_dm'] as bool? ?? true,
           isLoading: false,
           error: null,
         );

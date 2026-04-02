@@ -386,7 +386,10 @@ class _MessageItemState extends State<MessageItem> {
                 color: context.mainBg,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(Icons.insert_drive_file_outlined, color: context.textMuted),
+              child: Icon(
+                Icons.insert_drive_file_outlined,
+                color: context.textMuted,
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -680,10 +683,7 @@ class _MessageItemState extends State<MessageItem> {
             children: [
               if (_isHovered && !hasReactions)
                 Padding(
-                  padding: EdgeInsets.only(
-                    bottom: 6,
-                    left: isMine ? 0 : 36,
-                  ),
+                  padding: EdgeInsets.only(bottom: 6, left: isMine ? 0 : 36),
                   child: Align(
                     alignment: isMine
                         ? Alignment.centerRight

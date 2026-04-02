@@ -222,14 +222,14 @@ pub async fn set_conversation_encrypted(
     Ok(())
 }
 
-    pub async fn get_conversation_security(
-        pool: &PgPool,
-        conversation_id: Uuid,
-    ) -> Result<Option<ConversationSecurityRow>, sqlx::Error> {
-        sqlx::query_as::<_, ConversationSecurityRow>(
-            "SELECT kind, is_encrypted FROM conversations WHERE id = $1",
-        )
-        .bind(conversation_id)
-        .fetch_optional(pool)
-        .await
-    }
+pub async fn get_conversation_security(
+    pool: &PgPool,
+    conversation_id: Uuid,
+) -> Result<Option<ConversationSecurityRow>, sqlx::Error> {
+    sqlx::query_as::<_, ConversationSecurityRow>(
+        "SELECT kind, is_encrypted FROM conversations WHERE id = $1",
+    )
+    .bind(conversation_id)
+    .fetch_optional(pool)
+    .await
+}
