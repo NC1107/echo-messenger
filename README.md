@@ -1,6 +1,6 @@
 # Echo - Encrypted Messenger
 
-A lightweight, cross-platform messaging app with optional end-to-end encryption. Discord got too bloated, Matrix is too hard to set up -- Echo is the middle ground. Centralized by default, self-hostable if you want.
+A lightweight, cross-platform messaging app with end-to-end encryption. I'm not a fan of the direction discord is moving, and I don't think most people can setup Matrix, so this is my attempt at a replacement. I will be setting it up by default centralized, but there is always an option to host the server yourself.
 
 ## Downloads
 
