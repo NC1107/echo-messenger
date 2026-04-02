@@ -64,6 +64,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   final Map<String, List<RTCIceCandidate>> _pendingIceCandidates = {};
   Set<String> _currentParticipants = const {};
 
+  /// Expose remote audio renderers so the widget tree can mount hidden
+  /// [RTCVideoView] widgets that enable audio playback on web/desktop.
+  Map<String, RTCVideoRenderer> get remoteAudioRenderers =>
+      Map.unmodifiable(_remoteAudioRenderers);
+
   VoiceRtcNotifier(this.ref) : super(VoiceRtcState.empty) {
     _signalSubscription = ref
         .read(websocketProvider.notifier)

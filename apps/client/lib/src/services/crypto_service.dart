@@ -385,6 +385,24 @@ class CryptoService {
     return utf8.decode(plainBytes);
   }
 
+  /// Check whether a session can be established with [peerUserId].
+  ///
+  /// Returns true immediately if a session already exists. Otherwise queries
+  /// the server for the peer's key bundle and returns true when one is
+  /// available.
+  Future<bool> canEstablishSession(String peerUserId) async {
+    if (_sessions.containsKey(peerUserId)) return true;
+    try {
+      final response = await http.get(
+        Uri.parse('$serverUrl/api/keys/bundle/$peerUserId'),
+        headers: {'Authorization': 'Bearer $_token'},
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Check if we have a session for a peer (no network call needed).
   bool hasSessionKey(String peerUserId) {
     return _sessions.containsKey(peerUserId);

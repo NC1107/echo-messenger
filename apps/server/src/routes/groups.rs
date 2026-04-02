@@ -63,6 +63,7 @@ pub struct AddMemberRequest {
 #[derive(Debug, Deserialize)]
 pub struct UpdateGroupRequest {
     pub title: Option<String>,
+    pub description: Option<String>,
 }
 
 /// POST /api/groups -- Create a new group conversation.
@@ -382,6 +383,12 @@ pub async fn update_group(
         db::groups::update_group_title(&state.pool, group_id, trimmed)
             .await
             .map_err(|_| AppError::internal("Failed to update group title"))?;
+    }
+
+    if let Some(ref desc) = body.description {
+        db::groups::update_group_description(&state.pool, group_id, desc)
+            .await
+            .map_err(|_| AppError::internal("Failed to update description"))?;
     }
 
     Ok(Json(serde_json::json!({ "status": "updated" })))

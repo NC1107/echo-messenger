@@ -224,7 +224,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
       } catch (_) {
         _addFailedMessage(
           toUserId,
-          'Encryption failed',
+          'Encryption setup failed. Recipient may not have encryption keys. Try disabling encryption.',
           conversationId: conversationId,
         );
         return;
@@ -556,14 +556,16 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
               'from $fromUserId. First error: $firstError, '
               'Retry error: $retryError',
             );
-            decryptedContent = '[Could not decrypt]';
+            decryptedContent =
+                '[Could not decrypt - encryption keys may be out of sync]';
           }
         } else {
           debugPrint(
             '[WebSocket] Skipping retry for $fromUserId '
             '(already retried this connection): $firstError',
           );
-          decryptedContent = '[Could not decrypt]';
+          decryptedContent =
+              '[Could not decrypt - encryption keys may be out of sync]';
         }
       }
     }

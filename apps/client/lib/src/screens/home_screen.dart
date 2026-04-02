@@ -16,6 +16,7 @@ import '../providers/chat_provider.dart';
 import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
+import '../providers/voice_rtc_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/chat_panel.dart';
@@ -87,6 +88,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (!wsState.isConnected) {
       ref.read(websocketProvider.notifier).connect();
     }
+
+    // Clean up any stale voice session from a previous run.
+    ref.read(voiceRtcProvider.notifier).leaveChannel();
 
     // 3. Load conversations AFTER crypto and WS are set up
     await ref.read(conversationsProvider.notifier).loadConversations();

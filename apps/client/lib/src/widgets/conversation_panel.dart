@@ -434,71 +434,76 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 ),
                 const Spacer(),
                 // Three action icons
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.person_add_outlined, size: 18),
-                          color: context.textSecondary,
-                          tooltip: 'New Chat',
-                          onPressed: widget.onNewChat,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 32,
-                            minHeight: 32,
+                Flexible(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.person_add_outlined,
+                              size: 18,
+                            ),
+                            color: context.textSecondary,
+                            tooltip: 'New Chat',
+                            onPressed: widget.onNewChat,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
                           ),
-                        ),
-                        if (pendingCount > 0)
-                          Positioned(
-                            top: -2,
-                            right: -2,
-                            child: Container(
-                              width: 16,
-                              height: 16,
-                              decoration: const BoxDecoration(
-                                color: EchoTheme.danger,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  pendingCount > 9 ? '9+' : '$pendingCount',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w700,
+                          if (pendingCount > 0)
+                            Positioned(
+                              top: -2,
+                              right: -2,
+                              child: Container(
+                                width: 16,
+                                height: 16,
+                                decoration: const BoxDecoration(
+                                  color: EchoTheme.danger,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    pendingCount > 9 ? '9+' : '$pendingCount',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                      ],
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.group_add_outlined, size: 18),
-                      color: context.textSecondary,
-                      tooltip: 'New Group',
-                      onPressed: widget.onNewGroup,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 32,
+                        ],
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.explore_outlined, size: 18),
-                      color: context.textSecondary,
-                      tooltip: 'Discover Groups',
-                      onPressed: widget.onDiscover,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 32,
+                      IconButton(
+                        icon: const Icon(Icons.group_add_outlined, size: 18),
+                        color: context.textSecondary,
+                        tooltip: 'New Group',
+                        onPressed: widget.onNewGroup,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
                       ),
-                    ),
-                  ],
+                      IconButton(
+                        icon: const Icon(Icons.explore_outlined, size: 18),
+                        color: context.textSecondary,
+                        tooltip: 'Discover Groups',
+                        onPressed: widget.onDiscover,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

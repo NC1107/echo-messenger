@@ -202,6 +202,51 @@ class ChannelsNotifier extends StateNotifier<ChannelsState> {
     }
   }
 
+  Future<bool> createChannel(
+    String conversationId,
+    String name,
+    String kind,
+  ) async {
+    try {
+      final response = await _authenticatedRequest(
+        (token) => http.post(
+          Uri.parse('$_serverUrl/api/groups/$conversationId/channels'),
+          headers: _headersWithToken(token),
+          body: jsonEncode({'name': name, 'kind': kind}),
+        ),
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        await loadChannels(conversationId);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('[Channels] createChannel failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteChannel(String conversationId, String channelId) async {
+    try {
+      final response = await _authenticatedRequest(
+        (token) => http.delete(
+          Uri.parse(
+            '$_serverUrl/api/groups/$conversationId/channels/$channelId',
+          ),
+          headers: _headersWithToken(token),
+        ),
+      );
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        await loadChannels(conversationId);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('[Channels] deleteChannel failed: $e');
+      return false;
+    }
+  }
+
   Future<bool> updateVoiceState({
     required String conversationId,
     required String channelId,

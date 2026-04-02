@@ -1,6 +1,7 @@
 class Conversation {
   final String id;
   final String? name;
+  final String? description;
   final bool isGroup;
   final bool isEncrypted;
   final String? lastMessage;
@@ -12,6 +13,7 @@ class Conversation {
   const Conversation({
     required this.id,
     this.name,
+    this.description,
     required this.isGroup,
     this.isEncrypted = false,
     this.lastMessage,
@@ -60,6 +62,7 @@ class Conversation {
     return Conversation(
       id: json['conversation_id'] as String? ?? json['id'] as String,
       name: (json['title'] ?? json['name']) as String?,
+      description: json['description'] as String?,
       isGroup: isGroupValue,
       isEncrypted: json['is_encrypted'] as bool? ?? false,
       lastMessage: lastMsg,
@@ -81,6 +84,7 @@ class Conversation {
   Conversation copyWith({
     String? id,
     String? name,
+    String? description,
     bool? isGroup,
     bool? isEncrypted,
     String? lastMessage,
@@ -92,6 +96,7 @@ class Conversation {
     return Conversation(
       id: id ?? this.id,
       name: name ?? this.name,
+      description: description ?? this.description,
       isGroup: isGroup ?? this.isGroup,
       isEncrypted: isEncrypted ?? this.isEncrypted,
       lastMessage: lastMessage ?? this.lastMessage,

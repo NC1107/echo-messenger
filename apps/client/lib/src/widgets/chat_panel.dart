@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -23,6 +24,7 @@ import '../providers/voice_settings_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/sound_service.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/clipboard_image_helper.dart';
 import 'conversation_panel.dart' show buildAvatar, groupAvatarColor;
@@ -191,6 +193,23 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     _loadedChannelsConversationId = conv.id;
     await ref.read(channelsProvider.notifier).loadChannels(conv.id);
+  }
+
+  Future<void> _syncVoiceState() async {
+    final conv = widget.conversation;
+    if (conv == null) return;
+    final channelId = _activeVoiceChannelId;
+    if (channelId == null) return;
+    final voiceSettings = ref.read(voiceSettingsProvider);
+    await ref
+        .read(channelsProvider.notifier)
+        .updateVoiceState(
+          conversationId: conv.id,
+          channelId: channelId,
+          isMuted: voiceSettings.selfMuted,
+          isDeafened: voiceSettings.selfDeafened,
+          pushToTalk: voiceSettings.pushToTalkEnabled,
+        );
   }
 
   void _markAsRead() {
@@ -694,7 +713,25 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
   Future<void> _toggleEncryption(Conversation conv) async {
     final newValue = !conv.isEncrypted;
+    final myUserId = ref.read(authProvider).userId ?? '';
     final serverUrl = ref.read(serverUrlProvider);
+
+    // Pre-check: warn if peer has no encryption keys when enabling.
+    if (newValue && !conv.isGroup) {
+      final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
+      if (peer != null) {
+        final crypto = ref.read(cryptoServiceProvider);
+        crypto.setToken(ref.read(authProvider).token ?? '');
+        final ready = await crypto.canEstablishSession(peer.userId);
+        if (!ready && mounted) {
+          ToastService.show(
+            context,
+            'Peer has not set up encryption keys yet',
+            type: ToastType.warning,
+          );
+        }
+      }
+    }
 
     try {
       await ref
@@ -924,7 +961,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     );
   }
 
-  Widget _buildVoiceChannelTile(
+  Widget _buildVoiceChannelChip(
     String conversationId,
     GroupChannel channel,
     int participantCount,
@@ -933,69 +970,82 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   ) {
     final isActive = effectiveActiveVoiceChannelId == channel.id;
 
-    return Container(
-      margin: const EdgeInsets.only(top: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: context.surface,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: context.border, width: 1),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.graphic_eq, size: 16, color: context.textSecondary),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        onTap: () async {
+          final channelsNotifier = ref.read(channelsProvider.notifier);
+          final rtcNotifier = ref.read(voiceRtcProvider.notifier);
+          final success = isActive
+              ? await channelsNotifier.leaveVoiceChannel(
+                  conversationId,
+                  channel.id,
+                )
+              : await channelsNotifier.joinVoiceChannel(
+                  conversationId,
+                  channel.id,
+                );
+          if (success && mounted) {
+            if (isActive) {
+              await rtcNotifier.leaveChannel();
+            } else {
+              await rtcNotifier.joinChannel(
+                conversationId: conversationId,
+                channelId: channel.id,
+                startMuted:
+                    voiceSettings.selfMuted || voiceSettings.selfDeafened,
+              );
+            }
+            setState(() {
+              _activeVoiceChannelId = isActive ? null : channel.id;
+            });
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? context.accent.withValues(alpha: 0.18)
+                  : context.surface,
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(
+                color: isActive
+                    ? context.accent.withValues(alpha: 0.6)
+                    : context.border,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
+                Icon(
+                  Icons.headset_mic_outlined,
+                  size: 13,
+                  color: context.textSecondary,
+                ),
+                const SizedBox(width: 5),
                 Text(
                   channel.name,
                   style: TextStyle(
-                    color: context.textPrimary,
-                    fontSize: 12,
+                    color: isActive ? context.accent : context.textPrimary,
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                Text(
-                  '$participantCount connected',
-                  style: TextStyle(color: context.textMuted, fontSize: 10),
-                ),
+                if (participantCount > 0) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    '($participantCount)',
+                    style: TextStyle(color: context.textMuted, fontSize: 10),
+                  ),
+                ],
               ],
             ),
           ),
-          TextButton(
-            onPressed: () async {
-              final channelsNotifier = ref.read(channelsProvider.notifier);
-              final rtcNotifier = ref.read(voiceRtcProvider.notifier);
-              final success = isActive
-                  ? await channelsNotifier.leaveVoiceChannel(
-                      conversationId,
-                      channel.id,
-                    )
-                  : await channelsNotifier.joinVoiceChannel(
-                      conversationId,
-                      channel.id,
-                    );
-              if (success && mounted) {
-                if (isActive) {
-                  await rtcNotifier.leaveChannel();
-                } else {
-                  await rtcNotifier.joinChannel(
-                    conversationId: conversationId,
-                    channelId: channel.id,
-                    startMuted:
-                        voiceSettings.selfMuted || voiceSettings.selfDeafened,
-                  );
-                }
-                setState(() {
-                  _activeVoiceChannelId = isActive ? null : channel.id;
-                });
-              }
-            },
-            child: Text(isActive ? 'Leave' : 'Join'),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1019,10 +1069,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       });
     }
 
-    final selectedText = textChannels
-        .where((c) => c.id == _selectedTextChannelId)
-        .firstOrNull;
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
@@ -1030,66 +1076,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         color: context.sidebarBg,
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.forum_outlined,
-                size: 14,
-                color: context.textSecondary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Text Channels',
-                style: TextStyle(
-                  color: context.textSecondary,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                selectedText != null ? '#${selectedText.name}' : '#loading',
-                style: TextStyle(
-                  color: context.accent,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 2),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: textChannels
-                  .map((channel) => _buildTextChannelChip(channel))
-                  .toList(),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Icon(
-                Icons.headset_mic_outlined,
-                size: 13,
-                color: context.textSecondary,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'Voice Channels',
-                style: TextStyle(
-                  color: context.textSecondary,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          if (channels.isEmpty)
-            Padding(
+      child: channels.isEmpty
+          ? Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 channelsState.isLoadingConversation(conversationId)
@@ -1097,17 +1085,26 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     : 'No channels yet',
                 style: TextStyle(color: context.textMuted, fontSize: 12),
               ),
+            )
+          : SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ...textChannels.map(
+                    (channel) => _buildTextChannelChip(channel),
+                  ),
+                  ...voiceChannels.map(
+                    (channel) => _buildVoiceChannelChip(
+                      conversationId,
+                      channel,
+                      channelsState.voiceSessionsFor(channel.id).length,
+                      voiceSettings,
+                      effectiveActiveVoiceChannelId,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          for (final voiceChannel in voiceChannels)
-            _buildVoiceChannelTile(
-              conversationId,
-              voiceChannel,
-              channelsState.voiceSessionsFor(voiceChannel.id).length,
-              voiceSettings,
-              effectiveActiveVoiceChannelId,
-            ),
-        ],
-      ),
     );
   }
 
@@ -1125,18 +1122,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         .firstOrNull;
     if (activeVoiceChannel == null) {
       return const SizedBox.shrink();
-    }
-
-    Future<void> syncVoiceState() async {
-      await ref
-          .read(channelsProvider.notifier)
-          .updateVoiceState(
-            conversationId: conversationId,
-            channelId: activeVoiceChannel.id,
-            isMuted: voiceSettings.selfMuted,
-            isDeafened: voiceSettings.selfDeafened,
-            pushToTalk: voiceSettings.pushToTalkEnabled,
-          );
     }
 
     final participants = channelsState.voiceSessionsFor(activeVoiceChannel.id);
@@ -1214,7 +1199,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               ref
                   .read(voiceRtcProvider.notifier)
                   .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
-              await syncVoiceState();
+              await _syncVoiceState();
             },
           ),
           IconButton(
@@ -1235,7 +1220,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               ref
                   .read(voiceRtcProvider.notifier)
                   .setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
-              await syncVoiceState();
+              await _syncVoiceState();
             },
           ),
           TextButton(
@@ -1250,7 +1235,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                         !voiceSettings.selfMuted &&
                         !voiceSettings.selfDeafened,
                   );
-              await syncVoiceState();
+              await _syncVoiceState();
             },
             child: Text(
               voiceSettings.pushToTalkEnabled
@@ -1578,6 +1563,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               voiceRtc,
               effectiveActiveVoiceChannelId,
             ),
+          // Hidden renderers to enable remote audio playback
+          ...ref
+              .watch(voiceRtcProvider.notifier)
+              .remoteAudioRenderers
+              .values
+              .map(
+                (renderer) => SizedBox(
+                  width: 0,
+                  height: 0,
+                  child: RTCVideoView(renderer),
+                ),
+              ),
           // Loading indicator for history
           if (isLoadingHistory)
             LinearProgressIndicator(
@@ -1845,10 +1842,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                 ref
                                     .read(voiceRtcProvider.notifier)
                                     .setCaptureEnabled(true);
+                                _syncVoiceState();
                               } else if (event is KeyUpEvent) {
                                 ref
                                     .read(voiceRtcProvider.notifier)
                                     .setCaptureEnabled(false);
+                                _syncVoiceState();
                               }
                             }
 

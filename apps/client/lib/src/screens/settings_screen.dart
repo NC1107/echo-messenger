@@ -461,7 +461,11 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
             final data = jsonDecode(body) as Map<String, dynamic>;
             final avatarUrl = data['avatar_url'] as String?;
             if (avatarUrl != null) {
-              ref.read(authProvider.notifier).updateAvatarUrl(avatarUrl);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  ref.read(authProvider.notifier).updateAvatarUrl(avatarUrl);
+                }
+              });
             }
           } catch (_) {}
           ScaffoldMessenger.of(

@@ -380,3 +380,16 @@ pub async fn update_group_title(
         .await?;
     Ok(())
 }
+
+pub async fn update_group_description(
+    pool: &PgPool,
+    group_id: Uuid,
+    description: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE conversations SET description = $1 WHERE id = $2")
+        .bind(description)
+        .bind(group_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
