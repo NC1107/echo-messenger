@@ -52,7 +52,8 @@ class ChatState {
       if (m.channelId == channelId) {
         return true;
       }
-      return includeUnchanneled && (m.channelId == null || m.channelId!.isEmpty);
+      return includeUnchanneled &&
+          (m.channelId == null || m.channelId!.isEmpty);
     }).toList();
   }
 
@@ -243,11 +244,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
           newMessages.add(msg);
         }
 
-        _mergeMessages(
-          conversationId,
-          newMessages,
-          channelId: channelId,
-        );
+        _mergeMessages(conversationId, newMessages, channelId: channelId);
       }
     } catch (e) {
       debugPrint(
@@ -267,9 +264,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   void _mergeMessages(
     String conversationId,
-    List<ChatMessage> newMessages,
-    {String? channelId}
-  ) {
+    List<ChatMessage> newMessages, {
+    String? channelId,
+  }) {
     final updatedConv = Map<String, List<ChatMessage>>.from(
       state.messagesByConversation,
     );

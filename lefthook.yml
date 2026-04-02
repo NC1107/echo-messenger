@@ -9,10 +9,16 @@ pre-commit:
       run: cargo clippy --workspace --all-targets -- -D warnings
     dart-format:
       glob: "*.dart"
-      run: cd apps/client && dart format --set-exit-if-changed .
+      run: |
+        FLUTTER_BIN=$(dirname "$(which flutter 2>/dev/null || echo "$HOME/.flutter/bin/flutter")")
+        export PATH="$FLUTTER_BIN:$PATH"
+        cd apps/client && dart format --set-exit-if-changed .
     flutter-analyze:
       glob: "*.dart"
-      run: cd apps/client && flutter analyze --fatal-infos
+      run: |
+        FLUTTER_BIN=$(dirname "$(which flutter 2>/dev/null || echo "$HOME/.flutter/bin/flutter")")
+        export PATH="$FLUTTER_BIN:$PATH"
+        cd apps/client && flutter analyze --fatal-infos
 
 commit-msg:
   commands:

@@ -877,7 +877,7 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
         ),
         const SizedBox(height: 18),
         DropdownButtonFormField<String>(
-          value: inputDevices.any((d) => d['id'] == voice.inputDeviceId)
+          initialValue: inputDevices.any((d) => d['id'] == voice.inputDeviceId)
               ? voice.inputDeviceId
               : 'default',
           decoration: const InputDecoration(labelText: 'Input Device'),
@@ -895,7 +895,8 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          value: outputDevices.any((d) => d['id'] == voice.outputDeviceId)
+          initialValue:
+              outputDevices.any((d) => d['id'] == voice.outputDeviceId)
               ? voice.outputDeviceId
               : 'default',
           decoration: const InputDecoration(labelText: 'Output Device'),

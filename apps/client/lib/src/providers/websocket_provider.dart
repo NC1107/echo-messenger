@@ -91,7 +91,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     );
   }
 
-  Stream<Map<String, dynamic>> get voiceSignals => _voiceSignalController.stream;
+  Stream<Map<String, dynamic>> get voiceSignals =>
+      _voiceSignalController.stream;
 
   /// Request a short-lived WebSocket ticket from the server.
   ///
@@ -597,7 +598,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     if (fromUserId == myUserId) return;
 
     final typingKey = '$conversationId:${channelId ?? ''}';
-    final updatedTyping = Map<String, Map<String, DateTime>>.from(state.typingUsers);
+    final updatedTyping = Map<String, Map<String, DateTime>>.from(
+      state.typingUsers,
+    );
     final conversationTyping = Map<String, DateTime>.from(
       updatedTyping[typingKey] ?? {},
     );

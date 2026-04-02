@@ -30,7 +30,8 @@ class ChannelsState {
     return ChannelsState(
       channelsByConversation:
           channelsByConversation ?? this.channelsByConversation,
-      voiceSessionsByChannel: voiceSessionsByChannel ?? this.voiceSessionsByChannel,
+      voiceSessionsByChannel:
+          voiceSessionsByChannel ?? this.voiceSessionsByChannel,
       loadingConversations: loadingConversations ?? this.loadingConversations,
       error: error,
     );
@@ -81,22 +82,24 @@ class ChannelsNotifier extends StateNotifier<ChannelsState> {
 
       if (response.statusCode != 200) {
         state = state.copyWith(
-          loadingConversations: {...state.loadingConversations}..remove(conversationId),
+          loadingConversations: {...state.loadingConversations}
+            ..remove(conversationId),
           error: 'Failed to load channels',
         );
         return;
       }
 
-      final list = (jsonDecode(response.body) as List)
-          .map((e) => GroupChannel.fromJson(e as Map<String, dynamic>))
-          .toList()
-        ..sort((a, b) {
-          final kindOrder = a.kind.compareTo(b.kind);
-          if (kindOrder != 0) return kindOrder;
-          final posOrder = a.position.compareTo(b.position);
-          if (posOrder != 0) return posOrder;
-          return a.name.compareTo(b.name);
-        });
+      final list =
+          (jsonDecode(response.body) as List)
+              .map((e) => GroupChannel.fromJson(e as Map<String, dynamic>))
+              .toList()
+            ..sort((a, b) {
+              final kindOrder = a.kind.compareTo(b.kind);
+              if (kindOrder != 0) return kindOrder;
+              final posOrder = a.position.compareTo(b.position);
+              if (posOrder != 0) return posOrder;
+              return a.name.compareTo(b.name);
+            });
 
       final updatedChannels = Map<String, List<GroupChannel>>.from(
         state.channelsByConversation,
@@ -105,7 +108,8 @@ class ChannelsNotifier extends StateNotifier<ChannelsState> {
 
       state = state.copyWith(
         channelsByConversation: updatedChannels,
-        loadingConversations: {...state.loadingConversations}..remove(conversationId),
+        loadingConversations: {...state.loadingConversations}
+          ..remove(conversationId),
         error: null,
       );
 
@@ -115,17 +119,23 @@ class ChannelsNotifier extends StateNotifier<ChannelsState> {
     } catch (e) {
       debugPrint('[Channels] loadChannels failed for $conversationId: $e');
       state = state.copyWith(
-        loadingConversations: {...state.loadingConversations}..remove(conversationId),
+        loadingConversations: {...state.loadingConversations}
+          ..remove(conversationId),
         error: e.toString(),
       );
     }
   }
 
-  Future<void> loadVoiceSessions(String conversationId, String channelId) async {
+  Future<void> loadVoiceSessions(
+    String conversationId,
+    String channelId,
+  ) async {
     try {
       final response = await _authenticatedRequest(
         (token) => http.get(
-          Uri.parse('$_serverUrl/api/groups/$conversationId/channels/$channelId/voice'),
+          Uri.parse(
+            '$_serverUrl/api/groups/$conversationId/channels/$channelId/voice',
+          ),
           headers: _headersWithToken(token),
         ),
       );
@@ -168,7 +178,10 @@ class ChannelsNotifier extends StateNotifier<ChannelsState> {
     }
   }
 
-  Future<bool> leaveVoiceChannel(String conversationId, String channelId) async {
+  Future<bool> leaveVoiceChannel(
+    String conversationId,
+    String channelId,
+  ) async {
     try {
       final response = await _authenticatedRequest(
         (token) => http.post(
@@ -222,8 +235,8 @@ class ChannelsNotifier extends StateNotifier<ChannelsState> {
   }
 }
 
-final channelsProvider = StateNotifierProvider<ChannelsNotifier, ChannelsState>((
-  ref,
-) {
-  return ChannelsNotifier(ref);
-});
+final channelsProvider = StateNotifierProvider<ChannelsNotifier, ChannelsState>(
+  (ref) {
+    return ChannelsNotifier(ref);
+  },
+);

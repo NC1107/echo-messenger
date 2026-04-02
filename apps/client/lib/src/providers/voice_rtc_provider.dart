@@ -59,8 +59,10 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   Set<String> _currentParticipants = const {};
 
   VoiceRtcNotifier(this.ref) : super(VoiceRtcState.empty) {
-    _signalSubscription =
-        ref.read(websocketProvider.notifier).voiceSignals.listen(_onVoiceSignal);
+    _signalSubscription = ref
+        .read(websocketProvider.notifier)
+        .voiceSignals
+        .listen(_onVoiceSignal);
   }
 
   bool _isCurrentVoiceContext(String conversationId, String channelId) {
@@ -108,10 +110,9 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
 
       state = state.copyWith(isJoining: false, isActive: true, error: null);
 
-      await ref.read(channelsProvider.notifier).loadVoiceSessions(
-            conversationId,
-            channelId,
-          );
+      await ref
+          .read(channelsProvider.notifier)
+          .loadVoiceSessions(conversationId, channelId);
 
       final participants = ref
           .read(channelsProvider)
@@ -156,7 +157,8 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   }
 
   void setCaptureEnabled(bool enabled) {
-    for (final track in _localStream?.getAudioTracks() ?? const <MediaStreamTrack>[]) {
+    for (final track
+        in _localStream?.getAudioTracks() ?? const <MediaStreamTrack>[]) {
       track.enabled = enabled;
     }
 
@@ -243,15 +245,12 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         return;
       }
 
-      _sendSignal(
-        remoteUserId,
-        {
-          'type': 'ice-candidate',
-          'candidate': candidateValue,
-          'sdpMid': candidate.sdpMid,
-          'sdpMLineIndex': candidate.sdpMLineIndex,
-        },
-      );
+      _sendSignal(remoteUserId, {
+        'type': 'ice-candidate',
+        'candidate': candidateValue,
+        'sdpMid': candidate.sdpMid,
+        'sdpMLineIndex': candidate.sdpMLineIndex,
+      });
     };
 
     pc.onConnectionState = (connectionState) {
@@ -264,17 +263,17 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     return pc;
   }
 
-  Future<void> _createAndSendOffer(String remoteUserId, RTCPeerConnection pc) async {
+  Future<void> _createAndSendOffer(
+    String remoteUserId,
+    RTCPeerConnection pc,
+  ) async {
     try {
       final offer = await pc.createOffer({
         'offerToReceiveAudio': 1,
         'offerToReceiveVideo': 0,
       });
       await pc.setLocalDescription(offer);
-      _sendSignal(remoteUserId, {
-        'type': 'offer',
-        'sdp': offer.sdp,
-      });
+      _sendSignal(remoteUserId, {'type': 'offer', 'sdp': offer.sdp});
     } catch (e) {
       debugPrint('[VoiceRTC] createOffer failed for $remoteUserId: $e');
       _updatePeerState(remoteUserId, 'offer_failed');
@@ -332,10 +331,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       });
       await pc.setLocalDescription(answer);
 
-      _sendSignal(fromUserId, {
-        'type': 'answer',
-        'sdp': answer.sdp,
-      });
+      _sendSignal(fromUserId, {'type': 'answer', 'sdp': answer.sdp});
       _updatePeerState(fromUserId, 'answer_sent');
     } catch (e) {
       debugPrint('[VoiceRTC] handleOffer failed from $fromUserId: $e');
@@ -370,9 +366,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     }
 
     try {
-      await pc.addCandidate(
-        RTCIceCandidate(candidate, sdpMid, sdpMLineIndex),
-      );
+      await pc.addCandidate(RTCIceCandidate(candidate, sdpMid, sdpMLineIndex));
     } catch (e) {
       debugPrint('[VoiceRTC] addCandidate failed from $fromUserId: $e');
       _updatePeerState(fromUserId, 'ice_error');
@@ -386,7 +380,9 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       return;
     }
 
-    ref.read(websocketProvider.notifier).sendVoiceSignal(
+    ref
+        .read(websocketProvider.notifier)
+        .sendVoiceSignal(
           conversationId: conversationId,
           channelId: channelId,
           toUserId: toUserId,

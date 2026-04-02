@@ -173,7 +173,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     if (conv == null) return;
 
     final channels = ref.read(channelsProvider).channelsFor(conv.id);
-    final defaultTextChannelId = channels.where((c) => c.isText).firstOrNull?.id;
+    final defaultTextChannelId = channels
+        .where((c) => c.isText)
+        .firstOrNull
+        ?.id;
     final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
     final includeUnchanneled =
         conv.isGroup &&
@@ -251,10 +254,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       }
     } else {
       final channels = ref.read(channelsProvider).channelsFor(conv.id);
-      channelId = _selectedTextChannelId ?? channels.where((c) => c.isText).firstOrNull?.id;
+      channelId =
+          _selectedTextChannelId ??
+          channels.where((c) => c.isText).firstOrNull?.id;
       if (channelId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No text channel available in this group')),
+          const SnackBar(
+            content: Text('No text channel available in this group'),
+          ),
         );
         return;
       }
@@ -1174,7 +1181,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           TextButton(
             onPressed: () async {
               final notifier = ref.read(voiceSettingsProvider.notifier);
-              await notifier.setPushToTalkEnabled(!voiceSettings.pushToTalkEnabled);
+              await notifier.setPushToTalkEnabled(
+                !voiceSettings.pushToTalkEnabled,
+              );
               await syncVoiceState();
             },
             child: Text(voiceSettings.pushToTalkEnabled ? 'PTT On' : 'PTT Off'),
@@ -1284,10 +1293,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       conv.id,
       channelId: selectedChannelId,
     );
-    final typingUsers = wsState.typingIn(
-      conv.id,
-      channelId: selectedChannelId,
-    );
+    final typingUsers = wsState.typingIn(conv.id, channelId: selectedChannelId);
 
     final displayName = conv.displayName(myUserId);
     final typingText = conv.isGroup
