@@ -12,17 +12,19 @@ import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/auth_provider.dart';
+import '../services/toast_service.dart';
 import '../providers/chat_provider.dart';
 import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
-import '../providers/voice_rtc_provider.dart';
+import '../providers/voice_livekit_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/chat_panel.dart';
 import '../widgets/conversation_panel.dart'
     show ConversationPanel, buildAvatar, groupAvatarColor;
 import '../widgets/members_panel.dart';
+import '../widgets/voice_dock.dart';
 import 'contacts_screen.dart';
 import 'create_group_screen.dart';
 import 'discover_groups_screen.dart';
@@ -90,7 +92,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     // Clean up any stale voice session from a previous run.
-    ref.read(voiceRtcProvider.notifier).leaveChannel();
+    ref.read(voiceLivekitProvider.notifier).leaveChannel();
 
     // 3. Load conversations AFTER crypto and WS are set up
     await ref.read(conversationsProvider.notifier).loadConversations();
@@ -229,8 +231,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (conv != null) {
       _selectConversation(conv);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not start conversation')),
+      ToastService.show(
+        context,
+        'Could not start conversation',
+        type: ToastType.error,
       );
     }
   }
@@ -502,9 +506,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // Listen for errors
     ref.listen<ConversationsState>(conversationsProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(next.error!)));
+        ToastService.show(context, next.error!, type: ToastType.error);
       }
     });
 
@@ -522,12 +524,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     ref.listen<CryptoState>(cryptoProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Encryption: ${next.error}'),
-            backgroundColor: EchoTheme.danger,
-            duration: const Duration(seconds: 10),
-          ),
+        ToastService.show(
+          context,
+          'Encryption: ${next.error}',
+          type: ToastType.error,
         );
       }
     });
@@ -569,78 +569,92 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         onMembersToggle: _selectedConversation?.isGroup == true
             ? _toggleMembers
             : null,
+        hideVoiceDock: true,
       );
     } else {
       rightPanel = _buildEmptyState();
     }
 
     final animatedSidebarWidth = _sidebarCollapsed ? 60.0 : sidebarWidth;
+    final voiceRtc = ref.watch(voiceLivekitProvider);
+    final showVoiceDock = voiceRtc.isActive && voiceRtc.channelId != null;
 
     return Scaffold(
-      body: Row(
+      body: Stack(
         children: [
-          // Left sidebar with animated width
-          if (_showSettings)
-            _buildSettingsSidebar(sidebarWidth)
-          else
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              width: animatedSidebarWidth,
-              clipBehavior: Clip.hardEdge,
-              decoration: const BoxDecoration(),
-              child: _sidebarCollapsed
-                  ? _buildCollapsedSidebar()
-                  : Stack(
-                      children: [
-                        _buildConversationPanel(),
-                        Positioned(
-                          top: 16,
-                          right: 4,
-                          child: IconButton(
-                            icon: Icon(Icons.chevron_left, size: 18),
-                            color: context.textMuted,
-                            tooltip: 'Collapse sidebar',
-                            onPressed: () =>
-                                setState(() => _sidebarCollapsed = true),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 44,
-                              minHeight: 44,
+          Row(
+            children: [
+              // Left sidebar with animated width
+              if (_showSettings)
+                _buildSettingsSidebar(sidebarWidth)
+              else
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  width: animatedSidebarWidth,
+                  clipBehavior: Clip.hardEdge,
+                  decoration: const BoxDecoration(),
+                  child: _sidebarCollapsed
+                      ? _buildCollapsedSidebar()
+                      : Stack(
+                          children: [
+                            _buildConversationPanel(),
+                            Positioned(
+                              top: 16,
+                              right: 4,
+                              child: IconButton(
+                                icon: Icon(Icons.chevron_left, size: 18),
+                                color: context.textMuted,
+                                tooltip: 'Collapse sidebar',
+                                onPressed: () =>
+                                    setState(() => _sidebarCollapsed = true),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 44,
+                                  minHeight: 44,
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
-            ),
-          // Thin vertical divider
-          Container(width: 1, color: context.border),
-          // Center: content area (flex) + optional update banner
-          Expanded(
-            child: Column(
-              children: [
-                _buildUpdateBanner(),
-                Expanded(child: rightPanel),
+                ),
+              // Thin vertical divider
+              Container(width: 1, color: context.border),
+              // Center: content area (flex) + optional update banner
+              Expanded(
+                child: Column(
+                  children: [
+                    _buildUpdateBanner(),
+                    Expanded(child: rightPanel),
+                  ],
+                ),
+              ),
+              // Right: members panel (optional, 280px)
+              if (!_showSettings &&
+                  _showMembers &&
+                  _selectedConversation != null &&
+                  _selectedConversation!.isGroup) ...[
+                Container(width: 1, color: context.border),
+                MembersPanel(
+                  conversation: _selectedConversation,
+                  onGroupLeft: () {
+                    setState(() {
+                      _selectedConversation = null;
+                      _showMembers = false;
+                      _narrowPanelIndex = 0;
+                    });
+                  },
+                ),
               ],
-            ),
+            ],
           ),
-          // Right: members panel (optional, 280px)
-          if (!_showSettings &&
-              _showMembers &&
-              _selectedConversation != null &&
-              _selectedConversation!.isGroup) ...[
-            Container(width: 1, color: context.border),
-            MembersPanel(
-              conversation: _selectedConversation,
-              onGroupLeft: () {
-                setState(() {
-                  _selectedConversation = null;
-                  _showMembers = false;
-                  _narrowPanelIndex = 0;
-                });
-              },
+          // Discord-style voice dock -- fixed bottom-left over the sidebar
+          if (showVoiceDock)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              child: VoiceDock(width: animatedSidebarWidth),
             ),
-          ],
         ],
       ),
     );

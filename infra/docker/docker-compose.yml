@@ -15,5 +15,16 @@ services:
       timeout: 5s
       retries: 5
 
+  livekit:
+    image: livekit/livekit-server:latest
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50060:50000-50060/udp"
+    environment:
+      LIVEKIT_KEYS: "devkey: devsecret"
+    command: --dev
+    restart: unless-stopped
+
 volumes:
   pgdata:

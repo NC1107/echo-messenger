@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 
 /// Screen shown when a user opens an invite link like
@@ -111,10 +112,10 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
         // Refresh conversations list so the new group appears
         await ref.read(conversationsProvider.notifier).loadConversations();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Joined ${_groupName ?? "group"} successfully!'),
-            ),
+          ToastService.show(
+            context,
+            'Joined ${_groupName ?? "group"} successfully!',
+            type: ToastType.success,
           );
           context.go('/home');
         }

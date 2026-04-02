@@ -18,6 +18,7 @@ import '../providers/theme_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../version.dart';
 
@@ -414,12 +415,10 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
       await ref.read(serverUrlProvider.notifier).setUrl(newUrl);
       await _checkServerHealth();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Server URL updated. Please log out and log in again for changes to take full effect.',
-            ),
-          ),
+        ToastService.show(
+          context,
+          'Server URL updated. Please log out and log in again for changes to take full effect.',
+          type: ToastType.info,
         );
       }
     }
@@ -468,24 +467,18 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
               });
             }
           } catch (_) {}
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Avatar updated')));
+          ToastService.show(context, 'Avatar updated', type: ToastType.success);
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Failed to upload avatar (${streamedResponse.statusCode})',
-              ),
-            ),
+          ToastService.show(
+            context,
+            'Failed to upload avatar (${streamedResponse.statusCode})',
+            type: ToastType.error,
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Upload error: $e')));
+        ToastService.show(context, 'Upload error: $e', type: ToastType.error);
       }
     }
   }
@@ -546,8 +539,10 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
             OutlinedButton.icon(
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: echoUri));
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  const SnackBar(content: Text('Link copied to clipboard')),
+                ToastService.show(
+                  dialogContext,
+                  'Link copied to clipboard',
+                  type: ToastType.success,
                 );
               },
               icon: const Icon(Icons.copy, size: 16),
@@ -728,17 +723,19 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
     try {
       await ref.read(cryptoProvider.notifier).resetKeys();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Encryption keys have been reset successfully.'),
-          ),
+        ToastService.show(
+          context,
+          'Encryption keys have been reset successfully.',
+          type: ToastType.success,
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        ToastService.show(
           context,
-        ).showSnackBar(SnackBar(content: Text('Failed to reset keys: $e')));
+          'Failed to reset keys: $e',
+          type: ToastType.error,
+        );
       }
     }
   }
@@ -1187,8 +1184,10 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
         ref.read(chatProvider.notifier).clear();
         ref.read(authProvider.notifier).logout();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Account deleted successfully.')),
+          ToastService.show(
+            context,
+            'Account deleted successfully.',
+            type: ToastType.success,
           );
           context.go('/login');
         }
@@ -1198,14 +1197,14 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
           errorMsg = data['error'] as String? ?? errorMsg;
         } catch (_) {}
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(errorMsg)));
+        ToastService.show(context, errorMsg, type: ToastType.error);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Network error. Please try again.')),
+        ToastService.show(
+          context,
+          'Network error. Please try again.',
+          type: ToastType.error,
         );
       }
     }

@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -19,7 +18,7 @@ import '../providers/crypto_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../providers/voice_rtc_provider.dart';
+import '../providers/voice_livekit_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
@@ -34,12 +33,14 @@ class ChatPanel extends ConsumerStatefulWidget {
   final Conversation? conversation;
   final VoidCallback? onMembersToggle;
   final VoidCallback? onGroupInfo;
+  final bool hideVoiceDock;
 
   const ChatPanel({
     super.key,
     this.conversation,
     this.onMembersToggle,
     this.onGroupInfo,
+    this.hideVoiceDock = false,
   });
 
   @override
@@ -74,7 +75,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     super.didUpdateWidget(oldWidget);
     if (widget.conversation?.id != oldWidget.conversation?.id) {
       if (_activeVoiceChannelId != null) {
-        ref.read(voiceRtcProvider.notifier).leaveChannel();
+        ref.read(voiceLivekitProvider.notifier).leaveChannel();
       }
       _hideEncryptionBanner = false;
       _selectedTextChannelId = null;
@@ -89,7 +90,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   @override
   void dispose() {
     if (_activeVoiceChannelId != null) {
-      ref.read(voiceRtcProvider.notifier).leaveChannel();
+      ref.read(voiceLivekitProvider.notifier).leaveChannel();
     }
     _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
@@ -309,12 +310,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
       final privacy = ref.read(privacyProvider);
       if (!conv.isEncrypted && !privacy.allowUnencryptedDm) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Plaintext direct messages are disabled in Privacy settings',
-            ),
-          ),
+        ToastService.show(
+          context,
+          'Plaintext direct messages are disabled in Privacy settings',
+          type: ToastType.warning,
         );
         return;
       }
@@ -324,10 +323,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           _selectedTextChannelId ??
           channels.where((c) => c.isText).firstOrNull?.id;
       if (channelId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No text channel available in this group'),
-          ),
+        ToastService.show(
+          context,
+          'No text channel available in this group',
+          type: ToastType.warning,
         );
         return;
       }
@@ -358,9 +357,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        ToastService.show(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Failed to send message')));
+          'Failed to send message',
+          type: ToastType.error,
+        );
       }
     }
   }
@@ -459,13 +460,17 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         );
         _sendMessage();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Upload succeeded but no URL returned')),
+        ToastService.show(
+          context,
+          'Upload succeeded but no URL returned',
+          type: ToastType.error,
         );
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed (${response.statusCode})')),
+      ToastService.show(
+        context,
+        'Upload failed (${response.statusCode})',
+        type: ToastType.error,
       );
     }
   }
@@ -480,11 +485,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Uploading pasted image...'),
-        duration: Duration(seconds: 1),
-      ),
+    ToastService.show(
+      context,
+      'Uploading pasted image...',
+      type: ToastType.info,
     );
 
     try {
@@ -497,9 +501,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      ToastService.show(
         context,
-      ).showSnackBar(SnackBar(content: Text('Clipboard upload failed: $e')));
+        'Clipboard upload failed: $e',
+        type: ToastType.error,
+      );
     }
   }
 
@@ -516,8 +522,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       final file = result.files.first;
       if (file.bytes == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not read file data')),
+          ToastService.show(
+            context,
+            'Could not read file data',
+            type: ToastType.error,
           );
         }
         return;
@@ -544,9 +552,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
+      ToastService.show(
         context,
-      ).showSnackBar(SnackBar(content: Text('File upload error: $e')));
+        'File upload error: $e',
+        type: ToastType.error,
+      );
     }
   }
 
@@ -758,8 +768,76 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to toggle encryption')),
+        ToastService.show(
+          context,
+          'Failed to toggle encryption',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _resetPeerKeys(Conversation conv, String myUserId) async {
+    final peerId = conv.members
+        .where((m) => m.userId != myUserId)
+        .firstOrNull
+        ?.userId;
+    if (peerId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: Text(
+          'Reset encryption keys?',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'This will establish a fresh encrypted session. '
+          'Messages encrypted with the old keys may become unreadable.',
+          style: TextStyle(color: context.textSecondary, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Reset Keys'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final crypto = ref.read(cryptoServiceProvider);
+      crypto.setToken(ref.read(authProvider).token ?? '');
+      await crypto.invalidateSessionKey(peerId);
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Encryption keys reset. Next message will establish new session.',
+          type: ToastType.success,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Failed to reset keys: $e',
+          type: ToastType.error,
         );
       }
     }
@@ -794,9 +872,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        ToastService.show(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Failed to edit message')));
+          'Failed to edit message',
+          type: ToastType.error,
+        );
       }
     }
   }
@@ -857,8 +937,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to delete message')),
+        ToastService.show(
+          context,
+          'Failed to delete message',
+          type: ToastType.error,
         );
       }
     }
@@ -976,7 +1058,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         borderRadius: BorderRadius.circular(8),
         onTap: () async {
           final channelsNotifier = ref.read(channelsProvider.notifier);
-          final rtcNotifier = ref.read(voiceRtcProvider.notifier);
+          final rtcNotifier = ref.read(voiceLivekitProvider.notifier);
           final success = isActive
               ? await channelsNotifier.leaveVoiceChannel(
                   conversationId,
@@ -1114,7 +1196,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     ChannelsState channelsState,
     VoiceSettingsState voiceSettings,
     String myUserId,
-    VoiceRtcState voiceRtc,
+    VoiceLivekitState voiceRtc,
     String? effectiveActiveVoiceChannelId,
   ) {
     final activeVoiceChannel = channels
@@ -1132,22 +1214,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           effectiveActiveVoiceChannelId ?? _activeVoiceChannelId;
       if (expectedActive != activeVoiceChannel.id) return;
 
-      final rtcNotifier = ref.read(voiceRtcProvider.notifier);
       if (!iAmInChannel) {
-        await rtcNotifier.leaveChannel();
+        await ref.read(voiceLivekitProvider.notifier).leaveChannel();
         if (mounted) {
           setState(() {
             _activeVoiceChannelId = null;
           });
         }
-        return;
       }
-
-      await rtcNotifier.syncParticipants(
-        conversationId: conversationId,
-        channelId: activeVoiceChannel.id,
-        participantUserIds: participants.map((m) => m.userId).toList(),
-      );
     });
 
     return Container(
@@ -1163,7 +1237,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Connected to ${activeVoiceChannel.name} • ${voiceRtc.peerConnectionStates.length} peer(s)',
+              'Connected to ${activeVoiceChannel.name} • ${voiceRtc.participantIds.length} peer(s)',
               style: TextStyle(
                 color: context.textPrimary,
                 fontSize: 12,
@@ -1197,7 +1271,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               final nextMuted = !voiceSettings.selfMuted;
               await notifier.setSelfMuted(nextMuted);
               ref
-                  .read(voiceRtcProvider.notifier)
+                  .read(voiceLivekitProvider.notifier)
                   .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
               await _syncVoiceState();
             },
@@ -1217,9 +1291,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               final notifier = ref.read(voiceSettingsProvider.notifier);
               final nextDeafened = !voiceSettings.selfDeafened;
               await notifier.setSelfDeafened(nextDeafened);
-              ref
-                  .read(voiceRtcProvider.notifier)
-                  .setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
+              final lk = ref.read(voiceLivekitProvider.notifier);
+              lk.setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
+              await lk.setDeafened(nextDeafened);
               await _syncVoiceState();
             },
           ),
@@ -1229,7 +1303,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               final next = !voiceSettings.pushToTalkEnabled;
               await notifier.setPushToTalkEnabled(next);
               ref
-                  .read(voiceRtcProvider.notifier)
+                  .read(voiceLivekitProvider.notifier)
                   .setCaptureEnabled(
                     !next &&
                         !voiceSettings.selfMuted &&
@@ -1318,7 +1392,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     final chatState = ref.watch(chatProvider);
     final channelsState = ref.watch(channelsProvider);
-    final voiceRtc = ref.watch(voiceRtcProvider);
+    final voiceRtc = ref.watch(voiceLivekitProvider);
     final voiceSettings = ref.watch(voiceSettingsProvider);
     final wsState = ref.watch(websocketProvider);
     final authState = ref.watch(authProvider);
@@ -1517,6 +1591,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                       minHeight: 36,
                     ),
                   ),
+                // Reset encryption keys for this peer (DM + encrypted only)
+                if (!conv.isGroup && conv.isEncrypted)
+                  IconButton(
+                    icon: const Icon(Icons.vpn_key_off, size: 18),
+                    color: context.textMuted,
+                    tooltip: 'Reset encryption keys',
+                    onPressed: () => _resetPeerKeys(conv, myUserId),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                  ),
                 if (conv.isGroup) ...[
                   if (widget.onMembersToggle != null)
                     IconButton(
@@ -1553,7 +1640,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               voiceSettings,
               effectiveActiveVoiceChannelId,
             ),
-          if (conv.isGroup && effectiveActiveVoiceChannelId != null)
+          if (conv.isGroup &&
+              effectiveActiveVoiceChannelId != null &&
+              !widget.hideVoiceDock)
             _buildVoiceControlDock(
               conv.id,
               channels,
@@ -1563,18 +1652,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               voiceRtc,
               effectiveActiveVoiceChannelId,
             ),
-          // Hidden renderers to enable remote audio playback
-          ...ref
-              .watch(voiceRtcProvider.notifier)
-              .remoteAudioRenderers
-              .values
-              .map(
-                (renderer) => SizedBox(
-                  width: 0,
-                  height: 0,
-                  child: RTCVideoView(renderer),
-                ),
-              ),
           // Loading indicator for history
           if (isLoadingHistory)
             LinearProgressIndicator(
@@ -1840,12 +1917,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                   !voiceSettings.selfDeafened;
                               if (event is KeyDownEvent && allowCapture) {
                                 ref
-                                    .read(voiceRtcProvider.notifier)
+                                    .read(voiceLivekitProvider.notifier)
                                     .setCaptureEnabled(true);
                                 _syncVoiceState();
                               } else if (event is KeyUpEvent) {
                                 ref
-                                    .read(voiceRtcProvider.notifier)
+                                    .read(voiceLivekitProvider.notifier)
                                     .setCaptureEnabled(false);
                                 _syncVoiceState();
                               }

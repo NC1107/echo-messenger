@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/download_helper.dart';
 import '../utils/time_utils.dart';
@@ -125,11 +126,10 @@ class _MessageItemState extends State<MessageItem> {
       if (!mounted) return;
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Download failed (${response.statusCode})'),
-            duration: const Duration(seconds: 2),
-          ),
+        ToastService.show(
+          context,
+          'Download failed (${response.statusCode})',
+          type: ToastType.error,
         );
         return;
       }
@@ -144,30 +144,23 @@ class _MessageItemState extends State<MessageItem> {
 
       if (!mounted) return;
       if (downloaded) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Download started'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        ToastService.show(context, 'Download started', type: ToastType.success);
         return;
       }
 
       await Clipboard.setData(ClipboardData(text: mediaUrl));
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Save not supported here yet. Link copied.'),
-          duration: Duration(seconds: 2),
-        ),
+      ToastService.show(
+        context,
+        'Save not supported here yet. Link copied.',
+        type: ToastType.info,
       );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not download media'),
-          duration: Duration(seconds: 2),
-        ),
+      ToastService.show(
+        context,
+        'Could not download media',
+        type: ToastType.error,
       );
     }
   }
@@ -466,15 +459,10 @@ class _MessageItemState extends State<MessageItem> {
                   ? _resolveMediaUrl(mediaUrl)
                   : msg.content;
               Clipboard.setData(ClipboardData(text: copyText));
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    mediaUrl != null
-                        ? 'Media URL copied'
-                        : 'Copied to clipboard',
-                  ),
-                  duration: Duration(seconds: 2),
-                ),
+              ToastService.show(
+                context,
+                mediaUrl != null ? 'Media URL copied' : 'Copied to clipboard',
+                type: ToastType.success,
               );
             },
           ),

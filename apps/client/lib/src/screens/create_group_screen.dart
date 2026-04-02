@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 
 class CreateGroupScreen extends ConsumerStatefulWidget {
@@ -38,8 +39,10 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
   Future<void> _createGroup() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a group name')),
+      ToastService.show(
+        context,
+        'Please enter a group name',
+        type: ToastType.warning,
       );
       return;
     }

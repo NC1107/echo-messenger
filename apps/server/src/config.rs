@@ -8,6 +8,9 @@ pub struct Config {
     pub jwt_secret: String,
     pub host: String,
     pub port: u16,
+    pub livekit_api_key: String,
+    pub livekit_api_secret: String,
+    pub livekit_url: String,
 }
 
 impl Config {
@@ -22,6 +25,9 @@ impl Config {
                 .ok()
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(8080),
+            livekit_api_key: env::var("LIVEKIT_API_KEY").unwrap_or_default(),
+            livekit_api_secret: env::var("LIVEKIT_API_SECRET").unwrap_or_default(),
+            livekit_url: env::var("LIVEKIT_URL").unwrap_or_default(),
         }
     }
 }

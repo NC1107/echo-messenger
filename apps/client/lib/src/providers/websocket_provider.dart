@@ -73,8 +73,6 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   Timer? _typingCleanupTimer;
-  final _voiceSignalController =
-      StreamController<Map<String, dynamic>>.broadcast();
 
   /// Throttle: track last typing event sent per conversation.
   final Map<String, DateTime> _lastTypingSent = {};
@@ -90,9 +88,6 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
       (_) => _cleanupTyping(),
     );
   }
-
-  Stream<Map<String, dynamic>> get voiceSignals =>
-      _voiceSignalController.stream;
 
   /// Request a short-lived WebSocket ticket from the server.
   ///
@@ -355,24 +350,6 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     );
   }
 
-  /// Relay a WebRTC signaling payload to another voice-channel member.
-  void sendVoiceSignal({
-    required String conversationId,
-    required String channelId,
-    required String toUserId,
-    required Map<String, dynamic> signal,
-  }) {
-    _channel?.sink.add(
-      jsonEncode({
-        'type': 'voice_signal',
-        'conversation_id': conversationId,
-        'channel_id': channelId,
-        'to_user_id': toUserId,
-        'signal': signal,
-      }),
-    );
-  }
-
   void _onMessage(String data) {
     final json = jsonDecode(data) as Map<String, dynamic>;
     final type = json['type'] as String;
@@ -414,13 +391,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
         _refreshVoiceSessionsFromEvent(json);
       case 'error':
         break;
-      case 'voice_signal':
-        _handleVoiceSignal(json);
     }
-  }
-
-  void _handleVoiceSignal(Map<String, dynamic> json) {
-    _voiceSignalController.add(json);
   }
 
   void _refreshChannelsFromEvent(Map<String, dynamic> json) {
@@ -729,7 +700,6 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   @override
   void dispose() {
     _typingCleanupTimer?.cancel();
-    _voiceSignalController.close();
     disconnect();
     super.dispose();
   }

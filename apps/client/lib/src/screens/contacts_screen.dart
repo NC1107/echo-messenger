@@ -7,6 +7,7 @@ import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
+import '../services/toast_service.dart';
 import '../widgets/conversation_panel.dart' show buildAvatar;
 import 'user_profile_screen.dart';
 
@@ -92,8 +93,10 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
           context.go('/home');
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not start conversation')),
+        ToastService.show(
+          context,
+          'Could not start conversation',
+          type: ToastType.error,
         );
       }
     } finally {
@@ -109,9 +112,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
 
     ref.listen<ContactsState>(contactsProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(next.error!)));
+        ToastService.show(context, next.error!, type: ToastType.error);
       }
     });
 

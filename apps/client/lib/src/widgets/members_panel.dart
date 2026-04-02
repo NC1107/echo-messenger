@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../screens/user_profile_screen.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import 'conversation_panel.dart' show buildAvatar;
 
@@ -186,27 +187,29 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
       if (response.statusCode == 200 || response.statusCode == 204) {
         ref.read(conversationsProvider.notifier).loadConversations();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${widget.member.username} removed from group'),
-            ),
+          ToastService.show(
+            context,
+            '${widget.member.username} removed from group',
+            type: ToastType.success,
           );
         }
       } else {
         setState(() => _isRemoving = false);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to remove member (${response.statusCode})'),
-            ),
+          ToastService.show(
+            context,
+            'Failed to remove member (${response.statusCode})',
+            type: ToastType.error,
           );
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isRemoving = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to remove member')),
+        ToastService.show(
+          context,
+          'Failed to remove member',
+          type: ToastType.error,
         );
       }
     }
@@ -376,26 +379,26 @@ class _LeaveGroupButtonState extends ConsumerState<_LeaveGroupButton> {
         await ref.read(conversationsProvider.notifier).loadConversations();
         widget.onLeft?.call();
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Left group')));
+          ToastService.show(context, 'Left group', type: ToastType.success);
         }
       } else {
         setState(() => _isLoading = false);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to leave group (${response.statusCode})'),
-            ),
+          ToastService.show(
+            context,
+            'Failed to leave group (${response.statusCode})',
+            type: ToastType.error,
           );
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(
+        ToastService.show(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Failed to leave group')));
+          'Failed to leave group',
+          type: ToastType.error,
+        );
       }
     }
   }
@@ -501,26 +504,26 @@ class _DeleteGroupButtonState extends ConsumerState<_DeleteGroupButton> {
         await ref.read(conversationsProvider.notifier).loadConversations();
         widget.onDeleted?.call();
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Group deleted')));
+          ToastService.show(context, 'Group deleted', type: ToastType.success);
         }
       } else {
         setState(() => _isLoading = false);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to delete group (${response.statusCode})'),
-            ),
+          ToastService.show(
+            context,
+            'Failed to delete group (${response.statusCode})',
+            type: ToastType.error,
           );
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(
+        ToastService.show(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Failed to delete group')));
+          'Failed to delete group',
+          type: ToastType.error,
+        );
       }
     }
   }

@@ -41,6 +41,9 @@ async fn main() {
         jwt_secret: config.jwt_secret,
         hub,
         ticket_store: Mutex::new(HashMap::new()),
+        livekit_api_key: config.livekit_api_key,
+        livekit_api_secret: config.livekit_api_secret,
+        livekit_url: config.livekit_url,
     });
     let app = routes::create_router(state);
 

@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
@@ -97,8 +98,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         .toList();
 
     if (available.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('All contacts are already in this group')),
+      ToastService.show(
+        context,
+        'All contacts are already in this group',
+        type: ToastType.info,
       );
       return;
     }
@@ -145,16 +148,16 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       if (response.statusCode == 200 || response.statusCode == 201) {
         await _loadGroupInfo();
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Member added')));
+          ToastService.show(context, 'Member added', type: ToastType.success);
         }
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        ToastService.show(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Failed to add member')));
+          'Failed to add member',
+          type: ToastType.error,
+        );
       }
     }
   }
@@ -203,9 +206,11 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        ToastService.show(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Failed to leave group')));
+          'Failed to leave group',
+          type: ToastType.error,
+        );
       }
     }
   }
@@ -248,15 +253,19 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       if (response.statusCode == 200 && mounted) {
         await _loadGroupInfo();
         if (mounted) {
-          ScaffoldMessenger.of(
+          ToastService.show(
             context,
-          ).showSnackBar(SnackBar(content: Text('${member.username} removed')));
+            '${member.username} removed',
+            type: ToastType.success,
+          );
         }
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to remove member')),
+        ToastService.show(
+          context,
+          'Failed to remove member',
+          type: ToastType.error,
         );
       }
     }
@@ -286,8 +295,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to update group name')),
+        ToastService.show(
+          context,
+          'Failed to update group name',
+          type: ToastType.error,
         );
       }
     }
@@ -316,8 +327,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to update description')),
+        ToastService.show(
+          context,
+          'Failed to update description',
+          type: ToastType.error,
         );
       }
     }
@@ -386,12 +399,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         .read(channelsProvider.notifier)
         .createChannel(widget.conversationId, result['name']!, result['kind']!);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            success ? 'Channel created' : 'Failed to create channel',
-          ),
-        ),
+      ToastService.show(
+        context,
+        success ? 'Channel created' : 'Failed to create channel',
+        type: success ? ToastType.success : ToastType.error,
       );
     }
   }
@@ -423,12 +434,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         .read(channelsProvider.notifier)
         .deleteChannel(widget.conversationId, channelId);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            success ? 'Channel deleted' : 'Failed to delete channel',
-          ),
-        ),
+      ToastService.show(
+        context,
+        success ? 'Channel deleted' : 'Failed to delete channel',
+        type: success ? ToastType.success : ToastType.error,
       );
     }
   }
@@ -775,10 +784,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                     final link =
                         'https://echo-messenger.us/#/join/${widget.conversationId}';
                     Clipboard.setData(ClipboardData(text: link));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Invite link copied to clipboard'),
-                      ),
+                    ToastService.show(
+                      context,
+                      'Invite link copied to clipboard',
+                      type: ToastType.success,
                     );
                   },
                   icon: const Icon(Icons.link_outlined),

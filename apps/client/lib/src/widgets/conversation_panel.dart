@@ -14,6 +14,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
 
@@ -351,21 +352,25 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       if (response.statusCode == 200 || response.statusCode == 204) {
         await ref.read(conversationsProvider.notifier).loadConversations();
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('You have left the group.')),
+        ToastService.show(
+          context,
+          'You have left the group.',
+          type: ToastType.success,
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to leave group (${response.statusCode})'),
-          ),
+        ToastService.show(
+          context,
+          'Failed to leave group (${response.statusCode})',
+          type: ToastType.error,
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        ToastService.show(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error leaving group: $e')));
+          'Error leaving group: $e',
+          type: ToastType.error,
+        );
       }
     }
   }

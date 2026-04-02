@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/conversation_panel.dart' show buildAvatar;
 
@@ -125,9 +126,11 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     if (_username.isEmpty) return;
     await ref.read(contactsProvider.notifier).sendRequest(_username);
     if (mounted) {
-      ScaffoldMessenger.of(
+      ToastService.show(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Contact request sent')));
+        'Contact request sent',
+        type: ToastType.success,
+      );
     }
   }
 

@@ -4,7 +4,9 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_windows
+  connectivity_plus
   flutter_webrtc
+  livekit_client
   url_launcher_windows
 )
 

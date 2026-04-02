@@ -219,6 +219,7 @@ pub async fn list_voice_sessions(
     .await
 }
 
+#[allow(dead_code)]
 pub async fn is_user_in_voice_channel(
     pool: &PgPool,
     channel_id: Uuid,

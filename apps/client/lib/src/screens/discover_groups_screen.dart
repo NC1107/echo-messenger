@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 
 /// A public group returned by the discovery endpoint.
@@ -156,19 +157,21 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
       } else {
         setState(() => _joiningIds.remove(group.id));
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to join group (${response.statusCode})'),
-            ),
+          ToastService.show(
+            context,
+            'Failed to join group (${response.statusCode})',
+            type: ToastType.error,
           );
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() => _joiningIds.remove(group.id));
-        ScaffoldMessenger.of(
+        ToastService.show(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Failed to join group')));
+          'Failed to join group',
+          type: ToastType.error,
+        );
       }
     }
   }

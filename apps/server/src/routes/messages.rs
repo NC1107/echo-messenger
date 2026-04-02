@@ -66,6 +66,7 @@ pub struct ConversationListItem {
 pub struct MemberInfo {
     pub user_id: Uuid,
     pub username: String,
+    pub role: Option<String>,
     pub avatar_url: Option<String>,
 }
 
@@ -101,7 +102,7 @@ pub async fn list_conversations(
             c.title, \
             c.is_encrypted, \
             (SELECT json_agg(json_build_object( \
-                'user_id', u.id, 'username', u.username, 'avatar_url', u.avatar_url \
+                'user_id', u.id, 'username', u.username, 'role', cm2.role, 'avatar_url', u.avatar_url \
             )) FROM conversation_members cm2 \
             JOIN users u ON cm2.user_id = u.id \
             WHERE cm2.conversation_id = c.id) AS members_json, \
