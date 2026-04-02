@@ -106,8 +106,10 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
           Uri.parse('$_serverUrl/api/users/me/privacy'),
           headers: _headersWithToken(token),
           body: jsonEncode({
+            // ignore: use_null_aware_elements
             if (readReceiptsEnabled != null)
               'read_receipts_enabled': readReceiptsEnabled,
+            // ignore: use_null_aware_elements
             if (allowUnencryptedDm != null)
               'allow_unencrypted_dm': allowUnencryptedDm,
           }),

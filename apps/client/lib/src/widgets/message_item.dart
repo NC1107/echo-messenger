@@ -614,7 +614,7 @@ class _MessageItemState extends State<MessageItem> {
             Padding(
               padding: EdgeInsets.only(
                 bottom: 4,
-                left: imageWidget != null ? 8 : 0,
+                left: mediaWidget != null ? 8 : 0,
               ),
               child: Text(
                 msg.fromUsername,

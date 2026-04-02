@@ -296,7 +296,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     final parts = mimeType.split('/');
     final mediaType = parts.length == 2
         ? MediaType(parts[0], parts[1])
-        : const MediaType('application', 'octet-stream');
+        : MediaType('application', 'octet-stream');
 
     request.files.add(
       http.MultipartFile.fromBytes(
