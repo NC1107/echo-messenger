@@ -55,6 +55,7 @@ pub struct ConversationListItem {
     pub conversation_id: Uuid,
     pub kind: String,
     pub title: Option<String>,
+    pub is_encrypted: bool,
     pub members: Vec<MemberInfo>,
     pub last_message: Option<LastMessageInfo>,
     pub unread_count: i64,
@@ -80,6 +81,7 @@ struct ConversationFullRow {
     conversation_id: Uuid,
     kind: String,
     title: Option<String>,
+    is_encrypted: bool,
     members_json: Option<serde_json::Value>,
     last_message_json: Option<serde_json::Value>,
     unread_count: i64,
@@ -96,6 +98,7 @@ pub async fn list_conversations(
             c.id AS conversation_id, \
             c.kind, \
             c.title, \
+            c.is_encrypted, \
             (SELECT json_agg(json_build_object( \
                 'user_id', u.id, 'username', u.username, 'avatar_url', u.avatar_url \
             )) FROM conversation_members cm2 \
@@ -152,6 +155,7 @@ pub async fn list_conversations(
             conversation_id: row.conversation_id,
             kind: row.kind,
             title: row.title,
+            is_encrypted: row.is_encrypted,
             members,
             last_message,
             unread_count: row.unread_count,
@@ -295,5 +299,38 @@ pub async fn edit_message(
     Ok(Json(serde_json::json!({
         "message_id": message_id,
         "edited_at": edited_at,
+    })))
+}
+
+// ---------------------------------------------------------------------------
+// PUT /api/conversations/:conversation_id/encryption -- toggle encryption
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct ToggleEncryptionRequest {
+    pub is_encrypted: bool,
+}
+
+pub async fn toggle_encryption(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(conversation_id): Path<Uuid>,
+    Json(body): Json<ToggleEncryptionRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify caller is a member of this conversation
+    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+    if !is_member {
+        return Err(AppError::unauthorized("Not a member of this conversation"));
+    }
+
+    db::messages::set_conversation_encrypted(&state.pool, conversation_id, body.is_encrypted)
+        .await
+        .map_err(|_| AppError::internal("Failed to update encryption setting"))?;
+
+    Ok(Json(serde_json::json!({
+        "conversation_id": conversation_id,
+        "is_encrypted": body.is_encrypted,
     })))
 }

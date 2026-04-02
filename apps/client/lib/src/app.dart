@@ -11,12 +11,21 @@ class EchoApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
-    final themeMode = ref.watch(themeProvider);
+    final themeSelection = ref.watch(themeProvider);
+    final themeMode = switch (themeSelection) {
+      AppThemeSelection.system => ThemeMode.system,
+      AppThemeSelection.dark => ThemeMode.dark,
+      AppThemeSelection.light => ThemeMode.light,
+      AppThemeSelection.graphite => ThemeMode.dark,
+    };
+    final darkTheme = themeSelection == AppThemeSelection.graphite
+        ? EchoTheme.graphiteTheme
+        : EchoTheme.darkTheme;
 
     return MaterialApp.router(
       title: 'Echo',
       theme: EchoTheme.lightTheme,
-      darkTheme: EchoTheme.darkTheme,
+      darkTheme: darkTheme,
       themeMode: themeMode,
       routerConfig: router,
       debugShowCheckedModeBanner: false,

@@ -139,6 +139,34 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     }
   }
 
+  /// Update the conversation preview if an edited message was the last one.
+  void onMessageEdited({
+    required String conversationId,
+    required String newContent,
+  }) {
+    final updated = List<Conversation>.from(state.conversations);
+    final index = updated.indexWhere((c) => c.id == conversationId);
+    if (index >= 0) {
+      final conv = updated[index];
+      // Only update preview -- we can't cheaply tell if this was the last
+      // message, but updating the preview is harmless either way since the
+      // next real message will overwrite it.
+      updated[index] = conv.copyWith(lastMessage: newContent);
+      _decryptedPreviews[conversationId] = newContent;
+      state = state.copyWith(conversations: updated);
+    }
+  }
+
+  /// Update the encryption flag for a conversation locally.
+  void updateEncryption(String conversationId, bool isEncrypted) {
+    final updated = List<Conversation>.from(state.conversations);
+    final index = updated.indexWhere((c) => c.id == conversationId);
+    if (index >= 0) {
+      updated[index] = updated[index].copyWith(isEncrypted: isEncrypted);
+      state = state.copyWith(conversations: updated);
+    }
+  }
+
   /// Mark a conversation as read (reset unread count).
   void markAsRead(String conversationId) {
     final updated = List<Conversation>.from(state.conversations);

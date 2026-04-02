@@ -166,38 +166,48 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     state = state.copyWith(isConnected: false);
   }
 
-  /// Send an encrypted message to a peer.
+  /// Send a DM message to a peer. Encrypts only if the conversation has
+  /// encryption enabled; otherwise sends plaintext.
   Future<void> sendMessage(
     String toUserId,
     String content, {
     String? conversationId,
   }) async {
-    final cryptoState = ref.read(cryptoProvider);
-
-    if (!cryptoState.isInitialized) {
-      // Encryption not available -- show failure instead of sending plaintext
-      _addFailedMessage(
-        toUserId,
-        'Encryption not initialized',
-        conversationId: conversationId ?? '',
-      );
-      return;
-    }
+    // Check if encryption is enabled for this conversation.
+    final isEncrypted = conversationId != null &&
+        ref
+            .read(conversationsProvider)
+            .conversations
+            .where((c) => c.id == conversationId)
+            .firstOrNull
+            ?.isEncrypted == true;
 
     String payload;
-    try {
-      final crypto = ref.read(cryptoServiceProvider);
-      final token = ref.read(authProvider).token ?? '';
-      crypto.setToken(token);
-      payload = await crypto.encryptMessage(toUserId, content);
-    } catch (_) {
-      // Encryption failed -- do NOT fall back to plaintext
-      _addFailedMessage(
-        toUserId,
-        'Encryption failed',
-        conversationId: conversationId ?? '',
-      );
-      return;
+    if (isEncrypted) {
+      final cryptoState = ref.read(cryptoProvider);
+      if (!cryptoState.isInitialized) {
+        _addFailedMessage(
+          toUserId,
+          'Encryption not initialized',
+          conversationId: conversationId,
+        );
+        return;
+      }
+      try {
+        final crypto = ref.read(cryptoServiceProvider);
+        final token = ref.read(authProvider).token ?? '';
+        crypto.setToken(token);
+        payload = await crypto.encryptMessage(toUserId, content);
+      } catch (_) {
+        _addFailedMessage(
+          toUserId,
+          'Encryption failed',
+          conversationId: conversationId,
+        );
+        return;
+      }
+    } else {
+      payload = content;
     }
 
     final msg = <String, dynamic>{
@@ -541,6 +551,11 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     ref
         .read(chatProvider.notifier)
         .editMessage(conversationId, messageId, newContent, editedAt: editedAt);
+    // Update conversation list preview in case this was the last message.
+    ref.read(conversationsProvider.notifier).onMessageEdited(
+          conversationId: conversationId,
+          newContent: newContent,
+        );
   }
 
   void _handlePresence(Map<String, dynamic> json) {

@@ -761,7 +761,7 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
   }
 
   Widget _buildAppearanceSection() {
-    final currentMode = ref.watch(themeProvider);
+    final currentTheme = ref.watch(themeProvider);
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -779,27 +779,42 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
           label: 'System',
           subtitle: 'Follow your device settings',
           icon: Icons.settings_brightness_outlined,
-          isSelected: currentMode == ThemeMode.system,
+          isSelected: currentTheme == AppThemeSelection.system,
           onTap: () =>
-              ref.read(themeProvider.notifier).setThemeMode(ThemeMode.system),
+              ref
+                  .read(themeProvider.notifier)
+                  .setTheme(AppThemeSelection.system),
         ),
         const SizedBox(height: 8),
         _ThemeOption(
           label: 'Dark',
           subtitle: 'Easy on the eyes',
           icon: Icons.dark_mode_outlined,
-          isSelected: currentMode == ThemeMode.dark,
+          isSelected: currentTheme == AppThemeSelection.dark,
           onTap: () =>
-              ref.read(themeProvider.notifier).setThemeMode(ThemeMode.dark),
+              ref.read(themeProvider.notifier).setTheme(AppThemeSelection.dark),
         ),
         const SizedBox(height: 8),
         _ThemeOption(
           label: 'Light',
           subtitle: 'Classic bright look',
           icon: Icons.light_mode_outlined,
-          isSelected: currentMode == ThemeMode.light,
+          isSelected: currentTheme == AppThemeSelection.light,
           onTap: () =>
-              ref.read(themeProvider.notifier).setThemeMode(ThemeMode.light),
+              ref
+                  .read(themeProvider.notifier)
+                  .setTheme(AppThemeSelection.light),
+        ),
+        const SizedBox(height: 8),
+        _ThemeOption(
+          label: 'Graphite',
+          subtitle: 'High-contrast dark with teal accents',
+          icon: Icons.water_drop_outlined,
+          isSelected: currentTheme == AppThemeSelection.graphite,
+          onTap: () =>
+              ref
+                  .read(themeProvider.notifier)
+                  .setTheme(AppThemeSelection.graphite),
         ),
       ],
     );

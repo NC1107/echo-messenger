@@ -35,6 +35,7 @@ pub struct PublicGroupResponse {
     pub title: Option<String>,
     pub member_count: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub is_member: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -57,6 +58,11 @@ pub struct GroupMemberResponse {
 #[derive(Debug, Deserialize)]
 pub struct AddMemberRequest {
     pub user_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateGroupRequest {
+    pub title: Option<String>,
 }
 
 /// POST /api/groups -- Create a new group conversation.
@@ -263,11 +269,11 @@ pub async fn remove_member(
 
 /// GET /api/groups/public -- List public groups.
 pub async fn list_public_groups(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Query(query): Query<PublicGroupsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let groups = db::groups::list_public_groups(&state.pool, query.search.as_deref())
+    let groups = db::groups::list_public_groups(&state.pool, auth.user_id, query.search.as_deref())
         .await
         .map_err(|e| {
             tracing::error!("Failed to list public groups: {:?}", e);
@@ -281,6 +287,7 @@ pub async fn list_public_groups(
             title: g.title,
             member_count: g.member_count,
             created_at: g.created_at,
+            is_member: g.is_member,
         })
         .collect();
 
@@ -339,4 +346,35 @@ pub async fn delete_group(
         ));
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// PUT /api/groups/:id -- Update group metadata (owner/admin only).
+pub async fn update_group(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<Uuid>,
+    Json(body): Json<UpdateGroupRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Failed to check role"))?
+        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+
+    if caller_role != "owner" && caller_role != "admin" {
+        return Err(AppError::unauthorized(
+            "Only the group owner or admin can update the group",
+        ));
+    }
+
+    if let Some(title) = &body.title {
+        let trimmed = title.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::bad_request("Title cannot be empty"));
+        }
+        db::groups::update_group_title(&state.pool, group_id, trimmed)
+            .await
+            .map_err(|_| AppError::internal("Failed to update group title"))?;
+    }
+
+    Ok(Json(serde_json::json!({ "status": "updated" })))
 }

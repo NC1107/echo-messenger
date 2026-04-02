@@ -299,6 +299,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildCollapsedSidebar() {
     final conversationsState = ref.watch(conversationsProvider);
     final myUserId = ref.watch(authProvider).userId ?? '';
+    final serverUrl = ref.read(serverUrlProvider);
     final conversations = conversationsState.conversations;
 
     return Container(
@@ -350,20 +351,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 ? Border.all(color: context.accent, width: 2)
                                 : null,
                           ),
-                          child: buildAvatar(
-                            name: displayName,
-                            radius: 18,
-                            bgColor: conv.isGroup
-                                ? groupAvatarColor(displayName)
-                                : null,
-                            fallbackIcon: conv.isGroup
-                                ? const Icon(
-                                    Icons.group,
-                                    size: 16,
-                                    color: Colors.white,
-                                  )
-                                : null,
-                          ),
+                          child: Builder(builder: (_) {
+                            final peer = conv.members
+                                .where((m) => m.userId != myUserId)
+                                .firstOrNull;
+                            final peerAvatarUrl =
+                                (!conv.isGroup && peer?.avatarUrl != null)
+                                    ? '$serverUrl${peer!.avatarUrl}'
+                                    : null;
+                            return buildAvatar(
+                              name: displayName,
+                              radius: 18,
+                              imageUrl: peerAvatarUrl,
+                              bgColor: conv.isGroup
+                                  ? groupAvatarColor(displayName)
+                                  : null,
+                              fallbackIcon: conv.isGroup
+                                  ? const Icon(
+                                      Icons.group,
+                                      size: 16,
+                                      color: Colors.white,
+                                    )
+                                  : null,
+                            );
+                          }),
                         ),
                       ),
                     ),

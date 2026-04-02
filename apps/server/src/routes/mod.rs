@@ -97,6 +97,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             post(reactions::mark_read),
         )
         .route(
+            "/conversations/{conversation_id}/encryption",
+            put(messages::toggle_encryption),
+        )
+        .route(
             "/messages/{id}",
             get(messages::get_messages)
                 .delete(messages::delete_message)
@@ -124,7 +128,12 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let group_routes = Router::new()
         .route("/", post(groups::create_group))
         .route("/public", get(groups::list_public_groups))
-        .route("/{id}", get(groups::get_group).delete(groups::delete_group))
+        .route(
+            "/{id}",
+            get(groups::get_group)
+                .put(groups::update_group)
+                .delete(groups::delete_group),
+        )
         .route("/{id}/members", post(groups::add_member))
         .route("/{id}/members/{user_id}", delete(groups::remove_member))
         .route("/{id}/join", post(groups::join_group))

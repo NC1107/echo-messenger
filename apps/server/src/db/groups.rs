@@ -124,37 +124,52 @@ pub struct PublicGroupRow {
     pub title: Option<String>,
     pub member_count: i64,
     pub created_at: DateTime<Utc>,
+    pub is_member: bool,
 }
 
 /// List public groups, optionally filtered by title search.
 pub async fn list_public_groups(
     pool: &PgPool,
+    user_id: Uuid,
     search: Option<&str>,
 ) -> Result<Vec<PublicGroupRow>, sqlx::Error> {
     match search {
         Some(term) => {
             let pattern = format!("%{}%", term);
             sqlx::query_as::<_, PublicGroupRow>(
-                "SELECT c.id, c.title, COUNT(cm.user_id) AS member_count, c.created_at \
+                "SELECT c.id, c.title, \
+                 COUNT(cm.user_id) AS member_count, c.created_at, \
+                 EXISTS(SELECT 1 FROM conversation_members cm2 \
+                        WHERE cm2.conversation_id = c.id \
+                        AND cm2.user_id = $2) AS is_member \
                  FROM conversations c \
-                 LEFT JOIN conversation_members cm ON cm.conversation_id = c.id \
-                 WHERE c.is_public = true AND c.kind = 'group' AND c.title ILIKE $1 \
+                 LEFT JOIN conversation_members cm \
+                   ON cm.conversation_id = c.id \
+                 WHERE c.is_public = true AND c.kind = 'group' \
+                   AND c.title ILIKE $1 \
                  GROUP BY c.id \
                  ORDER BY c.created_at DESC",
             )
             .bind(pattern)
+            .bind(user_id)
             .fetch_all(pool)
             .await
         }
         None => {
             sqlx::query_as::<_, PublicGroupRow>(
-                "SELECT c.id, c.title, COUNT(cm.user_id) AS member_count, c.created_at \
+                "SELECT c.id, c.title, \
+                 COUNT(cm.user_id) AS member_count, c.created_at, \
+                 EXISTS(SELECT 1 FROM conversation_members cm2 \
+                        WHERE cm2.conversation_id = c.id \
+                        AND cm2.user_id = $1) AS is_member \
                  FROM conversations c \
-                 LEFT JOIN conversation_members cm ON cm.conversation_id = c.id \
+                 LEFT JOIN conversation_members cm \
+                   ON cm.conversation_id = c.id \
                  WHERE c.is_public = true AND c.kind = 'group' \
                  GROUP BY c.id \
                  ORDER BY c.created_at DESC",
             )
+            .bind(user_id)
             .fetch_all(pool)
             .await
         }
@@ -351,4 +366,17 @@ pub async fn is_public(pool: &PgPool, group_id: Uuid) -> Result<bool, sqlx::Erro
         .fetch_optional(pool)
         .await?;
     Ok(row.map(|(p,)| p).unwrap_or(false))
+}
+
+pub async fn update_group_title(
+    pool: &PgPool,
+    group_id: Uuid,
+    title: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE conversations SET title = $1 WHERE id = $2")
+        .bind(title)
+        .bind(group_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }

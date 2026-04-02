@@ -202,3 +202,16 @@ pub async fn edit_message(
 
     Ok(row)
 }
+
+pub async fn set_conversation_encrypted(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    is_encrypted: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE conversations SET is_encrypted = $1 WHERE id = $2")
+        .bind(is_encrypted)
+        .bind(conversation_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

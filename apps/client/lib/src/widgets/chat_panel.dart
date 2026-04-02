@@ -387,9 +387,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     }
   }
 
-  Widget _buildEncryptionBanner(bool isGroup) {
+  Widget _buildEncryptionBanner(bool isGroup, {bool isEncrypted = false}) {
     if (_hideEncryptionBanner) {
       return const SizedBox.shrink();
+    }
+
+    final encrypted = !isGroup && isEncrypted;
+    final String label;
+    if (isGroup) {
+      label = 'Group messages are not encrypted';
+    } else if (isEncrypted) {
+      label = 'Messages are end-to-end encrypted';
+    } else {
+      label = 'Encryption is off -- messages are sent as plaintext';
     }
 
     return Container(
@@ -398,9 +408,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       decoration: BoxDecoration(
         color: context.surface,
         border: Border.all(
-          color: isGroup
-              ? context.border
-              : EchoTheme.online.withValues(alpha: 0.45),
+          color: encrypted
+              ? EchoTheme.online.withValues(alpha: 0.45)
+              : context.border,
           width: 1,
         ),
         borderRadius: BorderRadius.circular(8),
@@ -408,19 +418,17 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       child: Row(
         children: [
           Icon(
-            isGroup ? Icons.shield_outlined : Icons.lock_outlined,
+            encrypted ? Icons.lock_outlined : Icons.lock_open_outlined,
             size: 14,
-            color: isGroup ? context.textMuted : EchoTheme.online,
+            color: encrypted ? EchoTheme.online : context.textMuted,
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              isGroup
-                  ? 'Group messages are not encrypted'
-                  : 'Messages are end-to-end encrypted',
+              label,
               style: TextStyle(
-                fontSize: isGroup ? 11 : 12,
-                color: isGroup ? context.textMuted : EchoTheme.online,
+                fontSize: encrypted ? 12 : 11,
+                color: encrypted ? EchoTheme.online : context.textMuted,
               ),
             ),
           ),
@@ -448,6 +456,36 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       _messageController.clear();
       _isTextEmpty = true;
     });
+  }
+
+  Future<void> _toggleEncryption(Conversation conv) async {
+    final newValue = !conv.isEncrypted;
+    final serverUrl = ref.read(serverUrlProvider);
+
+    try {
+      await ref.read(authProvider.notifier).authenticatedRequest(
+            (token) => http.put(
+              Uri.parse(
+                '$serverUrl/api/conversations/${conv.id}/encryption',
+              ),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({'is_encrypted': newValue}),
+            ),
+          );
+      // Update local conversation state
+      ref
+          .read(conversationsProvider.notifier)
+          .updateEncryption(conv.id, newValue);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to toggle encryption')),
+        );
+      }
+    }
   }
 
   Future<void> _submitEdit() async {
@@ -588,6 +626,150 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                 ),
               );
             }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChannelPreviewTile({
+    required IconData icon,
+    required String label,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          child: Row(
+            children: [
+              Icon(icon, size: 16, color: context.textSecondary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: context.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 16, color: context.textMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showGroupChannelsPreview(Conversation conv) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: context.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Channels',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Preview for ${conv.name ?? 'this group'}',
+                style: TextStyle(
+                  color: context.textMuted,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Text Channels',
+                style: TextStyle(
+                  color: context.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              _buildChannelPreviewTile(
+                icon: Icons.tag,
+                label: '# general',
+                subtitle: 'Main discussion channel',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Text channel routing preview enabled.'),
+                    ),
+                  );
+                },
+              ),
+              _buildChannelPreviewTile(
+                icon: Icons.tag,
+                label: '# announcements',
+                subtitle: 'Broadcast updates for the group',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Channel creation flow comes next.'),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Voice Channels',
+                style: TextStyle(
+                  color: context.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              _buildChannelPreviewTile(
+                icon: Icons.graphic_eq,
+                label: 'Lounge',
+                subtitle: '0 connected',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Voice channel presence preview enabled.'),
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
         ),
       ),
@@ -781,7 +963,40 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     ],
                   ),
                 ),
+                // Encryption toggle for DMs
+                if (!conv.isGroup)
+                  IconButton(
+                    icon: Icon(
+                      conv.isEncrypted
+                          ? Icons.lock_outlined
+                          : Icons.lock_open_outlined,
+                      size: 20,
+                    ),
+                    color: conv.isEncrypted
+                        ? EchoTheme.online
+                        : context.textMuted,
+                    tooltip: conv.isEncrypted
+                        ? 'Encryption on'
+                        : 'Encryption off',
+                    onPressed: () => _toggleEncryption(conv),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                  ),
                 if (conv.isGroup) ...[
+                  IconButton(
+                    icon: const Icon(Icons.view_list_outlined, size: 20),
+                    color: context.textSecondary,
+                    tooltip: 'Channels',
+                    onPressed: () => _showGroupChannelsPreview(conv),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                  ),
                   if (widget.onMembersToggle != null)
                     IconButton(
                       icon: const Icon(Icons.people_outline, size: 20),
@@ -821,7 +1036,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             child: messages.isEmpty && !isLoadingHistory
                 ? Column(
                     children: [
-                      _buildEncryptionBanner(conv.isGroup),
+                      _buildEncryptionBanner(conv.isGroup, isEncrypted: conv.isEncrypted),
                       Expanded(
                         child: Center(
                           child: Column(
@@ -872,7 +1087,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     itemCount: messages.length + 1,
                     itemBuilder: (context, index) {
                       if (index == 0) {
-                        return _buildEncryptionBanner(conv.isGroup);
+                        return _buildEncryptionBanner(conv.isGroup, isEncrypted: conv.isEncrypted);
                       }
 
                       final msgIndex = index - 1;

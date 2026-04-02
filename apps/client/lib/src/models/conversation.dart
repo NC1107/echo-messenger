@@ -2,6 +2,7 @@ class Conversation {
   final String id;
   final String? name;
   final bool isGroup;
+  final bool isEncrypted;
   final String? lastMessage;
   final String? lastMessageTimestamp;
   final String? lastMessageSender;
@@ -12,6 +13,7 @@ class Conversation {
     required this.id,
     this.name,
     required this.isGroup,
+    this.isEncrypted = false,
     this.lastMessage,
     this.lastMessageTimestamp,
     this.lastMessageSender,
@@ -59,6 +61,7 @@ class Conversation {
       id: json['conversation_id'] as String? ?? json['id'] as String,
       name: (json['title'] ?? json['name']) as String?,
       isGroup: isGroupValue,
+      isEncrypted: json['is_encrypted'] as bool? ?? false,
       lastMessage: lastMsg,
       lastMessageTimestamp: lastMsgTimestamp,
       lastMessageSender: lastMsgSender,
@@ -79,6 +82,7 @@ class Conversation {
     String? id,
     String? name,
     bool? isGroup,
+    bool? isEncrypted,
     String? lastMessage,
     String? lastMessageTimestamp,
     String? lastMessageSender,
@@ -89,6 +93,7 @@ class Conversation {
       id: id ?? this.id,
       name: name ?? this.name,
       isGroup: isGroup ?? this.isGroup,
+      isEncrypted: isEncrypted ?? this.isEncrypted,
       lastMessage: lastMessage ?? this.lastMessage,
       lastMessageTimestamp: lastMessageTimestamp ?? this.lastMessageTimestamp,
       lastMessageSender: lastMessageSender ?? this.lastMessageSender,

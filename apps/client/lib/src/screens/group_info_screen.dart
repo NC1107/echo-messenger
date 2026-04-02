@@ -25,6 +25,8 @@ class GroupInfoScreen extends ConsumerStatefulWidget {
 class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   Conversation? _conversation;
   bool _isLoading = true;
+  bool _isEditingName = false;
+  final _nameController = TextEditingController();
 
   @override
   void initState() {
@@ -203,6 +205,89 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     }
   }
 
+  Future<void> _kickMember(ConversationMember member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Member'),
+        content: Text('Remove ${member.username} from this group?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final token = ref.read(authProvider).token;
+    if (token == null) return;
+    final serverUrl = ref.read(serverUrlProvider);
+
+    try {
+      final response = await http.delete(
+        Uri.parse(
+          '$serverUrl/api/groups/${widget.conversationId}'
+          '/members/${member.userId}',
+        ),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200 && mounted) {
+        await _loadGroupInfo();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${member.username} removed')),
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to remove member')),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveGroupName() async {
+    final newTitle = _nameController.text.trim();
+    if (newTitle.isEmpty) return;
+
+    final token = ref.read(authProvider).token;
+    if (token == null) return;
+    final serverUrl = ref.read(serverUrlProvider);
+
+    try {
+      final response = await http.put(
+        Uri.parse('$serverUrl/api/groups/${widget.conversationId}'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'title': newTitle}),
+      );
+      if ((response.statusCode == 200) && mounted) {
+        setState(() => _isEditingName = false);
+        await _loadGroupInfo();
+        await ref.read(conversationsProvider.notifier).loadConversations();
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to update group name')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final myUserId = ref.watch(authProvider).userId ?? '';
@@ -223,6 +308,11 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
     final conv = _conversation!;
     final displayName = conv.displayName(myUserId);
+    final myMember = conv.members
+        .where((m) => m.userId == myUserId)
+        .firstOrNull;
+    final myRole = myMember?.role ?? 'member';
+    final isOwnerOrAdmin = myRole == 'owner' || myRole == 'admin';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Group Info')),
@@ -240,12 +330,55 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              Center(
-                child: Text(
-                  displayName,
-                  style: Theme.of(context).textTheme.headlineSmall,
+              if (_isEditingName)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 48),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _nameController,
+                          autofocus: true,
+                          decoration: const InputDecoration(
+                            hintText: 'Group name',
+                            isDense: true,
+                          ),
+                          onSubmitted: (_) => _saveGroupName(),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.check),
+                        onPressed: _saveGroupName,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () =>
+                            setState(() => _isEditingName = false),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        displayName,
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      if (isOwnerOrAdmin)
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 18),
+                          tooltip: 'Edit group name',
+                          onPressed: () {
+                            _nameController.text = displayName;
+                            setState(() => _isEditingName = true);
+                          },
+                        ),
+                    ],
+                  ),
                 ),
-              ),
               Center(
                 child: Text(
                   '${conv.members.length} members',
@@ -277,6 +410,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
               ),
               ...conv.members.map((member) {
                 final serverUrl = ref.read(serverUrlProvider);
+                final isMe = member.userId == myUserId;
+                final role = member.role ?? 'member';
                 return ListTile(
                   leading: buildAvatar(
                     name: member.username,
@@ -285,9 +420,68 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                         ? '$serverUrl${member.avatarUrl}'
                         : null,
                   ),
-                  title: Text(member.username),
-                  subtitle: member.userId == myUserId
-                      ? const Text('You')
+                  title: Row(
+                    children: [
+                      Text(member.username),
+                      if (role == 'owner') ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .primary
+                                .withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Owner',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ] else if (role == 'admin') ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'Admin',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.orange,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  subtitle: isMe ? const Text('You') : null,
+                  trailing: (isOwnerOrAdmin &&
+                          !isMe &&
+                          role != 'owner')
+                      ? IconButton(
+                          icon: Icon(
+                            Icons.person_remove_outlined,
+                            size: 18,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                          tooltip: 'Remove member',
+                          onPressed: () => _kickMember(member),
+                        )
                       : null,
                 );
               }),
