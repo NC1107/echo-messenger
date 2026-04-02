@@ -668,15 +668,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: context.accent.withValues(alpha: 0.15),
+      decoration: BoxDecoration(
+        color: context.surface,
+        border: Border(
+          bottom: BorderSide(color: context.border, width: 1),
+        ),
+      ),
       child: Row(
         children: [
-          Icon(Icons.system_update, size: 18, color: context.accent),
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: context.accent.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.system_update, size: 14, color: context.accent),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               'Echo v${update.latestVersion} is available',
-              style: TextStyle(color: context.textPrimary, fontSize: 13),
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
           TextButton(
