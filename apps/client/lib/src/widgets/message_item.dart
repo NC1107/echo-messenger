@@ -420,7 +420,7 @@ class _MessageItemState extends State<MessageItem> {
   Widget _buildHoverActions(ChatMessage msg, bool isMine, {String? mediaUrl}) {
     return Container(
       decoration: BoxDecoration(
-        color: context.surface,
+        color: context.surface.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: context.border, width: 1),
       ),
@@ -431,10 +431,17 @@ class _MessageItemState extends State<MessageItem> {
             icon: Icons.copy_outlined,
             tooltip: 'Copy',
             onPressed: () {
-              Clipboard.setData(ClipboardData(text: msg.content));
+              final copyText = mediaUrl != null
+                  ? _resolveMediaUrl(mediaUrl)
+                  : msg.content;
+              Clipboard.setData(ClipboardData(text: copyText));
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Copied to clipboard'),
+                SnackBar(
+                  content: Text(
+                    mediaUrl != null
+                        ? 'Media URL copied'
+                        : 'Copied to clipboard',
+                  ),
                   duration: Duration(seconds: 2),
                 ),
               );
@@ -676,93 +683,114 @@ class _MessageItemState extends State<MessageItem> {
             top: widget.showHeader ? 8 : 2,
             bottom: hasReactions ? 4 : 2,
           ),
-          child: Column(
-            crossAxisAlignment: isMine
-                ? CrossAxisAlignment.end
-                : CrossAxisAlignment.start,
+          child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              if (_isHovered && !hasReactions)
-                Padding(
-                  padding: EdgeInsets.only(bottom: 6, left: isMine ? 0 : 36),
-                  child: Align(
-                    alignment: isMine
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    child: _buildHoverActions(msg, isMine, mediaUrl: mediaUrl),
-                  ),
-                ),
-              Row(
-                mainAxisAlignment: isMine
-                    ? MainAxisAlignment.end
-                    : MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.end,
+              Column(
+                crossAxisAlignment: isMine
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
                 children: [
-                  // Avatar for received messages (first in group only)
-                  if (!isMine) ...[
-                    GestureDetector(
-                      onTap: widget.onAvatarTap != null
-                          ? () => widget.onAvatarTap!(msg.fromUserId)
-                          : null,
-                      child: SizedBox(
-                        width: 28,
-                        child: widget.showHeader
-                            ? buildAvatar(
-                                name: msg.fromUsername,
-                                radius: 14,
-                                bgColor: _getUserColor(msg.fromUserId),
-                                imageUrl: widget.senderAvatarUrl != null
-                                    ? '${widget.serverUrl ?? ""}${widget.senderAvatarUrl}'
-                                    : null,
-                              )
-                            : const SizedBox.shrink(),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  // Bubble with reactions
-                  Flexible(child: bubbleWithReactions),
-                ],
-              ),
-              // Timestamp (only on last in group)
-              if (widget.isLastInGroup)
-                Padding(
-                  padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  Row(
                     mainAxisAlignment: isMine
                         ? MainAxisAlignment.end
                         : MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text(
-                        formatMessageTimestamp(msg.timestamp),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: context.textMuted,
-                        ),
-                      ),
-                      if (msg.isEncrypted)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 3),
-                          child: Icon(
-                            Icons.lock,
-                            size: 10,
-                            color: EchoTheme.online,
+                      // Avatar for received messages (first in group only)
+                      if (!isMine) ...[
+                        GestureDetector(
+                          onTap: widget.onAvatarTap != null
+                              ? () => widget.onAvatarTap!(msg.fromUserId)
+                              : null,
+                          child: SizedBox(
+                            width: 28,
+                            child: widget.showHeader
+                                ? buildAvatar(
+                                    name: msg.fromUsername,
+                                    radius: 14,
+                                    bgColor: _getUserColor(msg.fromUserId),
+                                    imageUrl: widget.senderAvatarUrl != null
+                                        ? '${widget.serverUrl ?? ""}${widget.senderAvatarUrl}'
+                                        : null,
+                                  )
+                                : const SizedBox.shrink(),
                           ),
                         ),
-                      if (msg.editedAt != null)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 4),
-                          child: Text(
-                            '(edited)',
+                        const SizedBox(width: 8),
+                      ],
+                      // Bubble with reactions
+                      Flexible(child: bubbleWithReactions),
+                    ],
+                  ),
+                  // Timestamp (only on last in group)
+                  if (widget.isLastInGroup)
+                    Padding(
+                      padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: isMine
+                            ? MainAxisAlignment.end
+                            : MainAxisAlignment.start,
+                        children: [
+                          Text(
+                            formatMessageTimestamp(msg.timestamp),
                             style: TextStyle(
-                              fontSize: 10,
-                              fontStyle: FontStyle.italic,
+                              fontSize: 11,
                               color: context.textMuted,
                             ),
                           ),
+                          if (msg.isEncrypted)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 3),
+                              child: Icon(
+                                Icons.lock,
+                                size: 10,
+                                color: EchoTheme.online,
+                              ),
+                            ),
+                          if (msg.editedAt != null)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 4),
+                              child: Text(
+                                '(edited)',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontStyle: FontStyle.italic,
+                                  color: context.textMuted,
+                                ),
+                              ),
+                            ),
+                          if (isMine) _buildStatusIcon(msg.status),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              if (!hasReactions)
+                Positioned(
+                  top: -12,
+                  left: isMine ? null : 36,
+                  right: isMine ? 0 : null,
+                  child: IgnorePointer(
+                    ignoring: !_isHovered,
+                    child: AnimatedOpacity(
+                      opacity: _isHovered ? 1 : 0,
+                      duration: const Duration(milliseconds: 140),
+                      curve: Curves.easeOut,
+                      child: AnimatedSlide(
+                        offset: _isHovered
+                            ? Offset.zero
+                            : const Offset(0, -0.12),
+                        duration: const Duration(milliseconds: 140),
+                        curve: Curves.easeOut,
+                        child: _buildHoverActions(
+                          msg,
+                          isMine,
+                          mediaUrl: mediaUrl,
                         ),
-                      if (isMine) _buildStatusIcon(msg.status),
-                    ],
+                      ),
+                    ),
                   ),
                 ),
             ],

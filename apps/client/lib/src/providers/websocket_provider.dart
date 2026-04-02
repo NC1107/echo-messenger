@@ -667,6 +667,12 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     ref
         .read(conversationsProvider.notifier)
         .updateEncryption(conversationId, isEncrypted);
+    ref
+        .read(chatProvider.notifier)
+        .addSystemEvent(
+          conversationId,
+          isEncrypted ? 'encryption_enabled' : 'encryption_disabled',
+        );
   }
 
   void _handlePresence(Map<String, dynamic> json) {

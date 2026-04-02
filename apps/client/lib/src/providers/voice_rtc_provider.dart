@@ -56,6 +56,8 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   StreamSubscription<Map<String, dynamic>>? _signalSubscription;
   MediaStream? _localStream;
   final Map<String, RTCPeerConnection> _peerConnections = {};
+  final Map<String, RTCVideoRenderer> _remoteAudioRenderers = {};
+  final Map<String, List<RTCIceCandidate>> _pendingIceCandidates = {};
   Set<String> _currentParticipants = const {};
 
   VoiceRtcNotifier(this.ref) : super(VoiceRtcState.empty) {
@@ -102,7 +104,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
 
     try {
       _localStream = await navigator.mediaDevices.getUserMedia({
-        'audio': true,
+        'audio': {
+          'echoCancellation': true,
+          'noiseSuppression': true,
+          'autoGainControl': true,
+        },
         'video': false,
       });
 
@@ -137,12 +143,19 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   }
 
   Future<void> leaveChannel() async {
-    for (final pc in _peerConnections.values) {
+    for (final userId in _peerConnections.keys.toList()) {
+      final pc = _peerConnections[userId];
+      if (pc == null) {
+        continue;
+      }
       try {
         await pc.close();
       } catch (_) {}
+      await _disposeRemoteRenderer(userId);
     }
     _peerConnections.clear();
+    _remoteAudioRenderers.clear();
+    _pendingIceCandidates.clear();
     _currentParticipants = const {};
 
     if (_localStream != null) {
@@ -196,6 +209,8 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
           await pc.close();
         } catch (_) {}
       }
+      await _disposeRemoteRenderer(userId);
+      _pendingIceCandidates.remove(userId);
     }
 
     final sortedTargets = targetPeers.toList()..sort();
@@ -260,7 +275,43 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       );
     };
 
+    pc.onTrack = (event) {
+      if (event.track.kind != 'audio') {
+        return;
+      }
+      if (event.streams.isEmpty) {
+        return;
+      }
+      _attachRemoteAudioStream(remoteUserId, event.streams.first);
+    };
+
     return pc;
+  }
+
+  Future<void> _attachRemoteAudioStream(
+    String remoteUserId,
+    MediaStream stream,
+  ) async {
+    final existing = _remoteAudioRenderers[remoteUserId];
+    if (existing != null) {
+      existing.srcObject = stream;
+      return;
+    }
+
+    final renderer = RTCVideoRenderer();
+    await renderer.initialize();
+    renderer.srcObject = stream;
+    renderer.muted = false;
+    _remoteAudioRenderers[remoteUserId] = renderer;
+  }
+
+  Future<void> _disposeRemoteRenderer(String remoteUserId) async {
+    final renderer = _remoteAudioRenderers.remove(remoteUserId);
+    if (renderer == null) {
+      return;
+    }
+    renderer.srcObject = null;
+    await renderer.dispose();
   }
 
   Future<void> _createAndSendOffer(
@@ -325,6 +376,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
 
     try {
       await pc.setRemoteDescription(RTCSessionDescription(sdp, 'offer'));
+      await _drainPendingIceCandidates(fromUserId, pc);
       final answer = await pc.createAnswer({
         'offerToReceiveAudio': 1,
         'offerToReceiveVideo': 0,
@@ -347,6 +399,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
 
     try {
       await pc.setRemoteDescription(RTCSessionDescription(sdp, 'answer'));
+      await _drainPendingIceCandidates(fromUserId, pc);
       _updatePeerState(fromUserId, 'answer_applied');
     } catch (e) {
       debugPrint('[VoiceRTC] handleAnswer failed from $fromUserId: $e');
@@ -362,14 +415,44 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   ) async {
     final pc = _peerConnections[fromUserId];
     if (pc == null) {
+      _pendingIceCandidates
+          .putIfAbsent(fromUserId, () => [])
+          .add(RTCIceCandidate(candidate, sdpMid, sdpMLineIndex));
       return;
     }
 
     try {
       await pc.addCandidate(RTCIceCandidate(candidate, sdpMid, sdpMLineIndex));
     } catch (e) {
-      debugPrint('[VoiceRTC] addCandidate failed from $fromUserId: $e');
-      _updatePeerState(fromUserId, 'ice_error');
+      _pendingIceCandidates
+          .putIfAbsent(fromUserId, () => [])
+          .add(RTCIceCandidate(candidate, sdpMid, sdpMLineIndex));
+      debugPrint('[VoiceRTC] addCandidate deferred for $fromUserId: $e');
+    }
+  }
+
+  Future<void> _drainPendingIceCandidates(
+    String userId,
+    RTCPeerConnection pc,
+  ) async {
+    final queue = _pendingIceCandidates[userId];
+    if (queue == null || queue.isEmpty) {
+      return;
+    }
+
+    final remaining = <RTCIceCandidate>[];
+    for (final candidate in queue) {
+      try {
+        await pc.addCandidate(candidate);
+      } catch (_) {
+        remaining.add(candidate);
+      }
+    }
+
+    if (remaining.isEmpty) {
+      _pendingIceCandidates.remove(userId);
+    } else {
+      _pendingIceCandidates[userId] = remaining;
     }
   }
 

@@ -13,6 +13,7 @@ import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../screens/user_profile_screen.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
 
@@ -953,6 +954,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           onMessage: () {
             widget.onMessageContact?.call(contact.userId, contact.username);
           },
+          onProfile: () {
+            UserProfileScreen.show(context, ref, contact.userId);
+          },
         );
       },
     );
@@ -1057,11 +1061,13 @@ class _ContactItem extends StatefulWidget {
   final dynamic contact;
   final String serverUrl;
   final VoidCallback onMessage;
+  final VoidCallback onProfile;
 
   const _ContactItem({
     required this.contact,
     required this.serverUrl,
     required this.onMessage,
+    required this.onProfile,
   });
 
   @override
@@ -1094,54 +1100,78 @@ class _ContactItemState extends State<_ContactItem> {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
           children: [
-            // Avatar with online dot
-            Stack(
-              children: [
-                buildAvatar(
-                  name: username,
-                  radius: 18,
-                  imageUrl: fullAvatarUrl,
-                ),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: EchoTheme.online,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: context.sidebarBg, width: 2),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 12),
-            // Name
             Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    displayName ?? username,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: context.textPrimary,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: widget.onProfile,
+                child: Row(
+                  children: [
+                    // Avatar with online dot
+                    Stack(
+                      children: [
+                        buildAvatar(
+                          name: username,
+                          radius: 18,
+                          imageUrl: fullAvatarUrl,
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: EchoTheme.online,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: context.sidebarBg,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  if (displayName != null)
-                    Text(
-                      '@$username',
-                      style: TextStyle(fontSize: 12, color: context.textMuted),
+                    const SizedBox(width: 12),
+                    // Name
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            displayName ?? username,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: context.textPrimary,
+                            ),
+                          ),
+                          if (displayName != null)
+                            Text(
+                              '@$username',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: context.textMuted,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                ],
+                  ],
+                ),
               ),
             ),
-            // Message button
+            IconButton(
+              icon: Icon(
+                Icons.info_outline,
+                size: 18,
+                color: context.textMuted,
+              ),
+              tooltip: 'Profile',
+              onPressed: widget.onProfile,
+            ),
             SizedBox(
               height: 28,
               child: Material(

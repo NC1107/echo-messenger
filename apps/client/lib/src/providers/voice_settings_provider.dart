@@ -8,6 +8,8 @@ class VoiceSettingsState {
   final double inputGain;
   final double outputVolume;
   final bool pushToTalkEnabled;
+  final String pushToTalkKeyId;
+  final String pushToTalkKeyLabel;
   final bool selfMuted;
   final bool selfDeafened;
 
@@ -17,6 +19,8 @@ class VoiceSettingsState {
     this.inputGain = 1.0,
     this.outputVolume = 1.0,
     this.pushToTalkEnabled = false,
+    this.pushToTalkKeyId = '32',
+    this.pushToTalkKeyLabel = 'Space',
     this.selfMuted = false,
     this.selfDeafened = false,
   });
@@ -27,6 +31,8 @@ class VoiceSettingsState {
     double? inputGain,
     double? outputVolume,
     bool? pushToTalkEnabled,
+    String? pushToTalkKeyId,
+    String? pushToTalkKeyLabel,
     bool? selfMuted,
     bool? selfDeafened,
   }) {
@@ -36,6 +42,8 @@ class VoiceSettingsState {
       inputGain: inputGain ?? this.inputGain,
       outputVolume: outputVolume ?? this.outputVolume,
       pushToTalkEnabled: pushToTalkEnabled ?? this.pushToTalkEnabled,
+      pushToTalkKeyId: pushToTalkKeyId ?? this.pushToTalkKeyId,
+      pushToTalkKeyLabel: pushToTalkKeyLabel ?? this.pushToTalkKeyLabel,
       selfMuted: selfMuted ?? this.selfMuted,
       selfDeafened: selfDeafened ?? this.selfDeafened,
     );
@@ -52,6 +60,8 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
   static const _keyInputGain = 'voice_input_gain';
   static const _keyOutputVolume = 'voice_output_volume';
   static const _keyPushToTalk = 'voice_push_to_talk_enabled';
+  static const _keyPushToTalkKeyId = 'voice_push_to_talk_key_id';
+  static const _keyPushToTalkKeyLabel = 'voice_push_to_talk_key_label';
   static const _keySelfMuted = 'voice_self_muted';
   static const _keySelfDeafened = 'voice_self_deafened';
 
@@ -64,6 +74,8 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
         inputGain: prefs.getDouble(_keyInputGain) ?? 1.0,
         outputVolume: prefs.getDouble(_keyOutputVolume) ?? 1.0,
         pushToTalkEnabled: prefs.getBool(_keyPushToTalk) ?? false,
+        pushToTalkKeyId: prefs.getString(_keyPushToTalkKeyId) ?? '32',
+        pushToTalkKeyLabel: prefs.getString(_keyPushToTalkKeyLabel) ?? 'Space',
         selfMuted: prefs.getBool(_keySelfMuted) ?? false,
         selfDeafened: prefs.getBool(_keySelfDeafened) ?? false,
       );
@@ -80,6 +92,8 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
       await prefs.setDouble(_keyInputGain, next.inputGain);
       await prefs.setDouble(_keyOutputVolume, next.outputVolume);
       await prefs.setBool(_keyPushToTalk, next.pushToTalkEnabled);
+      await prefs.setString(_keyPushToTalkKeyId, next.pushToTalkKeyId);
+      await prefs.setString(_keyPushToTalkKeyLabel, next.pushToTalkKeyLabel);
       await prefs.setBool(_keySelfMuted, next.selfMuted);
       await prefs.setBool(_keySelfDeafened, next.selfDeafened);
     } catch (e) {
@@ -113,6 +127,18 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
 
   Future<void> setPushToTalkEnabled(bool value) async {
     final next = state.copyWith(pushToTalkEnabled: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setPushToTalkKey({
+    required String keyId,
+    required String keyLabel,
+  }) async {
+    final next = state.copyWith(
+      pushToTalkKeyId: keyId,
+      pushToTalkKeyLabel: keyLabel,
+    );
     state = next;
     await _persist(next);
   }

@@ -97,6 +97,53 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     super.dispose();
   }
 
+  bool _isSystemTimelineMessage(ChatMessage msg) {
+    return msg.fromUserId == '__system__' &&
+        (msg.content == 'encryption_enabled' ||
+            msg.content == 'encryption_disabled');
+  }
+
+  Widget _buildSystemTimelineMessage(ChatMessage msg) {
+    final enabled = msg.content == 'encryption_enabled';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: context.border, thickness: 1)),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: context.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  enabled ? Icons.lock_outline : Icons.lock_open_outlined,
+                  size: 12,
+                  color: enabled ? EchoTheme.online : context.textMuted,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  enabled ? 'Encryption enabled' : 'Encryption disabled',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: enabled ? EchoTheme.online : context.textMuted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: Divider(color: context.border, thickness: 1)),
+        ],
+      ),
+    );
+  }
+
   void _onTextChanged() {
     final empty = _messageController.text.trim().isEmpty;
     if (empty != _isTextEmpty) {
@@ -666,6 +713,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       ref
           .read(conversationsProvider.notifier)
           .updateEncryption(conv.id, newValue);
+      ref
+          .read(chatProvider.notifier)
+          .addSystemEvent(
+            conv.id,
+            newValue ? 'encryption_enabled' : 'encryption_disabled',
+          );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -835,9 +888,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           _markAsRead();
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: isSelected
                   ? context.accent.withValues(alpha: 0.18)
@@ -854,12 +907,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.tag, size: 13, color: context.textSecondary),
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
                 Text(
                   channel.name,
                   style: TextStyle(
                     color: isSelected ? context.accent : context.textPrimary,
-                    fontSize: 12,
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -876,12 +929,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     GroupChannel channel,
     int participantCount,
     VoiceSettingsState voiceSettings,
+    String? effectiveActiveVoiceChannelId,
   ) {
-    final isActive = _activeVoiceChannelId == channel.id;
+    final isActive = effectiveActiveVoiceChannelId == channel.id;
 
     return Container(
-      margin: const EdgeInsets.only(top: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: context.surface,
         borderRadius: BorderRadius.circular(8),
@@ -890,7 +944,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       child: Row(
         children: [
           Icon(Icons.graphic_eq, size: 16, color: context.textSecondary),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -899,13 +953,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   channel.name,
                   style: TextStyle(
                     color: context.textPrimary,
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 Text(
                   '$participantCount connected',
-                  style: TextStyle(color: context.textMuted, fontSize: 11),
+                  style: TextStyle(color: context.textMuted, fontSize: 10),
                 ),
               ],
             ),
@@ -951,6 +1005,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     List<GroupChannel> channels,
     ChannelsState channelsState,
     VoiceSettingsState voiceSettings,
+    String? effectiveActiveVoiceChannelId,
   ) {
     final textChannels = channels.where((c) => c.isText).toList();
     final voiceChannels = channels.where((c) => c.isVoice).toList();
@@ -970,7 +1025,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
       decoration: BoxDecoration(
         color: context.sidebarBg,
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
@@ -990,7 +1045,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                 'Text Channels',
                 style: TextStyle(
                   color: context.textSecondary,
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -999,13 +1054,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                 selectedText != null ? '#${selectedText.name}' : '#loading',
                 style: TextStyle(
                   color: context.accent,
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -1014,20 +1069,20 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   .toList(),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Row(
             children: [
               Icon(
                 Icons.headset_mic_outlined,
-                size: 14,
+                size: 13,
                 color: context.textSecondary,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               Text(
                 'Voice Channels',
                 style: TextStyle(
                   color: context.textSecondary,
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1049,6 +1104,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               voiceChannel,
               channelsState.voiceSessionsFor(voiceChannel.id).length,
               voiceSettings,
+              effectiveActiveVoiceChannelId,
             ),
         ],
       ),
@@ -1062,9 +1118,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     VoiceSettingsState voiceSettings,
     String myUserId,
     VoiceRtcState voiceRtc,
+    String? effectiveActiveVoiceChannelId,
   ) {
     final activeVoiceChannel = channels
-        .where((c) => c.id == _activeVoiceChannelId)
+        .where((c) => c.id == effectiveActiveVoiceChannelId)
         .firstOrNull;
     if (activeVoiceChannel == null) {
       return const SizedBox.shrink();
@@ -1085,7 +1142,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     final participants = channelsState.voiceSessionsFor(activeVoiceChannel.id);
     final iAmInChannel = participants.any((p) => p.userId == myUserId);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || _activeVoiceChannelId != activeVoiceChannel.id) return;
+      if (!mounted) return;
+      final expectedActive =
+          effectiveActiveVoiceChannelId ?? _activeVoiceChannelId;
+      if (expectedActive != activeVoiceChannel.id) return;
 
       final rtcNotifier = ref.read(voiceRtcProvider.notifier);
       if (!iAmInChannel) {
@@ -1181,12 +1241,22 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           TextButton(
             onPressed: () async {
               final notifier = ref.read(voiceSettingsProvider.notifier);
-              await notifier.setPushToTalkEnabled(
-                !voiceSettings.pushToTalkEnabled,
-              );
+              final next = !voiceSettings.pushToTalkEnabled;
+              await notifier.setPushToTalkEnabled(next);
+              ref
+                  .read(voiceRtcProvider.notifier)
+                  .setCaptureEnabled(
+                    !next &&
+                        !voiceSettings.selfMuted &&
+                        !voiceSettings.selfDeafened,
+                  );
               await syncVoiceState();
             },
-            child: Text(voiceSettings.pushToTalkEnabled ? 'PTT On' : 'PTT Off'),
+            child: Text(
+              voiceSettings.pushToTalkEnabled
+                  ? 'PTT ${voiceSettings.pushToTalkKeyLabel}'
+                  : 'PTT Off',
+            ),
           ),
           if (participants.any((p) => p.userId == myUserId))
             Icon(Icons.fiber_manual_record, size: 10, color: EchoTheme.online),
@@ -1276,6 +1346,27 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     final defaultTextChannelId = textChannels.isNotEmpty
         ? textChannels.first.id
         : null;
+    final inferredActiveVoiceChannelId = channels
+        .where((c) => c.isVoice)
+        .firstWhere(
+          (c) => channelsState
+              .voiceSessionsFor(c.id)
+              .any((m) => m.userId == myUserId),
+          orElse: () => const GroupChannel(
+            id: '',
+            conversationId: '',
+            name: '',
+            kind: 'voice',
+            position: 0,
+            createdAt: '',
+          ),
+        )
+        .id;
+    final effectiveActiveVoiceChannelId =
+        _activeVoiceChannelId ??
+        (inferredActiveVoiceChannelId.isEmpty
+            ? null
+            : inferredActiveVoiceChannelId);
     final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
     final includeUnchanneled =
         conv.isGroup &&
@@ -1475,8 +1566,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               channels,
               channelsState,
               voiceSettings,
+              effectiveActiveVoiceChannelId,
             ),
-          if (conv.isGroup)
+          if (conv.isGroup && effectiveActiveVoiceChannelId != null)
             _buildVoiceControlDock(
               conv.id,
               channels,
@@ -1484,6 +1576,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               voiceSettings,
               myUserId,
               voiceRtc,
+              effectiveActiveVoiceChannelId,
             ),
           // Loading indicator for history
           if (isLoadingHistory)
@@ -1560,6 +1653,25 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                       final msgIndex = index - 1;
                       final msg = messages[msgIndex];
 
+                      // Date divider
+                      Widget? dateDivider;
+                      if (msgIndex == 0 ||
+                          _differentDay(
+                            messages[msgIndex - 1].timestamp,
+                            msg.timestamp,
+                          )) {
+                        dateDivider = _buildDateDivider(msg.timestamp);
+                      }
+
+                      if (_isSystemTimelineMessage(msg)) {
+                        return Column(
+                          children: [
+                            ?dateDivider,
+                            _buildSystemTimelineMessage(msg),
+                          ],
+                        );
+                      }
+
                       // Determine grouping
                       bool showHeader = true;
                       bool isLastInGroup = true;
@@ -1578,16 +1690,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                             !_differentDay(msg.timestamp, next.timestamp)) {
                           isLastInGroup = false;
                         }
-                      }
-
-                      // Date divider
-                      Widget? dateDivider;
-                      if (msgIndex == 0 ||
-                          _differentDay(
-                            messages[msgIndex - 1].timestamp,
-                            msg.timestamp,
-                          )) {
-                        dateDivider = _buildDateDivider(msg.timestamp);
                       }
 
                       // Look up sender avatar from conversation members
@@ -1726,9 +1828,30 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                       if (_isEditing) const SizedBox(width: 12),
                       // Text field
                       Expanded(
-                        child: KeyboardListener(
-                          focusNode: FocusNode(),
-                          onKeyEvent: (event) {
+                        child: Focus(
+                          onKeyEvent: (_, event) {
+                            final pttKeyId = voiceSettings.pushToTalkKeyId;
+                            final isPttKey =
+                                event.logicalKey.keyId.toString() == pttKeyId;
+                            final canPushToTalk =
+                                voiceSettings.pushToTalkEnabled &&
+                                effectiveActiveVoiceChannelId != null;
+
+                            if (canPushToTalk && isPttKey) {
+                              final allowCapture =
+                                  !voiceSettings.selfMuted &&
+                                  !voiceSettings.selfDeafened;
+                              if (event is KeyDownEvent && allowCapture) {
+                                ref
+                                    .read(voiceRtcProvider.notifier)
+                                    .setCaptureEnabled(true);
+                              } else if (event is KeyUpEvent) {
+                                ref
+                                    .read(voiceRtcProvider.notifier)
+                                    .setCaptureEnabled(false);
+                              }
+                            }
+
                             if (event is KeyDownEvent) {
                               if (event.logicalKey ==
                                       LogicalKeyboardKey.escape &&
@@ -1744,6 +1867,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                 _pasteImageFromClipboard();
                               }
                             }
+                            return KeyEventResult.ignored;
                           },
                           child: TextField(
                             controller: _messageController,

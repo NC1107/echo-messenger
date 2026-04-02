@@ -182,6 +182,100 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
   bool _checkingHealth = true;
   String? _serverVersion;
 
+  String _friendlyKeyLabel(LogicalKeyboardKey key) {
+    if (key == LogicalKeyboardKey.space) return 'Space';
+    if (key == LogicalKeyboardKey.controlLeft ||
+        key == LogicalKeyboardKey.controlRight) {
+      return 'Ctrl';
+    }
+    if (key == LogicalKeyboardKey.shiftLeft ||
+        key == LogicalKeyboardKey.shiftRight) {
+      return 'Shift';
+    }
+    if (key == LogicalKeyboardKey.altLeft ||
+        key == LogicalKeyboardKey.altRight) {
+      return 'Alt';
+    }
+    if (key == LogicalKeyboardKey.metaLeft ||
+        key == LogicalKeyboardKey.metaRight) {
+      return 'Meta';
+    }
+
+    final label = key.keyLabel.trim();
+    if (label.isNotEmpty) return label.toUpperCase();
+    return (key.debugName ?? 'Unknown').replaceAll(' ', '');
+  }
+
+  Future<void> _capturePushToTalkKey(VoiceSettingsNotifier notifier) async {
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (dialogContext) {
+        String captured = 'Press any key...';
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            backgroundColor: context.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: context.border),
+            ),
+            title: Text(
+              'Set Push-to-Talk Key',
+              style: TextStyle(color: context.textPrimary, fontSize: 17),
+            ),
+            content: Focus(
+              autofocus: true,
+              onKeyEvent: (_, event) {
+                if (event is KeyDownEvent) {
+                  final label = _friendlyKeyLabel(event.logicalKey);
+                  setDialogState(() {
+                    captured = label;
+                  });
+                  Navigator.pop(dialogContext, {
+                    'id': event.logicalKey.keyId.toString(),
+                    'label': label,
+                  });
+                }
+                return KeyEventResult.handled;
+              },
+              child: Container(
+                width: 340,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 14,
+                ),
+                decoration: BoxDecoration(
+                  color: context.mainBg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: context.border),
+                ),
+                child: Text(
+                  captured,
+                  style: TextStyle(
+                    color: context.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (result == null) return;
+    final keyId = result['id'];
+    final keyLabel = result['label'];
+    if (keyId == null || keyLabel == null) return;
+    await notifier.setPushToTalkKey(keyId: keyId, keyLabel: keyLabel);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -951,6 +1045,21 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
           ),
           value: voice.pushToTalkEnabled,
           onChanged: notifier.setPushToTalkEnabled,
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Push-to-Talk Key',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            voice.pushToTalkKeyLabel,
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          trailing: OutlinedButton(
+            onPressed: () => _capturePushToTalkKey(notifier),
+            child: const Text('Set Key'),
+          ),
         ),
       ],
     );

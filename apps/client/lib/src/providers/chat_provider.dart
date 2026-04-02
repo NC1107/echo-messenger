@@ -96,6 +96,29 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.withMessage(msg);
   }
 
+  void addSystemEvent(String conversationId, String event) {
+    final existing = state.messagesForConversation(conversationId);
+    if (existing.isNotEmpty) {
+      final last = existing.last;
+      // Avoid duplicate timeline rows when local state and WS echo race.
+      if (last.fromUserId == '__system__' && last.content == event) {
+        return;
+      }
+    }
+
+    final msg = ChatMessage(
+      id: 'system_${DateTime.now().millisecondsSinceEpoch}',
+      fromUserId: '__system__',
+      fromUsername: 'System',
+      conversationId: conversationId,
+      content: event,
+      timestamp: DateTime.now().toIso8601String(),
+      isMine: false,
+      status: MessageStatus.sent,
+    );
+    state = state.withMessage(msg);
+  }
+
   void addOptimistic(
     String peerUserId,
     String content,
