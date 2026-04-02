@@ -37,14 +37,24 @@ class ChatMessage {
             .toList() ??
         [];
 
+    final id = (json['message_id'] ?? json['id'] ?? '').toString();
+    final fromUserId = (json['from_user_id'] ?? json['sender_id'] ?? '').toString();
+    final fromUsername =
+        (json['from_username'] ?? json['sender_username'] ?? 'Unknown').toString();
+    final conversationId = (json['conversation_id'] ?? '').toString();
+    final content = (json['content'] ?? '').toString();
+    final timestamp =
+        (json['timestamp'] ?? json['created_at'] ?? DateTime.now().toIso8601String())
+            .toString();
+
     return ChatMessage(
-      id: json['message_id'] as String,
-      fromUserId: json['from_user_id'] as String,
-      fromUsername: json['from_username'] as String,
-      conversationId: json['conversation_id'] as String,
-      content: json['content'] as String,
-      timestamp: json['timestamp'] as String,
-      isMine: json['from_user_id'] == myUserId,
+      id: id,
+      fromUserId: fromUserId,
+      fromUsername: fromUsername,
+      conversationId: conversationId,
+      content: content,
+      timestamp: timestamp,
+      isMine: fromUserId == myUserId,
       status: MessageStatus.sent,
       reactions: reactionsList,
       editedAt: json['edited_at'] as String?,

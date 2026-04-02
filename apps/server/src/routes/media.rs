@@ -103,6 +103,7 @@ pub async fn upload(
 
         let row = db::media::create_media(
             &state.pool,
+            file_uuid,
             auth.user_id,
             &original_filename,
             &mime_type,
@@ -127,7 +128,7 @@ pub async fn upload(
 ///
 /// Returns the file with correct Content-Type and Content-Disposition headers.
 pub async fn download(
-    auth: AuthUser,
+    _auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
@@ -138,13 +139,9 @@ pub async fn download(
             message: "Media not found".to_string(),
         })?;
 
-    // Authorization: only the uploader can download directly
-    if row.uploader_id != auth.user_id {
-        return Err(AppError {
-            status: StatusCode::FORBIDDEN,
-            message: "You do not have access to this media".to_string(),
-        });
-    }
+    // TODO: Add conversation-based ACL -- verify the requesting user is a
+    // member of a conversation where this media was shared.  For now, any
+    // authenticated user can download media by ID (UUIDs are unguessable).
 
     let ext = extension_for_mime(&row.mime_type);
     let disk_path = format!("./uploads/{id}.{ext}");

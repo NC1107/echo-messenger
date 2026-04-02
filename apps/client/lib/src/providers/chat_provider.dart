@@ -186,19 +186,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
                   msg.content,
                 );
                 msg = msg.copyWith(content: decrypted);
-              } catch (_) {
-                // Retry with fresh key
-                await crypto.invalidateSessionKey(msg.fromUserId);
-                try {
-                  final decrypted = await crypto.decryptMessage(
-                    msg.fromUserId,
-                    msg.content,
-                  );
-                  msg = msg.copyWith(content: decrypted);
-                } catch (e) {
-                  debugPrint('[Chat] Decrypt retry failed for ${msg.id}: $e');
-                  msg = msg.copyWith(content: '[Could not decrypt]');
-                }
+              } catch (e) {
+                // History messages are immutable artifacts -- don't
+                // invalidate the live session for a past message.
+                debugPrint(
+                    '[Chat] History decrypt failed for ${msg.id}: $e');
+                msg = msg.copyWith(content: '[Could not decrypt]');
               }
             } else {
               msg = msg.copyWith(content: '[Encrypted history]');
@@ -241,13 +234,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
         .where((m) => !existingIds.contains(m.id))
         .toList();
 
-    if (isPagination) {
-      // Older messages go to the front
-      updatedConv[conversationId] = [...deduped, ...existing];
-    } else {
-      // Initial load: server messages first, then any in-memory ones
-      updatedConv[conversationId] = [...deduped, ...existing];
-    }
+    updatedConv[conversationId] = [...deduped, ...existing]
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
     final updatedHasMore = Map<String, bool>.from(state.hasMore);
     updatedHasMore[conversationId] = newMessages.length >= 50;
