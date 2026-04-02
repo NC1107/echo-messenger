@@ -194,6 +194,7 @@ class EchoTheme {
         contentTextStyle: GoogleFonts.inter(color: textPrimary, fontSize: 13),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         behavior: SnackBarBehavior.floating,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
       ),
     );
   }
@@ -387,6 +388,7 @@ class EchoTheme {
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         behavior: SnackBarBehavior.floating,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
       ),
     );
   }

@@ -43,6 +43,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   final _scrollController = ScrollController();
   final _inputFocusNode = FocusNode();
   bool _isTextEmpty = true;
+  bool _hideEncryptionBanner = false;
   String? _loadedConversationId;
 
   // Edit mode state
@@ -60,6 +61,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   void didUpdateWidget(covariant ChatPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.conversation?.id != oldWidget.conversation?.id) {
+      _hideEncryptionBanner = false;
       _loadHistory();
       _markAsRead();
     }
@@ -386,18 +388,24 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   }
 
   Widget _buildEncryptionBanner(bool isGroup) {
+    if (_hideEncryptionBanner) {
+      return const SizedBox.shrink();
+    }
+
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: isGroup
-            ? context.surface
-            : EchoTheme.online.withValues(alpha: 0.08),
+        color: context.surface,
+        border: Border.all(
+          color: isGroup
+              ? context.border
+              : EchoTheme.online.withValues(alpha: 0.45),
+          width: 1,
+        ),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
             isGroup ? Icons.shield_outlined : Icons.lock_outlined,
@@ -405,14 +413,20 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             color: isGroup ? context.textMuted : EchoTheme.online,
           ),
           const SizedBox(width: 8),
-          Text(
-            isGroup
-                ? 'Group messages are not encrypted'
-                : 'Messages are end-to-end encrypted',
-            style: TextStyle(
-              fontSize: isGroup ? 11 : 12,
-              color: isGroup ? context.textMuted : EchoTheme.online,
+          Expanded(
+            child: Text(
+              isGroup
+                  ? 'Group messages are not encrypted'
+                  : 'Messages are end-to-end encrypted',
+              style: TextStyle(
+                fontSize: isGroup ? 11 : 12,
+                color: isGroup ? context.textMuted : EchoTheme.online,
+              ),
             ),
+          ),
+          GestureDetector(
+            onTap: () => setState(() => _hideEncryptionBanner = true),
+            child: Icon(Icons.close, size: 14, color: context.textMuted),
           ),
         ],
       ),
@@ -657,6 +671,15 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     final typingUsers = wsState.typingIn(conv.id);
 
     final displayName = conv.displayName(myUserId);
+    final typingText = conv.isGroup
+      ? (typingUsers.length == 1
+          ? '${typingUsers.first} is typing...'
+          : '${typingUsers.join(", ")} are typing...')
+      : '$displayName is typing...';
+    final showInputStatus = _isEditing || typingUsers.isNotEmpty;
+    final inputStatusText = _isEditing && typingUsers.isNotEmpty
+      ? 'Editing message • $typingText'
+      : (_isEditing ? 'Editing message...' : typingText);
 
     // Listen for new messages to auto-scroll
     ref.listen<ChatState>(chatProvider, (prev, next) {
@@ -920,154 +943,176 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     },
                   ),
           ),
-          // Typing indicator
-          if (typingUsers.isNotEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-              child: Text(
-                conv.isGroup
-                    ? (typingUsers.length == 1
-                          ? '${typingUsers.first} is typing...'
-                          : '${typingUsers.join(", ")} are typing...')
-                    : '$displayName is typing...',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontStyle: FontStyle.italic,
-                  color: context.textMuted,
-                ),
-              ),
-            ),
-          // Edit mode banner
-          if (_isEditing)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-              color: context.accent.withValues(alpha: 0.08),
-              child: Row(
-                children: [
-                  Icon(Icons.edit_outlined, size: 14, color: context.accent),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Editing message...',
-                      style: TextStyle(
-                        color: context.accent,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: _cancelEditMode,
-                    child: Icon(
-                      Icons.close,
-                      size: 16,
-                      color: context.textMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           // Input area
           Container(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
             color: context.chatBg,
-            child: Container(
-              height: 44,
-              decoration: BoxDecoration(
-                color: context.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _isEditing ? context.accent : context.border,
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // Attachment button (hidden in edit mode)
-                  if (!_isEditing)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: IconButton(
-                        icon: const Icon(Icons.attach_file_outlined, size: 18),
-                        color: context.textSecondary,
-                        tooltip: 'Attach file',
-                        onPressed: _pickFile,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 36,
-                          minHeight: 36,
-                        ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showInputStatus)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _isEditing
+                          ? context.accent.withValues(alpha: 0.12)
+                          : context.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _isEditing
+                            ? context.accent.withValues(alpha: 0.4)
+                            : context.border,
+                        width: 1,
                       ),
                     ),
-                  if (_isEditing) const SizedBox(width: 12),
-                  // Text field
-                  Expanded(
-                    child: KeyboardListener(
-                      focusNode: FocusNode(),
-                      onKeyEvent: (event) {
-                        if (event is KeyDownEvent &&
-                            event.logicalKey == LogicalKeyboardKey.escape &&
-                            _isEditing) {
-                          _cancelEditMode();
-                        }
-                      },
-                      child: TextField(
-                        controller: _messageController,
-                        focusNode: _inputFocusNode,
-                        maxLines: 1,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: context.textPrimary,
+                    child: Row(
+                      children: [
+                        Icon(
+                          _isEditing
+                              ? Icons.edit_outlined
+                              : Icons.more_horiz_rounded,
+                          size: 12,
+                          color: _isEditing ? context.accent : context.textMuted,
                         ),
-                        decoration: InputDecoration(
-                          hintText: _isEditing
-                              ? 'Edit your message...'
-                              : 'Type a message...',
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          filled: false,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 10,
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            inputStatusText,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontStyle: _isEditing
+                                  ? FontStyle.normal
+                                  : FontStyle.italic,
+                              color: _isEditing
+                                  ? context.accent
+                                  : context.textMuted,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        onChanged: _onInputChanged,
-                        onSubmitted: (_) =>
-                            _isEditing ? _submitEdit() : _sendMessage(),
-                      ),
+                        if (_isEditing)
+                          GestureDetector(
+                            onTap: _cancelEditMode,
+                            child: Icon(
+                              Icons.close,
+                              size: 14,
+                              color: context.textMuted,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-                  // Send / confirm edit button
-                  if (!_isTextEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 7),
-                      child: GestureDetector(
-                        onTap: _isEditing ? _submitEdit : _sendMessage,
-                        child: Container(
-                          width: 30,
-                          height: 30,
-                          decoration: BoxDecoration(
-                            color: _isEditing
-                                ? EchoTheme.online
-                                : context.accent,
-                            shape: BoxShape.circle,
+                Container(
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: context.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _isEditing ? context.accent : context.border,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // Attachment button (hidden in edit mode)
+                      if (!_isEditing)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: IconButton(
+                            icon: const Icon(
+                              Icons.attach_file_outlined,
+                              size: 18,
+                            ),
+                            color: context.textSecondary,
+                            tooltip: 'Attach file',
+                            onPressed: _pickFile,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
                           ),
-                          child: Icon(
-                            _isEditing
-                                ? Icons.check_rounded
-                                : Icons.arrow_upward_rounded,
-                            size: 18,
-                            color: Colors.white,
+                        ),
+                      if (_isEditing) const SizedBox(width: 12),
+                      // Text field
+                      Expanded(
+                        child: KeyboardListener(
+                          focusNode: FocusNode(),
+                          onKeyEvent: (event) {
+                            if (event is KeyDownEvent &&
+                                event.logicalKey ==
+                                    LogicalKeyboardKey.escape &&
+                                _isEditing) {
+                              _cancelEditMode();
+                            }
+                          },
+                          child: TextField(
+                            controller: _messageController,
+                            focusNode: _inputFocusNode,
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: context.textPrimary,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: _isEditing
+                                  ? 'Edit your message...'
+                                  : 'Type a message...',
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              filled: false,
+                              contentPadding: const EdgeInsets.symmetric(
+                                vertical: 10,
+                              ),
+                            ),
+                            onChanged: _onInputChanged,
+                            onSubmitted: (_) =>
+                                _isEditing ? _submitEdit() : _sendMessage(),
                           ),
                         ),
                       ),
-                    )
-                  else
-                    const SizedBox(width: 8),
-                ],
-              ),
+                      // Send / confirm edit button (keeps stable footprint)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 7),
+                        child: GestureDetector(
+                          onTap: _isTextEmpty
+                              ? null
+                              : (_isEditing ? _submitEdit : _sendMessage),
+                          child: Opacity(
+                            opacity: _isTextEmpty ? 0.45 : 1,
+                            child: Container(
+                              width: 30,
+                              height: 30,
+                              decoration: BoxDecoration(
+                                color: _isTextEmpty
+                                    ? context.textMuted
+                                    : (_isEditing
+                                          ? EchoTheme.online
+                                          : context.accent),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                _isEditing
+                                    ? Icons.check_rounded
+                                    : Icons.arrow_upward_rounded,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],

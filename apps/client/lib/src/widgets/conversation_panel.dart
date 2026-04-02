@@ -599,8 +599,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 height: 48,
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
-                  color: context.accent.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
+                  color: context.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: context.accent.withValues(alpha: 0.45),
+                    width: 1,
+                  ),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Row(
