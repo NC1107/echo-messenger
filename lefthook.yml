@@ -7,6 +7,12 @@ pre-commit:
     rust-clippy:
       glob: "*.rs"
       run: cargo clippy --workspace --all-targets -- -D warnings
+    dart-format:
+      glob: "*.dart"
+      run: cd apps/client && dart format --set-exit-if-changed .
+    flutter-analyze:
+      glob: "*.dart"
+      run: cd apps/client && flutter analyze --fatal-infos
 
 commit-msg:
   commands:
