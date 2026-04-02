@@ -16,16 +16,18 @@ pub struct MediaRow {
 
 pub async fn create_media(
     pool: &PgPool,
+    id: Uuid,
     uploader_id: Uuid,
     filename: &str,
     mime_type: &str,
     size_bytes: i64,
 ) -> Result<MediaRow, sqlx::Error> {
     sqlx::query_as::<_, MediaRow>(
-        "INSERT INTO media (uploader_id, filename, mime_type, size_bytes) \
-         VALUES ($1, $2, $3, $4) \
+        "INSERT INTO media (id, uploader_id, filename, mime_type, size_bytes) \
+         VALUES ($1, $2, $3, $4, $5) \
          RETURNING id, uploader_id, filename, mime_type, size_bytes, created_at",
     )
+    .bind(id)
     .bind(uploader_id)
     .bind(filename)
     .bind(mime_type)

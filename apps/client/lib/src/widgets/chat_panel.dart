@@ -158,6 +158,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           auth.userId!,
           before: oldestTimestamp,
           crypto: crypto,
+          isGroup: conv.isGroup,
         );
   }
 

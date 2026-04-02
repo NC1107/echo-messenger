@@ -94,6 +94,83 @@ void main() {
       expect(msg.reactions.first.userId, 'user-xyz');
     });
 
+    test('REST-style field names parsed via fallbacks', () {
+      final json = {
+        'id': 'msg-rest-1',
+        'sender_id': 'user-rest',
+        'sender_username': 'rest_user',
+        'conversation_id': 'conv-1',
+        'content': 'from REST API',
+        'created_at': '2026-03-31T14:00:00Z',
+      };
+
+      final msg = ChatMessage.fromServerJson(json, 'user-other');
+
+      expect(msg.id, 'msg-rest-1');
+      expect(msg.fromUserId, 'user-rest');
+      expect(msg.fromUsername, 'rest_user');
+      expect(msg.timestamp, '2026-03-31T14:00:00Z');
+      expect(msg.isMine, isFalse);
+    });
+
+    test('REST-style isMine detection with sender_id', () {
+      final json = {
+        'id': 'msg-rest-2',
+        'sender_id': 'user-me',
+        'sender_username': 'me',
+        'conversation_id': 'conv-1',
+        'content': 'my message',
+        'created_at': '2026-03-31T14:01:00Z',
+      };
+
+      final msg = ChatMessage.fromServerJson(json, 'user-me');
+
+      expect(msg.isMine, isTrue);
+    });
+
+    test('WS-style field names take precedence over REST-style', () {
+      final json = {
+        'message_id': 'ws-id',
+        'id': 'rest-id',
+        'from_user_id': 'ws-user',
+        'sender_id': 'rest-user',
+        'from_username': 'ws-name',
+        'sender_username': 'rest-name',
+        'conversation_id': 'conv-1',
+        'content': 'test',
+        'timestamp': '2026-03-31T15:00:00Z',
+        'created_at': '2026-03-31T14:00:00Z',
+      };
+
+      final msg = ChatMessage.fromServerJson(json, 'other');
+
+      expect(msg.id, 'ws-id');
+      expect(msg.fromUserId, 'ws-user');
+      expect(msg.fromUsername, 'ws-name');
+      expect(msg.timestamp, '2026-03-31T15:00:00Z');
+    });
+
+    test('copyWith to decrypt-failure preserves identity fields', () {
+      const msg = ChatMessage(
+        id: 'msg-enc-1',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'SGVsbG8gV29ybGQ=',
+        timestamp: '2026-03-31T12:00:00Z',
+        isMine: false,
+      );
+
+      final failed = msg.copyWith(content: '[Could not decrypt]');
+
+      expect(failed.content, '[Could not decrypt]');
+      expect(failed.id, 'msg-enc-1');
+      expect(failed.fromUserId, 'user-1');
+      expect(failed.fromUsername, 'alice');
+      expect(failed.conversationId, 'conv-1');
+      expect(failed.timestamp, '2026-03-31T12:00:00Z');
+    });
+
     test('copyWith preserves unchanged fields', () {
       const msg = ChatMessage(
         id: 'msg-1',

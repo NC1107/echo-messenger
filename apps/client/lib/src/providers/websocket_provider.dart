@@ -71,6 +71,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   /// Throttle: track last typing event sent per conversation.
   final Map<String, DateTime> _lastTypingSent = {};
 
+  /// Peers that already had a decrypt-retry this connection, to prevent
+  /// cascading session invalidation.
+  final Set<String> _retriedPeers = {};
+
   WebSocketNotifier(this.ref) : super(const WebSocketState()) {
     // Periodically clean up stale typing indicators
     _typingCleanupTimer = Timer.periodic(
@@ -137,6 +141,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     final uri = Uri.parse('$wsBase/ws?ticket=$ticket');
     _channel = WebSocketChannel.connect(uri);
     state = state.copyWith(isConnected: true);
+    _retriedPeers.clear();
 
     // Reload conversations now that WebSocket is connected -- ensures the
     // list is up-to-date even if the initial REST call raced with connection.
@@ -430,19 +435,28 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
       try {
         decryptedContent = await crypto.decryptMessage(fromUserId, rawContent);
       } catch (firstError) {
-        // First attempt failed -- invalidate cached session key and retry once
-        // with a fresh key fetch.
-        try {
-          await crypto.invalidateSessionKey(fromUserId);
-          decryptedContent = await crypto.decryptMessage(
-            fromUserId,
-            rawContent,
-          );
-        } catch (retryError) {
+        if (!_retriedPeers.contains(fromUserId)) {
+          // First failure for this peer this connection -- invalidate session
+          // and retry once.
+          _retriedPeers.add(fromUserId);
+          try {
+            await crypto.invalidateSessionKey(fromUserId);
+            decryptedContent = await crypto.decryptMessage(
+              fromUserId,
+              rawContent,
+            );
+          } catch (retryError) {
+            debugPrint(
+              '[WebSocket] Decryption failed for message in $conversationId '
+              'from $fromUserId. First error: $firstError, '
+              'Retry error: $retryError',
+            );
+            decryptedContent = '[Could not decrypt]';
+          }
+        } else {
           debugPrint(
-            '[WebSocket] Decryption failed for message in $conversationId '
-            'from $fromUserId. First error: $firstError, '
-            'Retry error: $retryError',
+            '[WebSocket] Skipping retry for $fromUserId '
+            '(already retried this connection): $firstError',
           );
           decryptedContent = '[Could not decrypt]';
         }
