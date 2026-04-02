@@ -14,6 +14,7 @@ import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/update_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../version.dart';
@@ -889,6 +890,52 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
     }
   }
 
+  Widget _buildCheckForUpdates() {
+    final update = ref.watch(updateProvider);
+    return Row(
+      children: [
+        OutlinedButton.icon(
+          onPressed: update.checking
+              ? null
+              : () => ref.read(updateProvider.notifier).check(force: true),
+          icon: update.checking
+              ? SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: context.textMuted,
+                  ),
+                )
+              : Icon(Icons.refresh, size: 16),
+          label: Text(update.checking ? 'Checking...' : 'Check for Updates'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: context.textSecondary,
+            side: BorderSide(color: context.border),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            textStyle: const TextStyle(fontSize: 13),
+          ),
+        ),
+        const SizedBox(width: 12),
+        if (update.latestVersion != null && !update.checking)
+          Text(
+            update.updateAvailable
+                ? 'v${update.latestVersion} available'
+                : 'Up to date',
+            style: TextStyle(
+              color: update.updateAvailable
+                  ? context.accent
+                  : context.textMuted,
+              fontSize: 13,
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildAboutSection() {
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -911,6 +958,8 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
           'Server version: ${_serverVersion ?? "unknown"}',
           style: TextStyle(color: context.textMuted, fontSize: 14),
         ),
+        const SizedBox(height: 16),
+        _buildCheckForUpdates(),
         const SizedBox(height: 24),
         Text(
           'Open source',

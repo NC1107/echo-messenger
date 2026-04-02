@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/conversation.dart';
 import '../providers/contacts_provider.dart';
@@ -11,6 +12,7 @@ import '../providers/crypto_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../providers/update_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/chat_panel.dart';
@@ -78,7 +80,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.read(contactsProvider.notifier).loadContacts();
     ref.read(contactsProvider.notifier).loadPending();
 
-    // 5. Show first-login server notice
+    // 5. Check for app updates (non-blocking)
+    ref.read(updateProvider.notifier).check();
+
+    // 6. Show first-login server notice
     await _showServerNoticeIfNeeded();
   }
 
@@ -548,8 +553,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           // Thin vertical divider
           Container(width: 1, color: context.border),
-          // Center: content area (flex)
-          Expanded(child: rightPanel),
+          // Center: content area (flex) + optional update banner
+          Expanded(
+            child: Column(
+              children: [
+                _buildUpdateBanner(),
+                Expanded(child: rightPanel),
+              ],
+            ),
+          ),
           // Right: members panel (optional, 280px)
           if (!_showSettings &&
               _showMembers &&
@@ -599,8 +611,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             SizedBox(width: 300, child: _buildConversationPanel()),
           // Thin vertical divider
           Container(width: 1, color: context.border),
-          // Right: content area
-          Expanded(child: rightPanel),
+          // Right: content area + optional update banner
+          Expanded(
+            child: Column(
+              children: [
+                _buildUpdateBanner(),
+                Expanded(child: rightPanel),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -639,6 +658,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     return Scaffold(body: _buildConversationPanel());
+  }
+
+  Widget _buildUpdateBanner() {
+    final update = ref.watch(updateProvider);
+    if (!update.updateAvailable || update.dismissed) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: context.accent.withValues(alpha: 0.15),
+      child: Row(
+        children: [
+          Icon(Icons.system_update, size: 18, color: context.accent),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Echo v${update.latestVersion} is available',
+              style: TextStyle(color: context.textPrimary, fontSize: 13),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              final url = update.downloadUrl;
+              if (url != null) launchUrl(Uri.parse(url));
+            },
+            child: Text(
+              'Download',
+              style: TextStyle(
+                color: context.accent,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.close, size: 16, color: context.textMuted),
+            onPressed: () => ref.read(updateProvider.notifier).dismiss(),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildEmptyState() {
