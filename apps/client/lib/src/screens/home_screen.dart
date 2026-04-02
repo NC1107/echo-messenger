@@ -738,73 +738,179 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   Widget _buildUpdateBanner() {
     final update = ref.watch(updateProvider);
-    if (!update.updateAvailable || update.dismissed) {
+
+    // Nothing to show
+    if (!update.updateAvailable &&
+        update.status != UpdateStatus.downloading &&
+        update.status != UpdateStatus.readyToInstall &&
+        update.status != UpdateStatus.installing &&
+        update.status != UpdateStatus.error) {
       return const SizedBox.shrink();
     }
+    if (update.dismissed &&
+        update.status != UpdateStatus.downloading &&
+        update.status != UpdateStatus.readyToInstall &&
+        update.status != UpdateStatus.installing) {
+      return const SizedBox.shrink();
+    }
+
+    String label;
+    Widget action;
+    Widget? trailing;
+    Widget? progress;
+
+    switch (update.status) {
+      case UpdateStatus.downloading:
+        final pct = (update.downloadProgress * 100).toInt();
+        label = 'Downloading update... $pct%';
+        action = TextButton(
+          onPressed: () => ref.read(updateProvider.notifier).cancelDownload(),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: context.textMuted, fontSize: 13),
+          ),
+        );
+        trailing = null;
+        progress = LinearProgressIndicator(
+          value: update.downloadProgress,
+          color: context.accent,
+          backgroundColor: context.border,
+          minHeight: 3,
+        );
+      case UpdateStatus.readyToInstall:
+        label = 'Echo v${update.latestVersion} ready to install';
+        action = FilledButton.icon(
+          onPressed: () => ref.read(updateProvider.notifier).applyUpdate(),
+          icon: const Icon(Icons.restart_alt, size: 16),
+          label: const Text(
+            'Restart to Update',
+            style: TextStyle(fontSize: 12),
+          ),
+          style: FilledButton.styleFrom(
+            backgroundColor: context.accent,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          ),
+        );
+        trailing = TextButton(
+          onPressed: () => ref.read(updateProvider.notifier).dismiss(),
+          child: Text(
+            'Later',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+        );
+        progress = null;
+      case UpdateStatus.installing:
+        label = 'Installing update...';
+        action = const SizedBox(
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        );
+        trailing = null;
+        progress = null;
+      case UpdateStatus.error:
+        label = 'Update failed';
+        action = TextButton(
+          onPressed: () => ref.read(updateProvider.notifier).downloadUpdate(),
+          child: Text(
+            'Retry',
+            style: TextStyle(color: context.accent, fontSize: 13),
+          ),
+        );
+        trailing = IconButton(
+          icon: Icon(Icons.close, size: 16, color: context.textMuted),
+          onPressed: () => ref.read(updateProvider.notifier).dismiss(),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        );
+        progress = null;
+      default: // idle with updateAvailable
+        label = 'Echo v${update.latestVersion} is available';
+        action = TextButton(
+          onPressed: update.assetDownloadUrl != null
+              ? () => ref.read(updateProvider.notifier).downloadUpdate()
+              : () {
+                  final url = update.downloadUrl;
+                  if (url != null) launchUrl(Uri.parse(url));
+                },
+          child: Text(
+            update.assetDownloadUrl != null ? 'Update' : 'Download',
+            style: TextStyle(
+              color: context.accent,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        );
+        trailing = IconButton(
+          icon: Icon(Icons.close, size: 16, color: context.textMuted),
+          onPressed: () => ref.read(updateProvider.notifier).dismiss(),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        );
+        progress = null;
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: context.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: context.border),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: context.accent.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.system_update,
-                    size: 14,
-                    color: context.accent,
-                  ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Echo v${update.latestVersion} is available',
-                    style: TextStyle(
-                      color: context.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                decoration: BoxDecoration(
+                  color: context.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: context.border),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: context.accent.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.system_update,
+                        size: 14,
+                        color: context.accent,
+                      ),
                     ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    final url = update.downloadUrl;
-                    if (url != null) launchUrl(Uri.parse(url));
-                  },
-                  child: Text(
-                    'Download',
-                    style: TextStyle(
-                      color: context.accent,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
-                  ),
+                    action,
+                    // ignore: use_null_aware_elements
+                    if (trailing != null) trailing,
+                  ],
                 ),
-                IconButton(
-                  icon: Icon(Icons.close, size: 16, color: context.textMuted),
-                  onPressed: () => ref.read(updateProvider.notifier).dismiss(),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 44,
-                    minHeight: 44,
+              ),
+              if (progress != null)
+                ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(10),
+                    bottomRight: Radius.circular(10),
                   ),
+                  child: progress,
                 ),
-              ],
-            ),
+            ],
           ),
         ),
       ),

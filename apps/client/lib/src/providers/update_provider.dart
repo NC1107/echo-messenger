@@ -4,18 +4,36 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/update_service.dart' as update_svc;
 import '../version.dart';
 
+enum UpdateStatus {
+  idle,
+  checking,
+  downloading,
+  readyToInstall,
+  installing,
+  error,
+}
+
 class UpdateState {
+  final UpdateStatus status;
   final String? latestVersion;
   final String? downloadUrl;
-  final bool checking;
+  final String? assetDownloadUrl;
+  final String? downloadedFilePath;
+  final double downloadProgress;
+  final String? errorMessage;
   final bool dismissed;
 
   const UpdateState({
+    this.status = UpdateStatus.idle,
     this.latestVersion,
     this.downloadUrl,
-    this.checking = false,
+    this.assetDownloadUrl,
+    this.downloadedFilePath,
+    this.downloadProgress = 0,
+    this.errorMessage,
     this.dismissed = false,
   });
 
@@ -24,22 +42,32 @@ class UpdateState {
       latestVersion != appVersion &&
       _isNewer(latestVersion!, appVersion);
 
+  /// Backward-compat: old code checks `state.checking`.
+  bool get checking => status == UpdateStatus.checking;
+
   UpdateState copyWith({
+    UpdateStatus? status,
     String? latestVersion,
     String? downloadUrl,
-    bool? checking,
+    String? assetDownloadUrl,
+    String? downloadedFilePath,
+    double? downloadProgress,
+    String? errorMessage,
     bool? dismissed,
   }) {
     return UpdateState(
+      status: status ?? this.status,
       latestVersion: latestVersion ?? this.latestVersion,
       downloadUrl: downloadUrl ?? this.downloadUrl,
-      checking: checking ?? this.checking,
+      assetDownloadUrl: assetDownloadUrl ?? this.assetDownloadUrl,
+      downloadedFilePath: downloadedFilePath ?? this.downloadedFilePath,
+      downloadProgress: downloadProgress ?? this.downloadProgress,
+      errorMessage: errorMessage ?? this.errorMessage,
       dismissed: dismissed ?? this.dismissed,
     );
   }
 }
 
-/// Compare two semver strings (e.g. "0.0.33" > "0.0.32").
 bool _isNewer(String remote, String local) {
   if (local == 'dev') return false;
   final r = remote.split('.').map((s) => int.tryParse(s) ?? 0).toList();
@@ -56,6 +84,8 @@ bool _isNewer(String remote, String local) {
 const _cacheKey = 'update_check_cache';
 const _cacheTimeKey = 'update_check_time';
 const _dismissedVersionKey = 'update_dismissed_version';
+const _downloadedFileKey = 'update_downloaded_file';
+const _downloadedVersionKey = 'update_downloaded_version';
 const _cacheTtl = Duration(hours: 24);
 
 const _releaseApiUrl =
@@ -68,12 +98,11 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
 
   Future<void> check({bool force = false}) async {
     if (appVersion == 'dev') return;
-    state = state.copyWith(checking: true);
+    state = state.copyWith(status: UpdateStatus.checking);
 
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Check cache unless forced
       if (!force) {
         final cachedTime = prefs.getInt(_cacheTimeKey) ?? 0;
         final age = DateTime.now().millisecondsSinceEpoch - cachedTime;
@@ -83,10 +112,17 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
             final data = jsonDecode(cached) as Map<String, dynamic>;
             final version = data['version'] as String;
             final dismissed = prefs.getString(_dismissedVersionKey) == version;
+            final readyPath = await _checkExistingDownload(prefs, version);
+
             state = UpdateState(
               latestVersion: version,
               downloadUrl: data['url'] as String?,
+              assetDownloadUrl: data['assetUrl'] as String?,
               dismissed: dismissed,
+              status: readyPath != null
+                  ? UpdateStatus.readyToInstall
+                  : UpdateStatus.idle,
+              downloadedFilePath: readyPath,
             );
             return;
           }
@@ -101,7 +137,7 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode != 200) {
-        state = state.copyWith(checking: false);
+        state = state.copyWith(status: UpdateStatus.idle);
         return;
       }
 
@@ -110,21 +146,104 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
       final version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
       final url = (data['html_url'] as String?) ?? _releasesPageUrl;
 
-      // Cache the result
+      // Find the platform-specific asset URL.
+      String? assetUrl;
+      final assetName = update_svc.getAssetNameForPlatform();
+      if (assetName != null) {
+        final assets = data['assets'] as List<dynamic>? ?? [];
+        for (final asset in assets) {
+          if ((asset['name'] as String?) == assetName) {
+            assetUrl = asset['browser_download_url'] as String?;
+            break;
+          }
+        }
+      }
+
       await prefs.setString(
         _cacheKey,
-        jsonEncode({'version': version, 'url': url}),
+        jsonEncode({'version': version, 'url': url, 'assetUrl': assetUrl}),
       );
       await prefs.setInt(_cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
 
       final dismissed = prefs.getString(_dismissedVersionKey) == version;
+      final readyPath = await _checkExistingDownload(prefs, version);
+
       state = UpdateState(
         latestVersion: version,
         downloadUrl: url,
+        assetDownloadUrl: assetUrl,
         dismissed: dismissed,
+        status: readyPath != null
+            ? UpdateStatus.readyToInstall
+            : UpdateStatus.idle,
+        downloadedFilePath: readyPath,
       );
     } catch (_) {
-      state = state.copyWith(checking: false);
+      state = state.copyWith(status: UpdateStatus.idle);
+    }
+  }
+
+  /// Download the update binary in the background.
+  Future<void> downloadUpdate() async {
+    final assetUrl = state.assetDownloadUrl;
+    final assetName = update_svc.getAssetNameForPlatform();
+    if (assetUrl == null || assetName == null || !update_svc.canAutoUpdate) {
+      return;
+    }
+
+    state = state.copyWith(
+      status: UpdateStatus.downloading,
+      downloadProgress: 0,
+      errorMessage: null,
+    );
+
+    try {
+      final filePath = await update_svc.downloadFile(assetUrl, assetName, (
+        progress,
+      ) {
+        if (mounted) {
+          state = state.copyWith(downloadProgress: progress);
+        }
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_downloadedFileKey, filePath);
+      await prefs.setString(_downloadedVersionKey, state.latestVersion ?? '');
+
+      state = state.copyWith(
+        status: UpdateStatus.readyToInstall,
+        downloadedFilePath: filePath,
+        downloadProgress: 1,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        status: UpdateStatus.error,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  /// Cancel an in-progress download and reset state.
+  void cancelDownload() {
+    // The download runs inside update_svc.downloadFile which is a single
+    // awaited future. Cancellation is best-effort: we reset state and the
+    // partially downloaded file will be cleaned up on next check.
+    state = state.copyWith(status: UpdateStatus.idle, downloadProgress: 0);
+  }
+
+  /// Apply the downloaded update (restart the app).
+  Future<void> applyUpdate() async {
+    final filePath = state.downloadedFilePath;
+    if (filePath == null) return;
+
+    state = state.copyWith(status: UpdateStatus.installing);
+    try {
+      await update_svc.applyUpdate(filePath);
+    } catch (e) {
+      state = state.copyWith(
+        status: UpdateStatus.error,
+        errorMessage: e.toString(),
+      );
     }
   }
 
@@ -134,6 +253,22 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_dismissedVersionKey, state.latestVersion!);
     }
+  }
+
+  Future<String?> _checkExistingDownload(
+    SharedPreferences prefs,
+    String version,
+  ) async {
+    if (!update_svc.canAutoUpdate) return null;
+    final savedPath = prefs.getString(_downloadedFileKey);
+    final savedVersion = prefs.getString(_downloadedVersionKey);
+    if (savedPath != null && savedVersion == version) {
+      if (await update_svc.fileExists(savedPath)) return savedPath;
+      // Stale reference -- clean up.
+      await prefs.remove(_downloadedFileKey);
+      await prefs.remove(_downloadedVersionKey);
+    }
+    return null;
   }
 }
 
