@@ -14,6 +14,7 @@ class VoiceRtcState {
   final bool isJoining;
   final bool isActive;
   final bool isCaptureEnabled;
+  final bool isDeafened;
   final Map<String, String> peerConnectionStates;
   final String? error;
 
@@ -23,6 +24,7 @@ class VoiceRtcState {
     this.isJoining = false,
     this.isActive = false,
     this.isCaptureEnabled = true,
+    this.isDeafened = false,
     this.peerConnectionStates = const {},
     this.error,
   });
@@ -33,6 +35,7 @@ class VoiceRtcState {
     bool? isJoining,
     bool? isActive,
     bool? isCaptureEnabled,
+    bool? isDeafened,
     Map<String, String>? peerConnectionStates,
     String? error,
   }) {
@@ -42,6 +45,7 @@ class VoiceRtcState {
       isJoining: isJoining ?? this.isJoining,
       isActive: isActive ?? this.isActive,
       isCaptureEnabled: isCaptureEnabled ?? this.isCaptureEnabled,
+      isDeafened: isDeafened ?? this.isDeafened,
       peerConnectionStates: peerConnectionStates ?? this.peerConnectionStates,
       error: error,
     );
@@ -178,6 +182,24 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     state = state.copyWith(isCaptureEnabled: enabled);
   }
 
+  /// Mute/unmute all incoming audio from remote peers.
+  void setDeafened(bool deafened) {
+    for (final renderer in _remoteAudioRenderers.values) {
+      renderer.muted = deafened;
+    }
+    // Also disable remote audio tracks on all peer connections so audio
+    // processing stops entirely while deafened.
+    for (final pc in _peerConnections.values) {
+      for (final stream in pc.getRemoteStreams()) {
+        if (stream == null) continue;
+        for (final track in stream.getAudioTracks()) {
+          track.enabled = !deafened;
+        }
+      }
+    }
+    state = state.copyWith(isDeafened: deafened);
+  }
+
   Future<void> syncParticipants({
     required String conversationId,
     required String channelId,
@@ -292,17 +314,27 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     String remoteUserId,
     MediaStream stream,
   ) async {
+    final isCurrentlyDeafened = state.isDeafened;
+
     final existing = _remoteAudioRenderers[remoteUserId];
     if (existing != null) {
       existing.srcObject = stream;
+      existing.muted = isCurrentlyDeafened;
       return;
     }
 
     final renderer = RTCVideoRenderer();
     await renderer.initialize();
     renderer.srcObject = stream;
-    renderer.muted = false;
+    renderer.muted = isCurrentlyDeafened;
     _remoteAudioRenderers[remoteUserId] = renderer;
+
+    // Disable remote audio tracks if currently deafened.
+    if (isCurrentlyDeafened) {
+      for (final track in stream.getAudioTracks()) {
+        track.enabled = false;
+      }
+    }
   }
 
   Future<void> _disposeRemoteRenderer(String remoteUserId) async {

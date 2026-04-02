@@ -14,6 +14,22 @@ import '../screens/register_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/user_profile_screen.dart';
 
+/// Shared fade transition used by all routes.
+CustomTransitionPage<void> _fadePage({
+  required LocalKey key,
+  required Widget child,
+}) {
+  return CustomTransitionPage<void>(
+    key: key,
+    child: child,
+    transitionDuration: const Duration(milliseconds: 200),
+    reverseTransitionDuration: const Duration(milliseconds: 200),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return FadeTransition(opacity: animation, child: child);
+    },
+  );
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
 
@@ -30,45 +46,65 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      GoRoute(
+        path: '/login',
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const LoginScreen()),
+      ),
       GoRoute(
         path: '/register',
-        builder: (context, state) => const RegisterScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const RegisterScreen()),
       ),
-      GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
-      // Keep these as overlay routes that push on top of home
+      GoRoute(
+        path: '/home',
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const HomeScreen()),
+      ),
       GoRoute(
         path: '/contacts',
-        builder: (context, state) => const ContactsScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const ContactsScreen()),
       ),
       GoRoute(
         path: '/create-group',
-        builder: (context, state) => const CreateGroupScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const CreateGroupScreen()),
       ),
       GoRoute(
         path: '/group-info/:conversationId',
-        builder: (_, state) => GroupInfoScreen(
-          conversationId: state.pathParameters['conversationId']!,
+        pageBuilder: (context, state) => _fadePage(
+          key: state.pageKey,
+          child: GroupInfoScreen(
+            conversationId: state.pathParameters['conversationId']!,
+          ),
         ),
       ),
       GoRoute(
         path: '/discover-groups',
-        builder: (context, state) => const DiscoverGroupsScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const DiscoverGroupsScreen()),
       ),
       GoRoute(
         path: '/settings',
-        builder: (context, state) => const SettingsScreen(),
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const SettingsScreen()),
       ),
       GoRoute(
         path: '/join/:groupId',
-        builder: (_, state) =>
-            JoinGroupScreen(groupId: state.pathParameters['groupId']!),
+        pageBuilder: (context, state) => _fadePage(
+          key: state.pageKey,
+          child: JoinGroupScreen(groupId: state.pathParameters['groupId']!),
+        ),
       ),
       GoRoute(
         path: '/profile/:userId',
-        builder: (_, state) => Scaffold(
-          appBar: AppBar(title: const Text('Profile')),
-          body: UserProfileScreen(userId: state.pathParameters['userId']!),
+        pageBuilder: (context, state) => _fadePage(
+          key: state.pageKey,
+          child: Scaffold(
+            appBar: AppBar(title: const Text('Profile')),
+            body: UserProfileScreen(userId: state.pathParameters['userId']!),
+          ),
         ),
       ),
     ],

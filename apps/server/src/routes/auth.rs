@@ -212,7 +212,7 @@ pub async fn ws_ticket(
     state
         .ticket_store
         .lock()
-        .expect("ticket store lock poisoned")
+        .map_err(|_| AppError::internal("Internal state error"))?
         .insert(ticket.clone(), (auth_user.user_id, Instant::now()));
 
     Ok(Json(WsTicketResponse { ticket }))

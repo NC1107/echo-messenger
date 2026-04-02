@@ -771,7 +771,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             child: Text(
               label,
               style: TextStyle(
-                color: isSelected ? Colors.white : context.textSecondary,
+                color: isSelected
+                    ? Theme.of(context).colorScheme.onPrimary
+                    : context.textSecondary,
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
               ),

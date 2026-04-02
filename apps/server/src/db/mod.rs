@@ -12,8 +12,12 @@ use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 
 pub async fn create_pool(database_url: &str) -> PgPool {
+    let max_conns: u32 = std::env::var("DB_MAX_CONNECTIONS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100);
     PgPoolOptions::new()
-        .max_connections(50)
+        .max_connections(max_conns)
         .connect(database_url)
         .await
         .expect("Failed to connect to database")
@@ -37,6 +41,9 @@ pub async fn run_migrations(pool: &PgPool) {
         include_str!("../migrations/014_encryption_toggle.sql"),
         include_str!("../migrations/015_user_privacy_preferences.sql"),
         include_str!("../migrations/016_channels_and_voice.sql"),
+        include_str!("../migrations/017_media_conversation_id.sql"),
+        include_str!("../migrations/018_audit_indexes.sql"),
+        include_str!("../migrations/019_message_replies.sql"),
     ];
 
     // Execute each statement separately (sqlx doesn't support multiple statements in one query)

@@ -30,8 +30,8 @@ pub struct UploadBundleRequest {
     /// Device ID for multi-device support. Defaults to 0 for backward compatibility.
     #[serde(default)]
     pub device_id: i32,
-    /// Ed25519 signing public key, base64-encoded. Optional for backward compatibility.
-    pub signing_key: Option<String>,
+    /// Ed25519 signing public key, base64-encoded. Required to prevent MITM attacks.
+    pub signing_key: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,18 +86,11 @@ pub async fn upload_bundle(
 
     let device_id = body.device_id;
 
-    // Decode and optionally verify signing_key + signature
-    let signing_key_bytes: Option<Vec<u8>> = match &body.signing_key {
-        Some(sk_b64) => {
-            let sk = BASE64
-                .decode(sk_b64)
-                .map_err(|_| AppError::bad_request("Invalid base64 for signing_key"))?;
-            // Verify the signed_prekey_signature using the Ed25519 signing key
-            verify_signed_prekey_signature(&sk, &signed_prekey, &signed_prekey_signature)?;
-            Some(sk)
-        }
-        None => None,
-    };
+    // Decode and verify signing_key + signature (required for MITM prevention)
+    let signing_key_bytes = BASE64
+        .decode(&body.signing_key)
+        .map_err(|_| AppError::bad_request("Invalid base64 for signing_key"))?;
+    verify_signed_prekey_signature(&signing_key_bytes, &signed_prekey, &signed_prekey_signature)?;
 
     let one_time_prekeys: Vec<(i32, Vec<u8>)> = body
         .one_time_prekeys
@@ -115,7 +108,7 @@ pub async fn upload_bundle(
         auth_user.user_id,
         device_id,
         &identity_key,
-        signing_key_bytes.as_deref(),
+        Some(&signing_key_bytes),
     )
     .await?;
     db::keys::store_signed_prekey(

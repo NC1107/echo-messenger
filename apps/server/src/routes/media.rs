@@ -44,8 +44,9 @@ fn extension_for_mime(mime: &str) -> &str {
 
 /// POST /api/media/upload
 ///
-/// Accepts multipart form data with a `file` field.
-/// Saves the file to `./uploads/{uuid}.{ext}` and creates a DB record.
+/// Accepts multipart form data with a `file` field and an optional
+/// `conversation_id` field.  Saves the file to `./uploads/{uuid}.{ext}`
+/// and creates a DB record.
 pub async fn upload(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
@@ -56,12 +57,39 @@ pub async fn upload(
         .await
         .map_err(|e| AppError::internal(format!("Failed to create uploads directory: {e}")))?;
 
+    let mut file_data: Option<(String, String, Vec<u8>)> = None;
+    let mut conversation_id: Option<Uuid> = None;
+
     while let Some(field) = multipart
         .next_field()
         .await
         .map_err(|e| AppError::bad_request(format!("Invalid multipart data: {e}")))?
     {
         let field_name = field.name().unwrap_or_default().to_string();
+
+        if field_name == "conversation_id" {
+            let text = field
+                .text()
+                .await
+                .map_err(|e| AppError::bad_request(format!("Invalid conversation_id: {e}")))?;
+            let cid = text
+                .parse::<Uuid>()
+                .map_err(|_| AppError::bad_request("conversation_id must be a valid UUID"))?;
+
+            // Verify the uploader is a member of this conversation
+            let is_member = db::groups::is_member(&state.pool, cid, auth.user_id)
+                .await
+                .map_err(|_| AppError::internal("Database error"))?;
+            if !is_member {
+                return Err(AppError {
+                    status: StatusCode::FORBIDDEN,
+                    message: "Not a member of this conversation".to_string(),
+                });
+            }
+            conversation_id = Some(cid);
+            continue;
+        }
+
         if field_name != "file" {
             continue;
         }
@@ -83,7 +111,8 @@ pub async fn upload(
         let data = field
             .bytes()
             .await
-            .map_err(|e| AppError::bad_request(format!("Failed to read file data: {e}")))?;
+            .map_err(|e| AppError::bad_request(format!("Failed to read file data: {e}")))?
+            .to_vec();
 
         if data.len() > MAX_FILE_SIZE {
             return Err(AppError::bad_request(format!(
@@ -92,43 +121,47 @@ pub async fn upload(
             )));
         }
 
-        let ext = extension_for_mime(&mime_type);
-        let file_uuid = Uuid::new_v4();
-        let disk_filename = format!("{file_uuid}.{ext}");
-        let disk_path = format!("./uploads/{disk_filename}");
-
-        fs::write(&disk_path, &data)
-            .await
-            .map_err(|e| AppError::internal(format!("Failed to save file: {e}")))?;
-
-        let row = db::media::create_media(
-            &state.pool,
-            file_uuid,
-            auth.user_id,
-            &original_filename,
-            &mime_type,
-            data.len() as i64,
-        )
-        .await?;
-
-        let body = json!({
-            "id": row.id.to_string(),
-            "url": format!("/api/media/{}", row.id),
-        });
-
-        return Ok((StatusCode::CREATED, axum::Json(body)));
+        file_data = Some((original_filename, mime_type, data));
     }
 
-    Err(AppError::bad_request(
-        "Missing 'file' field in multipart form data",
-    ))
+    let (original_filename, mime_type, data) = file_data
+        .ok_or_else(|| AppError::bad_request("Missing 'file' field in multipart form data"))?;
+
+    let ext = extension_for_mime(&mime_type);
+    let file_uuid = Uuid::new_v4();
+    let disk_filename = format!("{file_uuid}.{ext}");
+    let disk_path = format!("./uploads/{disk_filename}");
+
+    fs::write(&disk_path, &data)
+        .await
+        .map_err(|e| AppError::internal(format!("Failed to save file: {e}")))?;
+
+    let row = db::media::create_media(
+        &state.pool,
+        file_uuid,
+        auth.user_id,
+        &original_filename,
+        &mime_type,
+        data.len() as i64,
+        conversation_id,
+    )
+    .await?;
+
+    let body = json!({
+        "id": row.id.to_string(),
+        "url": format!("/api/media/{}", row.id),
+    });
+
+    Ok((StatusCode::CREATED, axum::Json(body)))
 }
 
 /// GET /api/media/:id
 ///
 /// Returns the file with correct Content-Type and Content-Disposition headers.
+/// Only accessible to the uploader or members of a conversation where the
+/// media was shared.
 pub async fn download(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Response, AppError> {
@@ -139,9 +172,20 @@ pub async fn download(
             message: "Media not found".to_string(),
         })?;
 
-    // TODO: Add conversation-based ACL -- verify the requesting user is a
-    // member of a conversation where this media was shared.  For now, any
-    // authenticated user can download media by ID (UUIDs are unguessable).
+    // ACL: verify the requesting user can access this media
+    let allowed = db::media::can_user_access_media(&state.pool, id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Media ACL check failed: {e}");
+            AppError::internal("Database error")
+        })?;
+
+    if !allowed {
+        return Err(AppError {
+            status: StatusCode::FORBIDDEN,
+            message: "You do not have access to this media".to_string(),
+        });
+    }
 
     let ext = extension_for_mime(&row.mime_type);
     let disk_path = format!("./uploads/{id}.{ext}");

@@ -367,17 +367,10 @@ pub async fn join_voice_channel(
         return Err(AppError::bad_request("Channel is not a voice channel"));
     }
 
-    let removed_channel_ids = db::channels::leave_user_voice_sessions_in_conversation(
-        &state.pool,
-        group_id,
-        auth.user_id,
-    )
-    .await
-    .map_err(|_| AppError::internal("Failed to update voice session"))?;
-
-    let joined = db::channels::join_voice_channel(&state.pool, channel.id, auth.user_id)
-        .await
-        .map_err(|_| AppError::internal("Failed to join voice channel"))?;
+    let (removed_channel_ids, joined) =
+        db::channels::leave_and_join_voice_channel(&state.pool, group_id, channel.id, auth.user_id)
+            .await
+            .map_err(|_| AppError::internal("Failed to join voice channel"))?;
 
     for old_channel_id in removed_channel_ids {
         if old_channel_id == channel.id {

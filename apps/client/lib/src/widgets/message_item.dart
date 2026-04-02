@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -35,6 +36,7 @@ class MessageItem extends StatefulWidget {
   final void Function(ChatMessage message, String emoji)? onReactionSelect;
   final void Function(ChatMessage message)? onDelete;
   final void Function(ChatMessage message)? onEdit;
+  final void Function(ChatMessage message)? onReply;
   final void Function(String userId)? onAvatarTap;
 
   /// Server URL for resolving relative image paths.
@@ -56,6 +58,7 @@ class MessageItem extends StatefulWidget {
     this.onReactionSelect,
     this.onDelete,
     this.onEdit,
+    this.onReply,
     this.onAvatarTap,
     this.serverUrl,
     this.authToken,
@@ -183,10 +186,20 @@ class _MessageItemState extends State<MessageItem> {
                 minScale: 0.8,
                 maxScale: 4,
                 child: Center(
-                  child: Image.network(
-                    imageUrl,
-                    headers: headers,
+                  child: CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    httpHeaders: headers,
                     fit: BoxFit.contain,
+                    placeholder: (_, _) => const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    ),
+                    errorWidget: (_, _, _) => const Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white54,
+                        size: 48,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -262,12 +275,12 @@ class _MessageItemState extends State<MessageItem> {
           onTap: () => _showImageViewer(imageUrl: fullUrl, isMine: isMine),
           child: Stack(
             children: [
-              Image.network(
-                fullUrl,
+              CachedNetworkImage(
+                imageUrl: fullUrl,
                 width: 300,
                 fit: BoxFit.cover,
-                headers: headers,
-                errorBuilder: (_, _, _) => Container(
+                httpHeaders: headers,
+                errorWidget: (_, _, _) => Container(
                   width: 300,
                   height: 80,
                   decoration: BoxDecoration(
@@ -278,6 +291,24 @@ class _MessageItemState extends State<MessageItem> {
                     child: Text(
                       '[Image failed to load]',
                       style: TextStyle(color: context.textMuted, fontSize: 13),
+                    ),
+                  ),
+                ),
+                placeholder: (_, _) => Container(
+                  width: 300,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: context.surface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: context.textMuted,
+                      ),
                     ),
                   ),
                 ),
@@ -452,6 +483,12 @@ class _MessageItemState extends State<MessageItem> {
               icon: Icons.download_outlined,
               tooltip: 'Download',
               onPressed: () => _downloadMedia(mediaUrl),
+            ),
+          if (widget.onReply != null)
+            _HoverActionButton(
+              icon: Icons.reply_outlined,
+              tooltip: 'Reply',
+              onPressed: () => widget.onReply?.call(msg),
             ),
           _HoverActionButton(
             icon: Icons.add_reaction_outlined,
@@ -630,6 +667,55 @@ class _MessageItemState extends State<MessageItem> {
                   fontWeight: FontWeight.w600,
                   color: _getUserColor(msg.fromUserId),
                 ),
+              ),
+            ),
+          // Reply quote block
+          if (msg.replyToContent != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                color: (isMine ? Colors.white : context.accent).withValues(
+                  alpha: 0.12,
+                ),
+                borderRadius: BorderRadius.circular(8),
+                border: Border(
+                  left: BorderSide(
+                    color: isMine
+                        ? Colors.white.withValues(alpha: 0.5)
+                        : context.accent,
+                    width: 3,
+                  ),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    msg.replyToUsername ?? 'Unknown',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isMine
+                          ? Colors.white.withValues(alpha: 0.8)
+                          : context.accent,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    msg.replyToContent!.length > 100
+                        ? '${msg.replyToContent!.substring(0, 100)}...'
+                        : msg.replyToContent!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isMine
+                          ? Colors.white.withValues(alpha: 0.7)
+                          : context.textSecondary,
+                    ),
+                  ),
+                ],
               ),
             ),
           // Image or text content

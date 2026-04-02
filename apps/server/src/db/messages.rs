@@ -13,6 +13,7 @@ pub struct MessageRow {
     pub content: String,
     pub created_at: DateTime<Utc>,
     pub delivered: bool,
+    pub reply_to_id: Option<Uuid>,
 }
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
@@ -25,6 +26,9 @@ pub struct MessageWithSender {
     pub content: String,
     pub created_at: DateTime<Utc>,
     pub edited_at: Option<DateTime<Utc>>,
+    pub reply_to_id: Option<Uuid>,
+    pub reply_to_content: Option<String>,
+    pub reply_to_username: Option<String>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -90,16 +94,19 @@ pub async fn store_message(
     channel_id: Option<Uuid>,
     sender_id: Uuid,
     content: &str,
+    reply_to_id: Option<Uuid>,
 ) -> Result<MessageRow, sqlx::Error> {
     sqlx::query_as::<_, MessageRow>(
-        "INSERT INTO messages (conversation_id, channel_id, sender_id, content) \
-         VALUES ($1, $2, $3, $4) \
-         RETURNING id, conversation_id, channel_id, sender_id, content, created_at, delivered",
+        "INSERT INTO messages (conversation_id, channel_id, sender_id, content, reply_to_id) \
+         VALUES ($1, $2, $3, $4, $5) \
+         RETURNING id, conversation_id, channel_id, sender_id, content, created_at, delivered, \
+                   reply_to_id",
     )
     .bind(conversation_id)
     .bind(channel_id)
     .bind(sender_id)
     .bind(content)
+    .bind(reply_to_id)
     .fetch_one(pool)
     .await
 }
@@ -114,10 +121,15 @@ pub async fn get_messages(
     match before {
         Some(cursor) => {
             sqlx::query_as::<_, MessageWithSender>(
-                "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, u.username AS sender_username, \
-                        m.content, m.created_at, m.edited_at \
+                "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                        u.username AS sender_username, \
+                        m.content, m.created_at, m.edited_at, m.reply_to_id, \
+                        rm.content AS reply_to_content, \
+                        ru.username AS reply_to_username \
                  FROM messages m \
                  JOIN users u ON u.id = m.sender_id \
+                 LEFT JOIN messages rm ON rm.id = m.reply_to_id \
+                 LEFT JOIN users ru ON ru.id = rm.sender_id \
                  WHERE m.conversation_id = $1 \
                    AND ($2::uuid IS NULL OR m.channel_id = $2) \
                    AND m.created_at < $3 \
@@ -134,10 +146,15 @@ pub async fn get_messages(
         }
         None => {
             sqlx::query_as::<_, MessageWithSender>(
-                "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, u.username AS sender_username, \
-                        m.content, m.created_at, m.edited_at \
+                "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                        u.username AS sender_username, \
+                        m.content, m.created_at, m.edited_at, m.reply_to_id, \
+                        rm.content AS reply_to_content, \
+                        ru.username AS reply_to_username \
                  FROM messages m \
                  JOIN users u ON u.id = m.sender_id \
+                 LEFT JOIN messages rm ON rm.id = m.reply_to_id \
+                 LEFT JOIN users ru ON ru.id = rm.sender_id \
                  WHERE m.conversation_id = $1 \
                    AND ($2::uuid IS NULL OR m.channel_id = $2) \
                    AND m.deleted_at IS NULL \
@@ -158,10 +175,15 @@ pub async fn get_undelivered(
     user_id: Uuid,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
-        "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, u.username AS sender_username, \
-                m.content, m.created_at, m.edited_at \
+        "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                u.username AS sender_username, \
+                m.content, m.created_at, m.edited_at, m.reply_to_id, \
+                rm.content AS reply_to_content, \
+                ru.username AS reply_to_username \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id \
+         LEFT JOIN users ru ON ru.id = rm.sender_id \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
          WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
          ORDER BY m.created_at ASC",

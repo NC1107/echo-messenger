@@ -309,8 +309,8 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
               // Remove button
               if (showRemove)
                 SizedBox(
-                  width: 24,
-                  height: 24,
+                  width: 44,
+                  height: 44,
                   child: IconButton(
                     icon: const Icon(Icons.close, size: 14),
                     color: context.textMuted,
@@ -318,8 +318,8 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                     onPressed: _removeMember,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
-                      minWidth: 24,
-                      minHeight: 24,
+                      minWidth: 44,
+                      minHeight: 44,
                     ),
                   ),
                 ),

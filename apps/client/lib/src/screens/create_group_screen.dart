@@ -209,7 +209,11 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
                               });
                             },
                             secondary: CircleAvatar(
-                              child: Text(contact.username[0].toUpperCase()),
+                              child: Text(
+                                contact.username.isNotEmpty
+                                    ? contact.username[0].toUpperCase()
+                                    : '?',
+                              ),
                             ),
                             title: Text(
                               contact.displayName ?? contact.username,

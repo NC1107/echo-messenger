@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
+import '../theme/echo_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
@@ -381,9 +382,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
               Center(
                 child: Text(
                   '${conv.members.length} members',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
@@ -452,14 +453,14 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                             vertical: 1,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.orange.withValues(alpha: 0.15),
+                            color: EchoTheme.warning.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
                             'Admin',
                             style: TextStyle(
                               fontSize: 11,
-                              color: Colors.orange,
+                              color: EchoTheme.warning,
                               fontWeight: FontWeight.w600,
                             ),
                           ),

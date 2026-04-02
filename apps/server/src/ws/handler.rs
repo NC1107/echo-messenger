@@ -8,6 +8,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+use sqlx;
+
 use crate::db;
 use crate::routes::AppState;
 
@@ -20,6 +22,7 @@ enum ClientMessage {
         channel_id: Option<Uuid>,
         to_user_id: Option<Uuid>,
         content: String,
+        reply_to_id: Option<Uuid>,
     },
     #[serde(rename = "typing")]
     Typing {
@@ -50,6 +53,12 @@ enum ServerMessage {
         channel_id: Option<Uuid>,
         content: String,
         timestamp: DateTime<Utc>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reply_to_id: Option<Uuid>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reply_to_content: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reply_to_username: Option<String>,
     },
     #[serde(rename = "message_sent")]
     MessageSent {
@@ -124,6 +133,9 @@ pub async fn handle_socket(
                 channel_id: msg.channel_id,
                 content: msg.content.clone(),
                 timestamp: msg.created_at,
+                reply_to_id: msg.reply_to_id,
+                reply_to_content: msg.reply_to_content.clone(),
+                reply_to_username: msg.reply_to_username.clone(),
             };
             if let Ok(json) = serde_json::to_string(&server_msg) {
                 let _ = state.hub.send_to(&user_id, WsMessage::Text(json.into()));
@@ -162,6 +174,31 @@ pub async fn handle_socket(
     state.hub.unregister(user_id);
     send_task.abort();
 
+    // Clean up stale voice sessions for this user (handles client crashes).
+    if let Ok(removed_sessions) =
+        db::channels::leave_all_user_voice_sessions(&state.pool, user_id).await
+    {
+        for (channel_id, conversation_id) in removed_sessions {
+            let member_ids =
+                db::groups::get_conversation_member_ids(&state.pool, conversation_id).await;
+            if let Ok(member_ids) = member_ids {
+                let event = serde_json::json!({
+                    "type": "voice_session_left",
+                    "group_id": conversation_id,
+                    "channel_id": channel_id,
+                    "user_id": user_id,
+                });
+                if let Ok(json) = serde_json::to_string(&event) {
+                    for member_id in &member_ids {
+                        state
+                            .hub
+                            .send_to(member_id, WsMessage::Text(json.clone().into()));
+                    }
+                }
+            }
+        }
+    }
+
     // Broadcast offline presence to contacts
     broadcast_presence(&state, user_id, &username, "offline").await;
 
@@ -183,6 +220,7 @@ async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str,
             channel_id,
             to_user_id,
             content,
+            reply_to_id,
         } => {
             handle_send_message(
                 state,
@@ -192,6 +230,7 @@ async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str,
                 channel_id,
                 to_user_id,
                 content,
+                reply_to_id,
             )
             .await;
         }
@@ -230,6 +269,7 @@ async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str,
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_send_message(
     state: &AppState,
     sender_id: Uuid,
@@ -238,6 +278,7 @@ async fn handle_send_message(
     channel_id: Option<Uuid>,
     to_user_id: Option<Uuid>,
     content: String,
+    reply_to_id: Option<Uuid>,
 ) {
     // Validate message content length
     const MAX_MESSAGE_LENGTH: usize = 10_000;
@@ -393,6 +434,24 @@ async fn handle_send_message(
         }
     }
 
+    // Look up reply context if reply_to_id is provided
+    let (reply_content, reply_username) = if let Some(rid) = reply_to_id {
+        match sqlx::query_as::<_, (String, String)>(
+            "SELECT m.content, u.username \
+             FROM messages m JOIN users u ON u.id = m.sender_id \
+             WHERE m.id = $1",
+        )
+        .bind(rid)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            Ok(Some((c, u))) => (Some(c), Some(u)),
+            _ => (None, None),
+        }
+    } else {
+        (None, None)
+    };
+
     // Store message
     let stored = match db::messages::store_message(
         &state.pool,
@@ -400,6 +459,7 @@ async fn handle_send_message(
         resolved_channel_id,
         sender_id,
         &content,
+        reply_to_id,
     )
     .await
     {
@@ -438,6 +498,9 @@ async fn handle_send_message(
         channel_id: stored.channel_id,
         content,
         timestamp: stored.created_at,
+        reply_to_id,
+        reply_to_content: reply_content,
+        reply_to_username: reply_username,
     };
     let json = match serde_json::to_string(&deliver) {
         Ok(j) => j,

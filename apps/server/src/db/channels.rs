@@ -159,24 +159,6 @@ pub async fn soft_delete_channel(pool: &PgPool, channel_id: Uuid) -> Result<bool
     Ok(result.rows_affected() > 0)
 }
 
-pub async fn join_voice_channel(
-    pool: &PgPool,
-    channel_id: Uuid,
-    user_id: Uuid,
-) -> Result<VoiceSessionRow, sqlx::Error> {
-    sqlx::query_as::<_, VoiceSessionRow>(
-        "INSERT INTO voice_sessions (channel_id, user_id)
-         VALUES ($1, $2)
-         ON CONFLICT (channel_id, user_id)
-         DO UPDATE SET updated_at = now()
-         RETURNING channel_id, user_id, is_muted, is_deafened, push_to_talk, joined_at, updated_at",
-    )
-    .bind(channel_id)
-    .bind(user_id)
-    .fetch_one(pool)
-    .await
-}
-
 pub async fn leave_voice_channel(
     pool: &PgPool,
     channel_id: Uuid,
@@ -192,27 +174,6 @@ pub async fn leave_voice_channel(
     .await?;
 
     Ok(result.rows_affected() > 0)
-}
-
-pub async fn leave_user_voice_sessions_in_conversation(
-    pool: &PgPool,
-    conversation_id: Uuid,
-    user_id: Uuid,
-) -> Result<Vec<Uuid>, sqlx::Error> {
-    let rows: Vec<(Uuid,)> = sqlx::query_as(
-        "DELETE FROM voice_sessions vs
-         USING channels c
-         WHERE vs.channel_id = c.id
-           AND c.conversation_id = $1
-           AND vs.user_id = $2
-         RETURNING c.id",
-    )
-    .bind(conversation_id)
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
 pub async fn update_voice_state(
@@ -275,4 +236,69 @@ pub async fn is_user_in_voice_channel(
     .await?;
 
     Ok(row.0)
+}
+
+/// Remove all voice sessions for a user (called on WS disconnect to clean up
+/// stale sessions from crashed clients). Returns (channel_id, conversation_id)
+/// pairs so the caller can broadcast leave events.
+pub async fn leave_all_user_voice_sessions(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<(Uuid, Uuid)>, sqlx::Error> {
+    let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
+        "DELETE FROM voice_sessions vs
+         USING channels c
+         WHERE vs.channel_id = c.id
+           AND vs.user_id = $1
+         RETURNING c.id, c.conversation_id",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+/// Atomically leave all voice sessions in a conversation and join a new
+/// channel. Wraps the leave + join in a single transaction to prevent race
+/// conditions where a user briefly appears in zero or two channels.
+pub async fn leave_and_join_voice_channel(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    channel_id: Uuid,
+    user_id: Uuid,
+) -> Result<(Vec<Uuid>, VoiceSessionRow), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let removed: Vec<(Uuid,)> = sqlx::query_as(
+        "DELETE FROM voice_sessions vs
+         USING channels c
+         WHERE vs.channel_id = c.id
+           AND c.conversation_id = $1
+           AND vs.user_id = $2
+         RETURNING c.id",
+    )
+    .bind(conversation_id)
+    .bind(user_id)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    let removed_ids: Vec<Uuid> = removed.into_iter().map(|(id,)| id).collect();
+
+    let joined = sqlx::query_as::<_, VoiceSessionRow>(
+        "INSERT INTO voice_sessions (channel_id, user_id)
+         VALUES ($1, $2)
+         ON CONFLICT (channel_id, user_id)
+         DO UPDATE SET updated_at = now()
+         RETURNING channel_id, user_id, is_muted, is_deafened, \
+         push_to_talk, joined_at, updated_at",
+    )
+    .bind(channel_id)
+    .bind(user_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok((removed_ids, joined))
 }

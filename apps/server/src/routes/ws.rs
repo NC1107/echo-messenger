@@ -32,7 +32,7 @@ pub async fn ws_upgrade(
         let mut store = state
             .ticket_store
             .lock()
-            .expect("ticket store lock poisoned");
+            .map_err(|_| AppError::internal("Internal state error"))?;
 
         // Opportunistic cleanup of expired tickets.
         let now = Instant::now();

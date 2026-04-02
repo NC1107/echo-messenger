@@ -15,6 +15,9 @@ class ChatMessage {
   final List<Reaction> reactions;
   final String? editedAt;
   final bool isEncrypted;
+  final String? replyToId;
+  final String? replyToContent;
+  final String? replyToUsername;
 
   const ChatMessage({
     required this.id,
@@ -29,6 +32,9 @@ class ChatMessage {
     this.reactions = const [],
     this.editedAt,
     this.isEncrypted = false,
+    this.replyToId,
+    this.replyToContent,
+    this.replyToUsername,
   });
 
   factory ChatMessage.fromServerJson(
@@ -68,6 +74,9 @@ class ChatMessage {
       status: MessageStatus.sent,
       reactions: reactionsList,
       editedAt: json['edited_at'] as String?,
+      replyToId: json['reply_to_id'] as String?,
+      replyToContent: json['reply_to_content'] as String?,
+      replyToUsername: json['reply_to_username'] as String?,
     );
   }
 
@@ -84,6 +93,9 @@ class ChatMessage {
     List<Reaction>? reactions,
     String? editedAt,
     bool? isEncrypted,
+    String? replyToId,
+    String? replyToContent,
+    String? replyToUsername,
   }) {
     return ChatMessage(
       id: id ?? this.id,
@@ -98,6 +110,9 @@ class ChatMessage {
       reactions: reactions ?? this.reactions,
       editedAt: editedAt ?? this.editedAt,
       isEncrypted: isEncrypted ?? this.isEncrypted,
+      replyToId: replyToId ?? this.replyToId,
+      replyToContent: replyToContent ?? this.replyToContent,
+      replyToUsername: replyToUsername ?? this.replyToUsername,
     );
   }
 }

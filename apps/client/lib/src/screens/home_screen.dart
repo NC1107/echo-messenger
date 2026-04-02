@@ -349,7 +349,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 tooltip: 'Expand sidebar',
                 onPressed: () => setState(() => _sidebarCollapsed = false),
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
               ),
             ),
           ),
@@ -426,7 +426,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 tooltip: 'Settings',
                 onPressed: _openSettings,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
               ),
             ),
           ),
@@ -460,8 +460,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   onPressed: () => setState(() => _showSettings = false),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
-                    minWidth: 36,
-                    minHeight: 36,
+                    minWidth: 44,
+                    minHeight: 44,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -570,38 +570,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       rightPanel = _buildEmptyState();
     }
 
+    final animatedSidebarWidth = _sidebarCollapsed ? 60.0 : sidebarWidth;
+
     return Scaffold(
       body: Row(
         children: [
-          // Left sidebar
-          if (_sidebarCollapsed)
-            _buildCollapsedSidebar()
-          else if (_showSettings)
+          // Left sidebar with animated width
+          if (_showSettings)
             _buildSettingsSidebar(sidebarWidth)
           else
-            SizedBox(
-              width: sidebarWidth,
-              child: Stack(
-                children: [
-                  _buildConversationPanel(),
-                  // Collapse button at bottom of header
-                  Positioned(
-                    top: 16,
-                    right: 4,
-                    child: IconButton(
-                      icon: Icon(Icons.chevron_left, size: 18),
-                      color: context.textMuted,
-                      tooltip: 'Collapse sidebar',
-                      onPressed: () => setState(() => _sidebarCollapsed = true),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 24,
-                        minHeight: 24,
-                      ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              width: animatedSidebarWidth,
+              clipBehavior: Clip.hardEdge,
+              decoration: const BoxDecoration(),
+              child: _sidebarCollapsed
+                  ? _buildCollapsedSidebar()
+                  : Stack(
+                      children: [
+                        _buildConversationPanel(),
+                        Positioned(
+                          top: 16,
+                          right: 4,
+                          child: IconButton(
+                            icon: Icon(Icons.chevron_left, size: 18),
+                            color: context.textMuted,
+                            tooltip: 'Collapse sidebar',
+                            onPressed: () =>
+                                setState(() => _sidebarCollapsed = true),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 44,
+                              minHeight: 44,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
             ),
           // Thin vertical divider
           Container(width: 1, color: context.border),
@@ -775,8 +781,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   onPressed: () => ref.read(updateProvider.notifier).dismiss(),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
-                    minWidth: 24,
-                    minHeight: 24,
+                    minWidth: 44,
+                    minHeight: 44,
                   ),
                 ),
               ],
