@@ -18,7 +18,7 @@ import '../providers/crypto_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../providers/voice_livekit_provider.dart';
+import '../providers/voice_rtc_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
@@ -75,7 +75,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     super.didUpdateWidget(oldWidget);
     if (widget.conversation?.id != oldWidget.conversation?.id) {
       if (_activeVoiceChannelId != null) {
-        ref.read(voiceLivekitProvider.notifier).leaveChannel();
+        ref.read(voiceRtcProvider.notifier).leaveChannel();
       }
       _hideEncryptionBanner = false;
       _selectedTextChannelId = null;
@@ -90,7 +90,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   @override
   void dispose() {
     if (_activeVoiceChannelId != null) {
-      ref.read(voiceLivekitProvider.notifier).leaveChannel();
+      ref.read(voiceRtcProvider.notifier).leaveChannel();
     }
     _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
@@ -1058,7 +1058,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         borderRadius: BorderRadius.circular(8),
         onTap: () async {
           final channelsNotifier = ref.read(channelsProvider.notifier);
-          final rtcNotifier = ref.read(voiceLivekitProvider.notifier);
+          final rtcNotifier = ref.read(voiceRtcProvider.notifier);
           final success = isActive
               ? await channelsNotifier.leaveVoiceChannel(
                   conversationId,
@@ -1196,7 +1196,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     ChannelsState channelsState,
     VoiceSettingsState voiceSettings,
     String myUserId,
-    VoiceLivekitState voiceRtc,
+    VoiceRtcState voiceRtc,
     String? effectiveActiveVoiceChannelId,
   ) {
     final activeVoiceChannel = channels
@@ -1215,7 +1215,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       if (expectedActive != activeVoiceChannel.id) return;
 
       if (!iAmInChannel) {
-        await ref.read(voiceLivekitProvider.notifier).leaveChannel();
+        await ref.read(voiceRtcProvider.notifier).leaveChannel();
         if (mounted) {
           setState(() {
             _activeVoiceChannelId = null;
@@ -1237,7 +1237,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Connected to ${activeVoiceChannel.name} • ${voiceRtc.participantIds.length} peer(s)',
+              'Connected to ${activeVoiceChannel.name} • ${voiceRtc.peerConnectionStates.length} peer(s)',
               style: TextStyle(
                 color: context.textPrimary,
                 fontSize: 12,
@@ -1271,7 +1271,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               final nextMuted = !voiceSettings.selfMuted;
               await notifier.setSelfMuted(nextMuted);
               ref
-                  .read(voiceLivekitProvider.notifier)
+                  .read(voiceRtcProvider.notifier)
                   .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
               await _syncVoiceState();
             },
@@ -1291,9 +1291,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               final notifier = ref.read(voiceSettingsProvider.notifier);
               final nextDeafened = !voiceSettings.selfDeafened;
               await notifier.setSelfDeafened(nextDeafened);
-              final lk = ref.read(voiceLivekitProvider.notifier);
+              final lk = ref.read(voiceRtcProvider.notifier);
               lk.setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
-              await lk.setDeafened(nextDeafened);
+              lk.setDeafened(nextDeafened);
               await _syncVoiceState();
             },
           ),
@@ -1303,7 +1303,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               final next = !voiceSettings.pushToTalkEnabled;
               await notifier.setPushToTalkEnabled(next);
               ref
-                  .read(voiceLivekitProvider.notifier)
+                  .read(voiceRtcProvider.notifier)
                   .setCaptureEnabled(
                     !next &&
                         !voiceSettings.selfMuted &&
@@ -1392,7 +1392,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     final chatState = ref.watch(chatProvider);
     final channelsState = ref.watch(channelsProvider);
-    final voiceRtc = ref.watch(voiceLivekitProvider);
+    final voiceRtc = ref.watch(voiceRtcProvider);
     final voiceSettings = ref.watch(voiceSettingsProvider);
     final wsState = ref.watch(websocketProvider);
     final authState = ref.watch(authProvider);
@@ -1917,12 +1917,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                   !voiceSettings.selfDeafened;
                               if (event is KeyDownEvent && allowCapture) {
                                 ref
-                                    .read(voiceLivekitProvider.notifier)
+                                    .read(voiceRtcProvider.notifier)
                                     .setCaptureEnabled(true);
                                 _syncVoiceState();
                               } else if (event is KeyUpEvent) {
                                 ref
-                                    .read(voiceLivekitProvider.notifier)
+                                    .read(voiceRtcProvider.notifier)
                                     .setCaptureEnabled(false);
                                 _syncVoiceState();
                               }

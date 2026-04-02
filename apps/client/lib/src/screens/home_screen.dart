@@ -17,7 +17,7 @@ import '../providers/chat_provider.dart';
 import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
-import '../providers/voice_livekit_provider.dart';
+import '../providers/voice_rtc_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/chat_panel.dart';
@@ -92,7 +92,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     // Clean up any stale voice session from a previous run.
-    ref.read(voiceLivekitProvider.notifier).leaveChannel();
+    ref.read(voiceRtcProvider.notifier).leaveChannel();
 
     // 3. Load conversations AFTER crypto and WS are set up
     await ref.read(conversationsProvider.notifier).loadConversations();
@@ -576,7 +576,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     final animatedSidebarWidth = _sidebarCollapsed ? 60.0 : sidebarWidth;
-    final voiceRtc = ref.watch(voiceLivekitProvider);
+    final voiceRtc = ref.watch(voiceRtcProvider);
     final showVoiceDock = voiceRtc.isActive && voiceRtc.channelId != null;
 
     return Scaffold(

@@ -34,9 +34,6 @@ pub struct AppState {
     pub jwt_secret: String,
     pub hub: Hub,
     pub ticket_store: TicketStore,
-    pub livekit_api_key: String,
-    pub livekit_api_secret: String,
-    pub livekit_url: String,
 }
 
 pub fn create_router(state: Arc<AppState>) -> Router {
@@ -155,10 +152,6 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route(
             "/{id}/channels/{channel_id}/voice/state",
             put(channels::update_voice_state),
-        )
-        .route(
-            "/{id}/channels/{channel_id}/voice/token",
-            post(channels::get_voice_token),
         )
         .route(
             "/{id}",

@@ -31,6 +31,13 @@ enum ClientMessage {
     },
     #[serde(rename = "read_receipt")]
     ReadReceipt { conversation_id: Uuid },
+    #[serde(rename = "voice_signal")]
+    VoiceSignal {
+        conversation_id: Uuid,
+        channel_id: Uuid,
+        to_user_id: Uuid,
+        signal: serde_json::Value,
+    },
 }
 
 #[derive(Serialize)]
@@ -81,6 +88,13 @@ enum ServerMessage {
     },
     #[serde(rename = "error")]
     Error { message: String },
+    #[serde(rename = "voice_signal")]
+    VoiceSignal {
+        conversation_id: Uuid,
+        channel_id: Uuid,
+        from_user_id: Uuid,
+        signal: serde_json::Value,
+    },
 }
 
 pub async fn handle_socket(
@@ -235,6 +249,22 @@ async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str,
         }
         ClientMessage::ReadReceipt { conversation_id } => {
             handle_read_receipt(state, sender_id, conversation_id).await;
+        }
+        ClientMessage::VoiceSignal {
+            conversation_id,
+            channel_id,
+            to_user_id,
+            signal,
+        } => {
+            handle_voice_signal(
+                state,
+                sender_id,
+                conversation_id,
+                channel_id,
+                to_user_id,
+                signal,
+            )
+            .await;
         }
     }
 }
@@ -620,6 +650,111 @@ async fn handle_read_receipt(state: &AppState, sender_id: Uuid, conversation_id:
         state
             .hub
             .send_to(member_id, WsMessage::Text(json.clone().into()));
+    }
+}
+
+async fn handle_voice_signal(
+    state: &AppState,
+    sender_id: Uuid,
+    conversation_id: Uuid,
+    channel_id: Uuid,
+    to_user_id: Uuid,
+    signal: serde_json::Value,
+) {
+    let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
+        Ok(m) => m,
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return;
+        }
+    };
+    if !is_member {
+        send_error(state, sender_id, "Not a member of this conversation");
+        return;
+    }
+
+    let kind = match db::groups::get_conversation_kind(&state.pool, conversation_id).await {
+        Ok(Some(k)) => k,
+        Ok(None) => {
+            send_error(state, sender_id, "Conversation not found");
+            return;
+        }
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return;
+        }
+    };
+
+    if kind != "group" {
+        send_error(
+            state,
+            sender_id,
+            "Voice signaling is only supported in groups",
+        );
+        return;
+    }
+
+    let channel = match db::channels::get_channel(&state.pool, channel_id).await {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            send_error(state, sender_id, "Channel not found");
+            return;
+        }
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return;
+        }
+    };
+
+    if channel.conversation_id != conversation_id {
+        send_error(state, sender_id, "Channel is not part of this conversation");
+        return;
+    }
+
+    if channel.kind != "voice" {
+        send_error(
+            state,
+            sender_id,
+            "Voice signaling is only valid for voice channels",
+        );
+        return;
+    }
+
+    let sender_in_channel =
+        match db::channels::is_user_in_voice_channel(&state.pool, channel_id, sender_id).await {
+            Ok(v) => v,
+            Err(_) => {
+                send_error(state, sender_id, "Database error");
+                return;
+            }
+        };
+    if !sender_in_channel {
+        send_error(state, sender_id, "Join the voice channel before signaling");
+        return;
+    }
+
+    let target_in_channel =
+        match db::channels::is_user_in_voice_channel(&state.pool, channel_id, to_user_id).await {
+            Ok(v) => v,
+            Err(_) => {
+                send_error(state, sender_id, "Database error");
+                return;
+            }
+        };
+    if !target_in_channel {
+        send_error(state, sender_id, "Target user is not in this voice channel");
+        return;
+    }
+
+    let event = ServerMessage::VoiceSignal {
+        conversation_id,
+        channel_id,
+        from_user_id: sender_id,
+        signal,
+    };
+
+    if let Ok(json) = serde_json::to_string(&event) {
+        state.hub.send_to(&to_user_id, WsMessage::Text(json.into()));
     }
 }
 

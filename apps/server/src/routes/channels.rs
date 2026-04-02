@@ -5,7 +5,6 @@ use axum::extract::ws::Message as WsMessage;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use jsonwebtoken::{EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -487,91 +486,4 @@ pub async fn update_voice_state(
     .await;
 
     Ok(Json(serde_json::json!({ "status": "updated" })))
-}
-
-/// LiveKit video grant embedded in the JWT.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct LivekitVideoGrant {
-    room: String,
-    room_join: bool,
-    can_publish: bool,
-    can_subscribe: bool,
-}
-
-/// Claims for a LiveKit access token (JWT).
-#[derive(Debug, Serialize)]
-struct LivekitClaims {
-    iss: String,
-    sub: String,
-    iat: i64,
-    nbf: i64,
-    exp: i64,
-    video: LivekitVideoGrant,
-}
-
-/// POST /api/groups/:id/channels/:channel_id/voice/token
-///
-/// Returns a LiveKit access token and server URL so the client can connect
-/// to the SFU room for this voice channel.
-pub async fn get_voice_token(
-    auth: AuthUser,
-    State(state): State<Arc<AppState>>,
-    Path((group_id, channel_id)): Path<(Uuid, Uuid)>,
-) -> Result<impl IntoResponse, AppError> {
-    ensure_group_member(&state, group_id, auth.user_id).await?;
-    let channel = ensure_channel_in_group(&state, group_id, channel_id).await?;
-
-    if channel.kind != "voice" {
-        return Err(AppError::bad_request("Channel is not a voice channel"));
-    }
-
-    if state.livekit_api_key.is_empty() || state.livekit_api_secret.is_empty() {
-        return Err(AppError::internal(
-            "LiveKit is not configured on this server",
-        ));
-    }
-
-    // Fetch the username for the token identity.
-    let user = db::users::find_by_id(&state.pool, auth.user_id)
-        .await
-        .map_err(|_| AppError::internal("Database error"))?
-        .ok_or_else(|| AppError::internal("User not found"))?;
-
-    // Room name: deterministic from group + channel so all participants land in the same room.
-    let room_name = format!("{}:{}", group_id, channel_id);
-    let identity = format!("{}:{}", auth.user_id, user.username);
-
-    let now = chrono::Utc::now().timestamp();
-    let claims = LivekitClaims {
-        iss: state.livekit_api_key.clone(),
-        sub: identity,
-        iat: now,
-        nbf: now,
-        exp: now + 6 * 3600, // 6 hours
-        video: LivekitVideoGrant {
-            room: room_name,
-            room_join: true,
-            can_publish: true,
-            can_subscribe: true,
-        },
-    };
-
-    let header = Header {
-        alg: jsonwebtoken::Algorithm::HS256,
-        typ: Some("JWT".into()),
-        ..Default::default()
-    };
-
-    let token = encode(
-        &header,
-        &claims,
-        &EncodingKey::from_secret(state.livekit_api_secret.as_bytes()),
-    )
-    .map_err(|_| AppError::internal("Failed to generate LiveKit token"))?;
-
-    Ok(Json(serde_json::json!({
-        "token": token,
-        "url": state.livekit_url,
-    })))
 }

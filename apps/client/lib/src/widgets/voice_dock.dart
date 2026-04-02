@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
-import '../providers/voice_livekit_provider.dart';
+import '../providers/voice_rtc_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
 
@@ -18,7 +18,7 @@ class VoiceDock extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final voiceLk = ref.watch(voiceLivekitProvider);
+    final voiceLk = ref.watch(voiceRtcProvider);
 
     if (!voiceLk.isActive || voiceLk.channelId == null) {
       return const SizedBox.shrink();
@@ -34,7 +34,7 @@ class VoiceDock extends ConsumerWidget {
     final activeChannel = channels.where((c) => c.id == channelId).firstOrNull;
     final channelName = activeChannel?.name ?? 'Voice';
     final participants = channelsState.voiceSessionsFor(channelId);
-    final peerCount = voiceLk.participantIds.length;
+    final peerCount = voiceLk.peerConnectionStates.length;
 
     return Container(
       width: width,
@@ -123,7 +123,7 @@ class VoiceDock extends ConsumerWidget {
                     final nextMuted = !voiceSettings.selfMuted;
                     await notifier.setSelfMuted(nextMuted);
                     ref
-                        .read(voiceLivekitProvider.notifier)
+                        .read(voiceRtcProvider.notifier)
                         .setCaptureEnabled(
                           !nextMuted && !voiceSettings.selfDeafened,
                         );
@@ -150,11 +150,11 @@ class VoiceDock extends ConsumerWidget {
                     final notifier = ref.read(voiceSettingsProvider.notifier);
                     final nextDeafened = !voiceSettings.selfDeafened;
                     await notifier.setSelfDeafened(nextDeafened);
-                    final lk = ref.read(voiceLivekitProvider.notifier);
+                    final lk = ref.read(voiceRtcProvider.notifier);
                     lk.setCaptureEnabled(
                       !voiceSettings.selfMuted && !nextDeafened,
                     );
-                    await lk.setDeafened(nextDeafened);
+                    lk.setDeafened(nextDeafened);
                   },
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
@@ -171,7 +171,7 @@ class VoiceDock extends ConsumerWidget {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(8),
                       onTap: () {
-                        ref.read(voiceLivekitProvider.notifier).leaveChannel();
+                        ref.read(voiceRtcProvider.notifier).leaveChannel();
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
