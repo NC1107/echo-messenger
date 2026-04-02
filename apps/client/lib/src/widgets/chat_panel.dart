@@ -8,14 +8,18 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
 import '../models/chat_message.dart';
+import '../models/channel.dart';
 import '../models/conversation.dart';
 import '../models/reaction.dart';
 import '../providers/auth_provider.dart';
+import '../providers/channels_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../providers/voice_rtc_provider.dart';
+import '../providers/voice_settings_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/sound_service.dart';
@@ -44,14 +48,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   final _inputFocusNode = FocusNode();
-  static const _defaultTextChannels = ['general', 'announcements', 'random'];
-  static const _defaultVoiceChannels = ['Lounge', 'Game Room'];
 
   bool _isTextEmpty = true;
   bool _hideEncryptionBanner = false;
-  String _selectedTextChannel = _defaultTextChannels.first;
-  String? _activeVoiceChannel;
-  String? _loadedConversationId;
+  String? _selectedTextChannelId;
+  String? _activeVoiceChannelId;
+  String? _loadedHistoryKey;
+  String? _loadedChannelsConversationId;
 
   // Edit mode state
   ChatMessage? _editingMessage;
@@ -68,16 +71,24 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   void didUpdateWidget(covariant ChatPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.conversation?.id != oldWidget.conversation?.id) {
+      if (_activeVoiceChannelId != null) {
+        ref.read(voiceRtcProvider.notifier).leaveChannel();
+      }
       _hideEncryptionBanner = false;
-      _selectedTextChannel = _defaultTextChannels.first;
-      _activeVoiceChannel = null;
+      _selectedTextChannelId = null;
+      _activeVoiceChannelId = null;
+      _loadedHistoryKey = null;
       _loadHistory();
+      _loadChannels();
       _markAsRead();
     }
   }
 
   @override
   void dispose() {
+    if (_activeVoiceChannelId != null) {
+      ref.read(voiceRtcProvider.notifier).leaveChannel();
+    }
     _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
     _scrollController.removeListener(_onScroll);
@@ -96,9 +107,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   void _loadHistory() {
     final conv = widget.conversation;
     if (conv == null) return;
-    if (conv.id == _loadedConversationId) return;
 
-    _loadedConversationId = conv.id;
+    final channelId = conv.isGroup ? _selectedTextChannelId : null;
+    final historyKey = '${conv.id}:${channelId ?? ''}';
+    if (_loadedHistoryKey == historyKey) return;
+
+    _loadedHistoryKey = historyKey;
 
     final auth = ref.read(authProvider);
     if (auth.token == null || auth.userId == null) return;
@@ -117,9 +131,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           conv.id,
           auth.token!,
           auth.userId!,
+          channelId: channelId,
           crypto: crypto,
           isGroup: conv.isGroup,
         );
+  }
+
+  Future<void> _loadChannels() async {
+    final conv = widget.conversation;
+    if (conv == null || !conv.isGroup) return;
+    if (_loadedChannelsConversationId == conv.id) return;
+
+    _loadedChannelsConversationId = conv.id;
+    await ref.read(channelsProvider.notifier).loadChannels(conv.id);
   }
 
   void _markAsRead() {
@@ -148,11 +172,29 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     final conv = widget.conversation;
     if (conv == null) return;
 
-    final chatState = ref.read(chatProvider);
-    if (chatState.isLoadingHistory(conv.id)) return;
-    if (!chatState.conversationHasMore(conv.id)) return;
+    final channels = ref.read(channelsProvider).channelsFor(conv.id);
+    final defaultTextChannelId = channels.where((c) => c.isText).firstOrNull?.id;
+    final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
+    final includeUnchanneled =
+        conv.isGroup &&
+        selectedChannelId != null &&
+        selectedChannelId == defaultTextChannelId;
 
-    final messages = chatState.messagesForConversation(conv.id);
+    final chatState = ref.read(chatProvider);
+    if (chatState.isLoadingHistory(conv.id, channelId: selectedChannelId)) {
+      return;
+    }
+    if (!chatState.conversationHasMore(conv.id, channelId: selectedChannelId)) {
+      return;
+    }
+
+    final messages = conv.isGroup
+        ? chatState.messagesForConversationChannel(
+            conv.id,
+            channelId: selectedChannelId,
+            includeUnchanneled: includeUnchanneled,
+          )
+        : chatState.messagesForConversation(conv.id);
     if (messages.isEmpty) return;
 
     final oldestTimestamp = messages.first.timestamp;
@@ -173,6 +215,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           conv.id,
           auth.token!,
           auth.userId!,
+          channelId: selectedChannelId,
           before: oldestTimestamp,
           crypto: crypto,
           isGroup: conv.isGroup,
@@ -190,6 +233,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     // Find peer user ID for DMs
     String peerUserId = '';
+    String? channelId;
     if (!conv.isGroup) {
       final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
       peerUserId = peer?.userId ?? '';
@@ -205,11 +249,26 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         );
         return;
       }
+    } else {
+      final channels = ref.read(channelsProvider).channelsFor(conv.id);
+      channelId = _selectedTextChannelId ?? channels.where((c) => c.isText).firstOrNull?.id;
+      if (channelId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No text channel available in this group')),
+        );
+        return;
+      }
     }
 
     ref
         .read(chatProvider.notifier)
-        .addOptimistic(peerUserId, text, myUserId, conversationId: conv.id);
+        .addOptimistic(
+          peerUserId,
+          text,
+          myUserId,
+          conversationId: conv.id,
+          channelId: channelId,
+        );
     _messageController.clear();
     _scrollToBottom();
     SoundService().playMessageSent();
@@ -218,7 +277,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       if (conv.isGroup) {
         await ref
             .read(websocketProvider.notifier)
-            .sendGroupMessage(conv.id, text);
+            .sendGroupMessage(conv.id, text, channelId: channelId);
       } else {
         await ref
             .read(websocketProvider.notifier)
@@ -236,7 +295,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   void _onInputChanged(String text) {
     final conv = widget.conversation;
     if (conv != null && text.isNotEmpty) {
-      ref.read(websocketProvider.notifier).sendTyping(conv.id);
+      ref
+          .read(websocketProvider.notifier)
+          .sendTyping(
+            conv.id,
+            channelId: conv.isGroup ? _selectedTextChannelId : null,
+          );
     }
   }
 
@@ -748,8 +812,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     );
   }
 
-  Widget _buildTextChannelChip(String channelName) {
-    final isSelected = _selectedTextChannel == channelName;
+  Widget _buildTextChannelChip(GroupChannel channel) {
+    final isSelected = _selectedTextChannelId == channel.id;
 
     return Material(
       color: Colors.transparent,
@@ -757,8 +821,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         borderRadius: BorderRadius.circular(8),
         onTap: () {
           setState(() {
-            _selectedTextChannel = channelName;
+            _selectedTextChannelId = channel.id;
+            _loadedHistoryKey = null;
           });
+          _loadHistory();
+          _markAsRead();
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -782,7 +849,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                 Icon(Icons.tag, size: 13, color: context.textSecondary),
                 const SizedBox(width: 6),
                 Text(
-                  channelName,
+                  channel.name,
                   style: TextStyle(
                     color: isSelected ? context.accent : context.textPrimary,
                     fontSize: 12,
@@ -797,9 +864,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     );
   }
 
-  Widget _buildVoiceChannelTile(String channelName) {
-    final isActive = _activeVoiceChannel == channelName;
-    final participantCount = isActive ? 1 : 0;
+  Widget _buildVoiceChannelTile(
+    String conversationId,
+    GroupChannel channel,
+    int participantCount,
+    VoiceSettingsState voiceSettings,
+  ) {
+    final isActive = _activeVoiceChannelId == channel.id;
 
     return Container(
       margin: const EdgeInsets.only(top: 6),
@@ -818,7 +889,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  channelName,
+                  channel.name,
                   style: TextStyle(
                     color: context.textPrimary,
                     fontSize: 13,
@@ -833,10 +904,33 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             ),
           ),
           TextButton(
-            onPressed: () {
-              setState(() {
-                _activeVoiceChannel = isActive ? null : channelName;
-              });
+            onPressed: () async {
+              final channelsNotifier = ref.read(channelsProvider.notifier);
+              final rtcNotifier = ref.read(voiceRtcProvider.notifier);
+              final success = isActive
+                  ? await channelsNotifier.leaveVoiceChannel(
+                      conversationId,
+                      channel.id,
+                    )
+                  : await channelsNotifier.joinVoiceChannel(
+                      conversationId,
+                      channel.id,
+                    );
+              if (success && mounted) {
+                if (isActive) {
+                  await rtcNotifier.leaveChannel();
+                } else {
+                  await rtcNotifier.joinChannel(
+                    conversationId: conversationId,
+                    channelId: channel.id,
+                    startMuted:
+                        voiceSettings.selfMuted || voiceSettings.selfDeafened,
+                  );
+                }
+                setState(() {
+                  _activeVoiceChannelId = isActive ? null : channel.id;
+                });
+              }
             },
             child: Text(isActive ? 'Leave' : 'Join'),
           ),
@@ -845,7 +939,28 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     );
   }
 
-  Widget _buildInlineGroupChannels() {
+  Widget _buildInlineGroupChannels(
+    String conversationId,
+    List<GroupChannel> channels,
+    ChannelsState channelsState,
+    VoiceSettingsState voiceSettings,
+  ) {
+    final textChannels = channels.where((c) => c.isText).toList();
+    final voiceChannels = channels.where((c) => c.isVoice).toList();
+
+    if (_selectedTextChannelId == null && textChannels.isNotEmpty) {
+      _selectedTextChannelId = textChannels.first.id;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _loadedHistoryKey = null;
+        _loadHistory();
+      });
+    }
+
+    final selectedText = textChannels
+        .where((c) => c.id == _selectedTextChannelId)
+        .firstOrNull;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
@@ -874,7 +989,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               ),
               const Spacer(),
               Text(
-                '#$_selectedTextChannel',
+                selectedText != null ? '#${selectedText.name}' : '#loading',
                 style: TextStyle(
                   color: context.accent,
                   fontSize: 11,
@@ -887,8 +1002,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: _defaultTextChannels
-                  .map((channelName) => _buildTextChannelChip(channelName))
+              children: textChannels
+                  .map((channel) => _buildTextChannelChip(channel))
                   .toList(),
             ),
           ),
@@ -911,8 +1026,161 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               ),
             ],
           ),
-          for (final voiceChannel in _defaultVoiceChannels)
-            _buildVoiceChannelTile(voiceChannel),
+          if (channels.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                channelsState.isLoadingConversation(conversationId)
+                    ? 'Loading channels...'
+                    : 'No channels yet',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+            ),
+          for (final voiceChannel in voiceChannels)
+            _buildVoiceChannelTile(
+              conversationId,
+              voiceChannel,
+              channelsState.voiceSessionsFor(voiceChannel.id).length,
+              voiceSettings,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVoiceControlDock(
+    String conversationId,
+    List<GroupChannel> channels,
+    ChannelsState channelsState,
+    VoiceSettingsState voiceSettings,
+    String myUserId,
+    VoiceRtcState voiceRtc,
+  ) {
+    final activeVoiceChannel = channels
+        .where((c) => c.id == _activeVoiceChannelId)
+        .firstOrNull;
+    if (activeVoiceChannel == null) {
+      return const SizedBox.shrink();
+    }
+
+    Future<void> syncVoiceState() async {
+      await ref
+          .read(channelsProvider.notifier)
+          .updateVoiceState(
+            conversationId: conversationId,
+            channelId: activeVoiceChannel.id,
+            isMuted: voiceSettings.selfMuted,
+            isDeafened: voiceSettings.selfDeafened,
+            pushToTalk: voiceSettings.pushToTalkEnabled,
+          );
+    }
+
+    final participants = channelsState.voiceSessionsFor(activeVoiceChannel.id);
+    final iAmInChannel = participants.any((p) => p.userId == myUserId);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _activeVoiceChannelId != activeVoiceChannel.id) return;
+
+      final rtcNotifier = ref.read(voiceRtcProvider.notifier);
+      if (!iAmInChannel) {
+        await rtcNotifier.leaveChannel();
+        if (mounted) {
+          setState(() {
+            _activeVoiceChannelId = null;
+          });
+        }
+        return;
+      }
+
+      await rtcNotifier.syncParticipants(
+        conversationId: conversationId,
+        channelId: activeVoiceChannel.id,
+        participantUserIds: participants.map((m) => m.userId).toList(),
+      );
+    });
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+      decoration: BoxDecoration(
+        color: context.surface,
+        border: Border(bottom: BorderSide(color: context.border, width: 1)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.graphic_eq, size: 16, color: context.accent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Connected to ${activeVoiceChannel.name} • ${voiceRtc.peerConnectionStates.length} peer(s)',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (voiceRtc.isJoining)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: context.accent,
+                ),
+              ),
+            ),
+          IconButton(
+            icon: Icon(
+              voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
+              size: 18,
+            ),
+            color: voiceSettings.selfMuted
+                ? EchoTheme.danger
+                : context.textSecondary,
+            tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
+            onPressed: () async {
+              final notifier = ref.read(voiceSettingsProvider.notifier);
+              final nextMuted = !voiceSettings.selfMuted;
+              await notifier.setSelfMuted(nextMuted);
+              ref
+                  .read(voiceRtcProvider.notifier)
+                  .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
+              await syncVoiceState();
+            },
+          ),
+          IconButton(
+            icon: Icon(
+              voiceSettings.selfDeafened
+                  ? Icons.volume_off_outlined
+                  : Icons.volume_up_outlined,
+              size: 18,
+            ),
+            color: voiceSettings.selfDeafened
+                ? EchoTheme.danger
+                : context.textSecondary,
+            tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
+            onPressed: () async {
+              final notifier = ref.read(voiceSettingsProvider.notifier);
+              final nextDeafened = !voiceSettings.selfDeafened;
+              await notifier.setSelfDeafened(nextDeafened);
+              ref
+                  .read(voiceRtcProvider.notifier)
+                  .setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
+              await syncVoiceState();
+            },
+          ),
+          TextButton(
+            onPressed: () async {
+              final notifier = ref.read(voiceSettingsProvider.notifier);
+              await notifier.setPushToTalkEnabled(!voiceSettings.pushToTalkEnabled);
+              await syncVoiceState();
+            },
+            child: Text(voiceSettings.pushToTalkEnabled ? 'PTT On' : 'PTT Off'),
+          ),
+          if (participants.any((p) => p.userId == myUserId))
+            Icon(Icons.fiber_manual_record, size: 10, color: EchoTheme.online),
         ],
       ),
     );
@@ -976,23 +1244,50 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     }
 
     // Load history on first build with this conversation
-    if (_loadedConversationId != conv.id) {
+    if (_loadedHistoryKey == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadHistory();
+        _loadChannels();
         _markAsRead();
       });
     }
 
     final chatState = ref.watch(chatProvider);
+    final channelsState = ref.watch(channelsProvider);
+    final voiceRtc = ref.watch(voiceRtcProvider);
+    final voiceSettings = ref.watch(voiceSettingsProvider);
     final wsState = ref.watch(websocketProvider);
     final authState = ref.watch(authProvider);
     final myUserId = authState.userId ?? '';
     final serverUrl = ref.watch(serverUrlProvider);
     final authToken = authState.token ?? '';
 
-    final messages = chatState.messagesForConversation(conv.id);
-    final isLoadingHistory = chatState.isLoadingHistory(conv.id);
-    final typingUsers = wsState.typingIn(conv.id);
+    final channels = channelsState.channelsFor(conv.id);
+    final textChannels = channels.where((c) => c.isText).toList();
+    final defaultTextChannelId = textChannels.isNotEmpty
+        ? textChannels.first.id
+        : null;
+    final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
+    final includeUnchanneled =
+        conv.isGroup &&
+        selectedChannelId != null &&
+        selectedChannelId == defaultTextChannelId;
+
+    final messages = conv.isGroup
+        ? chatState.messagesForConversationChannel(
+            conv.id,
+            channelId: selectedChannelId,
+            includeUnchanneled: includeUnchanneled,
+          )
+        : chatState.messagesForConversation(conv.id);
+    final isLoadingHistory = chatState.isLoadingHistory(
+      conv.id,
+      channelId: selectedChannelId,
+    );
+    final typingUsers = wsState.typingIn(
+      conv.id,
+      channelId: selectedChannelId,
+    );
 
     final displayName = conv.displayName(myUserId);
     final typingText = conv.isGroup
@@ -1007,8 +1302,21 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     // Listen for new messages to auto-scroll
     ref.listen<ChatState>(chatProvider, (prev, next) {
-      final prevCount = prev?.messagesForConversation(conv.id).length ?? 0;
-      final nextCount = next.messagesForConversation(conv.id).length;
+      int visibleCount(ChatState s) {
+        if (!conv.isGroup) {
+          return s.messagesForConversation(conv.id).length;
+        }
+        return s
+            .messagesForConversationChannel(
+              conv.id,
+              channelId: selectedChannelId,
+              includeUnchanneled: includeUnchanneled,
+            )
+            .length;
+      }
+
+      final prevCount = prev == null ? 0 : visibleCount(prev);
+      final nextCount = visibleCount(next);
       if (nextCount > prevCount) {
         _scrollToBottom();
       }
@@ -1155,7 +1463,22 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               ],
             ),
           ),
-          if (conv.isGroup) _buildInlineGroupChannels(),
+          if (conv.isGroup)
+            _buildInlineGroupChannels(
+              conv.id,
+              channels,
+              channelsState,
+              voiceSettings,
+            ),
+          if (conv.isGroup)
+            _buildVoiceControlDock(
+              conv.id,
+              channels,
+              channelsState,
+              voiceSettings,
+              myUserId,
+              voiceRtc,
+            ),
           // Loading indicator for history
           if (isLoadingHistory)
             LinearProgressIndicator(

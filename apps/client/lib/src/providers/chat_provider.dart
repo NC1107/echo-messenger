@@ -17,9 +17,11 @@ class ChatState {
   final Map<String, List<ChatMessage>> messagesByConversation;
 
   /// Whether history is currently loading for a conversation.
+  /// Key format: conversationId:channelId (channelId empty for full conversation).
   final Map<String, bool> loadingHistory;
 
   /// Whether there are more messages to load (for pagination).
+  /// Key format: conversationId:channelId (channelId empty for full conversation).
   final Map<String, bool> hasMore;
 
   const ChatState({
@@ -33,12 +35,33 @@ class ChatState {
     return messagesByConversation[conversationId] ?? [];
   }
 
-  bool isLoadingHistory(String conversationId) {
-    return loadingHistory[conversationId] ?? false;
+  String _historyKey(String conversationId, String? channelId) {
+    return '$conversationId:${channelId ?? ''}';
   }
 
-  bool conversationHasMore(String conversationId) {
-    return hasMore[conversationId] ?? true;
+  List<ChatMessage> messagesForConversationChannel(
+    String conversationId, {
+    String? channelId,
+    bool includeUnchanneled = false,
+  }) {
+    final messages = messagesForConversation(conversationId);
+    if (channelId == null || channelId.isEmpty) {
+      return messages;
+    }
+    return messages.where((m) {
+      if (m.channelId == channelId) {
+        return true;
+      }
+      return includeUnchanneled && (m.channelId == null || m.channelId!.isEmpty);
+    }).toList();
+  }
+
+  bool isLoadingHistory(String conversationId, {String? channelId}) {
+    return loadingHistory[_historyKey(conversationId, channelId)] ?? false;
+  }
+
+  bool conversationHasMore(String conversationId, {String? channelId}) {
+    return hasMore[_historyKey(conversationId, channelId)] ?? true;
   }
 
   ChatState withMessage(ChatMessage msg) {
@@ -77,12 +100,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String content,
     String myUserId, {
     String conversationId = '',
+    String? channelId,
   }) {
     final msg = ChatMessage(
       id: 'pending_${DateTime.now().millisecondsSinceEpoch}',
       fromUserId: myUserId,
       fromUsername: 'You',
       conversationId: conversationId,
+      channelId: channelId,
       content: content,
       timestamp: DateTime.now().toIso8601String(),
       isMine: true,
@@ -91,7 +116,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.withMessage(msg);
   }
 
-  void confirmSent(String messageId, String conversationId, String timestamp) {
+  void confirmSent(
+    String messageId,
+    String conversationId,
+    String timestamp, {
+    String? channelId,
+  }) {
     // Replace the most recent pending/sending message in this conversation
     // with the server-assigned ID so that delivery receipts can match it.
     final updatedConv = Map<String, List<ChatMessage>>.from(
@@ -104,12 +134,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
         final msg = messages[i];
         if (msg.id.startsWith('pending_') &&
             msg.isMine &&
-            msg.status == MessageStatus.sending) {
+            msg.status == MessageStatus.sending &&
+            (channelId == null || msg.channelId == channelId)) {
           final updatedMessages = List<ChatMessage>.from(messages);
           updatedMessages[i] = msg.copyWith(
             id: messageId,
             timestamp: timestamp,
             status: MessageStatus.sent,
+            channelId: channelId ?? msg.channelId,
           );
           updatedConv[conversationId] = updatedMessages;
           break;
@@ -131,14 +163,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String conversationId,
     String token,
     String myUserId, {
+    String? channelId,
     String? before,
     CryptoService? crypto,
     bool isGroup = false,
   }) async {
-    if (state.isLoadingHistory(conversationId)) return;
+    final historyKey = '$conversationId:${channelId ?? ''}';
+    if (state.isLoadingHistory(conversationId, channelId: channelId)) return;
 
     final updatedLoading = Map<String, bool>.from(state.loadingHistory);
-    updatedLoading[conversationId] = true;
+    updatedLoading[historyKey] = true;
     state = ChatState(
       messagesByConversation: state.messagesByConversation,
       loadingHistory: updatedLoading,
@@ -147,6 +181,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     try {
       var url = '$_serverUrl/api/messages/$conversationId?limit=50';
+      if (channelId != null && channelId.isNotEmpty) {
+        url += '&channel_id=${Uri.encodeComponent(channelId)}';
+      }
       if (before != null) {
         url += '&before=${Uri.encodeComponent(before)}';
       }
@@ -206,7 +243,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
           newMessages.add(msg);
         }
 
-        _mergeMessages(conversationId, newMessages, before != null);
+        _mergeMessages(
+          conversationId,
+          newMessages,
+          channelId: channelId,
+        );
       }
     } catch (e) {
       debugPrint(
@@ -215,7 +256,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       );
     } finally {
       final updatedLoading2 = Map<String, bool>.from(state.loadingHistory);
-      updatedLoading2[conversationId] = false;
+      updatedLoading2[historyKey] = false;
       state = ChatState(
         messagesByConversation: state.messagesByConversation,
         loadingHistory: updatedLoading2,
@@ -227,7 +268,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   void _mergeMessages(
     String conversationId,
     List<ChatMessage> newMessages,
-    bool isPagination,
+    {String? channelId}
   ) {
     final updatedConv = Map<String, List<ChatMessage>>.from(
       state.messagesByConversation,
@@ -243,7 +284,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
     final updatedHasMore = Map<String, bool>.from(state.hasMore);
-    updatedHasMore[conversationId] = newMessages.length >= 50;
+    updatedHasMore['$conversationId:${channelId ?? ''}'] =
+        newMessages.length >= 50;
 
     state = ChatState(
       messagesByConversation: updatedConv,

@@ -17,13 +17,24 @@ enum ClientMessage {
     #[serde(rename = "send_message")]
     SendMessage {
         conversation_id: Option<Uuid>,
+        channel_id: Option<Uuid>,
         to_user_id: Option<Uuid>,
         content: String,
     },
     #[serde(rename = "typing")]
-    Typing { conversation_id: Uuid },
+    Typing {
+        conversation_id: Uuid,
+        channel_id: Option<Uuid>,
+    },
     #[serde(rename = "read_receipt")]
     ReadReceipt { conversation_id: Uuid },
+    #[serde(rename = "voice_signal")]
+    VoiceSignal {
+        conversation_id: Uuid,
+        channel_id: Uuid,
+        to_user_id: Uuid,
+        signal: serde_json::Value,
+    },
 }
 
 #[derive(Serialize)]
@@ -35,6 +46,8 @@ enum ServerMessage {
         from_user_id: Uuid,
         from_username: String,
         conversation_id: Uuid,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        channel_id: Option<Uuid>,
         content: String,
         timestamp: DateTime<Utc>,
     },
@@ -42,6 +55,8 @@ enum ServerMessage {
     MessageSent {
         message_id: Uuid,
         conversation_id: Uuid,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        channel_id: Option<Uuid>,
         timestamp: DateTime<Utc>,
     },
     #[serde(rename = "delivered")]
@@ -52,6 +67,8 @@ enum ServerMessage {
     #[serde(rename = "typing")]
     Typing {
         conversation_id: Uuid,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        channel_id: Option<Uuid>,
         user_id: Uuid,
         from_username: String,
     },
@@ -62,6 +79,13 @@ enum ServerMessage {
     },
     #[serde(rename = "error")]
     Error { message: String },
+    #[serde(rename = "voice_signal")]
+    VoiceSignal {
+        conversation_id: Uuid,
+        channel_id: Uuid,
+        from_user_id: Uuid,
+        signal: serde_json::Value,
+    },
 }
 
 pub async fn handle_socket(
@@ -97,6 +121,7 @@ pub async fn handle_socket(
                 from_user_id: msg.sender_id,
                 from_username: msg.sender_username.clone(),
                 conversation_id: msg.conversation_id,
+                channel_id: msg.channel_id,
                 content: msg.content.clone(),
                 timestamp: msg.created_at,
             };
@@ -155,6 +180,7 @@ async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str,
     match msg {
         ClientMessage::SendMessage {
             conversation_id,
+            channel_id,
             to_user_id,
             content,
         } => {
@@ -163,16 +189,43 @@ async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str,
                 sender_id,
                 sender_username,
                 conversation_id,
+                channel_id,
                 to_user_id,
                 content,
             )
             .await;
         }
-        ClientMessage::Typing { conversation_id } => {
-            handle_typing(state, sender_id, sender_username, conversation_id).await;
+        ClientMessage::Typing {
+            conversation_id,
+            channel_id,
+        } => {
+            handle_typing(
+                state,
+                sender_id,
+                sender_username,
+                conversation_id,
+                channel_id,
+            )
+            .await;
         }
         ClientMessage::ReadReceipt { conversation_id } => {
             handle_read_receipt(state, sender_id, conversation_id).await;
+        }
+        ClientMessage::VoiceSignal {
+            conversation_id,
+            channel_id,
+            to_user_id,
+            signal,
+        } => {
+            handle_voice_signal(
+                state,
+                sender_id,
+                conversation_id,
+                channel_id,
+                to_user_id,
+                signal,
+            )
+            .await;
         }
     }
 }
@@ -182,6 +235,7 @@ async fn handle_send_message(
     sender_id: Uuid,
     sender_username: &str,
     conversation_id: Option<Uuid>,
+    channel_id: Option<Uuid>,
     to_user_id: Option<Uuid>,
     content: String,
 ) {
@@ -261,6 +315,61 @@ async fn handle_send_message(
         }
     };
 
+    if conv_security.kind != "group" && channel_id.is_some() {
+        send_error(
+            state,
+            sender_id,
+            "channel_id is only valid for group conversations",
+        );
+        return;
+    }
+
+    let resolved_channel_id = if conv_security.kind == "group" {
+        if let Some(cid) = channel_id {
+            let channel = match db::channels::get_channel(&state.pool, cid).await {
+                Ok(Some(c)) => c,
+                Ok(None) => {
+                    send_error(state, sender_id, "Channel not found");
+                    return;
+                }
+                Err(_) => {
+                    send_error(state, sender_id, "Database error");
+                    return;
+                }
+            };
+
+            if channel.conversation_id != conv_id {
+                send_error(state, sender_id, "Channel is not part of this conversation");
+                return;
+            }
+
+            if channel.kind != "text" {
+                send_error(
+                    state,
+                    sender_id,
+                    "Messages can only be sent to text channels",
+                );
+                return;
+            }
+
+            Some(cid)
+        } else {
+            match db::channels::get_default_text_channel(&state.pool, conv_id).await {
+                Ok(Some(channel)) => Some(channel.id),
+                Ok(None) => {
+                    send_error(state, sender_id, "No text channel found for this group");
+                    return;
+                }
+                Err(_) => {
+                    send_error(state, sender_id, "Database error");
+                    return;
+                }
+            }
+        }
+    } else {
+        None
+    };
+
     if conv_security.kind == "direct" && !conv_security.is_encrypted {
         let privacy = match db::users::get_privacy_preferences(&state.pool, sender_id).await {
             Ok(Some(p)) => p,
@@ -285,7 +394,14 @@ async fn handle_send_message(
     }
 
     // Store message
-    let stored = match db::messages::store_message(&state.pool, conv_id, sender_id, &content).await
+    let stored = match db::messages::store_message(
+        &state.pool,
+        conv_id,
+        resolved_channel_id,
+        sender_id,
+        &content,
+    )
+    .await
     {
         Ok(row) => row,
         Err(_) => {
@@ -298,6 +414,7 @@ async fn handle_send_message(
     let confirm = ServerMessage::MessageSent {
         message_id: stored.id,
         conversation_id: conv_id,
+        channel_id: stored.channel_id,
         timestamp: stored.created_at,
     };
     if let Ok(json) = serde_json::to_string(&confirm) {
@@ -318,6 +435,7 @@ async fn handle_send_message(
         from_user_id: sender_id,
         from_username: sender_username.to_string(),
         conversation_id: conv_id,
+        channel_id: stored.channel_id,
         content,
         timestamp: stored.created_at,
     };
@@ -367,6 +485,7 @@ async fn handle_typing(
     sender_id: Uuid,
     sender_username: &str,
     conversation_id: Uuid,
+    channel_id: Option<Uuid>,
 ) {
     // Verify membership
     let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
@@ -377,6 +496,25 @@ async fn handle_typing(
         return;
     }
 
+    let kind = match db::groups::get_conversation_kind(&state.pool, conversation_id).await {
+        Ok(Some(k)) => k,
+        _ => return,
+    };
+
+    let mut resolved_channel_id = None;
+    if kind == "group"
+        && let Some(cid) = channel_id
+    {
+        let channel = match db::channels::get_channel(&state.pool, cid).await {
+            Ok(Some(c)) => c,
+            _ => return,
+        };
+        if channel.conversation_id != conversation_id || channel.kind != "text" {
+            return;
+        }
+        resolved_channel_id = Some(cid);
+    }
+
     let member_ids =
         match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await {
             Ok(ids) => ids,
@@ -385,6 +523,7 @@ async fn handle_typing(
 
     let event = ServerMessage::Typing {
         conversation_id,
+        channel_id: resolved_channel_id,
         user_id: sender_id,
         from_username: sender_username.to_string(),
     };
@@ -448,6 +587,111 @@ async fn handle_read_receipt(state: &AppState, sender_id: Uuid, conversation_id:
         state
             .hub
             .send_to(member_id, WsMessage::Text(json.clone().into()));
+    }
+}
+
+async fn handle_voice_signal(
+    state: &AppState,
+    sender_id: Uuid,
+    conversation_id: Uuid,
+    channel_id: Uuid,
+    to_user_id: Uuid,
+    signal: serde_json::Value,
+) {
+    let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
+        Ok(m) => m,
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return;
+        }
+    };
+    if !is_member {
+        send_error(state, sender_id, "Not a member of this conversation");
+        return;
+    }
+
+    let kind = match db::groups::get_conversation_kind(&state.pool, conversation_id).await {
+        Ok(Some(k)) => k,
+        Ok(None) => {
+            send_error(state, sender_id, "Conversation not found");
+            return;
+        }
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return;
+        }
+    };
+
+    if kind != "group" {
+        send_error(
+            state,
+            sender_id,
+            "Voice signaling is only supported in groups",
+        );
+        return;
+    }
+
+    let channel = match db::channels::get_channel(&state.pool, channel_id).await {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            send_error(state, sender_id, "Channel not found");
+            return;
+        }
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return;
+        }
+    };
+
+    if channel.conversation_id != conversation_id {
+        send_error(state, sender_id, "Channel is not part of this conversation");
+        return;
+    }
+
+    if channel.kind != "voice" {
+        send_error(
+            state,
+            sender_id,
+            "Voice signaling is only valid for voice channels",
+        );
+        return;
+    }
+
+    let sender_in_channel =
+        match db::channels::is_user_in_voice_channel(&state.pool, channel_id, sender_id).await {
+            Ok(v) => v,
+            Err(_) => {
+                send_error(state, sender_id, "Database error");
+                return;
+            }
+        };
+    if !sender_in_channel {
+        send_error(state, sender_id, "Join the voice channel before signaling");
+        return;
+    }
+
+    let target_in_channel =
+        match db::channels::is_user_in_voice_channel(&state.pool, channel_id, to_user_id).await {
+            Ok(v) => v,
+            Err(_) => {
+                send_error(state, sender_id, "Database error");
+                return;
+            }
+        };
+    if !target_in_channel {
+        send_error(state, sender_id, "Target user is not in this voice channel");
+        return;
+    }
+
+    let event = ServerMessage::VoiceSignal {
+        conversation_id,
+        channel_id,
+        from_user_id: sender_id,
+        signal,
+    };
+
+    if let Ok(json) = serde_json::to_string(&event) {
+        state.hub.send_to(&to_user_id, WsMessage::Text(json.into()));
     }
 }
 

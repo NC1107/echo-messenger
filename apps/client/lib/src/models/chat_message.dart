@@ -7,6 +7,7 @@ class ChatMessage {
   final String fromUserId;
   final String fromUsername;
   final String conversationId;
+  final String? channelId;
   final String content;
   final String timestamp;
   final bool isMine;
@@ -20,6 +21,7 @@ class ChatMessage {
     required this.fromUserId,
     required this.fromUsername,
     required this.conversationId,
+    this.channelId,
     required this.content,
     required this.timestamp,
     required this.isMine,
@@ -46,6 +48,7 @@ class ChatMessage {
         (json['from_username'] ?? json['sender_username'] ?? 'Unknown')
             .toString();
     final conversationId = (json['conversation_id'] ?? '').toString();
+    final channelId = (json['channel_id'] as String?)?.trim();
     final content = (json['content'] ?? '').toString();
     final timestamp =
         (json['timestamp'] ??
@@ -58,6 +61,7 @@ class ChatMessage {
       fromUserId: fromUserId,
       fromUsername: fromUsername,
       conversationId: conversationId,
+      channelId: (channelId == null || channelId.isEmpty) ? null : channelId,
       content: content,
       timestamp: timestamp,
       isMine: fromUserId == myUserId,
@@ -72,6 +76,7 @@ class ChatMessage {
     String? fromUserId,
     String? fromUsername,
     String? conversationId,
+    String? channelId,
     String? content,
     String? timestamp,
     bool? isMine,
@@ -85,6 +90,7 @@ class ChatMessage {
       fromUserId: fromUserId ?? this.fromUserId,
       fromUsername: fromUsername ?? this.fromUsername,
       conversationId: conversationId ?? this.conversationId,
+      channelId: channelId ?? this.channelId,
       content: content ?? this.content,
       timestamp: timestamp ?? this.timestamp,
       isMine: isMine ?? this.isMine,

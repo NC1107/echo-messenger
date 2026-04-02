@@ -13,6 +13,7 @@ import '../services/notification_service.dart';
 import '../services/sound_service.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
+import 'channels_provider.dart';
 import 'chat_provider.dart';
 import 'conversations_provider.dart';
 import 'crypto_provider.dart';
@@ -50,9 +51,13 @@ class WebSocketState {
   /// Check if a specific user is online.
   bool isUserOnline(String userId) => onlineUsers.contains(userId);
 
-  /// Get list of usernames typing in a given conversation.
-  List<String> typingIn(String conversationId) {
-    final users = typingUsers[conversationId];
+  String _typingKey(String conversationId, String? channelId) {
+    return '$conversationId:${channelId ?? ''}';
+  }
+
+  /// Get list of usernames typing in a given conversation/channel.
+  List<String> typingIn(String conversationId, {String? channelId}) {
+    final users = typingUsers[_typingKey(conversationId, channelId)];
     if (users == null) return [];
     final now = DateTime.now();
     // Only show users who typed within the last 5 seconds
@@ -68,6 +73,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   Timer? _typingCleanupTimer;
+  final _voiceSignalController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   /// Throttle: track last typing event sent per conversation.
   final Map<String, DateTime> _lastTypingSent = {};
@@ -83,6 +90,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
       (_) => _cleanupTyping(),
     );
   }
+
+  Stream<Map<String, dynamic>> get voiceSignals => _voiceSignalController.stream;
 
   /// Request a short-lived WebSocket ticket from the server.
   ///
@@ -256,28 +265,40 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   }
 
   /// Send a message to a group conversation.
-  Future<void> sendGroupMessage(String conversationId, String content) async {
-    _channel?.sink.add(
-      jsonEncode({
-        'type': 'send_message',
-        'conversation_id': conversationId,
-        'content': content,
-      }),
-    );
+  Future<void> sendGroupMessage(
+    String conversationId,
+    String content, {
+    String? channelId,
+  }) async {
+    final msg = <String, dynamic>{
+      'type': 'send_message',
+      'conversation_id': conversationId,
+      'content': content,
+    };
+    if (channelId != null && channelId.isNotEmpty) {
+      msg['channel_id'] = channelId;
+    }
+    _channel?.sink.add(jsonEncode(msg));
   }
 
   /// Send a typing indicator (throttled to max 1 per 3 seconds per conversation).
-  void sendTyping(String conversationId) {
+  void sendTyping(String conversationId, {String? channelId}) {
+    final throttleKey = '$conversationId:${channelId ?? ''}';
     final now = DateTime.now();
-    final lastSent = _lastTypingSent[conversationId];
+    final lastSent = _lastTypingSent[throttleKey];
     if (lastSent != null && now.difference(lastSent).inSeconds < 3) {
       return;
     }
-    _lastTypingSent[conversationId] = now;
+    _lastTypingSent[throttleKey] = now;
 
-    _channel?.sink.add(
-      jsonEncode({'type': 'typing', 'conversation_id': conversationId}),
-    );
+    final msg = <String, dynamic>{
+      'type': 'typing',
+      'conversation_id': conversationId,
+    };
+    if (channelId != null && channelId.isNotEmpty) {
+      msg['channel_id'] = channelId;
+    }
+    _channel?.sink.add(jsonEncode(msg));
   }
 
   /// Send a reaction via REST (server broadcasts via WebSocket to other members).
@@ -333,6 +354,24 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
     );
   }
 
+  /// Relay a WebRTC signaling payload to another voice-channel member.
+  void sendVoiceSignal({
+    required String conversationId,
+    required String channelId,
+    required String toUserId,
+    required Map<String, dynamic> signal,
+  }) {
+    _channel?.sink.add(
+      jsonEncode({
+        'type': 'voice_signal',
+        'conversation_id': conversationId,
+        'channel_id': channelId,
+        'to_user_id': toUserId,
+        'signal': signal,
+      }),
+    );
+  }
+
   void _onMessage(String data) {
     final json = jsonDecode(data) as Map<String, dynamic>;
     final type = json['type'] as String;
@@ -364,18 +403,53 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
         _handlePresence(json);
       case 'presence_list':
         _handlePresenceList(json);
+      case 'channel_created':
+      case 'channel_updated':
+      case 'channel_deleted':
+        _refreshChannelsFromEvent(json);
+      case 'voice_session_joined':
+      case 'voice_session_left':
+      case 'voice_session_updated':
+        _refreshVoiceSessionsFromEvent(json);
       case 'error':
         break;
+      case 'voice_signal':
+        _handleVoiceSignal(json);
     }
+  }
+
+  void _handleVoiceSignal(Map<String, dynamic> json) {
+    _voiceSignalController.add(json);
+  }
+
+  void _refreshChannelsFromEvent(Map<String, dynamic> json) {
+    final groupId = json['group_id'] as String?;
+    if (groupId == null || groupId.isEmpty) return;
+    ref.read(channelsProvider.notifier).loadChannels(groupId);
+  }
+
+  void _refreshVoiceSessionsFromEvent(Map<String, dynamic> json) {
+    final groupId = json['group_id'] as String?;
+    final channelId = json['channel_id'] as String?;
+    if (groupId == null || channelId == null) return;
+
+    final notifier = ref.read(channelsProvider.notifier);
+    notifier.loadVoiceSessions(groupId, channelId);
   }
 
   void _handleMessageSent(Map<String, dynamic> json) {
     final messageId = json['message_id'] as String;
     final conversationId = json['conversation_id'] as String;
+    final channelId = json['channel_id'] as String?;
     final timestamp = json['timestamp'] as String;
     ref
         .read(chatProvider.notifier)
-        .confirmSent(messageId, conversationId, timestamp);
+        .confirmSent(
+          messageId,
+          conversationId,
+          timestamp,
+          channelId: channelId,
+        );
     // Update status to sent
     ref
         .read(chatProvider.notifier)
@@ -514,20 +588,21 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
 
   void _handleTyping(Map<String, dynamic> json, String myUserId) {
     final conversationId = json['conversation_id'] as String;
-    final fromUserId = json['from_user_id'] as String? ?? '';
+    final channelId = json['channel_id'] as String?;
+    final fromUserId =
+        (json['from_user_id'] as String?) ?? (json['user_id'] as String?) ?? '';
     final fromUsername = json['from_username'] as String? ?? 'Someone';
 
     // Don't show own typing indicator
     if (fromUserId == myUserId) return;
 
-    final updatedTyping = Map<String, Map<String, DateTime>>.from(
-      state.typingUsers,
-    );
+    final typingKey = '$conversationId:${channelId ?? ''}';
+    final updatedTyping = Map<String, Map<String, DateTime>>.from(state.typingUsers);
     final conversationTyping = Map<String, DateTime>.from(
-      updatedTyping[conversationId] ?? {},
+      updatedTyping[typingKey] ?? {},
     );
     conversationTyping[fromUsername] = DateTime.now();
-    updatedTyping[conversationId] = conversationTyping;
+    updatedTyping[typingKey] = conversationTyping;
 
     state = state.copyWith(typingUsers: updatedTyping);
   }
@@ -643,6 +718,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
   @override
   void dispose() {
     _typingCleanupTimer?.cancel();
+    _voiceSignalController.close();
     disconnect();
     super.dispose();
   }

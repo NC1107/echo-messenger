@@ -1,0 +1,136 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class VoiceSettingsState {
+  final String inputDeviceId;
+  final String outputDeviceId;
+  final double inputGain;
+  final double outputVolume;
+  final bool pushToTalkEnabled;
+  final bool selfMuted;
+  final bool selfDeafened;
+
+  const VoiceSettingsState({
+    this.inputDeviceId = 'default',
+    this.outputDeviceId = 'default',
+    this.inputGain = 1.0,
+    this.outputVolume = 1.0,
+    this.pushToTalkEnabled = false,
+    this.selfMuted = false,
+    this.selfDeafened = false,
+  });
+
+  VoiceSettingsState copyWith({
+    String? inputDeviceId,
+    String? outputDeviceId,
+    double? inputGain,
+    double? outputVolume,
+    bool? pushToTalkEnabled,
+    bool? selfMuted,
+    bool? selfDeafened,
+  }) {
+    return VoiceSettingsState(
+      inputDeviceId: inputDeviceId ?? this.inputDeviceId,
+      outputDeviceId: outputDeviceId ?? this.outputDeviceId,
+      inputGain: inputGain ?? this.inputGain,
+      outputVolume: outputVolume ?? this.outputVolume,
+      pushToTalkEnabled: pushToTalkEnabled ?? this.pushToTalkEnabled,
+      selfMuted: selfMuted ?? this.selfMuted,
+      selfDeafened: selfDeafened ?? this.selfDeafened,
+    );
+  }
+}
+
+class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
+  VoiceSettingsNotifier() : super(const VoiceSettingsState()) {
+    _load();
+  }
+
+  static const _keyInputDevice = 'voice_input_device_id';
+  static const _keyOutputDevice = 'voice_output_device_id';
+  static const _keyInputGain = 'voice_input_gain';
+  static const _keyOutputVolume = 'voice_output_volume';
+  static const _keyPushToTalk = 'voice_push_to_talk_enabled';
+  static const _keySelfMuted = 'voice_self_muted';
+  static const _keySelfDeafened = 'voice_self_deafened';
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      state = state.copyWith(
+        inputDeviceId: prefs.getString(_keyInputDevice) ?? 'default',
+        outputDeviceId: prefs.getString(_keyOutputDevice) ?? 'default',
+        inputGain: prefs.getDouble(_keyInputGain) ?? 1.0,
+        outputVolume: prefs.getDouble(_keyOutputVolume) ?? 1.0,
+        pushToTalkEnabled: prefs.getBool(_keyPushToTalk) ?? false,
+        selfMuted: prefs.getBool(_keySelfMuted) ?? false,
+        selfDeafened: prefs.getBool(_keySelfDeafened) ?? false,
+      );
+    } catch (e) {
+      debugPrint('[VoiceSettings] load failed: $e');
+    }
+  }
+
+  Future<void> _persist(VoiceSettingsState next) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyInputDevice, next.inputDeviceId);
+      await prefs.setString(_keyOutputDevice, next.outputDeviceId);
+      await prefs.setDouble(_keyInputGain, next.inputGain);
+      await prefs.setDouble(_keyOutputVolume, next.outputVolume);
+      await prefs.setBool(_keyPushToTalk, next.pushToTalkEnabled);
+      await prefs.setBool(_keySelfMuted, next.selfMuted);
+      await prefs.setBool(_keySelfDeafened, next.selfDeafened);
+    } catch (e) {
+      debugPrint('[VoiceSettings] persist failed: $e');
+    }
+  }
+
+  Future<void> setInputDevice(String value) async {
+    final next = state.copyWith(inputDeviceId: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setOutputDevice(String value) async {
+    final next = state.copyWith(outputDeviceId: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setInputGain(double value) async {
+    final next = state.copyWith(inputGain: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setOutputVolume(double value) async {
+    final next = state.copyWith(outputVolume: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setPushToTalkEnabled(bool value) async {
+    final next = state.copyWith(pushToTalkEnabled: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setSelfMuted(bool value) async {
+    final next = state.copyWith(selfMuted: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setSelfDeafened(bool value) async {
+    final next = state.copyWith(selfDeafened: value);
+    state = next;
+    await _persist(next);
+  }
+}
+
+final voiceSettingsProvider =
+    StateNotifierProvider<VoiceSettingsNotifier, VoiceSettingsState>((ref) {
+      return VoiceSettingsNotifier();
+    });

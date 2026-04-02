@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod channels;
 pub mod contacts;
 pub mod groups;
 pub mod keys;
@@ -128,6 +129,30 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let group_routes = Router::new()
         .route("/", post(groups::create_group))
         .route("/public", get(groups::list_public_groups))
+        .route(
+            "/{id}/channels",
+            get(channels::list_channels).post(channels::create_channel),
+        )
+        .route(
+            "/{id}/channels/{channel_id}",
+            put(channels::update_channel).delete(channels::delete_channel),
+        )
+        .route(
+            "/{id}/channels/{channel_id}/voice",
+            get(channels::list_voice_sessions),
+        )
+        .route(
+            "/{id}/channels/{channel_id}/voice/join",
+            post(channels::join_voice_channel),
+        )
+        .route(
+            "/{id}/channels/{channel_id}/voice/leave",
+            post(channels::leave_voice_channel),
+        )
+        .route(
+            "/{id}/channels/{channel_id}/voice/state",
+            put(channels::update_voice_state),
+        )
         .route(
             "/{id}",
             get(groups::get_group)

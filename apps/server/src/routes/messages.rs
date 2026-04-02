@@ -48,6 +48,7 @@ pub struct MessageQuery {
     #[serde(default, deserialize_with = "deserialize_lenient_datetime")]
     pub before: Option<DateTime<Utc>>,
     pub limit: Option<i64>,
+    pub channel_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
@@ -180,10 +181,46 @@ pub async fn get_messages(
         return Err(AppError::unauthorized("Not a member of this conversation"));
     }
 
+    if let Some(channel_id) = params.channel_id {
+        let conversation_kind = db::groups::get_conversation_kind(&state.pool, conversation_id)
+            .await
+            .map_err(|_| AppError::internal("Database error"))?
+            .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
+
+        if conversation_kind != "group" {
+            return Err(AppError::bad_request(
+                "channel_id is only supported for group conversations",
+            ));
+        }
+
+        let channel = db::channels::get_channel(&state.pool, channel_id)
+            .await
+            .map_err(|_| AppError::internal("Database error"))?
+            .ok_or_else(|| AppError::bad_request("Channel not found"))?;
+
+        if channel.conversation_id != conversation_id {
+            return Err(AppError::bad_request(
+                "Channel is not part of this conversation",
+            ));
+        }
+
+        if channel.kind != "text" {
+            return Err(AppError::bad_request(
+                "Only text channels can contain messages",
+            ));
+        }
+    }
+
     let limit = params.limit.unwrap_or(50).min(100);
-    let messages = db::messages::get_messages(&state.pool, conversation_id, params.before, limit)
-        .await
-        .map_err(|_| AppError::internal("Database error"))?;
+    let messages = db::messages::get_messages(
+        &state.pool,
+        conversation_id,
+        params.channel_id,
+        params.before,
+        limit,
+    )
+    .await
+    .map_err(|_| AppError::internal("Database error"))?;
 
     Ok(Json(messages))
 }

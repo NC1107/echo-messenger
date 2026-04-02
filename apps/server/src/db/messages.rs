@@ -8,6 +8,7 @@ use uuid::Uuid;
 pub struct MessageRow {
     pub id: Uuid,
     pub conversation_id: Uuid,
+    pub channel_id: Option<Uuid>,
     pub sender_id: Uuid,
     pub content: String,
     pub created_at: DateTime<Utc>,
@@ -18,6 +19,7 @@ pub struct MessageRow {
 pub struct MessageWithSender {
     pub id: Uuid,
     pub conversation_id: Uuid,
+    pub channel_id: Option<Uuid>,
     pub sender_id: Uuid,
     pub sender_username: String,
     pub content: String,
@@ -85,15 +87,17 @@ pub async fn find_or_create_dm_conversation(
 pub async fn store_message(
     pool: &PgPool,
     conversation_id: Uuid,
+    channel_id: Option<Uuid>,
     sender_id: Uuid,
     content: &str,
 ) -> Result<MessageRow, sqlx::Error> {
     sqlx::query_as::<_, MessageRow>(
-        "INSERT INTO messages (conversation_id, sender_id, content) \
-         VALUES ($1, $2, $3) \
-         RETURNING id, conversation_id, sender_id, content, created_at, delivered",
+        "INSERT INTO messages (conversation_id, channel_id, sender_id, content) \
+         VALUES ($1, $2, $3, $4) \
+         RETURNING id, conversation_id, channel_id, sender_id, content, created_at, delivered",
     )
     .bind(conversation_id)
+    .bind(channel_id)
     .bind(sender_id)
     .bind(content)
     .fetch_one(pool)
@@ -103,21 +107,26 @@ pub async fn store_message(
 pub async fn get_messages(
     pool: &PgPool,
     conversation_id: Uuid,
+    channel_id: Option<Uuid>,
     before: Option<DateTime<Utc>>,
     limit: i64,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     match before {
         Some(cursor) => {
             sqlx::query_as::<_, MessageWithSender>(
-                "SELECT m.id, m.conversation_id, m.sender_id, u.username AS sender_username, \
+                "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, u.username AS sender_username, \
                         m.content, m.created_at, m.edited_at \
                  FROM messages m \
                  JOIN users u ON u.id = m.sender_id \
-                 WHERE m.conversation_id = $1 AND m.created_at < $2 AND m.deleted_at IS NULL \
+                 WHERE m.conversation_id = $1 \
+                   AND ($2::uuid IS NULL OR m.channel_id = $2) \
+                   AND m.created_at < $3 \
+                   AND m.deleted_at IS NULL \
                  ORDER BY m.created_at DESC \
-                 LIMIT $3",
+                 LIMIT $4",
             )
             .bind(conversation_id)
+            .bind(channel_id)
             .bind(cursor)
             .bind(limit)
             .fetch_all(pool)
@@ -125,15 +134,18 @@ pub async fn get_messages(
         }
         None => {
             sqlx::query_as::<_, MessageWithSender>(
-                "SELECT m.id, m.conversation_id, m.sender_id, u.username AS sender_username, \
+                "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, u.username AS sender_username, \
                         m.content, m.created_at, m.edited_at \
                  FROM messages m \
                  JOIN users u ON u.id = m.sender_id \
-                 WHERE m.conversation_id = $1 AND m.deleted_at IS NULL \
+                 WHERE m.conversation_id = $1 \
+                   AND ($2::uuid IS NULL OR m.channel_id = $2) \
+                   AND m.deleted_at IS NULL \
                  ORDER BY m.created_at DESC \
-                 LIMIT $2",
+                 LIMIT $3",
             )
             .bind(conversation_id)
+            .bind(channel_id)
             .bind(limit)
             .fetch_all(pool)
             .await
@@ -146,7 +158,7 @@ pub async fn get_undelivered(
     user_id: Uuid,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
-        "SELECT m.id, m.conversation_id, m.sender_id, u.username AS sender_username, \
+        "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, u.username AS sender_username, \
                 m.content, m.created_at, m.edited_at \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \

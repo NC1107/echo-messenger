@@ -1,3 +1,4 @@
+pub mod channels;
 pub mod contacts;
 pub mod groups;
 pub mod keys;
@@ -35,6 +36,7 @@ pub async fn run_migrations(pool: &PgPool) {
         include_str!("../migrations/013_signal_device_keys.sql"),
         include_str!("../migrations/014_encryption_toggle.sql"),
         include_str!("../migrations/015_user_privacy_preferences.sql"),
+        include_str!("../migrations/016_channels_and_voice.sql"),
     ];
 
     // Execute each statement separately (sqlx doesn't support multiple statements in one query)

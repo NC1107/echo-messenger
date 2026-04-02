@@ -107,6 +107,14 @@ pub async fn create_group(
         AppError::internal("Failed to create group")
     })?;
 
+    // Seed default channels for new groups.
+    db::channels::create_channel(&state.pool, group.id, "general", "text", None, 0)
+        .await
+        .map_err(|_| AppError::internal("Failed to create default text channel"))?;
+    db::channels::create_channel(&state.pool, group.id, "lounge", "voice", None, 0)
+        .await
+        .map_err(|_| AppError::internal("Failed to create default voice channel"))?;
+
     let members = db::groups::get_group_members(&state.pool, group.id)
         .await
         .map_err(|_| AppError::internal("Failed to fetch group members"))?;
