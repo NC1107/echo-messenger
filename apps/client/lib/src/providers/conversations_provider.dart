@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../models/conversation.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
+import 'privacy_provider.dart';
 import 'server_url_provider.dart';
 
 class ConversationsState {
@@ -181,6 +182,10 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   /// Send read receipt to server.
   Future<void> sendReadReceipt(String conversationId) async {
     markAsRead(conversationId);
+    final privacy = ref.read(privacyProvider);
+    if (!privacy.readReceiptsEnabled) {
+      return;
+    }
     try {
       await _authenticatedRequest(
         (token) => http.post(

@@ -12,6 +12,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
+import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/update_provider.dart';
@@ -181,6 +182,11 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
         _checkServerHealth();
       });
     }
+    if (widget.section == SettingsSection.privacy) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(privacyProvider.notifier).load();
+      });
+    }
   }
 
   @override
@@ -191,6 +197,10 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
             widget.section == SettingsSection.about) &&
         _serverVersion == null) {
       _checkServerHealth();
+    }
+    if (widget.section != oldWidget.section &&
+        widget.section == SettingsSection.privacy) {
+      ref.read(privacyProvider.notifier).load();
     }
   }
 
@@ -625,9 +635,72 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
   }
 
   Widget _buildPrivacySection() {
+    final privacy = ref.watch(privacyProvider);
+
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
+        if (privacy.error != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              privacy.error!,
+              style: const TextStyle(color: EchoTheme.danger, fontSize: 12),
+            ),
+          ),
+        Text(
+          'Messaging Privacy',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Control read receipts and whether unencrypted direct messages are allowed.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Send Read Receipts',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'When off, others will not see when you read messages.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: privacy.readReceiptsEnabled,
+          onChanged: privacy.isLoading
+              ? null
+              : (value) => ref
+                    .read(privacyProvider.notifier)
+                    .setReadReceiptsEnabled(value),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Allow Unencrypted Direct Messages',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'When off, plaintext direct messages are blocked.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: privacy.allowUnencryptedDm,
+          onChanged: privacy.isLoading
+              ? null
+              : (value) => ref
+                    .read(privacyProvider.notifier)
+                    .setAllowUnencryptedDm(value),
+        ),
+        const SizedBox(height: 24),
         Text(
           'Encryption',
           style: TextStyle(
@@ -638,7 +711,7 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Echo uses end-to-end encryption for direct messages. '
+          'Echo uses end-to-end encryption for encrypted direct messages. '
           'Your encryption keys are stored locally on this device.',
           style: TextStyle(
             color: context.textSecondary,
@@ -646,7 +719,7 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
             height: 1.5,
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(

@@ -141,6 +141,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let user_routes = Router::new()
         .route("/me", delete(users::delete_account))
+        .route(
+            "/me/privacy",
+            get(users::get_my_privacy).patch(users::update_my_privacy),
+        )
         .route("/me/avatar", put(users::upload_avatar))
         .route("/online", get(users::online_users))
         .route("/{id}/profile", get(users::get_profile))

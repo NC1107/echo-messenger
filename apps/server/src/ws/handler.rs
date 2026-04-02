@@ -246,6 +246,44 @@ async fn handle_send_message(
         return;
     };
 
+    // Enforce sender privacy preference for plaintext direct messages.
+    // If a direct conversation has encryption disabled, treat outbound content
+    // as plaintext and reject it when the sender has opted out.
+    let conv_security = match db::messages::get_conversation_security(&state.pool, conv_id).await {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            send_error(state, sender_id, "Conversation not found");
+            return;
+        }
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return;
+        }
+    };
+
+    if conv_security.kind == "direct" && !conv_security.is_encrypted {
+        let privacy = match db::users::get_privacy_preferences(&state.pool, sender_id).await {
+            Ok(Some(p)) => p,
+            Ok(None) => {
+                send_error(state, sender_id, "User not found");
+                return;
+            }
+            Err(_) => {
+                send_error(state, sender_id, "Database error");
+                return;
+            }
+        };
+
+        if !privacy.allow_unencrypted_dm {
+            send_error(
+                state,
+                sender_id,
+                "Plaintext direct messages are disabled in your privacy settings",
+            );
+            return;
+        }
+    }
+
     // Store message
     let stored = match db::messages::store_message(&state.pool, conv_id, sender_id, &content).await
     {
@@ -372,6 +410,15 @@ async fn handle_read_receipt(state: &AppState, sender_id: Uuid, conversation_id:
         Err(_) => return,
     };
     if !is_member {
+        return;
+    }
+
+    // Enforce sender preference: when disabled, do not persist or broadcast.
+    let privacy = match db::users::get_privacy_preferences(&state.pool, sender_id).await {
+        Ok(Some(p)) => p,
+        _ => return,
+    };
+    if !privacy.read_receipts_enabled {
         return;
     }
 

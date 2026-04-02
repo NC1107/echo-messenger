@@ -16,6 +16,7 @@ import 'auth_provider.dart';
 import 'chat_provider.dart';
 import 'conversations_provider.dart';
 import 'crypto_provider.dart';
+import 'privacy_provider.dart';
 import 'server_url_provider.dart';
 
 /// State that tracks both connection status and typing indicators.
@@ -184,6 +185,16 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
                 ?.isEncrypted ==
             true;
 
+    final privacy = ref.read(privacyProvider);
+    if (!isEncrypted && !privacy.allowUnencryptedDm) {
+      _addFailedMessage(
+        toUserId,
+        'Plaintext direct messages are disabled in privacy settings',
+        conversationId: conversationId ?? '',
+      );
+      return;
+    }
+
     String payload;
     if (isEncrypted) {
       final cryptoState = ref.read(cryptoProvider);
@@ -313,6 +324,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
 
   /// Send a read receipt via WebSocket.
   void sendReadReceipt(String conversationId) {
+    final privacy = ref.read(privacyProvider);
+    if (!privacy.readReceiptsEnabled) {
+      return;
+    }
     _channel?.sink.add(
       jsonEncode({'type': 'read_receipt', 'conversation_id': conversationId}),
     );

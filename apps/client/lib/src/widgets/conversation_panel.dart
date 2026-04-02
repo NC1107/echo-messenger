@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1202,6 +1203,17 @@ class _ConversationItem extends StatefulWidget {
 class _ConversationItemState extends State<_ConversationItem> {
   bool _isHovered = false;
 
+  bool get _enableLongPressMenu {
+    if (kIsWeb) {
+      return false;
+    }
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.android => true,
+      TargetPlatform.iOS => true,
+      _ => false,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final conv = widget.conversation;
@@ -1227,9 +1239,11 @@ class _ConversationItemState extends State<_ConversationItem> {
         onSecondaryTapUp: (details) {
           widget.onContextMenu?.call(details.globalPosition);
         },
-        onLongPressStart: (details) {
-          widget.onContextMenu?.call(details.globalPosition);
-        },
+        onLongPressStart: _enableLongPressMenu
+            ? (details) {
+                widget.onContextMenu?.call(details.globalPosition);
+              }
+            : null,
         child: Container(
           height: 68,
           margin: const EdgeInsets.symmetric(vertical: 1),

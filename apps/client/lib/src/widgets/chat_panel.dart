@@ -14,11 +14,13 @@ import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/sound_service.dart';
 import '../theme/echo_theme.dart';
+import '../utils/clipboard_image_helper.dart';
 import 'conversation_panel.dart' show buildAvatar, groupAvatarColor;
 import 'message_item.dart';
 
@@ -125,6 +127,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     if (conv == null) return;
 
     ref.read(conversationsProvider.notifier).markAsRead(conv.id);
+
+    final privacy = ref.read(privacyProvider);
+    if (!privacy.readReceiptsEnabled) {
+      return;
+    }
+
     ref.read(conversationsProvider.notifier).sendReadReceipt(conv.id);
     ref.read(websocketProvider.notifier).sendReadReceipt(conv.id);
   }
@@ -185,6 +193,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     if (!conv.isGroup) {
       final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
       peerUserId = peer?.userId ?? '';
+
+      final privacy = ref.read(privacyProvider);
+      if (!conv.isEncrypted && !privacy.allowUnencryptedDm) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Plaintext direct messages are disabled in Privacy settings',
+            ),
+          ),
+        );
+        return;
+      }
     }
 
     ref
@@ -234,6 +254,116 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     return '[file:$url]';
   }
 
+  String _extensionFromMime(String mimeType) {
+    switch (mimeType.toLowerCase()) {
+      case 'image/jpeg':
+        return 'jpg';
+      case 'image/png':
+        return 'png';
+      case 'image/gif':
+        return 'gif';
+      case 'image/webp':
+        return 'webp';
+      case 'video/mp4':
+        return 'mp4';
+      case 'video/webm':
+        return 'webm';
+      case 'video/quicktime':
+        return 'mov';
+      case 'application/pdf':
+        return 'pdf';
+      default:
+        return 'bin';
+    }
+  }
+
+  Future<void> _uploadAndSendMedia({
+    required List<int> bytes,
+    required String fileName,
+    required String mimeType,
+    required String extension,
+  }) async {
+    final serverUrl = ref.read(serverUrlProvider);
+    final token = ref.read(authProvider).token;
+    if (token == null) return;
+
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$serverUrl/api/media/upload'),
+    );
+    request.headers['Authorization'] = 'Bearer $token';
+
+    final parts = mimeType.split('/');
+    final mediaType = parts.length == 2
+        ? MediaType(parts[0], parts[1])
+        : const MediaType('application', 'octet-stream');
+
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: fileName,
+        contentType: mediaType,
+      ),
+    );
+
+    final response = await request.send();
+    final body = await response.stream.bytesToString();
+
+    if (!mounted) return;
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final data = jsonDecode(body);
+      final mediaUrl = data['url'] as String?;
+      if (mediaUrl != null) {
+        _messageController.text =
+            _buildMediaMarker(extension: extension, url: mediaUrl);
+        _sendMessage();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Upload succeeded but no URL returned')),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upload failed (${response.statusCode})')),
+      );
+    }
+  }
+
+  Future<void> _pasteImageFromClipboard() async {
+    final conv = widget.conversation;
+    if (conv == null) return;
+
+    final image = await readImageFromClipboard();
+    if (image == null) {
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Uploading pasted image...'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    try {
+      final ext = _extensionFromMime(image.mimeType);
+      await _uploadAndSendMedia(
+        bytes: image.bytes,
+        fileName: image.fileName,
+        mimeType: image.mimeType,
+        extension: ext,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Clipboard upload failed: $e')),
+      );
+    }
+  }
+
   Future<void> _pickFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -254,16 +384,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         return;
       }
 
-      // Upload to server
-      final serverUrl = ref.read(serverUrlProvider);
-      final token = ref.read(authProvider).token;
-      if (token == null) return;
-
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$serverUrl/api/media/upload'),
-      );
-      request.headers['Authorization'] = 'Bearer $token';
       // Determine MIME type from file extension
       final ext = (file.extension ?? '').toLowerCase();
       final mimeTypes = <String, List<String>>{
@@ -277,39 +397,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       };
       final mime = mimeTypes[ext] ?? ['application', 'octet-stream'];
 
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          file.bytes!,
-          filename: file.name,
-          contentType: MediaType(mime[0], mime[1]),
-        ),
+      await _uploadAndSendMedia(
+        bytes: file.bytes!,
+        fileName: file.name,
+        mimeType: '${mime[0]}/${mime[1]}',
+        extension: ext,
       );
-
-      final response = await request.send();
-      final body = await response.stream.bytesToString();
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(body);
-        final mediaUrl = data['url'] as String?;
-        if (mediaUrl != null) {
-          _messageController.text =
-              _buildMediaMarker(extension: ext, url: mediaUrl);
-          _sendMessage();
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Upload succeeded but no URL returned'),
-            ),
-          );
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed (${response.statusCode})')),
-        );
-      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -1305,10 +1398,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                         child: KeyboardListener(
                           focusNode: FocusNode(),
                           onKeyEvent: (event) {
-                            if (event is KeyDownEvent &&
-                                event.logicalKey == LogicalKeyboardKey.escape &&
-                                _isEditing) {
-                              _cancelEditMode();
+                            if (event is KeyDownEvent) {
+                              if (event.logicalKey == LogicalKeyboardKey.escape &&
+                                  _isEditing) {
+                                _cancelEditMode();
+                              }
+
+                              final isPasteShortcut =
+                                  event.logicalKey == LogicalKeyboardKey.keyV &&
+                                  (HardwareKeyboard.instance.isControlPressed ||
+                                      HardwareKeyboard.instance.isMetaPressed);
+                              if (isPasteShortcut && !_isEditing) {
+                                _pasteImageFromClipboard();
+                              }
                             }
                           },
                           child: TextField(

@@ -87,6 +87,12 @@ pub struct UserProfileRow {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct UserPrivacyRow {
+    pub read_receipts_enabled: bool,
+    pub allow_unencrypted_dm: bool,
+}
+
 /// Fetch the public profile for a user by ID.
 pub async fn find_public_profile(
     pool: &PgPool,
@@ -107,4 +113,35 @@ pub async fn get_avatar_url(pool: &PgPool, user_id: Uuid) -> Result<Option<Strin
             .fetch_optional(pool)
             .await?;
     Ok(row.and_then(|(url,)| url))
+}
+
+pub async fn get_privacy_preferences(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<UserPrivacyRow>, sqlx::Error> {
+    sqlx::query_as::<_, UserPrivacyRow>(
+        "SELECT read_receipts_enabled, allow_unencrypted_dm FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+}
+
+pub async fn update_privacy_preferences(
+    pool: &PgPool,
+    user_id: Uuid,
+    read_receipts_enabled: bool,
+    allow_unencrypted_dm: bool,
+) -> Result<UserPrivacyRow, sqlx::Error> {
+    sqlx::query_as::<_, UserPrivacyRow>(
+        "UPDATE users
+         SET read_receipts_enabled = $1, allow_unencrypted_dm = $2
+         WHERE id = $3
+         RETURNING read_receipts_enabled, allow_unencrypted_dm",
+    )
+    .bind(read_receipts_enabled)
+    .bind(allow_unencrypted_dm)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
 }

@@ -7,6 +7,7 @@ use axum::http::StatusCode;
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
 use std::sync::Arc;
@@ -27,6 +28,64 @@ pub struct UserProfile {
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+pub struct PrivacyPreferencesResponse {
+    pub read_receipts_enabled: bool,
+    pub allow_unencrypted_dm: bool,
+}
+
+#[derive(Deserialize)]
+pub struct UpdatePrivacyPreferencesRequest {
+    pub read_receipts_enabled: Option<bool>,
+    pub allow_unencrypted_dm: Option<bool>,
+}
+
+/// GET /api/users/me/privacy
+pub async fn get_my_privacy(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let privacy = db::users::get_privacy_preferences(&state.pool, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::bad_request("User not found"))?;
+
+    Ok(Json(PrivacyPreferencesResponse {
+        read_receipts_enabled: privacy.read_receipts_enabled,
+        allow_unencrypted_dm: privacy.allow_unencrypted_dm,
+    }))
+}
+
+/// PATCH /api/users/me/privacy
+pub async fn update_my_privacy(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<UpdatePrivacyPreferencesRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let current = db::users::get_privacy_preferences(&state.pool, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::bad_request("User not found"))?;
+
+    let updated = db::users::update_privacy_preferences(
+        &state.pool,
+        auth.user_id,
+        payload
+            .read_receipts_enabled
+            .unwrap_or(current.read_receipts_enabled),
+        payload
+            .allow_unencrypted_dm
+            .unwrap_or(current.allow_unencrypted_dm),
+    )
+    .await
+    .map_err(|_| AppError::internal("Failed to update privacy settings"))?;
+
+    Ok(Json(PrivacyPreferencesResponse {
+        read_receipts_enabled: updated.read_receipts_enabled,
+        allow_unencrypted_dm: updated.allow_unencrypted_dm,
+    }))
 }
 
 /// GET /api/users/:id/profile

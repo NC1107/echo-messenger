@@ -25,6 +25,12 @@ pub struct MessageWithSender {
     pub edited_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct ConversationSecurityRow {
+    pub kind: String,
+    pub is_encrypted: bool,
+}
+
 pub async fn find_or_create_dm_conversation(
     pool: &PgPool,
     user_a: Uuid,
@@ -215,3 +221,15 @@ pub async fn set_conversation_encrypted(
         .await?;
     Ok(())
 }
+
+    pub async fn get_conversation_security(
+        pool: &PgPool,
+        conversation_id: Uuid,
+    ) -> Result<Option<ConversationSecurityRow>, sqlx::Error> {
+        sqlx::query_as::<_, ConversationSecurityRow>(
+            "SELECT kind, is_encrypted FROM conversations WHERE id = $1",
+        )
+        .bind(conversation_id)
+        .fetch_optional(pool)
+        .await
+    }

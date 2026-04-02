@@ -155,6 +155,18 @@ pub async fn mark_read(
         return Err(AppError::unauthorized("Not a member of this conversation"));
     }
 
+    let privacy = db::users::get_privacy_preferences(&state.pool, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::bad_request("User not found"))?;
+
+    if !privacy.read_receipts_enabled {
+        return Ok(Json(serde_json::json!({
+            "status": "ignored",
+            "reason": "read_receipts_disabled"
+        })));
+    }
+
     db::reactions::mark_read(&state.pool, conversation_id, auth.user_id)
         .await
         .map_err(|_| AppError::internal("Failed to mark as read"))?;

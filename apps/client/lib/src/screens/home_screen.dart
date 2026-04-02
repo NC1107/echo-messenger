@@ -13,6 +13,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
+import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/websocket_provider.dart';
@@ -95,10 +96,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ref.read(contactsProvider.notifier).loadPending(force: true);
     _startPendingRefreshLoop();
 
-    // 5. Check for app updates (non-blocking)
+    // 5. Load privacy preferences used for read-receipt/plaintext behavior.
+    await ref.read(privacyProvider.notifier).load();
+
+    // 6. Check for app updates (non-blocking)
     ref.read(updateProvider.notifier).check();
 
-    // 6. Show first-login server notice
+    // 7. Show first-login server notice
     await _showServerNoticeIfNeeded();
   }
 
