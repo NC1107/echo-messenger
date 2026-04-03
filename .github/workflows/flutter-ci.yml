@@ -34,3 +34,14 @@ jobs:
       - name: Test
         working-directory: apps/client
         run: flutter test
+      - name: Run tests with coverage
+        working-directory: apps/client
+        run: flutter test --coverage
+        continue-on-error: true
+      - name: Upload Flutter coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: apps/client/coverage/lcov.info
+          flags: flutter
+          fail_ci_if_error: false
+        continue-on-error: true

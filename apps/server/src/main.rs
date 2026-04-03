@@ -2,15 +2,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
+use echo_server::{config, db, routes, ws};
 use tracing_subscriber::EnvFilter;
-
-mod auth;
-mod config;
-mod db;
-mod error;
-mod middleware;
-mod routes;
-mod ws;
 
 #[tokio::main]
 async fn main() {

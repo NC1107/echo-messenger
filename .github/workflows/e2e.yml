@@ -1,0 +1,92 @@
+name: E2E Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.41.x"
+
+jobs:
+  e2e:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: echo_test
+          POSTGRES_USER: echo
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U echo -d echo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # -- Rust server --
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build server
+        run: cargo build --release --package echo-server
+
+      # -- Flutter web --
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build web client
+        working-directory: apps/client
+        run: |
+          flutter pub get
+          flutter build web --release --pwa-strategy=none --dart-define=APP_VERSION=0.0.0-e2e
+
+      # -- Start services --
+      - name: Start server
+        run: |
+          ./target/release/echo-server &
+          sleep 5
+          curl --retry 10 --retry-delay 2 --retry-connrefused -s http://localhost:8080/api/health
+        env:
+          DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
+          JWT_SECRET: ci-e2e-secret-do-not-use-in-production
+          RUST_LOG: echo_server=info
+          SERVER_HOST: 0.0.0.0
+          SERVER_PORT: 8080
+          CORS_ORIGINS: http://localhost:8081
+
+      - name: Serve web client
+        run: |
+          npx serve -s apps/client/build/web -l 8081 &
+          sleep 2
+          curl --retry 5 --retry-delay 1 --retry-connrefused -s http://localhost:8081/ > /dev/null
+
+      # -- Playwright --
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: npx playwright test --config tests/e2e/playwright.config.ts
+        env:
+          DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
+          JWT_SECRET: ci-e2e-secret-do-not-use-in-production
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-results
+          path: |
+            tests/e2e/test-results/
+          retention-days: 7
