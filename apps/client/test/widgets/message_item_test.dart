@@ -364,7 +364,7 @@ void main() {
             showHeader: false,
             isLastInGroup: false,
             myUserId: 'test-user-id',
-            onReactionTap: (m) => tappedMessage = m,
+            onReactionTap: (m, _) => tappedMessage = m,
           ),
         );
         await tester.pump();

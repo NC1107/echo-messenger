@@ -17,10 +17,13 @@ class EchoApp extends ConsumerWidget {
       AppThemeSelection.dark => ThemeMode.dark,
       AppThemeSelection.light => ThemeMode.light,
       AppThemeSelection.graphite => ThemeMode.dark,
+      AppThemeSelection.ember => ThemeMode.dark,
     };
-    final darkTheme = themeSelection == AppThemeSelection.graphite
-        ? EchoTheme.graphiteTheme
-        : EchoTheme.darkTheme;
+    final darkTheme = switch (themeSelection) {
+      AppThemeSelection.graphite => EchoTheme.graphiteTheme,
+      AppThemeSelection.ember => EchoTheme.emberTheme,
+      _ => EchoTheme.darkTheme,
+    };
 
     return MaterialApp.router(
       title: 'Echo',

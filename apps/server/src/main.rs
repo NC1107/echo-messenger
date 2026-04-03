@@ -75,6 +75,14 @@ async fn main() {
                     tracing::warn!("Voice session cleanup error: {e}");
                 }
             }
+
+            // Also clean up empty groups (zero members)
+            let _ = sqlx::query(
+                "DELETE FROM conversations WHERE kind = 'group' \
+                 AND id NOT IN (SELECT DISTINCT conversation_id FROM conversation_members)",
+            )
+            .execute(&cleanup_pool)
+            .await;
         }
     });
 

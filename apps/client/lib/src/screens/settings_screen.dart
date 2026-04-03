@@ -1119,6 +1119,16 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
               .read(themeProvider.notifier)
               .setTheme(AppThemeSelection.graphite),
         ),
+        const SizedBox(height: 8),
+        _ThemeOption(
+          label: 'Ember',
+          subtitle: 'Warm dark with amber accents',
+          icon: Icons.local_fire_department_outlined,
+          isSelected: currentTheme == AppThemeSelection.ember,
+          onTap: () => ref
+              .read(themeProvider.notifier)
+              .setTheme(AppThemeSelection.ember),
+        ),
         const SizedBox(height: 32),
         Text(
           'Message Layout',

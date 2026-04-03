@@ -36,7 +36,8 @@ class MessageItem extends StatefulWidget {
   final bool showHeader;
   final bool isLastInGroup;
   final String myUserId;
-  final void Function(ChatMessage message)? onReactionTap;
+  final void Function(ChatMessage message, Offset globalPosition)?
+  onReactionTap;
   final void Function(ChatMessage message, String emoji)? onReactionSelect;
   final void Function(ChatMessage message)? onDelete;
   final void Function(ChatMessage message)? onEdit;
@@ -282,44 +283,72 @@ class _MessageItemState extends State<MessageItem> {
           onTap: () => _showImageViewer(imageUrl: fullUrl, isMine: isMine),
           child: Stack(
             children: [
-              CachedNetworkImage(
-                imageUrl: fullUrl,
-                width: 300,
-                fit: BoxFit.cover,
-                httpHeaders: headers,
-                errorWidget: (_, _, _) => Container(
-                  width: 300,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: context.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(
-                      '[Image failed to load]',
-                      style: TextStyle(color: context.textMuted, fontSize: 13),
-                    ),
-                  ),
-                ),
-                placeholder: (_, _) => Container(
-                  width: 300,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: context.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: context.textMuted,
+              // Use Image.network for external GIFs to preserve animation
+              fullUrl.startsWith('http') && rawUrl.contains('.gif')
+                  ? Image.network(
+                      fullUrl,
+                      width: 300,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, e, st) => Container(
+                        width: 300,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          color: context.surface,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                          child: Text(
+                            '[GIF failed to load]',
+                            style: TextStyle(
+                              color: context.textMuted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : CachedNetworkImage(
+                      imageUrl: fullUrl,
+                      width: 300,
+                      fit: BoxFit.cover,
+                      httpHeaders: headers,
+                      errorWidget: (_, e, st) => Container(
+                        width: 300,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          color: context.surface,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                          child: Text(
+                            '[Image failed to load]',
+                            style: TextStyle(
+                              color: context.textMuted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                      placeholder: (_, _) => Container(
+                        width: 300,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          color: context.surface,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: context.textMuted,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              ),
               Positioned(
                 right: 8,
                 bottom: 8,
@@ -495,7 +524,11 @@ class _MessageItemState extends State<MessageItem> {
           _HoverActionButton(
             icon: Icons.add_reaction_outlined,
             tooltip: 'React',
-            onPressed: () => widget.onReactionTap?.call(msg),
+            onPressed: () {
+              final box = context.findRenderObject() as RenderBox?;
+              final pos = box?.localToGlobal(Offset.zero) ?? Offset.zero;
+              widget.onReactionTap?.call(msg, pos);
+            },
           ),
           if (isMine && widget.onEdit != null)
             _HoverActionButton(
@@ -645,7 +678,8 @@ class _MessageItemState extends State<MessageItem> {
     final totalCount = reactions.length;
 
     return GestureDetector(
-      onTap: () => widget.onReactionTap?.call(widget.message),
+      onTapUp: (details) =>
+          widget.onReactionTap?.call(widget.message, details.globalPosition),
       child: Container(
         height: 24,
         padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -815,8 +849,9 @@ class _MessageItemState extends State<MessageItem> {
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
-        onLongPress: !hasReactions
-            ? () => widget.onReactionTap?.call(msg)
+        onLongPressStart: !hasReactions
+            ? (details) =>
+                  widget.onReactionTap?.call(msg, details.globalPosition)
             : null,
         child: Container(
           padding: EdgeInsets.only(

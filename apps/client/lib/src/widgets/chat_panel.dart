@@ -131,6 +131,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     if (_activeVoiceChannelId != null) {
       ref.read(voiceRtcProvider.notifier).leaveChannel();
     }
+    _dismissReactionPicker();
     _searchDebounce?.cancel();
     _highlightTimer?.cancel();
     _messageController.removeListener(_onTextChanged);
@@ -1222,51 +1223,116 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     }
   }
 
-  void _showReactionPicker(ChatMessage message) {
+  OverlayEntry? _reactionOverlay;
+
+  void _dismissReactionPicker() {
+    _reactionOverlay?.remove();
+    _reactionOverlay = null;
+    _inputFocusNode.requestFocus();
+  }
+
+  void _showReactionPicker(ChatMessage message, Offset tapPosition) {
     final conv = widget.conversation;
     if (conv == null) return;
-    final myUserId = ref.read(authProvider).userId ?? '';
+    _dismissReactionPicker(); // close any existing
 
-    showDialog<String>(
-      context: context,
-      barrierColor: Colors.transparent,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: context.surface,
-        contentPadding: const EdgeInsets.all(12),
-        content: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: reactionEmojis.map((emoji) {
-            final alreadyReacted = message.reactions.any(
-              (r) => r.emoji == emoji && r.userId == myUserId,
-            );
-            return GestureDetector(
-              onTap: () {
-                Navigator.pop(dialogCtx, emoji);
-              },
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: alreadyReacted
-                      ? context.accent.withValues(alpha: 0.2)
-                      : null,
-                  borderRadius: BorderRadius.circular(8),
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final overlay = Overlay.of(context);
+    const pickerWidth = 340.0;
+    const pickerHeight = 44.0;
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    // Position above the tap point, clamped to screen
+    final left = (tapPosition.dx - pickerWidth / 2).clamp(
+      12.0,
+      screenWidth - pickerWidth - 12,
+    );
+    final top = (tapPosition.dy - pickerHeight - 12).clamp(
+      12.0,
+      double.infinity,
+    );
+
+    _reactionOverlay = OverlayEntry(
+      builder: (_) => Stack(
+        children: [
+          // Dismiss barrier
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _dismissReactionPicker,
+              behavior: HitTestBehavior.opaque,
+              child: Container(color: Colors.black.withValues(alpha: 0.15)),
+            ),
+          ),
+          // Picker pill
+          Positioned(
+            left: left,
+            top: top,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              builder: (_, value, child) => Opacity(
+                opacity: value,
+                child: Transform.translate(
+                  offset: Offset(0, 8 * (1 - value)),
+                  child: child,
                 ),
-                child: Text(emoji, style: const TextStyle(fontSize: 24)),
               ),
-            );
-          }).toList(),
-        ),
+              child: Container(
+                height: pickerHeight,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: context.surface.withValues(alpha: 0.95),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: context.border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: reactionEmojis.map((emoji) {
+                    final alreadyReacted = message.reactions.any(
+                      (r) => r.emoji == emoji && r.userId == myUserId,
+                    );
+                    return GestureDetector(
+                      onTap: () {
+                        _dismissReactionPicker();
+                        _toggleReaction(message, emoji, alreadyReacted);
+                      },
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                        decoration: BoxDecoration(
+                          color: alreadyReacted
+                              ? context.accent.withValues(alpha: 0.2)
+                              : null,
+                          borderRadius: BorderRadius.circular(8),
+                          border: alreadyReacted
+                              ? Border.all(color: context.accent, width: 2)
+                              : null,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          emoji,
+                          style: const TextStyle(fontSize: 22),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
-    ).then((emoji) {
-      if (emoji != null) {
-        final alreadyReacted = message.reactions.any(
-          (r) => r.emoji == emoji && r.userId == myUserId,
-        );
-        _toggleReaction(message, emoji, alreadyReacted);
-      }
-      _inputFocusNode.requestFocus();
-    });
+    );
+    overlay.insert(_reactionOverlay!);
   }
 
   Widget _buildTextChannelChip(GroupChannel channel) {
@@ -1806,49 +1872,62 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   },
                 ),
                 const SizedBox(width: 12),
-                // Name + status
+                // Name + status (tappable for DM profile)
                 Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        displayName,
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
+                  child: GestureDetector(
+                    onTap: !conv.isGroup
+                        ? () {
+                            final peer = conv.members
+                                .where((m) => m.userId != myUserId)
+                                .firstOrNull;
+                            if (peer != null) {
+                              UserProfileScreen.show(context, ref, peer.userId);
+                            }
+                          }
+                        : null,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          displayName,
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      Builder(
-                        builder: (context) {
-                          if (conv.isGroup) {
+                        Builder(
+                          builder: (context) {
+                            if (conv.isGroup) {
+                              return Text(
+                                '${conv.members.length} members',
+                                style: TextStyle(
+                                  color: context.textMuted,
+                                  fontSize: 12,
+                                ),
+                              );
+                            }
+                            // For DMs, check peer presence
+                            final peer = conv.members
+                                .where((m) => m.userId != myUserId)
+                                .firstOrNull;
+                            final peerOnline =
+                                peer != null &&
+                                wsState.isUserOnline(peer.userId);
                             return Text(
-                              '${conv.members.length} members',
+                              peerOnline ? 'Online' : 'Offline',
                               style: TextStyle(
-                                color: context.textMuted,
+                                color: peerOnline
+                                    ? EchoTheme.online
+                                    : context.textMuted,
                                 fontSize: 12,
                               ),
                             );
-                          }
-                          // For DMs, check peer presence
-                          final peer = conv.members
-                              .where((m) => m.userId != myUserId)
-                              .firstOrNull;
-                          final peerOnline =
-                              peer != null && wsState.isUserOnline(peer.userId);
-                          return Text(
-                            peerOnline ? 'Online' : 'Offline',
-                            style: TextStyle(
-                              color: peerOnline
-                                  ? EchoTheme.online
-                                  : context.textMuted,
-                              fontSize: 12,
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 // Encryption toggle for DMs

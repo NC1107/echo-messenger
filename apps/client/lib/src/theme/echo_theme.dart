@@ -229,6 +229,22 @@ class EchoTheme {
   static const graphiteRecvBubble = Color(0xFF22333B);
   static const graphiteBorder = Color(0xFF2C434D);
 
+  // Ember theme colors (warm dark with amber accent)
+  static const emberMainBg = Color(0xFF110E0A);
+  static const emberSidebarBg = Color(0xFF171310);
+  static const emberChatBg = Color(0xFF1C1814);
+  static const emberSurface = Color(0xFF252019);
+  static const emberSurfaceHover = Color(0xFF2F2920);
+  static const emberAccent = Color(0xFFF59E0B);
+  static const emberAccentHover = Color(0xFFFBBF24);
+  static const emberAccentLight = Color(0x1AF59E0B);
+  static const emberTextPrimary = Color(0xFFF5F0E8);
+  static const emberTextSecondary = Color(0xFFA89F91);
+  static const emberTextMuted = Color(0xFF736A5E);
+  static const emberSentBubble = Color(0xFFB45309);
+  static const emberRecvBubble = Color(0xFF252019);
+  static const emberBorder = Color(0xFF332D24);
+
   static ThemeData get lightTheme {
     final baseTextTheme = GoogleFonts.interTextTheme(
       ThemeData.light().textTheme,
@@ -584,6 +600,179 @@ class EchoTheme {
       ),
     );
   }
+
+  static ThemeData get emberTheme {
+    final baseTextTheme = GoogleFonts.interTextTheme(
+      ThemeData.dark().textTheme,
+    );
+    final textTheme = baseTextTheme.copyWith(
+      headlineLarge: baseTextTheme.headlineLarge?.copyWith(
+        fontSize: 24,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.5,
+        color: emberTextPrimary,
+      ),
+      headlineMedium: baseTextTheme.headlineMedium?.copyWith(
+        fontSize: 22,
+        fontWeight: FontWeight.w700,
+        color: emberTextPrimary,
+      ),
+      titleLarge: baseTextTheme.titleLarge?.copyWith(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        color: emberTextPrimary,
+      ),
+      titleMedium: baseTextTheme.titleMedium?.copyWith(
+        fontSize: 14,
+        fontWeight: FontWeight.w600,
+        color: emberTextPrimary,
+      ),
+      bodyLarge: baseTextTheme.bodyLarge?.copyWith(
+        fontSize: 15,
+        fontWeight: FontWeight.w400,
+        height: 1.47,
+        color: emberTextPrimary,
+      ),
+      bodyMedium: baseTextTheme.bodyMedium?.copyWith(
+        fontSize: 13,
+        fontWeight: FontWeight.w400,
+        color: emberTextSecondary,
+      ),
+      bodySmall: baseTextTheme.bodySmall?.copyWith(
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+        color: emberTextMuted,
+      ),
+      labelLarge: baseTextTheme.labelLarge?.copyWith(
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.5,
+        color: emberTextSecondary,
+      ),
+    );
+
+    return ThemeData(
+      brightness: Brightness.dark,
+      extensions: const [EchoColorExtension.ember],
+      scaffoldBackgroundColor: emberMainBg,
+      textTheme: textTheme,
+      colorScheme: const ColorScheme.dark(
+        primary: emberAccent,
+        secondary: emberAccentHover,
+        surface: emberSurface,
+        onSurfaceVariant: emberTextSecondary,
+        error: danger,
+        onPrimary: Colors.white,
+        onSecondary: Colors.white,
+        onSurface: emberTextPrimary,
+        onError: Colors.white,
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: emberSidebarBg,
+        foregroundColor: emberTextPrimary,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: GoogleFonts.inter(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: emberTextPrimary,
+        ),
+      ),
+      dividerColor: emberBorder,
+      dividerTheme: const DividerThemeData(
+        color: emberBorder,
+        thickness: 1,
+        space: 1,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: emberSurface,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: emberBorder, width: 1),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: emberBorder, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: emberAccent, width: 1),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+        hintStyle: GoogleFonts.inter(color: emberTextMuted, fontSize: 13),
+        labelStyle: GoogleFonts.inter(color: emberTextSecondary, fontSize: 13),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: emberAccent,
+          foregroundColor: Colors.white,
+          textStyle: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: emberAccent,
+          textStyle: GoogleFonts.inter(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: emberTextPrimary,
+          side: const BorderSide(color: emberBorder),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      ),
+      iconTheme: const IconThemeData(color: emberTextSecondary, size: 20),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: emberSurface,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: emberBorder, width: 1),
+        ),
+        textStyle: GoogleFonts.inter(color: emberTextPrimary, fontSize: 12),
+        waitDuration: const Duration(milliseconds: 500),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: emberSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: emberBorder),
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: emberSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: emberSurface,
+        contentTextStyle: GoogleFonts.inter(
+          color: emberTextPrimary,
+          fontSize: 13,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        behavior: SnackBarBehavior.floating,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
+      ),
+    );
+  }
 }
 
 /// Custom theme extension for Echo-specific colors not in Material's ColorScheme.
@@ -640,6 +829,17 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     textMuted: EchoTheme.graphiteTextMuted,
     sentBubble: EchoTheme.graphiteSentBubble,
     recvBubble: EchoTheme.graphiteRecvBubble,
+  );
+
+  /// Ember theme colors
+  static const ember = EchoColorExtension(
+    sidebarBg: EchoTheme.emberSidebarBg,
+    chatBg: EchoTheme.emberChatBg,
+    surfaceHover: EchoTheme.emberSurfaceHover,
+    accentLight: EchoTheme.emberAccentLight,
+    textMuted: EchoTheme.emberTextMuted,
+    sentBubble: EchoTheme.emberSentBubble,
+    recvBubble: EchoTheme.emberRecvBubble,
   );
 
   @override

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum AppThemeSelection { system, dark, light, graphite }
+enum AppThemeSelection { system, dark, light, graphite, ember }
 
 class ThemeNotifier extends StateNotifier<AppThemeSelection> {
   static const _key = 'echo_theme_mode';
@@ -19,6 +19,7 @@ class ThemeNotifier extends StateNotifier<AppThemeSelection> {
       'dark' => AppThemeSelection.dark,
       'system' => AppThemeSelection.system,
       'graphite' => AppThemeSelection.graphite,
+      'ember' => AppThemeSelection.ember,
       _ => AppThemeSelection.dark,
     };
   }

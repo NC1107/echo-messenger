@@ -96,3 +96,4 @@ test-results/
 uploads/
 tests/selenium/screenshots/
 apps/client/.idea/
+.playwright-mcp/

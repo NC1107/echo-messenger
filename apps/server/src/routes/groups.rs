@@ -281,6 +281,15 @@ pub async fn remove_member(
         return Err(AppError::bad_request("User is not a member of this group"));
     }
 
+    // Auto-delete group if no members remain
+    let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
+        .await
+        .unwrap_or_default();
+    if remaining.is_empty() {
+        let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;
+        tracing::info!("Auto-deleted empty group {group_id}");
+    }
+
     Ok(Json(serde_json::json!({ "status": "removed" })))
 }
 
@@ -451,6 +460,15 @@ pub async fn ban_member(
     db::groups::ban_member(&state.pool, group_id, target_user_id, auth.user_id)
         .await
         .map_err(|_| AppError::internal("Failed to ban member"))?;
+
+    // Auto-delete group if no members remain
+    let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
+        .await
+        .unwrap_or_default();
+    if remaining.is_empty() {
+        let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;
+        tracing::info!("Auto-deleted empty group {group_id}");
+    }
 
     Ok(Json(serde_json::json!({ "status": "banned" })))
 }
