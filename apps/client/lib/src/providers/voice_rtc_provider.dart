@@ -615,11 +615,18 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   /// Periodically fetch voice participants from the server and reconcile
   /// with local peer state. Catches stale peers that may have disconnected
   /// without sending a proper leave event.
+  bool _disposed = false;
+
   void _startPeriodicParticipantSync(String conversationId, String channelId) {
     _participantSyncTimer?.cancel();
     _participantSyncTimer = Timer.periodic(const Duration(seconds: 30), (
       _,
     ) async {
+      if (_disposed) {
+        _participantSyncTimer?.cancel();
+        _participantSyncTimer = null;
+        return;
+      }
       if (!_isCurrentVoiceContext(conversationId, channelId)) {
         _participantSyncTimer?.cancel();
         _participantSyncTimer = null;
@@ -648,6 +655,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
 
   @override
   void dispose() {
+    _disposed = true;
     _participantSyncTimer?.cancel();
     _signalSubscription?.cancel();
     unawaited(leaveChannel());
