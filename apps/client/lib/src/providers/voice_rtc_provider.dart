@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:http/http.dart' as http;
 
 import '../services/sound_service.dart';
 import 'auth_provider.dart';
 import 'channels_provider.dart';
+import 'server_url_provider.dart';
 import 'websocket_provider.dart';
 
 class VoiceRtcState {
@@ -66,6 +69,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       {};
   Set<String> _currentParticipants = const {};
   Timer? _participantSyncTimer;
+  List<Map<String, dynamic>>? _cachedIceServers;
 
   /// Maximum pending ICE candidates per peer before oldest are dropped.
   static const _maxPendingIceCandidatesPerPeer = 50;
@@ -282,22 +286,34 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     _publishPeerStates();
   }
 
+  Future<List<Map<String, dynamic>>> _fetchIceServers() async {
+    if (_cachedIceServers != null) return _cachedIceServers!;
+    try {
+      final serverUrl = ref.read(serverUrlProvider);
+      final resp = await http.get(Uri.parse('$serverUrl/api/config/ice'));
+      if (resp.statusCode == 200) {
+        final json = jsonDecode(resp.body);
+        final servers = (json['iceServers'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        if (servers != null && servers.isNotEmpty) {
+          _cachedIceServers = servers;
+          return servers;
+        }
+      }
+    } catch (e) {
+      debugPrint('[VoiceRTC] Failed to fetch ICE config: $e');
+    }
+    // Fallback to STUN only
+    return [
+      {'urls': 'stun:stun.l.google.com:19302'},
+    ];
+  }
+
   Future<RTCPeerConnection> _createPeerConnection(String remoteUserId) async {
+    final iceServers = await _fetchIceServers();
     final config = {
-      // Keep under 5 ICE servers to avoid browser slowdown warning.
-      // For production, self-host coturn and replace credentials.
-      'iceServers': [
-        {'urls': 'stun:stun.l.google.com:19302'},
-        {
-          'urls': [
-            'turn:a.relay.metered.ca:80',
-            'turn:a.relay.metered.ca:443',
-            'turn:a.relay.metered.ca:443?transport=tcp',
-          ],
-          'username': 'e8dd65b92fdd45f4b4c8e207',
-          'credential': 'kBBm6TlKbHJHoNjp',
-        },
-      ],
+      'iceServers': iceServers,
       'sdpSemantics': 'unified-plan',
       'iceTransportPolicy': 'all',
       'bundlePolicy': 'max-bundle',

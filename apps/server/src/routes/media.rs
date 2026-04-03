@@ -1,16 +1,17 @@
 //! Media upload and download endpoints.
 
 use axum::body::Body;
-use axum::extract::{Multipart, Path, State};
+use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::response::{IntoResponse, Response};
+use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::fs;
 use uuid::Uuid;
 
-use crate::auth::middleware::AuthUser;
+use crate::auth::{jwt, middleware::AuthUser};
 use crate::db;
 use crate::error::AppError;
 
@@ -155,16 +156,35 @@ pub async fn upload(
     Ok((StatusCode::CREATED, axum::Json(body)))
 }
 
+/// Query param for media download -- allows `?token=JWT` for web clients
+/// where `<img>` elements can't set Authorization headers.
+#[derive(Debug, Deserialize)]
+pub struct MediaDownloadQuery {
+    pub token: Option<String>,
+}
+
 /// GET /api/media/:id
 ///
 /// Returns the file with correct Content-Type and Content-Disposition headers.
-/// Only accessible to the uploader or members of a conversation where the
-/// media was shared.
+/// Accepts auth via `Authorization: Bearer` header OR `?token=JWT` query param.
 pub async fn download(
-    auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
+    Query(query): Query<MediaDownloadQuery>,
+    headers: axum::http::HeaderMap,
 ) -> Result<Response, AppError> {
+    // Accept auth from header or query param (web <img> can't set headers)
+    let token_str = headers
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(String::from)
+        .or(query.token)
+        .ok_or_else(|| AppError::unauthorized("Missing authentication"))?;
+
+    let claims = jwt::validate_token(&token_str, &state.jwt_secret)?;
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::unauthorized("Invalid user ID in token"))?;
     let row = db::media::get_media(&state.pool, id)
         .await?
         .ok_or_else(|| AppError {
@@ -173,7 +193,7 @@ pub async fn download(
         })?;
 
     // ACL: verify the requesting user can access this media
-    let allowed = db::media::can_user_access_media(&state.pool, id, auth.user_id)
+    let allowed = db::media::can_user_access_media(&state.pool, id, user_id)
         .await
         .map_err(|e| {
             tracing::error!("Media ACL check failed: {e}");

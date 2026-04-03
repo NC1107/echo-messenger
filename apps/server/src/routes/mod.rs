@@ -198,6 +198,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api/media", media_routes)
         .nest("/api", message_routes)
         .route("/api/health", get(health))
+        .route("/api/config/ice", get(ice_config))
         .route("/ws", get(ws::ws_upgrade))
         .layer(cors)
         .layer(SetResponseHeaderLayer::overriding(
@@ -229,4 +230,22 @@ pub async fn health() -> impl IntoResponse {
         "version": env!("CARGO_PKG_VERSION"),
         "server": "Echo Messenger"
     }))
+}
+
+/// Returns ICE server configuration from environment variables.
+/// Set TURN_URL, TURN_USERNAME, TURN_CREDENTIAL to configure TURN.
+pub async fn ice_config() -> impl IntoResponse {
+    let mut servers = vec![serde_json::json!({"urls": "stun:stun.l.google.com:19302"})];
+
+    if let Ok(turn_url) = std::env::var("TURN_URL") {
+        let username = std::env::var("TURN_USERNAME").unwrap_or_default();
+        let credential = std::env::var("TURN_CREDENTIAL").unwrap_or_default();
+        servers.push(serde_json::json!({
+            "urls": turn_url,
+            "username": username,
+            "credential": credential,
+        }));
+    }
+
+    Json(serde_json::json!({ "iceServers": servers }))
 }

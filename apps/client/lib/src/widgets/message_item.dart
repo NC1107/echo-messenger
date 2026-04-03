@@ -81,7 +81,11 @@ class _MessageItemState extends State<MessageItem> {
   bool _isHovered = false;
 
   String _resolveMediaUrl(String url) {
-    return url.startsWith('/') ? '${widget.serverUrl ?? ""}$url' : url;
+    if (url.startsWith('http')) return url; // external URLs (GIFs)
+    final base = widget.serverUrl ?? '';
+    final token = widget.authToken ?? '';
+    // Append token as query param -- web <img> elements can't set headers
+    return token.isNotEmpty ? '$base$url?token=$token' : '$base$url';
   }
 
   Map<String, String> _mediaHeaders() {

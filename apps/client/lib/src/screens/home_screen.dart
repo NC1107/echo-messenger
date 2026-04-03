@@ -658,11 +658,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ],
             ],
           ),
-          // Discord-style voice dock -- fixed bottom-left over the sidebar
-          // Offset above settings button (60px) when sidebar is collapsed
+          // Discord-style voice dock -- always above user status bar (60px)
           if (showVoiceDock)
             Positioned(
-              bottom: _sidebarCollapsed ? 60 : 0,
+              bottom: 60,
               left: 0,
               child: VoiceDock(width: animatedSidebarWidth),
             ),

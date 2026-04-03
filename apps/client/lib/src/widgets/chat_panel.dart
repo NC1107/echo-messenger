@@ -806,8 +806,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
+        // List is reversed, so 0 is the bottom (newest messages)
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          0,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
