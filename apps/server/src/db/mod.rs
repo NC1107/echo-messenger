@@ -53,10 +53,16 @@ pub async fn run_migrations(pool: &PgPool) {
             if trimmed.is_empty() {
                 continue;
             }
-            sqlx::query(trimmed)
-                .execute(pool)
-                .await
-                .expect("Failed to run migration statement");
+            if let Err(e) = sqlx::query(trimmed).execute(pool).await {
+                let msg = e.to_string();
+                // Tolerate "already exists" errors from concurrent migration runs
+                // (e.g. parallel integration tests).
+                if msg.contains("already exists") || msg.contains("duplicate key") {
+                    tracing::debug!("Migration statement skipped (already applied): {}", msg);
+                } else {
+                    panic!("Failed to run migration statement: {e}");
+                }
+            }
         }
     }
 

@@ -12,9 +12,13 @@ use std::sync::{Arc, Mutex};
 use echo_server::{db, routes, ws};
 use reqwest::Client;
 use serde_json::Value;
+use tokio::sync::OnceCell;
 
 /// JWT secret used across all integration tests.
 pub const TEST_JWT_SECRET: &str = "integration-test-secret";
+
+/// Run migrations exactly once across all tests, even when running in parallel.
+static MIGRATIONS: OnceCell<()> = OnceCell::const_new();
 
 /// Spawn a test server and return its base URL (e.g. `http://127.0.0.1:12345`).
 ///
@@ -26,7 +30,14 @@ pub async fn spawn_server() -> Option<String> {
         .ok()?;
 
     let pool = db::create_pool(&database_url).await;
-    db::run_migrations(&pool).await;
+
+    // Ensure migrations run exactly once -- prevents parallel CREATE TABLE races.
+    let pool_clone = pool.clone();
+    MIGRATIONS
+        .get_or_init(|| async {
+            db::run_migrations(&pool_clone).await;
+        })
+        .await;
 
     let hub = ws::hub::Hub::new();
     let state = Arc::new(routes::AppState {
