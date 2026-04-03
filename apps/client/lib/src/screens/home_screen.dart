@@ -24,6 +24,7 @@ import '../widgets/chat_panel.dart';
 import '../widgets/conversation_panel.dart'
     show ConversationPanel, buildAvatar, groupAvatarColor;
 import '../widgets/members_panel.dart';
+import '../utils/web_lifecycle.dart';
 import '../widgets/voice_dock.dart';
 import 'contacts_screen.dart';
 import 'create_group_screen.dart';
@@ -63,11 +64,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initData();
     });
+    // Web: leave voice call on tab close
+    registerBeforeUnload(() {
+      ref.read(voiceRtcProvider.notifier).leaveChannel();
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unregisterBeforeUnload();
     _pendingRefreshTimer?.cancel();
     _searchFocusNode.dispose();
     super.dispose();
@@ -77,6 +83,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(contactsProvider.notifier).loadPending(force: true);
+    } else if (state == AppLifecycleState.detached ||
+        state == AppLifecycleState.paused) {
+      // Leave voice call when app is closed or backgrounded
+      ref.read(voiceRtcProvider.notifier).leaveChannel();
     }
   }
 
@@ -649,9 +659,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ],
           ),
           // Discord-style voice dock -- fixed bottom-left over the sidebar
+          // Offset above settings button (60px) when sidebar is collapsed
           if (showVoiceDock)
             Positioned(
-              bottom: 0,
+              bottom: _sidebarCollapsed ? 60 : 0,
               left: 0,
               child: VoiceDock(width: animatedSidebarWidth),
             ),

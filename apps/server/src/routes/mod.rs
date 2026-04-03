@@ -174,7 +174,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/{id}/members", post(groups::add_member))
         .route("/{id}/members/{user_id}", delete(groups::remove_member))
         .route("/{id}/join", post(groups::join_group))
-        .route("/{id}/leave", post(groups::leave_group));
+        .route("/{id}/leave", post(groups::leave_group))
+        .route("/{id}/ban/{user_id}", post(groups::ban_member))
+        .route("/{id}/unban/{user_id}", post(groups::unban_member));
 
     let user_routes = Router::new()
         .route("/me", delete(users::delete_account))

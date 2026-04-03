@@ -42,19 +42,21 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     });
   }
 
-  Future<void> _loadGroupInfo() async {
-    // Try to find the conversation in the existing state first
-    final conversations = ref.read(conversationsProvider).conversations;
-    final existing = conversations
-        .where((c) => c.id == widget.conversationId)
-        .firstOrNull;
+  Future<void> _loadGroupInfo({bool force = false}) async {
+    if (!force) {
+      // Try to find the conversation in the existing state first
+      final conversations = ref.read(conversationsProvider).conversations;
+      final existing = conversations
+          .where((c) => c.id == widget.conversationId)
+          .firstOrNull;
 
-    if (existing != null) {
-      setState(() {
-        _conversation = existing;
-        _isLoading = false;
-      });
-      return;
+      if (existing != null) {
+        setState(() {
+          _conversation = existing;
+          _isLoading = false;
+        });
+        return;
+      }
     }
 
     // Otherwise fetch from server
@@ -146,7 +148,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        await _loadGroupInfo();
+        await ref.read(conversationsProvider.notifier).loadConversations();
+        await _loadGroupInfo(force: true);
         if (mounted) {
           ToastService.show(context, 'Member added', type: ToastType.success);
         }
@@ -251,7 +254,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         headers: {'Authorization': 'Bearer $token'},
       );
       if (response.statusCode == 200 && mounted) {
-        await _loadGroupInfo();
+        await ref.read(conversationsProvider.notifier).loadConversations();
+        await _loadGroupInfo(force: true);
         if (mounted) {
           ToastService.show(
             context,
@@ -265,6 +269,66 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         ToastService.show(
           context,
           'Failed to remove member',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _banMember(ConversationMember member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ban Member'),
+        content: Text(
+          'Ban ${member.username} from this group? '
+          'They will not be able to rejoin.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Ban'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final token = ref.read(authProvider).token;
+    if (token == null) return;
+    final serverUrl = ref.read(serverUrlProvider);
+
+    try {
+      final response = await http.post(
+        Uri.parse(
+          '$serverUrl/api/groups/${widget.conversationId}'
+          '/ban/${member.userId}',
+        ),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200 && mounted) {
+        await ref.read(conversationsProvider.notifier).loadConversations();
+        await _loadGroupInfo(force: true);
+        if (mounted) {
+          ToastService.show(
+            context,
+            '${member.username} banned',
+            type: ToastType.success,
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Failed to ban member',
           type: ToastType.error,
         );
       }
@@ -691,14 +755,28 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                   ),
                   subtitle: isMe ? const Text('You') : null,
                   trailing: (isOwnerOrAdmin && !isMe && role != 'owner')
-                      ? IconButton(
-                          icon: Icon(
-                            Icons.person_remove_outlined,
-                            size: 18,
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                          tooltip: 'Remove member',
-                          onPressed: () => _kickMember(member),
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                Icons.person_remove_outlined,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                              tooltip: 'Kick member',
+                              onPressed: () => _kickMember(member),
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.block_outlined,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                              tooltip: 'Ban member',
+                              onPressed: () => _banMember(member),
+                            ),
+                          ],
                         )
                       : null,
                 );

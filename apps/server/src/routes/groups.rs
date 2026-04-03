@@ -224,6 +224,14 @@ pub async fn add_member(
         return Err(AppError::bad_request("User not found"));
     }
 
+    // Check if target user is banned
+    let banned = db::groups::is_banned(&state.pool, group_id, body.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+    if banned {
+        return Err(AppError::bad_request("User is banned from this group"));
+    }
+
     db::groups::add_member(&state.pool, group_id, body.user_id)
         .await
         .map_err(|e| match e {
@@ -309,6 +317,14 @@ pub async fn join_group(
     State(state): State<Arc<AppState>>,
     Path(group_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Check if user is banned
+    let banned = db::groups::is_banned(&state.pool, group_id, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+    if banned {
+        return Err(AppError::bad_request("You are banned from this group"));
+    }
+
     let joined = db::groups::join_public_group(&state.pool, group_id, auth.user_id)
         .await
         .map_err(|e| {
@@ -392,4 +408,70 @@ pub async fn update_group(
     }
 
     Ok(Json(serde_json::json!({ "status": "updated" })))
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/groups/:id/ban/:user_id -- Ban a member from a group
+// ---------------------------------------------------------------------------
+
+pub async fn ban_member(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path((group_id, target_user_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+
+    if caller_role != "owner" && caller_role != "admin" {
+        return Err(AppError::unauthorized(
+            "Only owners and admins can ban members",
+        ));
+    }
+
+    // Prevent banning the owner
+    let target_role = db::groups::get_member_role(&state.pool, group_id, target_user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+    if target_role.as_deref() == Some("owner") {
+        return Err(AppError::bad_request("Cannot ban the group owner"));
+    }
+
+    db::groups::ban_member(&state.pool, group_id, target_user_id, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Failed to ban member"))?;
+
+    Ok(Json(serde_json::json!({ "status": "banned" })))
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/groups/:id/unban/:user_id -- Unban a member from a group
+// ---------------------------------------------------------------------------
+
+pub async fn unban_member(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path((group_id, target_user_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+
+    if caller_role != "owner" && caller_role != "admin" {
+        return Err(AppError::unauthorized(
+            "Only owners and admins can unban members",
+        ));
+    }
+
+    let unbanned = db::groups::unban_member(&state.pool, group_id, target_user_id)
+        .await
+        .map_err(|_| AppError::internal("Failed to unban member"))?;
+
+    if !unbanned {
+        return Err(AppError::bad_request("User is not banned from this group"));
+    }
+
+    Ok(Json(serde_json::json!({ "status": "unbanned" })))
 }

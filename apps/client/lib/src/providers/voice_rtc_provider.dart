@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import '../services/sound_service.dart';
 import 'auth_provider.dart';
 import 'channels_provider.dart';
 import 'websocket_provider.dart';
@@ -132,6 +133,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       setCaptureEnabled(!startMuted);
 
       state = state.copyWith(isJoining: false, isActive: true, error: null);
+      SoundService().playVoiceJoin();
 
       await ref
           .read(channelsProvider.notifier)
@@ -163,6 +165,9 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   }
 
   Future<void> leaveChannel() async {
+    if (state.isActive) {
+      SoundService().playVoiceLeave();
+    }
     _participantSyncTimer?.cancel();
     _participantSyncTimer = null;
 

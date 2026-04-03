@@ -397,6 +397,30 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
   }
 
+  /// Mark all of my sent/delivered messages in a conversation as read.
+  void markConversationRead(String conversationId) {
+    final updatedConv = Map<String, List<ChatMessage>>.from(
+      state.messagesByConversation,
+    );
+    final messages = updatedConv[conversationId];
+    if (messages == null) return;
+
+    updatedConv[conversationId] = messages.map((msg) {
+      if (msg.isMine &&
+          (msg.status == MessageStatus.sent ||
+              msg.status == MessageStatus.delivered)) {
+        return msg.copyWith(status: MessageStatus.read);
+      }
+      return msg;
+    }).toList();
+
+    state = ChatState(
+      messagesByConversation: updatedConv,
+      loadingHistory: state.loadingHistory,
+      hasMore: state.hasMore,
+    );
+  }
+
   /// Delete a message from local state.
   void deleteMessage(String conversationId, String messageId) {
     final updatedConv = Map<String, List<ChatMessage>>.from(

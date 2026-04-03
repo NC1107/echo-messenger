@@ -38,7 +38,7 @@ async fn main() {
     });
 
     // Background task: clean up stale voice sessions every 60 seconds.
-    // Sessions not updated within 5 minutes are removed and leave events
+    // Sessions not updated within 2 minutes are removed and leave events
     // are broadcast to group members.
     let cleanup_pool = pool.clone();
     let cleanup_hub = hub.clone();
@@ -46,7 +46,7 @@ async fn main() {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
         loop {
             interval.tick().await;
-            match db::channels::cleanup_stale_voice_sessions(&cleanup_pool, 300).await {
+            match db::channels::cleanup_stale_voice_sessions(&cleanup_pool, 120).await {
                 Ok(removed) => {
                     for (channel_id, conversation_id, user_id) in removed {
                         tracing::info!(

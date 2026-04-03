@@ -22,12 +22,14 @@ import '../providers/conversations_provider.dart';
 import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/voice_rtc_provider.dart';
+import '../providers/theme_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/sound_service.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import 'gif_picker_widget.dart';
 import '../utils/clipboard_image_helper.dart';
 import 'conversation_panel.dart' show buildAvatar, groupAvatarColor;
 import 'message_item.dart';
@@ -57,11 +59,15 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
   bool _isTextEmpty = true;
   bool _showEmojiPicker = false;
+  bool _showGifPicker = false;
   bool _hideEncryptionBanner = false;
   String? _selectedTextChannelId;
   String? _activeVoiceChannelId;
   String? _loadedHistoryKey;
   String? _loadedChannelsConversationId;
+
+  // File picker guard
+  bool _isPickingFile = false;
 
   // Edit mode state
   ChatMessage? _editingMessage;
@@ -658,6 +664,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     );
     request.headers['Authorization'] = 'Bearer $token';
 
+    final conversationId = widget.conversation?.id;
+    if (conversationId != null) {
+      request.fields['conversation_id'] = conversationId;
+    }
+
     final parts = mimeType.split('/');
     final mediaType = parts.length == 2
         ? MediaType(parts[0], parts[1])
@@ -737,6 +748,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   }
 
   Future<void> _pickFile() async {
+    if (_isPickingFile) return;
+    _isPickingFile = true;
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.any,
@@ -784,6 +797,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         'File upload error: $e',
         type: ToastType.error,
       );
+    } finally {
+      _isPickingFile = false;
     }
   }
 
@@ -1178,44 +1193,70 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     if (conv == null) return;
     final myUserId = ref.read(authProvider).userId ?? '';
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: context.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            alignment: WrapAlignment.center,
-            children: reactionEmojis.map((emoji) {
-              final alreadyReacted = message.reactions.any(
-                (r) => r.emoji == emoji && r.userId == myUserId,
-              );
-              return GestureDetector(
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _toggleReaction(message, emoji, alreadyReacted);
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: alreadyReacted
-                        ? context.accent.withValues(alpha: 0.2)
-                        : null,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(emoji, style: const TextStyle(fontSize: 28)),
-                ),
-              );
-            }).toList(),
+    final overlay = Overlay.of(context);
+    final renderBox = context.findRenderObject() as RenderBox?;
+    // Position popup near the center-top of the chat area
+    final size = renderBox?.size ?? Size.zero;
+    final offset = renderBox?.localToGlobal(Offset.zero) ?? Offset.zero;
+    final centerX = offset.dx + size.width / 2 - 160;
+    final centerY = offset.dy + size.height / 2 - 40;
+
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (ctx) => Stack(
+        children: [
+          // Dismiss on tap outside
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => entry.remove(),
+              behavior: HitTestBehavior.opaque,
+              child: const SizedBox.expand(),
+            ),
           ),
-        ),
+          Positioned(
+            left: centerX.clamp(8.0, size.width - 330),
+            top: centerY.clamp(8.0, double.infinity),
+            child: Material(
+              elevation: 8,
+              borderRadius: BorderRadius.circular(12),
+              color: context.surface,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: reactionEmojis.map((emoji) {
+                    final alreadyReacted = message.reactions.any(
+                      (r) => r.emoji == emoji && r.userId == myUserId,
+                    );
+                    return GestureDetector(
+                      onTap: () {
+                        entry.remove();
+                        _toggleReaction(message, emoji, alreadyReacted);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: alreadyReacted
+                              ? context.accent.withValues(alpha: 0.2)
+                              : null,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          emoji,
+                          style: const TextStyle(fontSize: 24),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
+    overlay.insert(entry);
   }
 
   Widget _buildTextChannelChip(GroupChannel channel) {
@@ -2158,6 +2199,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                               serverUrl: serverUrl,
                               authToken: authToken,
                               senderAvatarUrl: senderAvatarUrl,
+                              compactLayout:
+                                  ref.watch(messageLayoutProvider) ==
+                                  MessageLayout.compact,
                               onReactionTap: _showReactionPicker,
                               onReactionSelect: (message, emoji) {
                                 final alreadyReacted = message.reactions.any(
@@ -2316,52 +2360,85 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Attachment button (hidden in edit mode)
+                      // Consolidated + button (hidden in edit mode)
                       if (!_isEditing)
                         Padding(
                           padding: const EdgeInsets.only(left: 4),
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.attach_file_outlined,
-                              size: 18,
+                          child: PopupMenuButton<String>(
+                            icon: Icon(
+                              _showEmojiPicker
+                                  ? Icons.keyboard_outlined
+                                  : Icons.add_circle_outline,
+                              size: 20,
+                              color: _showEmojiPicker
+                                  ? context.accent
+                                  : context.textSecondary,
                             ),
-                            color: context.textSecondary,
-                            tooltip: 'Attach file',
-                            onPressed: _pickFile,
+                            tooltip: 'Attach or emoji',
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(
                               minWidth: 36,
                               minHeight: 36,
                             ),
-                          ),
-                        ),
-                      // Emoji picker toggle
-                      if (!_isEditing)
-                        IconButton(
-                          icon: Icon(
-                            _showEmojiPicker
-                                ? Icons.keyboard_outlined
-                                : Icons.sentiment_satisfied_alt_outlined,
-                            size: 18,
-                          ),
-                          color: _showEmojiPicker
-                              ? context.accent
-                              : context.textSecondary,
-                          tooltip: _showEmojiPicker
-                              ? 'Show keyboard'
-                              : 'Emoji picker',
-                          onPressed: () {
-                            setState(
-                              () => _showEmojiPicker = !_showEmojiPicker,
-                            );
-                            if (!_showEmojiPicker) {
-                              _inputFocusNode.requestFocus();
-                            }
-                          },
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 36,
-                            minHeight: 36,
+                            onSelected: (value) {
+                              switch (value) {
+                                case 'file':
+                                  _pickFile();
+                                case 'emoji':
+                                  setState(() {
+                                    _showEmojiPicker = !_showEmojiPicker;
+                                    _showGifPicker = false;
+                                  });
+                                  if (!_showEmojiPicker) {
+                                    _inputFocusNode.requestFocus();
+                                  }
+                                case 'gif':
+                                  setState(() {
+                                    _showGifPicker = !_showGifPicker;
+                                    _showEmojiPicker = false;
+                                  });
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 'file',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.attach_file_outlined, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('File'),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: 'emoji',
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      _showEmojiPicker
+                                          ? Icons.keyboard_outlined
+                                          : Icons
+                                                .sentiment_satisfied_alt_outlined,
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _showEmojiPicker ? 'Keyboard' : 'Emoji',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'gif',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.gif_box_outlined, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('GIF'),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       if (_isEditing) const SizedBox(width: 12),
@@ -2419,7 +2496,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                           child: TextField(
                             controller: _messageController,
                             focusNode: _inputFocusNode,
-                            maxLines: 1,
+                            maxLines: 5,
+                            minLines: 1,
                             style: TextStyle(
                               fontSize: 14,
                               color: context.textPrimary,
@@ -2535,16 +2613,29 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                 ),
               ),
             ),
+          // GIF picker panel
+          if (_showGifPicker)
+            GifPickerWidget(
+              onGifSelected: (gifUrl, slug) {
+                setState(() => _showGifPicker = false);
+                _messageController.text = '[img:$gifUrl]';
+                _sendMessage();
+              },
+            ),
           // Hidden RTCVideoView widgets to enable audio playback
+          // Use 1x1 with zero opacity so browsers allow audio output
           ...ref
               .watch(voiceRtcProvider.notifier)
               .remoteAudioRenderers
               .values
               .map(
-                (renderer) => SizedBox(
-                  width: 0,
-                  height: 0,
-                  child: RTCVideoView(renderer),
+                (renderer) => Opacity(
+                  opacity: 0,
+                  child: SizedBox(
+                    width: 1,
+                    height: 1,
+                    child: RTCVideoView(renderer),
+                  ),
                 ),
               ),
         ],

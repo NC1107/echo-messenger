@@ -393,3 +393,63 @@ pub async fn update_group_description(
         .await?;
     Ok(())
 }
+
+/// Ban a member: remove from group + add to banned_members table.
+pub async fn ban_member(
+    pool: &PgPool,
+    group_id: Uuid,
+    user_id: Uuid,
+    banned_by: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    // Remove from conversation_members
+    sqlx::query("DELETE FROM conversation_members WHERE conversation_id = $1 AND user_id = $2")
+        .bind(group_id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+
+    // Insert into banned_members (upsert to handle re-ban)
+    let result = sqlx::query(
+        "INSERT INTO banned_members (conversation_id, user_id, banned_by) \
+         VALUES ($1, $2, $3) \
+         ON CONFLICT (conversation_id, user_id) DO UPDATE SET banned_at = now(), banned_by = $3",
+    )
+    .bind(group_id)
+    .bind(user_id)
+    .bind(banned_by)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// Check if a user is banned from a group.
+pub async fn is_banned(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    let row: (bool,) = sqlx::query_as(
+        "SELECT EXISTS(SELECT 1 FROM banned_members \
+         WHERE conversation_id = $1 AND user_id = $2)",
+    )
+    .bind(group_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+/// Unban a user from a group.
+pub async fn unban_member(
+    pool: &PgPool,
+    group_id: Uuid,
+    user_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let result =
+        sqlx::query("DELETE FROM banned_members WHERE conversation_id = $1 AND user_id = $2")
+            .bind(group_id)
+            .bind(user_id)
+            .execute(pool)
+            .await?;
+    Ok(result.rows_affected() > 0)
+}

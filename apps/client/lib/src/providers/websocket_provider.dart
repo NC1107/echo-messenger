@@ -394,6 +394,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
         }
       case 'delivered':
         _handleDelivered(json);
+      case 'read_receipt':
+        _handleReadReceipt(json);
       case 'message_deleted':
         _handleMessageDeleted(json);
       case 'message_edited':
@@ -640,6 +642,11 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
           messageId,
           MessageStatus.delivered,
         );
+  }
+
+  void _handleReadReceipt(Map<String, dynamic> json) {
+    final conversationId = json['conversation_id'] as String;
+    ref.read(chatProvider.notifier).markConversationRead(conversationId);
   }
 
   void _handleMessageDeleted(Map<String, dynamic> json) {

@@ -52,6 +52,9 @@ class MessageItem extends StatefulWidget {
   /// Avatar URL path for the message sender (relative, e.g. /api/users/.../avatar).
   final String? senderAvatarUrl;
 
+  /// When true, uses Discord-style compact layout (all left-aligned, colored usernames).
+  final bool compactLayout;
+
   const MessageItem({
     super.key,
     required this.message,
@@ -67,6 +70,7 @@ class MessageItem extends StatefulWidget {
     this.serverUrl,
     this.authToken,
     this.senderAvatarUrl,
+    this.compactLayout = false,
   });
 
   @override
@@ -239,6 +243,9 @@ class _MessageItemState extends State<MessageItem> {
         icon = Icons.check_outlined;
         color = context.textMuted;
       case MessageStatus.delivered:
+        icon = Icons.done_all_outlined;
+        color = context.textMuted;
+      case MessageStatus.read:
         icon = Icons.done_all_outlined;
         color = EchoTheme.online;
       case MessageStatus.failed:
@@ -700,8 +707,8 @@ class _MessageItemState extends State<MessageItem> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Sender name for group received messages
-          if (!isMine && widget.showHeader)
+          // Sender name (always shown in compact mode, otherwise only for received)
+          if (widget.showHeader && (!isMine || widget.compactLayout))
             Padding(
               padding: EdgeInsets.only(
                 bottom: 4,
@@ -820,12 +827,12 @@ class _MessageItemState extends State<MessageItem> {
             clipBehavior: Clip.none,
             children: [
               Column(
-                crossAxisAlignment: isMine
+                crossAxisAlignment: (isMine && !widget.compactLayout)
                     ? CrossAxisAlignment.end
                     : CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: isMine
+                    mainAxisAlignment: (isMine && !widget.compactLayout)
                         ? MainAxisAlignment.end
                         : MainAxisAlignment.start,
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -953,7 +960,10 @@ class _HoverActionButton extends StatelessWidget {
         onTap: onPressed,
         child: Padding(
           padding: const EdgeInsets.all(6),
-          child: Icon(icon, size: 16, color: context.textSecondary),
+          child: Opacity(
+            opacity: 0.75,
+            child: Icon(icon, size: 14, color: context.textSecondary),
+          ),
         ),
       ),
     );

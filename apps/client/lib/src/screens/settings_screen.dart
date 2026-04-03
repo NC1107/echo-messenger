@@ -1119,6 +1119,35 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
               .read(themeProvider.notifier)
               .setTheme(AppThemeSelection.graphite),
         ),
+        const SizedBox(height: 32),
+        Text(
+          'Message Layout',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _ThemeOption(
+          label: 'Bubbles',
+          subtitle: 'Chat bubbles aligned left and right',
+          icon: Icons.chat_bubble_outline,
+          isSelected: ref.watch(messageLayoutProvider) == MessageLayout.bubbles,
+          onTap: () => ref
+              .read(messageLayoutProvider.notifier)
+              .setLayout(MessageLayout.bubbles),
+        ),
+        const SizedBox(height: 8),
+        _ThemeOption(
+          label: 'Compact',
+          subtitle: 'Discord-style, all messages left-aligned',
+          icon: Icons.format_align_left_outlined,
+          isSelected: ref.watch(messageLayoutProvider) == MessageLayout.compact,
+          onTap: () => ref
+              .read(messageLayoutProvider.notifier)
+              .setLayout(MessageLayout.compact),
+        ),
       ],
     );
   }

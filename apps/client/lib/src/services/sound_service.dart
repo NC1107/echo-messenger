@@ -11,6 +11,8 @@ class SoundService {
 
   final AudioPlayer _sentPlayer = AudioPlayer();
   final AudioPlayer _receivedPlayer = AudioPlayer();
+  final AudioPlayer _voiceJoinPlayer = AudioPlayer();
+  final AudioPlayer _voiceLeavePlayer = AudioPlayer();
 
   bool enabled = true;
 
@@ -37,8 +39,36 @@ class SoundService {
     }
   }
 
+  /// Play ascending chime when joining a voice channel.
+  Future<void> playVoiceJoin() async {
+    if (!enabled) return;
+    try {
+      await _voiceJoinPlayer.play(
+        AssetSource('sounds/voice_join.mp3'),
+        volume: 0.5,
+      );
+    } catch (e) {
+      debugPrint('[Sound] Failed to play voice join sound: $e');
+    }
+  }
+
+  /// Play descending chime when leaving a voice channel.
+  Future<void> playVoiceLeave() async {
+    if (!enabled) return;
+    try {
+      await _voiceLeavePlayer.play(
+        AssetSource('sounds/voice_leave.mp3'),
+        volume: 0.5,
+      );
+    } catch (e) {
+      debugPrint('[Sound] Failed to play voice leave sound: $e');
+    }
+  }
+
   void dispose() {
     _sentPlayer.dispose();
     _receivedPlayer.dispose();
+    _voiceJoinPlayer.dispose();
+    _voiceLeavePlayer.dispose();
   }
 }
