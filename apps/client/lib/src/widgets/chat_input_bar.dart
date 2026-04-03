@@ -1,0 +1,1172 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
+
+import '../models/chat_message.dart';
+import '../models/conversation.dart';
+import '../providers/auth_provider.dart';
+import '../providers/channels_provider.dart';
+import '../providers/chat_provider.dart';
+import '../providers/privacy_provider.dart';
+import '../providers/server_url_provider.dart';
+import '../providers/voice_rtc_provider.dart';
+import '../providers/voice_settings_provider.dart';
+import '../providers/websocket_provider.dart';
+import '../services/sound_service.dart';
+import '../services/toast_service.dart';
+import '../theme/echo_theme.dart';
+import '../utils/clipboard_image_helper.dart';
+import 'gif_picker_widget.dart';
+
+/// Extracted chat input bar from ChatPanel (~850 lines).
+///
+/// Manages:
+/// - Text composition with mention autocomplete
+/// - Attachment picking, upload preview, and clipboard paste
+/// - Emoji / GIF picker panels
+/// - Edit mode for existing messages
+/// - Keyboard shortcuts (Enter to send, Shift+Enter newline, Escape, Ctrl+V)
+/// - Push-to-talk key handling
+///
+/// Exposes [enterEditMode] as a public method so the parent can invoke it
+/// via `GlobalKey<ChatInputBarState>`.
+class ChatInputBar extends ConsumerStatefulWidget {
+  final Conversation conversation;
+  final String? selectedTextChannelId;
+  final String? effectiveActiveVoiceChannelId;
+  final List<String> typingUsers;
+  final VoidCallback onMessageSent;
+
+  const ChatInputBar({
+    super.key,
+    required this.conversation,
+    this.selectedTextChannelId,
+    this.effectiveActiveVoiceChannelId,
+    this.typingUsers = const [],
+    required this.onMessageSent,
+  });
+
+  @override
+  ConsumerState<ChatInputBar> createState() => ChatInputBarState();
+}
+
+class ChatInputBarState extends ConsumerState<ChatInputBar> {
+  final _messageController = TextEditingController();
+  final _inputFocusNode = FocusNode();
+
+  bool _isTextEmpty = true;
+  bool _showEmojiPicker = false;
+  bool _showGifPicker = false;
+
+  // File picker guard
+  bool _isPickingFile = false;
+
+  // Edit mode state
+  ChatMessage? _editingMessage;
+  bool get _isEditing => _editingMessage != null;
+
+  // Mention autocomplete state
+  bool _showMentionPicker = false;
+  String _mentionQuery = '';
+
+  // Pending attachment (Discord-style preview before send)
+  Uint8List? _pendingAttachmentBytes;
+  String? _pendingAttachmentFileName;
+  String? _pendingAttachmentMimeType;
+  String? _pendingAttachmentExt;
+  String? _pendingAttachmentUrl;
+  bool _isUploadingAttachment = false;
+
+  // Debounce for search (used by _detectMention indirectly via parent, but
+  // kept here to match the cancel contract in dispose/didUpdateWidget).
+  Timer? _searchDebounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _messageController.addListener(_onTextChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatInputBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.conversation.id != oldWidget.conversation.id) {
+      _showMentionPicker = false;
+      _mentionQuery = '';
+      _searchDebounce?.cancel();
+      _clearPendingAttachment();
+      _messageController.clear();
+      _editingMessage = null;
+      _isTextEmpty = true;
+      _showEmojiPicker = false;
+      _showGifPicker = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _messageController.removeListener(_onTextChanged);
+    _messageController.dispose();
+    _inputFocusNode.dispose();
+    super.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public API (called by parent via GlobalKey<ChatInputBarState>)
+  // ---------------------------------------------------------------------------
+
+  void enterEditMode(ChatMessage message) {
+    setState(() {
+      _editingMessage = message;
+      _messageController.text = message.content;
+      _isTextEmpty = false;
+    });
+    _inputFocusNode.requestFocus();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Text listener
+  // ---------------------------------------------------------------------------
+
+  void _onTextChanged() {
+    final empty = _messageController.text.trim().isEmpty;
+    if (empty != _isTextEmpty) {
+      setState(() => _isTextEmpty = empty);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Send message
+  // ---------------------------------------------------------------------------
+
+  Future<void> _sendMessage() async {
+    var text = _messageController.text.trim();
+
+    // Prepend pending attachment marker if upload is ready
+    if (_pendingAttachmentUrl != null && _pendingAttachmentExt != null) {
+      final marker = _buildMediaMarker(
+        extension: _pendingAttachmentExt!,
+        url: _pendingAttachmentUrl!,
+      );
+      text = text.isEmpty ? marker : '$marker $text';
+      _clearPendingAttachment();
+    }
+
+    if (text.isEmpty) return;
+
+    final conv = widget.conversation;
+    final myUserId = ref.read(authProvider).userId ?? '';
+
+    // Find peer user ID for DMs
+    String peerUserId = '';
+    String? channelId;
+    if (!conv.isGroup) {
+      final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
+      peerUserId = peer?.userId ?? '';
+
+      final privacy = ref.read(privacyProvider);
+      if (!conv.isEncrypted && !privacy.allowUnencryptedDm) {
+        ToastService.show(
+          context,
+          'Plaintext direct messages are disabled in Privacy settings',
+          type: ToastType.warning,
+        );
+        return;
+      }
+    } else {
+      final channels = ref.read(channelsProvider).channelsFor(conv.id);
+      channelId =
+          widget.selectedTextChannelId ??
+          channels.where((c) => c.isText).firstOrNull?.id;
+      if (channelId == null) {
+        ToastService.show(
+          context,
+          'No text channel available in this group',
+          type: ToastType.warning,
+        );
+        return;
+      }
+    }
+
+    ref
+        .read(chatProvider.notifier)
+        .addOptimistic(
+          peerUserId,
+          text,
+          myUserId,
+          conversationId: conv.id,
+          channelId: channelId,
+        );
+    _messageController.clear();
+    if (_showEmojiPicker) setState(() => _showEmojiPicker = false);
+
+    widget.onMessageSent();
+    SoundService().playMessageSent();
+
+    try {
+      if (conv.isGroup) {
+        await ref
+            .read(websocketProvider.notifier)
+            .sendGroupMessage(conv.id, text, channelId: channelId);
+      } else {
+        await ref
+            .read(websocketProvider.notifier)
+            .sendMessage(peerUserId, text, conversationId: conv.id);
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Failed to send message',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Input changed / typing indicator / mention detection
+  // ---------------------------------------------------------------------------
+
+  void _onInputChanged(String text) {
+    final conv = widget.conversation;
+    if (text.isNotEmpty) {
+      ref
+          .read(websocketProvider.notifier)
+          .sendTyping(
+            conv.id,
+            channelId: conv.isGroup ? widget.selectedTextChannelId : null,
+          );
+    }
+    _detectMention(text);
+  }
+
+  void _detectMention(String text) {
+    final conv = widget.conversation;
+    if (!conv.isGroup) {
+      if (_showMentionPicker) {
+        setState(() {
+          _showMentionPicker = false;
+          _mentionQuery = '';
+        });
+      }
+      return;
+    }
+
+    final cursorPos = _messageController.selection.baseOffset;
+    if (cursorPos < 0 || cursorPos > text.length) {
+      if (_showMentionPicker) setState(() => _showMentionPicker = false);
+      return;
+    }
+
+    final beforeCursor = text.substring(0, cursorPos);
+    final atIndex = beforeCursor.lastIndexOf('@');
+    if (atIndex < 0) {
+      if (_showMentionPicker) setState(() => _showMentionPicker = false);
+      return;
+    }
+
+    if (atIndex > 0 && beforeCursor[atIndex - 1] != ' ') {
+      if (_showMentionPicker) setState(() => _showMentionPicker = false);
+      return;
+    }
+
+    final partial = beforeCursor.substring(atIndex + 1);
+    if (partial.contains(' ')) {
+      if (_showMentionPicker) setState(() => _showMentionPicker = false);
+      return;
+    }
+
+    setState(() {
+      _showMentionPicker = true;
+      _mentionQuery = partial.toLowerCase();
+    });
+  }
+
+  void _insertMention(String username) {
+    final text = _messageController.text;
+    final cursorPos = _messageController.selection.baseOffset;
+    if (cursorPos < 0) return;
+
+    final beforeCursor = text.substring(0, cursorPos);
+    final atIndex = beforeCursor.lastIndexOf('@');
+    if (atIndex < 0) return;
+
+    final afterCursor = text.substring(cursorPos);
+    final replacement = '@$username ';
+    final newText = text.substring(0, atIndex) + replacement + afterCursor;
+    final newCursorPos = atIndex + replacement.length;
+
+    _messageController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newCursorPos),
+    );
+
+    setState(() {
+      _showMentionPicker = false;
+      _mentionQuery = '';
+    });
+    _inputFocusNode.requestFocus();
+  }
+
+  List<ConversationMember> get _filteredMentionMembers {
+    final conv = widget.conversation;
+    final myUserId = ref.read(authProvider).userId ?? '';
+    return conv.members.where((m) {
+      if (m.userId == myUserId) return false;
+      if (_mentionQuery.isEmpty) return true;
+      return m.username.toLowerCase().startsWith(_mentionQuery);
+    }).toList();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Media marker helpers
+  // ---------------------------------------------------------------------------
+
+  String _buildMediaMarker({required String extension, required String url}) {
+    const imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
+    const videoExts = {'mp4', 'webm', 'mov'};
+
+    final ext = extension.toLowerCase();
+    if (imageExts.contains(ext)) {
+      return '[img:$url]';
+    }
+    if (videoExts.contains(ext)) {
+      return '[video:$url]';
+    }
+    return '[file:$url]';
+  }
+
+  String _extensionFromMime(String mimeType) {
+    switch (mimeType.toLowerCase()) {
+      case 'image/jpeg':
+        return 'jpg';
+      case 'image/png':
+        return 'png';
+      case 'image/gif':
+        return 'gif';
+      case 'image/webp':
+        return 'webp';
+      case 'video/mp4':
+        return 'mp4';
+      case 'video/webm':
+        return 'webm';
+      case 'video/quicktime':
+        return 'mov';
+      case 'application/pdf':
+        return 'pdf';
+      default:
+        return 'bin';
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pending attachment helpers (Discord-style preview before send)
+  // ---------------------------------------------------------------------------
+
+  void _setPendingAttachment({
+    required List<int> bytes,
+    required String fileName,
+    required String mimeType,
+    required String ext,
+  }) {
+    setState(() {
+      _pendingAttachmentBytes = Uint8List.fromList(bytes);
+      _pendingAttachmentFileName = fileName;
+      _pendingAttachmentMimeType = mimeType;
+      _pendingAttachmentExt = ext;
+      _pendingAttachmentUrl = null;
+      _isUploadingAttachment = false;
+    });
+    _startAttachmentUpload();
+  }
+
+  void _clearPendingAttachment() {
+    setState(() {
+      _pendingAttachmentBytes = null;
+      _pendingAttachmentFileName = null;
+      _pendingAttachmentMimeType = null;
+      _pendingAttachmentExt = null;
+      _pendingAttachmentUrl = null;
+      _isUploadingAttachment = false;
+    });
+  }
+
+  Future<void> _startAttachmentUpload() async {
+    final bytes = _pendingAttachmentBytes;
+    final fileName = _pendingAttachmentFileName;
+    final mimeType = _pendingAttachmentMimeType;
+    if (bytes == null || fileName == null || mimeType == null) return;
+
+    setState(() => _isUploadingAttachment = true);
+
+    final serverUrl = ref.read(serverUrlProvider);
+    final token = ref.read(authProvider).token;
+    if (token == null) {
+      _clearPendingAttachment();
+      return;
+    }
+
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$serverUrl/api/media/upload'),
+      );
+      request.headers['Authorization'] = 'Bearer $token';
+
+      final conversationId = widget.conversation.id;
+      request.fields['conversation_id'] = conversationId;
+
+      final parts = mimeType.split('/');
+      final mediaType = parts.length == 2
+          ? MediaType(parts[0], parts[1])
+          : MediaType('application', 'octet-stream');
+
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: fileName,
+          contentType: mediaType,
+        ),
+      );
+
+      final response = await request.send();
+      final body = await response.stream.bytesToString();
+      if (!mounted) return;
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(body);
+        final mediaUrl = data['url'] as String?;
+        if (mediaUrl != null) {
+          setState(() {
+            _pendingAttachmentUrl = mediaUrl;
+            _isUploadingAttachment = false;
+          });
+        } else {
+          ToastService.show(context, 'Upload failed', type: ToastType.error);
+          _clearPendingAttachment();
+        }
+      } else {
+        ToastService.show(
+          context,
+          'Upload failed (${response.statusCode})',
+          type: ToastType.error,
+        );
+        _clearPendingAttachment();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, 'Upload failed: $e', type: ToastType.error);
+      _clearPendingAttachment();
+    }
+  }
+
+  Future<void> _pasteImageFromClipboard() async {
+    final image = await readImageFromClipboard();
+    if (image == null) return;
+    if (!mounted) return;
+
+    _setPendingAttachment(
+      bytes: image.bytes,
+      fileName: image.fileName,
+      mimeType: image.mimeType,
+      ext: _extensionFromMime(image.mimeType),
+    );
+  }
+
+  Future<void> _pickFile() async {
+    if (_isPickingFile) return;
+    _isPickingFile = true;
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      if (!mounted) return;
+
+      final file = result.files.first;
+      if (file.bytes == null) {
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Could not read file data',
+            type: ToastType.error,
+          );
+        }
+        return;
+      }
+
+      final ext = (file.extension ?? '').toLowerCase();
+      final mimeTypes = <String, List<String>>{
+        'jpg': ['image', 'jpeg'],
+        'jpeg': ['image', 'jpeg'],
+        'png': ['image', 'png'],
+        'gif': ['image', 'gif'],
+        'webp': ['image', 'webp'],
+        'mp4': ['video', 'mp4'],
+        'pdf': ['application', 'pdf'],
+      };
+      final mime = mimeTypes[ext] ?? ['application', 'octet-stream'];
+
+      _setPendingAttachment(
+        bytes: file.bytes!,
+        fileName: file.name,
+        mimeType: '${mime[0]}/${mime[1]}',
+        ext: ext,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, 'File pick error: $e', type: ToastType.error);
+    } finally {
+      _isPickingFile = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Edit mode
+  // ---------------------------------------------------------------------------
+
+  void _cancelEditMode() {
+    setState(() {
+      _editingMessage = null;
+      _messageController.clear();
+      _isTextEmpty = true;
+    });
+  }
+
+  Future<void> _submitEdit() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty || _editingMessage == null) return;
+
+    final conv = widget.conversation;
+    final messageId = _editingMessage!.id;
+    final serverUrl = ref.read(serverUrlProvider);
+
+    // Optimistically update local state
+    ref.read(chatProvider.notifier).editMessage(conv.id, messageId, text);
+    _cancelEditMode();
+
+    try {
+      await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.put(
+              Uri.parse('$serverUrl/api/messages/$messageId'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({'content': text}),
+            ),
+          );
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Failed to edit message',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Voice state sync (for push-to-talk key handling)
+  // ---------------------------------------------------------------------------
+
+  Future<void> _syncVoiceState() async {
+    final conv = widget.conversation;
+    final channelId = widget.effectiveActiveVoiceChannelId;
+    if (channelId == null) return;
+    final voiceSettings = ref.read(voiceSettingsProvider);
+    await ref
+        .read(channelsProvider.notifier)
+        .updateVoiceState(
+          conversationId: conv.id,
+          channelId: channelId,
+          isMuted: voiceSettings.selfMuted,
+          isDeafened: voiceSettings.selfDeafened,
+          pushToTalk: voiceSettings.pushToTalkEnabled,
+        );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
+
+  @override
+  Widget build(BuildContext context) {
+    final conv = widget.conversation;
+    final myUserId = ref.watch(authProvider).userId ?? '';
+    final voiceSettings = ref.watch(voiceSettingsProvider);
+
+    final displayName = conv.displayName(myUserId);
+    final typingUsers = widget.typingUsers;
+    final typingText = conv.isGroup
+        ? (typingUsers.length == 1
+              ? '${typingUsers.first} is typing...'
+              : '${typingUsers.join(", ")} are typing...')
+        : '$displayName is typing...';
+    final showInputStatus = _isEditing || typingUsers.isNotEmpty;
+    final inputStatusText = _isEditing && typingUsers.isNotEmpty
+        ? 'Editing message \u2022 $typingText'
+        : (_isEditing ? 'Editing message...' : typingText);
+
+    final effectiveActiveVoiceChannelId = widget.effectiveActiveVoiceChannelId;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Mention autocomplete picker
+        if (_showMentionPicker && _filteredMentionMembers.isNotEmpty)
+          Container(
+            constraints: const BoxConstraints(maxHeight: 160),
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(8),
+              ),
+              border: Border.all(color: context.border),
+            ),
+            child: ListView.builder(
+              shrinkWrap: true,
+              reverse: true,
+              padding: EdgeInsets.zero,
+              itemCount: _filteredMentionMembers.length,
+              itemBuilder: (context, i) {
+                final member = _filteredMentionMembers[i];
+                return InkWell(
+                  onTap: () => _insertMention(member.username),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.alternate_email,
+                          size: 14,
+                          color: context.accent,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          member.username,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: context.textPrimary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (member.role != null) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            member.role!,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: context.textMuted,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        // Input area
+        Container(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+          color: context.chatBg,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (showInputStatus)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _isEditing
+                        ? context.accent.withValues(alpha: 0.12)
+                        : context.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: _isEditing
+                          ? context.accent.withValues(alpha: 0.4)
+                          : context.border,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _isEditing
+                            ? Icons.edit_outlined
+                            : Icons.more_horiz_rounded,
+                        size: 12,
+                        color: _isEditing ? context.accent : context.textMuted,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          inputStatusText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontStyle: _isEditing
+                                ? FontStyle.normal
+                                : FontStyle.italic,
+                            color: _isEditing
+                                ? context.accent
+                                : context.textMuted,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (_isEditing)
+                        GestureDetector(
+                          onTap: _cancelEditMode,
+                          child: Icon(
+                            Icons.close,
+                            size: 14,
+                            color: context.textMuted,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              // Attachment preview bar (Discord-style)
+              if (_pendingAttachmentBytes != null ||
+                  _pendingAttachmentUrl != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: context.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: context.border, width: 1),
+                  ),
+                  child: Row(
+                    children: [
+                      // Thumbnail
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: _pendingAttachmentBytes != null
+                            ? Image.memory(
+                                _pendingAttachmentBytes!,
+                                width: 48,
+                                height: 48,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, e, st) => Container(
+                                  width: 48,
+                                  height: 48,
+                                  color: context.mainBg,
+                                  child: Icon(
+                                    Icons.insert_drive_file_outlined,
+                                    color: context.textMuted,
+                                    size: 24,
+                                  ),
+                                ),
+                              )
+                            : Container(
+                                width: 48,
+                                height: 48,
+                                color: context.mainBg,
+                                child: Icon(
+                                  Icons.gif_box_outlined,
+                                  color: context.accent,
+                                  size: 24,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(width: 10),
+                      // Filename + status
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _pendingAttachmentFileName ?? 'Attachment',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: context.textPrimary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _isUploadingAttachment
+                                  ? 'Uploading...'
+                                  : _pendingAttachmentUrl != null
+                                  ? 'Ready to send'
+                                  : 'Preparing...',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: _pendingAttachmentUrl != null
+                                    ? EchoTheme.online
+                                    : context.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Upload spinner or ready icon
+                      if (_isUploadingAttachment)
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: context.accent,
+                          ),
+                        )
+                      else if (_pendingAttachmentUrl != null)
+                        Icon(
+                          Icons.check_circle_outline,
+                          size: 16,
+                          color: EchoTheme.online,
+                        ),
+                      const SizedBox(width: 6),
+                      // Remove button
+                      GestureDetector(
+                        onTap: _clearPendingAttachment,
+                        child: Icon(
+                          Icons.close,
+                          size: 16,
+                          color: context.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Container(
+                height: 44,
+                decoration: BoxDecoration(
+                  color: context.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _isEditing ? context.accent : context.border,
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Consolidated + button (hidden in edit mode)
+                    if (!_isEditing)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: PopupMenuButton<String>(
+                          icon: Icon(
+                            _showEmojiPicker
+                                ? Icons.keyboard_outlined
+                                : Icons.add_circle_outline,
+                            size: 20,
+                            color: _showEmojiPicker
+                                ? context.accent
+                                : context.textSecondary,
+                          ),
+                          tooltip: 'Attach or emoji',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                          onSelected: (value) {
+                            switch (value) {
+                              case 'file':
+                                _pickFile();
+                              case 'emoji':
+                                setState(() {
+                                  _showEmojiPicker = !_showEmojiPicker;
+                                  _showGifPicker = false;
+                                });
+                                if (!_showEmojiPicker) {
+                                  _inputFocusNode.requestFocus();
+                                }
+                              case 'gif':
+                                setState(() {
+                                  _showGifPicker = !_showGifPicker;
+                                  _showEmojiPicker = false;
+                                });
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'file',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.attach_file_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('File'),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'emoji',
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _showEmojiPicker
+                                        ? Icons.keyboard_outlined
+                                        : Icons
+                                              .sentiment_satisfied_alt_outlined,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(_showEmojiPicker ? 'Keyboard' : 'Emoji'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'gif',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.gif_box_outlined, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('GIF'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (_isEditing) const SizedBox(width: 12),
+                    // Text field
+                    Expanded(
+                      child: Focus(
+                        onKeyEvent: (_, event) {
+                          final pttKeyId = voiceSettings.pushToTalkKeyId;
+                          final isPttKey =
+                              event.logicalKey.keyId.toString() == pttKeyId;
+                          final canPushToTalk =
+                              voiceSettings.pushToTalkEnabled &&
+                              effectiveActiveVoiceChannelId != null;
+
+                          if (canPushToTalk && isPttKey) {
+                            final allowCapture =
+                                !voiceSettings.selfMuted &&
+                                !voiceSettings.selfDeafened;
+                            if (event is KeyDownEvent && allowCapture) {
+                              ref
+                                  .read(voiceRtcProvider.notifier)
+                                  .setCaptureEnabled(true);
+                              _syncVoiceState();
+                            } else if (event is KeyUpEvent) {
+                              ref
+                                  .read(voiceRtcProvider.notifier)
+                                  .setCaptureEnabled(false);
+                              _syncVoiceState();
+                            }
+                          }
+
+                          if (event is KeyDownEvent) {
+                            if (event.logicalKey == LogicalKeyboardKey.escape) {
+                              if (_showMentionPicker) {
+                                setState(() {
+                                  _showMentionPicker = false;
+                                  _mentionQuery = '';
+                                });
+                              } else if (_showEmojiPicker) {
+                                setState(() => _showEmojiPicker = false);
+                                _inputFocusNode.requestFocus();
+                              } else if (_showGifPicker) {
+                                setState(() => _showGifPicker = false);
+                                _inputFocusNode.requestFocus();
+                              } else if (_pendingAttachmentBytes != null ||
+                                  _pendingAttachmentUrl != null) {
+                                _clearPendingAttachment();
+                              } else if (_isEditing) {
+                                _cancelEditMode();
+                              }
+                            }
+
+                            // Enter sends message, Shift+Enter for newline
+                            if (event.logicalKey == LogicalKeyboardKey.enter &&
+                                !HardwareKeyboard.instance.isShiftPressed) {
+                              if (_isEditing) {
+                                _submitEdit();
+                              } else {
+                                _sendMessage();
+                              }
+                              return KeyEventResult.handled;
+                            }
+
+                            final isPasteShortcut =
+                                event.logicalKey == LogicalKeyboardKey.keyV &&
+                                (HardwareKeyboard.instance.isControlPressed ||
+                                    HardwareKeyboard.instance.isMetaPressed);
+                            if (isPasteShortcut && !_isEditing) {
+                              // Try clipboard image paste (async, won't block text paste)
+                              _pasteImageFromClipboard();
+                            }
+                          }
+                          return KeyEventResult.ignored;
+                        },
+                        child: TextField(
+                          controller: _messageController,
+                          focusNode: _inputFocusNode,
+                          maxLines: 5,
+                          minLines: 1,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: context.textPrimary,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: _isEditing
+                                ? 'Edit your message...'
+                                : 'Type a message...',
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            filled: false,
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 10,
+                            ),
+                          ),
+                          onChanged: _onInputChanged,
+                          onTap: () {
+                            if (_showEmojiPicker) {
+                              setState(() => _showEmojiPicker = false);
+                            }
+                          },
+                          onSubmitted: (_) =>
+                              _isEditing ? _submitEdit() : _sendMessage(),
+                        ),
+                      ),
+                    ),
+                    // Send / confirm edit button (keeps stable footprint)
+                    Builder(
+                      builder: (context) {
+                        final canSend =
+                            !_isTextEmpty ||
+                            (_pendingAttachmentUrl != null &&
+                                !_isUploadingAttachment);
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 7),
+                          child: GestureDetector(
+                            onTap: canSend
+                                ? (_isEditing ? _submitEdit : _sendMessage)
+                                : null,
+                            child: Opacity(
+                              opacity: canSend ? 1 : 0.45,
+                              child: Container(
+                                width: 30,
+                                height: 30,
+                                decoration: BoxDecoration(
+                                  color: !canSend
+                                      ? context.textMuted
+                                      : (_isEditing
+                                            ? EchoTheme.online
+                                            : context.accent),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  _isEditing
+                                      ? Icons.check_rounded
+                                      : Icons.arrow_upward_rounded,
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Emoji picker panel
+        if (_showEmojiPicker)
+          Container(
+            height: 180,
+            color: context.surface,
+            child: EmojiPicker(
+              onEmojiSelected: (category, emoji) {
+                final text = _messageController.text;
+                final selection = _messageController.selection;
+                final cursorPos = selection.baseOffset >= 0
+                    ? selection.baseOffset
+                    : text.length;
+                final newText =
+                    text.substring(0, cursorPos) +
+                    emoji.emoji +
+                    text.substring(cursorPos);
+                _messageController.text = newText;
+                final newCursor = cursorPos + emoji.emoji.length;
+                _messageController.selection = TextSelection.collapsed(
+                  offset: newCursor,
+                );
+              },
+              config: Config(
+                height: 180,
+                checkPlatformCompatibility: true,
+                emojiViewConfig: EmojiViewConfig(
+                  backgroundColor: context.surface,
+                  columns: 8,
+                  emojiSizeMax: 28,
+                  noRecents: Text(
+                    'No Recents',
+                    style: TextStyle(fontSize: 16, color: context.textMuted),
+                  ),
+                ),
+                categoryViewConfig: CategoryViewConfig(
+                  backgroundColor: context.surface,
+                  indicatorColor: context.accent,
+                  iconColorSelected: context.accent,
+                  iconColor: context.textMuted,
+                ),
+                bottomActionBarConfig: const BottomActionBarConfig(
+                  enabled: false,
+                ),
+                searchViewConfig: SearchViewConfig(
+                  backgroundColor: context.surface,
+                  buttonIconColor: context.textSecondary,
+                  hintText: 'Search emoji...',
+                ),
+              ),
+            ),
+          ),
+        // GIF picker panel
+        if (_showGifPicker)
+          GifPickerWidget(
+            onClose: () => setState(() => _showGifPicker = false),
+            onGifSelected: (gifUrl, slug) {
+              setState(() {
+                _showGifPicker = false;
+                // GIF is external URL -- no upload needed, set directly
+                _pendingAttachmentUrl = gifUrl;
+                _pendingAttachmentExt = 'gif';
+                _pendingAttachmentFileName = 'gif';
+                _pendingAttachmentMimeType = 'image/gif';
+                _pendingAttachmentBytes = null; // no local bytes for GIFs
+                _isUploadingAttachment = false;
+              });
+            },
+          ),
+      ],
+    );
+  }
+}

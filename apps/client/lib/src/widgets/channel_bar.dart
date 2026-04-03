@@ -1,0 +1,462 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../models/channel.dart';
+import '../providers/auth_provider.dart';
+import '../providers/channels_provider.dart';
+import '../providers/voice_rtc_provider.dart';
+import '../providers/voice_settings_provider.dart';
+import '../theme/echo_theme.dart';
+
+class ChannelBar extends ConsumerStatefulWidget {
+  final String conversationId;
+  final bool hideVoiceDock;
+  final ValueChanged<String?> onTextChannelChanged;
+  final ValueChanged<String?> onVoiceChannelChanged;
+
+  const ChannelBar({
+    super.key,
+    required this.conversationId,
+    this.hideVoiceDock = false,
+    required this.onTextChannelChanged,
+    required this.onVoiceChannelChanged,
+  });
+
+  @override
+  ConsumerState<ChannelBar> createState() => _ChannelBarState();
+}
+
+class _ChannelBarState extends ConsumerState<ChannelBar> {
+  String? _selectedTextChannelId;
+  // null = use inferred from voice sessions, '' = explicitly left (don't infer)
+  String? _activeVoiceChannelId;
+
+  @override
+  void didUpdateWidget(covariant ChannelBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.conversationId != oldWidget.conversationId) {
+      if (_activeVoiceChannelId != null) {
+        ref.read(voiceRtcProvider.notifier).leaveChannel();
+      }
+      setState(() {
+        _selectedTextChannelId = null;
+        _activeVoiceChannelId = null;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_activeVoiceChannelId != null) {
+      ref.read(voiceRtcProvider.notifier).leaveChannel();
+    }
+    super.dispose();
+  }
+
+  Future<void> _syncVoiceState() async {
+    final channelId = _activeVoiceChannelId;
+    if (channelId == null) return;
+    final voiceSettings = ref.read(voiceSettingsProvider);
+    await ref
+        .read(channelsProvider.notifier)
+        .updateVoiceState(
+          conversationId: widget.conversationId,
+          channelId: channelId,
+          isMuted: voiceSettings.selfMuted,
+          isDeafened: voiceSettings.selfDeafened,
+          pushToTalk: voiceSettings.pushToTalkEnabled,
+        );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final channelsState = ref.watch(channelsProvider);
+    final voiceRtc = ref.watch(voiceRtcProvider);
+    final voiceSettings = ref.watch(voiceSettingsProvider);
+    final authState = ref.watch(authProvider);
+    final myUserId = authState.userId ?? '';
+
+    final channels = channelsState.channelsFor(widget.conversationId);
+    final textChannels = channels.where((c) => c.isText).toList();
+    final voiceChannels = channels.where((c) => c.isVoice).toList();
+
+    final inferredActiveVoiceChannelId = channels
+        .where((c) => c.isVoice)
+        .firstWhere(
+          (c) => channelsState
+              .voiceSessionsFor(c.id)
+              .any((m) => m.userId == myUserId),
+          orElse: () => const GroupChannel(
+            id: '',
+            conversationId: '',
+            name: '',
+            kind: 'voice',
+            position: 0,
+            createdAt: '',
+          ),
+        )
+        .id;
+    // '' means user explicitly left -- don't infer from sessions
+    final effectiveActiveVoiceChannelId = _activeVoiceChannelId == ''
+        ? null
+        : _activeVoiceChannelId ??
+              (inferredActiveVoiceChannelId.isEmpty
+                  ? null
+                  : inferredActiveVoiceChannelId);
+
+    // Auto-select first text channel when channels load
+    if (_selectedTextChannelId == null && textChannels.isNotEmpty) {
+      _selectedTextChannelId = textChannels.first.id;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        widget.onTextChannelChanged(_selectedTextChannelId);
+      });
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildInlineGroupChannels(
+          channels,
+          textChannels,
+          voiceChannels,
+          channelsState,
+          voiceSettings,
+          effectiveActiveVoiceChannelId,
+        ),
+        if (effectiveActiveVoiceChannelId != null && !widget.hideVoiceDock)
+          _buildVoiceControlDock(
+            channels,
+            channelsState,
+            voiceSettings,
+            myUserId,
+            voiceRtc,
+            effectiveActiveVoiceChannelId,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildTextChannelChip(GroupChannel channel) {
+    final isSelected = _selectedTextChannelId == channel.id;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
+          setState(() {
+            _selectedTextChannelId = channel.id;
+          });
+          widget.onTextChannelChanged(channel.id);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? context.accent.withValues(alpha: 0.18)
+                  : context.surface,
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(
+                color: isSelected
+                    ? context.accent.withValues(alpha: 0.6)
+                    : context.border,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.tag, size: 13, color: context.textSecondary),
+                const SizedBox(width: 5),
+                Text(
+                  channel.name,
+                  style: TextStyle(
+                    color: isSelected ? context.accent : context.textPrimary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVoiceChannelChip(
+    GroupChannel channel,
+    int participantCount,
+    VoiceSettingsState voiceSettings,
+    String? effectiveActiveVoiceChannelId,
+  ) {
+    final isActive = effectiveActiveVoiceChannelId == channel.id;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () async {
+          final channelsNotifier = ref.read(channelsProvider.notifier);
+          final rtcNotifier = ref.read(voiceRtcProvider.notifier);
+          if (isActive) {
+            // Leave: always clean up local state, even if server returns 400
+            await channelsNotifier.leaveVoiceChannel(
+              widget.conversationId,
+              channel.id,
+            );
+            await rtcNotifier.leaveChannel();
+            if (mounted) {
+              setState(() => _activeVoiceChannelId = '');
+              widget.onVoiceChannelChanged(null);
+            }
+          } else {
+            // Join
+            final success = await channelsNotifier.joinVoiceChannel(
+              widget.conversationId,
+              channel.id,
+            );
+            if (success && mounted) {
+              await rtcNotifier.joinChannel(
+                conversationId: widget.conversationId,
+                channelId: channel.id,
+                startMuted:
+                    voiceSettings.selfMuted || voiceSettings.selfDeafened,
+              );
+              setState(() => _activeVoiceChannelId = channel.id);
+              widget.onVoiceChannelChanged(channel.id);
+            }
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: isActive
+                  ? context.accent.withValues(alpha: 0.18)
+                  : context.surface,
+              borderRadius: BorderRadius.circular(7),
+              border: Border.all(
+                color: isActive
+                    ? context.accent.withValues(alpha: 0.6)
+                    : context.border,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.headset_mic_outlined,
+                  size: 13,
+                  color: context.textSecondary,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  channel.name,
+                  style: TextStyle(
+                    color: isActive ? context.accent : context.textPrimary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (participantCount > 0) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    '($participantCount)',
+                    style: TextStyle(color: context.textMuted, fontSize: 10),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInlineGroupChannels(
+    List<GroupChannel> channels,
+    List<GroupChannel> textChannels,
+    List<GroupChannel> voiceChannels,
+    ChannelsState channelsState,
+    VoiceSettingsState voiceSettings,
+    String? effectiveActiveVoiceChannelId,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      decoration: BoxDecoration(
+        color: context.sidebarBg,
+        border: Border(bottom: BorderSide(color: context.border, width: 1)),
+      ),
+      child: channels.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                channelsState.isLoadingConversation(widget.conversationId)
+                    ? 'Loading channels...'
+                    : 'No channels yet',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+            )
+          : SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ...textChannels.map(
+                    (channel) => _buildTextChannelChip(channel),
+                  ),
+                  ...voiceChannels.map(
+                    (channel) => _buildVoiceChannelChip(
+                      channel,
+                      channelsState.voiceSessionsFor(channel.id).length,
+                      voiceSettings,
+                      effectiveActiveVoiceChannelId,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _buildVoiceControlDock(
+    List<GroupChannel> channels,
+    ChannelsState channelsState,
+    VoiceSettingsState voiceSettings,
+    String myUserId,
+    VoiceRtcState voiceRtc,
+    String? effectiveActiveVoiceChannelId,
+  ) {
+    final activeVoiceChannel = channels
+        .where((c) => c.id == effectiveActiveVoiceChannelId)
+        .firstOrNull;
+    if (activeVoiceChannel == null) {
+      return const SizedBox.shrink();
+    }
+
+    final participants = channelsState.voiceSessionsFor(activeVoiceChannel.id);
+    final iAmInChannel = participants.any((p) => p.userId == myUserId);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final expectedActive =
+          effectiveActiveVoiceChannelId ?? _activeVoiceChannelId;
+      if (expectedActive != activeVoiceChannel.id) return;
+
+      if (!iAmInChannel) {
+        await ref.read(voiceRtcProvider.notifier).leaveChannel();
+        if (mounted) {
+          setState(() {
+            _activeVoiceChannelId = null;
+          });
+          widget.onVoiceChannelChanged(null);
+        }
+      }
+    });
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+      decoration: BoxDecoration(
+        color: context.surface,
+        border: Border(bottom: BorderSide(color: context.border, width: 1)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.graphic_eq, size: 16, color: context.accent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Connected to ${activeVoiceChannel.name} '
+              '${voiceRtc.peerConnectionStates.length} peer(s)',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (voiceRtc.isJoining)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: context.accent,
+                ),
+              ),
+            ),
+          IconButton(
+            icon: Icon(
+              voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
+              size: 18,
+            ),
+            color: voiceSettings.selfMuted
+                ? EchoTheme.danger
+                : context.textSecondary,
+            tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
+            onPressed: () async {
+              final notifier = ref.read(voiceSettingsProvider.notifier);
+              final nextMuted = !voiceSettings.selfMuted;
+              await notifier.setSelfMuted(nextMuted);
+              ref
+                  .read(voiceRtcProvider.notifier)
+                  .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
+              await _syncVoiceState();
+            },
+          ),
+          IconButton(
+            icon: Icon(
+              voiceSettings.selfDeafened
+                  ? Icons.volume_off_outlined
+                  : Icons.volume_up_outlined,
+              size: 18,
+            ),
+            color: voiceSettings.selfDeafened
+                ? EchoTheme.danger
+                : context.textSecondary,
+            tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
+            onPressed: () async {
+              final notifier = ref.read(voiceSettingsProvider.notifier);
+              final nextDeafened = !voiceSettings.selfDeafened;
+              await notifier.setSelfDeafened(nextDeafened);
+              final lk = ref.read(voiceRtcProvider.notifier);
+              lk.setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
+              lk.setDeafened(nextDeafened);
+              await _syncVoiceState();
+            },
+          ),
+          TextButton(
+            onPressed: () async {
+              final notifier = ref.read(voiceSettingsProvider.notifier);
+              final next = !voiceSettings.pushToTalkEnabled;
+              await notifier.setPushToTalkEnabled(next);
+              ref
+                  .read(voiceRtcProvider.notifier)
+                  .setCaptureEnabled(
+                    !next &&
+                        !voiceSettings.selfMuted &&
+                        !voiceSettings.selfDeafened,
+                  );
+              await _syncVoiceState();
+            },
+            child: Text(
+              voiceSettings.pushToTalkEnabled
+                  ? 'PTT ${voiceSettings.pushToTalkKeyLabel}'
+                  : 'PTT Off',
+            ),
+          ),
+          if (participants.any((p) => p.userId == myUserId))
+            Icon(Icons.fiber_manual_record, size: 10, color: EchoTheme.online),
+        ],
+      ),
+    );
+  }
+}
