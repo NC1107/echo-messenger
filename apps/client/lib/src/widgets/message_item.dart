@@ -80,6 +80,15 @@ class MessageItem extends StatefulWidget {
 
 class _MessageItemState extends State<MessageItem> {
   bool _isHovered = false;
+  final List<TapGestureRecognizer> _linkRecognizers = [];
+
+  @override
+  void dispose() {
+    for (final r in _linkRecognizers) {
+      r.dispose();
+    }
+    super.dispose();
+  }
 
   String _resolveMediaUrl(String url) {
     if (url.startsWith('http')) return url; // external URLs (GIFs)
@@ -594,9 +603,26 @@ class _MessageItemState extends State<MessageItem> {
     return spans;
   }
 
+  TapGestureRecognizer _createLinkRecognizer(String url) {
+    final recognizer = TapGestureRecognizer()
+      ..onTap = () async {
+        final uri = Uri.tryParse(url);
+        if (uri != null && await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      };
+    _linkRecognizers.add(recognizer);
+    return recognizer;
+  }
+
   /// Build a RichText widget that renders URLs as tappable links and @mentions
   /// with accent color + bold weight.
   Widget _buildMessageText(String text, {required Color textColor}) {
+    // Dispose old recognizers on each rebuild
+    for (final r in _linkRecognizers) {
+      r.dispose();
+    }
+    _linkRecognizers.clear();
     final urlMatches = _urlRegex.allMatches(text).toList();
     final mentionMatches = _mentionRegex.allMatches(text).toList();
 
@@ -642,13 +668,7 @@ class _MessageItemState extends State<MessageItem> {
             decorationColor: context.accentHover,
             height: 1.47,
           ),
-          recognizer: TapGestureRecognizer()
-            ..onTap = () async {
-              final uri = Uri.tryParse(url);
-              if (uri != null && await canLaunchUrl(uri)) {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              }
-            },
+          recognizer: _createLinkRecognizer(url),
         ),
       );
 

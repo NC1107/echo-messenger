@@ -119,6 +119,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       _searchResults = const [];
       _highlightedMessageId = null;
       _searchDebounce?.cancel();
+      _clearPendingAttachment();
       _highlightTimer?.cancel();
       _loadHistory();
       _loadChannels();
@@ -343,7 +344,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         extension: _pendingAttachmentExt!,
         url: _pendingAttachmentUrl!,
       );
-      text = text.isEmpty ? marker : marker;
+      text = text.isEmpty ? marker : '$marker $text';
       _clearPendingAttachment();
     }
 
@@ -847,6 +848,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         );
       }
     });
+  }
+
+  bool _isNearBottom() {
+    if (!_scrollController.hasClients) return true;
+    final pos = _scrollController.position;
+    return pos.maxScrollExtent - pos.pixels < 150;
   }
 
   bool _withinTwoMinutes(String ts1, String ts2) {
@@ -1804,7 +1811,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         ? 'Editing message • $typingText'
         : (_isEditing ? 'Editing message...' : typingText);
 
-    // Listen for new messages to auto-scroll
+    // Listen for new messages to auto-scroll (only if near bottom)
     ref.listen<ChatState>(chatProvider, (prev, next) {
       int visibleCount(ChatState s) {
         if (!conv.isGroup) {
@@ -1821,7 +1828,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
       final prevCount = prev == null ? 0 : visibleCount(prev);
       final nextCount = visibleCount(next);
-      if (nextCount > prevCount) {
+      if (nextCount > prevCount && _isNearBottom()) {
         _scrollToBottom();
       }
     });

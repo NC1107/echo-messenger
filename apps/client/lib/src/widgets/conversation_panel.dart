@@ -119,7 +119,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   bool _isSearching = false;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
-  Timer? _pendingRefreshTimer;
+  final _keyboardListenerFocusNode = FocusNode();
+  // Timer removed -- HomeScreen handles pending contacts polling
 
   /// 0 = Chats, 1 = Contacts, 2 = Groups
   int _selectedTab = 0;
@@ -146,33 +147,29 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
   @override
   void dispose() {
-    _pendingRefreshTimer?.cancel();
     widget.externalSearchFocusNode?.removeListener(_onExternalSearchFocus);
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _keyboardListenerFocusNode.dispose();
     super.dispose();
   }
 
+  // Pending contacts refresh is handled by HomeScreen's timer -- no duplicate here.
   void _startPendingRefreshLoop() {
-    _refreshPendingRequests(force: true);
-    _pendingRefreshTimer?.cancel();
-    _pendingRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _refreshPendingRequests();
-    });
-  }
-
-  void _refreshPendingRequests({bool force = false}) {
+    // Just do the initial load
     final authState = ref.read(authProvider);
-    if (!authState.isLoggedIn) {
-      return;
+    if (authState.isLoggedIn) {
+      ref.read(contactsProvider.notifier).loadPending(force: true);
     }
-    ref.read(contactsProvider.notifier).loadPending(force: force);
   }
 
   void _onTabSelected(int index) {
     setState(() => _selectedTab = index);
     if (index <= 1) {
-      _refreshPendingRequests(force: true);
+      final authState = ref.read(authProvider);
+      if (authState.isLoggedIn) {
+        ref.read(contactsProvider.notifier).loadPending(force: true);
+      }
     }
   }
 
@@ -554,7 +551,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 ),
                 child: _isSearching
                     ? KeyboardListener(
-                        focusNode: FocusNode(),
+                        focusNode: _keyboardListenerFocusNode,
                         onKeyEvent: (event) {
                           if (event is KeyDownEvent &&
                               event.logicalKey == LogicalKeyboardKey.escape) {
