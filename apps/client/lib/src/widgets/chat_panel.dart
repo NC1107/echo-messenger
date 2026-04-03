@@ -839,9 +839,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        // List is reversed, so 0 is the bottom (newest messages)
         _scrollController.animateTo(
-          0,
+          _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
@@ -2652,6 +2651,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                   (HardwareKeyboard.instance.isControlPressed ||
                                       HardwareKeyboard.instance.isMetaPressed);
                               if (isPasteShortcut && !_isEditing) {
+                                // Try clipboard image paste (async, won't block text paste)
                                 _pasteImageFromClipboard();
                               }
                             }
@@ -2737,7 +2737,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           // Emoji picker panel
           if (_showEmojiPicker)
             Container(
-              height: 250,
+              height: 180,
               color: context.surface,
               child: EmojiPicker(
                 onEmojiSelected: (category, emoji) {
@@ -2757,7 +2757,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   );
                 },
                 config: Config(
-                  height: 250,
+                  height: 180,
                   checkPlatformCompatibility: true,
                   emojiViewConfig: EmojiViewConfig(
                     backgroundColor: context.surface,
