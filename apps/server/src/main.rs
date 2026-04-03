@@ -76,13 +76,34 @@ async fn main() {
                 }
             }
 
-            // Also clean up empty groups (zero members)
-            let _ = sqlx::query(
-                "DELETE FROM conversations WHERE kind = 'group' \
+            // Also clean up empty groups (zero members) -- delete dependents first
+            let empty_group_ids: Vec<(uuid::Uuid,)> = sqlx::query_as(
+                "SELECT id FROM conversations WHERE kind = 'group' \
                  AND id NOT IN (SELECT DISTINCT conversation_id FROM conversation_members)",
             )
-            .execute(&cleanup_pool)
-            .await;
+            .fetch_all(&cleanup_pool)
+            .await
+            .unwrap_or_default();
+            for (gid,) in &empty_group_ids {
+                let _ = sqlx::query("DELETE FROM voice_sessions WHERE channel_id IN (SELECT id FROM channels WHERE conversation_id = $1)")
+                    .bind(gid).execute(&cleanup_pool).await;
+                let _ = sqlx::query("DELETE FROM channels WHERE conversation_id = $1")
+                    .bind(gid)
+                    .execute(&cleanup_pool)
+                    .await;
+                let _ = sqlx::query("DELETE FROM messages WHERE conversation_id = $1")
+                    .bind(gid)
+                    .execute(&cleanup_pool)
+                    .await;
+                let _ = sqlx::query("DELETE FROM banned_members WHERE conversation_id = $1")
+                    .bind(gid)
+                    .execute(&cleanup_pool)
+                    .await;
+                let _ = sqlx::query("DELETE FROM conversations WHERE id = $1")
+                    .bind(gid)
+                    .execute(&cleanup_pool)
+                    .await;
+            }
         }
     });
 
