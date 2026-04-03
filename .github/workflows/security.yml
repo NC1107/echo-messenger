@@ -21,6 +21,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo install cargo-audit
+      # RUSTSEC-2023-0071 is a transitive rsa advisory via jsonwebtoken.
+      # No upstream patch is available yet; rationale is tracked in deny.toml.
       - run: cargo audit --ignore RUSTSEC-2023-0071
   deny:
     name: License + Ban Check

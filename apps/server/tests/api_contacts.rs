@@ -7,10 +7,7 @@ use serde_json::Value;
 
 #[tokio::test]
 async fn contact_request_accept_list_flow() {
-    let Some(base) = common::spawn_server().await else {
-        eprintln!("Skipping: no DATABASE_URL set");
-        return;
-    };
+    let base = common::spawn_server().await;
     let client = Client::new();
 
     let alice_name = common::unique_username("alice");
@@ -79,10 +76,7 @@ async fn contact_request_accept_list_flow() {
 
 #[tokio::test]
 async fn pending_requests_visible() {
-    let Some(base) = common::spawn_server().await else {
-        eprintln!("Skipping: no DATABASE_URL set");
-        return;
-    };
+    let base = common::spawn_server().await;
     let client = Client::new();
 
     let alice_name = common::unique_username("alice");

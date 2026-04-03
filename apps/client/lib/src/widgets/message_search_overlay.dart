@@ -37,10 +37,12 @@ class _MessageSearchOverlayState extends ConsumerState<MessageSearchOverlay> {
   String _searchQuery = '';
   List<ChatMessage> _searchResults = const [];
   Timer? _searchDebounce;
+  final _keyboardFocusNode = FocusNode();
 
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _keyboardFocusNode.dispose();
     super.dispose();
   }
 
@@ -130,7 +132,7 @@ class _MessageSearchOverlayState extends ConsumerState<MessageSearchOverlay> {
   @override
   Widget build(BuildContext context) {
     return KeyboardListener(
-      focusNode: FocusNode(),
+      focusNode: _keyboardFocusNode,
       onKeyEvent: (event) {
         if (event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.escape) {

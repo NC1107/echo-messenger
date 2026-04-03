@@ -10,6 +10,7 @@ import '../theme/echo_theme.dart';
 
 class ChannelBar extends ConsumerStatefulWidget {
   final String conversationId;
+  final String? selectedTextChannelId;
   final bool hideVoiceDock;
   final ValueChanged<String?> onTextChannelChanged;
   final ValueChanged<String?> onVoiceChannelChanged;
@@ -17,6 +18,7 @@ class ChannelBar extends ConsumerStatefulWidget {
   const ChannelBar({
     super.key,
     required this.conversationId,
+    this.selectedTextChannelId,
     this.hideVoiceDock = false,
     required this.onTextChannelChanged,
     required this.onVoiceChannelChanged,
@@ -27,9 +29,83 @@ class ChannelBar extends ConsumerStatefulWidget {
 }
 
 class _ChannelBarState extends ConsumerState<ChannelBar> {
-  String? _selectedTextChannelId;
   // null = use inferred from voice sessions, '' = explicitly left (don't infer)
   String? _activeVoiceChannelId;
+  String? _lastAutoSelectedConversationId;
+  bool _voiceCleanupInFlight = false;
+
+  String _inferredActiveVoiceChannelId(
+    ChannelsState channelsState,
+    String myUserId,
+  ) {
+    final channels = channelsState.channelsFor(widget.conversationId);
+    return channels
+        .where((c) => c.isVoice)
+        .firstWhere(
+          (c) => channelsState
+              .voiceSessionsFor(c.id)
+              .any((m) => m.userId == myUserId),
+          orElse: () => const GroupChannel(
+            id: '',
+            conversationId: '',
+            name: '',
+            kind: 'voice',
+            position: 0,
+            createdAt: '',
+          ),
+        )
+        .id;
+  }
+
+  String? _effectiveActiveVoiceChannelId(
+    ChannelsState channelsState,
+    String myUserId,
+  ) {
+    final inferredActiveVoiceChannelId = _inferredActiveVoiceChannelId(
+      channelsState,
+      myUserId,
+    );
+    if (_activeVoiceChannelId == '') return null;
+    return _activeVoiceChannelId ??
+        (inferredActiveVoiceChannelId.isEmpty
+            ? null
+            : inferredActiveVoiceChannelId);
+  }
+
+  void _syncDerivedState(ChannelsState channelsState, String myUserId) {
+    final channels = channelsState.channelsFor(widget.conversationId);
+    final textChannels = channels.where((c) => c.isText).toList();
+
+    if (widget.selectedTextChannelId == null &&
+        textChannels.isNotEmpty &&
+        _lastAutoSelectedConversationId != widget.conversationId) {
+      _lastAutoSelectedConversationId = widget.conversationId;
+      widget.onTextChannelChanged(textChannels.first.id);
+    }
+
+    final effectiveActiveVoiceChannelId = _effectiveActiveVoiceChannelId(
+      channelsState,
+      myUserId,
+    );
+    if (effectiveActiveVoiceChannelId == null || _voiceCleanupInFlight) return;
+
+    final iAmInChannel = channelsState
+        .voiceSessionsFor(effectiveActiveVoiceChannelId)
+        .any((p) => p.userId == myUserId);
+    if (iAmInChannel) return;
+
+    _voiceCleanupInFlight = true;
+    ref.read(voiceRtcProvider.notifier).leaveChannel().whenComplete(() {
+      _voiceCleanupInFlight = false;
+      if (!mounted) return;
+      if (_activeVoiceChannelId != null) {
+        setState(() {
+          _activeVoiceChannelId = null;
+        });
+      }
+      widget.onVoiceChannelChanged(null);
+    });
+  }
 
   @override
   void didUpdateWidget(covariant ChannelBar oldWidget) {
@@ -39,9 +115,9 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
         ref.read(voiceRtcProvider.notifier).leaveChannel();
       }
       setState(() {
-        _selectedTextChannelId = null;
         _activeVoiceChannelId = null;
       });
+      _lastAutoSelectedConversationId = null;
     }
   }
 
@@ -76,42 +152,17 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     final authState = ref.watch(authProvider);
     final myUserId = authState.userId ?? '';
 
+    ref.listen<ChannelsState>(channelsProvider, (previous, next) {
+      _syncDerivedState(next, myUserId);
+    });
+
     final channels = channelsState.channelsFor(widget.conversationId);
     final textChannels = channels.where((c) => c.isText).toList();
     final voiceChannels = channels.where((c) => c.isVoice).toList();
-
-    final inferredActiveVoiceChannelId = channels
-        .where((c) => c.isVoice)
-        .firstWhere(
-          (c) => channelsState
-              .voiceSessionsFor(c.id)
-              .any((m) => m.userId == myUserId),
-          orElse: () => const GroupChannel(
-            id: '',
-            conversationId: '',
-            name: '',
-            kind: 'voice',
-            position: 0,
-            createdAt: '',
-          ),
-        )
-        .id;
-    // '' means user explicitly left -- don't infer from sessions
-    final effectiveActiveVoiceChannelId = _activeVoiceChannelId == ''
-        ? null
-        : _activeVoiceChannelId ??
-              (inferredActiveVoiceChannelId.isEmpty
-                  ? null
-                  : inferredActiveVoiceChannelId);
-
-    // Auto-select first text channel when channels load
-    if (_selectedTextChannelId == null && textChannels.isNotEmpty) {
-      _selectedTextChannelId = textChannels.first.id;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        widget.onTextChannelChanged(_selectedTextChannelId);
-      });
-    }
+    final effectiveActiveVoiceChannelId = _effectiveActiveVoiceChannelId(
+      channelsState,
+      myUserId,
+    );
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -138,16 +189,13 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   }
 
   Widget _buildTextChannelChip(GroupChannel channel) {
-    final isSelected = _selectedTextChannelId == channel.id;
+    final isSelected = widget.selectedTextChannelId == channel.id;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () {
-          setState(() {
-            _selectedTextChannelId = channel.id;
-          });
           widget.onTextChannelChanged(channel.id);
         },
         child: Padding(
@@ -339,25 +387,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     if (activeVoiceChannel == null) {
       return const SizedBox.shrink();
     }
-
     final participants = channelsState.voiceSessionsFor(activeVoiceChannel.id);
-    final iAmInChannel = participants.any((p) => p.userId == myUserId);
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      final expectedActive =
-          effectiveActiveVoiceChannelId ?? _activeVoiceChannelId;
-      if (expectedActive != activeVoiceChannel.id) return;
-
-      if (!iAmInChannel) {
-        await ref.read(voiceRtcProvider.notifier).leaveChannel();
-        if (mounted) {
-          setState(() {
-            _activeVoiceChannelId = null;
-          });
-          widget.onVoiceChannelChanged(null);
-        }
-      }
-    });
 
     return Container(
       width: double.infinity,

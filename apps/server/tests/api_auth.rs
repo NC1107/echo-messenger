@@ -6,10 +6,7 @@ use reqwest::Client;
 
 #[tokio::test]
 async fn register_returns_201() {
-    let Some(base) = common::spawn_server().await else {
-        eprintln!("Skipping: no DATABASE_URL set");
-        return;
-    };
+    let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("reg201");
 
@@ -19,10 +16,7 @@ async fn register_returns_201() {
 
 #[tokio::test]
 async fn register_duplicate_returns_409() {
-    let Some(base) = common::spawn_server().await else {
-        eprintln!("Skipping: no DATABASE_URL set");
-        return;
-    };
+    let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("regdup");
 
@@ -35,10 +29,7 @@ async fn register_duplicate_returns_409() {
 
 #[tokio::test]
 async fn login_returns_tokens() {
-    let Some(base) = common::spawn_server().await else {
-        eprintln!("Skipping: no DATABASE_URL set");
-        return;
-    };
+    let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("logintok");
 
@@ -55,10 +46,7 @@ async fn login_returns_tokens() {
 
 #[tokio::test]
 async fn login_wrong_password_returns_401() {
-    let Some(base) = common::spawn_server().await else {
-        eprintln!("Skipping: no DATABASE_URL set");
-        return;
-    };
+    let base = common::spawn_server().await;
     let client = Client::new();
     let username = common::unique_username("loginbad");
 
@@ -70,10 +58,7 @@ async fn login_wrong_password_returns_401() {
 
 #[tokio::test]
 async fn protected_route_without_token_returns_401() {
-    let Some(base) = common::spawn_server().await else {
-        eprintln!("Skipping: no DATABASE_URL set");
-        return;
-    };
+    let base = common::spawn_server().await;
     let client = Client::new();
 
     let resp = client

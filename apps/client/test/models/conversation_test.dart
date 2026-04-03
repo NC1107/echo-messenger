@@ -104,6 +104,45 @@ void main() {
       final conv = Conversation.fromJson(json);
       expect(conv.id, 'conv-fallback');
     });
+
+    test('value equality compares members and metadata', () {
+      const first = Conversation(
+        id: 'conv-1',
+        name: 'Team',
+        isGroup: true,
+        members: [
+          ConversationMember(userId: 'user-1', username: 'alice'),
+          ConversationMember(userId: 'user-2', username: 'bob'),
+        ],
+      );
+      const second = Conversation(
+        id: 'conv-1',
+        name: 'Team',
+        isGroup: true,
+        members: [
+          ConversationMember(userId: 'user-1', username: 'alice'),
+          ConversationMember(userId: 'user-2', username: 'bob'),
+        ],
+      );
+
+      expect(first, equals(second));
+      expect(first.hashCode, equals(second.hashCode));
+    });
+
+    test('value equality differs when member list changes', () {
+      const first = Conversation(
+        id: 'conv-1',
+        isGroup: true,
+        members: [ConversationMember(userId: 'user-1', username: 'alice')],
+      );
+      const second = Conversation(
+        id: 'conv-1',
+        isGroup: true,
+        members: [ConversationMember(userId: 'user-2', username: 'bob')],
+      );
+
+      expect(first == second, isFalse);
+    });
   });
 
   group('ConversationMember', () {
@@ -114,6 +153,22 @@ void main() {
 
       expect(member.userId, 'user-1');
       expect(member.username, 'alice');
+    });
+
+    test('value equality uses user fields', () {
+      const first = ConversationMember(
+        userId: 'user-1',
+        username: 'alice',
+        role: 'member',
+      );
+      const second = ConversationMember(
+        userId: 'user-1',
+        username: 'alice',
+        role: 'member',
+      );
+
+      expect(first, equals(second));
+      expect(first.hashCode, equals(second.hashCode));
     });
   });
 }

@@ -1,7 +1,7 @@
 //! Shared test harness for integration tests.
 //!
 //! Spins up a real Echo server against a live PostgreSQL database.
-//! Tests skip gracefully when `DATABASE_URL` / `TEST_DATABASE_URL` is not set.
+//! Tests fail fast when `DATABASE_URL` / `TEST_DATABASE_URL` is not set.
 
 #![allow(dead_code)]
 
@@ -21,13 +21,10 @@ pub const TEST_JWT_SECRET: &str = "integration-test-secret";
 static MIGRATIONS: OnceCell<()> = OnceCell::const_new();
 
 /// Spawn a test server and return its base URL (e.g. `http://127.0.0.1:12345`).
-///
-/// Returns `None` if no database URL is available, causing the calling test to
-/// skip without failure.
-pub async fn spawn_server() -> Option<String> {
+pub async fn spawn_server() -> String {
     let database_url = std::env::var("TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
-        .ok()?;
+        .expect("TEST_DATABASE_URL or DATABASE_URL must be set for integration tests");
 
     let pool = db::create_pool(&database_url).await;
 
@@ -63,7 +60,7 @@ pub async fn spawn_server() -> Option<String> {
         .expect("Test server error");
     });
 
-    Some(format!("http://{addr}"))
+    format!("http://{addr}")
 }
 
 /// Register a new user and return the raw response.

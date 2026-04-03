@@ -99,6 +99,14 @@ async fn main() {
                     .bind(gid)
                     .execute(&cleanup_pool)
                     .await;
+                let _ = sqlx::query("DELETE FROM read_receipts WHERE conversation_id = $1")
+                    .bind(gid)
+                    .execute(&cleanup_pool)
+                    .await;
+                let _ = sqlx::query("DELETE FROM media WHERE conversation_id = $1")
+                    .bind(gid)
+                    .execute(&cleanup_pool)
+                    .await;
                 let _ = sqlx::query("DELETE FROM conversations WHERE id = $1")
                     .bind(gid)
                     .execute(&cleanup_pool)

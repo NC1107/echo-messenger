@@ -12,10 +12,7 @@ use tokio_tungstenite::tungstenite::Message;
 /// the expected server events.
 #[tokio::test]
 async fn alice_sends_bob_receives() {
-    let Some(base) = common::spawn_server().await else {
-        eprintln!("Skipping: no DATABASE_URL set");
-        return;
-    };
+    let base = common::spawn_server().await;
     let client = Client::new();
 
     // -- Register Alice and Bob -----------------------------------------------

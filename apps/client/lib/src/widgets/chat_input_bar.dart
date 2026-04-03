@@ -19,7 +19,6 @@ import '../providers/server_url_provider.dart';
 import '../providers/voice_rtc_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../providers/websocket_provider.dart';
-import '../services/sound_service.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/clipboard_image_helper.dart';
@@ -209,7 +208,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     if (_showEmojiPicker) setState(() => _showEmojiPicker = false);
 
     widget.onMessageSent();
-    SoundService().playMessageSent();
 
     try {
       if (conv.isGroup) {

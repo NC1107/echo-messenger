@@ -31,13 +31,9 @@ jobs:
       - name: Analyze
         working-directory: apps/client
         run: flutter analyze --fatal-infos
-      - name: Test
-        working-directory: apps/client
-        run: flutter test
-      - name: Run tests with coverage
+      - name: Test with coverage
         working-directory: apps/client
         run: flutter test --coverage
-        continue-on-error: true
       - name: Upload Flutter coverage
         uses: codecov/codecov-action@v4
         with:

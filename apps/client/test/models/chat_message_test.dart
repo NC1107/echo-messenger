@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:echo_app/src/models/chat_message.dart';
+import 'package:echo_app/src/models/reaction.dart';
 
 void main() {
   group('ChatMessage.fromServerJson', () {
@@ -189,6 +190,61 @@ void main() {
       expect(updated.content, 'hello');
       expect(updated.status, MessageStatus.sent);
       expect(updated.isMine, isTrue);
+    });
+
+    test('value equality compares content and reactions', () {
+      const reaction = Reaction(
+        messageId: 'msg-1',
+        userId: 'user-2',
+        username: 'bob',
+        emoji: '👍',
+      );
+      const first = ChatMessage(
+        id: 'msg-1',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'hello',
+        timestamp: '2026-03-31T12:00:00Z',
+        isMine: true,
+        reactions: [reaction],
+      );
+      const second = ChatMessage(
+        id: 'msg-1',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'hello',
+        timestamp: '2026-03-31T12:00:00Z',
+        isMine: true,
+        reactions: [reaction],
+      );
+
+      expect(first, equals(second));
+      expect(first.hashCode, equals(second.hashCode));
+    });
+
+    test('value equality differs when key field changes', () {
+      const first = ChatMessage(
+        id: 'msg-1',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'hello',
+        timestamp: '2026-03-31T12:00:00Z',
+        isMine: true,
+      );
+      const second = ChatMessage(
+        id: 'msg-2',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'hello',
+        timestamp: '2026-03-31T12:00:00Z',
+        isMine: true,
+      );
+
+      expect(first == second, isFalse);
     });
   });
 }

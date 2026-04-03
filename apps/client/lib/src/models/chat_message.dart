@@ -2,6 +2,15 @@ import 'reaction.dart';
 
 enum MessageStatus { sending, sent, delivered, read, failed }
 
+bool _listEquals<T>(List<T> a, List<T> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
 class ChatMessage {
   final String id;
   final String fromUserId;
@@ -115,4 +124,44 @@ class ChatMessage {
       replyToUsername: replyToUsername ?? this.replyToUsername,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is ChatMessage &&
+            id == other.id &&
+            fromUserId == other.fromUserId &&
+            fromUsername == other.fromUsername &&
+            conversationId == other.conversationId &&
+            channelId == other.channelId &&
+            content == other.content &&
+            timestamp == other.timestamp &&
+            isMine == other.isMine &&
+            status == other.status &&
+            _listEquals(reactions, other.reactions) &&
+            editedAt == other.editedAt &&
+            isEncrypted == other.isEncrypted &&
+            replyToId == other.replyToId &&
+            replyToContent == other.replyToContent &&
+            replyToUsername == other.replyToUsername;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    fromUserId,
+    fromUsername,
+    conversationId,
+    channelId,
+    content,
+    timestamp,
+    isMine,
+    status,
+    Object.hashAll(reactions),
+    editedAt,
+    isEncrypted,
+    replyToId,
+    replyToContent,
+    replyToUsername,
+  );
 }

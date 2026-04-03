@@ -111,6 +111,50 @@ class Conversation {
       members: members ?? this.members,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is Conversation &&
+            id == other.id &&
+            name == other.name &&
+            description == other.description &&
+            isGroup == other.isGroup &&
+            isEncrypted == other.isEncrypted &&
+            lastMessage == other.lastMessage &&
+            lastMessageTimestamp == other.lastMessageTimestamp &&
+            lastMessageSender == other.lastMessageSender &&
+            unreadCount == other.unreadCount &&
+            isMuted == other.isMuted &&
+            _membersEqual(members, other.members);
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    name,
+    description,
+    isGroup,
+    isEncrypted,
+    lastMessage,
+    lastMessageTimestamp,
+    lastMessageSender,
+    unreadCount,
+    isMuted,
+    Object.hashAll(members),
+  );
+}
+
+bool _membersEqual(
+  List<ConversationMember> first,
+  List<ConversationMember> second,
+) {
+  if (identical(first, second)) return true;
+  if (first.length != second.length) return false;
+  for (var i = 0; i < first.length; i++) {
+    if (first[i] != second[i]) return false;
+  }
+  return true;
 }
 
 class ConversationMember {
@@ -134,4 +178,17 @@ class ConversationMember {
       avatarUrl: json['avatar_url'] as String?,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is ConversationMember &&
+            userId == other.userId &&
+            username == other.username &&
+            role == other.role &&
+            avatarUrl == other.avatarUrl;
+  }
+
+  @override
+  int get hashCode => Object.hash(userId, username, role, avatarUrl);
 }

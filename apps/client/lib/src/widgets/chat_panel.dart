@@ -17,7 +17,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/voice_rtc_provider.dart';
 import '../providers/websocket_provider.dart';
-import '../services/sound_service.dart';
+import '../screens/user_profile_screen.dart';
 import '../theme/echo_theme.dart';
 import 'channel_bar.dart';
 import 'chat_header_bar.dart';
@@ -192,6 +192,16 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     if (!privacy.readReceiptsEnabled) return;
     ref.read(conversationsProvider.notifier).sendReadReceipt(conv.id);
     ref.read(websocketProvider.notifier).sendReadReceipt(conv.id);
+  }
+
+  void _onTextChannelChanged(String? channelId) {
+    if (_selectedTextChannelId == channelId) return;
+    setState(() {
+      _selectedTextChannelId = channelId;
+      _loadedHistoryKey = null;
+    });
+    _loadHistory();
+    _markAsRead();
   }
 
   // ---------------------------------------------------------------------------
@@ -574,13 +584,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       });
     }
 
-    // Keep selected conversation in sync
-    if (widget.conversation != null) {
-      final convs = ref.watch(conversationsProvider).conversations;
-      // Keep in sync -- don't clear if temporarily absent during reload
-      convs.where((c) => c.id == widget.conversation!.id).firstOrNull;
-    }
-
     final chatState = ref.watch(chatProvider);
     final wsState = ref.watch(websocketProvider);
     final authState = ref.watch(authProvider);
@@ -668,15 +671,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           if (conv.isGroup)
             ChannelBar(
               conversationId: conv.id,
+              selectedTextChannelId: _selectedTextChannelId,
               hideVoiceDock: widget.hideVoiceDock,
-              onTextChannelChanged: (channelId) {
-                setState(() {
-                  _selectedTextChannelId = channelId;
-                  _loadedHistoryKey = null;
-                });
-                _loadHistory();
-                _markAsRead();
-              },
+              onTextChannelChanged: _onTextChannelChanged,
               onVoiceChannelChanged: (channelId) {
                 setState(() => _activeVoiceChannelId = channelId);
               },
@@ -819,8 +816,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                 // TODO: implement reply forwarding to input bar
                               },
                               onAvatarTap: (userId) {
-                                // Import would be needed for UserProfileScreen
-                                // UserProfileScreen.show(context, ref, userId);
+                                UserProfileScreen.show(context, ref, userId);
                               },
                             ),
                           ),
@@ -840,7 +836,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             onMessageSent: () {
               _scrollToBottom();
               _markAsRead();
-              SoundService().playMessageSent();
             },
           ),
 
