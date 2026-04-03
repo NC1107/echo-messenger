@@ -1227,70 +1227,46 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     if (conv == null) return;
     final myUserId = ref.read(authProvider).userId ?? '';
 
-    final overlay = Overlay.of(context);
-    final renderBox = context.findRenderObject() as RenderBox?;
-    // Position popup near the center-top of the chat area
-    final size = renderBox?.size ?? Size.zero;
-    final offset = renderBox?.localToGlobal(Offset.zero) ?? Offset.zero;
-    final centerX = offset.dx + size.width / 2 - 160;
-    final centerY = offset.dy + size.height / 2 - 40;
-
-    late OverlayEntry entry;
-    entry = OverlayEntry(
-      builder: (ctx) => Stack(
-        children: [
-          // Dismiss on tap outside
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: () => entry.remove(),
-              behavior: HitTestBehavior.opaque,
-              child: const SizedBox.expand(),
-            ),
-          ),
-          Positioned(
-            left: centerX.clamp(8.0, size.width - 330),
-            top: centerY.clamp(8.0, double.infinity),
-            child: Material(
-              elevation: 8,
-              borderRadius: BorderRadius.circular(12),
-              color: context.surface,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: reactionEmojis.map((emoji) {
-                    final alreadyReacted = message.reactions.any(
-                      (r) => r.emoji == emoji && r.userId == myUserId,
-                    );
-                    return GestureDetector(
-                      onTap: () {
-                        entry.remove();
-                        _toggleReaction(message, emoji, alreadyReacted);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: alreadyReacted
-                              ? context.accent.withValues(alpha: 0.2)
-                              : null,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          emoji,
-                          style: const TextStyle(fontSize: 24),
-                        ),
-                      ),
-                    );
-                  }).toList(),
+    showDialog<String>(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: context.surface,
+        contentPadding: const EdgeInsets.all(12),
+        content: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: reactionEmojis.map((emoji) {
+            final alreadyReacted = message.reactions.any(
+              (r) => r.emoji == emoji && r.userId == myUserId,
+            );
+            return GestureDetector(
+              onTap: () {
+                Navigator.pop(dialogCtx, emoji);
+              },
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: alreadyReacted
+                      ? context.accent.withValues(alpha: 0.2)
+                      : null,
+                  borderRadius: BorderRadius.circular(8),
                 ),
+                child: Text(emoji, style: const TextStyle(fontSize: 24)),
               ),
-            ),
-          ),
-        ],
+            );
+          }).toList(),
+        ),
       ),
-    );
-    overlay.insert(entry);
+    ).then((emoji) {
+      if (emoji != null) {
+        final alreadyReacted = message.reactions.any(
+          (r) => r.emoji == emoji && r.userId == myUserId,
+        );
+        _toggleReaction(message, emoji, alreadyReacted);
+      }
+      _inputFocusNode.requestFocus();
+    });
   }
 
   Widget _buildTextChannelChip(GroupChannel channel) {
@@ -2624,8 +2600,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                   });
                                 } else if (_showEmojiPicker) {
                                   setState(() => _showEmojiPicker = false);
+                                  _inputFocusNode.requestFocus();
                                 } else if (_showGifPicker) {
                                   setState(() => _showGifPicker = false);
+                                  _inputFocusNode.requestFocus();
                                 } else if (_pendingAttachmentBytes != null ||
                                     _pendingAttachmentUrl != null) {
                                   _clearPendingAttachment();

@@ -522,12 +522,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     // Keep the selected conversation in sync with provider state so that
     // changes (e.g. encryption toggle) propagate to ChatPanel immediately.
+    // IMPORTANT: Do NOT clear _selectedConversation when fresh is null --
+    // the conversation may be temporarily absent during a list reload.
     if (_selectedConversation != null) {
       final convs = ref.watch(conversationsProvider).conversations;
       final fresh = convs
           .where((c) => c.id == _selectedConversation!.id)
           .firstOrNull;
-      if (fresh != null) {
+      if (fresh != null && fresh != _selectedConversation) {
         _selectedConversation = fresh;
       }
     }

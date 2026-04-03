@@ -689,9 +689,7 @@ class _MessageItemState extends State<MessageItem> {
 
     // The bubble widget
     final bubble = Container(
-      constraints: BoxConstraints(
-        maxWidth: MediaQuery.of(context).size.width * 0.65,
-      ),
+      constraints: const BoxConstraints(maxWidth: 520),
       padding: mediaWidget != null
           ? const EdgeInsets.all(4)
           : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

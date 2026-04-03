@@ -1290,6 +1290,16 @@ class _ConversationItemState extends State<_ConversationItem> {
             snippet.startsWith('[Encrypted'))) {
       snippet = '\u{1F512} Encrypted message';
     }
+    // Show friendly labels for media markers
+    if (snippet != null) {
+      if (RegExp(r'^\[img:.+\]$').hasMatch(snippet)) {
+        snippet = '\u{1F5BC} Image';
+      } else if (RegExp(r'^\[video:.+\]$').hasMatch(snippet)) {
+        snippet = '\u{1F3AC} Video';
+      } else if (RegExp(r'^\[file:.+\]$').hasMatch(snippet)) {
+        snippet = '\u{1F4CE} File';
+      }
+    }
     if (snippet != null && conv.isGroup && conv.lastMessageSender != null) {
       snippet = '${conv.lastMessageSender}: $snippet';
     }
