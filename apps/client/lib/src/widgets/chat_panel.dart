@@ -86,6 +86,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   Timer? _searchDebounce;
   Timer? _highlightTimer;
 
+  // Pending attachment (Discord-style preview before send)
+  Uint8List? _pendingAttachmentBytes;
+  String? _pendingAttachmentFileName;
+  String? _pendingAttachmentMimeType;
+  String? _pendingAttachmentExt;
+  String? _pendingAttachmentUrl;
+  bool _isUploadingAttachment = false;
+
   @override
   void initState() {
     super.initState();
@@ -326,7 +334,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   }
 
   Future<void> _sendMessage() async {
-    final text = _messageController.text.trim();
+    var text = _messageController.text.trim();
+
+    // Prepend pending attachment marker if upload is ready
+    if (_pendingAttachmentUrl != null && _pendingAttachmentExt != null) {
+      final marker = _buildMediaMarker(
+        extension: _pendingAttachmentExt!,
+        url: _pendingAttachmentUrl!,
+      );
+      text = text.isEmpty ? marker : marker;
+      _clearPendingAttachment();
+    }
+
     if (text.isEmpty) return;
 
     final conv = widget.conversation;
@@ -649,103 +668,122 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     }
   }
 
-  Future<void> _uploadAndSendMedia({
+  // ---------------------------------------------------------------------------
+  // Pending attachment helpers (Discord-style preview before send)
+  // ---------------------------------------------------------------------------
+
+  void _setPendingAttachment({
     required List<int> bytes,
     required String fileName,
     required String mimeType,
-    required String extension,
-  }) async {
+    required String ext,
+  }) {
+    setState(() {
+      _pendingAttachmentBytes = Uint8List.fromList(bytes);
+      _pendingAttachmentFileName = fileName;
+      _pendingAttachmentMimeType = mimeType;
+      _pendingAttachmentExt = ext;
+      _pendingAttachmentUrl = null;
+      _isUploadingAttachment = false;
+    });
+    _startAttachmentUpload();
+  }
+
+  void _clearPendingAttachment() {
+    setState(() {
+      _pendingAttachmentBytes = null;
+      _pendingAttachmentFileName = null;
+      _pendingAttachmentMimeType = null;
+      _pendingAttachmentExt = null;
+      _pendingAttachmentUrl = null;
+      _isUploadingAttachment = false;
+    });
+  }
+
+  Future<void> _startAttachmentUpload() async {
+    final bytes = _pendingAttachmentBytes;
+    final fileName = _pendingAttachmentFileName;
+    final mimeType = _pendingAttachmentMimeType;
+    if (bytes == null || fileName == null || mimeType == null) return;
+
+    setState(() => _isUploadingAttachment = true);
+
     final serverUrl = ref.read(serverUrlProvider);
     final token = ref.read(authProvider).token;
-    if (token == null) return;
-
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.parse('$serverUrl/api/media/upload'),
-    );
-    request.headers['Authorization'] = 'Bearer $token';
-
-    final conversationId = widget.conversation?.id;
-    if (conversationId != null) {
-      request.fields['conversation_id'] = conversationId;
+    if (token == null) {
+      _clearPendingAttachment();
+      return;
     }
 
-    final parts = mimeType.split('/');
-    final mediaType = parts.length == 2
-        ? MediaType(parts[0], parts[1])
-        : MediaType('application', 'octet-stream');
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$serverUrl/api/media/upload'),
+      );
+      request.headers['Authorization'] = 'Bearer $token';
 
-    request.files.add(
-      http.MultipartFile.fromBytes(
-        'file',
-        bytes,
-        filename: fileName,
-        contentType: mediaType,
-      ),
-    );
+      final conversationId = widget.conversation?.id;
+      if (conversationId != null) {
+        request.fields['conversation_id'] = conversationId;
+      }
 
-    final response = await request.send();
-    final body = await response.stream.bytesToString();
+      final parts = mimeType.split('/');
+      final mediaType = parts.length == 2
+          ? MediaType(parts[0], parts[1])
+          : MediaType('application', 'octet-stream');
 
-    if (!mounted) return;
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: fileName,
+          contentType: mediaType,
+        ),
+      );
 
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      final data = jsonDecode(body);
-      final mediaUrl = data['url'] as String?;
-      if (mediaUrl != null) {
-        _messageController.text = _buildMediaMarker(
-          extension: extension,
-          url: mediaUrl,
-        );
-        _sendMessage();
+      final response = await request.send();
+      final body = await response.stream.bytesToString();
+      if (!mounted) return;
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(body);
+        final mediaUrl = data['url'] as String?;
+        if (mediaUrl != null) {
+          setState(() {
+            _pendingAttachmentUrl = mediaUrl;
+            _isUploadingAttachment = false;
+          });
+        } else {
+          ToastService.show(context, 'Upload failed', type: ToastType.error);
+          _clearPendingAttachment();
+        }
       } else {
         ToastService.show(
           context,
-          'Upload succeeded but no URL returned',
+          'Upload failed (${response.statusCode})',
           type: ToastType.error,
         );
+        _clearPendingAttachment();
       }
-    } else {
-      ToastService.show(
-        context,
-        'Upload failed (${response.statusCode})',
-        type: ToastType.error,
-      );
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, 'Upload failed: $e', type: ToastType.error);
+      _clearPendingAttachment();
     }
   }
 
   Future<void> _pasteImageFromClipboard() async {
-    final conv = widget.conversation;
-    if (conv == null) return;
-
+    if (widget.conversation == null) return;
     final image = await readImageFromClipboard();
-    if (image == null) {
-      return;
-    }
-
+    if (image == null) return;
     if (!mounted) return;
-    ToastService.show(
-      context,
-      'Uploading pasted image...',
-      type: ToastType.info,
-    );
 
-    try {
-      final ext = _extensionFromMime(image.mimeType);
-      await _uploadAndSendMedia(
-        bytes: image.bytes,
-        fileName: image.fileName,
-        mimeType: image.mimeType,
-        extension: ext,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ToastService.show(
-        context,
-        'Clipboard upload failed: $e',
-        type: ToastType.error,
-      );
-    }
+    _setPendingAttachment(
+      bytes: image.bytes,
+      fileName: image.fileName,
+      mimeType: image.mimeType,
+      ext: _extensionFromMime(image.mimeType),
+    );
   }
 
   Future<void> _pickFile() async {
@@ -772,7 +810,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         return;
       }
 
-      // Determine MIME type from file extension
       final ext = (file.extension ?? '').toLowerCase();
       final mimeTypes = <String, List<String>>{
         'jpg': ['image', 'jpeg'],
@@ -785,19 +822,15 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       };
       final mime = mimeTypes[ext] ?? ['application', 'octet-stream'];
 
-      await _uploadAndSendMedia(
+      _setPendingAttachment(
         bytes: file.bytes!,
         fileName: file.name,
         mimeType: '${mime[0]}/${mime[1]}',
-        extension: ext,
+        ext: ext,
       );
     } catch (e) {
       if (!mounted) return;
-      ToastService.show(
-        context,
-        'File upload error: $e',
-        type: ToastType.error,
-      );
+      ToastService.show(context, 'File pick error: $e', type: ToastType.error);
     } finally {
       _isPickingFile = false;
     }
@@ -2353,6 +2386,112 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                       ],
                     ),
                   ),
+                // Attachment preview bar (Discord-style)
+                if (_pendingAttachmentBytes != null ||
+                    _pendingAttachmentUrl != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: context.surface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: context.border, width: 1),
+                    ),
+                    child: Row(
+                      children: [
+                        // Thumbnail
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: _pendingAttachmentBytes != null
+                              ? Image.memory(
+                                  _pendingAttachmentBytes!,
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, e, st) => Container(
+                                    width: 48,
+                                    height: 48,
+                                    color: context.mainBg,
+                                    child: Icon(
+                                      Icons.insert_drive_file_outlined,
+                                      color: context.textMuted,
+                                      size: 24,
+                                    ),
+                                  ),
+                                )
+                              : Container(
+                                  width: 48,
+                                  height: 48,
+                                  color: context.mainBg,
+                                  child: Icon(
+                                    Icons.gif_box_outlined,
+                                    color: context.accent,
+                                    size: 24,
+                                  ),
+                                ),
+                        ),
+                        const SizedBox(width: 10),
+                        // Filename + status
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _pendingAttachmentFileName ?? 'Attachment',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: context.textPrimary,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _isUploadingAttachment
+                                    ? 'Uploading...'
+                                    : _pendingAttachmentUrl != null
+                                    ? 'Ready to send'
+                                    : 'Preparing...',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _pendingAttachmentUrl != null
+                                      ? EchoTheme.online
+                                      : context.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Upload spinner or ready icon
+                        if (_isUploadingAttachment)
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: context.accent,
+                            ),
+                          )
+                        else if (_pendingAttachmentUrl != null)
+                          Icon(
+                            Icons.check_circle_outline,
+                            size: 16,
+                            color: EchoTheme.online,
+                          ),
+                        const SizedBox(width: 6),
+                        // Remove button
+                        GestureDetector(
+                          onTap: _clearPendingAttachment,
+                          child: Icon(
+                            Icons.close,
+                            size: 16,
+                            color: context.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 Container(
                   height: 44,
                   decoration: BoxDecoration(
@@ -2488,6 +2627,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                   setState(() => _showEmojiPicker = false);
                                 } else if (_showGifPicker) {
                                   setState(() => _showGifPicker = false);
+                                } else if (_pendingAttachmentBytes != null ||
+                                    _pendingAttachmentUrl != null) {
+                                  _clearPendingAttachment();
                                 } else if (_isEditing) {
                                   _cancelEditMode();
                                 }
@@ -2548,35 +2690,43 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                         ),
                       ),
                       // Send / confirm edit button (keeps stable footprint)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 7),
-                        child: GestureDetector(
-                          onTap: _isTextEmpty
-                              ? null
-                              : (_isEditing ? _submitEdit : _sendMessage),
-                          child: Opacity(
-                            opacity: _isTextEmpty ? 0.45 : 1,
-                            child: Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                color: _isTextEmpty
-                                    ? context.textMuted
-                                    : (_isEditing
-                                          ? EchoTheme.online
-                                          : context.accent),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                _isEditing
-                                    ? Icons.check_rounded
-                                    : Icons.arrow_upward_rounded,
-                                size: 18,
-                                color: Colors.white,
+                      Builder(
+                        builder: (context) {
+                          final canSend =
+                              !_isTextEmpty ||
+                              (_pendingAttachmentUrl != null &&
+                                  !_isUploadingAttachment);
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 7),
+                            child: GestureDetector(
+                              onTap: canSend
+                                  ? (_isEditing ? _submitEdit : _sendMessage)
+                                  : null,
+                              child: Opacity(
+                                opacity: canSend ? 1 : 0.45,
+                                child: Container(
+                                  width: 30,
+                                  height: 30,
+                                  decoration: BoxDecoration(
+                                    color: !canSend
+                                        ? context.textMuted
+                                        : (_isEditing
+                                              ? EchoTheme.online
+                                              : context.accent),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    _isEditing
+                                        ? Icons.check_rounded
+                                        : Icons.arrow_upward_rounded,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -2640,9 +2790,16 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             GifPickerWidget(
               onClose: () => setState(() => _showGifPicker = false),
               onGifSelected: (gifUrl, slug) {
-                setState(() => _showGifPicker = false);
-                _messageController.text = '[img:$gifUrl]';
-                _sendMessage();
+                setState(() {
+                  _showGifPicker = false;
+                  // GIF is external URL -- no upload needed, set directly
+                  _pendingAttachmentUrl = gifUrl;
+                  _pendingAttachmentExt = 'gif';
+                  _pendingAttachmentFileName = 'gif';
+                  _pendingAttachmentMimeType = 'image/gif';
+                  _pendingAttachmentBytes = null; // no local bytes for GIFs
+                  _isUploadingAttachment = false;
+                });
               },
             ),
           // Hidden RTCVideoView widgets to enable audio playback
