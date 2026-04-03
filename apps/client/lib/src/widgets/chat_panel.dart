@@ -1329,29 +1329,31 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         onTap: () async {
           final channelsNotifier = ref.read(channelsProvider.notifier);
           final rtcNotifier = ref.read(voiceRtcProvider.notifier);
-          final success = isActive
-              ? await channelsNotifier.leaveVoiceChannel(
-                  conversationId,
-                  channel.id,
-                )
-              : await channelsNotifier.joinVoiceChannel(
-                  conversationId,
-                  channel.id,
-                );
-          if (success && mounted) {
-            if (isActive) {
-              await rtcNotifier.leaveChannel();
-            } else {
+          if (isActive) {
+            // Leave: always clean up local state, even if server returns 400
+            await channelsNotifier.leaveVoiceChannel(
+              conversationId,
+              channel.id,
+            );
+            await rtcNotifier.leaveChannel();
+            if (mounted) {
+              setState(() => _activeVoiceChannelId = '');
+            }
+          } else {
+            // Join
+            final success = await channelsNotifier.joinVoiceChannel(
+              conversationId,
+              channel.id,
+            );
+            if (success && mounted) {
               await rtcNotifier.joinChannel(
                 conversationId: conversationId,
                 channelId: channel.id,
                 startMuted:
                     voiceSettings.selfMuted || voiceSettings.selfDeafened,
               );
+              setState(() => _activeVoiceChannelId = channel.id);
             }
-            setState(() {
-              _activeVoiceChannelId = isActive ? '' : channel.id;
-            });
           }
         },
         child: Padding(
@@ -2489,6 +2491,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                 } else if (_isEditing) {
                                   _cancelEditMode();
                                 }
+                              }
+
+                              // Enter sends message, Shift+Enter for newline
+                              if (event.logicalKey ==
+                                      LogicalKeyboardKey.enter &&
+                                  !HardwareKeyboard.instance.isShiftPressed) {
+                                if (_isEditing) {
+                                  _submitEdit();
+                                } else {
+                                  _sendMessage();
+                                }
+                                return KeyEventResult.handled;
                               }
 
                               final isPasteShortcut =

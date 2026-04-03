@@ -107,9 +107,8 @@ class VoiceDock extends ConsumerWidget {
               final notifier = ref.read(voiceSettingsProvider.notifier);
               final nextDeafened = !voiceSettings.selfDeafened;
               await notifier.setSelfDeafened(nextDeafened);
-              final lk = ref.read(voiceRtcProvider.notifier);
-              lk.setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
-              lk.setDeafened(nextDeafened);
+              // setDeafened controls remote audio playback, not mic
+              ref.read(voiceRtcProvider.notifier).setDeafened(nextDeafened);
             },
           ),
           // Hangup
