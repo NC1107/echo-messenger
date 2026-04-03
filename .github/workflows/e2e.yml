@@ -66,11 +66,14 @@ jobs:
           SERVER_PORT: 8080
           CORS_ORIGINS: http://localhost:8081
 
+      - name: Install serve
+        run: npm install -g serve
+
       - name: Serve web client
         run: |
-          npx serve -s apps/client/build/web -l 8081 &
-          sleep 2
-          curl --retry 5 --retry-delay 1 --retry-connrefused -s http://localhost:8081/ > /dev/null
+          serve -s apps/client/build/web -l 8081 &
+          sleep 3
+          curl --retry 10 --retry-delay 2 --retry-connrefused -sf http://localhost:8081/ > /dev/null
 
       # -- Playwright --
       - name: Install Playwright browsers
