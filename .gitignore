@@ -90,6 +90,7 @@ package-lock.json
 # Playwright & test artifacts
 tests/e2e/test-results/
 tests/e2e/*.spec.ts
+!tests/e2e/local_full.spec.ts
 test-results/
 
 # Uploaded media files

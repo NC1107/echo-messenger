@@ -84,7 +84,7 @@ jobs:
 
       - name: Run E2E tests
         working-directory: tests/e2e
-        run: npx playwright test local_full.spec.ts
+        run: npx playwright test ./local_full.spec.ts
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
           JWT_SECRET: ci-e2e-secret-do-not-use-in-production
