@@ -33,6 +33,13 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   String? _activeVoiceChannelId;
   String? _lastAutoSelectedConversationId;
   bool _voiceCleanupInFlight = false;
+  late final VoiceRtcNotifier _voiceRtcNotifier;
+
+  @override
+  void initState() {
+    super.initState();
+    _voiceRtcNotifier = ref.read(voiceRtcProvider.notifier);
+  }
 
   String _inferredActiveVoiceChannelId(
     ChannelsState channelsState,
@@ -95,7 +102,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     if (iAmInChannel) return;
 
     _voiceCleanupInFlight = true;
-    ref.read(voiceRtcProvider.notifier).leaveChannel().whenComplete(() {
+    _voiceRtcNotifier.leaveChannel().whenComplete(() {
       _voiceCleanupInFlight = false;
       if (!mounted) return;
       if (_activeVoiceChannelId != null) {
@@ -112,7 +119,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     super.didUpdateWidget(oldWidget);
     if (widget.conversationId != oldWidget.conversationId) {
       if (_activeVoiceChannelId != null) {
-        ref.read(voiceRtcProvider.notifier).leaveChannel();
+        _voiceRtcNotifier.leaveChannel();
       }
       setState(() {
         _activeVoiceChannelId = null;
@@ -124,7 +131,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   @override
   void dispose() {
     if (_activeVoiceChannelId != null) {
-      ref.read(voiceRtcProvider.notifier).leaveChannel();
+      _voiceRtcNotifier.leaveChannel();
     }
     super.dispose();
   }

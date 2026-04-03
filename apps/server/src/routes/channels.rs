@@ -425,7 +425,7 @@ pub async fn leave_voice_channel(
         .map_err(|_| AppError::internal("Failed to leave voice channel"))?;
 
     if !removed {
-        return Err(AppError::bad_request("You are not in this voice channel"));
+        return Ok(Json(serde_json::json!({ "status": "already_left" })));
     }
 
     broadcast_to_group(

@@ -191,11 +191,21 @@ class ChannelsNotifier extends StateNotifier<ChannelsState> {
           headers: _headersWithToken(token),
         ),
       );
-      if (response.statusCode != 200) {
-        return false;
+      if (response.statusCode == 200) {
+        await loadVoiceSessions(conversationId, channelId);
+        return true;
       }
-      await loadVoiceSessions(conversationId, channelId);
-      return true;
+
+      if (response.statusCode == 400) {
+        final bodyLower = response.body.toLowerCase();
+        if (bodyLower.contains('no voice session found') ||
+            bodyLower.contains('you are not in this voice channel')) {
+          await loadVoiceSessions(conversationId, channelId);
+          return true;
+        }
+      }
+
+      return false;
     } catch (e) {
       debugPrint('[Channels] leaveVoiceChannel failed for $channelId: $e');
       return false;

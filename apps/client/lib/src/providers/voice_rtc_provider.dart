@@ -10,6 +10,7 @@ import '../services/sound_service.dart';
 import 'auth_provider.dart';
 import 'channels_provider.dart';
 import 'server_url_provider.dart';
+import 'voice_settings_provider.dart';
 import 'websocket_provider.dart';
 
 class VoiceRtcState {
@@ -100,6 +101,10 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     required String channelId,
     bool startMuted = false,
   }) async {
+    if (_disposed) {
+      return;
+    }
+
     if (_isCurrentVoiceContext(conversationId, channelId)) {
       await syncParticipants(
         conversationId: conversationId,
@@ -237,6 +242,10 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     required String channelId,
     required List<String> participantUserIds,
   }) async {
+    if (_disposed) {
+      return;
+    }
+
     if (!_isCurrentVoiceContext(conversationId, channelId)) {
       return;
     }
@@ -435,6 +444,10 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   }
 
   Future<void> _onVoiceSignal(Map<String, dynamic> envelope) async {
+    if (_disposed) {
+      return;
+    }
+
     final conversationId = envelope['conversation_id'] as String?;
     final channelId = envelope['channel_id'] as String?;
     final fromUserId = envelope['from_user_id'] as String?;
@@ -579,20 +592,28 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   }
 
   void _sendSignal(String toUserId, Map<String, dynamic> signal) {
+    if (_disposed) {
+      return;
+    }
+
     final conversationId = state.conversationId;
     final channelId = state.channelId;
     if (conversationId == null || channelId == null) {
       return;
     }
 
-    ref
-        .read(websocketProvider.notifier)
-        .sendVoiceSignal(
-          conversationId: conversationId,
-          channelId: channelId,
-          toUserId: toUserId,
-          signal: signal,
-        );
+    try {
+      ref
+          .read(websocketProvider.notifier)
+          .sendVoiceSignal(
+            conversationId: conversationId,
+            channelId: channelId,
+            toUserId: toUserId,
+            signal: signal,
+          );
+    } catch (e) {
+      debugPrint('[VoiceRTC] sendSignal failed: $e');
+    }
   }
 
   void _updatePeerState(String userId, String connectionState) {
@@ -634,9 +655,36 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       }
 
       try {
+        final authBefore = ref.read(authProvider);
+        final voiceSettings = ref.read(voiceSettingsProvider);
+
+        await ref
+            .read(channelsProvider.notifier)
+            .updateVoiceState(
+              conversationId: conversationId,
+              channelId: channelId,
+              isMuted: voiceSettings.selfMuted,
+              isDeafened: voiceSettings.selfDeafened,
+              pushToTalk: voiceSettings.pushToTalkEnabled,
+            );
+
         await ref
             .read(channelsProvider.notifier)
             .loadVoiceSessions(conversationId, channelId);
+
+        final authAfter = ref.read(authProvider);
+        if (authBefore.isLoggedIn && !authAfter.isLoggedIn) {
+          _participantSyncTimer?.cancel();
+          _participantSyncTimer = null;
+          await leaveChannel();
+          if (!_disposed) {
+            state = state.copyWith(
+              error: 'Voice disconnected. Please sign in again.',
+            );
+          }
+          return;
+        }
+
         final participants = ref
             .read(channelsProvider)
             .voiceSessionsFor(channelId)

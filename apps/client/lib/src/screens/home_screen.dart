@@ -43,6 +43,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Conversation? _selectedConversation;
   bool _showMembers = false;
   Timer? _pendingRefreshTimer;
+  late final VoiceRtcNotifier _voiceRtcNotifier;
 
   // For narrow screen navigation
   int _narrowPanelIndex = 0; // 0 = conv list, 1 = chat
@@ -60,13 +61,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   void initState() {
     super.initState();
+    _voiceRtcNotifier = ref.read(voiceRtcProvider.notifier);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initData();
     });
     // Web: leave voice call on tab close
     registerBeforeUnload(() {
-      ref.read(voiceRtcProvider.notifier).leaveChannel();
+      _voiceRtcNotifier.leaveChannel();
     });
   }
 
@@ -86,7 +88,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     } else if (state == AppLifecycleState.detached ||
         state == AppLifecycleState.paused) {
       // Leave voice call when app is closed or backgrounded
-      ref.read(voiceRtcProvider.notifier).leaveChannel();
+      _voiceRtcNotifier.leaveChannel();
     }
   }
 
@@ -102,7 +104,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     // Clean up any stale voice session from a previous run.
-    ref.read(voiceRtcProvider.notifier).leaveChannel();
+    _voiceRtcNotifier.leaveChannel();
 
     // 3. Load conversations AFTER crypto and WS are set up
     await ref.read(conversationsProvider.notifier).loadConversations();
@@ -541,6 +543,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           'Encryption: ${next.error}',
           type: ToastType.error,
         );
+      }
+    });
+
+    ref.listen<VoiceRtcState>(voiceRtcProvider, (prev, next) {
+      if (next.error == null || next.error == prev?.error) {
+        return;
+      }
+
+      ToastService.show(context, next.error!, type: ToastType.error);
+
+      if (next.error == 'Voice disconnected. Please sign in again.' &&
+          !ref.read(authProvider).isLoggedIn &&
+          mounted) {
+        context.go('/login');
       }
     });
 
