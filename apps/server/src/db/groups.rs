@@ -439,6 +439,18 @@ pub async fn is_banned(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<b
     Ok(row.0)
 }
 
+/// Force-delete a conversation (used for empty groups with no members).
+pub async fn force_delete_conversation(
+    pool: &PgPool,
+    conversation_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM conversations WHERE id = $1")
+        .bind(conversation_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Unban a user from a group.
 pub async fn unban_member(
     pool: &PgPool,

@@ -92,14 +92,15 @@ class _GifPickerWidgetState extends State<GifPickerWidget> {
           md['gif'] as Map<String, dynamic>? ??
           hd['gif'] as Map<String, dynamic>? ??
           {};
-      final sendMp4 =
-          hd['mp4'] as Map<String, dynamic>? ??
-          md['mp4'] as Map<String, dynamic>? ??
+      final hdGif =
+          hd['gif'] as Map<String, dynamic>? ??
+          md['gif'] as Map<String, dynamic>? ??
           {};
+      // Use .gif URLs for both preview and send so [img:] marker works
       return _GifItem(
         previewUrl: (previewGif['url'] as String?) ?? '',
         sendUrl:
-            (sendMp4['url'] as String?) ?? (previewGif['url'] as String?) ?? '',
+            (hdGif['url'] as String?) ?? (previewGif['url'] as String?) ?? '',
         slug: (item['slug'] as String?) ?? '',
       );
     }).toList();

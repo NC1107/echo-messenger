@@ -129,6 +129,10 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         },
         'video': false,
       });
+      debugPrint(
+        '[VoiceRTC] Got local stream: '
+        '${_localStream!.getAudioTracks().length} audio tracks',
+      );
 
       setCaptureEnabled(!startMuted);
 
@@ -280,25 +284,16 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
 
   Future<RTCPeerConnection> _createPeerConnection(String remoteUserId) async {
     final config = {
+      // Keep under 5 ICE servers to avoid browser slowdown warning.
+      // For production, self-host coturn and replace credentials.
       'iceServers': [
+        {'urls': 'stun:stun.l.google.com:19302'},
         {
           'urls': [
-            'stun:stun.l.google.com:19302',
-            'stun:stun1.l.google.com:19302',
+            'turn:a.relay.metered.ca:80',
+            'turn:a.relay.metered.ca:443',
+            'turn:a.relay.metered.ca:443?transport=tcp',
           ],
-        },
-        {
-          'urls': 'turn:a.relay.metered.ca:80',
-          'username': 'e8dd65b92fdd45f4b4c8e207',
-          'credential': 'kBBm6TlKbHJHoNjp',
-        },
-        {
-          'urls': 'turn:a.relay.metered.ca:443',
-          'username': 'e8dd65b92fdd45f4b4c8e207',
-          'credential': 'kBBm6TlKbHJHoNjp',
-        },
-        {
-          'urls': 'turn:a.relay.metered.ca:443?transport=tcp',
           'username': 'e8dd65b92fdd45f4b4c8e207',
           'credential': 'kBBm6TlKbHJHoNjp',
         },
@@ -312,7 +307,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
 
     final stream = _localStream;
     if (stream != null) {
-      for (final track in stream.getAudioTracks()) {
+      final audioTracks = stream.getAudioTracks();
+      debugPrint(
+        '[VoiceRTC] Adding ${audioTracks.length} audio tracks to PC for $remoteUserId',
+      );
+      for (final track in audioTracks) {
         await pc.addTrack(track, stream);
       }
     }
@@ -332,13 +331,28 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     };
 
     pc.onConnectionState = (connectionState) {
+      debugPrint(
+        '[VoiceRTC] Connection state for $remoteUserId: $connectionState',
+      );
       _updatePeerState(
         remoteUserId,
         connectionState.toString().split('.').last,
       );
     };
 
+    pc.onIceConnectionState = (iceState) {
+      debugPrint('[VoiceRTC] ICE state for $remoteUserId: $iceState');
+    };
+
+    pc.onIceGatheringState = (gatherState) {
+      debugPrint('[VoiceRTC] ICE gathering for $remoteUserId: $gatherState');
+    };
+
     pc.onTrack = (event) {
+      debugPrint(
+        '[VoiceRTC] onTrack from $remoteUserId: kind=${event.track.kind} '
+        'streams=${event.streams.length}',
+      );
       if (event.track.kind != 'audio') {
         return;
       }

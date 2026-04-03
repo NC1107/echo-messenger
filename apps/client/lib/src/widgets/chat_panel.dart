@@ -62,6 +62,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   bool _showGifPicker = false;
   bool _hideEncryptionBanner = false;
   String? _selectedTextChannelId;
+  // null = use inferred from voice sessions, '' = explicitly left (don't infer)
   String? _activeVoiceChannelId;
   String? _loadedHistoryKey;
   String? _loadedChannelsConversationId;
@@ -1348,7 +1349,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               );
             }
             setState(() {
-              _activeVoiceChannelId = isActive ? null : channel.id;
+              _activeVoiceChannelId = isActive ? '' : channel.id;
             });
           }
         },
@@ -1689,11 +1690,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           ),
         )
         .id;
-    final effectiveActiveVoiceChannelId =
-        _activeVoiceChannelId ??
-        (inferredActiveVoiceChannelId.isEmpty
-            ? null
-            : inferredActiveVoiceChannelId);
+    // '' means user explicitly left -- don't infer from sessions
+    final effectiveActiveVoiceChannelId = _activeVoiceChannelId == ''
+        ? null
+        : _activeVoiceChannelId ??
+              (inferredActiveVoiceChannelId.isEmpty
+                  ? null
+                  : inferredActiveVoiceChannelId);
     final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
     final includeUnchanneled =
         conv.isGroup &&

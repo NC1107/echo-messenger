@@ -837,8 +837,8 @@ class _MessageItemState extends State<MessageItem> {
                         : MainAxisAlignment.start,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      // Avatar for received messages (first in group only)
-                      if (!isMine) ...[
+                      // Avatar (received messages, or all in compact mode)
+                      if (!isMine || widget.compactLayout) ...[
                         GestureDetector(
                           onTap: widget.onAvatarTap != null
                               ? () => widget.onAvatarTap!(msg.fromUserId)

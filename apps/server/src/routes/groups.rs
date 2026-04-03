@@ -353,6 +353,16 @@ pub async fn leave_group(
         return Err(AppError::bad_request("Not a member of this group"));
     }
 
+    // Auto-delete group if no members remain
+    let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
+        .await
+        .unwrap_or_default();
+    if remaining.is_empty() {
+        // delete_group checks owner, but we just need a raw delete for empty groups
+        let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;
+        tracing::info!("Auto-deleted empty group {group_id}");
+    }
+
     Ok(Json(serde_json::json!({ "status": "left" })))
 }
 

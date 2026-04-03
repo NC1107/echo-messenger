@@ -61,9 +61,17 @@ class VoiceDock extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Voice Connected',
+                        voiceLk.isJoining
+                            ? 'Connecting...'
+                            : peerCount > 0
+                            ? 'Voice Connected'
+                            : 'Waiting for peers',
                         style: TextStyle(
-                          color: EchoTheme.online,
+                          color: voiceLk.isJoining
+                              ? context.textMuted
+                              : peerCount > 0
+                              ? EchoTheme.online
+                              : Colors.orange,
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
