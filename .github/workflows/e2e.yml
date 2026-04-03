@@ -76,11 +76,15 @@ jobs:
           curl --retry 10 --retry-delay 2 --retry-connrefused -sf http://localhost:8081/ > /dev/null
 
       # -- Playwright --
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+      - name: Install Playwright dependencies
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: npx playwright test --config tests/e2e/playwright.config.ts
+        working-directory: tests/e2e
+        run: npx playwright test
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
           JWT_SECRET: ci-e2e-secret-do-not-use-in-production

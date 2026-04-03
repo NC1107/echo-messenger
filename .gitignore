@@ -84,6 +84,8 @@ RESEARCH.md
 node_modules/
 package.json
 package-lock.json
+# Allow E2E test package.json
+!tests/e2e/package.json
 
 # Playwright & test artifacts
 tests/e2e/test-results/
