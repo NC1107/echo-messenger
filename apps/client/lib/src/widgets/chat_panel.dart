@@ -2478,6 +2478,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                     _showMentionPicker = false;
                                     _mentionQuery = '';
                                   });
+                                } else if (_showEmojiPicker) {
+                                  setState(() => _showEmojiPicker = false);
+                                } else if (_showGifPicker) {
+                                  setState(() => _showGifPicker = false);
                                 } else if (_isEditing) {
                                   _cancelEditMode();
                                 }
@@ -2616,6 +2620,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           // GIF picker panel
           if (_showGifPicker)
             GifPickerWidget(
+              onClose: () => setState(() => _showGifPicker = false),
               onGifSelected: (gifUrl, slug) {
                 setState(() => _showGifPicker = false);
                 _messageController.text = '[img:$gifUrl]';

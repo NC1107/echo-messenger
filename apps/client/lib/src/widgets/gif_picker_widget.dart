@@ -12,8 +12,9 @@ const _klipyBase = 'https://api.klipy.com/api/v1/$_klipyAppKey/gifs';
 
 class GifPickerWidget extends StatefulWidget {
   final void Function(String gifUrl, String? slug) onGifSelected;
+  final VoidCallback? onClose;
 
-  const GifPickerWidget({super.key, required this.onGifSelected});
+  const GifPickerWidget({super.key, required this.onGifSelected, this.onClose});
 
   @override
   State<GifPickerWidget> createState() => _GifPickerWidgetState();
@@ -72,12 +73,33 @@ class _GifPickerWidgetState extends State<GifPickerWidget> {
 
   void _parseResults(String body) {
     final json = jsonDecode(body);
-    final items = (json['data'] as List?) ?? [];
+    // Klipy nests items under data.data
+    final outer = json['data'];
+    final List items;
+    if (outer is Map && outer['data'] is List) {
+      items = outer['data'] as List;
+    } else if (outer is List) {
+      items = outer;
+    } else {
+      items = [];
+    }
     _results = items.map((item) {
       final file = item['file'] as Map<String, dynamic>? ?? {};
+      // file has hd/md sub-objects, each containing gif/mp4/webp etc.
+      final md = file['md'] as Map<String, dynamic>? ?? {};
+      final hd = file['hd'] as Map<String, dynamic>? ?? {};
+      final previewGif =
+          md['gif'] as Map<String, dynamic>? ??
+          hd['gif'] as Map<String, dynamic>? ??
+          {};
+      final sendMp4 =
+          hd['mp4'] as Map<String, dynamic>? ??
+          md['mp4'] as Map<String, dynamic>? ??
+          {};
       return _GifItem(
-        previewUrl: (file['gif'] as String?) ?? '',
-        sendUrl: (file['mp4'] as String?) ?? (file['gif'] as String?) ?? '',
+        previewUrl: (previewGif['url'] as String?) ?? '',
+        sendUrl:
+            (sendMp4['url'] as String?) ?? (previewGif['url'] as String?) ?? '',
         slug: (item['slug'] as String?) ?? '',
       );
     }).toList();
@@ -110,28 +132,45 @@ class _GifPickerWidgetState extends State<GifPickerWidget> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: TextField(
-              controller: _searchController,
-              onChanged: _onSearchChanged,
-              style: TextStyle(fontSize: 14, color: context.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'Search KLIPY',
-                hintStyle: TextStyle(color: context.textMuted),
-                prefixIcon: Icon(
-                  Icons.search,
-                  size: 18,
-                  color: context.textMuted,
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _onSearchChanged,
+                    style: TextStyle(fontSize: 14, color: context.textPrimary),
+                    decoration: InputDecoration(
+                      hintText: 'Search KLIPY',
+                      hintStyle: TextStyle(color: context.textMuted),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        size: 18,
+                        color: context.textMuted,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: context.border),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        vertical: 8,
+                        horizontal: 12,
+                      ),
+                      isDense: true,
+                    ),
+                  ),
                 ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: context.border),
+                const SizedBox(width: 4),
+                IconButton(
+                  icon: Icon(Icons.close, size: 18, color: context.textMuted),
+                  onPressed: widget.onClose,
+                  tooltip: 'Close',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                 ),
-                contentPadding: const EdgeInsets.symmetric(
-                  vertical: 8,
-                  horizontal: 12,
-                ),
-                isDense: true,
-              ),
+              ],
             ),
           ),
           Expanded(
