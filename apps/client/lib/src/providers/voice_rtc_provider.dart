@@ -480,10 +480,8 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     try {
       await pc.setRemoteDescription(RTCSessionDescription(sdp, 'offer'));
       await _drainPendingIceCandidates(fromUserId, pc);
-      final answer = await pc.createAnswer({
-        'offerToReceiveAudio': 1,
-        'offerToReceiveVideo': 0,
-      });
+      // No constraints needed on answer -- offer SDP already defines media
+      final answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
       _sendSignal(fromUserId, {'type': 'answer', 'sdp': answer.sdp});

@@ -674,8 +674,8 @@ async fn handle_voice_signal(
         return;
     }
 
-    // Validate signal type field
-    let valid_types = ["offer", "answer", "candidate"];
+    // Validate signal type field (client sends "ice-candidate", not "candidate")
+    let valid_types = ["offer", "answer", "ice-candidate"];
     match signal.get("type").and_then(|v| v.as_str()) {
         Some(t) if valid_types.contains(&t) => {}
         _ => {
@@ -683,7 +683,7 @@ async fn handle_voice_signal(
                 state,
                 sender_id,
                 "Voice signal must have a 'type' field with value 'offer', 'answer', or \
-                 'candidate'",
+                 'ice-candidate'",
             );
             return;
         }
