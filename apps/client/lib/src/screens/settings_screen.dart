@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -939,16 +940,53 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
     );
   }
 
+  List<Map<String, String>> _audioInputDevices = [
+    {'id': 'default', 'name': 'Default Microphone'},
+  ];
+  List<Map<String, String>> _audioOutputDevices = [
+    {'id': 'default', 'name': 'Default Output'},
+  ];
+  bool _devicesLoaded = false;
+
+  Future<void> _loadAudioDevices() async {
+    if (_devicesLoaded) return;
+    _devicesLoaded = true;
+    try {
+      final devices = await webrtc.navigator.mediaDevices.enumerateDevices();
+      final inputs = <Map<String, String>>[
+        {'id': 'default', 'name': 'Default Microphone'},
+      ];
+      final outputs = <Map<String, String>>[
+        {'id': 'default', 'name': 'Default Output'},
+      ];
+      for (final d in devices) {
+        final label = d.label.isNotEmpty ? d.label : d.deviceId;
+        if (d.kind == 'audioinput' && d.deviceId != 'default') {
+          inputs.add({'id': d.deviceId, 'name': label});
+        } else if (d.kind == 'audiooutput' && d.deviceId != 'default') {
+          outputs.add({'id': d.deviceId, 'name': label});
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _audioInputDevices = inputs;
+          _audioOutputDevices = outputs;
+        });
+      }
+    } catch (_) {
+      // Enumeration not available on this platform
+    }
+  }
+
   Widget _buildAudioSection() {
     final voice = ref.watch(voiceSettingsProvider);
     final notifier = ref.read(voiceSettingsProvider.notifier);
 
-    const inputDevices = [
-      {'id': 'default', 'name': 'Default Microphone'},
-    ];
-    const outputDevices = [
-      {'id': 'default', 'name': 'Default Output'},
-    ];
+    // Load real devices on first build
+    _loadAudioDevices();
+
+    final inputDevices = _audioInputDevices;
+    final outputDevices = _audioOutputDevices;
 
     return ListView(
       padding: const EdgeInsets.all(24),
