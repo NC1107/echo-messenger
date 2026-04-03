@@ -19,6 +19,9 @@ const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎'
 /// Regex for detecting URLs in message text.
 final _urlRegex = RegExp(r'https?://[^\s]+');
 
+/// Regex for detecting @mentions in message text.
+final _mentionRegex = RegExp(r'@(\w+)');
+
 /// Regex for detecting image markers: [img:URL]
 final _imgRegex = RegExp(r'^\[img:(.+)\]$');
 
@@ -500,26 +503,85 @@ class _MessageItemState extends State<MessageItem> {
     );
   }
 
-  /// Build a RichText widget that renders URLs as tappable, underlined links.
+  /// Build spans for a plain text segment (no URLs), highlighting @mentions.
+  List<InlineSpan> _buildMentionSpans(String text, {required Color textColor}) {
+    final mentionMatches = _mentionRegex.allMatches(text).toList();
+    if (mentionMatches.isEmpty) {
+      return [
+        TextSpan(
+          text: text,
+          style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
+        ),
+      ];
+    }
+
+    final spans = <InlineSpan>[];
+    int lastEnd = 0;
+    for (final match in mentionMatches) {
+      if (match.start > lastEnd) {
+        spans.add(
+          TextSpan(
+            text: text.substring(lastEnd, match.start),
+            style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
+          ),
+        );
+      }
+      spans.add(
+        TextSpan(
+          text: match.group(0),
+          style: TextStyle(
+            fontSize: 15,
+            color: context.accentHover,
+            fontWeight: FontWeight.w600,
+            height: 1.47,
+          ),
+        ),
+      );
+      lastEnd = match.end;
+    }
+    if (lastEnd < text.length) {
+      spans.add(
+        TextSpan(
+          text: text.substring(lastEnd),
+          style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
+        ),
+      );
+    }
+    return spans;
+  }
+
+  /// Build a RichText widget that renders URLs as tappable links and @mentions
+  /// with accent color + bold weight.
   Widget _buildMessageText(String text, {required Color textColor}) {
-    final matches = _urlRegex.allMatches(text).toList();
-    if (matches.isEmpty) {
+    final urlMatches = _urlRegex.allMatches(text).toList();
+    final mentionMatches = _mentionRegex.allMatches(text).toList();
+
+    if (urlMatches.isEmpty && mentionMatches.isEmpty) {
       return Text(
         text,
         style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
       );
     }
 
+    // If no URLs, just handle mentions.
+    if (urlMatches.isEmpty) {
+      return RichText(
+        text: TextSpan(
+          children: _buildMentionSpans(text, textColor: textColor),
+        ),
+      );
+    }
+
     final spans = <InlineSpan>[];
     int lastEnd = 0;
 
-    for (final match in matches) {
-      // Text before the URL
+    for (final match in urlMatches) {
+      // Text before the URL -- may contain mentions
       if (match.start > lastEnd) {
-        spans.add(
-          TextSpan(
-            text: text.substring(lastEnd, match.start),
-            style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
+        spans.addAll(
+          _buildMentionSpans(
+            text.substring(lastEnd, match.start),
+            textColor: textColor,
           ),
         );
       }
@@ -549,13 +611,10 @@ class _MessageItemState extends State<MessageItem> {
       lastEnd = match.end;
     }
 
-    // Remaining text after last URL
+    // Remaining text after last URL -- may contain mentions
     if (lastEnd < text.length) {
-      spans.add(
-        TextSpan(
-          text: text.substring(lastEnd),
-          style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
-        ),
+      spans.addAll(
+        _buildMentionSpans(text.substring(lastEnd), textColor: textColor),
       );
     }
 

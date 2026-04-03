@@ -8,6 +8,7 @@ class Conversation {
   final String? lastMessageTimestamp;
   final String? lastMessageSender;
   final int unreadCount;
+  final bool isMuted;
   final List<ConversationMember> members;
 
   const Conversation({
@@ -20,6 +21,7 @@ class Conversation {
     this.lastMessageTimestamp,
     this.lastMessageSender,
     this.unreadCount = 0,
+    this.isMuted = false,
     this.members = const [],
   });
 
@@ -69,6 +71,7 @@ class Conversation {
       lastMessageTimestamp: lastMsgTimestamp,
       lastMessageSender: lastMsgSender,
       unreadCount: json['unread_count'] as int? ?? 0,
+      isMuted: json['is_muted'] as bool? ?? false,
       members: membersList,
     );
   }
@@ -91,6 +94,7 @@ class Conversation {
     String? lastMessageTimestamp,
     String? lastMessageSender,
     int? unreadCount,
+    bool? isMuted,
     List<ConversationMember>? members,
   }) {
     return Conversation(
@@ -103,6 +107,7 @@ class Conversation {
       lastMessageTimestamp: lastMessageTimestamp ?? this.lastMessageTimestamp,
       lastMessageSender: lastMessageSender ?? this.lastMessageSender,
       unreadCount: unreadCount ?? this.unreadCount,
+      isMuted: isMuted ?? this.isMuted,
       members: members ?? this.members,
     );
   }

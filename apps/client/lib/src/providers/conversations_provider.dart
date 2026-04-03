@@ -239,6 +239,39 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     return null;
   }
 
+  /// Toggle mute state for a conversation.
+  Future<void> toggleMute(String conversationId) async {
+    final index = state.conversations.indexWhere((c) => c.id == conversationId);
+    if (index < 0) return;
+
+    final conv = state.conversations[index];
+    final newMuted = !conv.isMuted;
+
+    // Optimistically update local state
+    final updated = List<Conversation>.from(state.conversations);
+    updated[index] = conv.copyWith(isMuted: newMuted);
+    state = state.copyWith(conversations: updated);
+
+    try {
+      await _authenticatedRequest(
+        (token) => http.put(
+          Uri.parse('$_serverUrl/api/conversations/$conversationId/mute'),
+          headers: _headersWithToken(token),
+          body: jsonEncode({'is_muted': newMuted}),
+        ),
+      );
+    } catch (e) {
+      // Revert on failure
+      final reverted = List<Conversation>.from(state.conversations);
+      final idx = reverted.indexWhere((c) => c.id == conversationId);
+      if (idx >= 0) {
+        reverted[idx] = reverted[idx].copyWith(isMuted: !newMuted);
+        state = state.copyWith(conversations: reverted);
+      }
+      debugPrint('[Conversations] toggleMute failed for $conversationId: $e');
+    }
+  }
+
   /// Create a new group conversation.
   Future<String?> createGroup(
     String name,

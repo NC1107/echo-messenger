@@ -256,6 +256,35 @@ pub async fn set_conversation_encrypted(
     Ok(())
 }
 
+pub async fn search_messages(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    query: &str,
+    limit: i64,
+) -> Result<Vec<MessageWithSender>, sqlx::Error> {
+    sqlx::query_as::<_, MessageWithSender>(
+        "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                u.username AS sender_username, \
+                m.content, m.created_at, m.edited_at, m.reply_to_id, \
+                rm.content AS reply_to_content, \
+                ru.username AS reply_to_username \
+         FROM messages m \
+         JOIN users u ON u.id = m.sender_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id \
+         LEFT JOIN users ru ON ru.id = rm.sender_id \
+         WHERE m.conversation_id = $1 \
+           AND m.deleted_at IS NULL \
+           AND to_tsvector('english', m.content) @@ plainto_tsquery('english', $2) \
+         ORDER BY m.created_at DESC \
+         LIMIT $3",
+    )
+    .bind(conversation_id)
+    .bind(query)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn get_conversation_security(
     pool: &PgPool,
     conversation_id: Uuid,
@@ -266,4 +295,22 @@ pub async fn get_conversation_security(
     .bind(conversation_id)
     .fetch_optional(pool)
     .await
+}
+
+pub async fn set_mute_status(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    user_id: Uuid,
+    is_muted: bool,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE conversation_members SET is_muted = $1 \
+         WHERE conversation_id = $2 AND user_id = $3",
+    )
+    .bind(is_muted)
+    .bind(conversation_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
 }

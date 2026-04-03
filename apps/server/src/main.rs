@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
+use axum::extract::ws::Message as WsMessage;
 use echo_server::{config, db, routes, ws};
 use tracing_subscriber::EnvFilter;
 
@@ -30,11 +31,53 @@ async fn main() {
     // Build app state and router
     let hub = ws::hub::Hub::new();
     let state = Arc::new(routes::AppState {
-        pool,
+        pool: pool.clone(),
         jwt_secret: config.jwt_secret,
-        hub,
+        hub: hub.clone(),
         ticket_store: Mutex::new(HashMap::new()),
     });
+
+    // Background task: clean up stale voice sessions every 60 seconds.
+    // Sessions not updated within 5 minutes are removed and leave events
+    // are broadcast to group members.
+    let cleanup_pool = pool.clone();
+    let cleanup_hub = hub.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            match db::channels::cleanup_stale_voice_sessions(&cleanup_pool, 300).await {
+                Ok(removed) => {
+                    for (channel_id, conversation_id, user_id) in removed {
+                        tracing::info!(
+                            "Cleaned stale voice session: user={user_id} channel={channel_id}"
+                        );
+                        let member_ids =
+                            db::groups::get_conversation_member_ids(&cleanup_pool, conversation_id)
+                                .await;
+                        if let Ok(member_ids) = member_ids {
+                            let event = serde_json::json!({
+                                "type": "voice_session_left",
+                                "group_id": conversation_id,
+                                "channel_id": channel_id,
+                                "user_id": user_id,
+                            });
+                            if let Ok(json) = serde_json::to_string(&event) {
+                                for member_id in &member_ids {
+                                    cleanup_hub
+                                        .send_to(member_id, WsMessage::Text(json.clone().into()));
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Voice session cleanup error: {e}");
+                }
+            }
+        }
+    });
+
     let app = routes::create_router(state);
 
     // Start server

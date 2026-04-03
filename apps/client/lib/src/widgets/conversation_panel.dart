@@ -272,6 +272,25 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ],
           ),
         ),
+        PopupMenuItem<String>(
+          value: 'mute',
+          child: Row(
+            children: [
+              Icon(
+                conv.isMuted
+                    ? Icons.notifications_outlined
+                    : Icons.notifications_off_outlined,
+                size: 16,
+                color: context.textSecondary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                conv.isMuted ? 'Unmute' : 'Mute',
+                style: TextStyle(color: context.textPrimary, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
         if (conv.isGroup)
           PopupMenuItem<String>(
             value: 'leave_group',
@@ -290,6 +309,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     ).then((value) {
       if (value == 'pin') {
         _togglePin(conv.id);
+      } else if (value == 'mute') {
+        ref.read(conversationsProvider.notifier).toggleMute(conv.id);
       } else if (value == 'leave_group') {
         _leaveGroup(conv);
       }
@@ -1396,6 +1417,15 @@ class _ConversationItemState extends State<_ConversationItem> {
                               ),
                             ),
                           ),
+                          if (conv.isMuted)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 6),
+                              child: Icon(
+                                Icons.notifications_off_outlined,
+                                size: 14,
+                                color: context.textMuted,
+                              ),
+                            ),
                           if (hasUnread)
                             Container(
                               margin: const EdgeInsets.only(left: 8),

@@ -98,6 +98,14 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             post(reactions::mark_read),
         )
         .route(
+            "/conversations/{conversation_id}/search",
+            get(messages::search_messages),
+        )
+        .route(
+            "/conversations/{conversation_id}/mute",
+            put(messages::toggle_mute),
+        )
+        .route(
             "/conversations/{conversation_id}/encryption",
             put(messages::toggle_encryption),
         )
@@ -139,6 +147,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         )
         .route(
             "/{id}/channels/{channel_id}/voice",
+            get(channels::list_voice_sessions),
+        )
+        .route(
+            "/{id}/channels/{channel_id}/voice/participants",
             get(channels::list_voice_sessions),
         )
         .route(

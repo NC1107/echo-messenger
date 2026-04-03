@@ -61,8 +61,16 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   MediaStream? _localStream;
   final Map<String, RTCPeerConnection> _peerConnections = {};
   final Map<String, RTCVideoRenderer> _remoteAudioRenderers = {};
-  final Map<String, List<RTCIceCandidate>> _pendingIceCandidates = {};
+  final Map<String, List<(RTCIceCandidate, DateTime)>> _pendingIceCandidates =
+      {};
   Set<String> _currentParticipants = const {};
+  Timer? _participantSyncTimer;
+
+  /// Maximum pending ICE candidates per peer before oldest are dropped.
+  static const _maxPendingIceCandidatesPerPeer = 50;
+
+  /// Maximum age for a pending ICE candidate before it is skipped on flush.
+  static const _iceCandidateTtl = Duration(seconds: 30);
 
   /// Expose remote audio renderers so the widget tree can mount hidden
   /// [RTCVideoView] widgets that enable audio playback on web/desktop.
@@ -140,6 +148,9 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         channelId: channelId,
         participantUserIds: participants,
       );
+
+      // Start periodic participant sync to reconcile stale peer state.
+      _startPeriodicParticipantSync(conversationId, channelId);
     } catch (e) {
       debugPrint('[VoiceRTC] join failed: $e');
       await leaveChannel();
@@ -152,6 +163,9 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   }
 
   Future<void> leaveChannel() async {
+    _participantSyncTimer?.cancel();
+    _participantSyncTimer = null;
+
     for (final userId in _peerConnections.keys.toList()) {
       final pc = _peerConnections[userId];
       if (pc == null) {
@@ -268,8 +282,25 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
             'stun:stun1.l.google.com:19302',
           ],
         },
+        {
+          'urls': 'turn:a.relay.metered.ca:80',
+          'username': 'e8dd65b92fdd45f4b4c8e207',
+          'credential': 'kBBm6TlKbHJHoNjp',
+        },
+        {
+          'urls': 'turn:a.relay.metered.ca:443',
+          'username': 'e8dd65b92fdd45f4b4c8e207',
+          'credential': 'kBBm6TlKbHJHoNjp',
+        },
+        {
+          'urls': 'turn:a.relay.metered.ca:443?transport=tcp',
+          'username': 'e8dd65b92fdd45f4b4c8e207',
+          'credential': 'kBBm6TlKbHJHoNjp',
+        },
       ],
       'sdpSemantics': 'unified-plan',
+      'iceTransportPolicy': 'all',
+      'bundlePolicy': 'max-bundle',
     };
 
     final pc = await createPeerConnection(config);
@@ -444,6 +475,15 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     }
   }
 
+  void _enqueueIceCandidate(String userId, RTCIceCandidate candidate) {
+    final queue = _pendingIceCandidates.putIfAbsent(userId, () => []);
+    queue.add((candidate, DateTime.now()));
+    // Enforce max queue size -- drop oldest when exceeding limit.
+    while (queue.length > _maxPendingIceCandidatesPerPeer) {
+      queue.removeAt(0);
+    }
+  }
+
   Future<void> _handleIceCandidate(
     String fromUserId,
     String candidate,
@@ -452,18 +492,20 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   ) async {
     final pc = _peerConnections[fromUserId];
     if (pc == null) {
-      _pendingIceCandidates
-          .putIfAbsent(fromUserId, () => [])
-          .add(RTCIceCandidate(candidate, sdpMid, sdpMLineIndex));
+      _enqueueIceCandidate(
+        fromUserId,
+        RTCIceCandidate(candidate, sdpMid, sdpMLineIndex),
+      );
       return;
     }
 
     try {
       await pc.addCandidate(RTCIceCandidate(candidate, sdpMid, sdpMLineIndex));
     } catch (e) {
-      _pendingIceCandidates
-          .putIfAbsent(fromUserId, () => [])
-          .add(RTCIceCandidate(candidate, sdpMid, sdpMLineIndex));
+      _enqueueIceCandidate(
+        fromUserId,
+        RTCIceCandidate(candidate, sdpMid, sdpMLineIndex),
+      );
       debugPrint('[VoiceRTC] addCandidate deferred for $fromUserId: $e');
     }
   }
@@ -477,12 +519,22 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       return;
     }
 
-    final remaining = <RTCIceCandidate>[];
-    for (final candidate in queue) {
+    final now = DateTime.now();
+    final remaining = <(RTCIceCandidate, DateTime)>[];
+    for (final entry in queue) {
+      final (candidate, timestamp) = entry;
+      // Skip candidates older than TTL.
+      if (now.difference(timestamp) > _iceCandidateTtl) {
+        debugPrint(
+          '[VoiceRTC] Dropping stale ICE candidate for $userId '
+          '(age: ${now.difference(timestamp).inSeconds}s)',
+        );
+        continue;
+      }
       try {
         await pc.addCandidate(candidate);
       } catch (_) {
-        remaining.add(candidate);
+        remaining.add(entry);
       }
     }
 
@@ -527,8 +579,43 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     state = state.copyWith(peerConnectionStates: updated);
   }
 
+  /// Periodically fetch voice participants from the server and reconcile
+  /// with local peer state. Catches stale peers that may have disconnected
+  /// without sending a proper leave event.
+  void _startPeriodicParticipantSync(String conversationId, String channelId) {
+    _participantSyncTimer?.cancel();
+    _participantSyncTimer = Timer.periodic(const Duration(seconds: 30), (
+      _,
+    ) async {
+      if (!_isCurrentVoiceContext(conversationId, channelId)) {
+        _participantSyncTimer?.cancel();
+        _participantSyncTimer = null;
+        return;
+      }
+
+      try {
+        await ref
+            .read(channelsProvider.notifier)
+            .loadVoiceSessions(conversationId, channelId);
+        final participants = ref
+            .read(channelsProvider)
+            .voiceSessionsFor(channelId)
+            .map((m) => m.userId)
+            .toList();
+        await syncParticipants(
+          conversationId: conversationId,
+          channelId: channelId,
+          participantUserIds: participants,
+        );
+      } catch (e) {
+        debugPrint('[VoiceRTC] periodic sync failed: $e');
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _participantSyncTimer?.cancel();
     _signalSubscription?.cancel();
     unawaited(leaveChannel());
     super.dispose();

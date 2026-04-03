@@ -44,6 +44,7 @@ pub async fn run_migrations(pool: &PgPool) {
         include_str!("../migrations/017_media_conversation_id.sql"),
         include_str!("../migrations/018_audit_indexes.sql"),
         include_str!("../migrations/019_message_replies.sql"),
+        include_str!("../migrations/020_message_search_and_mute.sql"),
     ];
 
     // Execute each statement separately (sqlx doesn't support multiple statements in one query)

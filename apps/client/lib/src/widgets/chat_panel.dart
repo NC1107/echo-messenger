@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
@@ -53,6 +56,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   final _inputFocusNode = FocusNode();
 
   bool _isTextEmpty = true;
+  bool _showEmojiPicker = false;
   bool _hideEncryptionBanner = false;
   String? _selectedTextChannelId;
   String? _activeVoiceChannelId;
@@ -62,6 +66,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   // Edit mode state
   ChatMessage? _editingMessage;
   bool get _isEditing => _editingMessage != null;
+
+  // Mention autocomplete state
+  bool _showMentionPicker = false;
+  String _mentionQuery = '';
+
+  // Search state
+  bool _showSearch = false;
+  String _searchQuery = '';
+  List<ChatMessage> _searchResults = const [];
+  String? _highlightedMessageId;
+  Timer? _searchDebounce;
+  Timer? _highlightTimer;
 
   @override
   void initState() {
@@ -81,6 +97,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       _selectedTextChannelId = null;
       _activeVoiceChannelId = null;
       _loadedHistoryKey = null;
+      _showMentionPicker = false;
+      _mentionQuery = '';
+      _showSearch = false;
+      _searchQuery = '';
+      _searchResults = const [];
+      _highlightedMessageId = null;
+      _searchDebounce?.cancel();
+      _highlightTimer?.cancel();
       _loadHistory();
       _loadChannels();
       _markAsRead();
@@ -92,6 +116,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     if (_activeVoiceChannelId != null) {
       ref.read(voiceRtcProvider.notifier).leaveChannel();
     }
+    _searchDebounce?.cancel();
+    _highlightTimer?.cancel();
     _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
     _scrollController.removeListener(_onScroll);
@@ -342,6 +368,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           channelId: channelId,
         );
     _messageController.clear();
+    if (_showEmojiPicker) setState(() => _showEmojiPicker = false);
     _scrollToBottom();
     SoundService().playMessageSent();
 
@@ -376,6 +403,206 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             channelId: conv.isGroup ? _selectedTextChannelId : null,
           );
     }
+    _detectMention(text);
+  }
+
+  void _detectMention(String text) {
+    final conv = widget.conversation;
+    if (conv == null || !conv.isGroup) {
+      if (_showMentionPicker) {
+        setState(() {
+          _showMentionPicker = false;
+          _mentionQuery = '';
+        });
+      }
+      return;
+    }
+
+    final cursorPos = _messageController.selection.baseOffset;
+    if (cursorPos < 0 || cursorPos > text.length) {
+      if (_showMentionPicker) setState(() => _showMentionPicker = false);
+      return;
+    }
+
+    final beforeCursor = text.substring(0, cursorPos);
+    final atIndex = beforeCursor.lastIndexOf('@');
+    if (atIndex < 0) {
+      if (_showMentionPicker) setState(() => _showMentionPicker = false);
+      return;
+    }
+
+    if (atIndex > 0 && beforeCursor[atIndex - 1] != ' ') {
+      if (_showMentionPicker) setState(() => _showMentionPicker = false);
+      return;
+    }
+
+    final partial = beforeCursor.substring(atIndex + 1);
+    if (partial.contains(' ')) {
+      if (_showMentionPicker) setState(() => _showMentionPicker = false);
+      return;
+    }
+
+    setState(() {
+      _showMentionPicker = true;
+      _mentionQuery = partial.toLowerCase();
+    });
+  }
+
+  void _insertMention(String username) {
+    final text = _messageController.text;
+    final cursorPos = _messageController.selection.baseOffset;
+    if (cursorPos < 0) return;
+
+    final beforeCursor = text.substring(0, cursorPos);
+    final atIndex = beforeCursor.lastIndexOf('@');
+    if (atIndex < 0) return;
+
+    final afterCursor = text.substring(cursorPos);
+    final replacement = '@$username ';
+    final newText = text.substring(0, atIndex) + replacement + afterCursor;
+    final newCursorPos = atIndex + replacement.length;
+
+    _messageController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: newCursorPos),
+    );
+
+    setState(() {
+      _showMentionPicker = false;
+      _mentionQuery = '';
+    });
+    _inputFocusNode.requestFocus();
+  }
+
+  List<ConversationMember> get _filteredMentionMembers {
+    final conv = widget.conversation;
+    if (conv == null) return const [];
+    final myUserId = ref.read(authProvider).userId ?? '';
+    return conv.members.where((m) {
+      if (m.userId == myUserId) return false;
+      if (_mentionQuery.isEmpty) return true;
+      return m.username.toLowerCase().startsWith(_mentionQuery);
+    }).toList();
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _showSearch = !_showSearch;
+      if (!_showSearch) {
+        _searchQuery = '';
+        _searchResults = const [];
+        _highlightedMessageId = null;
+        _searchDebounce?.cancel();
+      }
+    });
+  }
+
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchQuery = '';
+        _searchResults = const [];
+      });
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      _performSearch(query.trim());
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    final conv = widget.conversation;
+    if (conv == null) return;
+
+    final serverUrl = ref.read(serverUrlProvider);
+    final myUserId = ref.read(authProvider).userId ?? '';
+
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.get(
+              Uri.parse(
+                '$serverUrl/api/conversations/${conv.id}/search'
+                '?q=${Uri.encodeQueryComponent(query)}',
+              ),
+              headers: {'Authorization': 'Bearer $token'},
+            ),
+          );
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final list = jsonDecode(response.body) as List;
+        setState(() {
+          _searchQuery = query;
+          _searchResults = list
+              .map(
+                (e) => ChatMessage.fromServerJson(
+                  e as Map<String, dynamic>,
+                  myUserId,
+                ),
+              )
+              .toList();
+        });
+      } else {
+        setState(() {
+          _searchQuery = query;
+          _searchResults = const [];
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _searchQuery = query;
+        _searchResults = const [];
+      });
+    }
+  }
+
+  void _highlightMessage(String messageId) {
+    _highlightTimer?.cancel();
+    setState(() {
+      _highlightedMessageId = messageId;
+      _showSearch = false;
+      _searchQuery = '';
+      _searchResults = const [];
+    });
+    _scrollToMessage(messageId);
+    _highlightTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _highlightedMessageId = null);
+    });
+  }
+
+  void _scrollToMessage(String messageId) {
+    final conv = widget.conversation;
+    if (conv == null) return;
+
+    final chatState = ref.read(chatProvider);
+    final selChId = conv.isGroup ? _selectedTextChannelId : null;
+    final channels = ref.read(channelsProvider).channelsFor(conv.id);
+    final defaultTxtChId = channels.where((c) => c.isText).firstOrNull?.id;
+    final inclUnchanneled =
+        conv.isGroup && selChId != null && selChId == defaultTxtChId;
+
+    final messages = conv.isGroup
+        ? chatState.messagesForConversationChannel(
+            conv.id,
+            channelId: selChId,
+            includeUnchanneled: inclUnchanneled,
+          )
+        : chatState.messagesForConversation(conv.id);
+
+    final index = messages.indexWhere((m) => m.id == messageId);
+    if (index < 0 || !_scrollController.hasClients) return;
+
+    final estimatedOffset = (index + 1) * 60.0;
+    final maxExtent = _scrollController.position.maxScrollExtent;
+    _scrollController.animateTo(
+      estimatedOffset.clamp(0.0, maxExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
   }
 
   String _buildMediaMarker({required String extension, required String url}) {
@@ -1604,6 +1831,21 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                       minHeight: 36,
                     ),
                   ),
+                // Search toggle (all conversations)
+                IconButton(
+                  icon: Icon(
+                    _showSearch ? Icons.search_off : Icons.search,
+                    size: 20,
+                  ),
+                  color: _showSearch ? context.accent : context.textSecondary,
+                  tooltip: _showSearch ? 'Close search' : 'Search messages',
+                  onPressed: _toggleSearch,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
+                ),
                 if (conv.isGroup) ...[
                   if (widget.onMembersToggle != null)
                     IconButton(
@@ -1651,6 +1893,132 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               myUserId,
               voiceRtc,
               effectiveActiveVoiceChannelId,
+            ),
+          // Search bar
+          if (_showSearch)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: context.surface,
+                border: Border(
+                  bottom: BorderSide(color: context.border, width: 1),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    autofocus: true,
+                    style: TextStyle(fontSize: 14, color: context.textPrimary),
+                    decoration: InputDecoration(
+                      hintText: 'Search messages...',
+                      hintStyle: TextStyle(color: context.textMuted),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        size: 18,
+                        color: context.textMuted,
+                      ),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: Icon(
+                                Icons.close,
+                                size: 16,
+                                color: context.textMuted,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _searchQuery = '';
+                                  _searchResults = const [];
+                                });
+                              },
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: context.mainBg,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: context.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: context.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: context.accent),
+                      ),
+                    ),
+                    onChanged: _onSearchChanged,
+                  ),
+                  if (_searchResults.isNotEmpty)
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _searchResults.length,
+                        itemBuilder: (context, i) {
+                          final r = _searchResults[i];
+                          return InkWell(
+                            onTap: () => _highlightMessage(r.id),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 6,
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          r.fromUsername,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: context.textSecondary,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          r.content.length > 80
+                                              ? '${r.content.substring(0, 80)}...'
+                                              : r.content,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: context.textPrimary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  if (_searchQuery.isNotEmpty && _searchResults.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'No results found',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.textMuted,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           // Loading indicator for history
           if (isLoadingHistory)
@@ -1772,35 +2140,103 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                           .firstOrNull;
                       final senderAvatarUrl = senderMember?.avatarUrl;
 
+                      final isHighlighted = _highlightedMessageId == msg.id;
+
                       return Column(
                         children: [
                           ?dateDivider,
-                          MessageItem(
-                            message: msg,
-                            showHeader: showHeader,
-                            isLastInGroup: isLastInGroup,
-                            myUserId: myUserId,
-                            serverUrl: serverUrl,
-                            authToken: authToken,
-                            senderAvatarUrl: senderAvatarUrl,
-                            onReactionTap: _showReactionPicker,
-                            onReactionSelect: (message, emoji) {
-                              final alreadyReacted = message.reactions.any(
-                                (r) => r.emoji == emoji && r.userId == myUserId,
-                              );
-                              _toggleReaction(message, emoji, alreadyReacted);
-                            },
-                            onDelete: _confirmDelete,
-                            onEdit: _enterEditMode,
-                            onAvatarTap: (userId) {
-                              UserProfileScreen.show(context, ref, userId);
-                            },
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 400),
+                            color: isHighlighted
+                                ? context.accent.withValues(alpha: 0.15)
+                                : Colors.transparent,
+                            child: MessageItem(
+                              message: msg,
+                              showHeader: showHeader,
+                              isLastInGroup: isLastInGroup,
+                              myUserId: myUserId,
+                              serverUrl: serverUrl,
+                              authToken: authToken,
+                              senderAvatarUrl: senderAvatarUrl,
+                              onReactionTap: _showReactionPicker,
+                              onReactionSelect: (message, emoji) {
+                                final alreadyReacted = message.reactions.any(
+                                  (r) =>
+                                      r.emoji == emoji && r.userId == myUserId,
+                                );
+                                _toggleReaction(message, emoji, alreadyReacted);
+                              },
+                              onDelete: _confirmDelete,
+                              onEdit: _enterEditMode,
+                              onAvatarTap: (userId) {
+                                UserProfileScreen.show(context, ref, userId);
+                              },
+                            ),
                           ),
                         ],
                       );
                     },
                   ),
           ),
+          // Mention autocomplete picker
+          if (_showMentionPicker && _filteredMentionMembers.isNotEmpty)
+            Container(
+              constraints: const BoxConstraints(maxHeight: 160),
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                color: context.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(8),
+                ),
+                border: Border.all(color: context.border),
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                reverse: true,
+                padding: EdgeInsets.zero,
+                itemCount: _filteredMentionMembers.length,
+                itemBuilder: (context, i) {
+                  final member = _filteredMentionMembers[i];
+                  return InkWell(
+                    onTap: () => _insertMention(member.username),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.alternate_email,
+                            size: 14,
+                            color: context.accent,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            member.username,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: context.textPrimary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (member.role != null) ...[
+                            const SizedBox(width: 6),
+                            Text(
+                              member.role!,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: context.textMuted,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
           // Input area
           Container(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -1899,6 +2335,35 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                             ),
                           ),
                         ),
+                      // Emoji picker toggle
+                      if (!_isEditing)
+                        IconButton(
+                          icon: Icon(
+                            _showEmojiPicker
+                                ? Icons.keyboard_outlined
+                                : Icons.sentiment_satisfied_alt_outlined,
+                            size: 18,
+                          ),
+                          color: _showEmojiPicker
+                              ? context.accent
+                              : context.textSecondary,
+                          tooltip: _showEmojiPicker
+                              ? 'Show keyboard'
+                              : 'Emoji picker',
+                          onPressed: () {
+                            setState(
+                              () => _showEmojiPicker = !_showEmojiPicker,
+                            );
+                            if (!_showEmojiPicker) {
+                              _inputFocusNode.requestFocus();
+                            }
+                          },
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 36,
+                            minHeight: 36,
+                          ),
+                        ),
                       if (_isEditing) const SizedBox(width: 12),
                       // Text field
                       Expanded(
@@ -1930,9 +2395,15 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
                             if (event is KeyDownEvent) {
                               if (event.logicalKey ==
-                                      LogicalKeyboardKey.escape &&
-                                  _isEditing) {
-                                _cancelEditMode();
+                                  LogicalKeyboardKey.escape) {
+                                if (_showMentionPicker) {
+                                  setState(() {
+                                    _showMentionPicker = false;
+                                    _mentionQuery = '';
+                                  });
+                                } else if (_isEditing) {
+                                  _cancelEditMode();
+                                }
                               }
 
                               final isPasteShortcut =
@@ -1966,6 +2437,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                               ),
                             ),
                             onChanged: _onInputChanged,
+                            onTap: () {
+                              if (_showEmojiPicker) {
+                                setState(() => _showEmojiPicker = false);
+                              }
+                            },
                             onSubmitted: (_) =>
                                 _isEditing ? _submitEdit() : _sendMessage(),
                           ),
@@ -2008,6 +2484,69 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               ],
             ),
           ),
+          // Emoji picker panel
+          if (_showEmojiPicker)
+            Container(
+              height: 250,
+              color: context.surface,
+              child: EmojiPicker(
+                onEmojiSelected: (category, emoji) {
+                  final text = _messageController.text;
+                  final selection = _messageController.selection;
+                  final cursorPos = selection.baseOffset >= 0
+                      ? selection.baseOffset
+                      : text.length;
+                  final newText =
+                      text.substring(0, cursorPos) +
+                      emoji.emoji +
+                      text.substring(cursorPos);
+                  _messageController.text = newText;
+                  final newCursor = cursorPos + emoji.emoji.length;
+                  _messageController.selection = TextSelection.collapsed(
+                    offset: newCursor,
+                  );
+                },
+                config: Config(
+                  height: 250,
+                  checkPlatformCompatibility: true,
+                  emojiViewConfig: EmojiViewConfig(
+                    backgroundColor: context.surface,
+                    columns: 8,
+                    emojiSizeMax: 28,
+                    noRecents: Text(
+                      'No Recents',
+                      style: TextStyle(fontSize: 16, color: context.textMuted),
+                    ),
+                  ),
+                  categoryViewConfig: CategoryViewConfig(
+                    backgroundColor: context.surface,
+                    indicatorColor: context.accent,
+                    iconColorSelected: context.accent,
+                    iconColor: context.textMuted,
+                  ),
+                  bottomActionBarConfig: const BottomActionBarConfig(
+                    enabled: false,
+                  ),
+                  searchViewConfig: SearchViewConfig(
+                    backgroundColor: context.surface,
+                    buttonIconColor: context.textSecondary,
+                    hintText: 'Search emoji...',
+                  ),
+                ),
+              ),
+            ),
+          // Hidden RTCVideoView widgets to enable audio playback
+          ...ref
+              .watch(voiceRtcProvider.notifier)
+              .remoteAudioRenderers
+              .values
+              .map(
+                (renderer) => SizedBox(
+                  width: 0,
+                  height: 0,
+                  child: RTCVideoView(renderer),
+                ),
+              ),
         ],
       ),
     );

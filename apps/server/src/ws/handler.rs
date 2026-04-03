@@ -661,6 +661,34 @@ async fn handle_voice_signal(
     to_user_id: Uuid,
     signal: serde_json::Value,
 ) {
+    // Reject oversized payloads (64 KB limit)
+    const MAX_SIGNAL_SIZE: usize = 64 * 1024;
+    if let Ok(encoded) = serde_json::to_string(&signal)
+        && encoded.len() > MAX_SIGNAL_SIZE
+    {
+        send_error(
+            state,
+            sender_id,
+            "Voice signal payload too large (max 64 KB)",
+        );
+        return;
+    }
+
+    // Validate signal type field
+    let valid_types = ["offer", "answer", "candidate"];
+    match signal.get("type").and_then(|v| v.as_str()) {
+        Some(t) if valid_types.contains(&t) => {}
+        _ => {
+            send_error(
+                state,
+                sender_id,
+                "Voice signal must have a 'type' field with value 'offer', 'answer', or \
+                 'candidate'",
+            );
+            return;
+        }
+    }
+
     let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
         Ok(m) => m,
         Err(_) => {

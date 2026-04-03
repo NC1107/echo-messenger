@@ -260,6 +260,27 @@ pub async fn leave_all_user_voice_sessions(
     Ok(rows)
 }
 
+/// Delete voice sessions that have not been updated within `max_age_seconds`.
+/// Returns (channel_id, conversation_id, user_id) tuples for each removed
+/// session so the caller can broadcast leave events.
+pub async fn cleanup_stale_voice_sessions(
+    pool: &PgPool,
+    max_age_seconds: i64,
+) -> Result<Vec<(Uuid, Uuid, Uuid)>, sqlx::Error> {
+    let rows: Vec<(Uuid, Uuid, Uuid)> = sqlx::query_as(
+        "DELETE FROM voice_sessions vs \
+         USING channels c \
+         WHERE vs.channel_id = c.id \
+           AND vs.updated_at < now() - make_interval(secs => $1::double precision) \
+         RETURNING c.id, c.conversation_id, vs.user_id",
+    )
+    .bind(max_age_seconds as f64)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
 /// Atomically leave all voice sessions in a conversation and join a new
 /// channel. Wraps the leave + join in a single transaction to prevent race
 /// conditions where a user briefly appears in zero or two channels.

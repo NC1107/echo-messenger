@@ -412,6 +412,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
       case 'voice_session_left':
       case 'voice_session_updated':
         _refreshVoiceSessionsFromEvent(json);
+      case 'mention':
+        _handleMention(json, myUserId);
       case 'error':
         break;
       case 'voice_signal':
@@ -675,6 +677,34 @@ class WebSocketNotifier extends StateNotifier<WebSocketState> {
           conversationId,
           isEncrypted ? 'encryption_enabled' : 'encryption_disabled',
         );
+  }
+
+  void _handleMention(Map<String, dynamic> json, String myUserId) {
+    final fromUsername = json['from_username'] as String? ?? 'Someone';
+    final conversationId = json['conversation_id'] as String? ?? '';
+    final content = json['content'] as String? ?? '';
+
+    // Only show notification if someone else mentions us
+    final fromUserId = json['from_user_id'] as String? ?? '';
+    if (fromUserId == myUserId) return;
+
+    SoundService().playMessageReceived();
+    NotificationService().showMessageNotification(
+      senderUsername: fromUsername,
+      body: content.length > 100 ? '${content.substring(0, 100)}...' : content,
+    );
+
+    // Bump unread count for the conversation
+    if (conversationId.isNotEmpty) {
+      ref
+          .read(conversationsProvider.notifier)
+          .onNewMessage(
+            conversationId: conversationId,
+            content: content,
+            timestamp: DateTime.now().toIso8601String(),
+            senderUsername: fromUsername,
+          );
+    }
   }
 
   void _handlePresence(Map<String, dynamic> json) {

@@ -57,6 +57,7 @@ pub struct ConversationListItem {
     pub kind: String,
     pub title: Option<String>,
     pub is_encrypted: bool,
+    pub is_muted: bool,
     pub members: Vec<MemberInfo>,
     pub last_message: Option<LastMessageInfo>,
     pub unread_count: i64,
@@ -84,6 +85,7 @@ struct ConversationFullRow {
     kind: String,
     title: Option<String>,
     is_encrypted: bool,
+    is_muted: bool,
     members_json: Option<serde_json::Value>,
     last_message_json: Option<serde_json::Value>,
     unread_count: i64,
@@ -101,6 +103,7 @@ pub async fn list_conversations(
             c.kind, \
             c.title, \
             c.is_encrypted, \
+            cm.is_muted, \
             (SELECT json_agg(json_build_object( \
                 'user_id', u.id, 'username', u.username, 'role', cm2.role, 'avatar_url', u.avatar_url \
             )) FROM conversation_members cm2 \
@@ -158,6 +161,7 @@ pub async fn list_conversations(
             kind: row.kind,
             title: row.title,
             is_encrypted: row.is_encrypted,
+            is_muted: row.is_muted,
             members,
             last_message,
             unread_count: row.unread_count,
@@ -348,6 +352,80 @@ pub async fn edit_message(
 pub struct ToggleEncryptionRequest {
     pub is_encrypted: bool,
 }
+
+// ---------------------------------------------------------------------------
+// GET /api/conversations/:conversation_id/search -- full-text message search
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct SearchQuery {
+    pub q: String,
+    #[serde(default = "default_search_limit")]
+    pub limit: i64,
+}
+
+fn default_search_limit() -> i64 {
+    20
+}
+
+pub async fn search_messages(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(conversation_id): Path<Uuid>,
+    Query(params): Query<SearchQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+    if !is_member {
+        return Err(AppError::unauthorized("Not a member of this conversation"));
+    }
+
+    let messages = db::messages::search_messages(
+        &state.pool,
+        conversation_id,
+        &params.q,
+        params.limit.min(50),
+    )
+    .await
+    .map_err(|_| AppError::internal("Search failed"))?;
+
+    Ok(Json(messages))
+}
+
+// ---------------------------------------------------------------------------
+// PUT /api/conversations/:conversation_id/mute -- toggle mute
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct ToggleMuteRequest {
+    pub is_muted: bool,
+}
+
+pub async fn toggle_mute(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(conversation_id): Path<Uuid>,
+    Json(body): Json<ToggleMuteRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let updated =
+        db::messages::set_mute_status(&state.pool, conversation_id, auth.user_id, body.is_muted)
+            .await
+            .map_err(|_| AppError::internal("Database error"))?;
+
+    if !updated {
+        return Err(AppError::bad_request("Not a member of this conversation"));
+    }
+
+    Ok(Json(serde_json::json!({
+        "conversation_id": conversation_id,
+        "is_muted": body.is_muted,
+    })))
+}
+
+// ---------------------------------------------------------------------------
+// PUT /api/conversations/:conversation_id/encryption -- toggle encryption
+// ---------------------------------------------------------------------------
 
 pub async fn toggle_encryption(
     auth: AuthUser,
