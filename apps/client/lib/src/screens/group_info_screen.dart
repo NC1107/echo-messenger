@@ -169,13 +169,15 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   Future<void> _deleteGroup() async {
+    final groupName = _conversation?.name ?? 'this group';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Group'),
-        content: const Text(
-          'This will permanently delete the group and all its messages. '
-          'This cannot be undone.',
+        content: Text(
+          'Are you sure you want to delete "$groupName"? '
+          'This will permanently remove all messages and members. '
+          'This action cannot be undone.',
         ),
         actions: [
           TextButton(

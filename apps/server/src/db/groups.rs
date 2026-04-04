@@ -81,11 +81,13 @@ pub struct PublicGroupRow {
     pub is_member: bool,
 }
 
-/// List public groups, optionally filtered by title search.
+/// List public groups, optionally filtered by title search, with pagination.
 pub async fn list_public_groups(
     pool: &PgPool,
     user_id: Uuid,
     search: Option<&str>,
+    limit: i64,
+    offset: i64,
 ) -> Result<Vec<PublicGroupRow>, sqlx::Error> {
     match search {
         Some(term) => {
@@ -102,10 +104,13 @@ pub async fn list_public_groups(
                  WHERE c.is_public = true AND c.kind = 'group' \
                    AND c.title ILIKE $1 \
                  GROUP BY c.id \
-                 ORDER BY c.created_at DESC",
+                 ORDER BY c.created_at DESC \
+                 LIMIT $3 OFFSET $4",
             )
             .bind(pattern)
             .bind(user_id)
+            .bind(limit)
+            .bind(offset)
             .fetch_all(pool)
             .await
         }
@@ -121,9 +126,12 @@ pub async fn list_public_groups(
                    ON cm.conversation_id = c.id \
                  WHERE c.is_public = true AND c.kind = 'group' \
                  GROUP BY c.id \
-                 ORDER BY c.created_at DESC",
+                 ORDER BY c.created_at DESC \
+                 LIMIT $2 OFFSET $3",
             )
             .bind(user_id)
+            .bind(limit)
+            .bind(offset)
             .fetch_all(pool)
             .await
         }

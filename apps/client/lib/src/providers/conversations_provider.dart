@@ -44,6 +44,24 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
 
   String get _serverUrl => ref.read(serverUrlProvider);
 
+  /// Map raw exceptions to user-friendly error messages.
+  String _friendlyError(Object error) {
+    final msg = error.toString();
+    if (msg.contains('SocketException') || msg.contains('Connection refused')) {
+      return 'Unable to connect to server. Check your internet connection.';
+    }
+    if (msg.contains('TimeoutException')) {
+      return 'Request timed out. Please try again.';
+    }
+    if (msg.contains('401') || msg.contains('Unauthorized')) {
+      return 'Session expired. Please log in again.';
+    }
+    if (msg.contains('403') || msg.contains('Forbidden')) {
+      return 'You don\'t have permission to do that.';
+    }
+    return 'Something went wrong. Please try again.';
+  }
+
   Map<String, String> _headersWithToken(String token) => {
     'Content-Type': 'application/json',
     'Authorization': 'Bearer $token',
@@ -102,7 +120,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         );
       }
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
+      state = state.copyWith(isLoading: false, error: _friendlyError(e));
     }
   }
 
@@ -335,7 +353,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         return null;
       }
     } catch (e) {
-      state = state.copyWith(error: e.toString());
+      state = state.copyWith(error: _friendlyError(e));
       return null;
     }
   }

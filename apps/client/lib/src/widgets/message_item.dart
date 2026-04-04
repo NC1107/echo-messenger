@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -286,98 +287,102 @@ class _MessageItemState extends State<MessageItem> {
       final rawUrl = imageMatch.group(1)!;
       final fullUrl = _resolveMediaUrl(rawUrl);
 
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: GestureDetector(
-          onTap: () => _showImageViewer(imageUrl: fullUrl, isMine: isMine),
-          child: Stack(
-            children: [
-              // Use Image.network for external GIFs to preserve animation
-              fullUrl.startsWith('http') && rawUrl.contains('.gif')
-                  ? Image.network(
-                      fullUrl,
-                      width: 300,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, e, st) => Container(
+      return Semantics(
+        label: 'Image attachment. Tap to view full size.',
+        image: true,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: GestureDetector(
+            onTap: () => _showImageViewer(imageUrl: fullUrl, isMine: isMine),
+            child: Stack(
+              children: [
+                // Use Image.network for external GIFs to preserve animation
+                fullUrl.startsWith('http') && rawUrl.contains('.gif')
+                    ? Image.network(
+                        fullUrl,
                         width: 300,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          color: context.surface,
-                          borderRadius: BorderRadius.circular(12),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, e, st) => Container(
+                          width: 300,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: context.surface,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Center(
+                            child: Text(
+                              '[GIF failed to load]',
+                              style: TextStyle(
+                                color: context.textMuted,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
                         ),
-                        child: Center(
-                          child: Text(
-                            '[GIF failed to load]',
-                            style: TextStyle(
-                              color: context.textMuted,
-                              fontSize: 13,
+                      )
+                    : CachedNetworkImage(
+                        imageUrl: fullUrl,
+                        width: 300,
+                        fit: BoxFit.cover,
+                        httpHeaders: headers,
+                        errorWidget: (_, e, st) => Container(
+                          width: 300,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: context.surface,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Center(
+                            child: Text(
+                              '[Image failed to load]',
+                              style: TextStyle(
+                                color: context.textMuted,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+                        placeholder: (_, _) => Container(
+                          width: 300,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            color: context.surface,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: context.textMuted,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    )
-                  : CachedNetworkImage(
-                      imageUrl: fullUrl,
-                      width: 300,
-                      fit: BoxFit.cover,
-                      httpHeaders: headers,
-                      errorWidget: (_, e, st) => Container(
-                        width: 300,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          color: context.surface,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Center(
-                          child: Text(
-                            '[Image failed to load]',
-                            style: TextStyle(
-                              color: context.textMuted,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ),
-                      placeholder: (_, _) => Container(
-                        width: 300,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          color: context.surface,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Center(
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: context.textMuted,
-                            ),
-                          ),
-                        ),
-                      ),
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
                     ),
-              Positioned(
-                right: 8,
-                bottom: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.open_in_full,
-                    size: 14,
-                    color: Colors.white,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.open_in_full,
+                      size: 14,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );
@@ -525,10 +530,14 @@ class _MessageItemState extends State<MessageItem> {
               onPressed: () => _downloadMedia(mediaUrl),
             ),
           if (widget.onReply != null)
-            _HoverActionButton(
-              icon: Icons.reply_outlined,
-              tooltip: 'Reply',
-              onPressed: () => widget.onReply?.call(msg),
+            Semantics(
+              label: 'Reply to message',
+              button: true,
+              child: _HoverActionButton(
+                icon: Icons.reply_outlined,
+                tooltip: 'Reply',
+                onPressed: () => widget.onReply?.call(msg),
+              ),
             ),
           _HoverActionButton(
             icon: Icons.add_reaction_outlined,
@@ -613,6 +622,45 @@ class _MessageItemState extends State<MessageItem> {
       };
     _linkRecognizers.add(recognizer);
     return recognizer;
+  }
+
+  /// Build a friendly decryption failure message with a recovery action.
+  Widget _buildDecryptionFailure() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.lock_open, size: 14, color: EchoTheme.danger),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                'Unable to decrypt this message',
+                style: TextStyle(
+                  fontStyle: FontStyle.italic,
+                  color: EchoTheme.danger.withValues(alpha: 0.8),
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        GestureDetector(
+          onTap: () => context.push('/settings'),
+          child: Text(
+            'Reset encryption keys in Settings',
+            style: TextStyle(
+              color: context.accent,
+              fontSize: 12,
+              decoration: TextDecoration.underline,
+              decorationColor: context.accent,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   /// Build a RichText widget that renders URLs as tappable links and @mentions
@@ -831,6 +879,8 @@ class _MessageItemState extends State<MessageItem> {
           // Image or text content
           if (mediaWidget != null)
             mediaWidget
+          else if (msg.content.startsWith('[Could not decrypt'))
+            _buildDecryptionFailure()
           else
             _buildMessageText(
               msg.content,
@@ -868,129 +918,136 @@ class _MessageItemState extends State<MessageItem> {
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        onLongPressStart: !hasReactions
-            ? (details) =>
-                  widget.onReactionTap?.call(msg, details.globalPosition)
-            : null,
-        child: Container(
-          padding: EdgeInsets.only(
-            left: 24,
-            right: 24,
-            top: widget.showHeader ? 8 : 2,
-            bottom: hasReactions ? 4 : 2,
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Column(
-                crossAxisAlignment: (isMine && !widget.compactLayout)
-                    ? CrossAxisAlignment.end
-                    : CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: (isMine && !widget.compactLayout)
-                        ? MainAxisAlignment.end
-                        : MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      // Avatar (received messages, or all in compact mode)
-                      if (!isMine || widget.compactLayout) ...[
-                        GestureDetector(
-                          onTap: widget.onAvatarTap != null
-                              ? () => widget.onAvatarTap!(msg.fromUserId)
-                              : null,
-                          child: SizedBox(
-                            width: 28,
-                            child: widget.showHeader
-                                ? buildAvatar(
-                                    name: msg.fromUsername,
-                                    radius: 14,
-                                    bgColor: _getUserColor(msg.fromUserId),
-                                    imageUrl: widget.senderAvatarUrl != null
-                                        ? '${widget.serverUrl ?? ""}${widget.senderAvatarUrl}'
-                                        : null,
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      ],
-                      // Bubble with reactions
-                      Flexible(child: bubbleWithReactions),
-                    ],
-                  ),
-                  // Timestamp (only on last in group)
-                  if (widget.isLastInGroup)
-                    Padding(
-                      padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: isMine
-                            ? MainAxisAlignment.end
-                            : MainAxisAlignment.start,
-                        children: [
-                          Text(
-                            formatMessageTimestamp(msg.timestamp),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: context.textMuted,
-                            ),
-                          ),
-                          if (msg.isEncrypted)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 3),
-                              child: Icon(
-                                Icons.lock,
-                                size: 10,
-                                color: EchoTheme.online,
+      child: Semantics(
+        label: 'Message from ${msg.fromUsername}. Long press for actions.',
+        child: GestureDetector(
+          onLongPressStart: !hasReactions
+              ? (details) =>
+                    widget.onReactionTap?.call(msg, details.globalPosition)
+              : null,
+          child: Container(
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: widget.showHeader ? 8 : 2,
+              bottom: hasReactions ? 4 : 2,
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Column(
+                  crossAxisAlignment: (isMine && !widget.compactLayout)
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: (isMine && !widget.compactLayout)
+                          ? MainAxisAlignment.end
+                          : MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        // Avatar (received messages, or all in compact mode)
+                        if (!isMine || widget.compactLayout) ...[
+                          Semantics(
+                            label: 'View profile of ${msg.fromUsername}',
+                            button: true,
+                            child: GestureDetector(
+                              onTap: widget.onAvatarTap != null
+                                  ? () => widget.onAvatarTap!(msg.fromUserId)
+                                  : null,
+                              child: SizedBox(
+                                width: 28,
+                                child: widget.showHeader
+                                    ? buildAvatar(
+                                        name: msg.fromUsername,
+                                        radius: 14,
+                                        bgColor: _getUserColor(msg.fromUserId),
+                                        imageUrl: widget.senderAvatarUrl != null
+                                            ? '${widget.serverUrl ?? ""}${widget.senderAvatarUrl}'
+                                            : null,
+                                      )
+                                    : const SizedBox.shrink(),
                               ),
                             ),
-                          if (msg.editedAt != null)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 4),
-                              child: Text(
-                                '(edited)',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontStyle: FontStyle.italic,
-                                  color: context.textMuted,
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        // Bubble with reactions
+                        Flexible(child: bubbleWithReactions),
+                      ],
+                    ),
+                    // Timestamp (only on last in group)
+                    if (widget.isLastInGroup)
+                      Padding(
+                        padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: isMine
+                              ? MainAxisAlignment.end
+                              : MainAxisAlignment.start,
+                          children: [
+                            Text(
+                              formatMessageTimestamp(msg.timestamp),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: context.textMuted,
+                              ),
+                            ),
+                            if (msg.isEncrypted)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 3),
+                                child: Icon(
+                                  Icons.lock,
+                                  size: 10,
+                                  color: EchoTheme.online,
                                 ),
                               ),
-                            ),
-                          if (isMine) _buildStatusIcon(msg.status),
-                        ],
+                            if (msg.editedAt != null)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 4),
+                                child: Text(
+                                  '(edited)',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontStyle: FontStyle.italic,
+                                    color: context.textMuted,
+                                  ),
+                                ),
+                              ),
+                            if (isMine) _buildStatusIcon(msg.status),
+                          ],
+                        ),
                       ),
-                    ),
-                ],
-              ),
-              if (!hasReactions)
-                Positioned(
-                  top: -12,
-                  left: isMine ? null : 36,
-                  right: isMine ? 0 : null,
-                  child: IgnorePointer(
-                    ignoring: !_isHovered,
-                    child: AnimatedOpacity(
-                      opacity: _isHovered ? 1 : 0,
-                      duration: const Duration(milliseconds: 140),
-                      curve: Curves.easeOut,
-                      child: AnimatedSlide(
-                        offset: _isHovered
-                            ? Offset.zero
-                            : const Offset(0, -0.12),
+                  ],
+                ),
+                if (!hasReactions)
+                  Positioned(
+                    top: -12,
+                    left: isMine ? null : 36,
+                    right: isMine ? 0 : null,
+                    child: IgnorePointer(
+                      ignoring: !_isHovered,
+                      child: AnimatedOpacity(
+                        opacity: _isHovered ? 1 : 0,
                         duration: const Duration(milliseconds: 140),
                         curve: Curves.easeOut,
-                        child: _buildHoverActions(
-                          msg,
-                          isMine,
-                          mediaUrl: mediaUrl,
+                        child: AnimatedSlide(
+                          offset: _isHovered
+                              ? Offset.zero
+                              : const Offset(0, -0.12),
+                          duration: const Duration(milliseconds: 140),
+                          curve: Curves.easeOut,
+                          child: _buildHoverActions(
+                            msg,
+                            isMine,
+                            mediaUrl: mediaUrl,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

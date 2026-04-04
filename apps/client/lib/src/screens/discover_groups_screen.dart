@@ -47,10 +47,14 @@ class DiscoverGroupsScreen extends ConsumerStatefulWidget {
 }
 
 class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
+  static const _pageSize = 20;
   final _searchController = TextEditingController();
   Timer? _debounce;
   List<_PublicGroup> _groups = [];
   bool _isLoading = false;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  int _offset = 0;
   String? _error;
   final Set<String> _joiningIds = {};
 
@@ -80,15 +84,35 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
     setState(() {
       _isLoading = true;
       _error = null;
+      _offset = 0;
+      _hasMore = true;
+      _groups = [];
     });
 
+    await _fetchGroups(query);
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+    await _fetchGroups(_searchController.text.trim());
+    if (mounted) setState(() => _isLoadingMore = false);
+  }
+
+  Future<void> _fetchGroups(String query) async {
     final serverUrl = ref.read(serverUrlProvider);
     final token = ref.read(authProvider).token;
 
     try {
+      final params = <String, String>{
+        'limit': '$_pageSize',
+        'offset': '$_offset',
+      };
+      if (query.isNotEmpty) params['search'] = query;
+
       final uri = Uri.parse(
         '$serverUrl/api/groups/public',
-      ).replace(queryParameters: query.isNotEmpty ? {'search': query} : null);
+      ).replace(queryParameters: params);
       final response = await http
           .get(
             uri,
@@ -106,10 +130,13 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
         final List<dynamic> list = body is List
             ? body
             : (body['groups'] as List? ?? []);
+        final newGroups = list
+            .map((e) => _PublicGroup.fromJson(e as Map<String, dynamic>))
+            .toList();
         setState(() {
-          _groups = list
-              .map((e) => _PublicGroup.fromJson(e as Map<String, dynamic>))
-              .toList();
+          _groups.addAll(newGroups);
+          _hasMore = newGroups.length >= _pageSize;
+          _offset += newGroups.length;
           _isLoading = false;
         });
       } else {
@@ -274,8 +301,28 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _groups.length,
+                    itemCount: _groups.length + (_hasMore ? 1 : 0),
                     itemBuilder: (context, index) {
+                      if (index >= _groups.length) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          child: Center(
+                            child: _isLoadingMore
+                                ? SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      color: context.accent,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : TextButton(
+                                    onPressed: _loadMore,
+                                    child: const Text('Load more'),
+                                  ),
+                          ),
+                        );
+                      }
                       final group = _groups[index];
                       return _GroupDiscoveryItem(
                         group: group,
