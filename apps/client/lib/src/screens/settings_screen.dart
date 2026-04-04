@@ -24,7 +24,7 @@ import '../theme/echo_theme.dart';
 import '../version.dart';
 
 /// Section identifiers for the settings navigation.
-enum SettingsSection { account, privacy, audio, server, appearance, about }
+enum SettingsSection { account, privacy, audio, appearance, about }
 
 /// Returns a human-readable label for a settings section.
 String settingsSectionLabel(SettingsSection section) {
@@ -33,8 +33,6 @@ String settingsSectionLabel(SettingsSection section) {
       return 'Account';
     case SettingsSection.privacy:
       return 'Privacy';
-    case SettingsSection.server:
-      return 'Server';
     case SettingsSection.audio:
       return 'Audio';
     case SettingsSection.appearance:
@@ -82,12 +80,6 @@ class SettingsNavList extends StatelessWidget {
           icon: Icons.graphic_eq,
           label: 'Audio',
           section: SettingsSection.audio,
-        ),
-        _navItem(
-          context: context,
-          icon: Icons.dns_outlined,
-          label: 'Server',
-          section: SettingsSection.server,
         ),
         _navItem(
           context: context,
@@ -281,8 +273,7 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
   @override
   void initState() {
     super.initState();
-    if (widget.section == SettingsSection.server ||
-        widget.section == SettingsSection.about) {
+    if (widget.section == SettingsSection.about) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _checkServerHealth();
       });
@@ -298,8 +289,7 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
   void didUpdateWidget(covariant SettingsContent oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.section != oldWidget.section &&
-        (widget.section == SettingsSection.server ||
-            widget.section == SettingsSection.about) &&
+        widget.section == SettingsSection.about &&
         _serverVersion == null) {
       _checkServerHealth();
     }
@@ -568,8 +558,6 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
         return _buildAccountSection();
       case SettingsSection.privacy:
         return _buildPrivacySection();
-      case SettingsSection.server:
-        return _buildServerSection();
       case SettingsSection.audio:
         return _buildAudioSection();
       case SettingsSection.appearance:
@@ -842,99 +830,6 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
               padding: const EdgeInsets.symmetric(vertical: 12),
             ),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildServerSection() {
-    final serverUrl = ref.watch(serverUrlProvider);
-    final displayHost = Uri.tryParse(serverUrl)?.host ?? serverUrl;
-
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        ListTile(
-          leading: Icon(
-            Icons.dns_outlined,
-            color: context.textSecondary,
-            size: 22,
-          ),
-          title: Text(
-            'Connected to',
-            style: TextStyle(color: context.textPrimary, fontSize: 15),
-          ),
-          subtitle: Text(
-            displayHost,
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-        ),
-        ListTile(
-          leading: Icon(
-            Icons.circle,
-            color: _checkingHealth
-                ? EchoTheme.warning
-                : (_serverOnline ? EchoTheme.online : EchoTheme.danger),
-            size: 12,
-          ),
-          title: Text(
-            'Status',
-            style: TextStyle(color: context.textPrimary, fontSize: 15),
-          ),
-          subtitle: Text(
-            _checkingHealth
-                ? 'Checking...'
-                : (_serverOnline ? 'Online' : 'Offline'),
-            style: TextStyle(
-              color: _checkingHealth
-                  ? EchoTheme.warning
-                  : (_serverOnline ? EchoTheme.online : EchoTheme.danger),
-              fontSize: 12,
-            ),
-          ),
-          trailing: IconButton(
-            icon: Icon(Icons.refresh, color: context.textMuted, size: 20),
-            tooltip: 'Refresh status',
-            onPressed: _checkServerHealth,
-          ),
-        ),
-        if (_serverVersion != null)
-          ListTile(
-            leading: Icon(
-              Icons.info_outline,
-              color: context.textSecondary,
-              size: 22,
-            ),
-            title: Text(
-              'Server version',
-              style: TextStyle(color: context.textPrimary, fontSize: 15),
-            ),
-            subtitle: Text(
-              _serverVersion!,
-              style: TextStyle(color: context.textMuted, fontSize: 12),
-            ),
-          ),
-        Divider(color: context.border, height: 32),
-        ListTile(
-          leading: Icon(
-            Icons.swap_horiz_outlined,
-            color: context.textSecondary,
-            size: 22,
-          ),
-          title: Text(
-            'Change server',
-            style: TextStyle(color: context.textPrimary, fontSize: 15),
-          ),
-          subtitle: Text(
-            'Connect to a different Echo server',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          trailing: Icon(
-            Icons.chevron_right,
-            color: context.textMuted,
-            size: 20,
-          ),
-          onTap: _showChangeServerDialog,
         ),
       ],
     );
@@ -1347,17 +1242,85 @@ class _SettingsContentState extends ConsumerState<SettingsContent> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Client version: $appVersion',
-          style: TextStyle(color: context.textMuted, fontSize: 14),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Server version: ${_serverVersion ?? "unknown"}',
+          'Client v$appVersion',
           style: TextStyle(color: context.textMuted, fontSize: 14),
         ),
         const SizedBox(height: 16),
         _buildCheckForUpdates(),
         const SizedBox(height: 24),
+        Divider(color: context.border),
+        const SizedBox(height: 16),
+        // Server info (merged from former Server section)
+        Text(
+          'Server',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            Icons.dns_outlined,
+            color: context.textSecondary,
+            size: 22,
+          ),
+          title: Text(
+            'Connected to',
+            style: TextStyle(color: context.textPrimary, fontSize: 15),
+          ),
+          subtitle: Text(
+            Uri.tryParse(ref.watch(serverUrlProvider))?.host ??
+                ref.watch(serverUrlProvider),
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            Icons.circle,
+            color: _checkingHealth
+                ? EchoTheme.warning
+                : (_serverOnline ? EchoTheme.online : EchoTheme.danger),
+            size: 12,
+          ),
+          title: Text(
+            'Status: ${_checkingHealth ? "Checking..." : (_serverOnline ? "Online" : "Offline")}',
+            style: TextStyle(color: context.textPrimary, fontSize: 15),
+          ),
+          subtitle: Text(
+            'Server v${_serverVersion ?? "unknown"}',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          trailing: IconButton(
+            icon: Icon(Icons.refresh, color: context.textMuted, size: 20),
+            tooltip: 'Refresh',
+            onPressed: _checkServerHealth,
+          ),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            Icons.swap_horiz_outlined,
+            color: context.textSecondary,
+            size: 22,
+          ),
+          title: Text(
+            'Change server',
+            style: TextStyle(color: context.textPrimary, fontSize: 15),
+          ),
+          trailing: Icon(
+            Icons.chevron_right,
+            color: context.textMuted,
+            size: 20,
+          ),
+          onTap: _showChangeServerDialog,
+        ),
+        const SizedBox(height: 16),
+        Divider(color: context.border),
+        const SizedBox(height: 16),
         Text(
           'Open source',
           style: TextStyle(
