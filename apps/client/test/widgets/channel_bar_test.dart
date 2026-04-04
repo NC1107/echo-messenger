@@ -91,7 +91,8 @@ class _FakeVoiceRtcNotifier extends VoiceRtcNotifier {
   @override
   Future<void> leaveChannel() async {
     leaveCalls++;
-    state = VoiceRtcState.empty;
+    // Don't set state here -- may be called during widget dispose when the
+    // element is already defunct, which would trigger a framework assertion.
   }
 }
 
