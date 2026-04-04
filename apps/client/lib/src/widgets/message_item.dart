@@ -20,6 +20,9 @@ const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎'
 /// Regex for detecting URLs in message text.
 final _urlRegex = RegExp(r'https?://[^\s]+');
 
+/// Regex for detecting standalone URL messages.
+final _standaloneUrlRegex = RegExp(r'^https?://[^\s]+$', caseSensitive: false);
+
 /// Regex for detecting @mentions in message text.
 final _mentionRegex = RegExp(r'@(\w+)');
 
@@ -31,6 +34,10 @@ final _videoRegex = RegExp(r'^\[video:(.+)\]$');
 
 /// Regex for detecting generic file markers: [file:URL]
 final _fileRegex = RegExp(r'^\[file:(.+)\]$');
+
+const _imageExtensions = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
+const _videoExtensions = {'mp4', 'webm', 'mov'};
+const _fileExtensions = {'pdf'};
 
 class MessageItem extends StatefulWidget {
   final ChatMessage message;
@@ -107,6 +114,29 @@ class _MessageItemState extends State<MessageItem> {
     return headers;
   }
 
+  String _urlExtension(String url) {
+    final uri = Uri.tryParse(url);
+    final path = uri?.path ?? '';
+    if (path.isEmpty || !path.contains('.')) return '';
+    return path.split('.').last.toLowerCase();
+  }
+
+  bool _isStandaloneMediaUrl(String content) {
+    final trimmed = content.trim();
+    if (!_standaloneUrlRegex.hasMatch(trimmed)) return false;
+
+    final ext = _urlExtension(trimmed);
+    return _imageExtensions.contains(ext) ||
+        _videoExtensions.contains(ext) ||
+        _fileExtensions.contains(ext);
+  }
+
+  bool _isImageUrl(String url) => _imageExtensions.contains(_urlExtension(url));
+
+  bool _isVideoUrl(String url) => _videoExtensions.contains(_urlExtension(url));
+
+  bool _isFileUrl(String url) => _fileExtensions.contains(_urlExtension(url));
+
   String? _extractMediaUrl(String content) {
     final imageMatch = _imgRegex.firstMatch(content);
     if (imageMatch != null) return imageMatch.group(1);
@@ -116,6 +146,10 @@ class _MessageItemState extends State<MessageItem> {
 
     final fileMatch = _fileRegex.firstMatch(content);
     if (fileMatch != null) return fileMatch.group(1);
+
+    if (_isStandaloneMediaUrl(content)) {
+      return content.trim();
+    }
 
     return null;
   }
@@ -283,8 +317,16 @@ class _MessageItemState extends State<MessageItem> {
   Widget? _buildMediaContent(String content, {required bool isMine}) {
     final headers = _mediaHeaders();
     final imageMatch = _imgRegex.firstMatch(content);
-    if (imageMatch != null) {
-      final rawUrl = imageMatch.group(1)!;
+    final standaloneUrl = _isStandaloneMediaUrl(content)
+        ? content.trim()
+        : null;
+    final imageUrl =
+        imageMatch?.group(1) ??
+        (standaloneUrl != null && _isImageUrl(standaloneUrl)
+            ? standaloneUrl
+            : null);
+    if (imageUrl != null) {
+      final rawUrl = imageUrl;
       final fullUrl = _resolveMediaUrl(rawUrl);
 
       return Semantics(
@@ -297,7 +339,7 @@ class _MessageItemState extends State<MessageItem> {
             child: Stack(
               children: [
                 // Use Image.network for external GIFs to preserve animation
-                fullUrl.startsWith('http') && rawUrl.contains('.gif')
+                fullUrl.startsWith('http') && _urlExtension(rawUrl) == 'gif'
                     ? Image.network(
                         fullUrl,
                         width: 300,
@@ -389,8 +431,13 @@ class _MessageItemState extends State<MessageItem> {
     }
 
     final videoMatch = _videoRegex.firstMatch(content);
-    if (videoMatch != null) {
-      final rawUrl = videoMatch.group(1)!;
+    final videoUrl =
+        videoMatch?.group(1) ??
+        (standaloneUrl != null && _isVideoUrl(standaloneUrl)
+            ? standaloneUrl
+            : null);
+    if (videoUrl != null) {
+      final rawUrl = videoUrl;
       return Container(
         width: 300,
         padding: const EdgeInsets.all(12),
@@ -447,8 +494,13 @@ class _MessageItemState extends State<MessageItem> {
     }
 
     final fileMatch = _fileRegex.firstMatch(content);
-    if (fileMatch != null) {
-      final rawUrl = fileMatch.group(1)!;
+    final fileUrl =
+        fileMatch?.group(1) ??
+        (standaloneUrl != null && _isFileUrl(standaloneUrl)
+            ? standaloneUrl
+            : null);
+    if (fileUrl != null) {
+      final rawUrl = fileUrl;
       final displayName = _filenameFromUrl(rawUrl);
       return Container(
         width: 300,

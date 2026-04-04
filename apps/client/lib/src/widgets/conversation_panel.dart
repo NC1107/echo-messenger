@@ -27,6 +27,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
   final VoidCallback? onNewChat;
   final VoidCallback? onNewGroup;
   final VoidCallback? onDiscover;
+  final VoidCallback? onCollapseSidebar;
   final VoidCallback? onSettings;
   final VoidCallback? onShowContacts;
 
@@ -44,6 +45,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
     this.onNewChat,
     this.onNewGroup,
     this.onDiscover,
+    this.onCollapseSidebar,
     this.onSettings,
     this.onShowContacts,
     this.onMessageContact,
@@ -460,6 +462,18 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                           minHeight: 32,
                         ),
                       ),
+                      if (widget.onCollapseSidebar != null)
+                        IconButton(
+                          icon: const Icon(Icons.chevron_left, size: 18),
+                          color: context.textMuted,
+                          tooltip: 'Collapse sidebar',
+                          onPressed: widget.onCollapseSidebar,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                        ),
                     ],
                   ),
                 ),

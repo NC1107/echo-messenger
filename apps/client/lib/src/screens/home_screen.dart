@@ -328,13 +328,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     context.go('/login');
   }
 
-  ConversationPanel _buildConversationPanel() {
+  ConversationPanel _buildConversationPanel({VoidCallback? onCollapseSidebar}) {
     return ConversationPanel(
       selectedConversationId: _selectedConversation?.id,
       onConversationTap: _selectConversation,
       onNewChat: _openContacts,
       onNewGroup: _openCreateGroup,
       onDiscover: _openDiscoverGroups,
+      onCollapseSidebar: onCollapseSidebar,
       onSettings: _openSettings,
       onShowContacts: _openContacts,
       onMessageContact: _messageContact,
@@ -624,26 +625,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   decoration: const BoxDecoration(),
                   child: _sidebarCollapsed
                       ? _buildCollapsedSidebar()
-                      : Stack(
-                          children: [
-                            _buildConversationPanel(),
-                            Positioned(
-                              top: 16,
-                              right: 4,
-                              child: IconButton(
-                                icon: Icon(Icons.chevron_left, size: 18),
-                                color: context.textMuted,
-                                tooltip: 'Collapse sidebar',
-                                onPressed: () =>
-                                    setState(() => _sidebarCollapsed = true),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                  minWidth: 44,
-                                  minHeight: 44,
-                                ),
-                              ),
-                            ),
-                          ],
+                      : _buildConversationPanel(
+                          onCollapseSidebar: () =>
+                              setState(() => _sidebarCollapsed = true),
                         ),
                 ),
               // Thin vertical divider

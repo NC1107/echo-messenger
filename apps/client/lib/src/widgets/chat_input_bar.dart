@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -667,6 +669,13 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final inputStatusText = _isEditing && typingUsers.isNotEmpty
         ? 'Editing message \u2022 $typingText'
         : (_isEditing ? 'Editing message...' : typingText);
+    final viewportWidth = MediaQuery.of(context).size.width;
+    final isMobileLayout = viewportWidth < 600;
+    final isDesktopLayout = viewportWidth >= 900;
+    final showEmojiPicker = _showEmojiPicker && !isMobileLayout;
+    final emojiPickerHeight = isDesktopLayout ? 160.0 : 180.0;
+    final emojiColumns = isDesktopLayout ? 9 : 8;
+    final emojiSize = isDesktopLayout ? 24.0 : 28.0;
 
     final effectiveActiveVoiceChannelId = widget.effectiveActiveVoiceChannelId;
 
@@ -921,11 +930,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                         padding: const EdgeInsets.only(left: 4),
                         child: PopupMenuButton<String>(
                           icon: Icon(
-                            _showEmojiPicker
+                            showEmojiPicker
                                 ? Icons.keyboard_outlined
                                 : Icons.add_circle_outline,
                             size: 20,
-                            color: _showEmojiPicker
+                            color: showEmojiPicker
                                 ? context.accent
                                 : context.textSecondary,
                           ),
@@ -965,22 +974,25 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                                 ],
                               ),
                             ),
-                            PopupMenuItem(
-                              value: 'emoji',
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    _showEmojiPicker
-                                        ? Icons.keyboard_outlined
-                                        : Icons
-                                              .sentiment_satisfied_alt_outlined,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(_showEmojiPicker ? 'Keyboard' : 'Emoji'),
-                                ],
+                            if (!isMobileLayout)
+                              PopupMenuItem(
+                                value: 'emoji',
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      showEmojiPicker
+                                          ? Icons.keyboard_outlined
+                                          : Icons
+                                                .sentiment_satisfied_alt_outlined,
+                                      size: 18,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      showEmojiPicker ? 'Keyboard' : 'Emoji',
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
                             const PopupMenuItem(
                               value: 'gif',
                               child: Row(
@@ -1062,6 +1074,13 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                                 (HardwareKeyboard.instance.isControlPressed ||
                                     HardwareKeyboard.instance.isMetaPressed);
                             if (isPaste) {
+                              // Let native paste run on Linux/Web where
+                              // manual interception can be flaky.
+                              if (kIsWeb ||
+                                  defaultTargetPlatform ==
+                                      TargetPlatform.linux) {
+                                return KeyEventResult.ignored;
+                              }
                               _handlePaste();
                               return KeyEventResult.handled;
                             }
@@ -1077,6 +1096,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                                 (HardwareKeyboard.instance.isControlPressed ||
                                     HardwareKeyboard.instance.isMetaPressed);
                             if (isCopy || isCut) {
+                              if (kIsWeb ||
+                                  defaultTargetPlatform ==
+                                      TargetPlatform.linux) {
+                                return KeyEventResult.ignored;
+                              }
                               final sel = _messageController.selection;
                               if (sel.isValid && !sel.isCollapsed) {
                                 final selected = _messageController.text
@@ -1122,7 +1146,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                           ),
                           onChanged: _onInputChanged,
                           onTap: () {
-                            if (_showEmojiPicker) {
+                            if (showEmojiPicker) {
                               setState(() => _showEmojiPicker = false);
                             }
                           },
@@ -1177,9 +1201,9 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           ),
         ),
         // Emoji picker panel
-        if (_showEmojiPicker)
+        if (showEmojiPicker)
           Container(
-            height: 180,
+            height: emojiPickerHeight,
             color: context.surface,
             child: EmojiPicker(
               onEmojiSelected: (category, emoji) {
@@ -1199,18 +1223,20 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                 );
               },
               config: Config(
-                height: 180,
+                height: emojiPickerHeight,
                 checkPlatformCompatibility: true,
                 emojiViewConfig: EmojiViewConfig(
                   backgroundColor: context.surface,
-                  columns: 8,
-                  emojiSizeMax: 28,
+                  columns: emojiColumns,
+                  emojiSizeMax: emojiSize,
                   noRecents: Text(
-                    'No Recents',
-                    style: TextStyle(fontSize: 16, color: context.textMuted),
+                    'No recents yet. Pick one below.',
+                    style: TextStyle(fontSize: 14, color: context.textMuted),
                   ),
                 ),
                 categoryViewConfig: CategoryViewConfig(
+                  initCategory: Category.SMILEYS,
+                  recentTabBehavior: RecentTabBehavior.NONE,
                   backgroundColor: context.surface,
                   indicatorColor: context.accent,
                   iconColorSelected: context.accent,

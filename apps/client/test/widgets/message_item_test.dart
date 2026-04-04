@@ -333,6 +333,44 @@ void main() {
       });
     });
 
+    testWidgets('direct image URL renders embedded image widget', (
+      tester,
+    ) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(content: 'https://example.com/image.png');
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('https://example.com/image.png'), findsNothing);
+        expect(find.byIcon(Icons.open_in_full), findsOneWidget);
+      });
+    });
+
+    testWidgets('direct GIF URL renders embedded media widget', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(content: 'https://example.com/fun.gif');
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('https://example.com/fun.gif'), findsNothing);
+        expect(find.byIcon(Icons.open_in_full), findsOneWidget);
+      });
+    });
+
     testWidgets('my message does not render avatar column', (tester) async {
       await mockNetworkImagesFor(() async {
         final msg = _makeMessage(isMine: true, fromUserId: 'test-user-id');

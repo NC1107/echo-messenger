@@ -33,6 +33,13 @@ CustomTransitionPage<void> _fadePage({
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
 
+  Widget buildProfilePage(String userId) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Profile')),
+      body: UserProfileScreen(userId: userId),
+    );
+  }
+
   return GoRouter(
     initialLocation: '/login',
     redirect: (context, state) {
@@ -98,13 +105,57 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: '/join',
+        redirect: (context, state) {
+          final qp = state.uri.queryParameters;
+          final groupId =
+              qp['groupId'] ?? qp['gid'] ?? qp['id'] ?? qp['invite'] ?? '';
+          if (groupId.isEmpty) return '/home';
+          return '/join/$groupId';
+        },
+      ),
+      GoRoute(
+        path: '/invite/:groupId',
+        pageBuilder: (context, state) => _fadePage(
+          key: state.pageKey,
+          child: JoinGroupScreen(groupId: state.pathParameters['groupId']!),
+        ),
+      ),
+      GoRoute(
         path: '/profile/:userId',
         pageBuilder: (context, state) => _fadePage(
           key: state.pageKey,
-          child: Scaffold(
-            appBar: AppBar(title: const Text('Profile')),
-            body: UserProfileScreen(userId: state.pathParameters['userId']!),
-          ),
+          child: buildProfilePage(state.pathParameters['userId']!),
+        ),
+      ),
+      GoRoute(
+        path: '/u/:userId',
+        pageBuilder: (context, state) => _fadePage(
+          key: state.pageKey,
+          child: buildProfilePage(state.pathParameters['userId']!),
+        ),
+      ),
+      GoRoute(
+        path: '/user/:userId',
+        pageBuilder: (context, state) => _fadePage(
+          key: state.pageKey,
+          child: buildProfilePage(state.pathParameters['userId']!),
+        ),
+      ),
+      GoRoute(
+        path: '/profile',
+        redirect: (context, state) {
+          final qp = state.uri.queryParameters;
+          final userId = qp['userId'] ?? qp['uid'] ?? qp['id'] ?? '';
+          if (userId.isEmpty) return '/home';
+          return '/profile/$userId';
+        },
+      ),
+      GoRoute(
+        path: '/echo-user/:userId',
+        pageBuilder: (context, state) => _fadePage(
+          key: state.pageKey,
+          child: buildProfilePage(state.pathParameters['userId']!),
         ),
       ),
     ],

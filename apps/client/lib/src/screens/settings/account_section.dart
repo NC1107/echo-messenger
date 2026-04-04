@@ -84,7 +84,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     final authState = ref.read(authProvider);
     final userId = authState.userId ?? '';
     final username = authState.username ?? 'Unknown';
-    final echoUri = 'echo://user/$userId';
+    final profileLink = 'https://echo-messenger.us/#/profile/$userId';
 
     showDialog(
       context: context,
@@ -112,7 +112,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: QrImageView(
-                data: echoUri,
+                data: profileLink,
                 version: QrVersions.auto,
                 size: 200,
                 backgroundColor: Colors.white,
@@ -129,13 +129,13 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
             ),
             const SizedBox(height: 4),
             Text(
-              echoUri,
+              profileLink,
               style: TextStyle(color: context.textMuted, fontSize: 12),
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: () {
-                Clipboard.setData(ClipboardData(text: echoUri));
+                Clipboard.setData(ClipboardData(text: profileLink));
                 ToastService.show(
                   dialogContext,
                   'Link copied to clipboard',

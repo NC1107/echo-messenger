@@ -87,12 +87,7 @@ class MembersPanel extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (isOwner)
-                  _DeleteGroupButton(
-                    conversationId: conv.id,
-                    onDeleted: onGroupLeft,
-                  )
-                else
+                if (!isOwner)
                   _LeaveGroupButton(
                     conversationId: conv.id,
                     onLeft: onGroupLeft,
@@ -423,131 +418,6 @@ class _LeaveGroupButtonState extends ConsumerState<_LeaveGroupButton> {
         style: OutlinedButton.styleFrom(
           foregroundColor: EchoTheme.danger,
           side: const BorderSide(color: EchoTheme.danger),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-        ),
-      ),
-    );
-  }
-}
-
-class _DeleteGroupButton extends ConsumerStatefulWidget {
-  final String conversationId;
-  final VoidCallback? onDeleted;
-
-  const _DeleteGroupButton({required this.conversationId, this.onDeleted});
-
-  @override
-  ConsumerState<_DeleteGroupButton> createState() => _DeleteGroupButtonState();
-}
-
-class _DeleteGroupButtonState extends ConsumerState<_DeleteGroupButton> {
-  bool _isLoading = false;
-
-  Future<void> _confirmAndDelete() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: Text(
-          'Delete group',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
-          'This will permanently delete the group and all its messages. '
-          'This action cannot be undone.',
-          style: TextStyle(color: context.textSecondary, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    final serverUrl = ref.read(serverUrlProvider);
-    final token = ref.read(authProvider).token;
-
-    setState(() => _isLoading = true);
-
-    try {
-      final response = await http
-          .delete(
-            Uri.parse('$serverUrl/api/groups/${widget.conversationId}'),
-            headers: {
-              'Authorization': 'Bearer ${token ?? ""}',
-              'Content-Type': 'application/json',
-            },
-          )
-          .timeout(const Duration(seconds: 10));
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        await ref.read(conversationsProvider.notifier).loadConversations();
-        widget.onDeleted?.call();
-        if (mounted) {
-          ToastService.show(context, 'Group deleted', type: ToastType.success);
-        }
-      } else {
-        setState(() => _isLoading = false);
-        if (mounted) {
-          ToastService.show(
-            context,
-            'Failed to delete group (${response.statusCode})',
-            type: ToastType.error,
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ToastService.show(
-          context,
-          'Failed to delete group',
-          type: ToastType.error,
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 36,
-      child: FilledButton.icon(
-        onPressed: _isLoading ? null : _confirmAndDelete,
-        icon: _isLoading
-            ? const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            : const Icon(Icons.delete_outline, size: 16),
-        label: const Text('Delete Group'),
-        style: FilledButton.styleFrom(
-          backgroundColor: EchoTheme.danger,
-          foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
         ),

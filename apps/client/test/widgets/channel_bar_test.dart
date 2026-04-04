@@ -178,5 +178,55 @@ void main() {
       expect(fakeVoiceRtc.joinCalls, 1);
       expect(activeVoice, 'voice-1');
     });
+
+    testWidgets('tapping active voice channel leaves and clears selection', (
+      tester,
+    ) async {
+      late _FakeChannelsNotifier fakeChannels;
+      late _FakeVoiceRtcNotifier fakeVoiceRtc;
+      String? activeVoice;
+
+      await tester.pumpApp(
+        ChannelBar(
+          conversationId: 'conv-1',
+          onTextChannelChanged: (_) {},
+          onVoiceChannelChanged: (channelId) => activeVoice = channelId,
+        ),
+        overrides: [
+          authOverride(loggedInAuthState),
+          webSocketOverride(),
+          channelsProvider.overrideWith((ref) {
+            fakeChannels = _FakeChannelsNotifier(ref);
+            return fakeChannels;
+          }),
+          voiceRtcProvider.overrideWith((ref) {
+            fakeVoiceRtc = _FakeVoiceRtcNotifier(ref);
+            return fakeVoiceRtc;
+          }),
+          voiceSettingsProvider.overrideWith(
+            (ref) => _FakeVoiceSettingsNotifier(),
+          ),
+        ],
+      );
+      await tester.pumpAndSettle();
+
+      // Join first.
+      await tester.tap(find.text('lounge'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Join'));
+      await tester.pumpAndSettle();
+
+      expect(fakeChannels.joinCalls, 1);
+      expect(fakeVoiceRtc.joinCalls, 1);
+      expect(activeVoice, 'voice-1');
+
+      // Tap active channel again to leave.
+      await tester.tap(find.text('lounge'));
+      await tester.pumpAndSettle();
+
+      expect(fakeChannels.leaveCalls, 1);
+      expect(fakeVoiceRtc.leaveCalls, 1);
+      expect(activeVoice, isNull);
+    });
   });
 }

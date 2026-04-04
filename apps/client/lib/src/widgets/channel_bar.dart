@@ -188,6 +188,19 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     return confirmed ?? false;
   }
 
+  Future<void> _leaveVoiceChannel(String channelId) async {
+    final channelsNotifier = ref.read(channelsProvider.notifier);
+    final rtcNotifier = ref.read(voiceRtcProvider.notifier);
+
+    // Leave: always clean up local state, even if server returns 400.
+    await channelsNotifier.leaveVoiceChannel(widget.conversationId, channelId);
+    await rtcNotifier.leaveChannel();
+
+    if (!mounted) return;
+    setState(() => _activeVoiceChannelId = '');
+    widget.onVoiceChannelChanged(null);
+  }
+
   @override
   Widget build(BuildContext context) {
     final channelsState = ref.watch(channelsProvider);
@@ -295,16 +308,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
           final channelsNotifier = ref.read(channelsProvider.notifier);
           final rtcNotifier = ref.read(voiceRtcProvider.notifier);
           if (isActive) {
-            // Leave: always clean up local state, even if server returns 400
-            await channelsNotifier.leaveVoiceChannel(
-              widget.conversationId,
-              channel.id,
-            );
-            await rtcNotifier.leaveChannel();
-            if (mounted) {
-              setState(() => _activeVoiceChannelId = '');
-              widget.onVoiceChannelChanged(null);
-            }
+            await _leaveVoiceChannel(channel.id);
           } else {
             // Join
             final shouldJoin = await _confirmVoiceJoin(channel.name);
@@ -434,6 +438,39 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
       return const SizedBox.shrink();
     }
     final participants = channelsState.voiceSessionsFor(activeVoiceChannel.id);
+    final isCompact = MediaQuery.of(context).size.width < 720;
+
+    Future<void> toggleMute() async {
+      final notifier = ref.read(voiceSettingsProvider.notifier);
+      final nextMuted = !voiceSettings.selfMuted;
+      await notifier.setSelfMuted(nextMuted);
+      ref
+          .read(voiceRtcProvider.notifier)
+          .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
+      await _syncVoiceState();
+    }
+
+    Future<void> toggleDeafen() async {
+      final notifier = ref.read(voiceSettingsProvider.notifier);
+      final nextDeafened = !voiceSettings.selfDeafened;
+      await notifier.setSelfDeafened(nextDeafened);
+      final lk = ref.read(voiceRtcProvider.notifier);
+      lk.setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
+      lk.setDeafened(nextDeafened);
+      await _syncVoiceState();
+    }
+
+    Future<void> togglePushToTalk() async {
+      final notifier = ref.read(voiceSettingsProvider.notifier);
+      final next = !voiceSettings.pushToTalkEnabled;
+      await notifier.setPushToTalkEnabled(next);
+      ref
+          .read(voiceRtcProvider.notifier)
+          .setCaptureEnabled(
+            !next && !voiceSettings.selfMuted && !voiceSettings.selfDeafened,
+          );
+      await _syncVoiceState();
+    }
 
     return Container(
       width: double.infinity,
@@ -442,97 +479,170 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
         color: context.surface,
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
-      child: Row(
-        children: [
-          Icon(Icons.graphic_eq, size: 16, color: context.accent),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Connected to ${activeVoiceChannel.name} '
-              '${voiceRtc.peerConnectionStates.length} peer(s)',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          if (voiceRtc.isJoining)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: context.accent,
+      child: isCompact
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.graphic_eq, size: 16, color: context.accent),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Connected to ${activeVoiceChannel.name} '
+                        '${voiceRtc.peerConnectionStates.length} peer(s)',
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (participants.any((p) => p.userId == myUserId))
+                      Icon(
+                        Icons.fiber_manual_record,
+                        size: 10,
+                        color: EchoTheme.online,
+                      ),
+                  ],
                 ),
-              ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
+                        size: 18,
+                      ),
+                      color: voiceSettings.selfMuted
+                          ? EchoTheme.danger
+                          : context.textSecondary,
+                      tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
+                      onPressed: toggleMute,
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        voiceSettings.selfDeafened
+                            ? Icons.headset_off
+                            : Icons.headset,
+                        size: 18,
+                      ),
+                      color: voiceSettings.selfDeafened
+                          ? EchoTheme.danger
+                          : context.textSecondary,
+                      tooltip: voiceSettings.selfDeafened
+                          ? 'Undeafen'
+                          : 'Deafen',
+                      onPressed: toggleDeafen,
+                    ),
+                    TextButton(
+                      onPressed: togglePushToTalk,
+                      child: Text(
+                        voiceSettings.pushToTalkEnabled
+                            ? 'PTT ${voiceSettings.pushToTalkKeyLabel}'
+                            : 'PTT Off',
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () =>
+                          _leaveVoiceChannel(activeVoiceChannel.id),
+                      icon: const Icon(Icons.call_end, size: 16),
+                      label: const Text('Leave'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: EchoTheme.danger,
+                      ),
+                    ),
+                    if (voiceRtc.isJoining)
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: context.accent,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                Icon(Icons.graphic_eq, size: 16, color: context.accent),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Connected to ${activeVoiceChannel.name} '
+                    '${voiceRtc.peerConnectionStates.length} peer(s)',
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (voiceRtc.isJoining)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: context.accent,
+                      ),
+                    ),
+                  ),
+                IconButton(
+                  icon: Icon(
+                    voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
+                    size: 18,
+                  ),
+                  color: voiceSettings.selfMuted
+                      ? EchoTheme.danger
+                      : context.textSecondary,
+                  tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
+                  onPressed: toggleMute,
+                ),
+                IconButton(
+                  icon: Icon(
+                    voiceSettings.selfDeafened
+                        ? Icons.headset_off
+                        : Icons.headset,
+                    size: 18,
+                  ),
+                  color: voiceSettings.selfDeafened
+                      ? EchoTheme.danger
+                      : context.textSecondary,
+                  tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
+                  onPressed: toggleDeafen,
+                ),
+                TextButton(
+                  onPressed: togglePushToTalk,
+                  child: Text(
+                    voiceSettings.pushToTalkEnabled
+                        ? 'PTT ${voiceSettings.pushToTalkKeyLabel}'
+                        : 'PTT Off',
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.call_end, size: 18),
+                  color: EchoTheme.danger,
+                  tooltip: 'Leave',
+                  onPressed: () => _leaveVoiceChannel(activeVoiceChannel.id),
+                ),
+                if (participants.any((p) => p.userId == myUserId))
+                  Icon(
+                    Icons.fiber_manual_record,
+                    size: 10,
+                    color: EchoTheme.online,
+                  ),
+              ],
             ),
-          IconButton(
-            icon: Icon(
-              voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
-              size: 18,
-            ),
-            color: voiceSettings.selfMuted
-                ? EchoTheme.danger
-                : context.textSecondary,
-            tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
-            onPressed: () async {
-              final notifier = ref.read(voiceSettingsProvider.notifier);
-              final nextMuted = !voiceSettings.selfMuted;
-              await notifier.setSelfMuted(nextMuted);
-              ref
-                  .read(voiceRtcProvider.notifier)
-                  .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
-              await _syncVoiceState();
-            },
-          ),
-          IconButton(
-            icon: Icon(
-              voiceSettings.selfDeafened
-                  ? Icons.volume_off_outlined
-                  : Icons.volume_up_outlined,
-              size: 18,
-            ),
-            color: voiceSettings.selfDeafened
-                ? EchoTheme.danger
-                : context.textSecondary,
-            tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
-            onPressed: () async {
-              final notifier = ref.read(voiceSettingsProvider.notifier);
-              final nextDeafened = !voiceSettings.selfDeafened;
-              await notifier.setSelfDeafened(nextDeafened);
-              final lk = ref.read(voiceRtcProvider.notifier);
-              lk.setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
-              lk.setDeafened(nextDeafened);
-              await _syncVoiceState();
-            },
-          ),
-          TextButton(
-            onPressed: () async {
-              final notifier = ref.read(voiceSettingsProvider.notifier);
-              final next = !voiceSettings.pushToTalkEnabled;
-              await notifier.setPushToTalkEnabled(next);
-              ref
-                  .read(voiceRtcProvider.notifier)
-                  .setCaptureEnabled(
-                    !next &&
-                        !voiceSettings.selfMuted &&
-                        !voiceSettings.selfDeafened,
-                  );
-              await _syncVoiceState();
-            },
-            child: Text(
-              voiceSettings.pushToTalkEnabled
-                  ? 'PTT ${voiceSettings.pushToTalkKeyLabel}'
-                  : 'PTT Off',
-            ),
-          ),
-          if (participants.any((p) => p.userId == myUserId))
-            Icon(Icons.fiber_manual_record, size: 10, color: EchoTheme.online),
-        ],
-      ),
     );
   }
 }

@@ -97,8 +97,8 @@ class VoiceDock extends ConsumerWidget {
           // Deafen
           _DockIconButton(
             icon: voiceSettings.selfDeafened
-                ? Icons.volume_off_outlined
-                : Icons.volume_up_outlined,
+                ? Icons.headset_off
+                : Icons.headset,
             color: voiceSettings.selfDeafened
                 ? EchoTheme.danger
                 : context.textSecondary,
@@ -116,8 +116,13 @@ class VoiceDock extends ConsumerWidget {
             icon: Icons.call_end,
             color: EchoTheme.danger,
             tooltip: 'Leave',
-            onPressed: () {
-              ref.read(voiceRtcProvider.notifier).leaveChannel();
+            onPressed: () async {
+              // Leave both server-side voice membership and local WebRTC state
+              // so channel selection state clears consistently in the UI.
+              await ref
+                  .read(channelsProvider.notifier)
+                  .leaveVoiceChannel(conversationId, channelId);
+              await ref.read(voiceRtcProvider.notifier).leaveChannel();
             },
           ),
         ],

@@ -59,6 +59,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   bool _showSearch = false;
   String? _highlightedMessageId;
   Timer? _highlightTimer;
+  double _lastKeyboardInset = 0;
 
   OverlayEntry? _reactionOverlay;
 
@@ -103,14 +104,32 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     }
   }
 
-  void _scrollToBottom() {
+  void _scrollToBottom({bool animated = true, int settleRetries = 2}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
+      if (!_scrollController.hasClients) return;
+
+      final target = _scrollController.position.maxScrollExtent;
+      final alreadyAtBottom =
+          (target - _scrollController.position.pixels).abs() < 1;
+      if (alreadyAtBottom) return;
+
+      Future<void> settleIfNeeded() async {
+        if (settleRetries <= 0 || !_scrollController.hasClients) return;
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        _scrollToBottom(animated: false, settleRetries: settleRetries - 1);
+      }
+
+      if (animated) {
+        _scrollController
+            .animateTo(
+              target,
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+            )
+            .whenComplete(settleIfNeeded);
+      } else {
+        _scrollController.jumpTo(target);
+        settleIfNeeded();
       }
     });
   }
@@ -581,9 +600,17 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         _loadHistory();
         _loadChannels();
         _markAsRead();
-        // Scroll to bottom after a short delay to let messages render
-        Future.delayed(const Duration(milliseconds: 300), _scrollToBottom);
+        _scrollToBottom(settleRetries: 3);
       });
+    }
+
+    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    if (keyboardInset != _lastKeyboardInset) {
+      final wasNearBottom = _isNearBottom();
+      _lastKeyboardInset = keyboardInset;
+      if (wasNearBottom) {
+        _scrollToBottom(animated: false, settleRetries: 2);
+      }
     }
 
     final chatState = ref.watch(chatProvider);
@@ -632,7 +659,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       final prevCount = prev == null ? 0 : visibleCount(prev);
       final nextCount = visibleCount(next);
       if (nextCount > prevCount && _isNearBottom()) {
-        _scrollToBottom();
+        _scrollToBottom(settleRetries: 2);
       }
     });
 
@@ -836,7 +863,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             effectiveActiveVoiceChannelId: _activeVoiceChannelId,
             typingUsers: typingUsers,
             onMessageSent: () {
-              _scrollToBottom();
+              _scrollToBottom(settleRetries: 2);
               _markAsRead();
             },
           ),
