@@ -807,10 +807,21 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               Text(
                 _searchQuery.isNotEmpty
                     ? 'Try a different search term'
-                    : 'Start a new chat to get going',
+                    : 'Add a contact to start messaging',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: context.textMuted, fontSize: 13),
               ),
+              if (_searchQuery.isEmpty) ...[
+                const SizedBox(height: 14),
+                SizedBox(
+                  height: 34,
+                  child: FilledButton.icon(
+                    onPressed: widget.onNewChat,
+                    icon: const Icon(Icons.chat_outlined, size: 16),
+                    label: const Text('New Chat'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

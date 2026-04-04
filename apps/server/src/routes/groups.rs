@@ -28,6 +28,8 @@ pub struct CreateGroupRequest {
 #[derive(Debug, Deserialize)]
 pub struct PublicGroupsQuery {
     pub search: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -344,12 +346,21 @@ pub async fn list_public_groups(
     State(state): State<Arc<AppState>>,
     Query(query): Query<PublicGroupsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let groups = db::groups::list_public_groups(&state.pool, auth.user_id, query.search.as_deref())
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to list public groups: {:?}", e);
-            AppError::internal("Failed to list public groups")
-        })?;
+    let limit = query.limit.unwrap_or(20).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
+
+    let groups = db::groups::list_public_groups(
+        &state.pool,
+        auth.user_id,
+        query.search.as_deref(),
+        limit,
+        offset,
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to list public groups: {:?}", e);
+        AppError::internal("Failed to list public groups")
+    })?;
 
     let response: Vec<PublicGroupResponse> = groups
         .into_iter()
