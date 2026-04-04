@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+import '../../utils/file_picker_helper.dart';
 
 class AccountSection extends ConsumerStatefulWidget {
   const AccountSection({super.key});
@@ -22,14 +22,8 @@ class AccountSection extends ConsumerStatefulWidget {
 
 class _AccountSectionState extends ConsumerState<AccountSection> {
   Future<void> _uploadAvatar() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) return;
-
-    final file = result.files.first;
-    if (file.bytes == null) return;
+    final picked = await pickImageFile();
+    if (picked == null) return;
 
     final serverUrl = ref.read(serverUrlProvider);
     final token = ref.read(authProvider).token;
@@ -41,8 +35,8 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
       ..files.add(
         http.MultipartFile.fromBytes(
           'avatar',
-          file.bytes!,
-          filename: file.name,
+          picked.bytes,
+          filename: picked.name,
           contentType: MediaType('image', 'png'),
         ),
       );

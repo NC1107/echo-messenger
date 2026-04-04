@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
@@ -23,6 +22,7 @@ import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/clipboard_image_helper.dart';
+import '../utils/file_picker_helper.dart';
 import 'gif_picker_widget.dart';
 
 /// Extracted chat input bar from ChatPanel (~850 lines).
@@ -534,27 +534,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     if (_isPickingFile) return;
     _isPickingFile = true;
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-        allowMultiple: false,
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty) return;
+      final picked = await pickAnyFile();
+      if (picked == null) return;
       if (!mounted) return;
 
-      final file = result.files.first;
-      if (file.bytes == null) {
-        if (mounted) {
-          ToastService.show(
-            context,
-            'Could not read file data',
-            type: ToastType.error,
-          );
-        }
-        return;
-      }
-
-      final ext = (file.extension ?? '').toLowerCase();
+      final ext = picked.extension ?? '';
       final mimeTypes = <String, List<String>>{
         'jpg': ['image', 'jpeg'],
         'jpeg': ['image', 'jpeg'],
@@ -567,8 +551,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       final mime = mimeTypes[ext] ?? ['application', 'octet-stream'];
 
       _setPendingAttachment(
-        bytes: file.bytes!,
-        fileName: file.name,
+        bytes: picked.bytes,
+        fileName: picked.name,
         mimeType: '${mime[0]}/${mime[1]}',
         ext: ext,
       );
