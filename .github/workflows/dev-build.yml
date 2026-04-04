@@ -1,0 +1,70 @@
+name: Dev Build
+
+on:
+  push:
+    branches: [dev]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'research/**'
+      - 'context/**'
+
+concurrency:
+  group: dev-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.41.x'
+
+jobs:
+  build-linux:
+    name: Build Linux AppImage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libfuse2 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good
+      - name: Build
+        working-directory: apps/client
+        run: flutter build linux --release --dart-define=APP_VERSION=dev
+      - name: Package tar.gz
+        run: |
+          cd apps/client/build/linux/x64/release/bundle
+          tar czf ${{ github.workspace }}/echo-linux-dev.tar.gz .
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-linux
+          path: echo-linux-dev.tar.gz
+          retention-days: 7
+
+  build-web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build
+        working-directory: apps/client
+        run: flutter build web --release --pwa-strategy=none --dart-define=APP_VERSION=dev
+      - name: Package
+        run: |
+          cd apps/client/build/web
+          tar czf ${{ github.workspace }}/echo-web-dev.tar.gz .
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-web
+          path: echo-web-dev.tar.gz
+          retention-days: 7
