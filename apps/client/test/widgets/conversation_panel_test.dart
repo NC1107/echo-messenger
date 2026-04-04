@@ -71,8 +71,8 @@ void main() {
       );
       await tester.pump();
 
-      // DM conversation shows raw last message
-      expect(find.text('Hey there!'), findsOneWidget);
+      // DM conversation shows sender prefix
+      expect(find.text('alice: Hey there!'), findsOneWidget);
       // Group conversation prefixes sender: "bob: Meeting at 3pm"
       expect(find.text('bob: Meeting at 3pm'), findsOneWidget);
     });

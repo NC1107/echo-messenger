@@ -1297,8 +1297,14 @@ class _ConversationItemState extends State<_ConversationItem> {
         snippet = '\u{1F4CE} File';
       }
     }
-    if (snippet != null && conv.isGroup && conv.lastMessageSender != null) {
-      snippet = '${conv.lastMessageSender}: $snippet';
+    if (snippet != null && conv.lastMessageSender != null) {
+      // Find if sender is "me" by checking if any member with myUserId has this username
+      final myMember = conv.members
+          .where((m) => m.userId == widget.myUserId)
+          .firstOrNull;
+      final isMe = myMember?.username == conv.lastMessageSender;
+      final senderLabel = isMe ? 'You' : conv.lastMessageSender!;
+      snippet = '$senderLabel: $snippet';
     }
 
     return MouseRegion(

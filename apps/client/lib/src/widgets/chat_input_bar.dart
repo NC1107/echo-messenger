@@ -147,32 +147,34 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // ---------------------------------------------------------------------------
 
   Future<void> _sendMessage() async {
-    var text = _messageController.text.trim();
+    final caption = _messageController.text.trim();
 
-    // Prepend pending attachment marker if upload is ready
+    // If there's an uploaded attachment, send it as a separate message
     if (_pendingAttachmentUrl != null && _pendingAttachmentExt != null) {
       final marker = _buildMediaMarker(
         extension: _pendingAttachmentExt!,
         url: _pendingAttachmentUrl!,
       );
-      text = text.isEmpty ? marker : '$marker $text';
       _clearPendingAttachment();
+      _messageController.clear();
+      await _doSend(marker);
+      // If user typed a caption, send it as a second message
+      if (caption.isNotEmpty) {
+        await _doSend(caption);
+      }
+      widget.onMessageSent();
+      return;
     }
 
+    final text = caption;
     if (text.isEmpty) return;
 
     final conv = widget.conversation;
-    final myUserId = ref.read(authProvider).userId ?? '';
 
-    // Find peer user ID for DMs
-    String peerUserId = '';
-    String? channelId;
-    if (!conv.isGroup) {
-      final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
-      peerUserId = peer?.userId ?? '';
-
+    // Privacy check for unencrypted DMs
+    if (!conv.isGroup && !conv.isEncrypted) {
       final privacy = ref.read(privacyProvider);
-      if (!conv.isEncrypted && !privacy.allowUnencryptedDm) {
+      if (!privacy.allowUnencryptedDm) {
         ToastService.show(
           context,
           'Plaintext direct messages are disabled in Privacy settings',
@@ -180,19 +182,29 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         );
         return;
       }
+    }
+
+    await _doSend(text);
+    _messageController.clear();
+    if (_showEmojiPicker) setState(() => _showEmojiPicker = false);
+    widget.onMessageSent();
+  }
+
+  Future<void> _doSend(String text) async {
+    if (text.isEmpty) return;
+    final conv = widget.conversation;
+    final myUserId = ref.read(authProvider).userId ?? '';
+
+    String peerUserId = '';
+    String? channelId;
+    if (!conv.isGroup) {
+      final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
+      peerUserId = peer?.userId ?? '';
     } else {
       final channels = ref.read(channelsProvider).channelsFor(conv.id);
       channelId =
           widget.selectedTextChannelId ??
           channels.where((c) => c.isText).firstOrNull?.id;
-      if (channelId == null) {
-        ToastService.show(
-          context,
-          'No text channel available in this group',
-          type: ToastType.warning,
-        );
-        return;
-      }
     }
 
     ref
@@ -204,10 +216,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           conversationId: conv.id,
           channelId: channelId,
         );
-    _messageController.clear();
-    if (_showEmojiPicker) setState(() => _showEmojiPicker = false);
-
-    widget.onMessageSent();
 
     try {
       if (conv.isGroup) {
@@ -449,6 +457,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
             _pendingAttachmentUrl = mediaUrl;
             _isUploadingAttachment = false;
           });
+          _inputFocusNode.requestFocus();
         } else {
           ToastService.show(context, 'Upload failed', type: ToastType.error);
           _clearPendingAttachment();

@@ -165,6 +165,65 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     }
   }
 
+  Future<void> _deleteGroup() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Group'),
+        content: const Text(
+          'This will permanently delete the group and all its messages. '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final token = ref.read(authProvider).token;
+    if (token == null) return;
+    final serverUrl = ref.read(serverUrlProvider);
+
+    try {
+      final response = await http.delete(
+        Uri.parse('$serverUrl/api/groups/${widget.conversationId}'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200 && mounted) {
+        await ref.read(conversationsProvider.notifier).loadConversations();
+        if (mounted) {
+          Navigator.pop(context);
+          ToastService.show(context, 'Group deleted', type: ToastType.success);
+        }
+      } else if (mounted) {
+        ToastService.show(
+          context,
+          'Only the group owner can delete this group',
+          type: ToastType.error,
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Failed to delete group',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
   Future<void> _leaveGroup() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -884,6 +943,20 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                   ),
                 ),
               ),
+              if (myRole == 'owner') ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: FilledButton.icon(
+                    onPressed: _deleteGroup,
+                    icon: const Icon(Icons.delete_forever_outlined),
+                    label: const Text('Delete Group'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
             ],
           ),

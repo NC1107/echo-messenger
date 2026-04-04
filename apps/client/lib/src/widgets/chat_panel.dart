@@ -575,12 +575,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       );
     }
 
-    // Load on first build
+    // Load on first build + scroll to newest message
     if (_loadedHistoryKey == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadHistory();
         _loadChannels();
         _markAsRead();
+        // Scroll to bottom after a short delay to let messages render
+        Future.delayed(const Duration(milliseconds: 300), _scrollToBottom);
       });
     }
 
