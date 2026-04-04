@@ -9,6 +9,28 @@ import 'package:echo_app/src/theme/echo_theme.dart';
 
 import '../helpers/mock_providers.dart';
 
+class _FailingLoginAuthNotifier extends AuthNotifier {
+  _FailingLoginAuthNotifier(super.ref) {
+    state = const AuthState();
+  }
+
+  @override
+  Future<void> login(String username, String password) async {
+    state = state.copyWith(isLoading: true, error: null);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    state = state.copyWith(
+      isLoading: false,
+      error: 'Invalid username or password',
+    );
+  }
+
+  @override
+  Future<void> register(String username, String password) async {}
+
+  @override
+  Future<bool> tryAutoLogin() async => false;
+}
+
 /// Builds a minimal [GoRouter] that renders [LoginScreen] on `/login` and
 /// captures navigation to `/register` and `/home`.
 GoRouter _buildRouter({required AuthState authState}) {
@@ -229,6 +251,48 @@ void main() {
 
       // The version text should contain 'Echo v'
       expect(find.textContaining('Echo v'), findsOneWidget);
+    });
+
+    testWidgets('keeps username and clears password on failed login', (
+      tester,
+    ) async {
+      final router = _buildRouter(authState: loggedOutAuthState);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authProvider.overrideWith((ref) => _FailingLoginAuthNotifier(ref)),
+            serverUrlOverride(),
+          ],
+          child: MaterialApp.router(
+            theme: EchoTheme.darkTheme,
+            darkTheme: EchoTheme.darkTheme,
+            themeMode: ThemeMode.dark,
+            routerConfig: router,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Username'),
+        'alice',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Password'),
+        'wrong-password',
+      );
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Login'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+
+      final fields = tester
+          .widgetList<TextFormField>(find.byType(TextFormField))
+          .toList();
+      expect(fields.first.controller?.text, 'alice');
+      expect(fields[1].controller?.text, '');
+      expect(find.text('Invalid username or password'), findsOneWidget);
     });
   });
 }

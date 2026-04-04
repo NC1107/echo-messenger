@@ -8,6 +8,7 @@ import '../providers/server_url_provider.dart';
 import '../utils/version_utils.dart';
 import '../version.dart';
 import '../theme/echo_theme.dart';
+import '../widgets/echo_logo_icon.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -34,6 +35,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     final auth = ref.read(authProvider.notifier);
     await auth.login(_usernameController.text.trim(), _passwordController.text);
+    if (!mounted) return;
+    if (ref.read(authProvider).error != null) {
+      _passwordController.clear();
+    }
     // Crypto init happens in contacts_screen._initData() after navigation
   }
 
@@ -55,9 +60,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    'Echo',
-                    style: Theme.of(context).textTheme.headlineLarge,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const EchoLogoIcon(size: 30),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Echo',
+                        style: Theme.of(context).textTheme.headlineLarge,
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   Text(

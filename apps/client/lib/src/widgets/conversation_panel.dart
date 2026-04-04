@@ -16,6 +16,7 @@ import '../utils/time_utils.dart';
 import 'avatar_utils.dart';
 import 'contact_item.dart';
 import 'conversation_item.dart';
+import 'echo_logo_icon.dart';
 
 // Re-export avatar utilities so existing `show` imports keep working.
 export 'avatar_utils.dart' show buildAvatar, avatarColor, groupAvatarColor;
@@ -367,6 +368,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ),
             child: Row(
               children: [
+                const EchoLogoIcon(size: 24),
+                const SizedBox(width: 10),
                 Text(
                   'Echo',
                   style: TextStyle(

@@ -662,7 +662,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 ),
               Center(
                 child: Text(
-                  '${conv.members.length} members',
+                  '${conv.members.length} member${conv.members.length == 1 ? '' : 's'}',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),

@@ -151,6 +151,43 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
         );
   }
 
+  Future<bool> _confirmVoiceJoin(String channelName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: Text(
+          'Join Voice Channel?',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Join $channelName now? Your microphone will be enabled based on your voice settings.',
+          style: TextStyle(color: context.textSecondary, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Join'),
+          ),
+        ],
+      ),
+    );
+
+    return confirmed ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final channelsState = ref.watch(channelsProvider);
@@ -270,6 +307,8 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
             }
           } else {
             // Join
+            final shouldJoin = await _confirmVoiceJoin(channel.name);
+            if (!shouldJoin) return;
             final success = await channelsNotifier.joinVoiceChannel(
               widget.conversationId,
               channel.id,

@@ -8,6 +8,7 @@ import '../providers/server_url_provider.dart';
 import '../utils/version_utils.dart';
 import '../version.dart';
 import '../theme/echo_theme.dart';
+import '../widgets/echo_logo_icon.dart';
 
 /// Computes password strength as a value from 0.0 to 1.0.
 /// Returns a record of (double value, String label, Color color).
@@ -105,6 +106,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  const EchoLogoIcon(size: 30),
+                  const SizedBox(height: 10),
                   Text(
                     'Create Account',
                     style: Theme.of(context).textTheme.headlineLarge,

@@ -64,10 +64,12 @@ pub async fn find_or_create_dm_conversation(
         return Ok(row.0);
     }
 
-    // Create new conversation
-    let conv: (Uuid,) = sqlx::query_as("INSERT INTO conversations DEFAULT VALUES RETURNING id")
-        .fetch_one(&mut *tx)
-        .await?;
+    // Create new DM conversation with encryption enabled by default.
+    let conv: (Uuid,) = sqlx::query_as(
+        "INSERT INTO conversations (kind, is_encrypted) VALUES ('direct', true) RETURNING id",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
 
     let conv_id = conv.0;
 

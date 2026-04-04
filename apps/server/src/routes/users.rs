@@ -57,7 +57,7 @@ pub async fn get_my_privacy(
 
     Ok(Json(PrivacyPreferencesResponse {
         read_receipts_enabled: privacy.read_receipts_enabled,
-        allow_unencrypted_dm: privacy.allow_unencrypted_dm,
+        allow_unencrypted_dm: false,
     }))
 }
 
@@ -81,9 +81,7 @@ pub async fn update_my_privacy(
         payload
             .read_receipts_enabled
             .unwrap_or(current.read_receipts_enabled),
-        payload
-            .allow_unencrypted_dm
-            .unwrap_or(current.allow_unencrypted_dm),
+        false,
     )
     .await
     .map_err(|e| {
@@ -93,7 +91,7 @@ pub async fn update_my_privacy(
 
     Ok(Json(PrivacyPreferencesResponse {
         read_receipts_enabled: updated.read_receipts_enabled,
-        allow_unencrypted_dm: updated.allow_unencrypted_dm,
+        allow_unencrypted_dm: false,
     }))
 }
 

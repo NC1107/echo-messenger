@@ -110,7 +110,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Control read receipts and whether unencrypted direct messages are allowed.',
+          'Control read receipts for your direct messages.',
           style: TextStyle(
             color: context.textSecondary,
             fontSize: 13,
@@ -134,23 +134,6 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
               : (value) => ref
                     .read(privacyProvider.notifier)
                     .setReadReceiptsEnabled(value),
-        ),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Allow Unencrypted Direct Messages',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'When off, plaintext direct messages are blocked.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: privacy.allowUnencryptedDm,
-          onChanged: privacy.isLoading
-              ? null
-              : (value) => ref
-                    .read(privacyProvider.notifier)
-                    .setAllowUnencryptedDm(value),
         ),
         const SizedBox(height: 24),
         Text(

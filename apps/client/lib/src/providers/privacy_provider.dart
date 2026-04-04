@@ -9,26 +9,22 @@ import 'server_url_provider.dart';
 
 class PrivacyState {
   final bool readReceiptsEnabled;
-  final bool allowUnencryptedDm;
   final bool isLoading;
   final String? error;
 
   const PrivacyState({
     this.readReceiptsEnabled = true,
-    this.allowUnencryptedDm = true,
     this.isLoading = false,
     this.error,
   });
 
   PrivacyState copyWith({
     bool? readReceiptsEnabled,
-    bool? allowUnencryptedDm,
     bool? isLoading,
     String? error,
   }) {
     return PrivacyState(
       readReceiptsEnabled: readReceiptsEnabled ?? this.readReceiptsEnabled,
-      allowUnencryptedDm: allowUnencryptedDm ?? this.allowUnencryptedDm,
       isLoading: isLoading ?? this.isLoading,
       error: error,
     );
@@ -72,7 +68,6 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         state = state.copyWith(
           readReceiptsEnabled: data['read_receipts_enabled'] as bool? ?? true,
-          allowUnencryptedDm: data['allow_unencrypted_dm'] as bool? ?? true,
           isLoading: false,
           error: null,
         );
@@ -88,14 +83,10 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
     }
   }
 
-  Future<void> _patch({
-    bool? readReceiptsEnabled,
-    bool? allowUnencryptedDm,
-  }) async {
+  Future<void> _patch({bool? readReceiptsEnabled}) async {
     final prev = state;
     state = state.copyWith(
       readReceiptsEnabled: readReceiptsEnabled ?? state.readReceiptsEnabled,
-      allowUnencryptedDm: allowUnencryptedDm ?? state.allowUnencryptedDm,
       isLoading: true,
       error: null,
     );
@@ -109,9 +100,6 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
             // ignore: use_null_aware_elements
             if (readReceiptsEnabled != null)
               'read_receipts_enabled': readReceiptsEnabled,
-            // ignore: use_null_aware_elements
-            if (allowUnencryptedDm != null)
-              'allow_unencrypted_dm': allowUnencryptedDm,
           }),
         ),
       );
@@ -120,7 +108,6 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         state = state.copyWith(
           readReceiptsEnabled: data['read_receipts_enabled'] as bool? ?? true,
-          allowUnencryptedDm: data['allow_unencrypted_dm'] as bool? ?? true,
           isLoading: false,
           error: null,
         );
@@ -138,10 +125,6 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
 
   Future<void> setReadReceiptsEnabled(bool value) async {
     await _patch(readReceiptsEnabled: value);
-  }
-
-  Future<void> setAllowUnencryptedDm(bool value) async {
-    await _patch(allowUnencryptedDm: value);
   }
 }
 

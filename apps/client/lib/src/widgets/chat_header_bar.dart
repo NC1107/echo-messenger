@@ -107,8 +107,9 @@ class ChatHeaderBar extends ConsumerWidget {
                       Builder(
                         builder: (context) {
                           if (conv.isGroup) {
+                            final memberCount = conv.members.length;
                             return Text(
-                              '${conv.members.length} members',
+                              '$memberCount member${memberCount == 1 ? '' : 's'}',
                               style: TextStyle(
                                 color: context.textMuted,
                                 fontSize: 12,

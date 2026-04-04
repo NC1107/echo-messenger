@@ -133,8 +133,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     state = state.copyWith(isConnected: false);
   }
 
-  /// Send a DM message to a peer. Encrypts only if the conversation has
-  /// encryption enabled; otherwise sends plaintext.
+  /// Send a DM message to a peer.
+  ///
+  /// Direct messages are encrypted-only. If a legacy conversation is not
+  /// marked encrypted yet, sending is blocked.
   Future<void> sendMessage(
     String toUserId,
     String content, {
@@ -151,42 +153,38 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
                 ?.isEncrypted ==
             true;
 
-    final privacy = ref.read(privacyProvider);
-    if (!isEncrypted && !privacy.allowUnencryptedDm) {
+    if (!isEncrypted) {
       _addFailedMessage(
         toUserId,
-        'Plaintext direct messages are disabled in privacy settings',
+        'This direct conversation is not encrypted. Sending is blocked.',
         conversationId: conversationId ?? '',
       );
       return;
     }
 
     String payload;
-    if (isEncrypted) {
-      final cryptoState = ref.read(cryptoProvider);
-      if (!cryptoState.isInitialized) {
-        _addFailedMessage(
-          toUserId,
-          'Encryption not initialized',
-          conversationId: conversationId,
-        );
-        return;
-      }
-      try {
-        final crypto = ref.read(cryptoServiceProvider);
-        final token = ref.read(authProvider).token ?? '';
-        crypto.setToken(token);
-        payload = await crypto.encryptMessage(toUserId, content);
-      } catch (_) {
-        _addFailedMessage(
-          toUserId,
-          'Encryption setup failed. Recipient may not have encryption keys. Try disabling encryption.',
-          conversationId: conversationId,
-        );
-        return;
-      }
-    } else {
-      payload = content;
+    final cryptoState = ref.read(cryptoProvider);
+    if (!cryptoState.isInitialized) {
+      _addFailedMessage(
+        toUserId,
+        'Encryption not initialized',
+        conversationId: conversationId,
+      );
+      return;
+    }
+
+    try {
+      final crypto = ref.read(cryptoServiceProvider);
+      final token = ref.read(authProvider).token ?? '';
+      crypto.setToken(token);
+      payload = await crypto.encryptMessage(toUserId, content);
+    } catch (_) {
+      _addFailedMessage(
+        toUserId,
+        'Encryption setup failed. Verify both users have encryption keys.',
+        conversationId: conversationId,
+      );
+      return;
     }
 
     final msg = <String, dynamic>{
@@ -194,7 +192,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       'to_user_id': toUserId,
       'content': payload,
     };
-    if (conversationId != null && conversationId.isNotEmpty) {
+    if (conversationId.isNotEmpty) {
       msg['conversation_id'] = conversationId;
     }
 

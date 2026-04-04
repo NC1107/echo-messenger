@@ -14,7 +14,6 @@ import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/chat_provider.dart';
-import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/voice_rtc_provider.dart';
 import '../providers/voice_settings_provider.dart';
@@ -171,17 +170,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
     final conv = widget.conversation;
 
-    // Privacy check for unencrypted DMs
+    // Direct messages are encrypted-only.
     if (!conv.isGroup && !conv.isEncrypted) {
-      final privacy = ref.read(privacyProvider);
-      if (!privacy.allowUnencryptedDm) {
-        ToastService.show(
-          context,
-          'Plaintext direct messages are disabled in Privacy settings',
-          type: ToastType.warning,
-        );
-        return;
-      }
+      ToastService.show(
+        context,
+        'This direct conversation is not encrypted yet. Sending is blocked.',
+        type: ToastType.warning,
+      );
+      return;
     }
 
     await _doSend(text);
@@ -488,6 +484,48 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       mimeType: image.mimeType,
       ext: _extensionFromMime(image.mimeType),
     );
+  }
+
+  /// Handle Ctrl+V: read clipboard text and insert at cursor, bypassing the
+  /// browser's native paste context menu that CanvasKit shows by default.
+  /// Also tries image paste in parallel for clipboard images.
+  Future<void> _handlePaste() async {
+    // Try image paste (non-blocking)
+    if (!_isEditing) {
+      _pasteImageFromClipboard();
+    }
+
+    // Read text from clipboard and insert at cursor
+    final data = await Clipboard.getData('text/plain');
+    if (data?.text == null || data!.text!.isEmpty) return;
+    if (!mounted) return;
+
+    final text = data.text!;
+    final selection = _messageController.selection;
+    final currentText = _messageController.text;
+
+    if (selection.isValid) {
+      final newText = currentText.replaceRange(
+        selection.start,
+        selection.end,
+        text,
+      );
+      _messageController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(
+          offset: selection.start + text.length,
+        ),
+      );
+    } else {
+      _messageController.value = TextEditingValue(
+        text: currentText + text,
+        selection: TextSelection.collapsed(
+          offset: currentText.length + text.length,
+        ),
+      );
+    }
+
+    _onInputChanged(_messageController.text);
   }
 
   Future<void> _pickFile() async {
@@ -1017,13 +1055,46 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                               return KeyEventResult.handled;
                             }
 
-                            final isPasteShortcut =
+                            // Ctrl+V: manually handle paste to bypass browser
+                            // context menu on Flutter web (CanvasKit).
+                            final isPaste =
                                 event.logicalKey == LogicalKeyboardKey.keyV &&
                                 (HardwareKeyboard.instance.isControlPressed ||
                                     HardwareKeyboard.instance.isMetaPressed);
-                            if (isPasteShortcut && !_isEditing) {
-                              // Try clipboard image paste (async, won't block text paste)
-                              _pasteImageFromClipboard();
+                            if (isPaste) {
+                              _handlePaste();
+                              return KeyEventResult.handled;
+                            }
+
+                            // Ctrl+C / Ctrl+X: handle copy/cut to prevent
+                            // browser context menu on selected text.
+                            final isCopy =
+                                event.logicalKey == LogicalKeyboardKey.keyC &&
+                                (HardwareKeyboard.instance.isControlPressed ||
+                                    HardwareKeyboard.instance.isMetaPressed);
+                            final isCut =
+                                event.logicalKey == LogicalKeyboardKey.keyX &&
+                                (HardwareKeyboard.instance.isControlPressed ||
+                                    HardwareKeyboard.instance.isMetaPressed);
+                            if (isCopy || isCut) {
+                              final sel = _messageController.selection;
+                              if (sel.isValid && !sel.isCollapsed) {
+                                final selected = _messageController.text
+                                    .substring(sel.start, sel.end);
+                                Clipboard.setData(
+                                  ClipboardData(text: selected),
+                                );
+                                if (isCut) {
+                                  _messageController.text = _messageController
+                                      .text
+                                      .replaceRange(sel.start, sel.end, '');
+                                  _messageController.selection =
+                                      TextSelection.collapsed(
+                                        offset: sel.start,
+                                      );
+                                }
+                                return KeyEventResult.handled;
+                              }
                             }
                           }
                           return KeyEventResult.ignored;

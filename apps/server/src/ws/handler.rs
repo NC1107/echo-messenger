@@ -320,7 +320,7 @@ async fn handle_send_message(
         return;
     };
 
-    // Enforce sender privacy preference for plaintext direct messages.
+    // Enforce encrypted-only direct messages.
     let conv_security = match db::messages::get_conversation_security(&state.pool, conv_id).await {
         Ok(Some(row)) => row,
         Ok(None) => {
@@ -350,26 +350,12 @@ async fn handle_send_message(
     };
 
     if conv_kind == Some(ConversationKind::Direct) && !conv_security.is_encrypted {
-        let privacy = match db::users::get_privacy_preferences(&state.pool, sender_id).await {
-            Ok(Some(p)) => p,
-            Ok(None) => {
-                send_error(state, sender_id, "User not found");
-                return;
-            }
-            Err(_) => {
-                send_error(state, sender_id, "Database error");
-                return;
-            }
-        };
-
-        if !privacy.allow_unencrypted_dm {
-            send_error(
-                state,
-                sender_id,
-                "Plaintext direct messages are disabled in your privacy settings",
-            );
-            return;
-        }
+        send_error(
+            state,
+            sender_id,
+            "Direct messages must be end-to-end encrypted",
+        );
+        return;
     }
 
     let (reply_content, reply_username) = lookup_reply_context(&state.pool, reply_to_id).await;
