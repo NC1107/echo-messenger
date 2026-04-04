@@ -6,6 +6,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Echo Messenger -- encrypted cross-platform chat app (Discord alternative). Rust server + Flutter client (web, Linux, Windows). Live at https://echo-messenger.us. Self-hosted via Docker + Traefik + Watchtower.
 
+## Git Workflow
+
+**Always work on the `dev` branch.** Push to `dev`, then merge to `main` via PR.
+
+- `dev` branch: runs lint CI (Rust CI + Flutter CI) + dev builds (Linux AppImage + Web only)
+- `main` branch: runs the full release pipeline (Linux, Windows, Android, Web, Server, Docker, GitHub Release)
+- **Never push directly to `main`** unless it's a hotfix. Use `git checkout dev && git merge main` to sync.
+
+```bash
+git checkout dev                    # Work here
+git push origin dev                 # Triggers lint + dev builds only
+gh pr create --base main            # When ready for release
+```
+
 ## Build & Run
 
 ```bash
