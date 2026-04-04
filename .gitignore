@@ -41,6 +41,7 @@
 *.p12
 *.keystore
 *.jks
+**/key.properties
 
 # Build artifacts
 *.so
