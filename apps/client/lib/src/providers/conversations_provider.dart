@@ -272,6 +272,31 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     }
   }
 
+  /// Leave a group conversation and remove it from local state.
+  /// Returns true on success, false on failure.
+  Future<bool> leaveGroup(String groupId) async {
+    try {
+      final response = await _authenticatedRequest(
+        (token) => http.post(
+          Uri.parse('$_serverUrl/api/groups/$groupId/leave'),
+          headers: _headersWithToken(token),
+        ),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        final updated = state.conversations
+            .where((c) => c.id != groupId)
+            .toList();
+        state = state.copyWith(conversations: updated);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('[Conversations] leaveGroup failed for $groupId: $e');
+      return false;
+    }
+  }
+
   /// Create a new group conversation.
   Future<String?> createGroup(
     String name,

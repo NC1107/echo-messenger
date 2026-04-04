@@ -6,12 +6,14 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 use uuid::Uuid;
 
 use sqlx;
 
 use crate::db;
 use crate::routes::AppState;
+use crate::types::ConversationKind;
 
 #[derive(Deserialize)]
 #[serde(tag = "type")]
@@ -159,10 +161,32 @@ pub async fn handle_socket(
         }
     }
 
-    // Message receive loop
+    // Message receive loop with rate limiting (token bucket: 20 msg/s, burst 50)
+    const RATE_LIMIT: f64 = 20.0;
+    const BURST: f64 = 50.0;
+    let mut tokens: f64 = BURST;
+    let mut last_refill = Instant::now();
+
     while let Some(Ok(msg)) = receiver.next().await {
+        // Refill tokens
+        let now = Instant::now();
+        let elapsed = now.duration_since(last_refill).as_secs_f64();
+        tokens = (tokens + elapsed * RATE_LIMIT).min(BURST);
+        last_refill = now;
+
         match msg {
             WsMessage::Text(text) => {
+                if tokens < 1.0 {
+                    let err = serde_json::json!({
+                        "type": "error",
+                        "message": "Rate limit exceeded"
+                    });
+                    let _ = state
+                        .hub
+                        .send_to(&user_id, WsMessage::Text(err.to_string().into()));
+                    continue;
+                }
+                tokens -= 1.0;
                 handle_text_message(&text, user_id, &username, &state).await;
             }
             WsMessage::Close(_) => break,
@@ -189,11 +213,7 @@ pub async fn handle_socket(
                     "user_id": user_id,
                 });
                 if let Ok(json) = serde_json::to_string(&event) {
-                    for member_id in &member_ids {
-                        state
-                            .hub
-                            .send_to(member_id, WsMessage::Text(json.clone().into()));
-                    }
+                    state.hub.broadcast_json(&member_ids, &json, None);
                 }
             }
         }
@@ -295,55 +315,12 @@ async fn handle_send_message(
         return;
     }
 
-    // Determine the conversation to send to.
-    // If conversation_id is provided, use it (for group messages or explicit DM).
-    // If to_user_id is provided without conversation_id, find/create DM conversation (backward compat).
-    let conv_id = if let Some(cid) = conversation_id {
-        // Verify sender is a member of this conversation
-        match db::groups::is_member(&state.pool, cid, sender_id).await {
-            Ok(true) => cid,
-            Ok(false) => {
-                send_error(state, sender_id, "Not a member of this conversation");
-                return;
-            }
-            Err(_) => {
-                send_error(state, sender_id, "Database error");
-                return;
-            }
-        }
-    } else if let Some(to_uid) = to_user_id {
-        // Legacy DM path: verify contacts
-        match db::contacts::are_contacts(&state.pool, sender_id, to_uid).await {
-            Ok(true) => {}
-            Ok(false) => {
-                send_error(state, sender_id, "Not a contact");
-                return;
-            }
-            Err(_) => {
-                send_error(state, sender_id, "Database error");
-                return;
-            }
-        }
-
-        match db::messages::find_or_create_dm_conversation(&state.pool, sender_id, to_uid).await {
-            Ok(id) => id,
-            Err(_) => {
-                send_error(state, sender_id, "Failed to create conversation");
-                return;
-            }
-        }
-    } else {
-        send_error(
-            state,
-            sender_id,
-            "Must provide conversation_id or to_user_id",
-        );
+    let Some(conv_id) = resolve_conversation(state, sender_id, conversation_id, to_user_id).await
+    else {
         return;
     };
 
     // Enforce sender privacy preference for plaintext direct messages.
-    // If a direct conversation has encryption disabled, treat outbound content
-    // as plaintext and reject it when the sender has opted out.
     let conv_security = match db::messages::get_conversation_security(&state.pool, conv_id).await {
         Ok(Some(row)) => row,
         Ok(None) => {
@@ -356,7 +333,8 @@ async fn handle_send_message(
         }
     };
 
-    if conv_security.kind != "group" && channel_id.is_some() {
+    let conv_kind = ConversationKind::from_str_opt(&conv_security.kind);
+    if conv_kind != Some(ConversationKind::Group) && channel_id.is_some() {
         send_error(
             state,
             sender_id,
@@ -365,53 +343,13 @@ async fn handle_send_message(
         return;
     }
 
-    let resolved_channel_id = if conv_security.kind == "group" {
-        if let Some(cid) = channel_id {
-            let channel = match db::channels::get_channel(&state.pool, cid).await {
-                Ok(Some(c)) => c,
-                Ok(None) => {
-                    send_error(state, sender_id, "Channel not found");
-                    return;
-                }
-                Err(_) => {
-                    send_error(state, sender_id, "Database error");
-                    return;
-                }
-            };
-
-            if channel.conversation_id != conv_id {
-                send_error(state, sender_id, "Channel is not part of this conversation");
-                return;
-            }
-
-            if channel.kind != "text" {
-                send_error(
-                    state,
-                    sender_id,
-                    "Messages can only be sent to text channels",
-                );
-                return;
-            }
-
-            Some(cid)
-        } else {
-            match db::channels::get_default_text_channel(&state.pool, conv_id).await {
-                Ok(Some(channel)) => Some(channel.id),
-                Ok(None) => {
-                    send_error(state, sender_id, "No text channel found for this group");
-                    return;
-                }
-                Err(_) => {
-                    send_error(state, sender_id, "Database error");
-                    return;
-                }
-            }
-        }
-    } else {
-        None
+    let Some(resolved_channel_id) =
+        resolve_channel(state, sender_id, conv_id, channel_id, conv_kind).await
+    else {
+        return;
     };
 
-    if conv_security.kind == "direct" && !conv_security.is_encrypted {
+    if conv_kind == Some(ConversationKind::Direct) && !conv_security.is_encrypted {
         let privacy = match db::users::get_privacy_preferences(&state.pool, sender_id).await {
             Ok(Some(p)) => p,
             Ok(None) => {
@@ -434,23 +372,7 @@ async fn handle_send_message(
         }
     }
 
-    // Look up reply context if reply_to_id is provided
-    let (reply_content, reply_username) = if let Some(rid) = reply_to_id {
-        match sqlx::query_as::<_, (String, String)>(
-            "SELECT m.content, u.username \
-             FROM messages m JOIN users u ON u.id = m.sender_id \
-             WHERE m.id = $1",
-        )
-        .bind(rid)
-        .fetch_optional(&state.pool)
-        .await
-        {
-            Ok(Some((c, u))) => (Some(c), Some(u)),
-            _ => (None, None),
-        }
-    } else {
-        (None, None)
-    };
+    let (reply_content, reply_username) = lookup_reply_context(&state.pool, reply_to_id).await;
 
     // Store message
     let stored = match db::messages::store_message(
@@ -481,15 +403,6 @@ async fn handle_send_message(
         state.hub.send_to(&sender_id, WsMessage::Text(json.into()));
     }
 
-    // Fan out to all conversation members (except sender)
-    let member_ids = match db::groups::get_conversation_member_ids(&state.pool, conv_id).await {
-        Ok(ids) => ids,
-        Err(_) => {
-            tracing::error!("Failed to get conversation members for fan-out");
-            return;
-        }
-    };
-
     let deliver = ServerMessage::NewMessage {
         message_id: stored.id,
         from_user_id: sender_id,
@@ -502,37 +415,190 @@ async fn handle_send_message(
         reply_to_content: reply_content,
         reply_to_username: reply_username,
     };
-    let json = match serde_json::to_string(&deliver) {
+
+    fanout_message(state, sender_id, conv_id, &deliver, stored.id).await;
+}
+
+/// Resolve the target conversation from either an explicit conversation_id or a to_user_id.
+/// Returns None and sends an error to the sender on failure.
+async fn resolve_conversation(
+    state: &AppState,
+    sender_id: Uuid,
+    conversation_id: Option<Uuid>,
+    to_user_id: Option<Uuid>,
+) -> Option<Uuid> {
+    if let Some(cid) = conversation_id {
+        // Verify sender is a member of this conversation
+        match db::groups::is_member(&state.pool, cid, sender_id).await {
+            Ok(true) => Some(cid),
+            Ok(false) => {
+                send_error(state, sender_id, "Not a member of this conversation");
+                None
+            }
+            Err(_) => {
+                send_error(state, sender_id, "Database error");
+                None
+            }
+        }
+    } else if let Some(to_uid) = to_user_id {
+        // Legacy DM path: verify contacts
+        match db::contacts::are_contacts(&state.pool, sender_id, to_uid).await {
+            Ok(true) => {}
+            Ok(false) => {
+                send_error(state, sender_id, "Not a contact");
+                return None;
+            }
+            Err(_) => {
+                send_error(state, sender_id, "Database error");
+                return None;
+            }
+        }
+
+        match db::messages::find_or_create_dm_conversation(&state.pool, sender_id, to_uid).await {
+            Ok(id) => Some(id),
+            Err(_) => {
+                send_error(state, sender_id, "Failed to create conversation");
+                None
+            }
+        }
+    } else {
+        send_error(
+            state,
+            sender_id,
+            "Must provide conversation_id or to_user_id",
+        );
+        None
+    }
+}
+
+/// Resolve the target channel for a message.
+/// Returns `Some(Some(channel_id))` for groups, `Some(None)` for DMs, `None` on error.
+async fn resolve_channel(
+    state: &AppState,
+    sender_id: Uuid,
+    conv_id: Uuid,
+    channel_id: Option<Uuid>,
+    conv_kind: Option<ConversationKind>,
+) -> Option<Option<Uuid>> {
+    if conv_kind == Some(ConversationKind::Group) {
+        if let Some(cid) = channel_id {
+            let channel = match db::channels::get_channel(&state.pool, cid).await {
+                Ok(Some(c)) => c,
+                Ok(None) => {
+                    send_error(state, sender_id, "Channel not found");
+                    return None;
+                }
+                Err(_) => {
+                    send_error(state, sender_id, "Database error");
+                    return None;
+                }
+            };
+
+            if channel.conversation_id != conv_id {
+                send_error(state, sender_id, "Channel is not part of this conversation");
+                return None;
+            }
+
+            if channel.kind != "text" {
+                send_error(
+                    state,
+                    sender_id,
+                    "Messages can only be sent to text channels",
+                );
+                return None;
+            }
+
+            Some(Some(cid))
+        } else {
+            match db::channels::get_default_text_channel(&state.pool, conv_id).await {
+                Ok(Some(channel)) => Some(Some(channel.id)),
+                Ok(None) => {
+                    send_error(state, sender_id, "No text channel found for this group");
+                    None
+                }
+                Err(_) => {
+                    send_error(state, sender_id, "Database error");
+                    None
+                }
+            }
+        }
+    } else {
+        Some(None)
+    }
+}
+
+/// Look up reply context (content and username) for a given reply_to_id.
+async fn lookup_reply_context(
+    pool: &sqlx::PgPool,
+    reply_to_id: Option<Uuid>,
+) -> (Option<String>, Option<String>) {
+    if let Some(rid) = reply_to_id {
+        match sqlx::query_as::<_, (String, String)>(
+            "SELECT m.content, u.username \
+             FROM messages m JOIN users u ON u.id = m.sender_id \
+             WHERE m.id = $1",
+        )
+        .bind(rid)
+        .fetch_optional(pool)
+        .await
+        {
+            Ok(Some((c, u))) => (Some(c), Some(u)),
+            _ => (None, None),
+        }
+    } else {
+        (None, None)
+    }
+}
+
+/// Fan out a message to all conversation members (except sender), with block filtering
+/// and delivery tracking.
+async fn fanout_message(
+    state: &AppState,
+    sender_id: Uuid,
+    conv_id: Uuid,
+    message: &ServerMessage,
+    stored_id: Uuid,
+) {
+    let member_ids = match db::groups::get_conversation_member_ids(&state.pool, conv_id).await {
+        Ok(ids) => ids,
+        Err(_) => {
+            tracing::error!("Failed to get conversation members for fan-out");
+            return;
+        }
+    };
+
+    let json = match serde_json::to_string(message) {
         Ok(j) => j,
         Err(_) => return,
     };
+
+    // Batch check which members have blocked the sender (single query instead of N+1)
+    let blockers: Vec<Uuid> = db::contacts::get_blockers_of(&state.pool, &member_ids, sender_id)
+        .await
+        .unwrap_or_default();
 
     let mut delivered_ids = Vec::new();
     for member_id in &member_ids {
         if *member_id == sender_id {
             continue;
         }
-        // Check if recipient has blocked the sender; if so, silently skip delivery
-        if db::contacts::is_blocked(&state.pool, *member_id, sender_id)
-            .await
-            .unwrap_or(false)
-        {
+        if blockers.contains(member_id) {
             continue;
         }
         if state
             .hub
             .send_to(member_id, WsMessage::Text(json.clone().into()))
         {
-            delivered_ids.push(stored.id);
+            delivered_ids.push(stored_id);
         }
     }
 
     if !delivered_ids.is_empty() {
-        let _ = db::messages::mark_delivered(&state.pool, &[stored.id]).await;
+        let _ = db::messages::mark_delivered(&state.pool, &[stored_id]).await;
 
         // Send delivery confirmation back to the sender
         let delivered_event = ServerMessage::Delivered {
-            message_id: stored.id,
+            message_id: stored_id,
             conversation_id: conv_id,
         };
         if let Ok(delivered_json) = serde_json::to_string(&delivered_event) {
@@ -565,7 +631,7 @@ async fn handle_typing(
     };
 
     let mut resolved_channel_id = None;
-    if kind == "group"
+    if ConversationKind::from_str_opt(&kind) == Some(ConversationKind::Group)
         && let Some(cid) = channel_id
     {
         let channel = match db::channels::get_channel(&state.pool, cid).await {
@@ -590,18 +656,10 @@ async fn handle_typing(
         user_id: sender_id,
         from_username: sender_username.to_string(),
     };
-    let json = match serde_json::to_string(&event) {
-        Ok(j) => j,
-        Err(_) => return,
-    };
-
-    for member_id in &member_ids {
-        if *member_id == sender_id {
-            continue;
-        }
+    if let Ok(json) = serde_json::to_string(&event) {
         state
             .hub
-            .send_to(member_id, WsMessage::Text(json.clone().into()));
+            .broadcast_json(&member_ids, &json, Some(sender_id));
     }
 }
 
@@ -638,18 +696,10 @@ async fn handle_read_receipt(state: &AppState, sender_id: Uuid, conversation_id:
         conversation_id,
         user_id: sender_id,
     };
-    let json = match serde_json::to_string(&event) {
-        Ok(j) => j,
-        Err(_) => return,
-    };
-
-    for member_id in &member_ids {
-        if *member_id == sender_id {
-            continue;
-        }
+    if let Ok(json) = serde_json::to_string(&event) {
         state
             .hub
-            .send_to(member_id, WsMessage::Text(json.clone().into()));
+            .broadcast_json(&member_ids, &json, Some(sender_id));
     }
 }
 
@@ -713,7 +763,7 @@ async fn handle_voice_signal(
         }
     };
 
-    if kind != "group" {
+    if ConversationKind::from_str_opt(&kind) != Some(ConversationKind::Group) {
         send_error(
             state,
             sender_id,

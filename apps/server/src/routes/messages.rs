@@ -1,7 +1,6 @@
 //! Message and conversation REST endpoints.
 
 use axum::Json;
-use axum::extract::ws::Message as WsMessage;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -13,6 +12,7 @@ use uuid::Uuid;
 use crate::auth::middleware::AuthUser;
 use crate::db;
 use crate::error::AppError;
+use crate::types::ConversationKind;
 
 use super::AppState;
 
@@ -180,7 +180,10 @@ pub async fn get_messages(
     // Verify the user is a member of this conversation
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in get_messages/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
@@ -189,10 +192,13 @@ pub async fn get_messages(
     if let Some(channel_id) = params.channel_id {
         let conversation_kind = db::groups::get_conversation_kind(&state.pool, conversation_id)
             .await
-            .map_err(|_| AppError::internal("Database error"))?
+            .map_err(|e| {
+                tracing::error!("DB error in get_messages/get_conversation_kind: {e:?}");
+                AppError::internal("Database error")
+            })?
             .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
 
-        if conversation_kind != "group" {
+        if ConversationKind::from_str_opt(&conversation_kind) != Some(ConversationKind::Group) {
             return Err(AppError::bad_request(
                 "channel_id is only supported for group conversations",
             ));
@@ -200,7 +206,10 @@ pub async fn get_messages(
 
         let channel = db::channels::get_channel(&state.pool, channel_id)
             .await
-            .map_err(|_| AppError::internal("Database error"))?
+            .map_err(|e| {
+                tracing::error!("DB error in get_messages/get_channel: {e:?}");
+                AppError::internal("Database error")
+            })?
             .ok_or_else(|| AppError::bad_request("Channel not found"))?;
 
         if channel.conversation_id != conversation_id {
@@ -225,7 +234,10 @@ pub async fn get_messages(
         limit,
     )
     .await
-    .map_err(|_| AppError::internal("Database error"))?;
+    .map_err(|e| {
+        tracing::error!("DB error in get_messages/fetch: {e:?}");
+        AppError::internal("Database error")
+    })?;
 
     Ok(Json(messages))
 }
@@ -242,14 +254,20 @@ pub async fn create_dm(
 ) -> Result<impl IntoResponse, AppError> {
     let are_contacts = db::contacts::are_contacts(&state.pool, auth.user_id, req.peer_user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in create_dm/are_contacts: {e:?}");
+            AppError::internal("Database error")
+        })?;
     if !are_contacts {
         return Err(AppError::bad_request("Not a contact"));
     }
     let conversation_id =
         db::messages::find_or_create_dm_conversation(&state.pool, auth.user_id, req.peer_user_id)
             .await
-            .map_err(|_| AppError::internal("Failed to create conversation"))?;
+            .map_err(|e| {
+                tracing::error!("DB error in create_dm/find_or_create: {e:?}");
+                AppError::internal("Failed to create conversation")
+            })?;
     Ok(Json(
         serde_json::json!({ "conversation_id": conversation_id }),
     ))
@@ -266,7 +284,10 @@ pub async fn delete_message(
 ) -> Result<impl IntoResponse, AppError> {
     let conversation_id = db::messages::delete_message(&state.pool, message_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in delete_message: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::bad_request("Message not found or you are not the sender"))?;
 
     // Broadcast to conversation members via WebSocket
@@ -280,11 +301,7 @@ pub async fn delete_message(
         "conversation_id": conversation_id,
     });
     if let Ok(json) = serde_json::to_string(&event) {
-        for member_id in &member_ids {
-            state
-                .hub
-                .send_to(member_id, WsMessage::Text(json.clone().into()));
-        }
+        state.hub.broadcast_json(&member_ids, &json, None);
     }
 
     Ok(StatusCode::NO_CONTENT)
@@ -315,7 +332,10 @@ pub async fn edit_message(
     let (conversation_id, edited_at) =
         db::messages::edit_message(&state.pool, message_id, auth.user_id, &body.content)
             .await
-            .map_err(|_| AppError::internal("Database error"))?
+            .map_err(|e| {
+                tracing::error!("DB error in edit_message: {e:?}");
+                AppError::internal("Database error")
+            })?
             .ok_or_else(|| AppError::bad_request("Message not found or you are not the sender"))?;
 
     // Broadcast to conversation members via WebSocket
@@ -331,26 +351,13 @@ pub async fn edit_message(
         "edited_at": edited_at,
     });
     if let Ok(json) = serde_json::to_string(&event) {
-        for member_id in &member_ids {
-            state
-                .hub
-                .send_to(member_id, WsMessage::Text(json.clone().into()));
-        }
+        state.hub.broadcast_json(&member_ids, &json, None);
     }
 
     Ok(Json(serde_json::json!({
         "message_id": message_id,
         "edited_at": edited_at,
     })))
-}
-
-// ---------------------------------------------------------------------------
-// PUT /api/conversations/:conversation_id/encryption -- toggle encryption
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-pub struct ToggleEncryptionRequest {
-    pub is_encrypted: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -376,7 +383,10 @@ pub async fn search_messages(
 ) -> Result<impl IntoResponse, AppError> {
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in search_messages/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
     }
@@ -388,7 +398,10 @@ pub async fn search_messages(
         params.limit.min(50),
     )
     .await
-    .map_err(|_| AppError::internal("Search failed"))?;
+    .map_err(|e| {
+        tracing::error!("DB error in search_messages: {e:?}");
+        AppError::internal("Search failed")
+    })?;
 
     Ok(Json(messages))
 }
@@ -411,7 +424,10 @@ pub async fn toggle_mute(
     let updated =
         db::messages::set_mute_status(&state.pool, conversation_id, auth.user_id, body.is_muted)
             .await
-            .map_err(|_| AppError::internal("Database error"))?;
+            .map_err(|e| {
+                tracing::error!("DB error in toggle_mute: {e:?}");
+                AppError::internal("Database error")
+            })?;
 
     if !updated {
         return Err(AppError::bad_request("Not a member of this conversation"));
@@ -420,50 +436,5 @@ pub async fn toggle_mute(
     Ok(Json(serde_json::json!({
         "conversation_id": conversation_id,
         "is_muted": body.is_muted,
-    })))
-}
-
-// ---------------------------------------------------------------------------
-// PUT /api/conversations/:conversation_id/encryption -- toggle encryption
-// ---------------------------------------------------------------------------
-
-pub async fn toggle_encryption(
-    auth: AuthUser,
-    State(state): State<Arc<AppState>>,
-    Path(conversation_id): Path<Uuid>,
-    Json(body): Json<ToggleEncryptionRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    // Verify caller is a member of this conversation
-    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
-        .await
-        .map_err(|_| AppError::internal("Database error"))?;
-    if !is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
-    }
-
-    db::messages::set_conversation_encrypted(&state.pool, conversation_id, body.is_encrypted)
-        .await
-        .map_err(|_| AppError::internal("Failed to update encryption setting"))?;
-
-    // Broadcast to all conversation members so both sides update immediately.
-    let member_ids = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
-        .await
-        .unwrap_or_default();
-    let event = serde_json::json!({
-        "type": "encryption_toggled",
-        "conversation_id": conversation_id,
-        "is_encrypted": body.is_encrypted,
-    });
-    if let Ok(json) = serde_json::to_string(&event) {
-        for member_id in &member_ids {
-            state
-                .hub
-                .send_to(member_id, WsMessage::Text(json.clone().into()));
-        }
-    }
-
-    Ok(Json(serde_json::json!({
-        "conversation_id": conversation_id,
-        "is_encrypted": body.is_encrypted,
     })))
 }

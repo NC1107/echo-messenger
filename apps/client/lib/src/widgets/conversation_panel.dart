@@ -1,10 +1,6 @@
-import 'dart:async';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation.dart';
@@ -17,69 +13,12 @@ import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
+import 'avatar_utils.dart';
+import 'contact_item.dart';
+import 'conversation_item.dart';
 
-/// Shared avatar builder used across conversation panel widgets.
-Widget buildAvatar({
-  String? imageUrl,
-  required String name,
-  required double radius,
-  Color? bgColor,
-  Widget? fallbackIcon,
-}) {
-  if (imageUrl != null && imageUrl.isNotEmpty) {
-    return CircleAvatar(
-      radius: radius,
-      backgroundImage: NetworkImage(imageUrl),
-    );
-  }
-  return CircleAvatar(
-    radius: radius,
-    backgroundColor: bgColor ?? avatarColor(name),
-    child:
-        fallbackIcon ??
-        Text(
-          name.isNotEmpty ? name[0].toUpperCase() : '?',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: radius * 0.8,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-  );
-}
-
-/// Deterministic color from a name string.
-Color avatarColor(String name) {
-  const colors = [
-    Color(0xFFE06666),
-    Color(0xFFF6B05C),
-    Color(0xFF57D28F),
-    Color(0xFF5DADE2),
-    Color(0xFFAF7AC5),
-    Color(0xFFEB984E),
-  ];
-  final index = name.hashCode.abs() % colors.length;
-  return colors[index];
-}
-
-/// Wider palette for group avatars, derived from group name hash.
-const _groupColors = [
-  Color(0xFF22C55E), // green
-  Color(0xFFEF4444), // red
-  Color(0xFF3B82F6), // blue
-  Color(0xFFF59E0B), // amber
-  Color(0xFF8B5CF6), // violet
-  Color(0xFFEC4899), // pink
-  Color(0xFF14B8A6), // teal
-  Color(0xFFF97316), // orange
-  Color(0xFF6366F1), // indigo
-  Color(0xFF06B6D4), // cyan
-];
-
-/// Deterministic color for group avatars.
-Color groupAvatarColor(String name) {
-  return _groupColors[name.hashCode.abs() % _groupColors.length];
-}
+// Re-export avatar utilities so existing `show` imports keep working.
+export 'avatar_utils.dart' show buildAvatar, avatarColor, groupAvatarColor;
 
 class ConversationPanel extends ConsumerStatefulWidget {
   final String? selectedConversationId;
@@ -356,20 +295,13 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     if (confirmed != true || !mounted) return;
 
     try {
-      final serverUrl = ref.read(serverUrlProvider);
-      final token = ref.read(authProvider).token;
-      if (token == null) return;
-
-      final response = await http.post(
-        Uri.parse('$serverUrl/api/groups/${conv.id}/leave'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
+      final success = await ref
+          .read(conversationsProvider.notifier)
+          .leaveGroup(conv.id);
 
       if (!mounted) return;
 
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        await ref.read(conversationsProvider.notifier).loadConversations();
-        if (!mounted) return;
+      if (success) {
         ToastService.show(
           context,
           'You have left the group.',
@@ -378,7 +310,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       } else {
         ToastService.show(
           context,
-          'Failed to leave group (${response.statusCode})',
+          'Failed to leave group',
           type: ToastType.error,
         );
       }
@@ -905,7 +837,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         if (!conv.isGroup && peer != null && peer.avatarUrl != null) {
           peerAvatarUrl = '$serverUrl${peer.avatarUrl}';
         }
-        return _ConversationItem(
+        return ConversationItem(
           conversation: conv,
           myUserId: myUserId,
           isSelected: isSelected,
@@ -978,7 +910,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       itemBuilder: (context, index) {
         final contact = contacts[index];
         final serverUrl = ref.watch(serverUrlProvider);
-        return _ContactItem(
+        return ContactItem(
           contact: contact,
           serverUrl: serverUrl,
           onMessage: () {
@@ -1071,7 +1003,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         final isSelected = conv.id == widget.selectedConversationId;
         final isPinned = _pinnedIds.contains(conv.id);
         // Groups don't have a single peer, so isPeerOnline is always false
-        return _ConversationItem(
+        return ConversationItem(
           conversation: conv,
           myUserId: myUserId,
           isSelected: isSelected,
@@ -1083,382 +1015,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               _showConversationContextMenu(context, conv, position),
         );
       },
-    );
-  }
-}
-
-class _ContactItem extends StatefulWidget {
-  final dynamic contact;
-  final String serverUrl;
-  final VoidCallback onMessage;
-  final VoidCallback onProfile;
-
-  const _ContactItem({
-    required this.contact,
-    required this.serverUrl,
-    required this.onMessage,
-    required this.onProfile,
-  });
-
-  @override
-  State<_ContactItem> createState() => _ContactItemState();
-}
-
-class _ContactItemState extends State<_ContactItem> {
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final contact = widget.contact;
-    final username = contact.username as String;
-    final displayName = contact.displayName as String?;
-    final avatarUrl = contact.avatarUrl as String?;
-    final fullAvatarUrl = avatarUrl != null
-        ? '${widget.serverUrl}$avatarUrl'
-        : null;
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: Container(
-        height: 56,
-        margin: const EdgeInsets.symmetric(vertical: 1),
-        decoration: BoxDecoration(
-          color: _isHovered ? context.surfaceHover : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: widget.onProfile,
-                child: Row(
-                  children: [
-                    // Avatar with online dot
-                    Stack(
-                      children: [
-                        buildAvatar(
-                          name: username,
-                          radius: 18,
-                          imageUrl: fullAvatarUrl,
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: EchoTheme.online,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: context.sidebarBg,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 12),
-                    // Name
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            displayName ?? username,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: context.textPrimary,
-                            ),
-                          ),
-                          if (displayName != null)
-                            Text(
-                              '@$username',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: context.textMuted,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            IconButton(
-              icon: Icon(
-                Icons.info_outline,
-                size: 18,
-                color: context.textMuted,
-              ),
-              tooltip: 'Profile',
-              onPressed: widget.onProfile,
-            ),
-            SizedBox(
-              height: 28,
-              child: Material(
-                color: context.accentLight,
-                borderRadius: BorderRadius.circular(6),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(6),
-                  onTap: widget.onMessage,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Center(
-                      child: Text(
-                        'Message',
-                        style: TextStyle(
-                          color: context.accent,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ConversationItem extends StatefulWidget {
-  final Conversation conversation;
-  final String myUserId;
-  final bool isSelected;
-  final bool isPinned;
-  final bool isPeerOnline;
-  final String? peerAvatarUrl;
-  final String timestamp;
-  final VoidCallback onTap;
-  final void Function(Offset position)? onContextMenu;
-
-  const _ConversationItem({
-    required this.conversation,
-    required this.myUserId,
-    required this.isSelected,
-    required this.isPinned,
-    required this.isPeerOnline,
-    this.peerAvatarUrl,
-    required this.timestamp,
-    required this.onTap,
-    this.onContextMenu,
-  });
-
-  @override
-  State<_ConversationItem> createState() => _ConversationItemState();
-}
-
-class _ConversationItemState extends State<_ConversationItem> {
-  bool _isHovered = false;
-
-  bool get _enableLongPressMenu {
-    if (kIsWeb) {
-      return false;
-    }
-    return switch (defaultTargetPlatform) {
-      TargetPlatform.android => true,
-      TargetPlatform.iOS => true,
-      _ => false,
-    };
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final conv = widget.conversation;
-    final displayName = conv.displayName(widget.myUserId);
-    final hasUnread = conv.unreadCount > 0;
-
-    String? snippet = conv.lastMessage;
-    // Mask encrypted / undecryptable previews with a friendly fallback
-    if (snippet != null &&
-        (snippet.startsWith('[Could not decrypt]') ||
-            snippet.startsWith('[Encrypted'))) {
-      snippet = '\u{1F512} Encrypted message';
-    }
-    // Show friendly labels for media markers
-    if (snippet != null) {
-      if (RegExp(r'^\[img:.+\]$').hasMatch(snippet)) {
-        snippet = '\u{1F5BC} Image';
-      } else if (RegExp(r'^\[video:.+\]$').hasMatch(snippet)) {
-        snippet = '\u{1F3AC} Video';
-      } else if (RegExp(r'^\[file:.+\]$').hasMatch(snippet)) {
-        snippet = '\u{1F4CE} File';
-      }
-    }
-    if (snippet != null && conv.lastMessageSender != null) {
-      // Find if sender is "me" by checking if any member with myUserId has this username
-      final myMember = conv.members
-          .where((m) => m.userId == widget.myUserId)
-          .firstOrNull;
-      final isMe = myMember?.username == conv.lastMessageSender;
-      final senderLabel = isMe ? 'You' : conv.lastMessageSender!;
-      snippet = '$senderLabel: $snippet';
-    }
-
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        onSecondaryTapUp: (details) {
-          widget.onContextMenu?.call(details.globalPosition);
-        },
-        onLongPressStart: _enableLongPressMenu
-            ? (details) {
-                widget.onContextMenu?.call(details.globalPosition);
-              }
-            : null,
-        child: Container(
-          height: 68,
-          margin: const EdgeInsets.symmetric(vertical: 1),
-          decoration: BoxDecoration(
-            color: widget.isSelected
-                ? context.accentLight
-                : _isHovered
-                ? context.surfaceHover
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            children: [
-              // Avatar with online dot
-              Stack(
-                children: [
-                  buildAvatar(
-                    name: displayName,
-                    radius: 20,
-                    imageUrl: conv.isGroup ? null : widget.peerAvatarUrl,
-                    bgColor: conv.isGroup
-                        ? groupAvatarColor(displayName)
-                        : null,
-                    fallbackIcon: conv.isGroup
-                        ? const Icon(Icons.group, size: 18, color: Colors.white)
-                        : null,
-                  ),
-                  if (!conv.isGroup)
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: widget.isPeerOnline
-                              ? EchoTheme.online
-                              : context.textMuted,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: context.sidebarBg,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(width: 12),
-              // Name + snippet
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Row(
-                      children: [
-                        if (widget.isPinned)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: Icon(
-                              Icons.push_pin,
-                              size: 12,
-                              color: context.textMuted,
-                            ),
-                          ),
-                        Expanded(
-                          child: Text(
-                            displayName,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: hasUnread
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: context.textPrimary,
-                            ),
-                          ),
-                        ),
-                        if (widget.timestamp.isNotEmpty)
-                          Text(
-                            widget.timestamp,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: hasUnread
-                                  ? context.accent
-                                  : context.textMuted,
-                            ),
-                          ),
-                      ],
-                    ),
-                    if (snippet != null) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              snippet,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: context.textMuted,
-                                fontWeight: hasUnread
-                                    ? FontWeight.w500
-                                    : FontWeight.normal,
-                              ),
-                            ),
-                          ),
-                          if (conv.isMuted)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 6),
-                              child: Icon(
-                                Icons.notifications_off_outlined,
-                                size: 14,
-                                color: context.textMuted,
-                              ),
-                            ),
-                          if (hasUnread)
-                            Container(
-                              margin: const EdgeInsets.only(left: 8),
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                color: context.accent,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

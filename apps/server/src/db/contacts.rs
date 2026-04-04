@@ -28,6 +28,14 @@ pub async fn create_contact_request(
 
     let target_id = target.0;
 
+    // Check if either party has blocked the other -- return a generic error
+    // (same as "user not found") to avoid leaking block status.
+    let blocked = is_blocked(pool, target_id, requester_id).await?
+        || is_blocked(pool, requester_id, target_id).await?;
+    if blocked {
+        return Err(sqlx::Error::RowNotFound);
+    }
+
     let row: (Uuid,) = sqlx::query_as(
         "INSERT INTO contacts (requester_id, target_id) VALUES ($1, $2) RETURNING id",
     )
@@ -77,6 +85,19 @@ pub async fn list_contacts(pool: &PgPool, user_id: Uuid) -> Result<Vec<ContactRo
     .bind(user_id)
     .fetch_all(pool)
     .await
+}
+
+/// Return just the user IDs of accepted contacts for a given user.
+pub async fn list_contact_user_ids(pool: &PgPool, user_id: Uuid) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT CASE WHEN requester_id = $1 THEN target_id ELSE requester_id END \
+         FROM contacts \
+         WHERE (requester_id = $1 OR target_id = $1) AND status = 'accepted'",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
 pub async fn list_pending_requests(
@@ -172,6 +193,23 @@ pub async fn is_blocked(
     .fetch_one(pool)
     .await?;
     Ok(row.0)
+}
+
+/// Return the set of user IDs (from `candidate_ids`) that have blocked `target_id`.
+pub async fn get_blockers_of(
+    pool: &PgPool,
+    candidate_ids: &[Uuid],
+    target_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT blocker_id FROM blocked_users \
+         WHERE blocker_id = ANY($1) AND blocked_id = $2",
+    )
+    .bind(candidate_ids)
+    .bind(target_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
 pub async fn are_contacts(pool: &PgPool, user_a: Uuid, user_b: Uuid) -> Result<bool, sqlx::Error> {

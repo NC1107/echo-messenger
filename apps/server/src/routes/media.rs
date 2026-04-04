@@ -80,7 +80,10 @@ pub async fn upload(
             // Verify the uploader is a member of this conversation
             let is_member = db::groups::is_member(&state.pool, cid, auth.user_id)
                 .await
-                .map_err(|_| AppError::internal("Database error"))?;
+                .map_err(|e| {
+                    tracing::error!("DB error in upload_media/is_member: {e:?}");
+                    AppError::internal("Database error")
+                })?;
             if !is_member {
                 return Err(AppError {
                     status: StatusCode::FORBIDDEN,

@@ -243,6 +243,7 @@ pub async fn edit_message(
     Ok(row)
 }
 
+#[allow(dead_code)]
 pub async fn set_conversation_encrypted(
     pool: &PgPool,
     conversation_id: Uuid,

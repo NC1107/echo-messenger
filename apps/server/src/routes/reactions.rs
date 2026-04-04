@@ -48,13 +48,19 @@ pub async fn add_reaction(
     // Get conversation for this message
     let conversation_id = db::reactions::get_message_conversation_id(&state.pool, message_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in add_reaction/get_conversation: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::bad_request("Message not found"))?;
 
     // Verify membership
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in add_reaction/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
@@ -62,12 +68,18 @@ pub async fn add_reaction(
 
     let reaction = db::reactions::add_reaction(&state.pool, message_id, auth.user_id, &body.emoji)
         .await
-        .map_err(|_| AppError::internal("Failed to add reaction"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in add_reaction: {e:?}");
+            AppError::internal("Failed to add reaction")
+        })?;
 
     // Look up username for broadcast
     let user = db::users::find_by_id(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in add_reaction/find_user: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::internal("User not found"))?;
 
     // Broadcast to conversation members
@@ -98,13 +110,19 @@ pub async fn remove_reaction(
     // Get conversation for this message
     let conversation_id = db::reactions::get_message_conversation_id(&state.pool, message_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in remove_reaction/get_conversation: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::bad_request("Message not found"))?;
 
     // Verify membership
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in remove_reaction/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
@@ -112,7 +130,10 @@ pub async fn remove_reaction(
 
     let removed = db::reactions::remove_reaction(&state.pool, message_id, auth.user_id, &emoji)
         .await
-        .map_err(|_| AppError::internal("Failed to remove reaction"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in remove_reaction: {e:?}");
+            AppError::internal("Failed to remove reaction")
+        })?;
 
     if !removed {
         return Err(AppError::bad_request("Reaction not found"));
@@ -121,7 +142,10 @@ pub async fn remove_reaction(
     // Look up username for broadcast
     let user = db::users::find_by_id(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in remove_reaction/find_user: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::internal("User not found"))?;
 
     // Broadcast removal to conversation members
@@ -149,7 +173,10 @@ pub async fn mark_read(
     // Verify membership
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in mark_read/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
@@ -157,7 +184,10 @@ pub async fn mark_read(
 
     let privacy = db::users::get_privacy_preferences(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in mark_read/get_privacy: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
     if !privacy.read_receipts_enabled {
@@ -169,7 +199,10 @@ pub async fn mark_read(
 
     db::reactions::mark_read(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Failed to mark as read"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in mark_read: {e:?}");
+            AppError::internal("Failed to mark as read")
+        })?;
 
     Ok(Json(serde_json::json!({ "status": "read" })))
 }

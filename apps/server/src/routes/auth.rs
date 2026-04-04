@@ -75,6 +75,11 @@ fn validate_password(password: &str) -> Result<(), AppError> {
             "Password must be at least 8 characters",
         ));
     }
+    if password.len() > 128 {
+        return Err(AppError::bad_request(
+            "Password must be at most 128 characters",
+        ));
+    }
     Ok(())
 }
 
@@ -203,17 +208,33 @@ pub async fn ws_ticket(
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use rand::RngCore;
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
     let ticket = URL_SAFE_NO_PAD.encode(bytes);
 
-    state
+    const TICKET_TTL: Duration = Duration::from_secs(30);
+    const MAX_TICKETS: usize = 10_000;
+
+    let mut store = state
         .ticket_store
         .lock()
-        .map_err(|_| AppError::internal("Internal state error"))?
-        .insert(ticket.clone(), (auth_user.user_id, Instant::now()));
+        .map_err(|_| AppError::internal("Internal state error"))?;
+
+    // Clean up expired tickets to bound memory
+    let now = Instant::now();
+    store.retain(|_, (_, ts)| now.duration_since(*ts) < TICKET_TTL);
+
+    // Cap total tickets to prevent memory exhaustion
+    if store.len() >= MAX_TICKETS {
+        return Err(AppError::bad_request(
+            "Too many pending tickets, try again later",
+        ));
+    }
+
+    store.insert(ticket.clone(), (auth_user.user_id, now));
+    drop(store);
 
     Ok(Json(WsTicketResponse { ticket }))
 }

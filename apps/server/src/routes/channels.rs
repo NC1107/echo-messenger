@@ -1,7 +1,6 @@
 //! Group channel and voice session REST endpoints.
 
 use axum::Json;
-use axum::extract::ws::Message as WsMessage;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -12,6 +11,7 @@ use uuid::Uuid;
 use crate::auth::middleware::AuthUser;
 use crate::db;
 use crate::error::AppError;
+use crate::types::{ConversationKind, Role};
 
 use super::AppState;
 
@@ -76,22 +76,48 @@ async fn ensure_group_member(
 ) -> Result<(), AppError> {
     let kind = db::groups::get_conversation_kind(&state.pool, group_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in ensure_group_member/get_kind: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::bad_request("Group not found"))?;
 
-    if kind != "group" {
+    if ConversationKind::from_str_opt(&kind) != Some(ConversationKind::Group) {
         return Err(AppError::bad_request("Conversation is not a group"));
     }
 
     let is_member = db::groups::is_member(&state.pool, group_id, user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in ensure_group_member/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this group"));
     }
 
     Ok(())
+}
+
+/// Verify that the user is an owner or admin of the group.
+async fn ensure_group_admin(
+    state: &AppState,
+    group_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let role = db::groups::get_member_role(&state.pool, group_id, user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in ensure_group_admin/get_role: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    match role.as_deref().and_then(Role::from_str_opt) {
+        Some(r) if r.is_admin_or_above() => Ok(()),
+        _ => Err(AppError::unauthorized(
+            "Only group owners and admins can manage channels",
+        )),
+    }
 }
 
 async fn ensure_channel_in_group(
@@ -101,7 +127,10 @@ async fn ensure_channel_in_group(
 ) -> Result<db::channels::ChannelRow, AppError> {
     let channel = db::channels::get_channel(&state.pool, channel_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in ensure_channel_in_group/get_channel: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::bad_request("Channel not found"))?;
 
     if channel.conversation_id != group_id {
@@ -117,15 +146,8 @@ async fn broadcast_to_group(state: &AppState, group_id: Uuid, event: &serde_json
         Err(_) => return,
     };
 
-    let json = match serde_json::to_string(event) {
-        Ok(payload) => payload,
-        Err(_) => return,
-    };
-
-    for member_id in &member_ids {
-        state
-            .hub
-            .send_to(member_id, WsMessage::Text(json.clone().into()));
+    if let Ok(json) = serde_json::to_string(event) {
+        state.hub.broadcast_json(&member_ids, &json, None);
     }
 }
 
@@ -139,7 +161,10 @@ pub async fn list_channels(
 
     let rows = db::channels::list_channels(&state.pool, group_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in list_channels: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     let channels: Vec<ChannelResponse> = rows
         .into_iter()
@@ -165,6 +190,7 @@ pub async fn create_channel(
     Json(body): Json<CreateChannelRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     ensure_group_member(&state, group_id, auth.user_id).await?;
+    ensure_group_admin(&state, group_id, auth.user_id).await?;
 
     let kind = body.kind.trim().to_lowercase();
     if !is_valid_channel_kind(&kind) {
@@ -185,7 +211,10 @@ pub async fn create_channel(
         Some(_) => return Err(AppError::bad_request("Position must be non-negative")),
         None => db::channels::next_channel_position(&state.pool, group_id, &kind)
             .await
-            .map_err(|_| AppError::internal("Database error"))?,
+            .map_err(|e| {
+                tracing::error!("DB error in create_channel/next_position: {e:?}");
+                AppError::internal("Database error")
+            })?,
     };
 
     let created = db::channels::create_channel(
@@ -236,6 +265,7 @@ pub async fn update_channel(
     Json(body): Json<UpdateChannelRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     ensure_group_member(&state, group_id, auth.user_id).await?;
+    ensure_group_admin(&state, group_id, auth.user_id).await?;
     let channel = ensure_channel_in_group(&state, group_id, channel_id).await?;
 
     let name = body
@@ -295,11 +325,15 @@ pub async fn delete_channel(
     Path((group_id, channel_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
     ensure_group_member(&state, group_id, auth.user_id).await?;
+    ensure_group_admin(&state, group_id, auth.user_id).await?;
     let channel = ensure_channel_in_group(&state, group_id, channel_id).await?;
 
     let deleted = db::channels::soft_delete_channel(&state.pool, channel.id)
         .await
-        .map_err(|_| AppError::internal("Failed to delete channel"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in delete_channel: {e:?}");
+            AppError::internal("Failed to delete channel")
+        })?;
 
     if !deleted {
         return Err(AppError::bad_request("Channel not found"));
@@ -334,7 +368,10 @@ pub async fn list_voice_sessions(
 
     let rows = db::channels::list_voice_sessions(&state.pool, channel.id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in list_voice_sessions: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     let sessions: Vec<VoiceSessionResponse> = rows
         .into_iter()
@@ -370,7 +407,10 @@ pub async fn join_voice_channel(
     let (removed_channel_ids, joined) =
         db::channels::leave_and_join_voice_channel(&state.pool, group_id, channel.id, auth.user_id)
             .await
-            .map_err(|_| AppError::internal("Failed to join voice channel"))?;
+            .map_err(|e| {
+                tracing::error!("DB error in join_voice_channel: {e:?}");
+                AppError::internal("Failed to join voice channel")
+            })?;
 
     for old_channel_id in removed_channel_ids {
         if old_channel_id == channel.id {
@@ -422,7 +462,10 @@ pub async fn leave_voice_channel(
 
     let removed = db::channels::leave_voice_channel(&state.pool, channel.id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Failed to leave voice channel"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in leave_voice_channel: {e:?}");
+            AppError::internal("Failed to leave voice channel")
+        })?;
 
     if !removed {
         return Ok(Json(serde_json::json!({ "status": "already_left" })));
@@ -466,7 +509,10 @@ pub async fn update_voice_state(
         body.push_to_talk,
     )
     .await
-    .map_err(|_| AppError::internal("Failed to update voice state"))?
+    .map_err(|e| {
+        tracing::error!("DB error in update_voice_state: {e:?}");
+        AppError::internal("Failed to update voice state")
+    })?
     .ok_or_else(|| AppError::bad_request("Voice session not found"))?;
 
     broadcast_to_group(
