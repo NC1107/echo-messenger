@@ -9,4 +9,3 @@
 pub mod encrypt;
 pub mod keys;
 pub mod session;
-pub mod store;

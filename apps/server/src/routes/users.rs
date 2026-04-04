@@ -49,7 +49,10 @@ pub async fn get_my_privacy(
 ) -> Result<impl IntoResponse, AppError> {
     let privacy = db::users::get_privacy_preferences(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in get_my_privacy: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
     Ok(Json(PrivacyPreferencesResponse {
@@ -66,7 +69,10 @@ pub async fn update_my_privacy(
 ) -> Result<impl IntoResponse, AppError> {
     let current = db::users::get_privacy_preferences(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in update_my_privacy/get_current: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
     let updated = db::users::update_privacy_preferences(
@@ -80,7 +86,10 @@ pub async fn update_my_privacy(
             .unwrap_or(current.allow_unencrypted_dm),
     )
     .await
-    .map_err(|_| AppError::internal("Failed to update privacy settings"))?;
+    .map_err(|e| {
+        tracing::error!("DB error in update_my_privacy: {e:?}");
+        AppError::internal("Failed to update privacy settings")
+    })?;
 
     Ok(Json(PrivacyPreferencesResponse {
         read_receipts_enabled: updated.read_receipts_enabled,
@@ -98,7 +107,10 @@ pub async fn get_profile(
 ) -> Result<impl IntoResponse, AppError> {
     let profile = db::users::find_public_profile(&state.pool, user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in get_profile: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
     Ok(Json(UserProfile {
@@ -122,7 +134,10 @@ pub async fn delete_account(
     // Revoke all refresh tokens
     db::tokens::revoke_all_user_tokens(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Failed to revoke tokens"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in delete_account/revoke_tokens: {e:?}");
+            AppError::internal("Failed to revoke tokens")
+        })?;
 
     // Disconnect from WebSocket hub if online
     state.hub.unregister(auth.user_id);
@@ -130,7 +145,10 @@ pub async fn delete_account(
     // Delete user row (CASCADE handles related tables)
     let deleted = db::users::delete_user(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Failed to delete account"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in delete_account/delete_user: {e:?}");
+            AppError::internal("Failed to delete account")
+        })?;
 
     if !deleted {
         return Err(AppError::internal("User not found"));
@@ -147,13 +165,26 @@ pub async fn delete_account(
 
 /// GET /api/users/online
 ///
-/// Returns the list of currently connected user IDs.
+/// Returns the list of currently connected user IDs, filtered to the
+/// caller's contacts only (prevents platform-wide user enumeration).
 pub async fn online_users(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let online_ids = state.hub.get_online_user_ids();
-    Ok(Json(serde_json::json!({ "online_user_ids": online_ids })))
+    let contact_ids = db::contacts::list_contact_user_ids(&state.pool, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in online_users/list_contacts: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    let all_online = state.hub.get_online_user_ids();
+    let online_contacts: Vec<_> = all_online
+        .into_iter()
+        .filter(|id| contact_ids.contains(id))
+        .collect();
+    Ok(Json(
+        serde_json::json!({ "online_user_ids": online_contacts }),
+    ))
 }
 
 /// Maximum avatar size: 2 MB.
@@ -262,6 +293,7 @@ pub async fn upload_avatar(
 /// Serves the avatar image with the correct Content-Type header.
 /// Returns 404 if no avatar is set.
 pub async fn get_avatar(
+    _auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Path(user_id): Path<Uuid>,
 ) -> Result<Response, AppError> {

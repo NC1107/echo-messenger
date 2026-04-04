@@ -52,7 +52,10 @@ pub async fn ws_upgrade(
 
     let user = db::users::find_by_id(&state.pool, user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in ws_upgrade/find_user: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::unauthorized("User not found"))?;
 
     tracing::info!("WebSocket connecting: {} ({})", user.username, user_id);

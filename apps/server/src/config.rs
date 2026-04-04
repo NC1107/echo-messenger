@@ -12,11 +12,16 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Self {
+        let jwt_secret =
+            env::var("JWT_SECRET").expect("JWT_SECRET environment variable must be set");
+        assert!(
+            jwt_secret.len() >= 32,
+            "JWT_SECRET must be at least 32 characters for security"
+        );
         Self {
             database_url: env::var("DATABASE_URL")
                 .expect("DATABASE_URL environment variable must be set"),
-            jwt_secret: env::var("JWT_SECRET")
-                .expect("JWT_SECRET environment variable must be set"),
+            jwt_secret,
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into()),
             port: env::var("PORT")
                 .ok()

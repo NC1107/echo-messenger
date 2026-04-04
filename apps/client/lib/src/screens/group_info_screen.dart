@@ -60,18 +60,21 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     }
 
     // Otherwise fetch from server
-    final token = ref.read(authProvider).token;
-    if (token == null) return;
-
     try {
       final serverUrl = ref.read(serverUrlProvider);
-      final response = await http.get(
-        Uri.parse('$serverUrl/api/conversations/${widget.conversationId}'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.get(
+              Uri.parse(
+                '$serverUrl/api/conversations/${widget.conversationId}',
+              ),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+            ),
+          );
 
       if (response.statusCode == 200 && mounted) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;

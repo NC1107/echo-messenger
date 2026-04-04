@@ -23,52 +23,6 @@ pub struct GroupMember {
     pub avatar_url: Option<String>,
 }
 
-/// Create a group conversation and add the creator plus initial members.
-#[allow(dead_code)]
-pub async fn create_group(
-    pool: &PgPool,
-    creator_id: Uuid,
-    name: &str,
-    member_ids: &[Uuid],
-) -> Result<GroupInfo, sqlx::Error> {
-    let mut tx = pool.begin().await?;
-
-    let group: GroupInfo = sqlx::query_as(
-        "INSERT INTO conversations (kind, title) VALUES ('group', $1) \
-         RETURNING id, title, kind, description, created_at",
-    )
-    .bind(name)
-    .fetch_one(&mut *tx)
-    .await?;
-
-    // Add creator as owner
-    sqlx::query(
-        "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'owner')",
-    )
-    .bind(group.id)
-    .bind(creator_id)
-    .execute(&mut *tx)
-    .await?;
-
-    // Add other members
-    for member_id in member_ids {
-        if *member_id == creator_id {
-            continue; // Skip if creator is also listed
-        }
-        sqlx::query(
-            "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'member') \
-             ON CONFLICT DO NOTHING",
-        )
-        .bind(group.id)
-        .bind(member_id)
-        .execute(&mut *tx)
-        .await?;
-    }
-
-    tx.commit().await?;
-    Ok(group)
-}
-
 /// Create a group conversation with visibility setting and add the creator plus initial members.
 pub async fn create_group_with_visibility(
     pool: &PgPool,
@@ -348,7 +302,8 @@ pub async fn delete_group(
 ) -> Result<bool, sqlx::Error> {
     // Verify the caller is the owner
     let role = get_member_role(pool, group_id, owner_id).await?;
-    if role.as_deref() != Some("owner") {
+    use crate::types::Role;
+    if role.as_deref().and_then(Role::from_str_opt) != Some(Role::Owner) {
         return Ok(false);
     }
     // Delete conversation (cascades to members, messages via FK)

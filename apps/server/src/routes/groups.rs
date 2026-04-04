@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::auth::middleware::AuthUser;
 use crate::db;
 use crate::error::AppError;
+use crate::types::{ConversationKind, Role};
 
 use super::AppState;
 
@@ -111,14 +112,23 @@ pub async fn create_group(
     // Seed default channels for new groups.
     db::channels::create_channel(&state.pool, group.id, "general", "text", None, 0)
         .await
-        .map_err(|_| AppError::internal("Failed to create default text channel"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in create_group/create_text_channel: {e:?}");
+            AppError::internal("Failed to create default text channel")
+        })?;
     db::channels::create_channel(&state.pool, group.id, "lounge", "voice", None, 0)
         .await
-        .map_err(|_| AppError::internal("Failed to create default voice channel"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in create_group/create_voice_channel: {e:?}");
+            AppError::internal("Failed to create default voice channel")
+        })?;
 
     let members = db::groups::get_group_members(&state.pool, group.id)
         .await
-        .map_err(|_| AppError::internal("Failed to fetch group members"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in create_group/get_members: {e:?}");
+            AppError::internal("Failed to fetch group members")
+        })?;
 
     let response = GroupResponse {
         id: group.id,
@@ -148,7 +158,10 @@ pub async fn get_group(
     // Verify membership
     let is_member = db::groups::is_member(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in get_group/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this group"));
@@ -156,12 +169,18 @@ pub async fn get_group(
 
     let group = db::groups::get_group(&state.pool, group_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in get_group/fetch: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::bad_request("Group not found"))?;
 
     let members = db::groups::get_group_members(&state.pool, group_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in get_group/get_members: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     let response = GroupResponse {
         id: group.id,
@@ -192,24 +211,34 @@ pub async fn add_member(
     // Verify caller is a member and get their role
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in add_member/get_caller_role: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
     // Verify it's a group conversation
     let kind = db::groups::get_conversation_kind(&state.pool, group_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in add_member/get_conversation_kind: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
-    if kind.as_deref() != Some("group") {
+    if kind.as_deref().and_then(ConversationKind::from_str_opt) != Some(ConversationKind::Group) {
         return Err(AppError::bad_request("Not a group conversation"));
     }
 
     // For private groups, only owner or admin can add members
     let is_public = db::groups::is_public(&state.pool, group_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in add_member/is_public: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
-    if !is_public && caller_role != "owner" && caller_role != "admin" {
+    let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
+    if !is_public && !caller_role_enum.is_admin_or_above() {
         return Err(AppError::unauthorized(
             "Only owners and admins can add members to private groups",
         ));
@@ -218,7 +247,10 @@ pub async fn add_member(
     // Verify target user exists
     let user_exists = db::users::find_by_id(&state.pool, body.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in add_member/find_user: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     if user_exists.is_none() {
         return Err(AppError::bad_request("User not found"));
@@ -227,7 +259,10 @@ pub async fn add_member(
     // Check if target user is banned
     let banned = db::groups::is_banned(&state.pool, group_id, body.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in add_member/is_banned: {e:?}");
+            AppError::internal("Database error")
+        })?;
     if banned {
         return Err(AppError::bad_request("User is banned from this group"));
     }
@@ -253,11 +288,15 @@ pub async fn remove_member(
     // Verify caller is a member and get their role
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in remove_member/get_caller_role: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
     // If removing someone else, must be owner or admin
-    if target_user_id != auth.user_id && caller_role != "owner" && caller_role != "admin" {
+    let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
+    if target_user_id != auth.user_id && !caller_role_enum.is_admin_or_above() {
         return Err(AppError::unauthorized(
             "Only owners and admins can remove other members",
         ));
@@ -267,15 +306,21 @@ pub async fn remove_member(
     if target_user_id != auth.user_id {
         let target_role = db::groups::get_member_role(&state.pool, group_id, target_user_id)
             .await
-            .map_err(|_| AppError::internal("Database error"))?;
-        if target_role.as_deref() == Some("owner") {
+            .map_err(|e| {
+                tracing::error!("DB error in remove_member/get_target_role: {e:?}");
+                AppError::internal("Database error")
+            })?;
+        if target_role.as_deref().and_then(Role::from_str_opt) == Some(Role::Owner) {
             return Err(AppError::bad_request("Cannot remove the group owner"));
         }
     }
 
     let removed = db::groups::remove_member(&state.pool, group_id, target_user_id)
         .await
-        .map_err(|_| AppError::internal("Failed to remove member"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in remove_member: {e:?}");
+            AppError::internal("Failed to remove member")
+        })?;
 
     if !removed {
         return Err(AppError::bad_request("User is not a member of this group"));
@@ -329,7 +374,10 @@ pub async fn join_group(
     // Check if user is banned
     let banned = db::groups::is_banned(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in join_group/is_banned: {e:?}");
+            AppError::internal("Database error")
+        })?;
     if banned {
         return Err(AppError::bad_request("You are banned from this group"));
     }
@@ -354,9 +402,30 @@ pub async fn leave_group(
     State(state): State<Arc<AppState>>,
     Path(group_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Owners must transfer ownership before leaving (unless they're the last member)
+    let role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in leave_group/get_role: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    if role.as_deref().and_then(Role::from_str_opt) == Some(Role::Owner) {
+        let members = db::groups::get_conversation_member_ids(&state.pool, group_id)
+            .await
+            .unwrap_or_default();
+        if members.len() > 1 {
+            return Err(AppError::bad_request(
+                "Transfer ownership before leaving the group",
+            ));
+        }
+    }
+
     let removed = db::groups::remove_member(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Failed to leave group"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in leave_group/remove_member: {e:?}");
+            AppError::internal("Failed to leave group")
+        })?;
 
     if !removed {
         return Err(AppError::bad_request("Not a member of this group"));
@@ -383,7 +452,10 @@ pub async fn delete_group(
 ) -> Result<impl IntoResponse, AppError> {
     let deleted = db::groups::delete_group(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Failed to delete group"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in delete_group: {e:?}");
+            AppError::internal("Failed to delete group")
+        })?;
     if !deleted {
         return Err(AppError::unauthorized(
             "Only the group owner can delete this group",
@@ -401,10 +473,14 @@ pub async fn update_group(
 ) -> Result<impl IntoResponse, AppError> {
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Failed to check role"))?
+        .map_err(|e| {
+            tracing::error!("DB error in update_group/get_role: {e:?}");
+            AppError::internal("Failed to check role")
+        })?
         .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
-    if caller_role != "owner" && caller_role != "admin" {
+    let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
+    if !caller_role_enum.is_admin_or_above() {
         return Err(AppError::unauthorized(
             "Only the group owner or admin can update the group",
         ));
@@ -417,13 +493,19 @@ pub async fn update_group(
         }
         db::groups::update_group_title(&state.pool, group_id, trimmed)
             .await
-            .map_err(|_| AppError::internal("Failed to update group title"))?;
+            .map_err(|e| {
+                tracing::error!("DB error in update_group/title: {e:?}");
+                AppError::internal("Failed to update group title")
+            })?;
     }
 
     if let Some(ref desc) = body.description {
         db::groups::update_group_description(&state.pool, group_id, desc)
             .await
-            .map_err(|_| AppError::internal("Failed to update description"))?;
+            .map_err(|e| {
+                tracing::error!("DB error in update_group/description: {e:?}");
+                AppError::internal("Failed to update description")
+            })?;
     }
 
     Ok(Json(serde_json::json!({ "status": "updated" })))
@@ -440,10 +522,14 @@ pub async fn ban_member(
 ) -> Result<impl IntoResponse, AppError> {
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in ban_member/get_caller_role: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
-    if caller_role != "owner" && caller_role != "admin" {
+    let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
+    if !caller_role_enum.is_admin_or_above() {
         return Err(AppError::unauthorized(
             "Only owners and admins can ban members",
         ));
@@ -452,14 +538,20 @@ pub async fn ban_member(
     // Prevent banning the owner
     let target_role = db::groups::get_member_role(&state.pool, group_id, target_user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
-    if target_role.as_deref() == Some("owner") {
+        .map_err(|e| {
+            tracing::error!("DB error in ban_member/get_target_role: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    if target_role.as_deref().and_then(Role::from_str_opt) == Some(Role::Owner) {
         return Err(AppError::bad_request("Cannot ban the group owner"));
     }
 
     db::groups::ban_member(&state.pool, group_id, target_user_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Failed to ban member"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in ban_member: {e:?}");
+            AppError::internal("Failed to ban member")
+        })?;
 
     // Auto-delete group if no members remain
     let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
@@ -484,10 +576,14 @@ pub async fn unban_member(
 ) -> Result<impl IntoResponse, AppError> {
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .map_err(|e| {
+            tracing::error!("DB error in unban_member/get_caller_role: {e:?}");
+            AppError::internal("Database error")
+        })?
         .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
-    if caller_role != "owner" && caller_role != "admin" {
+    let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
+    if !caller_role_enum.is_admin_or_above() {
         return Err(AppError::unauthorized(
             "Only owners and admins can unban members",
         ));
@@ -495,7 +591,10 @@ pub async fn unban_member(
 
     let unbanned = db::groups::unban_member(&state.pool, group_id, target_user_id)
         .await
-        .map_err(|_| AppError::internal("Failed to unban member"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in unban_member: {e:?}");
+            AppError::internal("Failed to unban member")
+        })?;
 
     if !unbanned {
         return Err(AppError::bad_request("User is not banned from this group"));

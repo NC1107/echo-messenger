@@ -1,15 +1,9 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
-import '../providers/chat_provider.dart';
-import '../providers/conversations_provider.dart';
 import '../providers/crypto_provider.dart';
-import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
@@ -142,26 +136,14 @@ class ChatHeaderBar extends ConsumerWidget {
                   ),
                 ),
               ),
-              // Encryption toggle for DMs
+              // Encryption indicator for DMs (always on)
               if (!conv.isGroup)
-                IconButton(
-                  icon: Icon(
-                    conv.isEncrypted
-                        ? Icons.lock_outlined
-                        : Icons.lock_open_outlined,
+                Tooltip(
+                  message: 'End-to-end encrypted',
+                  child: Icon(
+                    Icons.lock_outlined,
                     size: 20,
-                  ),
-                  color: conv.isEncrypted
-                      ? EchoTheme.online
-                      : context.textMuted,
-                  tooltip: conv.isEncrypted
-                      ? 'Encryption on'
-                      : 'Encryption off',
-                  onPressed: () => _toggleEncryption(context, ref, conv),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 36,
-                    minHeight: 36,
+                    color: EchoTheme.online,
                   ),
                 ),
               // Reset encryption keys for this peer (DM + encrypted only)
@@ -283,66 +265,6 @@ class ChatHeaderBar extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  Future<void> _toggleEncryption(
-    BuildContext context,
-    WidgetRef ref,
-    Conversation conv,
-  ) async {
-    final newValue = !conv.isEncrypted;
-    final myId = ref.read(authProvider).userId ?? '';
-    final srvUrl = ref.read(serverUrlProvider);
-
-    // Pre-check: warn if peer has no encryption keys when enabling.
-    if (newValue && !conv.isGroup) {
-      final peer = conv.members.where((m) => m.userId != myId).firstOrNull;
-      if (peer != null) {
-        final crypto = ref.read(cryptoServiceProvider);
-        crypto.setToken(ref.read(authProvider).token ?? '');
-        final ready = await crypto.canEstablishSession(peer.userId);
-        if (!ready && context.mounted) {
-          ToastService.show(
-            context,
-            'Peer has not set up encryption keys yet',
-            type: ToastType.warning,
-          );
-        }
-      }
-    }
-
-    try {
-      await ref
-          .read(authProvider.notifier)
-          .authenticatedRequest(
-            (token) => http.put(
-              Uri.parse('$srvUrl/api/conversations/${conv.id}/encryption'),
-              headers: {
-                'Authorization': 'Bearer $token',
-                'Content-Type': 'application/json',
-              },
-              body: jsonEncode({'is_encrypted': newValue}),
-            ),
-          );
-      // Update local conversation state
-      ref
-          .read(conversationsProvider.notifier)
-          .updateEncryption(conv.id, newValue);
-      ref
-          .read(chatProvider.notifier)
-          .addSystemEvent(
-            conv.id,
-            newValue ? 'encryption_enabled' : 'encryption_disabled',
-          );
-    } catch (e) {
-      if (context.mounted) {
-        ToastService.show(
-          context,
-          'Failed to toggle encryption',
-          type: ToastType.error,
-        );
-      }
-    }
   }
 
   Future<void> _resetPeerKeys(

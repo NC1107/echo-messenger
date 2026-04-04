@@ -1,1 +1,0 @@
-//! Contact storage operations.

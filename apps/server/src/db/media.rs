@@ -53,8 +53,7 @@ pub async fn get_media(pool: &PgPool, id: Uuid) -> Result<Option<MediaRow>, sqlx
 ///
 /// Access is granted when:
 ///   1. The user uploaded the file (uploader_id), OR
-///   2. The media has a conversation_id and the user is a member of that conversation, OR
-///   3. The media ID appears in a message content within a conversation the user belongs to.
+///   2. The media has a conversation_id and the user is a member of that conversation.
 pub async fn can_user_access_media(
     pool: &PgPool,
     media_id: Uuid,
@@ -67,11 +66,6 @@ pub async fn can_user_access_media(
             SELECT 1 FROM media m
               JOIN conversation_members cm ON cm.conversation_id = m.conversation_id
               WHERE m.id = $1 AND cm.user_id = $2
-            UNION ALL
-            SELECT 1 FROM messages msg
-              JOIN conversation_members cm ON cm.conversation_id = msg.conversation_id
-              WHERE msg.content LIKE '%' || $1::text || '%'
-                AND cm.user_id = $2
         )",
     )
     .bind(media_id)

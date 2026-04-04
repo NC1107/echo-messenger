@@ -77,7 +77,10 @@ pub async fn list_contacts(
 ) -> Result<impl IntoResponse, AppError> {
     let contacts = db::contacts::list_contacts(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in list_contacts: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     Ok(Json(contacts))
 }
@@ -88,7 +91,10 @@ pub async fn list_pending(
 ) -> Result<impl IntoResponse, AppError> {
     let pending = db::contacts::list_pending_requests(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in list_pending: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     Ok(Json(pending))
 }
@@ -113,7 +119,10 @@ pub async fn block_user(
 
     db::contacts::block_user(&state.pool, auth.user_id, body.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in block_user: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     Ok((
         StatusCode::CREATED,
@@ -128,7 +137,10 @@ pub async fn unblock_user(
 ) -> Result<impl IntoResponse, AppError> {
     let removed = db::contacts::unblock_user(&state.pool, auth.user_id, body.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in unblock_user: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     if !removed {
         return Err(AppError::bad_request("User is not blocked"));
@@ -143,7 +155,10 @@ pub async fn list_blocked(
 ) -> Result<impl IntoResponse, AppError> {
     let blocked = db::contacts::list_blocked_users(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .map_err(|e| {
+            tracing::error!("DB error in list_blocked: {e:?}");
+            AppError::internal("Database error")
+        })?;
 
     Ok(Json(blocked))
 }

@@ -1,0 +1,152 @@
+import 'package:flutter/material.dart';
+
+import '../models/contact.dart';
+import '../theme/echo_theme.dart';
+import 'avatar_utils.dart';
+
+class ContactItem extends StatefulWidget {
+  final Contact contact;
+  final String serverUrl;
+  final VoidCallback onMessage;
+  final VoidCallback onProfile;
+
+  const ContactItem({
+    super.key,
+    required this.contact,
+    required this.serverUrl,
+    required this.onMessage,
+    required this.onProfile,
+  });
+
+  @override
+  State<ContactItem> createState() => _ContactItemState();
+}
+
+class _ContactItemState extends State<ContactItem> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final contact = widget.contact;
+    final username = contact.username;
+    final displayName = contact.displayName;
+    final avatarUrl = contact.avatarUrl;
+    final fullAvatarUrl = avatarUrl != null
+        ? '${widget.serverUrl}$avatarUrl'
+        : null;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: Container(
+        height: 56,
+        margin: const EdgeInsets.symmetric(vertical: 1),
+        decoration: BoxDecoration(
+          color: _isHovered ? context.surfaceHover : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: widget.onProfile,
+                child: Row(
+                  children: [
+                    // Avatar with online dot
+                    Stack(
+                      children: [
+                        buildAvatar(
+                          name: username,
+                          radius: 18,
+                          imageUrl: fullAvatarUrl,
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: EchoTheme.online,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: context.sidebarBg,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 12),
+                    // Name
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            displayName ?? username,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: context.textPrimary,
+                            ),
+                          ),
+                          if (displayName != null)
+                            Text(
+                              '@$username',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: context.textMuted,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            IconButton(
+              icon: Icon(
+                Icons.info_outline,
+                size: 18,
+                color: context.textMuted,
+              ),
+              tooltip: 'Profile',
+              onPressed: widget.onProfile,
+            ),
+            SizedBox(
+              height: 28,
+              child: Material(
+                color: context.accentLight,
+                borderRadius: BorderRadius.circular(6),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: widget.onMessage,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Center(
+                      child: Text(
+                        'Message',
+                        style: TextStyle(
+                          color: context.accent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

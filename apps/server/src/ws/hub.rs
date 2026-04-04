@@ -38,6 +38,16 @@ impl Hub {
             false
         }
     }
+
+    /// Broadcast a JSON event to all members of a conversation, optionally excluding one user.
+    pub fn broadcast_json(&self, member_ids: &[Uuid], json: &str, exclude: Option<Uuid>) {
+        for member_id in member_ids {
+            if Some(*member_id) == exclude {
+                continue;
+            }
+            self.send_to(member_id, WsMessage::Text(json.to_string().into()));
+        }
+    }
 }
 
 #[cfg(test)]

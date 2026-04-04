@@ -76,17 +76,19 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
 
   Future<void> _loadProfile() async {
     final serverUrl = ref.read(serverUrlProvider);
-    final token = ref.read(authProvider).token;
-    if (token == null) return;
 
     try {
-      final response = await http.get(
-        Uri.parse('$serverUrl/api/users/${widget.userId}/profile'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.get(
+              Uri.parse('$serverUrl/api/users/${widget.userId}/profile'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+            ),
+          );
 
       if (!mounted) return;
 
