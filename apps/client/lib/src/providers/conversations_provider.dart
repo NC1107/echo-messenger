@@ -250,8 +250,8 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
           return state.conversations.where((c) => c.id == convId).firstOrNull;
         }
       }
-    } catch (_) {
-      // Fall through
+    } catch (e) {
+      debugPrint('[Conversations] getOrCreateDm failed for $peerUserId: $e');
     }
 
     return null;

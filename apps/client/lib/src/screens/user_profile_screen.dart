@@ -9,7 +9,7 @@ import '../providers/contacts_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
-import '../widgets/conversation_panel.dart' show buildAvatar;
+import '../widgets/avatar_utils.dart' show buildAvatar;
 
 /// Shows a user profile. On desktop (>=900px) opens as a dialog; on mobile as
 /// a full screen page.

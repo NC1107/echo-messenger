@@ -1,0 +1,127 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../providers/auth_provider.dart';
+import '../providers/crypto_provider.dart';
+import '../providers/update_provider.dart';
+import '../theme/echo_theme.dart';
+import '../widgets/echo_logo_icon.dart';
+
+class SplashScreen extends ConsumerStatefulWidget {
+  const SplashScreen({super.key});
+
+  @override
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends ConsumerState<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _fadeController;
+  late final Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeIn,
+    );
+    _fadeController.forward();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _init() async {
+    final stopwatch = Stopwatch()..start();
+
+    // Try auto-login from stored credentials
+    final auth = ref.read(authProvider.notifier);
+    var loggedIn = await auth.tryAutoLogin();
+
+    // If auto-login succeeded, init crypto keys
+    if (loggedIn) {
+      await ref.read(cryptoProvider.notifier).initAndUploadKeys();
+    }
+
+    // Support compile-time env vars for CI/testing
+    if (!loggedIn && !kIsWeb) {
+      const envUser = String.fromEnvironment('ECHO_USERNAME');
+      const envPass = String.fromEnvironment('ECHO_PASSWORD');
+      if (envUser.isNotEmpty && envPass.isNotEmpty) {
+        await auth.login(envUser, envPass);
+        if (ref.read(authProvider).isLoggedIn) {
+          await ref.read(cryptoProvider.notifier).initAndUploadKeys();
+          loggedIn = true;
+        }
+      }
+    }
+
+    // Check for updates on non-web platforms
+    if (!kIsWeb) {
+      // Fire-and-forget -- don't block splash on network call
+      ref.read(updateProvider.notifier).check();
+    }
+
+    // Ensure at least 1.5s of splash for visual polish
+    stopwatch.stop();
+    final elapsed = stopwatch.elapsedMilliseconds;
+    if (elapsed < 1500) {
+      await Future<void>.delayed(Duration(milliseconds: 1500 - elapsed));
+    }
+
+    if (!mounted) return;
+
+    final isLoggedIn = ref.read(authProvider).isLoggedIn;
+    context.go(isLoggedIn ? '/home' : '/login');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: context.mainBg,
+      body: Center(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const EchoLogoIcon(size: 72),
+              const SizedBox(height: 16),
+              Text(
+                'Echo',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.5,
+                  color: context.accent,
+                ),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: context.accent.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -682,7 +682,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               _chatInputBarKey.currentState?.enterEditMode(msg);
             },
             onReply: (msg) {
-              // TODO: implement reply forwarding to input bar
+              ref.read(chatProvider.notifier).setReplyTo(msg);
+              _chatInputBarKey.currentState?.requestInputFocus();
             },
             onAvatarTap: (userId) {
               UserProfileScreen.show(context, ref, userId);

@@ -9,7 +9,7 @@ import '../providers/server_url_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
-import 'conversation_panel.dart' show buildAvatar;
+import 'avatar_utils.dart' show buildAvatar;
 
 class MembersPanel extends ConsumerWidget {
   final Conversation? conversation;
