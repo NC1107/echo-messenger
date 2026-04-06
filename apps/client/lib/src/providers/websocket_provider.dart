@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,6 +25,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   Timer? _typingCleanupTimer;
+  Timer? _reconnectTimer;
+  int _reconnectAttempts = 0;
+  static const _maxReconnectAttempts = 10;
   final _voiceSignalController =
       StreamController<Map<String, dynamic>>.broadcast();
 
@@ -85,6 +89,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     if (token == null) return;
 
     disconnect();
+    _reconnectAttempts = 0;
 
     // Attempt ticket-based connection, falling back to token-based for
     // backward compatibility with servers that don't support ws-ticket.
@@ -99,15 +104,17 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     final ticket = await _fetchWsTicket();
 
     if (ticket == null || ticket.isEmpty) {
-      // Ticket fetch failed -- don't connect, let reconnect timer retry
+      // Ticket fetch failed -- don't connect, schedule retry with backoff
       debugPrint('[WebSocket] Failed to obtain ticket, will retry...');
       state = state.copyWith(isConnected: false);
+      _scheduleReconnect();
       return;
     }
 
     final uri = Uri.parse('$wsBase/ws?ticket=$ticket');
     _channel = WebSocketChannel.connect(uri);
     state = state.copyWith(isConnected: true);
+    _reconnectAttempts = 0;
     retriedPeers.clear();
 
     // Reload conversations now that WebSocket is connected -- ensures the
@@ -118,15 +125,53 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       (data) => _onMessage(data as String),
       onDone: () {
         state = state.copyWith(isConnected: false);
-        Future.delayed(const Duration(seconds: 3), () {
-          if (ref.read(authProvider).isLoggedIn) connect();
-        });
+        _scheduleReconnect();
       },
-      onError: (_) => state = state.copyWith(isConnected: false),
+      onError: (_) {
+        state = state.copyWith(isConnected: false);
+        _scheduleReconnect();
+      },
     );
   }
 
+  /// Schedule a reconnection attempt with exponential backoff.
+  ///
+  /// Uses `Timer` instead of `Future.delayed` so the pending callback can
+  /// be cancelled in [disconnect] and [dispose].
+  void _scheduleReconnect() {
+    _reconnectTimer?.cancel();
+
+    if (!ref.read(authProvider).isLoggedIn) return;
+
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      debugPrint(
+        '[WebSocket] Max reconnect attempts ($_maxReconnectAttempts) '
+        'reached -- server unreachable',
+      );
+      state = state.copyWith(isConnected: false);
+      return;
+    }
+
+    final delayMs = math.min(
+      1000 * math.pow(2, _reconnectAttempts).toInt(),
+      60000,
+    );
+    _reconnectAttempts++;
+    debugPrint(
+      '[WebSocket] Reconnecting in ${delayMs}ms '
+      '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
+    );
+
+    _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
+      if (ref.read(authProvider).isLoggedIn) {
+        _connectWithTicketOrFallback();
+      }
+    });
+  }
+
   void disconnect() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _subscription?.cancel();
     _channel?.sink.close();
     _channel = null;
@@ -365,6 +410,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
 
   @override
   void dispose() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     _typingCleanupTimer?.cancel();
     _voiceSignalController.close();
     disconnect();

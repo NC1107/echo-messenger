@@ -322,10 +322,10 @@ class SignalSession {
     return true;
   }
 
-  /// Serialize session state to JSON for SharedPreferences storage.
+  /// Serialize session state to JSON for secure storage persistence.
   ///
   /// Note: We store the private key bytes for the ratchet key pair.
-  /// In production, this should use secure storage (Keychain/Keystore).
+  /// These are persisted via [SecureKeyStore] (platform-specific secure storage).
   Future<Map<String, dynamic>> toJson() async {
     final sendPrivateBytes = await (sendRatchetKeyPair as SimpleKeyPairData)
         .extractPrivateKeyBytes();

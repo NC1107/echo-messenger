@@ -220,16 +220,20 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   }
 
   /// Mute/unmute all incoming audio from remote peers.
-  void setDeafened(bool deafened) {
+  ///
+  /// Uses [RTCRtpReceiver] to reliably access remote audio tracks under
+  /// unified-plan SDP semantics (`getRemoteStreams()` can be empty).
+  Future<void> setDeafened(bool deafened) async {
     for (final renderer in _remoteAudioRenderers.values) {
       renderer.muted = deafened;
     }
-    // Also disable remote audio tracks on all peer connections so audio
-    // processing stops entirely while deafened.
+    // Disable remote audio tracks via receivers -- this is the reliable
+    // unified-plan approach and stops audio processing while deafened.
     for (final pc in _peerConnections.values) {
-      for (final stream in pc.getRemoteStreams()) {
-        if (stream == null) continue;
-        for (final track in stream.getAudioTracks()) {
+      final receivers = await pc.getReceivers();
+      for (final receiver in receivers) {
+        final track = receiver.track;
+        if (track != null && track.kind == 'audio') {
           track.enabled = !deafened;
         }
       }
