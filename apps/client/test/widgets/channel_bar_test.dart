@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:echo_app/src/models/channel.dart';
@@ -146,10 +147,15 @@ void main() {
       String? activeVoice;
 
       await tester.pumpApp(
-        ChannelBar(
-          conversationId: 'conv-1',
-          onTextChannelChanged: (_) {},
-          onVoiceChannelChanged: (channelId) => activeVoice = channelId,
+        StatefulBuilder(
+          builder: (context, setState) => ChannelBar(
+            conversationId: 'conv-1',
+            activeVoiceChannelId: activeVoice,
+            onTextChannelChanged: (_) {},
+            onVoiceChannelChanged: (channelId) {
+              setState(() => activeVoice = channelId);
+            },
+          ),
         ),
         overrides: [
           authOverride(loggedInAuthState),
@@ -187,10 +193,15 @@ void main() {
       String? activeVoice;
 
       await tester.pumpApp(
-        ChannelBar(
-          conversationId: 'conv-1',
-          onTextChannelChanged: (_) {},
-          onVoiceChannelChanged: (channelId) => activeVoice = channelId,
+        StatefulBuilder(
+          builder: (context, setState) => ChannelBar(
+            conversationId: 'conv-1',
+            activeVoiceChannelId: activeVoice,
+            onTextChannelChanged: (_) {},
+            onVoiceChannelChanged: (channelId) {
+              setState(() => activeVoice = channelId);
+            },
+          ),
         ),
         overrides: [
           authOverride(loggedInAuthState),

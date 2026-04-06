@@ -29,54 +29,139 @@ class EchoTheme {
   static const activeBg = Color(0xFF27272A);
   static const divider = border;
 
-  static ThemeData get darkTheme {
-    final baseTextTheme = GoogleFonts.interTextTheme(
-      ThemeData.dark().textTheme,
-    );
-    final textTheme = baseTextTheme.copyWith(
+  // ---------------------------------------------------------------------------
+  // Shared factory methods for theme construction
+  // ---------------------------------------------------------------------------
+
+  static TextTheme _buildTextTheme({
+    required Brightness brightness,
+    required Color primaryColor,
+    required Color secondaryColor,
+    required Color mutedColor,
+  }) {
+    final base = brightness == Brightness.dark
+        ? ThemeData.dark().textTheme
+        : ThemeData.light().textTheme;
+    final baseTextTheme = GoogleFonts.interTextTheme(base);
+    return baseTextTheme.copyWith(
       headlineLarge: baseTextTheme.headlineLarge?.copyWith(
         fontSize: 24,
         fontWeight: FontWeight.w700,
         letterSpacing: -0.5,
-        color: textPrimary,
+        color: primaryColor,
       ),
       headlineMedium: baseTextTheme.headlineMedium?.copyWith(
         fontSize: 22,
         fontWeight: FontWeight.w700,
-        color: textPrimary,
+        color: primaryColor,
       ),
       titleLarge: baseTextTheme.titleLarge?.copyWith(
         fontSize: 16,
         fontWeight: FontWeight.w600,
-        color: textPrimary,
+        color: primaryColor,
       ),
       titleMedium: baseTextTheme.titleMedium?.copyWith(
         fontSize: 14,
         fontWeight: FontWeight.w600,
-        color: textPrimary,
+        color: primaryColor,
       ),
       bodyLarge: baseTextTheme.bodyLarge?.copyWith(
         fontSize: 15,
         fontWeight: FontWeight.w400,
         height: 1.47,
-        color: textPrimary,
+        color: primaryColor,
       ),
       bodyMedium: baseTextTheme.bodyMedium?.copyWith(
         fontSize: 13,
         fontWeight: FontWeight.w400,
-        color: textSecondary,
+        color: secondaryColor,
       ),
       bodySmall: baseTextTheme.bodySmall?.copyWith(
         fontSize: 12,
         fontWeight: FontWeight.w400,
-        color: textMuted,
+        color: mutedColor,
       ),
       labelLarge: baseTextTheme.labelLarge?.copyWith(
         fontSize: 11,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.5,
-        color: textSecondary,
+        color: secondaryColor,
       ),
+    );
+  }
+
+  static FilledButtonThemeData _buildFilledButtonTheme(Color accentColor) {
+    return FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: accentColor,
+        foregroundColor: Colors.white,
+        textStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      ),
+    );
+  }
+
+  static TextButtonThemeData _buildTextButtonTheme(Color accentColor) {
+    return TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: accentColor,
+        textStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500),
+      ),
+    );
+  }
+
+  static OutlinedButtonThemeData _buildOutlinedButtonTheme(
+    Color foregroundColor,
+    Color borderColor,
+  ) {
+    return OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: foregroundColor,
+        side: BorderSide(color: borderColor),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  static InputDecorationTheme _buildInputTheme({
+    required Color fillColor,
+    required Color borderColor,
+    required Color focusBorderColor,
+    required Color hintColor,
+    required Color labelColor,
+  }) {
+    return InputDecorationTheme(
+      filled: true,
+      fillColor: fillColor,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: borderColor, width: 1),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: borderColor, width: 1),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: focusBorderColor, width: 1),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      hintStyle: GoogleFonts.inter(color: hintColor, fontSize: 13),
+      labelStyle: GoogleFonts.inter(color: labelColor, fontSize: 13),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Dark theme
+  // ---------------------------------------------------------------------------
+
+  static ThemeData get darkTheme {
+    final textTheme = _buildTextTheme(
+      brightness: Brightness.dark,
+      primaryColor: textPrimary,
+      secondaryColor: textSecondary,
+      mutedColor: textMuted,
     );
 
     return ThemeData(
@@ -112,60 +197,16 @@ class EchoTheme {
         thickness: 1,
         space: 1,
       ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
+      inputDecorationTheme: _buildInputTheme(
         fillColor: surface,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: border, width: 1),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: border, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: accent, width: 1),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
-        hintStyle: GoogleFonts.inter(color: textMuted, fontSize: 13),
-        labelStyle: GoogleFonts.inter(color: textSecondary, fontSize: 13),
+        borderColor: border,
+        focusBorderColor: accent,
+        hintColor: textMuted,
+        labelColor: textSecondary,
       ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          backgroundColor: accent,
-          foregroundColor: Colors.white,
-          textStyle: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: accent,
-          textStyle: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: textPrimary,
-          side: const BorderSide(color: border),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      ),
+      filledButtonTheme: _buildFilledButtonTheme(accent),
+      textButtonTheme: _buildTextButtonTheme(accent),
+      outlinedButtonTheme: _buildOutlinedButtonTheme(textPrimary, border),
       iconTheme: const IconThemeData(color: textSecondary, size: 20),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
@@ -245,54 +286,16 @@ class EchoTheme {
   static const emberRecvBubble = Color(0xFF252019);
   static const emberBorder = Color(0xFF332D24);
 
+  // ---------------------------------------------------------------------------
+  // Light theme
+  // ---------------------------------------------------------------------------
+
   static ThemeData get lightTheme {
-    final baseTextTheme = GoogleFonts.interTextTheme(
-      ThemeData.light().textTheme,
-    );
-    final textTheme = baseTextTheme.copyWith(
-      headlineLarge: baseTextTheme.headlineLarge?.copyWith(
-        fontSize: 24,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.5,
-        color: lightTextPrimary,
-      ),
-      headlineMedium: baseTextTheme.headlineMedium?.copyWith(
-        fontSize: 22,
-        fontWeight: FontWeight.w700,
-        color: lightTextPrimary,
-      ),
-      titleLarge: baseTextTheme.titleLarge?.copyWith(
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-        color: lightTextPrimary,
-      ),
-      titleMedium: baseTextTheme.titleMedium?.copyWith(
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        color: lightTextPrimary,
-      ),
-      bodyLarge: baseTextTheme.bodyLarge?.copyWith(
-        fontSize: 15,
-        fontWeight: FontWeight.w400,
-        height: 1.47,
-        color: lightTextPrimary,
-      ),
-      bodyMedium: baseTextTheme.bodyMedium?.copyWith(
-        fontSize: 13,
-        fontWeight: FontWeight.w400,
-        color: lightTextSecondary,
-      ),
-      bodySmall: baseTextTheme.bodySmall?.copyWith(
-        fontSize: 12,
-        fontWeight: FontWeight.w400,
-        color: lightTextMuted,
-      ),
-      labelLarge: baseTextTheme.labelLarge?.copyWith(
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.5,
-        color: lightTextSecondary,
-      ),
+    final textTheme = _buildTextTheme(
+      brightness: Brightness.light,
+      primaryColor: lightTextPrimary,
+      secondaryColor: lightTextSecondary,
+      mutedColor: lightTextMuted,
     );
 
     return ThemeData(
@@ -328,59 +331,18 @@ class EchoTheme {
         thickness: 1,
         space: 1,
       ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
+      inputDecorationTheme: _buildInputTheme(
         fillColor: lightSurface,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: lightBorder, width: 1),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: lightBorder, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: accent, width: 1),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
-        hintStyle: GoogleFonts.inter(color: lightTextMuted, fontSize: 13),
-        labelStyle: GoogleFonts.inter(color: lightTextSecondary, fontSize: 13),
+        borderColor: lightBorder,
+        focusBorderColor: accent,
+        hintColor: lightTextMuted,
+        labelColor: lightTextSecondary,
       ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          backgroundColor: accent,
-          foregroundColor: Colors.white,
-          textStyle: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: accent,
-          textStyle: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: lightTextPrimary,
-          side: const BorderSide(color: lightBorder),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
+      filledButtonTheme: _buildFilledButtonTheme(accent),
+      textButtonTheme: _buildTextButtonTheme(accent),
+      outlinedButtonTheme: _buildOutlinedButtonTheme(
+        lightTextPrimary,
+        lightBorder,
       ),
       iconTheme: const IconThemeData(color: lightTextSecondary, size: 20),
       tooltipTheme: TooltipThemeData(
@@ -425,54 +387,16 @@ class EchoTheme {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Graphite theme
+  // ---------------------------------------------------------------------------
+
   static ThemeData get graphiteTheme {
-    final baseTextTheme = GoogleFonts.interTextTheme(
-      ThemeData.dark().textTheme,
-    );
-    final textTheme = baseTextTheme.copyWith(
-      headlineLarge: baseTextTheme.headlineLarge?.copyWith(
-        fontSize: 24,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.5,
-        color: graphiteTextPrimary,
-      ),
-      headlineMedium: baseTextTheme.headlineMedium?.copyWith(
-        fontSize: 22,
-        fontWeight: FontWeight.w700,
-        color: graphiteTextPrimary,
-      ),
-      titleLarge: baseTextTheme.titleLarge?.copyWith(
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-        color: graphiteTextPrimary,
-      ),
-      titleMedium: baseTextTheme.titleMedium?.copyWith(
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        color: graphiteTextPrimary,
-      ),
-      bodyLarge: baseTextTheme.bodyLarge?.copyWith(
-        fontSize: 15,
-        fontWeight: FontWeight.w400,
-        height: 1.47,
-        color: graphiteTextPrimary,
-      ),
-      bodyMedium: baseTextTheme.bodyMedium?.copyWith(
-        fontSize: 13,
-        fontWeight: FontWeight.w400,
-        color: graphiteTextSecondary,
-      ),
-      bodySmall: baseTextTheme.bodySmall?.copyWith(
-        fontSize: 12,
-        fontWeight: FontWeight.w400,
-        color: graphiteTextMuted,
-      ),
-      labelLarge: baseTextTheme.labelLarge?.copyWith(
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.5,
-        color: graphiteTextSecondary,
-      ),
+    final textTheme = _buildTextTheme(
+      brightness: Brightness.dark,
+      primaryColor: graphiteTextPrimary,
+      secondaryColor: graphiteTextSecondary,
+      mutedColor: graphiteTextMuted,
     );
 
     return ThemeData(
@@ -508,62 +432,18 @@ class EchoTheme {
         thickness: 1,
         space: 1,
       ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
+      inputDecorationTheme: _buildInputTheme(
         fillColor: graphiteSurface,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: graphiteBorder, width: 1),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: graphiteBorder, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: graphiteAccent, width: 1),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
-        hintStyle: GoogleFonts.inter(color: graphiteTextMuted, fontSize: 13),
-        labelStyle: GoogleFonts.inter(
-          color: graphiteTextSecondary,
-          fontSize: 13,
-        ),
+        borderColor: graphiteBorder,
+        focusBorderColor: graphiteAccent,
+        hintColor: graphiteTextMuted,
+        labelColor: graphiteTextSecondary,
       ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          backgroundColor: graphiteAccent,
-          foregroundColor: Colors.white,
-          textStyle: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: graphiteAccent,
-          textStyle: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: graphiteTextPrimary,
-          side: const BorderSide(color: graphiteBorder),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
+      filledButtonTheme: _buildFilledButtonTheme(graphiteAccent),
+      textButtonTheme: _buildTextButtonTheme(graphiteAccent),
+      outlinedButtonTheme: _buildOutlinedButtonTheme(
+        graphiteTextPrimary,
+        graphiteBorder,
       ),
       iconTheme: const IconThemeData(color: graphiteTextSecondary, size: 20),
       tooltipTheme: TooltipThemeData(
@@ -601,54 +481,16 @@ class EchoTheme {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Ember theme
+  // ---------------------------------------------------------------------------
+
   static ThemeData get emberTheme {
-    final baseTextTheme = GoogleFonts.interTextTheme(
-      ThemeData.dark().textTheme,
-    );
-    final textTheme = baseTextTheme.copyWith(
-      headlineLarge: baseTextTheme.headlineLarge?.copyWith(
-        fontSize: 24,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.5,
-        color: emberTextPrimary,
-      ),
-      headlineMedium: baseTextTheme.headlineMedium?.copyWith(
-        fontSize: 22,
-        fontWeight: FontWeight.w700,
-        color: emberTextPrimary,
-      ),
-      titleLarge: baseTextTheme.titleLarge?.copyWith(
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-        color: emberTextPrimary,
-      ),
-      titleMedium: baseTextTheme.titleMedium?.copyWith(
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        color: emberTextPrimary,
-      ),
-      bodyLarge: baseTextTheme.bodyLarge?.copyWith(
-        fontSize: 15,
-        fontWeight: FontWeight.w400,
-        height: 1.47,
-        color: emberTextPrimary,
-      ),
-      bodyMedium: baseTextTheme.bodyMedium?.copyWith(
-        fontSize: 13,
-        fontWeight: FontWeight.w400,
-        color: emberTextSecondary,
-      ),
-      bodySmall: baseTextTheme.bodySmall?.copyWith(
-        fontSize: 12,
-        fontWeight: FontWeight.w400,
-        color: emberTextMuted,
-      ),
-      labelLarge: baseTextTheme.labelLarge?.copyWith(
-        fontSize: 11,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.5,
-        color: emberTextSecondary,
-      ),
+    final textTheme = _buildTextTheme(
+      brightness: Brightness.dark,
+      primaryColor: emberTextPrimary,
+      secondaryColor: emberTextSecondary,
+      mutedColor: emberTextMuted,
     );
 
     return ThemeData(
@@ -684,59 +526,18 @@ class EchoTheme {
         thickness: 1,
         space: 1,
       ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
+      inputDecorationTheme: _buildInputTheme(
         fillColor: emberSurface,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: emberBorder, width: 1),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: emberBorder, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: emberAccent, width: 1),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
-        hintStyle: GoogleFonts.inter(color: emberTextMuted, fontSize: 13),
-        labelStyle: GoogleFonts.inter(color: emberTextSecondary, fontSize: 13),
+        borderColor: emberBorder,
+        focusBorderColor: emberAccent,
+        hintColor: emberTextMuted,
+        labelColor: emberTextSecondary,
       ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          backgroundColor: emberAccent,
-          foregroundColor: Colors.white,
-          textStyle: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        ),
-      ),
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: emberAccent,
-          textStyle: GoogleFonts.inter(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: emberTextPrimary,
-          side: const BorderSide(color: emberBorder),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
+      filledButtonTheme: _buildFilledButtonTheme(emberAccent),
+      textButtonTheme: _buildTextButtonTheme(emberAccent),
+      outlinedButtonTheme: _buildOutlinedButtonTheme(
+        emberTextPrimary,
+        emberBorder,
       ),
       iconTheme: const IconThemeData(color: emberTextSecondary, size: 20),
       tooltipTheme: TooltipThemeData(

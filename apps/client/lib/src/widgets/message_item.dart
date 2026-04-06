@@ -26,6 +26,19 @@ final _standaloneUrlRegex = RegExp(r'^https?://[^\s]+$', caseSensitive: false);
 /// Regex for detecting @mentions in message text.
 final _mentionRegex = RegExp(r'@(\w+)');
 
+/// Regex for detecting fenced code blocks: ```\n...\n``` (multiline).
+final _codeBlockRegex = RegExp(r'```\n?([\s\S]*?)```', multiLine: true);
+
+/// Regex for detecting inline code: `...` (single backtick, no nesting).
+final _inlineCodeRegex = RegExp(r'`([^`\n]+)`');
+
+/// Regex for detecting bold text: **...**
+final _boldRegex = RegExp(r'\*\*(.+?)\*\*');
+
+/// Regex for detecting italic text: *...*
+/// Negative lookahead/lookbehind to avoid matching ** (bold delimiters).
+final _italicRegex = RegExp(r'(?<!\*)\*([^*]+?)\*(?!\*)');
+
 /// Regex for detecting image markers: [img:URL]
 final _imgRegex = RegExp(r'^\[img:(.+)\]$');
 
@@ -617,14 +630,20 @@ class _MessageItemState extends State<MessageItem> {
     );
   }
 
-  /// Build spans for a plain text segment (no URLs), highlighting @mentions.
+  /// Base text style used throughout message rendering.
+  TextStyle _baseStyle({required Color textColor}) =>
+      TextStyle(fontSize: 15, color: textColor, height: 1.47);
+
+  /// Build spans for plain text that may contain @mentions.
+  /// Called for segments that have already been stripped of URLs, code, bold,
+  /// and italic markers.
   List<InlineSpan> _buildMentionSpans(String text, {required Color textColor}) {
     final mentionMatches = _mentionRegex.allMatches(text).toList();
     if (mentionMatches.isEmpty) {
       return [
         TextSpan(
           text: text,
-          style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
+          style: _baseStyle(textColor: textColor),
         ),
       ];
     }
@@ -636,7 +655,7 @@ class _MessageItemState extends State<MessageItem> {
         spans.add(
           TextSpan(
             text: text.substring(lastEnd, match.start),
-            style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
+            style: _baseStyle(textColor: textColor),
           ),
         );
       }
@@ -657,7 +676,7 @@ class _MessageItemState extends State<MessageItem> {
       spans.add(
         TextSpan(
           text: text.substring(lastEnd),
-          style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
+          style: _baseStyle(textColor: textColor),
         ),
       );
     }
@@ -674,6 +693,111 @@ class _MessageItemState extends State<MessageItem> {
       };
     _linkRecognizers.add(recognizer);
     return recognizer;
+  }
+
+  /// Build spans for a segment that may contain bold, italic, URLs, and
+  /// mentions (but NOT code -- code is stripped before this is called).
+  List<InlineSpan> _buildFormattedSpans(
+    String text, {
+    required Color textColor,
+  }) {
+    // Collect all matches for bold, italic, and URLs with a tag so we can
+    // process them in document order.
+    final entries = <({int start, int end, String tag, RegExpMatch match})>[];
+
+    for (final m in _boldRegex.allMatches(text)) {
+      entries.add((start: m.start, end: m.end, tag: 'bold', match: m));
+    }
+    for (final m in _italicRegex.allMatches(text)) {
+      entries.add((start: m.start, end: m.end, tag: 'italic', match: m));
+    }
+    for (final m in _urlRegex.allMatches(text)) {
+      entries.add((start: m.start, end: m.end, tag: 'url', match: m));
+    }
+
+    // Sort by start position; break ties by preferring longer matches.
+    entries.sort((a, b) {
+      final cmp = a.start.compareTo(b.start);
+      if (cmp != 0) return cmp;
+      return b.end.compareTo(a.end);
+    });
+
+    // Remove overlapping entries (first match wins).
+    final filtered = <({int start, int end, String tag, RegExpMatch match})>[];
+    int cursor = 0;
+    for (final e in entries) {
+      if (e.start < cursor) continue; // overlaps with a previous match
+      filtered.add(e);
+      cursor = e.end;
+    }
+
+    if (filtered.isEmpty) {
+      return _buildMentionSpans(text, textColor: textColor);
+    }
+
+    final spans = <InlineSpan>[];
+    int lastEnd = 0;
+
+    for (final e in filtered) {
+      // Gap before this match -- may contain mentions
+      if (e.start > lastEnd) {
+        spans.addAll(
+          _buildMentionSpans(
+            text.substring(lastEnd, e.start),
+            textColor: textColor,
+          ),
+        );
+      }
+
+      switch (e.tag) {
+        case 'bold':
+          final inner = e.match.group(1)!;
+          spans.add(
+            TextSpan(
+              text: inner,
+              style: _baseStyle(
+                textColor: textColor,
+              ).copyWith(fontWeight: FontWeight.bold),
+            ),
+          );
+        case 'italic':
+          final inner = e.match.group(1)!;
+          spans.add(
+            TextSpan(
+              text: inner,
+              style: _baseStyle(
+                textColor: textColor,
+              ).copyWith(fontStyle: FontStyle.italic),
+            ),
+          );
+        case 'url':
+          final url = e.match.group(0)!;
+          spans.add(
+            TextSpan(
+              text: url,
+              style: TextStyle(
+                fontSize: 15,
+                color: context.accentHover,
+                decoration: TextDecoration.underline,
+                decorationColor: context.accentHover,
+                height: 1.47,
+              ),
+              recognizer: _createLinkRecognizer(url),
+            ),
+          );
+      }
+
+      lastEnd = e.end;
+    }
+
+    // Remaining text after last match
+    if (lastEnd < text.length) {
+      spans.addAll(
+        _buildMentionSpans(text.substring(lastEnd), textColor: textColor),
+      );
+    }
+
+    return spans;
   }
 
   /// Build a friendly decryption failure message with a recovery action.
@@ -715,74 +839,173 @@ class _MessageItemState extends State<MessageItem> {
     );
   }
 
-  /// Build a RichText widget that renders URLs as tappable links and @mentions
-  /// with accent color + bold weight.
-  Widget _buildMessageText(String text, {required Color textColor}) {
-    // Dispose old recognizers on each rebuild
-    for (final r in _linkRecognizers) {
-      r.dispose();
-    }
-    _linkRecognizers.clear();
-    final urlMatches = _urlRegex.allMatches(text).toList();
-    final mentionMatches = _mentionRegex.allMatches(text).toList();
-
-    if (urlMatches.isEmpty && mentionMatches.isEmpty) {
-      return Text(
-        text,
-        style: TextStyle(fontSize: 15, color: textColor, height: 1.47),
-      );
-    }
-
-    // If no URLs, just handle mentions.
-    if (urlMatches.isEmpty) {
-      return RichText(
-        text: TextSpan(
-          children: _buildMentionSpans(text, textColor: textColor),
-        ),
-      );
+  /// Build spans for a segment that may contain inline code, bold, italic,
+  /// URLs, and mentions (but NOT fenced code blocks).
+  List<InlineSpan> _buildInlineCodeAndFormatting(
+    String text, {
+    required Color textColor,
+  }) {
+    final inlineCodeMatches = _inlineCodeRegex.allMatches(text).toList();
+    if (inlineCodeMatches.isEmpty) {
+      return _buildFormattedSpans(text, textColor: textColor);
     }
 
     final spans = <InlineSpan>[];
     int lastEnd = 0;
 
-    for (final match in urlMatches) {
-      // Text before the URL -- may contain mentions
+    for (final match in inlineCodeMatches) {
+      // Gap before inline code -- process for bold/italic/URL/mention
       if (match.start > lastEnd) {
         spans.addAll(
-          _buildMentionSpans(
+          _buildFormattedSpans(
             text.substring(lastEnd, match.start),
             textColor: textColor,
           ),
         );
       }
 
-      // The URL itself
-      final url = match.group(0)!;
+      // Inline code span with monospace + subtle background
+      final code = match.group(1)!;
       spans.add(
-        TextSpan(
-          text: url,
-          style: TextStyle(
-            fontSize: 15,
-            color: context.accentHover,
-            decoration: TextDecoration.underline,
-            decorationColor: context.accentHover,
-            height: 1.47,
+        WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(
+              color: context.textSecondary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              code,
+              style: TextStyle(
+                fontSize: 14,
+                fontFamily: 'monospace',
+                color: textColor,
+                height: 1.47,
+              ),
+            ),
           ),
-          recognizer: _createLinkRecognizer(url),
         ),
       );
 
       lastEnd = match.end;
     }
 
-    // Remaining text after last URL -- may contain mentions
+    // Remaining text after last inline code
     if (lastEnd < text.length) {
       spans.addAll(
-        _buildMentionSpans(text.substring(lastEnd), textColor: textColor),
+        _buildFormattedSpans(text.substring(lastEnd), textColor: textColor),
       );
     }
 
-    return RichText(text: TextSpan(children: spans));
+    return spans;
+  }
+
+  /// Build a RichText widget that renders markdown formatting, URLs as tappable
+  /// links, and @mentions with accent color + bold weight.
+  ///
+  /// Precedence: code blocks > inline code > bold > italic > URLs > mentions.
+  Widget _buildMessageText(String text, {required Color textColor}) {
+    // Dispose old recognizers on each rebuild
+    for (final r in _linkRecognizers) {
+      r.dispose();
+    }
+    _linkRecognizers.clear();
+
+    // Check for fenced code blocks first (highest precedence).
+    final codeBlockMatches = _codeBlockRegex.allMatches(text).toList();
+
+    if (codeBlockMatches.isEmpty) {
+      // No code blocks -- check if any formatting exists at all.
+      final hasUrl = _urlRegex.hasMatch(text);
+      final hasMention = _mentionRegex.hasMatch(text);
+      final hasBold = _boldRegex.hasMatch(text);
+      final hasItalic = _italicRegex.hasMatch(text);
+      final hasInlineCode = _inlineCodeRegex.hasMatch(text);
+
+      if (!hasUrl && !hasMention && !hasBold && !hasItalic && !hasInlineCode) {
+        return Text(text, style: _baseStyle(textColor: textColor));
+      }
+
+      return RichText(
+        text: TextSpan(
+          children: _buildInlineCodeAndFormatting(text, textColor: textColor),
+        ),
+      );
+    }
+
+    // Has code blocks -- build a Column with interleaved text and code blocks.
+    final children = <Widget>[];
+    int lastEnd = 0;
+
+    for (final match in codeBlockMatches) {
+      // Text segment before the code block
+      if (match.start > lastEnd) {
+        final segment = text.substring(lastEnd, match.start);
+        if (segment.trim().isNotEmpty) {
+          children.add(
+            RichText(
+              text: TextSpan(
+                children: _buildInlineCodeAndFormatting(
+                  segment.trim(),
+                  textColor: textColor,
+                ),
+              ),
+            ),
+          );
+        }
+      }
+
+      // The code block itself
+      final code = match.group(1) ?? '';
+      children.add(
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: context.textSecondary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            code.trimRight(),
+            style: TextStyle(
+              fontSize: 13,
+              fontFamily: 'monospace',
+              color: textColor,
+              height: 1.5,
+            ),
+          ),
+        ),
+      );
+
+      lastEnd = match.end;
+    }
+
+    // Remaining text after the last code block
+    if (lastEnd < text.length) {
+      final segment = text.substring(lastEnd);
+      if (segment.trim().isNotEmpty) {
+        children.add(
+          RichText(
+            text: TextSpan(
+              children: _buildInlineCodeAndFormatting(
+                segment.trim(),
+                textColor: textColor,
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    if (children.length == 1) return children.first;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
+    );
   }
 
   Widget _buildReactionPill(List<Reaction> reactions, bool isMine) {
