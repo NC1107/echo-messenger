@@ -448,7 +448,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     await notifier.setSelfDeafened(nextDeafened);
     final lk = ref.read(voiceRtcProvider.notifier);
     lk.setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
-    lk.setDeafened(nextDeafened);
+    await lk.setDeafened(nextDeafened);
     await _syncVoiceState();
   }
 

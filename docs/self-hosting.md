@@ -161,6 +161,157 @@ docker compose -f docker-compose.prod.yml ps
 curl https://your-domain.com/api/health
 ```
 
+## TURN Server for Voice Channels
+
+### Why you need TURN
+
+Echo Messenger uses WebRTC for peer-to-peer voice channels. WebRTC requires both peers to discover each other's network addresses via ICE (Interactive Connectivity Establishment). The default setup uses Google's public STUN server, which works when both users have direct internet access.
+
+However, **STUN alone fails for ~30% of users** who are behind:
+- Symmetric NATs (common in corporate networks)
+- Carrier-grade NAT (mobile networks)
+- Strict firewalls that block UDP
+
+A TURN server acts as a media relay — when direct P2P fails, audio traffic flows through the TURN server instead. Without it, voice channels silently fail to connect for affected users.
+
+### How it works in Echo
+
+The server already has a built-in ICE configuration endpoint (`GET /api/config/ice`). When TURN environment variables are set, the server automatically includes TURN credentials in the response. The client fetches this config when joining a voice channel — **no client code changes needed**.
+
+### Option A: Hosted TURN (quickest, recommended for small deployments)
+
+**Metered TURN** offers 25GB/month free (no credit card required), which is enough for light voice usage.
+
+1. Sign up at [metered.ca](https://www.metered.ca/stun-turn)
+2. Create an application and get your credentials
+3. Add to your `.env` file:
+
+```bash
+TURN_URL=turn:your-subdomain.relay.metered.ca:443?transport=tcp
+TURN_USERNAME=your-api-key
+TURN_CREDENTIAL=your-api-secret
+```
+
+4. Pass the variables to the server container in `docker-compose.prod.yml`:
+
+```yaml
+server:
+  environment:
+    # ... existing vars ...
+    TURN_URL: ${TURN_URL}
+    TURN_USERNAME: ${TURN_USERNAME}
+    TURN_CREDENTIAL: ${TURN_CREDENTIAL}
+```
+
+5. Restart the server:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env up -d server
+```
+
+6. Verify by calling the ICE config endpoint:
+
+```bash
+curl -s https://your-domain.com/api/config/ice \
+  -H "Authorization: Bearer <your-token>" | jq .
+```
+
+You should see both STUN and TURN servers in the response.
+
+**Other hosted options**: Twilio (pay-per-use, most reliable), Xirsys (5GB free), Cloudflare Calls.
+
+### Option B: Self-hosted coturn (full control, free)
+
+[coturn](https://github.com/coturn/coturn) is the standard open-source TURN server. It requires a server with a static public IP and open UDP ports.
+
+#### Requirements
+
+- A server with a **static public IP** (can be the same server as Echo, or a dedicated VPS)
+- Open ports: **3478/TCP+UDP** (TURN signaling) and **49152-65535/UDP** (media relay range)
+- ~64 Kbps bandwidth per active voice connection
+
+#### Setup
+
+1. Add coturn to your `docker-compose.prod.yml`:
+
+```yaml
+coturn:
+  image: coturn/coturn:latest
+  restart: unless-stopped
+  network_mode: host
+  volumes:
+    - ./turnserver.conf:/etc/turnserver.conf:ro
+  command: ["-c", "/etc/turnserver.conf"]
+```
+
+Note: coturn uses `network_mode: host` because it needs direct access to UDP ports. It cannot run behind Traefik (Traefik only proxies HTTP/TCP).
+
+2. Create `infra/docker/turnserver.conf`:
+
+```ini
+# Basic settings
+realm=echo-messenger.us
+listening-port=3478
+
+# Replace with your server's public IP
+external-ip=YOUR_PUBLIC_IP
+
+# Static credentials (use long-term credentials mechanism)
+user=echo:your-secure-turn-password
+lt-cred-mech
+
+# Relay port range
+min-port=49152
+max-port=65535
+
+# Security
+no-multicast-peers
+no-cli
+fingerprint
+
+# Logging
+log-file=stdout
+verbose
+```
+
+3. Add TURN environment variables to `.env`:
+
+```bash
+TURN_URL=turn:YOUR_PUBLIC_IP:3478?transport=udp
+TURN_USERNAME=echo
+TURN_CREDENTIAL=your-secure-turn-password
+```
+
+4. Pass them to the server container (same as Option A step 4).
+
+5. Open firewall ports:
+
+```bash
+# UFW example
+sudo ufw allow 3478/tcp
+sudo ufw allow 3478/udp
+sudo ufw allow 49152:65535/udp
+```
+
+6. Start the stack:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env up -d
+```
+
+7. Test TURN connectivity at [webrtc.github.io/samples/src/content/peerconnection/trickle-ice](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/) using your TURN URL and credentials. You should see `relay` candidates appear.
+
+### Verifying voice works through TURN
+
+1. Have two users join the same voice channel
+2. At least one user should be on a restricted network (or use a VPN to simulate)
+3. If audio connects, TURN is working
+4. Check coturn logs for relay activity:
+
+```bash
+docker compose -f docker-compose.prod.yml logs coturn
+```
+
 ## Troubleshooting
 
 ### Check container logs

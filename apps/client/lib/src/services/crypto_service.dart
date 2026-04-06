@@ -3,8 +3,10 @@
 /// Replaces the previous static DH key exchange with proper Signal Protocol
 /// sessions providing per-message forward secrecy and break-in recovery.
 ///
-/// Keys and session state are persisted via SharedPreferences for prototype
-/// simplicity. In production, use platform-specific secure storage.
+/// Keys and session state are persisted via [SecureKeyStore] (platform-specific
+/// secure storage: Keychain, Keystore, libsecret, DPAPI, etc.).
+/// On first run after the migration, any keys found in SharedPreferences are
+/// automatically moved to secure storage and removed from SharedPreferences.
 library;
 
 import 'dart:convert';
@@ -14,6 +16,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'secure_key_store.dart';
 import 'signal_session.dart';
 import 'signal_x3dh.dart';
 
@@ -25,6 +28,16 @@ class CryptoService {
   static const _signedPrekeyPref = 'echo_signed_prekey';
   static const _signedPrekeyPubPref = 'echo_signed_prekey_pub';
   static const _sessionPrefix = 'echo_signal_session_';
+
+  /// All crypto key names that should live in secure storage.
+  static const _allCryptoKeys = [
+    _identityKeyPref,
+    _identityPubKeyPref,
+    _signingKeyPref,
+    _signingPubKeyPref,
+    _signedPrekeyPref,
+    _signedPrekeyPubPref,
+  ];
 
   final String serverUrl;
   String _token = '';
@@ -48,16 +61,57 @@ class CryptoService {
   bool get isInitialized => _identityKeyPair != null;
   bool get keysAreFresh => _keysAreFresh;
 
+  /// Migrate crypto keys from SharedPreferences to SecureKeyStore.
+  ///
+  /// Checks SharedPreferences for each crypto key; if found, copies it to
+  /// secure storage and deletes from SharedPreferences. Session keys (prefixed
+  /// with [_sessionPrefix]) are also migrated.
+  Future<void> _migrateFromSharedPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final store = SecureKeyStore.instance;
+
+    // Migrate identity + signing + signed prekey
+    for (final key in _allCryptoKeys) {
+      final value = prefs.getString(key);
+      if (value != null) {
+        await store.write(key, value);
+        await prefs.remove(key);
+        debugPrint(
+          '[Crypto] Migrated $key from SharedPreferences to '
+          'secure storage',
+        );
+      }
+    }
+
+    // Migrate session keys
+    for (final key in prefs.getKeys()) {
+      if (key.startsWith(_sessionPrefix)) {
+        final value = prefs.getString(key);
+        if (value != null) {
+          await store.write(key, value);
+          await prefs.remove(key);
+          debugPrint('[Crypto] Migrated session $key to secure storage');
+        }
+      }
+    }
+  }
+
   /// Initialize: load or generate identity key pair, signing key, and signed prekey.
   Future<void> init() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final storedPrivate = prefs.getString(_identityKeyPref);
+      // Run migration before anything else -- moves keys from SharedPreferences
+      // into platform-secure storage if they exist there from a previous version.
+      await _migrateFromSharedPreferences();
+
+      final store = SecureKeyStore.instance;
+      final storedPrivate = await store.read(_identityKeyPref);
 
       if (storedPrivate != null) {
         // Restore identity key pair
         final privateBytes = base64Decode(storedPrivate);
-        final publicBytes = base64Decode(prefs.getString(_identityPubKeyPref)!);
+        final publicBytes = base64Decode(
+          (await store.read(_identityPubKeyPref))!,
+        );
         _identityKeyPair = SimpleKeyPairData(
           privateBytes,
           publicKey: SimplePublicKey(publicBytes, type: KeyPairType.x25519),
@@ -65,8 +119,8 @@ class CryptoService {
         );
 
         // Restore Ed25519 signing key pair
-        final sigPriv = prefs.getString(_signingKeyPref);
-        final sigPub = prefs.getString(_signingPubKeyPref);
+        final sigPriv = await store.read(_signingKeyPref);
+        final sigPub = await store.read(_signingPubKeyPref);
         if (sigPriv != null && sigPub != null) {
           _signingKeyPair = SimpleKeyPairData(
             base64Decode(sigPriv),
@@ -79,13 +133,13 @@ class CryptoService {
         } else {
           // Legacy migration: generate signing key if missing
           _signingKeyPair = await _ed25519.newKeyPair();
-          await _saveSigningKey(prefs);
+          await _saveSigningKey(store);
           _keysAreFresh = true;
         }
 
         // Restore signed prekey pair
-        final spkPriv = prefs.getString(_signedPrekeyPref);
-        final spkPub = prefs.getString(_signedPrekeyPubPref);
+        final spkPriv = await store.read(_signedPrekeyPref);
+        final spkPub = await store.read(_signedPrekeyPubPref);
         if (spkPriv != null && spkPub != null) {
           _signedPrekeyPair = SimpleKeyPairData(
             base64Decode(spkPriv),
@@ -98,7 +152,7 @@ class CryptoService {
         } else {
           // Legacy migration: generate signed prekey if missing
           _signedPrekeyPair = await _x25519.newKeyPair();
-          await _saveSignedPrekey(prefs);
+          await _saveSignedPrekey(store);
           _keysAreFresh = true;
         }
 
@@ -107,7 +161,7 @@ class CryptoService {
         }
 
         // Load persisted sessions
-        await _loadSessions(prefs);
+        await _loadSessions(store);
       } else {
         // Generate all keys fresh
         _identityKeyPair = await _x25519.newKeyPair();
@@ -118,13 +172,10 @@ class CryptoService {
             .extractPrivateKeyBytes();
         final publicKey = await _identityKeyPair!.extractPublicKey();
 
-        await prefs.setString(_identityKeyPref, base64Encode(privateBytes));
-        await prefs.setString(
-          _identityPubKeyPref,
-          base64Encode(publicKey.bytes),
-        );
-        await _saveSigningKey(prefs);
-        await _saveSignedPrekey(prefs);
+        await store.write(_identityKeyPref, base64Encode(privateBytes));
+        await store.write(_identityPubKeyPref, base64Encode(publicKey.bytes));
+        await _saveSigningKey(store);
+        await _saveSignedPrekey(store);
 
         _keysAreFresh = true;
       }
@@ -133,47 +184,45 @@ class CryptoService {
     }
   }
 
-  Future<void> _saveSigningKey(SharedPreferences prefs) async {
+  Future<void> _saveSigningKey(SecureKeyStore store) async {
     final sigPrivBytes = await (_signingKeyPair as SimpleKeyPairData)
         .extractPrivateKeyBytes();
     final sigPubKey = await _signingKeyPair!.extractPublicKey();
-    await prefs.setString(_signingKeyPref, base64Encode(sigPrivBytes));
-    await prefs.setString(_signingPubKeyPref, base64Encode(sigPubKey.bytes));
+    await store.write(_signingKeyPref, base64Encode(sigPrivBytes));
+    await store.write(_signingPubKeyPref, base64Encode(sigPubKey.bytes));
   }
 
-  Future<void> _saveSignedPrekey(SharedPreferences prefs) async {
+  Future<void> _saveSignedPrekey(SecureKeyStore store) async {
     final spkPrivBytes = await (_signedPrekeyPair as SimpleKeyPairData)
         .extractPrivateKeyBytes();
     final spkPubKey = await _signedPrekeyPair!.extractPublicKey();
-    await prefs.setString(_signedPrekeyPref, base64Encode(spkPrivBytes));
-    await prefs.setString(_signedPrekeyPubPref, base64Encode(spkPubKey.bytes));
+    await store.write(_signedPrekeyPref, base64Encode(spkPrivBytes));
+    await store.write(_signedPrekeyPubPref, base64Encode(spkPubKey.bytes));
   }
 
-  /// Load persisted Signal sessions from SharedPreferences.
-  Future<void> _loadSessions(SharedPreferences prefs) async {
+  /// Load persisted Signal sessions from secure storage.
+  Future<void> _loadSessions(SecureKeyStore store) async {
     _sessions.clear();
-    for (final key in prefs.getKeys()) {
-      if (key.startsWith(_sessionPrefix)) {
-        final peerId = key.substring(_sessionPrefix.length);
-        final jsonStr = prefs.getString(key);
-        if (jsonStr != null) {
-          try {
-            final json = jsonDecode(jsonStr) as Map<String, dynamic>;
-            _sessions[peerId] = SignalSession.fromJson(json);
-          } catch (e) {
-            debugPrint('[Crypto] Failed to load session for $peerId: $e');
-            await prefs.remove(key);
-          }
+    final allEntries = await store.readAll();
+    for (final entry in allEntries.entries) {
+      if (entry.key.startsWith(_sessionPrefix)) {
+        final peerId = entry.key.substring(_sessionPrefix.length);
+        try {
+          final json = jsonDecode(entry.value) as Map<String, dynamic>;
+          _sessions[peerId] = SignalSession.fromJson(json);
+        } catch (e) {
+          debugPrint('[Crypto] Failed to load session for $peerId: $e');
+          await store.delete(entry.key);
         }
       }
     }
   }
 
-  /// Persist a Signal session to SharedPreferences.
+  /// Persist a Signal session to secure storage.
   Future<void> _saveSession(String peerId, SignalSession session) async {
-    final prefs = await SharedPreferences.getInstance();
+    final store = SecureKeyStore.instance;
     final json = await session.toJson();
-    await prefs.setString('$_sessionPrefix$peerId', jsonEncode(json));
+    await store.write('$_sessionPrefix$peerId', jsonEncode(json));
   }
 
   /// Upload our public keys to the server as a PreKey bundle.
@@ -412,22 +461,20 @@ class CryptoService {
   /// [getOrCreateSession] will re-fetch from the server and create a new session.
   Future<void> invalidateSessionKey(String peerUserId) async {
     _sessions.remove(peerUserId);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('$_sessionPrefix$peerUserId');
+    final store = SecureKeyStore.instance;
+    await store.delete('$_sessionPrefix$peerUserId');
   }
 
   /// Reset all keys: delete identity + session keys, regenerate, and upload.
   Future<void> resetAllKeys() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_identityKeyPref);
-    await prefs.remove(_identityPubKeyPref);
-    await prefs.remove(_signingKeyPref);
-    await prefs.remove(_signingPubKeyPref);
-    await prefs.remove(_signedPrekeyPref);
-    await prefs.remove(_signedPrekeyPubPref);
-    for (final key in prefs.getKeys()) {
+    final store = SecureKeyStore.instance;
+    for (final key in _allCryptoKeys) {
+      await store.delete(key);
+    }
+    final allEntries = await store.readAll();
+    for (final key in allEntries.keys) {
       if (key.startsWith(_sessionPrefix)) {
-        await prefs.remove(key);
+        await store.delete(key);
       }
     }
     _sessions.clear();
@@ -444,16 +491,14 @@ class CryptoService {
     _signingKeyPair = null;
     _signedPrekeyPair = null;
     _sessions.clear();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_identityKeyPref);
-    await prefs.remove(_identityPubKeyPref);
-    await prefs.remove(_signingKeyPref);
-    await prefs.remove(_signingPubKeyPref);
-    await prefs.remove(_signedPrekeyPref);
-    await prefs.remove(_signedPrekeyPubPref);
-    for (final key in prefs.getKeys()) {
+    final store = SecureKeyStore.instance;
+    for (final key in _allCryptoKeys) {
+      await store.delete(key);
+    }
+    final allEntries = await store.readAll();
+    for (final key in allEntries.keys) {
       if (key.startsWith(_sessionPrefix)) {
-        await prefs.remove(key);
+        await store.delete(key);
       }
     }
   }

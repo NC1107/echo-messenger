@@ -187,29 +187,43 @@ async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid) {
     }
 }
 
-/// Rate-limited WebSocket receive loop (token bucket: 20 msg/s, burst 50).
+/// Rate-limited WebSocket receive loop.
+///
+/// Uses a token bucket algorithm: 30 messages per 10-second window
+/// (refill rate = 3 tokens/sec, burst cap = 30). When the bucket is
+/// empty the message is dropped and an error is sent to the client;
+/// the connection stays open so legitimate traffic can resume once
+/// tokens regenerate.
 async fn run_receive_loop(
     receiver: &mut futures_util::stream::SplitStream<WebSocket>,
     user_id: Uuid,
     username: &str,
     state: &AppState,
 ) {
-    const RATE_LIMIT: f64 = 20.0;
-    const BURST: f64 = 50.0;
-    let mut tokens: f64 = BURST;
+    /// Tokens added per second (30 messages / 10 seconds).
+    const REFILL_RATE: f64 = 3.0;
+    /// Maximum tokens the bucket can hold (== window size).
+    const BUCKET_CAPACITY: f64 = 30.0;
+
+    let mut tokens: f64 = BUCKET_CAPACITY;
     let mut last_refill = Instant::now();
 
     while let Some(Ok(msg)) = receiver.next().await {
-        // Refill tokens
+        // Refill tokens based on elapsed time.
         let now = Instant::now();
         let elapsed = now.duration_since(last_refill).as_secs_f64();
-        tokens = (tokens + elapsed * RATE_LIMIT).min(BURST);
+        tokens = (tokens + elapsed * REFILL_RATE).min(BUCKET_CAPACITY);
         last_refill = now;
 
         match msg {
             WsMessage::Text(text) => {
                 if tokens < 1.0 {
-                    send_error(state, user_id, "Rate limit exceeded");
+                    tracing::warn!(
+                        user_id = %user_id,
+                        username = %username,
+                        "WebSocket rate limit exceeded, dropping message"
+                    );
+                    send_error(state, user_id, "Rate limit exceeded, please slow down");
                     continue;
                 }
                 tokens -= 1.0;
