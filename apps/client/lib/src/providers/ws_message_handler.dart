@@ -99,6 +99,10 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleMessageDeleted(json);
       case 'message_edited':
         _handleMessageEdited(json);
+      case 'message_pinned':
+        _handleMessagePinned(json);
+      case 'message_unpinned':
+        _handleMessageUnpinned(json);
       case 'presence':
         _handlePresence(json);
       case 'presence_list':
@@ -367,6 +371,27 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
           conversationId: conversationId,
           newContent: newContent,
         );
+  }
+
+  void _handleMessagePinned(Map<String, dynamic> json) {
+    final conversationId = json['conversation_id'] as String;
+    final messageId = json['message_id'] as String;
+    final pinnedById = json['pinned_by_id'] as String?;
+    final pinnedAtRaw = json['pinned_at'] as String?;
+    final pinnedAt = pinnedAtRaw != null
+        ? DateTime.tryParse(pinnedAtRaw)
+        : DateTime.now();
+    ref
+        .read(chatProvider.notifier)
+        .updateMessagePin(conversationId, messageId, pinnedById, pinnedAt);
+  }
+
+  void _handleMessageUnpinned(Map<String, dynamic> json) {
+    final conversationId = json['conversation_id'] as String;
+    final messageId = json['message_id'] as String;
+    ref
+        .read(chatProvider.notifier)
+        .updateMessagePin(conversationId, messageId, null, null);
   }
 
   void _handleMention(Map<String, dynamic> json, String myUserId) {

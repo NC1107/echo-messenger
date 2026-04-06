@@ -1,13 +1,20 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
+import '../models/chat_message.dart';
 import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
+import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
+import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor;
 
 class ChatHeaderBar extends ConsumerWidget {
@@ -158,6 +165,13 @@ class ChatHeaderBar extends ConsumerWidget {
     WidgetRef ref,
     Conversation conv,
   ) {
+    // Count pinned messages from local state.
+    final chatState = ref.watch(chatProvider);
+    final pinnedCount = chatState
+        .messagesForConversation(conv.id)
+        .where((m) => m.pinnedAt != null)
+        .length;
+
     return [
       if (!conv.isGroup)
         const Tooltip(
@@ -173,6 +187,22 @@ class ChatHeaderBar extends ConsumerWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         ),
+      IconButton(
+        icon: Badge(
+          isLabelVisible: pinnedCount > 0,
+          label: Text(
+            '$pinnedCount',
+            style: const TextStyle(fontSize: 9, color: Colors.white),
+          ),
+          backgroundColor: context.accent,
+          child: const Icon(Icons.push_pin_outlined, size: 20),
+        ),
+        color: context.textSecondary,
+        tooltip: 'Pinned messages',
+        onPressed: () => _showPinnedMessagesDialog(context, ref, conv),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      ),
       IconButton(
         icon: Icon(showSearch ? Icons.search_off : Icons.search, size: 20),
         color: showSearch ? context.accent : context.textSecondary,
@@ -261,6 +291,24 @@ class ChatHeaderBar extends ConsumerWidget {
     );
   }
 
+  void _showPinnedMessagesDialog(
+    BuildContext context,
+    WidgetRef ref,
+    Conversation conv,
+  ) {
+    final serverUrl = ref.read(serverUrlProvider);
+    final myUserId = this.myUserId;
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => _PinnedMessagesDialog(
+        conversationId: conv.id,
+        serverUrl: serverUrl,
+        myUserId: myUserId,
+      ),
+    );
+  }
+
   Future<void> _resetPeerKeys(
     BuildContext context,
     WidgetRef ref,
@@ -330,5 +378,245 @@ class ChatHeaderBar extends ConsumerWidget {
         );
       }
     }
+  }
+}
+
+/// Dialog that fetches and displays pinned messages for a conversation.
+class _PinnedMessagesDialog extends ConsumerStatefulWidget {
+  final String conversationId;
+  final String serverUrl;
+  final String myUserId;
+
+  const _PinnedMessagesDialog({
+    required this.conversationId,
+    required this.serverUrl,
+    required this.myUserId,
+  });
+
+  @override
+  ConsumerState<_PinnedMessagesDialog> createState() =>
+      _PinnedMessagesDialogState();
+}
+
+class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
+  List<ChatMessage>? _pinnedMessages;
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPinnedMessages();
+  }
+
+  Future<void> _fetchPinnedMessages() async {
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.get(
+              Uri.parse(
+                '${widget.serverUrl}/api/conversations'
+                '/${widget.conversationId}/pinned',
+              ),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+            ),
+          );
+
+      if (!mounted) return;
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        final list = decoded is List
+            ? decoded
+            : (decoded['messages'] as List? ?? []);
+        final messages = list
+            .map(
+              (e) => ChatMessage.fromServerJson(
+                e as Map<String, dynamic>,
+                widget.myUserId,
+              ),
+            )
+            .toList();
+        setState(() {
+          _pinnedMessages = messages;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _error = 'Failed to load pinned messages';
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Failed to load pinned messages';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _unpinMessage(ChatMessage message) async {
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.delete(
+              Uri.parse(
+                '${widget.serverUrl}/api/conversations'
+                '/${widget.conversationId}'
+                '/messages/${message.id}/pin',
+              ),
+              headers: {'Authorization': 'Bearer $token'},
+            ),
+          );
+
+      if (!mounted) return;
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        ref
+            .read(chatProvider.notifier)
+            .updateMessagePin(widget.conversationId, message.id, null, null);
+        setState(() {
+          _pinnedMessages?.removeWhere((m) => m.id == message.id);
+        });
+        ToastService.show(context, 'Message unpinned', type: ToastType.success);
+      } else {
+        ToastService.show(
+          context,
+          'Failed to unpin message',
+          type: ToastType.error,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(
+        context,
+        'Failed to unpin message',
+        type: ToastType.error,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: context.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: context.border),
+      ),
+      title: Row(
+        children: [
+          Icon(Icons.push_pin, size: 18, color: context.accent),
+          const SizedBox(width: 8),
+          Text(
+            'Pinned Messages',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(width: 420, height: 380, child: _buildContent(context)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Text(
+          _error!,
+          style: TextStyle(color: context.textMuted, fontSize: 14),
+        ),
+      );
+    }
+    final messages = _pinnedMessages ?? [];
+    if (messages.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.push_pin_outlined, size: 40, color: context.textMuted),
+            const SizedBox(height: 12),
+            Text(
+              'No pinned messages',
+              style: TextStyle(color: context.textMuted, fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+    return ListView.separated(
+      itemCount: messages.length,
+      separatorBuilder: (_, _) => Divider(color: context.border, height: 1),
+      itemBuilder: (_, index) {
+        final msg = messages[index];
+        final preview = msg.content.length > 120
+            ? '${msg.content.substring(0, 120)}...'
+            : msg.content;
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      msg.fromUsername,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: context.accent,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      preview,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      formatMessageTimestamp(msg.timestamp),
+                      style: TextStyle(fontSize: 11, color: context.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.push_pin_outlined, size: 16),
+                color: context.textMuted,
+                tooltip: 'Unpin',
+                onPressed: () => _unpinMessage(msg),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }

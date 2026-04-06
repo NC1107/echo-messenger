@@ -317,3 +317,79 @@ pub async fn set_mute_status(
     .await?;
     Ok(result.rows_affected() > 0)
 }
+
+// ---------------------------------------------------------------------------
+// Message pinning
+// ---------------------------------------------------------------------------
+
+/// Pin a message. Sets pinned_by_id and pinned_at on the message row.
+/// Returns the conversation_id if the pin was successful, None if message not found.
+pub async fn pin_message(
+    pool: &PgPool,
+    message_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "UPDATE messages SET pinned_by_id = $2, pinned_at = now() \
+         WHERE id = $1 AND deleted_at IS NULL \
+         RETURNING conversation_id",
+    )
+    .bind(message_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(conv_id,)| conv_id))
+}
+
+/// Unpin a message. Clears pinned_by_id and pinned_at.
+/// Returns the conversation_id if the unpin was successful, None if message not found or
+/// not pinned.
+pub async fn unpin_message(pool: &PgPool, message_id: Uuid) -> Result<Option<Uuid>, sqlx::Error> {
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "UPDATE messages SET pinned_by_id = NULL, pinned_at = NULL \
+         WHERE id = $1 AND pinned_at IS NOT NULL AND deleted_at IS NULL \
+         RETURNING conversation_id",
+    )
+    .bind(message_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(conv_id,)| conv_id))
+}
+
+#[derive(Debug, sqlx::FromRow, serde::Serialize)]
+pub struct PinnedMessageRow {
+    pub id: Uuid,
+    pub conversation_id: Uuid,
+    pub sender_id: Uuid,
+    pub sender_username: String,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub pinned_by_id: Option<Uuid>,
+    pub pinned_by_username: Option<String>,
+    pub pinned_at: Option<DateTime<Utc>>,
+}
+
+/// Get all pinned messages for a conversation, ordered by pinned_at DESC.
+pub async fn get_pinned_messages(
+    pool: &PgPool,
+    conversation_id: Uuid,
+) -> Result<Vec<PinnedMessageRow>, sqlx::Error> {
+    sqlx::query_as::<_, PinnedMessageRow>(
+        "SELECT m.id, m.conversation_id, m.sender_id, \
+                u.username AS sender_username, \
+                m.content, m.created_at, \
+                m.pinned_by_id, \
+                pu.username AS pinned_by_username, \
+                m.pinned_at \
+         FROM messages m \
+         JOIN users u ON u.id = m.sender_id \
+         LEFT JOIN users pu ON pu.id = m.pinned_by_id \
+         WHERE m.conversation_id = $1 \
+           AND m.pinned_at IS NOT NULL \
+           AND m.deleted_at IS NULL \
+         ORDER BY m.pinned_at DESC",
+    )
+    .bind(conversation_id)
+    .fetch_all(pool)
+    .await
+}

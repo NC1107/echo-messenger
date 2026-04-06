@@ -107,6 +107,14 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             put(messages::toggle_mute),
         )
         .route(
+            "/conversations/{conversation_id}/pinned",
+            get(messages::get_pinned_messages),
+        )
+        .route(
+            "/conversations/{conversation_id}/messages/{message_id}/pin",
+            post(messages::pin_message).delete(messages::unpin_message),
+        )
+        .route(
             "/messages/{id}",
             get(messages::get_messages)
                 .delete(messages::delete_message)

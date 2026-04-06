@@ -45,4 +45,17 @@ class _WebNotificationService implements NotificationService {
       // Best-effort -- silently ignore errors
     }
   }
+
+  @override
+  void updateTabBadge(int totalUnread) {
+    try {
+      if (totalUnread > 0) {
+        web.document.title = '($totalUnread) Echo Messenger';
+      } else {
+        web.document.title = 'Echo Messenger';
+      }
+    } catch (_) {
+      // Best-effort -- silently ignore errors
+    }
+  }
 }

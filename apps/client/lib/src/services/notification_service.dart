@@ -19,4 +19,9 @@ abstract class NotificationService {
     required String senderUsername,
     required String body,
   });
+
+  /// Update the browser tab title badge with total unread count.
+  /// On web, sets document.title to "(N) Echo Messenger" or "Echo Messenger".
+  /// No-op on non-web platforms.
+  void updateTabBadge(int totalUnread);
 }

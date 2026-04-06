@@ -1,5 +1,9 @@
 import 'reaction.dart';
 
+/// Sentinel value used in [ChatMessage.copyWith] to distinguish between
+/// "not provided" and "explicitly set to null" for nullable fields.
+const _sentinel = Object();
+
 enum MessageStatus { sending, sent, delivered, read, failed }
 
 bool _listEquals<T>(List<T> a, List<T> b) {
@@ -27,6 +31,8 @@ class ChatMessage {
   final String? replyToId;
   final String? replyToContent;
   final String? replyToUsername;
+  final String? pinnedById;
+  final DateTime? pinnedAt;
 
   const ChatMessage({
     required this.id,
@@ -44,6 +50,8 @@ class ChatMessage {
     this.replyToId,
     this.replyToContent,
     this.replyToUsername,
+    this.pinnedById,
+    this.pinnedAt,
   });
 
   factory ChatMessage.fromServerJson(
@@ -71,6 +79,9 @@ class ChatMessage {
                 DateTime.now().toIso8601String())
             .toString();
 
+    final pinnedByIdRaw = json['pinned_by_id'] as String?;
+    final pinnedAtRaw = json['pinned_at'] as String?;
+
     return ChatMessage(
       id: id,
       fromUserId: fromUserId,
@@ -86,6 +97,8 @@ class ChatMessage {
       replyToId: json['reply_to_id'] as String?,
       replyToContent: json['reply_to_content'] as String?,
       replyToUsername: json['reply_to_username'] as String?,
+      pinnedById: pinnedByIdRaw,
+      pinnedAt: pinnedAtRaw != null ? DateTime.tryParse(pinnedAtRaw) : null,
     );
   }
 
@@ -105,6 +118,8 @@ class ChatMessage {
     String? replyToId,
     String? replyToContent,
     String? replyToUsername,
+    Object? pinnedById = _sentinel,
+    Object? pinnedAt = _sentinel,
   }) {
     return ChatMessage(
       id: id ?? this.id,
@@ -122,6 +137,10 @@ class ChatMessage {
       replyToId: replyToId ?? this.replyToId,
       replyToContent: replyToContent ?? this.replyToContent,
       replyToUsername: replyToUsername ?? this.replyToUsername,
+      pinnedById: pinnedById == _sentinel
+          ? this.pinnedById
+          : pinnedById as String?,
+      pinnedAt: pinnedAt == _sentinel ? this.pinnedAt : pinnedAt as DateTime?,
     );
   }
 
@@ -143,7 +162,9 @@ class ChatMessage {
             isEncrypted == other.isEncrypted &&
             replyToId == other.replyToId &&
             replyToContent == other.replyToContent &&
-            replyToUsername == other.replyToUsername;
+            replyToUsername == other.replyToUsername &&
+            pinnedById == other.pinnedById &&
+            pinnedAt == other.pinnedAt;
   }
 
   @override
@@ -163,5 +184,7 @@ class ChatMessage {
     replyToId,
     replyToContent,
     replyToUsername,
+    pinnedById,
+    pinnedAt,
   );
 }

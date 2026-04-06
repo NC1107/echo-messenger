@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
+import '../services/notification_service.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
 import 'privacy_provider.dart';
@@ -67,6 +68,15 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     'Authorization': 'Bearer $token',
   };
 
+  /// Compute total unread count and update the browser tab badge.
+  void _updateTabBadge() {
+    final total = state.conversations.fold<int>(
+      0,
+      (sum, c) => sum + c.unreadCount,
+    );
+    NotificationService().updateTabBadge(total);
+  }
+
   /// Make an authenticated request with automatic 401 refresh-and-retry.
   Future<http.Response> _authenticatedRequest(
     Future<http.Response> Function(String token) requestFn,
@@ -113,6 +123,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         });
 
         state = state.copyWith(conversations: conversations, isLoading: false);
+        _updateTabBadge();
       } else {
         state = state.copyWith(
           isLoading: false,
@@ -152,6 +163,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
       updated.insert(0, updatedConv);
 
       state = state.copyWith(conversations: updated);
+      _updateTabBadge();
     } else {
       // New conversation we don't have locally -- reload from server
       loadConversations();
@@ -194,6 +206,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     if (index >= 0) {
       updated[index] = updated[index].copyWith(unreadCount: 0);
       state = state.copyWith(conversations: updated);
+      _updateTabBadge();
     }
   }
 

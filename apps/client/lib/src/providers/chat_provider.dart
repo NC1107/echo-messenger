@@ -553,6 +553,34 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
   }
 
+  /// Update a message's pin state in local state.
+  void updateMessagePin(
+    String conversationId,
+    String messageId,
+    String? pinnedById,
+    DateTime? pinnedAt,
+  ) {
+    final updatedConv = Map<String, List<ChatMessage>>.from(
+      state.messagesByConversation,
+    );
+    final messages = updatedConv[conversationId];
+    if (messages == null) return;
+
+    updatedConv[conversationId] = messages.map((msg) {
+      if (msg.id == messageId) {
+        return msg.copyWith(pinnedById: pinnedById, pinnedAt: pinnedAt);
+      }
+      return msg;
+    }).toList();
+
+    state = ChatState(
+      messagesByConversation: updatedConv,
+      loadingHistory: state.loadingHistory,
+      hasMore: state.hasMore,
+      replyToMessage: state.replyToMessage,
+    );
+  }
+
   void clear() {
     state = const ChatState();
   }

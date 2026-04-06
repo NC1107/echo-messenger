@@ -18,6 +18,7 @@ import '../providers/theme_provider.dart';
 import '../providers/voice_rtc_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import 'channel_bar.dart';
 import 'chat_header_bar.dart';
@@ -445,6 +446,118 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   }
 
   // ---------------------------------------------------------------------------
+  // Pin / Unpin
+  // ---------------------------------------------------------------------------
+
+  Future<void> _pinMessage(ChatMessage message) async {
+    final conv = widget.conversation;
+    if (conv == null) return;
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final serverUrl = ref.read(serverUrlProvider);
+
+    // Optimistically update local state
+    ref
+        .read(chatProvider.notifier)
+        .updateMessagePin(conv.id, message.id, myUserId, DateTime.now());
+
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.post(
+              Uri.parse(
+                '$serverUrl/api/conversations/${conv.id}'
+                '/messages/${message.id}/pin',
+              ),
+              headers: {'Authorization': 'Bearer $token'},
+            ),
+          );
+      if (!mounted) return;
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        ToastService.show(context, 'Message pinned', type: ToastType.success);
+      } else {
+        // Revert on failure
+        ref
+            .read(chatProvider.notifier)
+            .updateMessagePin(conv.id, message.id, null, null);
+        ToastService.show(
+          context,
+          'Failed to pin message',
+          type: ToastType.error,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ref
+          .read(chatProvider.notifier)
+          .updateMessagePin(conv.id, message.id, null, null);
+      ToastService.show(
+        context,
+        'Failed to pin message',
+        type: ToastType.error,
+      );
+    }
+  }
+
+  Future<void> _unpinMessage(ChatMessage message) async {
+    final conv = widget.conversation;
+    if (conv == null) return;
+    final serverUrl = ref.read(serverUrlProvider);
+
+    // Save previous state for revert
+    final prevPinnedById = message.pinnedById;
+    final prevPinnedAt = message.pinnedAt;
+
+    // Optimistically clear pin
+    ref
+        .read(chatProvider.notifier)
+        .updateMessagePin(conv.id, message.id, null, null);
+
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.delete(
+              Uri.parse(
+                '$serverUrl/api/conversations/${conv.id}'
+                '/messages/${message.id}/pin',
+              ),
+              headers: {'Authorization': 'Bearer $token'},
+            ),
+          );
+      if (!mounted) return;
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        ToastService.show(context, 'Message unpinned', type: ToastType.success);
+      } else {
+        // Revert on failure
+        ref
+            .read(chatProvider.notifier)
+            .updateMessagePin(
+              conv.id,
+              message.id,
+              prevPinnedById,
+              prevPinnedAt,
+            );
+        ToastService.show(
+          context,
+          'Failed to unpin message',
+          type: ToastType.error,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ref
+          .read(chatProvider.notifier)
+          .updateMessagePin(conv.id, message.id, prevPinnedById, prevPinnedAt);
+      ToastService.show(
+        context,
+        'Failed to unpin message',
+        type: ToastType.error,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Message list helpers
   // ---------------------------------------------------------------------------
 
@@ -685,6 +798,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               ref.read(chatProvider.notifier).setReplyTo(msg);
               _chatInputBarKey.currentState?.requestInputFocus();
             },
+            onPin: (msg) => _pinMessage(msg),
+            onUnpin: (msg) => _unpinMessage(msg),
             onAvatarTap: (userId) {
               UserProfileScreen.show(context, ref, userId);
             },

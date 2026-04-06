@@ -64,6 +64,8 @@ class MessageItem extends StatefulWidget {
   final void Function(ChatMessage message)? onEdit;
   final void Function(ChatMessage message)? onReply;
   final void Function(String userId)? onAvatarTap;
+  final void Function(ChatMessage message)? onPin;
+  final void Function(ChatMessage message)? onUnpin;
 
   /// Server URL for resolving relative image paths.
   final String? serverUrl;
@@ -89,6 +91,8 @@ class MessageItem extends StatefulWidget {
     this.onEdit,
     this.onReply,
     this.onAvatarTap,
+    this.onPin,
+    this.onUnpin,
     this.serverUrl,
     this.authToken,
     this.senderAvatarUrl,
@@ -613,6 +617,18 @@ class _MessageItemState extends State<MessageItem> {
               widget.onReactionTap?.call(msg, pos);
             },
           ),
+          if (msg.pinnedAt == null && widget.onPin != null)
+            _HoverActionButton(
+              icon: Icons.push_pin_outlined,
+              tooltip: 'Pin',
+              onPressed: () => widget.onPin?.call(msg),
+            ),
+          if (msg.pinnedAt != null && widget.onUnpin != null)
+            _HoverActionButton(
+              icon: Icons.push_pin,
+              tooltip: 'Unpin',
+              onPressed: () => widget.onUnpin?.call(msg),
+            ),
           if (isMine && widget.onEdit != null)
             _HoverActionButton(
               icon: Icons.edit_outlined,
@@ -1164,6 +1180,36 @@ class _MessageItemState extends State<MessageItem> {
     return context.textPrimary;
   }
 
+  /// Build a small pinned indicator shown inside the bubble.
+  Widget _buildPinnedIndicator({required bool isMine}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.push_pin,
+            size: 11,
+            color: isMine
+                ? Colors.white.withValues(alpha: 0.7)
+                : context.accent,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            'Pinned',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+              color: isMine
+                  ? Colors.white.withValues(alpha: 0.7)
+                  : context.accent,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Assemble the children of the bubble Column.
   List<Widget> _bubbleChildren({
     required ChatMessage msg,
@@ -1172,6 +1218,7 @@ class _MessageItemState extends State<MessageItem> {
     required Widget? mediaWidget,
   }) {
     return [
+      if (msg.pinnedAt != null) _buildPinnedIndicator(isMine: isMine),
       if (widget.showHeader && (!isMine || widget.compactLayout))
         _buildSenderNameLabel(msg: msg, hasMedia: mediaWidget != null),
       if (msg.replyToContent != null)
@@ -1281,6 +1328,11 @@ class _MessageItemState extends State<MessageItem> {
             const Padding(
               padding: EdgeInsets.only(left: 3),
               child: Icon(Icons.lock, size: 10, color: EchoTheme.online),
+            ),
+          if (msg.pinnedAt != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Icon(Icons.push_pin, size: 10, color: context.accent),
             ),
           if (msg.editedAt != null)
             Padding(
