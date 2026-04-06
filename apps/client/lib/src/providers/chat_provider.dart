@@ -153,24 +153,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
     final messages = updatedConv[conversationId];
     if (messages != null) {
-      // Find the most recent optimistic (pending_*) message from us
-      for (var i = messages.length - 1; i >= 0; i--) {
-        final msg = messages[i];
-        if (msg.id.startsWith('pending_') &&
-            msg.isMine &&
-            msg.status == MessageStatus.sending &&
-            (channelId == null || msg.channelId == channelId)) {
-          final updatedMessages = List<ChatMessage>.from(messages);
-          updatedMessages[i] = msg.copyWith(
-            id: messageId,
-            timestamp: timestamp,
-            status: MessageStatus.sent,
-            channelId: channelId ?? msg.channelId,
-          );
-          updatedConv[conversationId] = updatedMessages;
-          break;
-        }
-      }
+      _replacePendingMessage(
+        updatedConv,
+        conversationId,
+        messages,
+        messageId,
+        timestamp,
+        channelId,
+      );
     }
 
     state = ChatState(
@@ -178,6 +168,33 @@ class ChatNotifier extends StateNotifier<ChatState> {
       loadingHistory: state.loadingHistory,
       hasMore: state.hasMore,
     );
+  }
+
+  void _replacePendingMessage(
+    Map<String, List<ChatMessage>> updatedConv,
+    String conversationId,
+    List<ChatMessage> messages,
+    String messageId,
+    String timestamp,
+    String? channelId,
+  ) {
+    for (var i = messages.length - 1; i >= 0; i--) {
+      final msg = messages[i];
+      if (msg.id.startsWith('pending_') &&
+          msg.isMine &&
+          msg.status == MessageStatus.sending &&
+          (channelId == null || msg.channelId == channelId)) {
+        final updatedMessages = List<ChatMessage>.from(messages);
+        updatedMessages[i] = msg.copyWith(
+          id: messageId,
+          timestamp: timestamp,
+          status: MessageStatus.sent,
+          channelId: channelId ?? msg.channelId,
+        );
+        updatedConv[conversationId] = updatedMessages;
+        break;
+      }
+    }
   }
 
   /// Load history with the user's own ID for isMine determination.
@@ -195,78 +212,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final historyKey = '$conversationId:${channelId ?? ''}';
     if (state.isLoadingHistory(conversationId, channelId: channelId)) return;
 
-    final updatedLoading = Map<String, bool>.from(state.loadingHistory);
-    updatedLoading[historyKey] = true;
-    state = ChatState(
-      messagesByConversation: state.messagesByConversation,
-      loadingHistory: updatedLoading,
-      hasMore: state.hasMore,
-    );
+    _setLoadingHistory(historyKey, true);
 
     try {
-      var url = '$_serverUrl/api/messages/$conversationId?limit=50';
-      if (channelId != null && channelId.isNotEmpty) {
-        url += '&channel_id=${Uri.encodeComponent(channelId)}';
-      }
-      if (before != null) {
-        url += '&before=${Uri.encodeComponent(before)}';
-      }
-
-      final response = await ref
-          .read(authProvider.notifier)
-          .authenticatedRequest(
-            (currentToken) => http.get(
-              Uri.parse(url),
-              headers: {
-                'Authorization': 'Bearer $currentToken',
-                'Content-Type': 'application/json',
-              },
-            ),
-          );
+      final url = _buildHistoryUrl(conversationId, channelId, before);
+      final response = await _fetchHistory(url);
 
       if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
-        final List<dynamic> messagesList = body is List
-            ? body
-            : (body['messages'] as List? ?? []);
-
-        final newMessages = <ChatMessage>[];
-        for (final e in messagesList) {
-          var msg = ChatMessage.fromServerJson(
-            e as Map<String, dynamic>,
-            myUserId,
-          );
-
-          // Attempt to decrypt encrypted history messages (skip for groups
-          // since group messages are sent as plaintext).
-          if (!isGroup && looksEncrypted(msg.content)) {
-            if (crypto != null) {
-              try {
-                final decrypted = await crypto.decryptMessage(
-                  msg.fromUserId,
-                  msg.content,
-                );
-                msg = msg.copyWith(content: decrypted, isEncrypted: true);
-              } catch (e) {
-                // History messages are immutable artifacts -- don't
-                // invalidate the live session for a past message.
-                debugPrint('[Chat] History decrypt failed for ${msg.id}: $e');
-                msg = msg.copyWith(
-                  content: '[Could not decrypt]',
-                  isEncrypted: true,
-                );
-              }
-            } else {
-              msg = msg.copyWith(
-                content: '[Encrypted history]',
-                isEncrypted: true,
-              );
-            }
-          }
-
-          newMessages.add(msg);
-        }
-
+        final messagesList = _parseMessagesList(response.body);
+        final newMessages = await _processHistoryMessages(
+          messagesList,
+          myUserId,
+          isGroup: isGroup,
+          crypto: crypto,
+        );
         _mergeMessages(conversationId, newMessages, channelId: channelId);
       }
     } catch (e) {
@@ -275,14 +234,90 @@ class ChatNotifier extends StateNotifier<ChatState> {
         '$conversationId: $e',
       );
     } finally {
-      final updatedLoading2 = Map<String, bool>.from(state.loadingHistory);
-      updatedLoading2[historyKey] = false;
-      state = ChatState(
-        messagesByConversation: state.messagesByConversation,
-        loadingHistory: updatedLoading2,
-        hasMore: state.hasMore,
-      );
+      _setLoadingHistory(historyKey, false);
     }
+  }
+
+  String _buildHistoryUrl(
+    String conversationId,
+    String? channelId,
+    String? before,
+  ) {
+    var url = '$_serverUrl/api/messages/$conversationId?limit=50';
+    if (channelId != null && channelId.isNotEmpty) {
+      url += '&channel_id=${Uri.encodeComponent(channelId)}';
+    }
+    if (before != null) {
+      url += '&before=${Uri.encodeComponent(before)}';
+    }
+    return url;
+  }
+
+  Future<http.Response> _fetchHistory(String url) {
+    return ref
+        .read(authProvider.notifier)
+        .authenticatedRequest(
+          (currentToken) => http.get(
+            Uri.parse(url),
+            headers: {
+              'Authorization': 'Bearer $currentToken',
+              'Content-Type': 'application/json',
+            },
+          ),
+        );
+  }
+
+  List<dynamic> _parseMessagesList(String body) {
+    final decoded = jsonDecode(body);
+    return decoded is List ? decoded : (decoded['messages'] as List? ?? []);
+  }
+
+  Future<List<ChatMessage>> _processHistoryMessages(
+    List<dynamic> messagesList,
+    String myUserId, {
+    required bool isGroup,
+    CryptoService? crypto,
+  }) async {
+    final newMessages = <ChatMessage>[];
+    for (final e in messagesList) {
+      var msg = ChatMessage.fromServerJson(e as Map<String, dynamic>, myUserId);
+      msg = await _decryptIfNeeded(msg, isGroup: isGroup, crypto: crypto);
+      newMessages.add(msg);
+    }
+    return newMessages;
+  }
+
+  Future<ChatMessage> _decryptIfNeeded(
+    ChatMessage msg, {
+    required bool isGroup,
+    CryptoService? crypto,
+  }) async {
+    if (isGroup || !looksEncrypted(msg.content)) return msg;
+
+    if (crypto == null) {
+      return msg.copyWith(content: '[Encrypted history]', isEncrypted: true);
+    }
+
+    try {
+      final decrypted = await crypto.decryptMessage(
+        msg.fromUserId,
+        msg.content,
+      );
+      return msg.copyWith(content: decrypted, isEncrypted: true);
+    } catch (e) {
+      debugPrint('[Chat] History decrypt failed for ${msg.id}: $e');
+      return msg.copyWith(content: '[Could not decrypt]', isEncrypted: true);
+    }
+  }
+
+  void _setLoadingHistory(String historyKey, bool loading) {
+    final updatedLoading = Map<String, bool>.from(state.loadingHistory);
+    updatedLoading[historyKey] = loading;
+    state = ChatState(
+      messagesByConversation: state.messagesByConversation,
+      loadingHistory: updatedLoading,
+      hasMore: state.hasMore,
+    );
   }
 
   void _mergeMessages(

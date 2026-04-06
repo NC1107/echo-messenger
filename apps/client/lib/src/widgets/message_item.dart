@@ -829,6 +829,296 @@ class _MessageItemState extends State<MessageItem> {
     );
   }
 
+  /// Resolve the bubble background color based on message state.
+  Color _bubbleColor({required bool isMine, required bool isFailed}) {
+    if (isFailed) return EchoTheme.danger.withValues(alpha: 0.2);
+    if (isMine) return context.sentBubble;
+    return context.recvBubble;
+  }
+
+  /// Resolve the bubble border radius with a flat corner on the sender's side.
+  BorderRadius _bubbleBorderRadius({required bool isMine}) {
+    return BorderRadius.only(
+      topLeft: const Radius.circular(16),
+      topRight: const Radius.circular(16),
+      bottomLeft: Radius.circular(isMine ? 16 : 4),
+      bottomRight: Radius.circular(isMine ? 4 : 16),
+    );
+  }
+
+  /// Build the sender name label shown above the message bubble.
+  Widget _buildSenderNameLabel({
+    required ChatMessage msg,
+    required bool hasMedia,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: 4, left: hasMedia ? 8 : 0),
+      child: Text(
+        msg.fromUsername,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: _getUserColor(msg.fromUserId),
+        ),
+      ),
+    );
+  }
+
+  /// Build the reply-to quote block shown above the message content.
+  Widget _buildReplyQuote({required ChatMessage msg, required bool isMine}) {
+    final replyContent = msg.replyToContent!;
+    final truncated = replyContent.length > 100
+        ? '${replyContent.substring(0, 100)}...'
+        : replyContent;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: (isMine ? Colors.white : context.accent).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border(
+          left: BorderSide(
+            color: isMine
+                ? Colors.white.withValues(alpha: 0.5)
+                : context.accent,
+            width: 3,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            msg.replyToUsername ?? 'Unknown',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isMine
+                  ? Colors.white.withValues(alpha: 0.8)
+                  : context.accent,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            truncated,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              color: isMine
+                  ? Colors.white.withValues(alpha: 0.7)
+                  : context.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Select and build the primary message content (media, decrypt error, or
+  /// rich text).
+  Widget _buildBubbleContent({
+    required ChatMessage msg,
+    required bool isMine,
+    required bool isFailed,
+    required Widget? mediaWidget,
+  }) {
+    if (mediaWidget != null) return mediaWidget;
+    if (msg.content.startsWith('[Could not decrypt')) {
+      return _buildDecryptionFailure();
+    }
+    return _buildMessageText(
+      msg.content,
+      textColor: _contentTextColor(isMine: isMine, isFailed: isFailed),
+    );
+  }
+
+  /// Resolve text color for message content.
+  Color _contentTextColor({required bool isMine, required bool isFailed}) {
+    if (isFailed) return EchoTheme.danger;
+    if (isMine) return Colors.white;
+    return context.textPrimary;
+  }
+
+  /// Assemble the children of the bubble Column.
+  List<Widget> _bubbleChildren({
+    required ChatMessage msg,
+    required bool isMine,
+    required bool isFailed,
+    required Widget? mediaWidget,
+  }) {
+    return [
+      if (widget.showHeader && (!isMine || widget.compactLayout))
+        _buildSenderNameLabel(msg: msg, hasMedia: mediaWidget != null),
+      if (msg.replyToContent != null)
+        _buildReplyQuote(msg: msg, isMine: isMine),
+      _buildBubbleContent(
+        msg: msg,
+        isMine: isMine,
+        isFailed: isFailed,
+        mediaWidget: mediaWidget,
+      ),
+    ];
+  }
+
+  /// Build the full message bubble container.
+  Widget _buildBubble({
+    required ChatMessage msg,
+    required bool isMine,
+    required bool isFailed,
+    required Widget? mediaWidget,
+  }) {
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 520),
+      padding: mediaWidget != null
+          ? const EdgeInsets.all(4)
+          : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: _bubbleColor(isMine: isMine, isFailed: isFailed),
+        borderRadius: _bubbleBorderRadius(isMine: isMine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: _bubbleChildren(
+          msg: msg,
+          isMine: isMine,
+          isFailed: isFailed,
+          mediaWidget: mediaWidget,
+        ),
+      ),
+    );
+  }
+
+  /// Wrap the bubble with a reaction pill overlay when reactions exist.
+  Widget _buildBubbleWithReactions({
+    required Widget bubble,
+    required bool isMine,
+    required bool hasReactions,
+    required Widget reactionPill,
+  }) {
+    if (!hasReactions) return bubble;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Padding(padding: const EdgeInsets.only(bottom: 14), child: bubble),
+        Positioned(
+          bottom: 0,
+          left: isMine ? null : 8,
+          right: isMine ? 8 : null,
+          child: reactionPill,
+        ),
+      ],
+    );
+  }
+
+  /// Build the avatar section shown to the left of received messages.
+  Widget _buildAvatarSection({required ChatMessage msg}) {
+    final avatarImageUrl = widget.senderAvatarUrl != null
+        ? '${widget.serverUrl ?? ""}${widget.senderAvatarUrl}'
+        : null;
+
+    return Semantics(
+      label: 'View profile of ${msg.fromUsername}',
+      button: true,
+      child: GestureDetector(
+        onTap: widget.onAvatarTap != null
+            ? () => widget.onAvatarTap!(msg.fromUserId)
+            : null,
+        child: SizedBox(
+          width: 28,
+          child: widget.showHeader
+              ? buildAvatar(
+                  name: msg.fromUsername,
+                  radius: 14,
+                  bgColor: _getUserColor(msg.fromUserId),
+                  imageUrl: avatarImageUrl,
+                )
+              : const SizedBox.shrink(),
+        ),
+      ),
+    );
+  }
+
+  /// Build the timestamp row shown below the last message in a group.
+  Widget _buildTimestampRow({required ChatMessage msg, required bool isMine}) {
+    return Padding(
+      padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: isMine
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
+        children: [
+          Text(
+            formatMessageTimestamp(msg.timestamp),
+            style: TextStyle(fontSize: 11, color: context.textMuted),
+          ),
+          if (msg.isEncrypted)
+            Padding(
+              padding: const EdgeInsets.only(left: 3),
+              child: Icon(Icons.lock, size: 10, color: EchoTheme.online),
+            ),
+          if (msg.editedAt != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Text(
+                '(edited)',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontStyle: FontStyle.italic,
+                  color: context.textMuted,
+                ),
+              ),
+            ),
+          if (isMine) _buildStatusIcon(msg.status),
+        ],
+      ),
+    );
+  }
+
+  /// Build the hover-actions overlay that appears above the bubble.
+  Widget _buildHoverOverlay({
+    required ChatMessage msg,
+    required bool isMine,
+    required String? mediaUrl,
+  }) {
+    return Positioned(
+      top: -12,
+      left: isMine ? null : 36,
+      right: isMine ? 0 : null,
+      child: IgnorePointer(
+        ignoring: !_isHovered,
+        child: AnimatedOpacity(
+          opacity: _isHovered ? 1 : 0,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          child: AnimatedSlide(
+            offset: _isHovered ? Offset.zero : const Offset(0, -0.12),
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOut,
+            child: _buildHoverActions(msg, isMine, mediaUrl: mediaUrl),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build the main message row containing the avatar and bubble.
+  List<Widget> _buildMessageRowChildren({
+    required ChatMessage msg,
+    required bool isMine,
+    required Widget bubbleWithReactions,
+  }) {
+    return [
+      if (!isMine || widget.compactLayout) ...[
+        _buildAvatarSection(msg: msg),
+        const SizedBox(width: 8),
+      ],
+      Flexible(child: bubbleWithReactions),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final msg = widget.message;
@@ -841,131 +1131,21 @@ class _MessageItemState extends State<MessageItem> {
     final hasReactions = msg.reactions.isNotEmpty;
     final reactionPill = _buildReactionPill(msg.reactions, isMine);
 
-    // The bubble widget
-    final bubble = Container(
-      constraints: const BoxConstraints(maxWidth: 520),
-      padding: mediaWidget != null
-          ? const EdgeInsets.all(4)
-          : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: isFailed
-            ? EchoTheme.danger.withValues(alpha: 0.2)
-            : isMine
-            ? context.sentBubble
-            : context.recvBubble,
-        borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(16),
-          topRight: const Radius.circular(16),
-          bottomLeft: Radius.circular(!isMine ? 4 : 16),
-          bottomRight: Radius.circular(isMine ? 4 : 16),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Sender name (always shown in compact mode, otherwise only for received)
-          if (widget.showHeader && (!isMine || widget.compactLayout))
-            Padding(
-              padding: EdgeInsets.only(
-                bottom: 4,
-                left: mediaWidget != null ? 8 : 0,
-              ),
-              child: Text(
-                msg.fromUsername,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: _getUserColor(msg.fromUserId),
-                ),
-              ),
-            ),
-          // Reply quote block
-          if (msg.replyToContent != null)
-            Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              decoration: BoxDecoration(
-                color: (isMine ? Colors.white : context.accent).withValues(
-                  alpha: 0.12,
-                ),
-                borderRadius: BorderRadius.circular(8),
-                border: Border(
-                  left: BorderSide(
-                    color: isMine
-                        ? Colors.white.withValues(alpha: 0.5)
-                        : context.accent,
-                    width: 3,
-                  ),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    msg.replyToUsername ?? 'Unknown',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: isMine
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : context.accent,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    msg.replyToContent!.length > 100
-                        ? '${msg.replyToContent!.substring(0, 100)}...'
-                        : msg.replyToContent!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isMine
-                          ? Colors.white.withValues(alpha: 0.7)
-                          : context.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          // Image or text content
-          if (mediaWidget != null)
-            mediaWidget
-          else if (msg.content.startsWith('[Could not decrypt'))
-            _buildDecryptionFailure()
-          else
-            _buildMessageText(
-              msg.content,
-              textColor: isFailed
-                  ? EchoTheme.danger
-                  : isMine
-                  ? Colors.white
-                  : context.textPrimary,
-            ),
-        ],
-      ),
+    final bubble = _buildBubble(
+      msg: msg,
+      isMine: isMine,
+      isFailed: isFailed,
+      mediaWidget: mediaWidget,
     );
 
-    // Bubble with reaction pill overlapping bottom via Stack
-    Widget bubbleWithReactions;
-    if (hasReactions) {
-      bubbleWithReactions = Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Add bottom padding so the pill has room to overlap
-          Padding(padding: const EdgeInsets.only(bottom: 14), child: bubble),
-          // Reaction pill overlapping bottom of the bubble
-          Positioned(
-            bottom: 0,
-            left: isMine ? null : 8,
-            right: isMine ? 8 : null,
-            child: reactionPill,
-          ),
-        ],
-      );
-    } else {
-      bubbleWithReactions = bubble;
-    }
+    final bubbleWithReactions = _buildBubbleWithReactions(
+      bubble: bubble,
+      isMine: isMine,
+      hasReactions: hasReactions,
+      reactionPill: reactionPill,
+    );
+
+    final isAlignedEnd = isMine && !widget.compactLayout;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -988,115 +1168,30 @@ class _MessageItemState extends State<MessageItem> {
               clipBehavior: Clip.none,
               children: [
                 Column(
-                  crossAxisAlignment: (isMine && !widget.compactLayout)
+                  crossAxisAlignment: isAlignedEnd
                       ? CrossAxisAlignment.end
                       : CrossAxisAlignment.start,
                   children: [
                     Row(
-                      mainAxisAlignment: (isMine && !widget.compactLayout)
+                      mainAxisAlignment: isAlignedEnd
                           ? MainAxisAlignment.end
                           : MainAxisAlignment.start,
                       crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        // Avatar (received messages, or all in compact mode)
-                        if (!isMine || widget.compactLayout) ...[
-                          Semantics(
-                            label: 'View profile of ${msg.fromUsername}',
-                            button: true,
-                            child: GestureDetector(
-                              onTap: widget.onAvatarTap != null
-                                  ? () => widget.onAvatarTap!(msg.fromUserId)
-                                  : null,
-                              child: SizedBox(
-                                width: 28,
-                                child: widget.showHeader
-                                    ? buildAvatar(
-                                        name: msg.fromUsername,
-                                        radius: 14,
-                                        bgColor: _getUserColor(msg.fromUserId),
-                                        imageUrl: widget.senderAvatarUrl != null
-                                            ? '${widget.serverUrl ?? ""}${widget.senderAvatarUrl}'
-                                            : null,
-                                      )
-                                    : const SizedBox.shrink(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        // Bubble with reactions
-                        Flexible(child: bubbleWithReactions),
-                      ],
-                    ),
-                    // Timestamp (only on last in group)
-                    if (widget.isLastInGroup)
-                      Padding(
-                        padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: isMine
-                              ? MainAxisAlignment.end
-                              : MainAxisAlignment.start,
-                          children: [
-                            Text(
-                              formatMessageTimestamp(msg.timestamp),
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: context.textMuted,
-                              ),
-                            ),
-                            if (msg.isEncrypted)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 3),
-                                child: Icon(
-                                  Icons.lock,
-                                  size: 10,
-                                  color: EchoTheme.online,
-                                ),
-                              ),
-                            if (msg.editedAt != null)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 4),
-                                child: Text(
-                                  '(edited)',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontStyle: FontStyle.italic,
-                                    color: context.textMuted,
-                                  ),
-                                ),
-                              ),
-                            if (isMine) _buildStatusIcon(msg.status),
-                          ],
-                        ),
+                      children: _buildMessageRowChildren(
+                        msg: msg,
+                        isMine: isMine,
+                        bubbleWithReactions: bubbleWithReactions,
                       ),
+                    ),
+                    if (widget.isLastInGroup)
+                      _buildTimestampRow(msg: msg, isMine: isMine),
                   ],
                 ),
                 if (!hasReactions)
-                  Positioned(
-                    top: -12,
-                    left: isMine ? null : 36,
-                    right: isMine ? 0 : null,
-                    child: IgnorePointer(
-                      ignoring: !_isHovered,
-                      child: AnimatedOpacity(
-                        opacity: _isHovered ? 1 : 0,
-                        duration: const Duration(milliseconds: 140),
-                        curve: Curves.easeOut,
-                        child: AnimatedSlide(
-                          offset: _isHovered
-                              ? Offset.zero
-                              : const Offset(0, -0.12),
-                          duration: const Duration(milliseconds: 140),
-                          curve: Curves.easeOut,
-                          child: _buildHoverActions(
-                            msg,
-                            isMine,
-                            mediaUrl: mediaUrl,
-                          ),
-                        ),
-                      ),
-                    ),
+                  _buildHoverOverlay(
+                    msg: msg,
+                    isMine: isMine,
+                    mediaUrl: mediaUrl,
                   ),
               ],
             ),

@@ -342,303 +342,18 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
     final allConversations = conversationsState.conversations;
 
-    // Filter conversations by search query
-    final conversations = _searchQuery.isEmpty
-        ? allConversations
-        : allConversations.where((conv) {
-            final query = _searchQuery.toLowerCase();
-            final name = conv.displayName(myUserId).toLowerCase();
-            final lastMsg = (conv.lastMessage ?? '').toLowerCase();
-            return name.contains(query) || lastMsg.contains(query);
-          }).toList();
-
-    // Group conversations only
+    final conversations = _filterConversations(allConversations, myUserId);
     final groupConversations = conversations.where((c) => c.isGroup).toList();
 
     return Container(
       color: context.sidebarBg,
       child: Column(
         children: [
-          // Logo header
-          Container(
-            height: 56,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: context.border, width: 1),
-              ),
-            ),
-            child: Row(
-              children: [
-                const EchoLogoIcon(size: 24),
-                const SizedBox(width: 10),
-                Text(
-                  'Echo',
-                  style: TextStyle(
-                    color: context.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: wsState.isConnected
-                        ? EchoTheme.online
-                        : context.textMuted,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const Spacer(),
-                // Three action icons
-                Flexible(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.person_add_outlined,
-                              size: 18,
-                            ),
-                            color: context.textSecondary,
-                            tooltip: 'New Chat',
-                            onPressed: widget.onNewChat,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
-                            ),
-                          ),
-                          if (pendingCount > 0)
-                            Positioned(
-                              top: -2,
-                              right: -2,
-                              child: Container(
-                                width: 16,
-                                height: 16,
-                                decoration: const BoxDecoration(
-                                  color: EchoTheme.danger,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    pendingCount > 9 ? '9+' : '$pendingCount',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.group_add_outlined, size: 18),
-                        color: context.textSecondary,
-                        tooltip: 'New Group',
-                        onPressed: widget.onNewGroup,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.explore_outlined, size: 18),
-                        color: context.textSecondary,
-                        tooltip: 'Discover Groups',
-                        onPressed: widget.onDiscover,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                      ),
-                      if (widget.onCollapseSidebar != null)
-                        IconButton(
-                          icon: const Icon(Icons.chevron_left, size: 18),
-                          color: context.textMuted,
-                          tooltip: 'Collapse sidebar',
-                          onPressed: widget.onCollapseSidebar,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 32,
-                            minHeight: 32,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: GestureDetector(
-              onTap: () {
-                if (!_isSearching) {
-                  setState(() => _isSearching = true);
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _searchFocusNode.requestFocus();
-                  });
-                }
-              },
-              child: Container(
-                height: 36,
-                decoration: BoxDecoration(
-                  color: context.surface,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: _isSearching
-                    ? KeyboardListener(
-                        focusNode: _keyboardListenerFocusNode,
-                        onKeyEvent: (event) {
-                          if (event is KeyDownEvent &&
-                              event.logicalKey == LogicalKeyboardKey.escape) {
-                            _clearSearch();
-                          }
-                        },
-                        child: Row(
-                          children: [
-                            const SizedBox(width: 12),
-                            Icon(
-                              Icons.search_outlined,
-                              size: 18,
-                              color: context.textMuted,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                controller: _searchController,
-                                focusNode: _searchFocusNode,
-                                autofocus: true,
-                                style: TextStyle(
-                                  color: context.textPrimary,
-                                  fontSize: 13,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: 'Search conversations',
-                                  hintStyle: TextStyle(
-                                    color: context.textMuted,
-                                    fontSize: 13,
-                                  ),
-                                  border: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  focusedBorder: InputBorder.none,
-                                  filled: false,
-                                  contentPadding: EdgeInsets.symmetric(
-                                    vertical: 10,
-                                  ),
-                                  isDense: true,
-                                ),
-                                onChanged: (value) {
-                                  setState(() {
-                                    _searchQuery = value.trim();
-                                  });
-                                },
-                              ),
-                            ),
-                            if (_searchQuery.isNotEmpty)
-                              IconButton(
-                                icon: const Icon(Icons.close, size: 16),
-                                color: context.textMuted,
-                                onPressed: _clearSearch,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                  minWidth: 28,
-                                  minHeight: 28,
-                                ),
-                              )
-                            else
-                              const SizedBox(width: 8),
-                          ],
-                        ),
-                      )
-                    : Row(
-                        children: [
-                          const SizedBox(width: 12),
-                          Icon(
-                            Icons.search_outlined,
-                            size: 18,
-                            color: context.textMuted,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Search conversations',
-                            style: TextStyle(
-                              color: context.textMuted,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
-          ),
-          // Tab bar: Chats / Contacts / Groups
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                _buildTabChip('Chats', 0),
-                const SizedBox(width: 6),
-                _buildTabChip('Contacts', 1),
-                const SizedBox(width: 6),
-                _buildTabChip('Groups', 2),
-              ],
-            ),
-          ),
+          _buildLogoHeader(context, wsState, pendingCount),
+          _buildSearchBar(context),
+          _buildTabBar(),
           const SizedBox(height: 8),
-          // Pending requests banner (show only on Chats or Contacts tab)
-          if (pendingCount > 0 && _selectedTab <= 1)
-            GestureDetector(
-              onTap: widget.onShowContacts ?? widget.onSettings,
-              child: Container(
-                height: 48,
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: context.surface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: context.accent.withValues(alpha: 0.45),
-                    width: 1,
-                  ),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.person_add_outlined,
-                      size: 18,
-                      color: context.accent,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        '$pendingCount pending request${pendingCount == 1 ? '' : 's'}',
-                        style: TextStyle(
-                          color: context.accent,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    Icon(Icons.chevron_right, size: 18, color: context.accent),
-                  ],
-                ),
-              ),
-            ),
-          if (pendingCount > 0 && _selectedTab <= 1) const SizedBox(height: 4),
-          // Tab content
+          _buildPendingBanner(context, pendingCount),
           Expanded(
             child: _buildTabContent(
               conversationsState: conversationsState,
@@ -649,83 +364,395 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               myUserId: myUserId,
             ),
           ),
-          // User status bar at bottom
-          Container(
-            height: 60,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: context.mainBg,
-              border: Border(top: BorderSide(color: context.border, width: 1)),
+          _buildUserStatusBar(
+            context,
+            myUsername: myUsername,
+            serverUrl: serverUrl,
+            authState: authState,
+            wsState: wsState,
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Conversation> _filterConversations(
+    List<Conversation> allConversations,
+    String myUserId,
+  ) {
+    if (_searchQuery.isEmpty) return allConversations;
+    return allConversations.where((conv) {
+      final query = _searchQuery.toLowerCase();
+      final name = conv.displayName(myUserId).toLowerCase();
+      final lastMsg = (conv.lastMessage ?? '').toLowerCase();
+      return name.contains(query) || lastMsg.contains(query);
+    }).toList();
+  }
+
+  Widget _buildLogoHeader(
+    BuildContext context,
+    WebSocketState wsState,
+    int pendingCount,
+  ) {
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: context.border, width: 1)),
+      ),
+      child: Row(
+        children: [
+          const EchoLogoIcon(size: 24),
+          const SizedBox(width: 10),
+          Text(
+            'Echo',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
             ),
+          ),
+          const SizedBox(width: 8),
+          _buildConnectionDot(context, wsState),
+          const Spacer(),
+          _buildHeaderActions(context, pendingCount),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConnectionDot(BuildContext context, WebSocketState wsState) {
+    return Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(
+        color: wsState.isConnected ? EchoTheme.online : context.textMuted,
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+
+  Widget _buildHeaderActions(BuildContext context, int pendingCount) {
+    return Flexible(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildNewChatButton(context, pendingCount),
+          IconButton(
+            icon: const Icon(Icons.group_add_outlined, size: 18),
+            color: context.textSecondary,
+            tooltip: 'New Group',
+            onPressed: widget.onNewGroup,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+          IconButton(
+            icon: const Icon(Icons.explore_outlined, size: 18),
+            color: context.textSecondary,
+            tooltip: 'Discover Groups',
+            onPressed: widget.onDiscover,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+          if (widget.onCollapseSidebar != null)
+            IconButton(
+              icon: const Icon(Icons.chevron_left, size: 18),
+              color: context.textMuted,
+              tooltip: 'Collapse sidebar',
+              onPressed: widget.onCollapseSidebar,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewChatButton(BuildContext context, int pendingCount) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.person_add_outlined, size: 18),
+          color: context.textSecondary,
+          tooltip: 'New Chat',
+          onPressed: widget.onNewChat,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        ),
+        if (pendingCount > 0)
+          Positioned(
+            top: -2,
+            right: -2,
+            child: Container(
+              width: 16,
+              height: 16,
+              decoration: const BoxDecoration(
+                color: EchoTheme.danger,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  pendingCount > 9 ? '9+' : '$pendingCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSearchBar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: GestureDetector(
+        onTap: () {
+          if (!_isSearching) {
+            setState(() => _isSearching = true);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _searchFocusNode.requestFocus();
+            });
+          }
+        },
+        child: Container(
+          height: 36,
+          decoration: BoxDecoration(
+            color: context.surface,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: _isSearching
+              ? _buildActiveSearchBar(context)
+              : _buildInactiveSearchBar(context),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActiveSearchBar(BuildContext context) {
+    return KeyboardListener(
+      focusNode: _keyboardListenerFocusNode,
+      onKeyEvent: (event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.escape) {
+          _clearSearch();
+        }
+      },
+      child: Row(
+        children: [
+          const SizedBox(width: 12),
+          Icon(Icons.search_outlined, size: 18, color: context.textMuted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              autofocus: true,
+              style: TextStyle(color: context.textPrimary, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Search conversations',
+                hintStyle: TextStyle(color: context.textMuted, fontSize: 13),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                filled: false,
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                isDense: true,
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value.trim();
+                });
+              },
+            ),
+          ),
+          if (_searchQuery.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.close, size: 16),
+              color: context.textMuted,
+              onPressed: _clearSearch,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            )
+          else
+            const SizedBox(width: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInactiveSearchBar(BuildContext context) {
+    return Row(
+      children: [
+        const SizedBox(width: 12),
+        Icon(Icons.search_outlined, size: 18, color: context.textMuted),
+        const SizedBox(width: 8),
+        Text(
+          'Search conversations',
+          style: TextStyle(color: context.textMuted, fontSize: 13),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTabBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          _buildTabChip('Chats', 0),
+          const SizedBox(width: 6),
+          _buildTabChip('Contacts', 1),
+          const SizedBox(width: 6),
+          _buildTabChip('Groups', 2),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingBanner(BuildContext context, int pendingCount) {
+    if (pendingCount <= 0 || _selectedTab > 1) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: widget.onShowContacts ?? widget.onSettings,
+          child: Container(
+            height: 48,
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: context.accent.withValues(alpha: 0.45),
+                width: 1,
+              ),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
-                // Avatar with connection dot
-                Stack(
-                  children: [
-                    buildAvatar(
-                      name: myUsername,
-                      radius: 16,
-                      bgColor: context.accent,
-                      imageUrl: authState.avatarUrl != null
-                          ? '$serverUrl${authState.avatarUrl}'
-                          : null,
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: wsState.isConnected
-                              ? EchoTheme.online
-                              : EchoTheme.warning,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: context.mainBg, width: 2),
-                        ),
-                      ),
-                    ),
-                  ],
+                Icon(
+                  Icons.person_add_outlined,
+                  size: 18,
+                  color: context.accent,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        myUsername,
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        wsState.isConnected ? 'Online' : 'Reconnecting...',
-                        style: TextStyle(
-                          color: wsState.isConnected
-                              ? EchoTheme.online
-                              : EchoTheme.warning,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    '$pendingCount pending request${pendingCount == 1 ? '' : 's'}',
+                    style: TextStyle(
+                      color: context.accent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.settings_outlined, size: 18),
-                  color: context.textSecondary,
-                  tooltip: 'Settings',
-                  onPressed: widget.onSettings,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
-                  ),
-                ),
+                Icon(Icons.chevron_right, size: 18, color: context.accent),
               ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  Widget _buildUserStatusBar(
+    BuildContext context, {
+    required String myUsername,
+    required String serverUrl,
+    required AuthState authState,
+    required WebSocketState wsState,
+  }) {
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: context.mainBg,
+        border: Border(top: BorderSide(color: context.border, width: 1)),
+      ),
+      child: Row(
+        children: [
+          _buildUserAvatar(context, myUsername, serverUrl, authState, wsState),
+          const SizedBox(width: 10),
+          _buildUserNameAndStatus(context, myUsername, wsState),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, size: 18),
+            color: context.textSecondary,
+            tooltip: 'Settings',
+            onPressed: widget.onSettings,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUserAvatar(
+    BuildContext context,
+    String myUsername,
+    String serverUrl,
+    AuthState authState,
+    WebSocketState wsState,
+  ) {
+    return Stack(
+      children: [
+        buildAvatar(
+          name: myUsername,
+          radius: 16,
+          bgColor: context.accent,
+          imageUrl: authState.avatarUrl != null
+              ? '$serverUrl${authState.avatarUrl}'
+              : null,
+        ),
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: wsState.isConnected ? EchoTheme.online : EchoTheme.warning,
+              shape: BoxShape.circle,
+              border: Border.all(color: context.mainBg, width: 2),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUserNameAndStatus(
+    BuildContext context,
+    String myUsername,
+    WebSocketState wsState,
+  ) {
+    return Expanded(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            myUsername,
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            wsState.isConnected ? 'Online' : 'Reconnecting...',
+            style: TextStyle(
+              color: wsState.isConnected ? EchoTheme.online : EchoTheme.warning,
+              fontSize: 11,
             ),
           ),
         ],
@@ -796,63 +823,67 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       );
     }
     if (conversations.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                _searchQuery.isNotEmpty
-                    ? Icons.search_off
-                    : Icons.forum_outlined,
-                size: 40,
-                color: context.textMuted.withValues(alpha: 0.5),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _searchQuery.isNotEmpty
-                    ? "No results found for '$_searchQuery'"
-                    : 'No conversations yet',
-                style: TextStyle(
-                  color: context.textSecondary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _searchQuery.isNotEmpty
-                    ? 'Try a different search term'
-                    : 'Add a contact to start messaging',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: context.textMuted, fontSize: 13),
-              ),
-              if (_searchQuery.isEmpty) ...[
-                const SizedBox(height: 14),
-                SizedBox(
-                  height: 34,
-                  child: FilledButton.icon(
-                    onPressed: widget.onNewChat,
-                    icon: const Icon(Icons.chat_outlined, size: 16),
-                    label: const Text('New Chat'),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      );
+      return _buildChatsEmptyState();
     }
 
     final sorted = _sortConversations(conversations);
+    return _buildConversationList(sorted, myUserId);
+  }
 
+  Widget _buildChatsEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _searchQuery.isNotEmpty ? Icons.search_off : Icons.forum_outlined,
+              size: 40,
+              color: context.textMuted.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _searchQuery.isNotEmpty
+                  ? "No results found for '$_searchQuery'"
+                  : 'No conversations yet',
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _searchQuery.isNotEmpty
+                  ? 'Try a different search term'
+                  : 'Add a contact to start messaging',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: context.textMuted, fontSize: 13),
+            ),
+            if (_searchQuery.isEmpty) ...[
+              const SizedBox(height: 14),
+              SizedBox(
+                height: 34,
+                child: FilledButton.icon(
+                  onPressed: widget.onNewChat,
+                  icon: const Icon(Icons.chat_outlined, size: 16),
+                  label: const Text('New Chat'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConversationList(List<Conversation> sorted, String myUserId) {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
       itemCount: sorted.length,
       itemBuilder: (context, index) {
         final conv = sorted[index];
-        final isSelected = conv.id == widget.selectedConversationId;
         final isPinned = _pinnedIds.contains(conv.id);
         final wsState = ref.watch(websocketProvider);
         final peer = conv.isGroup
@@ -860,7 +891,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             : conv.members.where((m) => m.userId != myUserId).firstOrNull;
         final isPeerOnline = peer != null && wsState.isUserOnline(peer.userId);
         final serverUrl = ref.watch(serverUrlProvider);
-        // For DMs, resolve peer avatar URL
         String? peerAvatarUrl;
         if (!conv.isGroup && peer != null && peer.avatarUrl != null) {
           peerAvatarUrl = '$serverUrl${peer.avatarUrl}';
@@ -868,7 +898,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         return ConversationItem(
           conversation: conv,
           myUserId: myUserId,
-          isSelected: isSelected,
+          isSelected: conv.id == widget.selectedConversationId,
           isPinned: isPinned,
           isPeerOnline: isPeerOnline,
           peerAvatarUrl: peerAvatarUrl,

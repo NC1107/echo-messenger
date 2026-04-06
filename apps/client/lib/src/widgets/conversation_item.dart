@@ -47,38 +47,58 @@ class _ConversationItemState extends State<ConversationItem> {
     };
   }
 
+  /// Resolve the display snippet from the last message, applying
+  /// encryption placeholders and media labels.
+  String? _resolveSnippet() {
+    final conv = widget.conversation;
+    String? snippet = conv.lastMessage;
+
+    snippet = _maskEncryptedSnippet(snippet);
+    snippet = _applyMediaLabel(snippet);
+    snippet = _prependSenderLabel(snippet, conv);
+
+    return snippet;
+  }
+
+  String? _maskEncryptedSnippet(String? snippet) {
+    if (snippet != null &&
+        (snippet.startsWith('[Could not decrypt]') ||
+            snippet.startsWith('[Encrypted'))) {
+      return '\u{1F512} Encrypted message';
+    }
+    return snippet;
+  }
+
+  String? _applyMediaLabel(String? snippet) {
+    if (snippet == null) return null;
+    if (RegExp(r'^\[img:.+\]$').hasMatch(snippet)) {
+      return '\u{1F5BC} Image';
+    }
+    if (RegExp(r'^\[video:.+\]$').hasMatch(snippet)) {
+      return '\u{1F3AC} Video';
+    }
+    if (RegExp(r'^\[file:.+\]$').hasMatch(snippet)) {
+      return '\u{1F4CE} File';
+    }
+    return snippet;
+  }
+
+  String? _prependSenderLabel(String? snippet, Conversation conv) {
+    if (snippet == null || conv.lastMessageSender == null) return snippet;
+    final myMember = conv.members
+        .where((m) => m.userId == widget.myUserId)
+        .firstOrNull;
+    final isMe = myMember?.username == conv.lastMessageSender;
+    final senderLabel = isMe ? 'You' : conv.lastMessageSender!;
+    return '$senderLabel: $snippet';
+  }
+
   @override
   Widget build(BuildContext context) {
     final conv = widget.conversation;
     final displayName = conv.displayName(widget.myUserId);
     final hasUnread = conv.unreadCount > 0;
-
-    String? snippet = conv.lastMessage;
-    // Mask encrypted / undecryptable previews with a friendly fallback
-    if (snippet != null &&
-        (snippet.startsWith('[Could not decrypt]') ||
-            snippet.startsWith('[Encrypted'))) {
-      snippet = '\u{1F512} Encrypted message';
-    }
-    // Show friendly labels for media markers
-    if (snippet != null) {
-      if (RegExp(r'^\[img:.+\]$').hasMatch(snippet)) {
-        snippet = '\u{1F5BC} Image';
-      } else if (RegExp(r'^\[video:.+\]$').hasMatch(snippet)) {
-        snippet = '\u{1F3AC} Video';
-      } else if (RegExp(r'^\[file:.+\]$').hasMatch(snippet)) {
-        snippet = '\u{1F4CE} File';
-      }
-    }
-    if (snippet != null && conv.lastMessageSender != null) {
-      // Find if sender is "me" by checking if any member with myUserId has this username
-      final myMember = conv.members
-          .where((m) => m.userId == widget.myUserId)
-          .firstOrNull;
-      final isMe = myMember?.username == conv.lastMessageSender;
-      final senderLabel = isMe ? 'You' : conv.lastMessageSender!;
-      snippet = '$senderLabel: $snippet';
-    }
+    final snippet = _resolveSnippet();
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -97,141 +117,167 @@ class _ConversationItemState extends State<ConversationItem> {
           height: 68,
           margin: const EdgeInsets.symmetric(vertical: 1),
           decoration: BoxDecoration(
-            color: widget.isSelected
-                ? context.accentLight
-                : _isHovered
-                ? context.surfaceHover
-                : Colors.transparent,
+            color: _resolveBackgroundColor(context),
             borderRadius: BorderRadius.circular(10),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
-              // Avatar with online dot
-              Stack(
-                children: [
-                  buildAvatar(
-                    name: displayName,
-                    radius: 20,
-                    imageUrl: conv.isGroup ? null : widget.peerAvatarUrl,
-                    bgColor: conv.isGroup
-                        ? groupAvatarColor(displayName)
-                        : null,
-                    fallbackIcon: conv.isGroup
-                        ? const Icon(Icons.group, size: 18, color: Colors.white)
-                        : null,
-                  ),
-                  if (!conv.isGroup)
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: widget.isPeerOnline
-                              ? EchoTheme.online
-                              : context.textMuted,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: context.sidebarBg,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+              _buildAvatarStack(context, conv, displayName),
               const SizedBox(width: 12),
-              // Name + snippet
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Row(
-                      children: [
-                        if (widget.isPinned)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: Icon(
-                              Icons.push_pin,
-                              size: 12,
-                              color: context.textMuted,
-                            ),
-                          ),
-                        Expanded(
-                          child: Text(
-                            displayName,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: hasUnread
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: context.textPrimary,
-                            ),
-                          ),
-                        ),
-                        if (widget.timestamp.isNotEmpty)
-                          Text(
-                            widget.timestamp,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: hasUnread
-                                  ? context.accent
-                                  : context.textMuted,
-                            ),
-                          ),
-                      ],
-                    ),
-                    if (snippet != null) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              snippet,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: context.textMuted,
-                                fontWeight: hasUnread
-                                    ? FontWeight.w500
-                                    : FontWeight.normal,
-                              ),
-                            ),
-                          ),
-                          if (conv.isMuted)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 6),
-                              child: Icon(
-                                Icons.notifications_off_outlined,
-                                size: 14,
-                                color: context.textMuted,
-                              ),
-                            ),
-                          if (hasUnread)
-                            Container(
-                              margin: const EdgeInsets.only(left: 8),
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                color: context.accent,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
+              _buildNameAndSnippet(
+                context,
+                displayName: displayName,
+                snippet: snippet,
+                hasUnread: hasUnread,
+                conv: conv,
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Color _resolveBackgroundColor(BuildContext context) {
+    if (widget.isSelected) return context.accentLight;
+    if (_isHovered) return context.surfaceHover;
+    return Colors.transparent;
+  }
+
+  Widget _buildAvatarStack(
+    BuildContext context,
+    Conversation conv,
+    String displayName,
+  ) {
+    return Stack(
+      children: [
+        buildAvatar(
+          name: displayName,
+          radius: 20,
+          imageUrl: conv.isGroup ? null : widget.peerAvatarUrl,
+          bgColor: conv.isGroup ? groupAvatarColor(displayName) : null,
+          fallbackIcon: conv.isGroup
+              ? const Icon(Icons.group, size: 18, color: Colors.white)
+              : null,
+        ),
+        if (!conv.isGroup)
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: widget.isPeerOnline
+                    ? EchoTheme.online
+                    : context.textMuted,
+                shape: BoxShape.circle,
+                border: Border.all(color: context.sidebarBg, width: 2),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildNameAndSnippet(
+    BuildContext context, {
+    required String displayName,
+    required String? snippet,
+    required bool hasUnread,
+    required Conversation conv,
+  }) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildNameRow(context, displayName, hasUnread),
+          if (snippet != null) ...[
+            const SizedBox(height: 4),
+            _buildSnippetRow(context, snippet, hasUnread, conv),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNameRow(
+    BuildContext context,
+    String displayName,
+    bool hasUnread,
+  ) {
+    return Row(
+      children: [
+        if (widget.isPinned)
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Icon(Icons.push_pin, size: 12, color: context.textMuted),
+          ),
+        Expanded(
+          child: Text(
+            displayName,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w500,
+              color: context.textPrimary,
+            ),
+          ),
+        ),
+        if (widget.timestamp.isNotEmpty)
+          Text(
+            widget.timestamp,
+            style: TextStyle(
+              fontSize: 11,
+              color: hasUnread ? context.accent : context.textMuted,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSnippetRow(
+    BuildContext context,
+    String snippet,
+    bool hasUnread,
+    Conversation conv,
+  ) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            snippet,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              color: context.textMuted,
+              fontWeight: hasUnread ? FontWeight.w500 : FontWeight.normal,
+            ),
+          ),
+        ),
+        if (conv.isMuted)
+          Padding(
+            padding: const EdgeInsets.only(left: 6),
+            child: Icon(
+              Icons.notifications_off_outlined,
+              size: 14,
+              color: context.textMuted,
+            ),
+          ),
+        if (hasUnread)
+          Container(
+            margin: const EdgeInsets.only(left: 8),
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: context.accent,
+              shape: BoxShape.circle,
+            ),
+          ),
+      ],
     );
   }
 }

@@ -121,143 +121,168 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 600),
-          child:
-              contactsState.isLoading &&
-                  contactsState.contacts.isEmpty &&
-                  contactsState.pendingRequests.isEmpty
-              ? const Center(child: CircularProgressIndicator())
-              : RefreshIndicator(
-                  onRefresh: () async {
-                    await ref.read(contactsProvider.notifier).loadContacts();
-                    await ref.read(contactsProvider.notifier).loadPending();
-                  },
-                  child: ListView(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    children: [
-                      if (contactsState.pendingRequests.isNotEmpty) ...[
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                          child: Text(
-                            'Pending Requests',
-                            style: Theme.of(context).textTheme.labelLarge
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                          ),
-                        ),
-                        ...contactsState.pendingRequests.map((contact) {
-                          final serverUrl = ref.watch(serverUrlProvider);
-                          return ListTile(
-                            leading: buildAvatar(
-                              name: contact.username,
-                              radius: 20,
-                              imageUrl: contact.avatarUrl != null
-                                  ? '$serverUrl${contact.avatarUrl}'
-                                  : null,
-                            ),
-                            title: Text(contact.username),
-                            subtitle: const Text('Wants to connect'),
-                            trailing: FilledButton.tonal(
-                              onPressed: () {
-                                ref
-                                    .read(contactsProvider.notifier)
-                                    .acceptRequest(contact.id);
-                              },
-                              child: const Text('Accept'),
-                            ),
-                          );
-                        }),
-                        const Divider(indent: 16, endIndent: 16),
-                      ],
-                      if (contactsState.contacts.isNotEmpty) ...[
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                          child: Text(
-                            'Contacts',
-                            style: Theme.of(context).textTheme.labelLarge
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                          ),
-                        ),
-                        ...contactsState.contacts.map((contact) {
-                          final serverUrl = ref.watch(serverUrlProvider);
-                          return ListTile(
-                            leading: buildAvatar(
-                              name: contact.username,
-                              radius: 20,
-                              imageUrl: contact.avatarUrl != null
-                                  ? '$serverUrl${contact.avatarUrl}'
-                                  : null,
-                            ),
-                            title: GestureDetector(
-                              onTap: () => UserProfileScreen.show(
-                                context,
-                                ref,
-                                contact.userId,
-                              ),
-                              child: Text(
-                                contact.displayName ?? contact.username,
-                              ),
-                            ),
-                            subtitle: contact.displayName != null
-                                ? Text('@${contact.username}')
-                                : null,
-                            trailing: SizedBox(
-                              height: 32,
-                              width: 90,
-                              child: Material(
-                                color: context.accentLight,
-                                borderRadius: BorderRadius.circular(6),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(6),
-                                  onTap: _isStartingDm
-                                      ? null
-                                      : () => _messageContact(
-                                          contact.userId,
-                                          contact.username,
-                                        ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        'Message',
-                                        style: TextStyle(
-                                          color: context.accent,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        }),
-                      ],
-                      if (contactsState.contacts.isEmpty &&
-                          contactsState.pendingRequests.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.all(48),
-                          child: Center(
-                            child: Text(
-                              'No contacts yet.\nTap + to add someone.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.grey),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+          child: _buildBody(context, contactsState),
         ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddContactDialog,
         child: const Icon(Icons.person_add_outlined),
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, ContactsState contactsState) {
+    final isInitialLoading =
+        contactsState.isLoading &&
+        contactsState.contacts.isEmpty &&
+        contactsState.pendingRequests.isEmpty;
+
+    if (isInitialLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        await ref.read(contactsProvider.notifier).loadContacts();
+        await ref.read(contactsProvider.notifier).loadPending();
+      },
+      child: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        children: [
+          _buildPendingRequestsSection(context, contactsState),
+          _buildContactsSection(context, contactsState),
+          _buildEmptyState(contactsState),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingRequestsSection(
+    BuildContext context,
+    ContactsState contactsState,
+  ) {
+    if (contactsState.pendingRequests.isEmpty) return const SizedBox.shrink();
+
+    final serverUrl = ref.watch(serverUrlProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Text(
+            'Pending Requests',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ),
+        ...contactsState.pendingRequests.map((contact) {
+          return ListTile(
+            leading: buildAvatar(
+              name: contact.username,
+              radius: 20,
+              imageUrl: contact.avatarUrl != null
+                  ? '$serverUrl${contact.avatarUrl}'
+                  : null,
+            ),
+            title: Text(contact.username),
+            subtitle: const Text('Wants to connect'),
+            trailing: FilledButton.tonal(
+              onPressed: () {
+                ref.read(contactsProvider.notifier).acceptRequest(contact.id);
+              },
+              child: const Text('Accept'),
+            ),
+          );
+        }),
+        const Divider(indent: 16, endIndent: 16),
+      ],
+    );
+  }
+
+  Widget _buildContactsSection(
+    BuildContext context,
+    ContactsState contactsState,
+  ) {
+    if (contactsState.contacts.isEmpty) return const SizedBox.shrink();
+
+    final serverUrl = ref.watch(serverUrlProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Text(
+            'Contacts',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        ),
+        ...contactsState.contacts.map((contact) {
+          return ListTile(
+            leading: buildAvatar(
+              name: contact.username,
+              radius: 20,
+              imageUrl: contact.avatarUrl != null
+                  ? '$serverUrl${contact.avatarUrl}'
+                  : null,
+            ),
+            title: GestureDetector(
+              onTap: () => UserProfileScreen.show(context, ref, contact.userId),
+              child: Text(contact.displayName ?? contact.username),
+            ),
+            subtitle: contact.displayName != null
+                ? Text('@${contact.username}')
+                : null,
+            trailing: _buildMessageButton(contact.userId, contact.username),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildMessageButton(String userId, String username) {
+    return SizedBox(
+      height: 32,
+      width: 90,
+      child: Material(
+        color: context.accentLight,
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: _isStartingDm ? null : () => _messageContact(userId, username),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Center(
+              child: Text(
+                'Message',
+                style: TextStyle(
+                  color: context.accent,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(ContactsState contactsState) {
+    if (contactsState.contacts.isNotEmpty ||
+        contactsState.pendingRequests.isNotEmpty) {
+      return const SizedBox.shrink();
+    }
+    return const Padding(
+      padding: EdgeInsets.all(48),
+      child: Center(
+        child: Text(
+          'No contacts yet.\nTap + to add someone.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey),
+        ),
       ),
     );
   }

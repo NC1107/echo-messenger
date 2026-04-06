@@ -60,134 +60,162 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const EchoLogoIcon(size: 30),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Echo',
-                        style: Theme.of(context).textTheme.headlineLarge,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Encrypted messaging',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
+                  _buildHeader(),
                   const SizedBox(height: 32),
-                  TextFormField(
-                    controller: _usernameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Username',
-                      border: OutlineInputBorder(),
-                    ),
-                    textInputAction: TextInputAction.next,
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'Username is required';
-                      }
-                      return null;
-                    },
-                  ),
+                  _buildUsernameField(),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Password',
-                      border: OutlineInputBorder(),
-                    ),
-                    onFieldSubmitted: (_) => _login(),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Password is required';
-                      }
-                      return null;
-                    },
-                  ),
-                  if (authState.error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      authState.error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ],
+                  _buildPasswordField(),
+                  _buildErrorMessage(authState),
                   const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: authState.isLoading ? null : _login,
-                      child: authState.isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Login'),
-                    ),
-                  ),
+                  _buildLoginButton(authState),
                   const SizedBox(height: 12),
                   TextButton(
                     onPressed: () => context.go('/register'),
                     child: const Text('Create an account'),
                   ),
                   const SizedBox(height: 16),
-                  Text(
-                    'Echo v$appVersion',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: context.textMuted, fontSize: 11),
-                  ),
-                  FutureBuilder<Map<String, String?>>(
-                    future: _versionFuture,
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) {
-                        return const SizedBox.shrink();
-                      }
-                      final info = snapshot.data!;
-                      final serverVersion = info['serverVersion'];
-                      final serverHost = info['serverHost'];
-                      final webVersion = info['webVersion'];
-
-                      final serverText = serverVersion != null
-                          ? 'Server: $serverHost v$serverVersion'
-                          : 'Server: unreachable';
-                      final serverColor = serverVersion != null
-                          ? context.textMuted
-                          : EchoTheme.warning;
-
-                      return Column(
-                        children: [
-                          const SizedBox(height: 2),
-                          Text(
-                            serverText,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: serverColor, fontSize: 11),
-                          ),
-                          if (kIsWeb && webVersion != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              'Web: v$webVersion',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: context.textMuted,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ],
-                      );
-                    },
-                  ),
+                  _buildVersionInfo(),
                 ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const EchoLogoIcon(size: 30),
+            const SizedBox(width: 10),
+            Text('Echo', style: Theme.of(context).textTheme.headlineLarge),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Encrypted messaging',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUsernameField() {
+    return TextFormField(
+      controller: _usernameController,
+      decoration: const InputDecoration(
+        labelText: 'Username',
+        border: OutlineInputBorder(),
+      ),
+      textInputAction: TextInputAction.next,
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return 'Username is required';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget _buildPasswordField() {
+    return TextFormField(
+      controller: _passwordController,
+      obscureText: true,
+      decoration: const InputDecoration(
+        labelText: 'Password',
+        border: OutlineInputBorder(),
+      ),
+      onFieldSubmitted: (_) => _login(),
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'Password is required';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget _buildErrorMessage(AuthState authState) {
+    if (authState.error == null) return const SizedBox.shrink();
+    return Column(
+      children: [
+        const SizedBox(height: 12),
+        Text(
+          authState.error!,
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoginButton(AuthState authState) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton(
+        onPressed: authState.isLoading ? null : _login,
+        child: authState.isLoading
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Text('Login'),
+      ),
+    );
+  }
+
+  Widget _buildVersionInfo() {
+    return Column(
+      children: [
+        Text(
+          'Echo v$appVersion',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: context.textMuted, fontSize: 11),
+        ),
+        FutureBuilder<Map<String, String?>>(
+          future: _versionFuture,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const SizedBox.shrink();
+            return _buildServerVersionDetails(snapshot.data!);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildServerVersionDetails(Map<String, String?> info) {
+    final serverVersion = info['serverVersion'];
+    final serverHost = info['serverHost'];
+    final webVersion = info['webVersion'];
+
+    final serverText = serverVersion != null
+        ? 'Server: $serverHost v$serverVersion'
+        : 'Server: unreachable';
+    final serverColor = serverVersion != null
+        ? context.textMuted
+        : EchoTheme.warning;
+
+    return Column(
+      children: [
+        const SizedBox(height: 2),
+        Text(
+          serverText,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: serverColor, fontSize: 11),
+        ),
+        if (kIsWeb && webVersion != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            'Web: v$webVersion',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: context.textMuted, fontSize: 11),
+          ),
+        ],
+      ],
     );
   }
 }

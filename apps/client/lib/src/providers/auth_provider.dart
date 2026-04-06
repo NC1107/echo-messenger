@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'server_url_provider.dart';
 
+const _kJsonHeaders = {'Content-Type': 'application/json'};
+
 class AuthState {
   final bool isLoggedIn;
   final String? userId;
@@ -105,7 +107,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       final response = await http.post(
         Uri.parse('$_serverUrl/api/auth/refresh'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _kJsonHeaders,
         body: jsonEncode({'refresh_token': storedRefreshToken}),
       );
 
@@ -162,7 +164,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final response = await http.post(
         Uri.parse('$_serverUrl/api/auth/refresh'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _kJsonHeaders,
         body: jsonEncode({'refresh_token': currentRefreshToken}),
       );
 
@@ -272,7 +274,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final response = await http.post(
         Uri.parse('$_serverUrl/api/auth/register'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _kJsonHeaders,
         body: jsonEncode({'username': username, 'password': password}),
       );
 
@@ -320,7 +322,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final response = await http.post(
         Uri.parse('$_serverUrl/api/auth/login'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _kJsonHeaders,
         body: jsonEncode({'username': username, 'password': password}),
       );
 

@@ -37,13 +37,11 @@ class ChatHeaderBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final conv = conversation;
-    final wsState = ref.watch(websocketProvider);
     final displayName = conv.displayName(myUserId);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Header bar -- 56px
         Container(
           height: 56,
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -53,154 +51,13 @@ class ChatHeaderBar extends ConsumerWidget {
           ),
           child: Row(
             children: [
-              // Avatar
-              Builder(
-                builder: (_) {
-                  String? headerAvatarUrl;
-                  if (!conv.isGroup) {
-                    final peer = conv.members
-                        .where((m) => m.userId != myUserId)
-                        .firstOrNull;
-                    if (peer?.avatarUrl != null) {
-                      headerAvatarUrl = '$serverUrl${peer!.avatarUrl}';
-                    }
-                  }
-                  return buildAvatar(
-                    name: displayName,
-                    radius: 16,
-                    imageUrl: headerAvatarUrl,
-                    bgColor: conv.isGroup
-                        ? groupAvatarColor(displayName)
-                        : null,
-                    fallbackIcon: conv.isGroup
-                        ? const Icon(Icons.group, size: 14, color: Colors.white)
-                        : null,
-                  );
-                },
-              ),
+              _buildHeaderAvatar(conv, displayName),
               const SizedBox(width: 12),
-              // Name + status (tappable for DM profile)
-              Expanded(
-                child: GestureDetector(
-                  onTap: !conv.isGroup
-                      ? () {
-                          final peer = conv.members
-                              .where((m) => m.userId != myUserId)
-                              .firstOrNull;
-                          if (peer != null) {
-                            UserProfileScreen.show(context, ref, peer.userId);
-                          }
-                        }
-                      : null,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        displayName,
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Builder(
-                        builder: (context) {
-                          if (conv.isGroup) {
-                            final memberCount = conv.members.length;
-                            return Text(
-                              '$memberCount member${memberCount == 1 ? '' : 's'}',
-                              style: TextStyle(
-                                color: context.textMuted,
-                                fontSize: 12,
-                              ),
-                            );
-                          }
-                          // For DMs, check peer presence
-                          final peer = conv.members
-                              .where((m) => m.userId != myUserId)
-                              .firstOrNull;
-                          final peerOnline =
-                              peer != null && wsState.isUserOnline(peer.userId);
-                          return Text(
-                            peerOnline ? 'Online' : 'Offline',
-                            style: TextStyle(
-                              color: peerOnline
-                                  ? EchoTheme.online
-                                  : context.textMuted,
-                              fontSize: 12,
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // Encryption indicator for DMs (always on)
-              if (!conv.isGroup)
-                Tooltip(
-                  message: 'End-to-end encrypted',
-                  child: Icon(
-                    Icons.lock_outlined,
-                    size: 20,
-                    color: EchoTheme.online,
-                  ),
-                ),
-              // Reset encryption keys for this peer (DM + encrypted only)
-              if (!conv.isGroup && conv.isEncrypted)
-                IconButton(
-                  icon: const Icon(Icons.vpn_key_off, size: 18),
-                  color: context.textMuted,
-                  tooltip: 'Reset encryption keys',
-                  onPressed: () => _resetPeerKeys(context, ref, conv, myUserId),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 36,
-                    minHeight: 36,
-                  ),
-                ),
-              // Search toggle (all conversations)
-              IconButton(
-                icon: Icon(
-                  showSearch ? Icons.search_off : Icons.search,
-                  size: 20,
-                ),
-                color: showSearch ? context.accent : context.textSecondary,
-                tooltip: showSearch ? 'Close search' : 'Search messages',
-                onPressed: onToggleSearch,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              ),
-              if (conv.isGroup) ...[
-                if (onMembersToggle != null)
-                  IconButton(
-                    icon: const Icon(Icons.people_outline, size: 20),
-                    color: context.textSecondary,
-                    tooltip: 'Members',
-                    onPressed: onMembersToggle,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
-                    ),
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.info_outline, size: 20),
-                  color: context.textSecondary,
-                  tooltip: 'Group Info',
-                  onPressed: onGroupInfo,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 36,
-                    minHeight: 36,
-                  ),
-                ),
-              ],
+              _buildNameAndStatus(context, ref, conv, displayName),
+              ..._buildActionButtons(context, ref, conv),
             ],
           ),
         ),
-        // Encryption banner
         _buildEncryptionBanner(
           context,
           conv.isGroup,
@@ -208,6 +65,142 @@ class ChatHeaderBar extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Widget _buildHeaderAvatar(Conversation conv, String displayName) {
+    return Builder(
+      builder: (_) {
+        String? headerAvatarUrl;
+        if (!conv.isGroup) {
+          final peer = conv.members
+              .where((m) => m.userId != myUserId)
+              .firstOrNull;
+          if (peer?.avatarUrl != null) {
+            headerAvatarUrl = '$serverUrl${peer!.avatarUrl}';
+          }
+        }
+        return buildAvatar(
+          name: displayName,
+          radius: 16,
+          imageUrl: headerAvatarUrl,
+          bgColor: conv.isGroup ? groupAvatarColor(displayName) : null,
+          fallbackIcon: conv.isGroup
+              ? const Icon(Icons.group, size: 14, color: Colors.white)
+              : null,
+        );
+      },
+    );
+  }
+
+  Widget _buildNameAndStatus(
+    BuildContext context,
+    WidgetRef ref,
+    Conversation conv,
+    String displayName,
+  ) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: !conv.isGroup
+            ? () {
+                final peer = conv.members
+                    .where((m) => m.userId != myUserId)
+                    .firstOrNull;
+                if (peer != null) {
+                  UserProfileScreen.show(context, ref, peer.userId);
+                }
+              }
+            : null,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              displayName,
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            _buildStatusLine(context, ref, conv),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusLine(
+    BuildContext context,
+    WidgetRef ref,
+    Conversation conv,
+  ) {
+    if (conv.isGroup) {
+      final memberCount = conv.members.length;
+      return Text(
+        '$memberCount member${memberCount == 1 ? '' : 's'}',
+        style: TextStyle(color: context.textMuted, fontSize: 12),
+      );
+    }
+    final wsState = ref.watch(websocketProvider);
+    final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
+    final peerOnline = peer != null && wsState.isUserOnline(peer.userId);
+    return Text(
+      peerOnline ? 'Online' : 'Offline',
+      style: TextStyle(
+        color: peerOnline ? EchoTheme.online : context.textMuted,
+        fontSize: 12,
+      ),
+    );
+  }
+
+  List<Widget> _buildActionButtons(
+    BuildContext context,
+    WidgetRef ref,
+    Conversation conv,
+  ) {
+    return [
+      if (!conv.isGroup)
+        Tooltip(
+          message: 'End-to-end encrypted',
+          child: Icon(Icons.lock_outlined, size: 20, color: EchoTheme.online),
+        ),
+      if (!conv.isGroup && conv.isEncrypted)
+        IconButton(
+          icon: const Icon(Icons.vpn_key_off, size: 18),
+          color: context.textMuted,
+          tooltip: 'Reset encryption keys',
+          onPressed: () => _resetPeerKeys(context, ref, conv, myUserId),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        ),
+      IconButton(
+        icon: Icon(showSearch ? Icons.search_off : Icons.search, size: 20),
+        color: showSearch ? context.accent : context.textSecondary,
+        tooltip: showSearch ? 'Close search' : 'Search messages',
+        onPressed: onToggleSearch,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      ),
+      if (conv.isGroup) ...[
+        if (onMembersToggle != null)
+          IconButton(
+            icon: const Icon(Icons.people_outline, size: 20),
+            color: context.textSecondary,
+            tooltip: 'Members',
+            onPressed: onMembersToggle,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          ),
+        IconButton(
+          icon: const Icon(Icons.info_outline, size: 20),
+          color: context.textSecondary,
+          tooltip: 'Group Info',
+          onPressed: onGroupInfo,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        ),
+      ],
+    ];
   }
 
   Widget _buildEncryptionBanner(

@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
 
+const _mimeImagePng = 'image/png';
+
 class ClipboardImageData {
   final Uint8List bytes;
   final String mimeType;
@@ -44,8 +46,8 @@ Future<ClipboardImageData?> _readLinuxClipboard() async {
   String? imageType;
   for (final t in targetList) {
     final trimmed = t.trim();
-    if (trimmed == 'image/png') {
-      imageType = 'image/png';
+    if (trimmed == _mimeImagePng) {
+      imageType = _mimeImagePng;
       break;
     } else if (trimmed.startsWith('image/')) {
       imageType = trimmed;
@@ -65,7 +67,7 @@ Future<ClipboardImageData?> _readLinuxClipboard() async {
   final bytes = result.stdout as List<int>;
   if (bytes.isEmpty) return null;
 
-  final ext = imageType == 'image/png' ? 'png' : 'jpg';
+  final ext = imageType == _mimeImagePng ? 'png' : 'jpg';
   return ClipboardImageData(
     bytes: Uint8List.fromList(bytes),
     mimeType: imageType,
@@ -104,7 +106,7 @@ Future<ClipboardImageData?> _readWindowsClipboard() async {
 
   return ClipboardImageData(
     bytes: bytes,
-    mimeType: 'image/png',
+    mimeType: _mimeImagePng,
     fileName: 'clipboard_image.png',
   );
 }
@@ -149,7 +151,7 @@ Future<ClipboardImageData?> _readMacOSClipboard() async {
 
   return ClipboardImageData(
     bytes: bytes,
-    mimeType: 'image/png',
+    mimeType: _mimeImagePng,
     fileName: 'clipboard_image.png',
   );
 }

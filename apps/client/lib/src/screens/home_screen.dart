@@ -516,50 +516,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final isNarrow = width < 600;
     final isDesktop = width >= 900;
 
-    // Listen for errors
-    ref.listen<ConversationsState>(conversationsProvider, (prev, next) {
-      if (next.error != null && next.error != prev?.error) {
-        ToastService.show(context, next.error!, type: ToastType.error);
-      }
-    });
-
-    // Keep the selected conversation in sync with provider state so that
-    // changes (e.g. encryption toggle) propagate to ChatPanel immediately.
-    // IMPORTANT: Do NOT clear _selectedConversation when fresh is null --
-    // the conversation may be temporarily absent during a list reload.
-    if (_selectedConversation != null) {
-      final convs = ref.watch(conversationsProvider).conversations;
-      final fresh = convs
-          .where((c) => c.id == _selectedConversation!.id)
-          .firstOrNull;
-      if (fresh != null && fresh != _selectedConversation) {
-        _selectedConversation = fresh;
-      }
-    }
-
-    ref.listen<CryptoState>(cryptoProvider, (prev, next) {
-      if (next.error != null && next.error != prev?.error) {
-        ToastService.show(
-          context,
-          'Encryption: ${next.error}',
-          type: ToastType.error,
-        );
-      }
-    });
-
-    ref.listen<VoiceRtcState>(voiceRtcProvider, (prev, next) {
-      if (next.error == null || next.error == prev?.error) {
-        return;
-      }
-
-      ToastService.show(context, next.error!, type: ToastType.error);
-
-      if (next.error == 'Voice disconnected. Please sign in again.' &&
-          !ref.read(authProvider).isLoggedIn &&
-          mounted) {
-        context.go('/login');
-      }
-    });
+    _listenForErrors();
+    _syncSelectedConversation();
 
     Widget layout;
     if (isNarrow) {
@@ -578,6 +536,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       },
       child: Focus(autofocus: true, child: layout),
     );
+  }
+
+  void _listenForErrors() {
+    ref.listen<ConversationsState>(conversationsProvider, (prev, next) {
+      if (next.error != null && next.error != prev?.error) {
+        ToastService.show(context, next.error!, type: ToastType.error);
+      }
+    });
+
+    ref.listen<CryptoState>(cryptoProvider, (prev, next) {
+      if (next.error != null && next.error != prev?.error) {
+        ToastService.show(
+          context,
+          'Encryption: ${next.error}',
+          type: ToastType.error,
+        );
+      }
+    });
+
+    ref.listen<VoiceRtcState>(voiceRtcProvider, (prev, next) {
+      if (next.error == null || next.error == prev?.error) return;
+      ToastService.show(context, next.error!, type: ToastType.error);
+      _handleVoiceDisconnectRedirect(next);
+    });
+  }
+
+  void _handleVoiceDisconnectRedirect(VoiceRtcState next) {
+    if (next.error == 'Voice disconnected. Please sign in again.' &&
+        !ref.read(authProvider).isLoggedIn &&
+        mounted) {
+      context.go('/login');
+    }
+  }
+
+  /// Keep the selected conversation in sync with provider state so that
+  /// changes (e.g. encryption toggle) propagate to ChatPanel immediately.
+  /// IMPORTANT: Do NOT clear _selectedConversation when fresh is null --
+  /// the conversation may be temporarily absent during a list reload.
+  void _syncSelectedConversation() {
+    if (_selectedConversation == null) return;
+    final convs = ref.watch(conversationsProvider).conversations;
+    final fresh = convs
+        .where((c) => c.id == _selectedConversation!.id)
+        .firstOrNull;
+    if (fresh != null && fresh != _selectedConversation) {
+      _selectedConversation = fresh;
+    }
   }
 
   /// Desktop layout: sidebar + flex chat + optional 280px members panel

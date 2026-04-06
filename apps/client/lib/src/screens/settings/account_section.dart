@@ -35,8 +35,27 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     final token = ref.read(authProvider).token;
     if (token == null) return;
 
+    final request = _buildAvatarRequest(serverUrl, token, file);
+
+    try {
+      final streamedResponse = await request.send();
+      final body = await streamedResponse.stream.bytesToString();
+      if (!mounted) return;
+      _handleAvatarResponse(streamedResponse.statusCode, body);
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(context, 'Upload error: $e', type: ToastType.error);
+      }
+    }
+  }
+
+  http.MultipartRequest _buildAvatarRequest(
+    String serverUrl,
+    String token,
+    PlatformFile file,
+  ) {
     final uri = Uri.parse('$serverUrl/api/users/me/avatar');
-    final request = http.MultipartRequest('PUT', uri)
+    return http.MultipartRequest('PUT', uri)
       ..headers['Authorization'] = 'Bearer $token'
       ..files.add(
         http.MultipartFile.fromBytes(
@@ -46,38 +65,33 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           contentType: MediaType('image', 'png'),
         ),
       );
+  }
 
-    try {
-      final streamedResponse = await request.send();
-      final body = await streamedResponse.stream.bytesToString();
-      if (mounted) {
-        if (streamedResponse.statusCode == 200) {
-          // Parse avatar URL from response and update auth state
-          try {
-            final data = jsonDecode(body) as Map<String, dynamic>;
-            final avatarUrl = data['avatar_url'] as String?;
-            if (avatarUrl != null) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) {
-                  ref.read(authProvider.notifier).updateAvatarUrl(avatarUrl);
-                }
-              });
-            }
-          } catch (_) {}
-          ToastService.show(context, 'Avatar updated', type: ToastType.success);
-        } else {
-          ToastService.show(
-            context,
-            'Failed to upload avatar (${streamedResponse.statusCode})',
-            type: ToastType.error,
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ToastService.show(context, 'Upload error: $e', type: ToastType.error);
-      }
+  void _handleAvatarResponse(int statusCode, String body) {
+    if (statusCode == 200) {
+      _tryUpdateAvatarUrl(body);
+      ToastService.show(context, 'Avatar updated', type: ToastType.success);
+    } else {
+      ToastService.show(
+        context,
+        'Failed to upload avatar ($statusCode)',
+        type: ToastType.error,
+      );
     }
+  }
+
+  void _tryUpdateAvatarUrl(String body) {
+    try {
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final avatarUrl = data['avatar_url'] as String?;
+      if (avatarUrl != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ref.read(authProvider.notifier).updateAvatarUrl(avatarUrl);
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   void _showQrCodeDialog() {
