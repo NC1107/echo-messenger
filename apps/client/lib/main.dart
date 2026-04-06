@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'src/app.dart';
 import 'src/providers/server_url_provider.dart';
 import 'src/services/notification_service.dart';
+import 'src/services/sound_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,6 +25,9 @@ void main() async {
       await container.read(serverUrlProvider.notifier).setUrl(serverParam);
     }
   }
+
+  // Load persisted sound preference
+  await SoundService().init();
 
   // Request browser notification permission (no-op on non-web platforms)
   NotificationService().requestPermission();

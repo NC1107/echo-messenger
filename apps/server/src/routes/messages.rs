@@ -12,7 +12,7 @@ use uuid::Uuid;
 use crate::auth::middleware::AuthUser;
 use crate::db;
 use crate::error::AppError;
-use crate::types::ConversationKind;
+use crate::types::{ConversationKind, Role};
 
 use super::AppState;
 
@@ -437,4 +437,211 @@ pub async fn toggle_mute(
         "conversation_id": conversation_id,
         "is_muted": body.is_muted,
     })))
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/conversations/:conversation_id/messages/:message_id/pin
+// ---------------------------------------------------------------------------
+
+pub async fn pin_message(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path((conversation_id, message_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify membership
+    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in pin_message/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    if !is_member {
+        return Err(AppError::unauthorized("Not a member of this conversation"));
+    }
+
+    // For groups, only admins/owners can pin
+    let kind = db::groups::get_conversation_kind(&state.pool, conversation_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in pin_message/get_kind: {e:?}");
+            AppError::internal("Database error")
+        })?
+        .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
+
+    if ConversationKind::from_str_opt(&kind) == Some(ConversationKind::Group) {
+        let role_str = db::groups::get_member_role(&state.pool, conversation_id, auth.user_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error in pin_message/get_role: {e:?}");
+                AppError::internal("Database error")
+            })?
+            .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+
+        let role = Role::from_str_opt(&role_str).unwrap_or(Role::Member);
+        if !role.is_admin_or_above() {
+            return Err(AppError::unauthorized(
+                "Only admins and owners can pin messages in groups",
+            ));
+        }
+    }
+
+    // Pin the message
+    let conv_id = db::messages::pin_message(&state.pool, message_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in pin_message: {e:?}");
+            AppError::internal("Database error")
+        })?
+        .ok_or_else(|| AppError::bad_request("Message not found"))?;
+
+    // Verify the message belongs to this conversation
+    if conv_id != conversation_id {
+        // Undo the pin -- message is in a different conversation
+        let _ = db::messages::unpin_message(&state.pool, message_id).await;
+        return Err(AppError::bad_request(
+            "Message does not belong to this conversation",
+        ));
+    }
+
+    // Look up pinner's username for the broadcast event
+    let pinner = db::users::find_by_id(&state.pool, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in pin_message/find_user: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    let pinned_by_username = pinner
+        .map(|u| u.username)
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // Broadcast to conversation members via WebSocket
+    let member_ids = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
+        .await
+        .unwrap_or_default();
+
+    let event = serde_json::json!({
+        "type": "message_pinned",
+        "message_id": message_id,
+        "conversation_id": conversation_id,
+        "pinned_by_id": auth.user_id,
+        "pinned_by_username": pinned_by_username,
+        "pinned_at": chrono::Utc::now(),
+    });
+    if let Ok(json) = serde_json::to_string(&event) {
+        state.hub.broadcast_json(&member_ids, &json, None);
+    }
+
+    Ok(Json(serde_json::json!({
+        "message_id": message_id,
+        "conversation_id": conversation_id,
+        "pinned_by_id": auth.user_id,
+    })))
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/conversations/:conversation_id/messages/:message_id/pin
+// ---------------------------------------------------------------------------
+
+pub async fn unpin_message(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path((conversation_id, message_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify membership
+    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in unpin_message/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    if !is_member {
+        return Err(AppError::unauthorized("Not a member of this conversation"));
+    }
+
+    // For groups, only admins/owners can unpin
+    let kind = db::groups::get_conversation_kind(&state.pool, conversation_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in unpin_message/get_kind: {e:?}");
+            AppError::internal("Database error")
+        })?
+        .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
+
+    if ConversationKind::from_str_opt(&kind) == Some(ConversationKind::Group) {
+        let role_str = db::groups::get_member_role(&state.pool, conversation_id, auth.user_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error in unpin_message/get_role: {e:?}");
+                AppError::internal("Database error")
+            })?
+            .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+
+        let role = Role::from_str_opt(&role_str).unwrap_or(Role::Member);
+        if !role.is_admin_or_above() {
+            return Err(AppError::unauthorized(
+                "Only admins and owners can unpin messages in groups",
+            ));
+        }
+    }
+
+    // Unpin the message
+    let conv_id = db::messages::unpin_message(&state.pool, message_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in unpin_message: {e:?}");
+            AppError::internal("Database error")
+        })?
+        .ok_or_else(|| AppError::bad_request("Message not found or not pinned"))?;
+
+    if conv_id != conversation_id {
+        return Err(AppError::bad_request(
+            "Message does not belong to this conversation",
+        ));
+    }
+
+    // Broadcast to conversation members via WebSocket
+    let member_ids = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
+        .await
+        .unwrap_or_default();
+
+    let event = serde_json::json!({
+        "type": "message_unpinned",
+        "message_id": message_id,
+        "conversation_id": conversation_id,
+    });
+    if let Ok(json) = serde_json::to_string(&event) {
+        state.hub.broadcast_json(&member_ids, &json, None);
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/conversations/:conversation_id/pinned
+// ---------------------------------------------------------------------------
+
+pub async fn get_pinned_messages(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(conversation_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify membership
+    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in get_pinned_messages/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    if !is_member {
+        return Err(AppError::unauthorized("Not a member of this conversation"));
+    }
+
+    let pinned = db::messages::get_pinned_messages(&state.pool, conversation_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in get_pinned_messages: {e:?}");
+            AppError::internal("Database error")
+        })?;
+
+    Ok(Json(pinned))
 }
