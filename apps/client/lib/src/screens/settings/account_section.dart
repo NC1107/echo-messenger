@@ -21,6 +21,11 @@ class AccountSection extends ConsumerStatefulWidget {
 }
 
 class _AccountSectionState extends ConsumerState<AccountSection> {
+  static String _avatarInitial(String username) {
+    if (username.isNotEmpty) return username[0].toUpperCase();
+    return '?';
+  }
+
   Future<void> _uploadAvatar() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
@@ -196,7 +201,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
                       : null,
                   child: authState.avatarUrl == null
                       ? Text(
-                          username.isNotEmpty ? username[0].toUpperCase() : '?',
+                          _avatarInitial(username),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 26,

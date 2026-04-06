@@ -684,7 +684,7 @@ class _MessageItemState extends State<MessageItem> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lock_open, size: 14, color: EchoTheme.danger),
+            const Icon(Icons.lock_open, size: 14, color: EchoTheme.danger),
             const SizedBox(width: 4),
             Flexible(
               child: Text(
@@ -1055,8 +1055,8 @@ class _MessageItemState extends State<MessageItem> {
             style: TextStyle(fontSize: 11, color: context.textMuted),
           ),
           if (msg.isEncrypted)
-            Padding(
-              padding: const EdgeInsets.only(left: 3),
+            const Padding(
+              padding: EdgeInsets.only(left: 3),
               child: Icon(Icons.lock, size: 10, color: EchoTheme.online),
             ),
           if (msg.editedAt != null)

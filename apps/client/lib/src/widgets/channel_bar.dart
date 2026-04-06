@@ -377,6 +377,13 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     );
   }
 
+  String _channelStatusLabel(ChannelsState channelsState) {
+    if (channelsState.isLoadingConversation(widget.conversationId)) {
+      return 'Loading channels...';
+    }
+    return 'No channels yet';
+  }
+
   Widget _buildInlineGroupChannels(
     List<GroupChannel> channels,
     List<GroupChannel> textChannels,
@@ -396,9 +403,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
           ? Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                channelsState.isLoadingConversation(widget.conversationId)
-                    ? 'Loading channels...'
-                    : 'No channels yet',
+                _channelStatusLabel(channelsState),
                 style: TextStyle(color: context.textMuted, fontSize: 12),
               ),
             )
@@ -502,7 +507,11 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   }
 
   Widget _buildConnectedIndicator() {
-    return Icon(Icons.fiber_manual_record, size: 10, color: EchoTheme.online);
+    return const Icon(
+      Icons.fiber_manual_record,
+      size: 10,
+      color: EchoTheme.online,
+    );
   }
 
   Widget _buildCompactVoiceDock({

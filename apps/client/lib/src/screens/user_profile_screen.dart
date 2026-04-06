@@ -43,7 +43,7 @@ class UserProfileScreen extends ConsumerStatefulWidget {
         MaterialPageRoute(
           builder: (_) => Scaffold(
             appBar: AppBar(
-              title: Text('Profile'),
+              title: const Text('Profile'),
               backgroundColor: context.surface,
             ),
             body: UserProfileScreen(userId: userId),
@@ -251,7 +251,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
               child: FilledButton.icon(
                 onPressed: _addContact,
                 icon: const Icon(Icons.person_add_outlined, size: 18),
-                label: Text('Add Contact'),
+                label: const Text('Add Contact'),
                 style: FilledButton.styleFrom(
                   backgroundColor: context.accent,
                   foregroundColor: Colors.white,

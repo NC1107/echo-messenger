@@ -174,52 +174,55 @@ class _GifPickerWidgetState extends State<GifPickerWidget> {
               ],
             ),
           ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
-                : _results.isEmpty
-                ? Center(
-                    child: Text(
-                      'No GIFs found',
-                      style: TextStyle(color: context.textMuted),
-                    ),
-                  )
-                : GridView.builder(
-                    padding: const EdgeInsets.all(8),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 6,
-                          mainAxisSpacing: 6,
-                        ),
-                    itemCount: _results.length,
-                    itemBuilder: (ctx, i) {
-                      final gif = _results[i];
-                      return GestureDetector(
-                        onTap: () {
-                          widget.onGifSelected(gif.sendUrl, gif.slug);
-                          _trackShare(gif.slug);
-                        },
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(6),
-                          child: Image.network(
-                            gif.previewUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, e, st) => Container(
-                              color: context.mainBg,
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                color: context.textMuted,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
+          Expanded(child: _buildGifContent(context)),
         ],
       ),
+    );
+  }
+
+  Widget _buildGifContent(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    if (_results.isEmpty) {
+      return Center(
+        child: Text(
+          'No GIFs found',
+          style: TextStyle(color: context.textMuted),
+        ),
+      );
+    }
+    return GridView.builder(
+      padding: const EdgeInsets.all(8),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 6,
+      ),
+      itemCount: _results.length,
+      itemBuilder: (ctx, i) {
+        final gif = _results[i];
+        return GestureDetector(
+          onTap: () {
+            widget.onGifSelected(gif.sendUrl, gif.slug);
+            _trackShare(gif.slug);
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Image.network(
+              gif.previewUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, e, st) => Container(
+                color: context.mainBg,
+                child: Icon(
+                  Icons.broken_image_outlined,
+                  color: context.textMuted,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

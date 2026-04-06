@@ -14,6 +14,12 @@ class VoiceDock extends ConsumerWidget {
 
   const VoiceDock({super.key, this.width = 320});
 
+  static String _voiceStatusLabel(bool isJoining, int peerCount) {
+    if (isJoining) return 'Connecting...';
+    if (peerCount > 0) return 'Voice Connected';
+    return 'Waiting for peers';
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final voiceLk = ref.watch(voiceRtcProvider);
@@ -32,11 +38,14 @@ class VoiceDock extends ConsumerWidget {
     final channelName = activeChannel?.name ?? 'Voice';
     final peerCount = voiceLk.peerConnectionStates.length;
 
-    final statusColor = voiceLk.isJoining
-        ? context.textMuted
-        : peerCount > 0
-        ? EchoTheme.online
-        : Colors.orange;
+    final Color statusColor;
+    if (voiceLk.isJoining) {
+      statusColor = context.textMuted;
+    } else if (peerCount > 0) {
+      statusColor = EchoTheme.online;
+    } else {
+      statusColor = Colors.orange;
+    }
 
     return Container(
       width: width,
@@ -59,11 +68,7 @@ class VoiceDock extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  voiceLk.isJoining
-                      ? 'Connecting...'
-                      : peerCount > 0
-                      ? 'Voice Connected'
-                      : 'Waiting for peers',
+                  _voiceStatusLabel(voiceLk.isJoining, peerCount),
                   style: TextStyle(
                     color: statusColor,
                     fontSize: 11,

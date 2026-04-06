@@ -35,7 +35,14 @@ String formatMessageTimestamp(String timestamp) {
     final hour = dt.hour;
     final minute = dt.minute.toString().padLeft(2, '0');
     final ampm = hour >= 12 ? 'PM' : 'AM';
-    final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    final int displayHour;
+    if (hour == 0) {
+      displayHour = 12;
+    } else if (hour > 12) {
+      displayHour = hour - 12;
+    } else {
+      displayHour = hour;
+    }
     return '$displayHour:$minute $ampm';
   } catch (_) {
     return '';

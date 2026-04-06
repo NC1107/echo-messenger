@@ -814,7 +814,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
             ),
           )
         else if (_pendingAttachmentUrl != null)
-          Icon(Icons.check_circle_outline, size: 16, color: EchoTheme.online),
+          const Icon(
+            Icons.check_circle_outline,
+            size: 16,
+            color: EchoTheme.online,
+          ),
         const SizedBox(width: 6),
         // Remove button
         GestureDetector(
@@ -1126,6 +1130,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     );
   }
 
+  VoidCallback _resolvedSendAction() {
+    if (_isEditing) return _submitEdit;
+    return _sendMessage;
+  }
+
   Widget _buildSendButton() {
     final canSend =
         !_isTextEmpty ||
@@ -1143,7 +1152,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     return Padding(
       padding: const EdgeInsets.only(right: 7),
       child: GestureDetector(
-        onTap: canSend ? (_isEditing ? _submitEdit : _sendMessage) : null,
+        onTap: canSend ? _resolvedSendAction() : null,
         child: Opacity(
           opacity: canSend ? 1 : 0.45,
           child: Container(

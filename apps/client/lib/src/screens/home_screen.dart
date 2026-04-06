@@ -365,7 +365,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
             child: Center(
               child: IconButton(
-                icon: Icon(Icons.chevron_right, size: 20),
+                icon: const Icon(Icons.chevron_right, size: 20),
                 color: context.textSecondary,
                 tooltip: 'Expand sidebar',
                 onPressed: () => setState(() => _sidebarCollapsed = false),
@@ -442,7 +442,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ),
             child: Center(
               child: IconButton(
-                icon: Icon(Icons.settings_outlined, size: 18),
+                icon: const Icon(Icons.settings_outlined, size: 18),
                 color: context.textSecondary,
                 tooltip: 'Settings',
                 onPressed: _openSettings,
@@ -475,7 +475,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             child: Row(
               children: [
                 IconButton(
-                  icon: Icon(Icons.arrow_back, size: 20),
+                  icon: const Icon(Icons.arrow_back, size: 20),
                   color: context.textSecondary,
                   tooltip: 'Back to conversations',
                   onPressed: () => setState(() => _showSettings = false),
@@ -587,7 +587,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   /// Desktop layout: sidebar + flex chat + optional 280px members panel
   Widget _buildDesktopLayout() {
-    final sidebarWidth = 320.0;
+    const sidebarWidth = 320.0;
 
     // Determine what the right panel shows
     Widget rightPanel;
@@ -730,7 +730,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               child: Row(
                 children: [
                   IconButton(
-                    icon: Icon(Icons.arrow_back_outlined, size: 20),
+                    icon: const Icon(Icons.arrow_back_outlined, size: 20),
                     color: context.textSecondary,
                     onPressed: () {
                       setState(() => _narrowPanelIndex = 0);
