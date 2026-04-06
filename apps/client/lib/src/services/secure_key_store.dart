@@ -48,21 +48,39 @@ class SecureKeyStore {
 
   /// Write a key-value pair.
   Future<void> write(String key, String value) async {
-    await _storage.write(key: key, value: value);
+    try {
+      await _storage.write(key: key, value: value);
+    } catch (e) {
+      debugPrint('[SecureKeyStore] write($key) failed: $e');
+    }
   }
 
   /// Delete a single key.
   Future<void> delete(String key) async {
-    await _storage.delete(key: key);
+    try {
+      await _storage.delete(key: key);
+    } catch (e) {
+      debugPrint('[SecureKeyStore] delete($key) failed: $e');
+    }
   }
 
   /// Read all key-value pairs. Used for iterating session keys.
   Future<Map<String, String>> readAll() async {
-    return await _storage.readAll();
+    try {
+      return await _storage.readAll();
+    } catch (e) {
+      debugPrint('[SecureKeyStore] readAll failed: $e');
+      return {};
+    }
   }
 
   /// Check if a key exists.
   Future<bool> containsKey(String key) async {
-    return await _storage.containsKey(key: key);
+    try {
+      return await _storage.containsKey(key: key);
+    } catch (e) {
+      debugPrint('[SecureKeyStore] containsKey($key) failed: $e');
+      return false;
+    }
   }
 }

@@ -289,9 +289,9 @@ pub async fn upload_avatar(
 /// GET /api/users/:id/avatar
 ///
 /// Serves the avatar image with the correct Content-Type header.
+/// Public endpoint — no auth required (avatars are profile pictures).
 /// Returns 404 if no avatar is set.
 pub async fn get_avatar(
-    _auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Path(user_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
