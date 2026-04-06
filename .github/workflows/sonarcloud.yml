@@ -13,7 +13,7 @@ jobs:
   sonarcloud:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
-    environment: ProId
+    environment: production
     services:
       postgres:
         image: postgres:17
