@@ -186,6 +186,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     String toUserId,
     String content, {
     String? conversationId,
+    String? replyToId,
   }) async {
     // Check if encryption is enabled for this conversation.
     final isEncrypted =
@@ -240,6 +241,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     if (conversationId.isNotEmpty) {
       msg['conversation_id'] = conversationId;
     }
+    if (replyToId != null && replyToId.isNotEmpty) {
+      msg['reply_to_id'] = replyToId;
+    }
 
     _channel?.sink.add(jsonEncode(msg));
   }
@@ -269,6 +273,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     String conversationId,
     String content, {
     String? channelId,
+    String? replyToId,
   }) async {
     final msg = <String, dynamic>{
       'type': 'send_message',
@@ -277,6 +282,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     };
     if (channelId != null && channelId.isNotEmpty) {
       msg['channel_id'] = channelId;
+    }
+    if (replyToId != null && replyToId.isNotEmpty) {
+      msg['reply_to_id'] = replyToId;
     }
     _channel?.sink.add(jsonEncode(msg));
   }
