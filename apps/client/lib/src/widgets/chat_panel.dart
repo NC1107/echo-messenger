@@ -871,6 +871,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             ChannelBar(
               conversationId: conv.id,
               selectedTextChannelId: _selectedTextChannelId,
+              activeVoiceChannelId: _activeVoiceChannelId,
               hideVoiceDock: widget.hideVoiceDock,
               onTextChannelChanged: _onTextChannelChanged,
               onVoiceChannelChanged: (channelId) {

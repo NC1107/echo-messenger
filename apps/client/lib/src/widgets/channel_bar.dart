@@ -11,6 +11,7 @@ import '../theme/echo_theme.dart';
 class ChannelBar extends ConsumerStatefulWidget {
   final String conversationId;
   final String? selectedTextChannelId;
+  final String? activeVoiceChannelId;
   final bool hideVoiceDock;
   final ValueChanged<String?> onTextChannelChanged;
   final ValueChanged<String?> onVoiceChannelChanged;
@@ -19,6 +20,7 @@ class ChannelBar extends ConsumerStatefulWidget {
     super.key,
     required this.conversationId,
     this.selectedTextChannelId,
+    this.activeVoiceChannelId,
     this.hideVoiceDock = false,
     required this.onTextChannelChanged,
     required this.onVoiceChannelChanged,
@@ -29,8 +31,6 @@ class ChannelBar extends ConsumerStatefulWidget {
 }
 
 class _ChannelBarState extends ConsumerState<ChannelBar> {
-  // null = use inferred from voice sessions, '' = explicitly left (don't infer)
-  String? _activeVoiceChannelId;
   String? _lastAutoSelectedConversationId;
   bool _voiceCleanupInFlight = false;
   late final VoiceRtcNotifier _voiceRtcNotifier;
@@ -39,44 +39,6 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   void initState() {
     super.initState();
     _voiceRtcNotifier = ref.read(voiceRtcProvider.notifier);
-  }
-
-  String _inferredActiveVoiceChannelId(
-    ChannelsState channelsState,
-    String myUserId,
-  ) {
-    final channels = channelsState.channelsFor(widget.conversationId);
-    return channels
-        .where((c) => c.isVoice)
-        .firstWhere(
-          (c) => channelsState
-              .voiceSessionsFor(c.id)
-              .any((m) => m.userId == myUserId),
-          orElse: () => const GroupChannel(
-            id: '',
-            conversationId: '',
-            name: '',
-            kind: 'voice',
-            position: 0,
-            createdAt: '',
-          ),
-        )
-        .id;
-  }
-
-  String? _effectiveActiveVoiceChannelId(
-    ChannelsState channelsState,
-    String myUserId,
-  ) {
-    final inferredActiveVoiceChannelId = _inferredActiveVoiceChannelId(
-      channelsState,
-      myUserId,
-    );
-    if (_activeVoiceChannelId == '') return null;
-    return _activeVoiceChannelId ??
-        (inferredActiveVoiceChannelId.isEmpty
-            ? null
-            : inferredActiveVoiceChannelId);
   }
 
   void _syncDerivedState(ChannelsState channelsState, String myUserId) {
@@ -90,14 +52,11 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
       widget.onTextChannelChanged(textChannels.first.id);
     }
 
-    final effectiveActiveVoiceChannelId = _effectiveActiveVoiceChannelId(
-      channelsState,
-      myUserId,
-    );
-    if (effectiveActiveVoiceChannelId == null || _voiceCleanupInFlight) return;
+    final activeVoice = widget.activeVoiceChannelId;
+    if (activeVoice == null || _voiceCleanupInFlight) return;
 
     final iAmInChannel = channelsState
-        .voiceSessionsFor(effectiveActiveVoiceChannelId)
+        .voiceSessionsFor(activeVoice)
         .any((p) => p.userId == myUserId);
     if (iAmInChannel) return;
 
@@ -105,11 +64,6 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     _voiceRtcNotifier.leaveChannel().whenComplete(() {
       _voiceCleanupInFlight = false;
       if (!mounted) return;
-      if (_activeVoiceChannelId != null) {
-        setState(() {
-          _activeVoiceChannelId = null;
-        });
-      }
       widget.onVoiceChannelChanged(null);
     });
   }
@@ -118,26 +72,23 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   void didUpdateWidget(covariant ChannelBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.conversationId != oldWidget.conversationId) {
-      if (_activeVoiceChannelId != null) {
+      if (oldWidget.activeVoiceChannelId != null) {
         _voiceRtcNotifier.leaveChannel();
       }
-      setState(() {
-        _activeVoiceChannelId = null;
-      });
       _lastAutoSelectedConversationId = null;
     }
   }
 
   @override
   void dispose() {
-    if (_activeVoiceChannelId != null) {
+    if (widget.activeVoiceChannelId != null) {
       _voiceRtcNotifier.leaveChannel();
     }
     super.dispose();
   }
 
   Future<void> _syncVoiceState() async {
-    final channelId = _activeVoiceChannelId;
+    final channelId = widget.activeVoiceChannelId;
     if (channelId == null) return;
     final voiceSettings = ref.read(voiceSettingsProvider);
     await ref
@@ -197,7 +148,6 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     await rtcNotifier.leaveChannel();
 
     if (!mounted) return;
-    setState(() => _activeVoiceChannelId = '');
     widget.onVoiceChannelChanged(null);
   }
 
@@ -216,10 +166,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     final channels = channelsState.channelsFor(widget.conversationId);
     final textChannels = channels.where((c) => c.isText).toList();
     final voiceChannels = channels.where((c) => c.isVoice).toList();
-    final effectiveActiveVoiceChannelId = _effectiveActiveVoiceChannelId(
-      channelsState,
-      myUserId,
-    );
+    final activeVoice = widget.activeVoiceChannelId;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -230,16 +177,16 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
           voiceChannels,
           channelsState,
           voiceSettings,
-          effectiveActiveVoiceChannelId,
+          activeVoice,
         ),
-        if (effectiveActiveVoiceChannelId != null && !widget.hideVoiceDock)
+        if (activeVoice != null && !widget.hideVoiceDock)
           _buildVoiceControlDock(
             channels,
             channelsState,
             voiceSettings,
             myUserId,
             voiceRtc,
-            effectiveActiveVoiceChannelId,
+            activeVoice,
           ),
       ],
     );
@@ -296,9 +243,9 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     GroupChannel channel,
     int participantCount,
     VoiceSettingsState voiceSettings,
-    String? effectiveActiveVoiceChannelId,
+    String? activeVoiceChannelId,
   ) {
-    final isActive = effectiveActiveVoiceChannelId == channel.id;
+    final isActive = activeVoiceChannelId == channel.id;
 
     return Material(
       color: Colors.transparent,
@@ -324,7 +271,6 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                 startMuted:
                     voiceSettings.selfMuted || voiceSettings.selfDeafened,
               );
-              setState(() => _activeVoiceChannelId = channel.id);
               widget.onVoiceChannelChanged(channel.id);
             }
           }
@@ -390,7 +336,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     List<GroupChannel> voiceChannels,
     ChannelsState channelsState,
     VoiceSettingsState voiceSettings,
-    String? effectiveActiveVoiceChannelId,
+    String? activeVoiceChannelId,
   ) {
     return Container(
       width: double.infinity,
@@ -419,7 +365,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                       channel,
                       channelsState.voiceSessionsFor(channel.id).length,
                       voiceSettings,
-                      effectiveActiveVoiceChannelId,
+                      activeVoiceChannelId,
                     ),
                   ),
                 ],
@@ -611,10 +557,10 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     VoiceSettingsState voiceSettings,
     String myUserId,
     VoiceRtcState voiceRtc,
-    String? effectiveActiveVoiceChannelId,
+    String? activeVoiceChannelId,
   ) {
     final activeVoiceChannel = channels
-        .where((c) => c.id == effectiveActiveVoiceChannelId)
+        .where((c) => c.id == activeVoiceChannelId)
         .firstOrNull;
     if (activeVoiceChannel == null) return const SizedBox.shrink();
 
