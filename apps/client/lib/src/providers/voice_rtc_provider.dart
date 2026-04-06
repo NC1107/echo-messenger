@@ -242,13 +242,8 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     required String channelId,
     required List<String> participantUserIds,
   }) async {
-    if (_disposed) {
-      return;
-    }
-
-    if (!_isCurrentVoiceContext(conversationId, channelId)) {
-      return;
-    }
+    if (_disposed) return;
+    if (!_isCurrentVoiceContext(conversationId, channelId)) return;
 
     final me = ref.read(authProvider).userId ?? '';
     if (me.isEmpty) return;
@@ -257,11 +252,17 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         .where((id) => id.isNotEmpty && id != me)
         .toSet();
 
-    if (setEquals(_currentParticipants, targetPeers)) {
-      return;
-    }
+    if (setEquals(_currentParticipants, targetPeers)) return;
 
-    // Close peers that are no longer in the voice channel.
+    await _closeStalePeers(targetPeers);
+    await _connectNewPeers(targetPeers, me);
+
+    _currentParticipants = targetPeers;
+    _publishPeerStates();
+  }
+
+  /// Close peer connections for users no longer in the voice channel.
+  Future<void> _closeStalePeers(Set<String> targetPeers) async {
     final stale = _peerConnections.keys
         .where((userId) => !targetPeers.contains(userId))
         .toList();
@@ -275,12 +276,13 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       await _disposeRemoteRenderer(userId);
       _pendingIceCandidates.remove(userId);
     }
+  }
 
+  /// Create peer connections for new participants and send offers where needed.
+  Future<void> _connectNewPeers(Set<String> targetPeers, String me) async {
     final sortedTargets = targetPeers.toList()..sort();
     for (final peerUserId in sortedTargets) {
-      if (_peerConnections.containsKey(peerUserId)) {
-        continue;
-      }
+      if (_peerConnections.containsKey(peerUserId)) continue;
 
       final pc = await _createPeerConnection(peerUserId);
       _peerConnections[peerUserId] = pc;
@@ -290,9 +292,6 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         await _createAndSendOffer(peerUserId, pc);
       }
     }
-
-    _currentParticipants = targetPeers;
-    _publishPeerStates();
   }
 
   Future<List<Map<String, dynamic>>> _fetchIceServers() async {

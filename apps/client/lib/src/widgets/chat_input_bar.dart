@@ -253,6 +253,26 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _detectMention(text);
   }
 
+  /// Attempts to extract a partial mention query from [text] at the cursor
+  /// position. Returns the query string (lowercased, possibly empty) when an
+  /// active `@` trigger is found, or `null` when no mention autocomplete
+  /// should be shown.
+  String? _extractMentionQuery(String text) {
+    final cursorPos = _messageController.selection.baseOffset;
+    if (cursorPos < 0 || cursorPos > text.length) return null;
+
+    final beforeCursor = text.substring(0, cursorPos);
+    final atIndex = beforeCursor.lastIndexOf('@');
+    if (atIndex < 0) return null;
+
+    if (atIndex > 0 && beforeCursor[atIndex - 1] != ' ') return null;
+
+    final partial = beforeCursor.substring(atIndex + 1);
+    if (partial.contains(' ')) return null;
+
+    return partial.toLowerCase();
+  }
+
   void _detectMention(String text) {
     final conv = widget.conversation;
     if (!conv.isGroup) {
@@ -265,33 +285,15 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       return;
     }
 
-    final cursorPos = _messageController.selection.baseOffset;
-    if (cursorPos < 0 || cursorPos > text.length) {
-      if (_showMentionPicker) setState(() => _showMentionPicker = false);
-      return;
-    }
-
-    final beforeCursor = text.substring(0, cursorPos);
-    final atIndex = beforeCursor.lastIndexOf('@');
-    if (atIndex < 0) {
-      if (_showMentionPicker) setState(() => _showMentionPicker = false);
-      return;
-    }
-
-    if (atIndex > 0 && beforeCursor[atIndex - 1] != ' ') {
-      if (_showMentionPicker) setState(() => _showMentionPicker = false);
-      return;
-    }
-
-    final partial = beforeCursor.substring(atIndex + 1);
-    if (partial.contains(' ')) {
+    final query = _extractMentionQuery(text);
+    if (query == null) {
       if (_showMentionPicker) setState(() => _showMentionPicker = false);
       return;
     }
 
     setState(() {
       _showMentionPicker = true;
-      _mentionQuery = partial.toLowerCase();
+      _mentionQuery = query;
     });
   }
 
@@ -649,8 +651,653 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   // ---------------------------------------------------------------------------
+  // Build helpers -- extracted to reduce cognitive complexity
+  // ---------------------------------------------------------------------------
+
+  Widget _buildMentionAutocomplete() {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 160),
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: context.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+        border: Border.all(color: context.border),
+      ),
+      child: ListView.builder(
+        shrinkWrap: true,
+        reverse: true,
+        padding: EdgeInsets.zero,
+        itemCount: _filteredMentionMembers.length,
+        itemBuilder: (context, i) {
+          final member = _filteredMentionMembers[i];
+          return _buildMentionItem(member);
+        },
+      ),
+    );
+  }
+
+  Widget _buildMentionItem(ConversationMember member) {
+    return InkWell(
+      onTap: () => _insertMention(member.username),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.alternate_email, size: 14, color: context.accent),
+            const SizedBox(width: 8),
+            Text(
+              member.username,
+              style: TextStyle(
+                fontSize: 13,
+                color: context.textPrimary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            if (member.role != null) ...[
+              const SizedBox(width: 6),
+              Text(
+                member.role!,
+                style: TextStyle(fontSize: 11, color: context.textMuted),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInputStatusBar(String inputStatusText) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: _isEditing
+            ? context.accent.withValues(alpha: 0.12)
+            : context.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _isEditing
+              ? context.accent.withValues(alpha: 0.4)
+              : context.border,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _isEditing ? Icons.edit_outlined : Icons.more_horiz_rounded,
+            size: 12,
+            color: _isEditing ? context.accent : context.textMuted,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              inputStatusText,
+              style: TextStyle(
+                fontSize: 12,
+                fontStyle: _isEditing ? FontStyle.normal : FontStyle.italic,
+                color: _isEditing ? context.accent : context.textMuted,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (_isEditing)
+            GestureDetector(
+              onTap: _cancelEditMode,
+              child: Icon(Icons.close, size: 14, color: context.textMuted),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttachmentThumbnail() {
+    if (_pendingAttachmentBytes != null) {
+      return Image.memory(
+        _pendingAttachmentBytes!,
+        width: 48,
+        height: 48,
+        fit: BoxFit.cover,
+        errorBuilder: (_, e, st) => Container(
+          width: 48,
+          height: 48,
+          color: context.mainBg,
+          child: Icon(
+            Icons.insert_drive_file_outlined,
+            color: context.textMuted,
+            size: 24,
+          ),
+        ),
+      );
+    }
+    return Container(
+      width: 48,
+      height: 48,
+      color: context.mainBg,
+      child: Icon(Icons.gif_box_outlined, color: context.accent, size: 24),
+    );
+  }
+
+  Widget _buildAttachmentStatusText() {
+    final String statusLabel;
+    final Color statusColor;
+
+    if (_isUploadingAttachment) {
+      statusLabel = 'Uploading...';
+      statusColor = context.textMuted;
+    } else if (_pendingAttachmentUrl != null) {
+      statusLabel = 'Ready to send';
+      statusColor = EchoTheme.online;
+    } else {
+      statusLabel = 'Preparing...';
+      statusColor = context.textMuted;
+    }
+
+    return Text(
+      statusLabel,
+      style: TextStyle(fontSize: 11, color: statusColor),
+    );
+  }
+
+  Widget _buildAttachmentTrailingWidgets() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_isUploadingAttachment)
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: context.accent,
+            ),
+          )
+        else if (_pendingAttachmentUrl != null)
+          Icon(Icons.check_circle_outline, size: 16, color: EchoTheme.online),
+        const SizedBox(width: 6),
+        // Remove button
+        GestureDetector(
+          onTap: _clearPendingAttachment,
+          child: Icon(Icons.close, size: 16, color: context.textMuted),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAttachmentPreview() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: context.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.border, width: 1),
+      ),
+      child: Row(
+        children: [
+          // Thumbnail
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: _buildAttachmentThumbnail(),
+          ),
+          const SizedBox(width: 10),
+          // Filename + status
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _pendingAttachmentFileName ?? 'Attachment',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: context.textPrimary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                _buildAttachmentStatusText(),
+              ],
+            ),
+          ),
+          _buildAttachmentTrailingWidgets(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlusMenuButton({
+    required bool showEmojiPicker,
+    required bool isMobileLayout,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: PopupMenuButton<String>(
+        icon: Icon(
+          showEmojiPicker ? Icons.keyboard_outlined : Icons.add_circle_outline,
+          size: 20,
+          color: showEmojiPicker ? context.accent : context.textSecondary,
+        ),
+        tooltip: 'Attach or emoji',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        onSelected: (value) {
+          _handlePlusMenuSelection(value, showEmojiPicker);
+        },
+        itemBuilder: (context) => _buildPlusMenuItems(
+          showEmojiPicker: showEmojiPicker,
+          isMobileLayout: isMobileLayout,
+        ),
+      ),
+    );
+  }
+
+  void _handlePlusMenuSelection(String value, bool showEmojiPicker) {
+    switch (value) {
+      case 'file':
+        _pickFile();
+      case 'emoji':
+        setState(() {
+          _showEmojiPicker = !_showEmojiPicker;
+          _showGifPicker = false;
+        });
+        if (!_showEmojiPicker) {
+          _inputFocusNode.requestFocus();
+        }
+      case 'gif':
+        setState(() {
+          _showGifPicker = !_showGifPicker;
+          _showEmojiPicker = false;
+        });
+    }
+  }
+
+  List<PopupMenuEntry<String>> _buildPlusMenuItems({
+    required bool showEmojiPicker,
+    required bool isMobileLayout,
+  }) {
+    return [
+      const PopupMenuItem(
+        value: 'file',
+        child: Row(
+          children: [
+            Icon(Icons.attach_file_outlined, size: 18),
+            SizedBox(width: 8),
+            Text('File'),
+          ],
+        ),
+      ),
+      if (!isMobileLayout)
+        PopupMenuItem(
+          value: 'emoji',
+          child: Row(
+            children: [
+              Icon(
+                showEmojiPicker
+                    ? Icons.keyboard_outlined
+                    : Icons.sentiment_satisfied_alt_outlined,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(showEmojiPicker ? 'Keyboard' : 'Emoji'),
+            ],
+          ),
+        ),
+      const PopupMenuItem(
+        value: 'gif',
+        child: Row(
+          children: [
+            Icon(Icons.gif_box_outlined, size: 18),
+            SizedBox(width: 8),
+            Text('GIF'),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  /// Handles push-to-talk key events. Returns true if the event was consumed.
+  bool _handlePushToTalk(
+    KeyEvent event,
+    VoiceSettingsState voiceSettings,
+    String? effectiveActiveVoiceChannelId,
+  ) {
+    final pttKeyId = voiceSettings.pushToTalkKeyId;
+    final isPttKey = event.logicalKey.keyId.toString() == pttKeyId;
+    final canPushToTalk =
+        voiceSettings.pushToTalkEnabled &&
+        effectiveActiveVoiceChannelId != null;
+
+    if (!canPushToTalk || !isPttKey) return false;
+
+    final allowCapture =
+        !voiceSettings.selfMuted && !voiceSettings.selfDeafened;
+    if (event is KeyDownEvent && allowCapture) {
+      ref.read(voiceRtcProvider.notifier).setCaptureEnabled(true);
+      _syncVoiceState();
+    } else if (event is KeyUpEvent) {
+      ref.read(voiceRtcProvider.notifier).setCaptureEnabled(false);
+      _syncVoiceState();
+    }
+    return false; // don't consume -- let other handlers also run
+  }
+
+  /// Handles the Escape key. Returns true if the event was consumed.
+  void _handleEscapeKey() {
+    if (_showMentionPicker) {
+      setState(() {
+        _showMentionPicker = false;
+        _mentionQuery = '';
+      });
+    } else if (_showEmojiPicker) {
+      setState(() => _showEmojiPicker = false);
+      _inputFocusNode.requestFocus();
+    } else if (_showGifPicker) {
+      setState(() => _showGifPicker = false);
+      _inputFocusNode.requestFocus();
+    } else if (_pendingAttachmentBytes != null ||
+        _pendingAttachmentUrl != null) {
+      _clearPendingAttachment();
+    } else if (_isEditing) {
+      _cancelEditMode();
+    }
+  }
+
+  /// Handles Ctrl+V paste shortcut. Returns a [KeyEventResult] indicating
+  /// whether the event was consumed.
+  KeyEventResult _handlePasteShortcut() {
+    if (kIsWeb || defaultTargetPlatform == TargetPlatform.linux) {
+      return KeyEventResult.ignored;
+    }
+    _handlePaste();
+    return KeyEventResult.handled;
+  }
+
+  /// Handles Ctrl+C / Ctrl+X copy/cut shortcuts. Returns a [KeyEventResult]
+  /// indicating whether the event was consumed.
+  KeyEventResult _handleCopyCutShortcut(bool isCut) {
+    if (kIsWeb || defaultTargetPlatform == TargetPlatform.linux) {
+      return KeyEventResult.ignored;
+    }
+    final sel = _messageController.selection;
+    if (sel.isValid && !sel.isCollapsed) {
+      final selected = _messageController.text.substring(sel.start, sel.end);
+      Clipboard.setData(ClipboardData(text: selected));
+      if (isCut) {
+        _messageController.text = _messageController.text.replaceRange(
+          sel.start,
+          sel.end,
+          '',
+        );
+        _messageController.selection = TextSelection.collapsed(
+          offset: sel.start,
+        );
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  KeyEventResult _onKeyEvent(
+    FocusNode _,
+    KeyEvent event,
+    VoiceSettingsState voiceSettings,
+    String? effectiveActiveVoiceChannelId,
+  ) {
+    _handlePushToTalk(event, voiceSettings, effectiveActiveVoiceChannelId);
+
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      _handleEscapeKey();
+    }
+
+    // Enter sends message, Shift+Enter for newline
+    if (event.logicalKey == LogicalKeyboardKey.enter &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      if (_isEditing) {
+        _submitEdit();
+      } else {
+        _sendMessage();
+      }
+      return KeyEventResult.handled;
+    }
+
+    // Ctrl+V: manually handle paste to bypass browser
+    // context menu on Flutter web (CanvasKit).
+    final isCtrlOrMeta =
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed;
+
+    if (event.logicalKey == LogicalKeyboardKey.keyV && isCtrlOrMeta) {
+      return _handlePasteShortcut();
+    }
+
+    // Ctrl+C / Ctrl+X: handle copy/cut to prevent
+    // browser context menu on selected text.
+    if (event.logicalKey == LogicalKeyboardKey.keyC && isCtrlOrMeta) {
+      return _handleCopyCutShortcut(false);
+    }
+    if (event.logicalKey == LogicalKeyboardKey.keyX && isCtrlOrMeta) {
+      return _handleCopyCutShortcut(true);
+    }
+
+    return KeyEventResult.ignored;
+  }
+
+  Widget _buildTextField({
+    required bool showEmojiPicker,
+    required VoiceSettingsState voiceSettings,
+    required String? effectiveActiveVoiceChannelId,
+  }) {
+    return Expanded(
+      child: Focus(
+        onKeyEvent: (node, event) => _onKeyEvent(
+          node,
+          event,
+          voiceSettings,
+          effectiveActiveVoiceChannelId,
+        ),
+        child: TextField(
+          controller: _messageController,
+          focusNode: _inputFocusNode,
+          maxLines: 5,
+          minLines: 1,
+          style: TextStyle(fontSize: 14, color: context.textPrimary),
+          decoration: InputDecoration(
+            hintText: _isEditing ? 'Edit your message...' : 'Type a message...',
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            filled: false,
+            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          ),
+          onChanged: _onInputChanged,
+          onTap: () {
+            if (showEmojiPicker) {
+              setState(() => _showEmojiPicker = false);
+            }
+          },
+          onSubmitted: (_) => _isEditing ? _submitEdit() : _sendMessage(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSendButton() {
+    final canSend =
+        !_isTextEmpty ||
+        (_pendingAttachmentUrl != null && !_isUploadingAttachment);
+
+    final Color buttonColor;
+    if (!canSend) {
+      buttonColor = context.textMuted;
+    } else if (_isEditing) {
+      buttonColor = EchoTheme.online;
+    } else {
+      buttonColor = context.accent;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 7),
+      child: GestureDetector(
+        onTap: canSend ? (_isEditing ? _submitEdit : _sendMessage) : null,
+        child: Opacity(
+          opacity: canSend ? 1 : 0.45,
+          child: Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: buttonColor,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              _isEditing ? Icons.check_rounded : Icons.arrow_upward_rounded,
+              size: 18,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInputRow({
+    required bool showEmojiPicker,
+    required bool isMobileLayout,
+    required VoiceSettingsState voiceSettings,
+    required String? effectiveActiveVoiceChannelId,
+  }) {
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: context.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _isEditing ? context.accent : context.border,
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Consolidated + button (hidden in edit mode)
+          if (!_isEditing)
+            _buildPlusMenuButton(
+              showEmojiPicker: showEmojiPicker,
+              isMobileLayout: isMobileLayout,
+            ),
+          if (_isEditing) const SizedBox(width: 12),
+          // Text field
+          _buildTextField(
+            showEmojiPicker: showEmojiPicker,
+            voiceSettings: voiceSettings,
+            effectiveActiveVoiceChannelId: effectiveActiveVoiceChannelId,
+          ),
+          // Send / confirm edit button
+          _buildSendButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmojiPickerPanel({
+    required double height,
+    required int columns,
+    required double emojiSize,
+  }) {
+    return Container(
+      height: height,
+      color: context.surface,
+      child: EmojiPicker(
+        onEmojiSelected: (category, emoji) {
+          final text = _messageController.text;
+          final selection = _messageController.selection;
+          final cursorPos = selection.baseOffset >= 0
+              ? selection.baseOffset
+              : text.length;
+          final newText =
+              text.substring(0, cursorPos) +
+              emoji.emoji +
+              text.substring(cursorPos);
+          _messageController.text = newText;
+          final newCursor = cursorPos + emoji.emoji.length;
+          _messageController.selection = TextSelection.collapsed(
+            offset: newCursor,
+          );
+        },
+        config: Config(
+          height: height,
+          checkPlatformCompatibility: true,
+          emojiViewConfig: EmojiViewConfig(
+            backgroundColor: context.surface,
+            columns: columns,
+            emojiSizeMax: emojiSize,
+            noRecents: Text(
+              'No recents yet. Pick one below.',
+              style: TextStyle(fontSize: 14, color: context.textMuted),
+            ),
+          ),
+          categoryViewConfig: CategoryViewConfig(
+            initCategory: Category.SMILEYS,
+            recentTabBehavior: RecentTabBehavior.NONE,
+            backgroundColor: context.surface,
+            indicatorColor: context.accent,
+            iconColorSelected: context.accent,
+            iconColor: context.textMuted,
+          ),
+          bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
+          searchViewConfig: SearchViewConfig(
+            backgroundColor: context.surface,
+            buttonIconColor: context.textSecondary,
+            hintText: 'Search emoji...',
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGifPickerPanel() {
+    return GifPickerWidget(
+      onClose: () => setState(() => _showGifPicker = false),
+      onGifSelected: (gifUrl, slug) {
+        setState(() {
+          _showGifPicker = false;
+          // GIF is external URL -- no upload needed, set directly
+          _pendingAttachmentUrl = gifUrl;
+          _pendingAttachmentExt = 'gif';
+          _pendingAttachmentFileName = 'gif';
+          _pendingAttachmentMimeType = 'image/gif';
+          _pendingAttachmentBytes = null; // no local bytes for GIFs
+          _isUploadingAttachment = false;
+        });
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
+
+  String _computeInputStatusText(String typingText) {
+    if (_isEditing && widget.typingUsers.isNotEmpty) {
+      return 'Editing message \u2022 $typingText';
+    }
+    if (_isEditing) return 'Editing message...';
+    return typingText;
+  }
+
+  String _computeTypingText(String displayName) {
+    final typingUsers = widget.typingUsers;
+    if (!widget.conversation.isGroup) return '$displayName is typing...';
+    if (typingUsers.length == 1) return '${typingUsers.first} is typing...';
+    return '${typingUsers.join(", ")} are typing...';
+  }
+
+  bool get _hasPendingAttachment =>
+      _pendingAttachmentBytes != null || _pendingAttachmentUrl != null;
 
   @override
   Widget build(BuildContext context) {
@@ -659,16 +1306,9 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final voiceSettings = ref.watch(voiceSettingsProvider);
 
     final displayName = conv.displayName(myUserId);
-    final typingUsers = widget.typingUsers;
-    final typingText = conv.isGroup
-        ? (typingUsers.length == 1
-              ? '${typingUsers.first} is typing...'
-              : '${typingUsers.join(", ")} are typing...')
-        : '$displayName is typing...';
-    final showInputStatus = _isEditing || typingUsers.isNotEmpty;
-    final inputStatusText = _isEditing && typingUsers.isNotEmpty
-        ? 'Editing message \u2022 $typingText'
-        : (_isEditing ? 'Editing message...' : typingText);
+    final typingText = _computeTypingText(displayName);
+    final showInputStatus = _isEditing || widget.typingUsers.isNotEmpty;
+    final inputStatusText = _computeInputStatusText(typingText);
     final viewportWidth = MediaQuery.of(context).size.width;
     final isMobileLayout = viewportWidth < 600;
     final isDesktopLayout = viewportWidth >= 900;
@@ -684,63 +1324,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       children: [
         // Mention autocomplete picker
         if (_showMentionPicker && _filteredMentionMembers.isNotEmpty)
-          Container(
-            constraints: const BoxConstraints(maxHeight: 160),
-            margin: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: BoxDecoration(
-              color: context.surface,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(8),
-              ),
-              border: Border.all(color: context.border),
-            ),
-            child: ListView.builder(
-              shrinkWrap: true,
-              reverse: true,
-              padding: EdgeInsets.zero,
-              itemCount: _filteredMentionMembers.length,
-              itemBuilder: (context, i) {
-                final member = _filteredMentionMembers[i];
-                return InkWell(
-                  onTap: () => _insertMention(member.username),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.alternate_email,
-                          size: 14,
-                          color: context.accent,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          member.username,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: context.textPrimary,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        if (member.role != null) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            member.role!,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: context.textMuted,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
+          _buildMentionAutocomplete(),
         // Input area
         Container(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -748,528 +1332,27 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (showInputStatus)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _isEditing
-                        ? context.accent.withValues(alpha: 0.12)
-                        : context.surface,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: _isEditing
-                          ? context.accent.withValues(alpha: 0.4)
-                          : context.border,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        _isEditing
-                            ? Icons.edit_outlined
-                            : Icons.more_horiz_rounded,
-                        size: 12,
-                        color: _isEditing ? context.accent : context.textMuted,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          inputStatusText,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontStyle: _isEditing
-                                ? FontStyle.normal
-                                : FontStyle.italic,
-                            color: _isEditing
-                                ? context.accent
-                                : context.textMuted,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (_isEditing)
-                        GestureDetector(
-                          onTap: _cancelEditMode,
-                          child: Icon(
-                            Icons.close,
-                            size: 14,
-                            color: context.textMuted,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+              if (showInputStatus) _buildInputStatusBar(inputStatusText),
               // Attachment preview bar (Discord-style)
-              if (_pendingAttachmentBytes != null ||
-                  _pendingAttachmentUrl != null)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: context.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: context.border, width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      // Thumbnail
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: _pendingAttachmentBytes != null
-                            ? Image.memory(
-                                _pendingAttachmentBytes!,
-                                width: 48,
-                                height: 48,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, e, st) => Container(
-                                  width: 48,
-                                  height: 48,
-                                  color: context.mainBg,
-                                  child: Icon(
-                                    Icons.insert_drive_file_outlined,
-                                    color: context.textMuted,
-                                    size: 24,
-                                  ),
-                                ),
-                              )
-                            : Container(
-                                width: 48,
-                                height: 48,
-                                color: context.mainBg,
-                                child: Icon(
-                                  Icons.gif_box_outlined,
-                                  color: context.accent,
-                                  size: 24,
-                                ),
-                              ),
-                      ),
-                      const SizedBox(width: 10),
-                      // Filename + status
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _pendingAttachmentFileName ?? 'Attachment',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: context.textPrimary,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _isUploadingAttachment
-                                  ? 'Uploading...'
-                                  : _pendingAttachmentUrl != null
-                                  ? 'Ready to send'
-                                  : 'Preparing...',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: _pendingAttachmentUrl != null
-                                    ? EchoTheme.online
-                                    : context.textMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Upload spinner or ready icon
-                      if (_isUploadingAttachment)
-                        SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: context.accent,
-                          ),
-                        )
-                      else if (_pendingAttachmentUrl != null)
-                        Icon(
-                          Icons.check_circle_outline,
-                          size: 16,
-                          color: EchoTheme.online,
-                        ),
-                      const SizedBox(width: 6),
-                      // Remove button
-                      GestureDetector(
-                        onTap: _clearPendingAttachment,
-                        child: Icon(
-                          Icons.close,
-                          size: 16,
-                          color: context.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              Container(
-                height: 44,
-                decoration: BoxDecoration(
-                  color: context.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _isEditing ? context.accent : context.border,
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Consolidated + button (hidden in edit mode)
-                    if (!_isEditing)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 4),
-                        child: PopupMenuButton<String>(
-                          icon: Icon(
-                            showEmojiPicker
-                                ? Icons.keyboard_outlined
-                                : Icons.add_circle_outline,
-                            size: 20,
-                            color: showEmojiPicker
-                                ? context.accent
-                                : context.textSecondary,
-                          ),
-                          tooltip: 'Attach or emoji',
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(
-                            minWidth: 36,
-                            minHeight: 36,
-                          ),
-                          onSelected: (value) {
-                            switch (value) {
-                              case 'file':
-                                _pickFile();
-                              case 'emoji':
-                                setState(() {
-                                  _showEmojiPicker = !_showEmojiPicker;
-                                  _showGifPicker = false;
-                                });
-                                if (!_showEmojiPicker) {
-                                  _inputFocusNode.requestFocus();
-                                }
-                              case 'gif':
-                                setState(() {
-                                  _showGifPicker = !_showGifPicker;
-                                  _showEmojiPicker = false;
-                                });
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(
-                              value: 'file',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.attach_file_outlined, size: 18),
-                                  SizedBox(width: 8),
-                                  Text('File'),
-                                ],
-                              ),
-                            ),
-                            if (!isMobileLayout)
-                              PopupMenuItem(
-                                value: 'emoji',
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      showEmojiPicker
-                                          ? Icons.keyboard_outlined
-                                          : Icons
-                                                .sentiment_satisfied_alt_outlined,
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      showEmojiPicker ? 'Keyboard' : 'Emoji',
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            const PopupMenuItem(
-                              value: 'gif',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.gif_box_outlined, size: 18),
-                                  SizedBox(width: 8),
-                                  Text('GIF'),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    if (_isEditing) const SizedBox(width: 12),
-                    // Text field
-                    Expanded(
-                      child: Focus(
-                        onKeyEvent: (_, event) {
-                          final pttKeyId = voiceSettings.pushToTalkKeyId;
-                          final isPttKey =
-                              event.logicalKey.keyId.toString() == pttKeyId;
-                          final canPushToTalk =
-                              voiceSettings.pushToTalkEnabled &&
-                              effectiveActiveVoiceChannelId != null;
-
-                          if (canPushToTalk && isPttKey) {
-                            final allowCapture =
-                                !voiceSettings.selfMuted &&
-                                !voiceSettings.selfDeafened;
-                            if (event is KeyDownEvent && allowCapture) {
-                              ref
-                                  .read(voiceRtcProvider.notifier)
-                                  .setCaptureEnabled(true);
-                              _syncVoiceState();
-                            } else if (event is KeyUpEvent) {
-                              ref
-                                  .read(voiceRtcProvider.notifier)
-                                  .setCaptureEnabled(false);
-                              _syncVoiceState();
-                            }
-                          }
-
-                          if (event is KeyDownEvent) {
-                            if (event.logicalKey == LogicalKeyboardKey.escape) {
-                              if (_showMentionPicker) {
-                                setState(() {
-                                  _showMentionPicker = false;
-                                  _mentionQuery = '';
-                                });
-                              } else if (_showEmojiPicker) {
-                                setState(() => _showEmojiPicker = false);
-                                _inputFocusNode.requestFocus();
-                              } else if (_showGifPicker) {
-                                setState(() => _showGifPicker = false);
-                                _inputFocusNode.requestFocus();
-                              } else if (_pendingAttachmentBytes != null ||
-                                  _pendingAttachmentUrl != null) {
-                                _clearPendingAttachment();
-                              } else if (_isEditing) {
-                                _cancelEditMode();
-                              }
-                            }
-
-                            // Enter sends message, Shift+Enter for newline
-                            if (event.logicalKey == LogicalKeyboardKey.enter &&
-                                !HardwareKeyboard.instance.isShiftPressed) {
-                              if (_isEditing) {
-                                _submitEdit();
-                              } else {
-                                _sendMessage();
-                              }
-                              return KeyEventResult.handled;
-                            }
-
-                            // Ctrl+V: manually handle paste to bypass browser
-                            // context menu on Flutter web (CanvasKit).
-                            final isPaste =
-                                event.logicalKey == LogicalKeyboardKey.keyV &&
-                                (HardwareKeyboard.instance.isControlPressed ||
-                                    HardwareKeyboard.instance.isMetaPressed);
-                            if (isPaste) {
-                              // Let native paste run on Linux/Web where
-                              // manual interception can be flaky.
-                              if (kIsWeb ||
-                                  defaultTargetPlatform ==
-                                      TargetPlatform.linux) {
-                                return KeyEventResult.ignored;
-                              }
-                              _handlePaste();
-                              return KeyEventResult.handled;
-                            }
-
-                            // Ctrl+C / Ctrl+X: handle copy/cut to prevent
-                            // browser context menu on selected text.
-                            final isCopy =
-                                event.logicalKey == LogicalKeyboardKey.keyC &&
-                                (HardwareKeyboard.instance.isControlPressed ||
-                                    HardwareKeyboard.instance.isMetaPressed);
-                            final isCut =
-                                event.logicalKey == LogicalKeyboardKey.keyX &&
-                                (HardwareKeyboard.instance.isControlPressed ||
-                                    HardwareKeyboard.instance.isMetaPressed);
-                            if (isCopy || isCut) {
-                              if (kIsWeb ||
-                                  defaultTargetPlatform ==
-                                      TargetPlatform.linux) {
-                                return KeyEventResult.ignored;
-                              }
-                              final sel = _messageController.selection;
-                              if (sel.isValid && !sel.isCollapsed) {
-                                final selected = _messageController.text
-                                    .substring(sel.start, sel.end);
-                                Clipboard.setData(
-                                  ClipboardData(text: selected),
-                                );
-                                if (isCut) {
-                                  _messageController.text = _messageController
-                                      .text
-                                      .replaceRange(sel.start, sel.end, '');
-                                  _messageController.selection =
-                                      TextSelection.collapsed(
-                                        offset: sel.start,
-                                      );
-                                }
-                                return KeyEventResult.handled;
-                              }
-                            }
-                          }
-                          return KeyEventResult.ignored;
-                        },
-                        child: TextField(
-                          controller: _messageController,
-                          focusNode: _inputFocusNode,
-                          maxLines: 5,
-                          minLines: 1,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: context.textPrimary,
-                          ),
-                          decoration: InputDecoration(
-                            hintText: _isEditing
-                                ? 'Edit your message...'
-                                : 'Type a message...',
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            filled: false,
-                            contentPadding: const EdgeInsets.symmetric(
-                              vertical: 10,
-                            ),
-                          ),
-                          onChanged: _onInputChanged,
-                          onTap: () {
-                            if (showEmojiPicker) {
-                              setState(() => _showEmojiPicker = false);
-                            }
-                          },
-                          onSubmitted: (_) =>
-                              _isEditing ? _submitEdit() : _sendMessage(),
-                        ),
-                      ),
-                    ),
-                    // Send / confirm edit button (keeps stable footprint)
-                    Builder(
-                      builder: (context) {
-                        final canSend =
-                            !_isTextEmpty ||
-                            (_pendingAttachmentUrl != null &&
-                                !_isUploadingAttachment);
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 7),
-                          child: GestureDetector(
-                            onTap: canSend
-                                ? (_isEditing ? _submitEdit : _sendMessage)
-                                : null,
-                            child: Opacity(
-                              opacity: canSend ? 1 : 0.45,
-                              child: Container(
-                                width: 30,
-                                height: 30,
-                                decoration: BoxDecoration(
-                                  color: !canSend
-                                      ? context.textMuted
-                                      : (_isEditing
-                                            ? EchoTheme.online
-                                            : context.accent),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  _isEditing
-                                      ? Icons.check_rounded
-                                      : Icons.arrow_upward_rounded,
-                                  size: 18,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
+              if (_hasPendingAttachment) _buildAttachmentPreview(),
+              _buildInputRow(
+                showEmojiPicker: showEmojiPicker,
+                isMobileLayout: isMobileLayout,
+                voiceSettings: voiceSettings,
+                effectiveActiveVoiceChannelId: effectiveActiveVoiceChannelId,
               ),
             ],
           ),
         ),
         // Emoji picker panel
         if (showEmojiPicker)
-          Container(
+          _buildEmojiPickerPanel(
             height: emojiPickerHeight,
-            color: context.surface,
-            child: EmojiPicker(
-              onEmojiSelected: (category, emoji) {
-                final text = _messageController.text;
-                final selection = _messageController.selection;
-                final cursorPos = selection.baseOffset >= 0
-                    ? selection.baseOffset
-                    : text.length;
-                final newText =
-                    text.substring(0, cursorPos) +
-                    emoji.emoji +
-                    text.substring(cursorPos);
-                _messageController.text = newText;
-                final newCursor = cursorPos + emoji.emoji.length;
-                _messageController.selection = TextSelection.collapsed(
-                  offset: newCursor,
-                );
-              },
-              config: Config(
-                height: emojiPickerHeight,
-                checkPlatformCompatibility: true,
-                emojiViewConfig: EmojiViewConfig(
-                  backgroundColor: context.surface,
-                  columns: emojiColumns,
-                  emojiSizeMax: emojiSize,
-                  noRecents: Text(
-                    'No recents yet. Pick one below.',
-                    style: TextStyle(fontSize: 14, color: context.textMuted),
-                  ),
-                ),
-                categoryViewConfig: CategoryViewConfig(
-                  initCategory: Category.SMILEYS,
-                  recentTabBehavior: RecentTabBehavior.NONE,
-                  backgroundColor: context.surface,
-                  indicatorColor: context.accent,
-                  iconColorSelected: context.accent,
-                  iconColor: context.textMuted,
-                ),
-                bottomActionBarConfig: const BottomActionBarConfig(
-                  enabled: false,
-                ),
-                searchViewConfig: SearchViewConfig(
-                  backgroundColor: context.surface,
-                  buttonIconColor: context.textSecondary,
-                  hintText: 'Search emoji...',
-                ),
-              ),
-            ),
+            columns: emojiColumns,
+            emojiSize: emojiSize,
           ),
         // GIF picker panel
-        if (_showGifPicker)
-          GifPickerWidget(
-            onClose: () => setState(() => _showGifPicker = false),
-            onGifSelected: (gifUrl, slug) {
-              setState(() {
-                _showGifPicker = false;
-                // GIF is external URL -- no upload needed, set directly
-                _pendingAttachmentUrl = gifUrl;
-                _pendingAttachmentExt = 'gif';
-                _pendingAttachmentFileName = 'gif';
-                _pendingAttachmentMimeType = 'image/gif';
-                _pendingAttachmentBytes = null; // no local bytes for GIFs
-                _isUploadingAttachment = false;
-              });
-            },
-          ),
+        if (_showGifPicker) _buildGifPickerPanel(),
       ],
     );
   }

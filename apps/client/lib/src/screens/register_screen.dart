@@ -87,6 +87,43 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     // Crypto init happens in contacts_screen._initData() after navigation
   }
 
+  String? _validateUsername(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Username is required';
+    }
+    final trimmed = value.trim();
+    if (trimmed.length < 3 || trimmed.length > 32) {
+      return 'Must be 3-32 characters';
+    }
+    if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(trimmed)) {
+      return 'Only letters, numbers, and underscores';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Password is required';
+    }
+    if (value.length < 8) {
+      return 'Must be at least 8 characters';
+    }
+    if (value.length > 128) {
+      return 'Must be 128 characters or fewer';
+    }
+    return null;
+  }
+
+  String? _validateConfirmPassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Please confirm your password';
+    }
+    if (value != _passwordController.text) {
+      return 'Passwords do not match';
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
@@ -106,190 +143,212 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const EchoLogoIcon(size: 30),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Create Account',
-                    style: Theme.of(context).textTheme.headlineLarge,
-                  ),
+                  _buildHeader(context),
                   const SizedBox(height: 32),
-                  TextFormField(
-                    controller: _usernameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Username',
-                      border: OutlineInputBorder(),
-                    ),
-                    textInputAction: TextInputAction.next,
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'Username is required';
-                      }
-                      final trimmed = value.trim();
-                      if (trimmed.length < 3 || trimmed.length > 32) {
-                        return 'Must be 3-32 characters';
-                      }
-                      if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(trimmed)) {
-                        return 'Only letters, numbers, and underscores';
-                      }
-                      return null;
-                    },
-                  ),
+                  _buildUsernameField(),
                   const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Password',
-                      border: OutlineInputBorder(),
-                    ),
-                    textInputAction: TextInputAction.next,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Password is required';
-                      }
-                      if (value.length < 8) {
-                        return 'Must be at least 8 characters';
-                      }
-                      if (value.length > 128) {
-                        return 'Must be 128 characters or fewer';
-                      }
-                      return null;
-                    },
-                  ),
-                  // Password strength indicator
-                  if (_passwordText.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(2),
-                            child: LinearProgressIndicator(
-                              value: strength.value,
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHighest,
-                              color: strength.color,
-                              minHeight: 4,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          strength.label,
-                          style: TextStyle(color: strength.color, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ],
+                  _buildPasswordField(),
+                  _buildStrengthIndicator(context, strength),
                   const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '8-128 characters required',
-                      style: TextStyle(color: context.textMuted, fontSize: 12),
-                    ),
-                  ),
+                  _buildPasswordHint(context),
                   const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _confirmController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Confirm password',
-                      border: OutlineInputBorder(),
-                    ),
-                    onFieldSubmitted: (_) => _register(),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please confirm your password';
-                      }
-                      if (value != _passwordController.text) {
-                        return 'Passwords do not match';
-                      }
-                      return null;
-                    },
-                  ),
-                  if (authState.error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      authState.error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ],
+                  _buildConfirmPasswordField(),
+                  _buildErrorMessage(context, authState),
                   const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: authState.isLoading ? null : _register,
-                      child: authState.isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Register'),
-                    ),
-                  ),
+                  _buildSubmitButton(authState),
                   const SizedBox(height: 12),
                   TextButton(
                     onPressed: () => context.go('/login'),
                     child: const Text('Already have an account? Login'),
                   ),
                   const SizedBox(height: 16),
-                  Text(
-                    'Echo v$appVersion',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: context.textMuted, fontSize: 11),
-                  ),
-                  FutureBuilder<Map<String, String?>>(
-                    future: _versionFuture,
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) {
-                        return const SizedBox.shrink();
-                      }
-                      final info = snapshot.data!;
-                      final serverVersion = info['serverVersion'];
-                      final serverHost = info['serverHost'];
-                      final webVersion = info['webVersion'];
-
-                      final serverText = serverVersion != null
-                          ? 'Server: $serverHost v$serverVersion'
-                          : 'Server: unreachable';
-                      final serverColor = serverVersion != null
-                          ? context.textMuted
-                          : EchoTheme.warning;
-
-                      return Column(
-                        children: [
-                          const SizedBox(height: 2),
-                          Text(
-                            serverText,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: serverColor, fontSize: 11),
-                          ),
-                          if (kIsWeb && webVersion != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              'Web: v$webVersion',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: context.textMuted,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ],
-                      );
-                    },
-                  ),
+                  _buildVersionFooter(context),
                 ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Column(
+      children: [
+        const EchoLogoIcon(size: 30),
+        const SizedBox(height: 10),
+        Text(
+          'Create Account',
+          style: Theme.of(context).textTheme.headlineLarge,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUsernameField() {
+    return TextFormField(
+      controller: _usernameController,
+      decoration: const InputDecoration(
+        labelText: 'Username',
+        border: OutlineInputBorder(),
+      ),
+      textInputAction: TextInputAction.next,
+      validator: _validateUsername,
+    );
+  }
+
+  Widget _buildPasswordField() {
+    return TextFormField(
+      controller: _passwordController,
+      obscureText: true,
+      decoration: const InputDecoration(
+        labelText: 'Password',
+        border: OutlineInputBorder(),
+      ),
+      textInputAction: TextInputAction.next,
+      validator: _validatePassword,
+    );
+  }
+
+  Widget _buildStrengthIndicator(
+    BuildContext context,
+    ({double value, String label, Color color}) strength,
+  ) {
+    if (_passwordText.isEmpty) return const SizedBox.shrink();
+    return Column(
+      children: [
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: strength.value,
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest,
+                  color: strength.color,
+                  minHeight: 4,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              strength.label,
+              style: TextStyle(color: strength.color, fontSize: 12),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPasswordHint(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        '8-128 characters required',
+        style: TextStyle(color: context.textMuted, fontSize: 12),
+      ),
+    );
+  }
+
+  Widget _buildConfirmPasswordField() {
+    return TextFormField(
+      controller: _confirmController,
+      obscureText: true,
+      decoration: const InputDecoration(
+        labelText: 'Confirm password',
+        border: OutlineInputBorder(),
+      ),
+      onFieldSubmitted: (_) => _register(),
+      validator: _validateConfirmPassword,
+    );
+  }
+
+  Widget _buildErrorMessage(BuildContext context, AuthState authState) {
+    if (authState.error == null) return const SizedBox.shrink();
+    return Column(
+      children: [
+        const SizedBox(height: 12),
+        Text(
+          authState.error!,
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSubmitButton(AuthState authState) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton(
+        onPressed: authState.isLoading ? null : _register,
+        child: authState.isLoading
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Text('Register'),
+      ),
+    );
+  }
+
+  Widget _buildVersionFooter(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          'Echo v$appVersion',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: context.textMuted, fontSize: 11),
+        ),
+        FutureBuilder<Map<String, String?>>(
+          future: _versionFuture,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const SizedBox.shrink();
+            }
+            return _buildServerVersionInfo(context, snapshot.data!);
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildServerVersionInfo(
+    BuildContext context,
+    Map<String, String?> info,
+  ) {
+    final serverVersion = info['serverVersion'];
+    final serverHost = info['serverHost'];
+    final webVersion = info['webVersion'];
+
+    final serverText = serverVersion != null
+        ? 'Server: $serverHost v$serverVersion'
+        : 'Server: unreachable';
+    final serverColor = serverVersion != null
+        ? context.textMuted
+        : EchoTheme.warning;
+
+    return Column(
+      children: [
+        const SizedBox(height: 2),
+        Text(
+          serverText,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: serverColor, fontSize: 11),
+        ),
+        if (kIsWeb && webVersion != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            'Web: v$webVersion',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: context.textMuted, fontSize: 11),
+          ),
+        ],
+      ],
     );
   }
 }

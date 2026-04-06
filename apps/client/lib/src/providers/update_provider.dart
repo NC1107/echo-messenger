@@ -104,83 +104,97 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
       final prefs = await SharedPreferences.getInstance();
 
       if (!force) {
-        final cachedTime = prefs.getInt(_cacheTimeKey) ?? 0;
-        final age = DateTime.now().millisecondsSinceEpoch - cachedTime;
-        if (age < _cacheTtl.inMilliseconds) {
-          final cached = prefs.getString(_cacheKey);
-          if (cached != null) {
-            final data = jsonDecode(cached) as Map<String, dynamic>;
-            final version = data['version'] as String;
-            final dismissed = prefs.getString(_dismissedVersionKey) == version;
-            final readyPath = await _checkExistingDownload(prefs, version);
-
-            state = UpdateState(
-              latestVersion: version,
-              downloadUrl: data['url'] as String?,
-              assetDownloadUrl: data['assetUrl'] as String?,
-              dismissed: dismissed,
-              status: readyPath != null
-                  ? UpdateStatus.readyToInstall
-                  : UpdateStatus.idle,
-              downloadedFilePath: readyPath,
-            );
-            return;
-          }
-        }
+        final usedCache = await _tryLoadFromCache(prefs);
+        if (usedCache) return;
       }
 
-      final response = await http
-          .get(
-            Uri.parse(_releaseApiUrl),
-            headers: {'Accept': 'application/vnd.github.v3+json'},
-          )
-          .timeout(const Duration(seconds: 10));
-
-      if (response.statusCode != 200) {
-        state = state.copyWith(status: UpdateStatus.idle);
-        return;
-      }
-
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final tagName = (data['tag_name'] as String?) ?? '';
-      final version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
-      final url = (data['html_url'] as String?) ?? _releasesPageUrl;
-
-      // Find the platform-specific asset URL.
-      String? assetUrl;
-      final assetName = update_svc.getAssetNameForPlatform();
-      if (assetName != null) {
-        final assets = data['assets'] as List<dynamic>? ?? [];
-        for (final asset in assets) {
-          if ((asset['name'] as String?) == assetName) {
-            assetUrl = asset['browser_download_url'] as String?;
-            break;
-          }
-        }
-      }
-
-      await prefs.setString(
-        _cacheKey,
-        jsonEncode({'version': version, 'url': url, 'assetUrl': assetUrl}),
-      );
-      await prefs.setInt(_cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
-
-      final dismissed = prefs.getString(_dismissedVersionKey) == version;
-      final readyPath = await _checkExistingDownload(prefs, version);
-
-      state = UpdateState(
-        latestVersion: version,
-        downloadUrl: url,
-        assetDownloadUrl: assetUrl,
-        dismissed: dismissed,
-        status: readyPath != null
-            ? UpdateStatus.readyToInstall
-            : UpdateStatus.idle,
-        downloadedFilePath: readyPath,
-      );
+      await _fetchLatestRelease(prefs);
     } catch (_) {
       state = state.copyWith(status: UpdateStatus.idle);
     }
+  }
+
+  /// Attempt to load update info from the local cache.
+  /// Returns true if cache was valid and state was set, false otherwise.
+  Future<bool> _tryLoadFromCache(SharedPreferences prefs) async {
+    final cachedTime = prefs.getInt(_cacheTimeKey) ?? 0;
+    final age = DateTime.now().millisecondsSinceEpoch - cachedTime;
+    if (age >= _cacheTtl.inMilliseconds) return false;
+
+    final cached = prefs.getString(_cacheKey);
+    if (cached == null) return false;
+
+    final data = jsonDecode(cached) as Map<String, dynamic>;
+    final version = data['version'] as String;
+    final dismissed = prefs.getString(_dismissedVersionKey) == version;
+    final readyPath = await _checkExistingDownload(prefs, version);
+
+    state = UpdateState(
+      latestVersion: version,
+      downloadUrl: data['url'] as String?,
+      assetDownloadUrl: data['assetUrl'] as String?,
+      dismissed: dismissed,
+      status: readyPath != null
+          ? UpdateStatus.readyToInstall
+          : UpdateStatus.idle,
+      downloadedFilePath: readyPath,
+    );
+    return true;
+  }
+
+  /// Fetch the latest release from GitHub and update state + cache.
+  Future<void> _fetchLatestRelease(SharedPreferences prefs) async {
+    final response = await http
+        .get(
+          Uri.parse(_releaseApiUrl),
+          headers: {'Accept': 'application/vnd.github.v3+json'},
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) {
+      state = state.copyWith(status: UpdateStatus.idle);
+      return;
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final tagName = (data['tag_name'] as String?) ?? '';
+    final version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
+    final url = (data['html_url'] as String?) ?? _releasesPageUrl;
+    final assetUrl = _findPlatformAssetUrl(data);
+
+    await prefs.setString(
+      _cacheKey,
+      jsonEncode({'version': version, 'url': url, 'assetUrl': assetUrl}),
+    );
+    await prefs.setInt(_cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
+
+    final dismissed = prefs.getString(_dismissedVersionKey) == version;
+    final readyPath = await _checkExistingDownload(prefs, version);
+
+    state = UpdateState(
+      latestVersion: version,
+      downloadUrl: url,
+      assetDownloadUrl: assetUrl,
+      dismissed: dismissed,
+      status: readyPath != null
+          ? UpdateStatus.readyToInstall
+          : UpdateStatus.idle,
+      downloadedFilePath: readyPath,
+    );
+  }
+
+  /// Find the platform-specific asset download URL from release data.
+  String? _findPlatformAssetUrl(Map<String, dynamic> data) {
+    final assetName = update_svc.getAssetNameForPlatform();
+    if (assetName == null) return null;
+
+    final assets = data['assets'] as List<dynamic>? ?? [];
+    for (final asset in assets) {
+      if ((asset['name'] as String?) == assetName) {
+        return asset['browser_download_url'] as String?;
+      }
+    }
+    return null;
   }
 
   /// Download the update binary in the background.

@@ -11,6 +11,8 @@ import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 
+const _routeHome = '/home';
+
 /// Screen shown when a user opens an invite link like
 /// `https://echo-messenger.us/#/join/{groupId}`.
 ///
@@ -117,7 +119,7 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
             'Joined ${_groupName ?? "group"} successfully!',
             type: ToastType.success,
           );
-          context.go('/home');
+          context.go(_routeHome);
         }
       } else {
         String errorMsg = 'Failed to join group';
@@ -156,7 +158,7 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
         ),
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: context.textSecondary),
-          onPressed: () => context.go('/home'),
+          onPressed: () => context.go(_routeHome),
         ),
       ),
       body: Center(
@@ -250,7 +252,7 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
           ),
           const SizedBox(height: 12),
           TextButton(
-            onPressed: () => context.go('/home'),
+            onPressed: () => context.go(_routeHome),
             child: Text(
               'Cancel',
               style: TextStyle(color: context.textSecondary),

@@ -16,6 +16,9 @@ import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../widgets/conversation_panel.dart' show buildAvatar;
 
+const _kJsonHeaders = {'Content-Type': 'application/json'};
+const _kGroupInfoTitle = 'Group Info';
+
 class GroupInfoScreen extends ConsumerStatefulWidget {
   final String conversationId;
 
@@ -69,10 +72,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
               Uri.parse(
                 '$serverUrl/api/conversations/${widget.conversationId}',
               ),
-              headers: {
-                'Authorization': 'Bearer $token',
-                'Content-Type': 'application/json',
-              },
+              headers: {'Authorization': 'Bearer $token', ..._kJsonHeaders},
             ),
           );
 
@@ -143,10 +143,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     try {
       final response = await http.post(
         Uri.parse('$serverUrl/api/groups/${widget.conversationId}/members'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $token', ..._kJsonHeaders},
         body: jsonEncode({'user_id': selected}),
       );
 
@@ -260,10 +257,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     try {
       final response = await http.post(
         Uri.parse('$serverUrl/api/groups/${widget.conversationId}/leave'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $token', ..._kJsonHeaders},
       );
 
       if ((response.statusCode == 200 || response.statusCode == 204) &&
@@ -410,10 +404,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     try {
       final response = await http.put(
         Uri.parse('$serverUrl/api/groups/${widget.conversationId}'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $token', ..._kJsonHeaders},
         body: jsonEncode({'title': newTitle}),
       );
       if ((response.statusCode == 200) && mounted) {
@@ -442,10 +433,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     try {
       final response = await http.put(
         Uri.parse('$serverUrl/api/groups/${widget.conversationId}'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
+        headers: {'Authorization': 'Bearer $token', ..._kJsonHeaders},
         body: jsonEncode({'description': newDesc}),
       );
       if ((response.statusCode == 200) && mounted) {
@@ -576,14 +564,14 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Group Info')),
+        appBar: AppBar(title: const Text(_kGroupInfoTitle)),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_conversation == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Group Info')),
+        appBar: AppBar(title: const Text(_kGroupInfoTitle)),
         body: const Center(child: Text('Could not load group information')),
       );
     }
@@ -597,7 +585,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final isOwnerOrAdmin = myRole == 'owner' || myRole == 'admin';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Group Info')),
+      appBar: AppBar(title: const Text(_kGroupInfoTitle)),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 600),

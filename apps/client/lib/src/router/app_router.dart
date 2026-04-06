@@ -14,6 +14,9 @@ import '../screens/register_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/user_profile_screen.dart';
 
+const _routeHome = '/home';
+const _routeLogin = '/login';
+
 /// Shared fade transition used by all routes.
 CustomTransitionPage<void> _fadePage({
   required LocalKey key,
@@ -41,20 +44,20 @@ final routerProvider = Provider<GoRouter>((ref) {
   }
 
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: _routeLogin,
     redirect: (context, state) {
       final isLoggedIn = authState.isLoggedIn;
       final isAuthRoute =
-          state.matchedLocation == '/login' ||
+          state.matchedLocation == _routeLogin ||
           state.matchedLocation == '/register';
 
-      if (!isLoggedIn && !isAuthRoute) return '/login';
-      if (isLoggedIn && isAuthRoute) return '/home';
+      if (!isLoggedIn && !isAuthRoute) return _routeLogin;
+      if (isLoggedIn && isAuthRoute) return _routeHome;
       return null;
     },
     routes: [
       GoRoute(
-        path: '/login',
+        path: _routeLogin,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const LoginScreen()),
       ),
@@ -64,7 +67,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             _fadePage(key: state.pageKey, child: const RegisterScreen()),
       ),
       GoRoute(
-        path: '/home',
+        path: _routeHome,
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const HomeScreen()),
       ),
@@ -110,7 +113,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           final qp = state.uri.queryParameters;
           final groupId =
               qp['groupId'] ?? qp['gid'] ?? qp['id'] ?? qp['invite'] ?? '';
-          if (groupId.isEmpty) return '/home';
+          if (groupId.isEmpty) return _routeHome;
           return '/join/$groupId';
         },
       ),
@@ -147,7 +150,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         redirect: (context, state) {
           final qp = state.uri.queryParameters;
           final userId = qp['userId'] ?? qp['uid'] ?? qp['id'] ?? '';
-          if (userId.isEmpty) return '/home';
+          if (userId.isEmpty) return _routeHome;
           return '/profile/$userId';
         },
       ),

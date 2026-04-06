@@ -234,105 +234,109 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
             ),
           ),
           // Content
-          Expanded(
-            child: _isLoading
-                ? Center(
-                    child: CircularProgressIndicator(
-                      color: context.accent,
-                      strokeWidth: 2,
-                    ),
-                  )
-                : _error != null
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          size: 40,
-                          color: context.textMuted,
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          _error!,
-                          style: TextStyle(
-                            color: context.textSecondary,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextButton(
-                          onPressed: () =>
-                              _searchGroups(_searchController.text.trim()),
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  )
-                : _groups.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.explore_outlined,
-                          size: 48,
-                          color: context.textMuted.withValues(alpha: 0.5),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No public groups found',
-                          style: TextStyle(
-                            color: context.textSecondary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Try a different search or create a public group',
-                          style: TextStyle(
-                            color: context.textMuted,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _groups.length + (_hasMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index >= _groups.length) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          child: Center(
-                            child: _isLoadingMore
-                                ? SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      color: context.accent,
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : TextButton(
-                                    onPressed: _loadMore,
-                                    child: const Text('Load more'),
-                                  ),
-                          ),
-                        );
-                      }
-                      final group = _groups[index];
-                      return _GroupDiscoveryItem(
-                        group: group,
-                        isJoining: _joiningIds.contains(group.id),
-                        onJoin: () => _joinGroup(group),
-                      );
-                    },
-                  ),
+          Expanded(child: _buildContent()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    if (_isLoading) {
+      return Center(
+        child: CircularProgressIndicator(color: context.accent, strokeWidth: 2),
+      );
+    }
+    if (_error != null) {
+      return _buildErrorState();
+    }
+    if (_groups.isEmpty) {
+      return _buildEmptyState();
+    }
+    return _buildGroupList();
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.error_outline, size: 40, color: context.textMuted),
+          const SizedBox(height: 12),
+          Text(
+            _error!,
+            style: TextStyle(color: context.textSecondary, fontSize: 14),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () => _searchGroups(_searchController.text.trim()),
+            child: const Text('Retry'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.explore_outlined,
+            size: 48,
+            color: context.textMuted.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No public groups found',
+            style: TextStyle(
+              color: context.textSecondary,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Try a different search or create a public group',
+            style: TextStyle(color: context.textMuted, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupList() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: _groups.length + (_hasMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index >= _groups.length) {
+          return _buildLoadMoreItem();
+        }
+        final group = _groups[index];
+        return _GroupDiscoveryItem(
+          group: group,
+          isJoining: _joiningIds.contains(group.id),
+          onJoin: () => _joinGroup(group),
+        );
+      },
+    );
+  }
+
+  Widget _buildLoadMoreItem() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: _isLoadingMore
+            ? SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  color: context.accent,
+                  strokeWidth: 2,
+                ),
+              )
+            : TextButton(onPressed: _loadMore, child: const Text('Load more')),
       ),
     );
   }

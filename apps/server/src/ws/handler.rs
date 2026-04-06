@@ -123,45 +123,77 @@ pub async fn handle_socket(
         }
     });
 
-    // Deliver undelivered messages
-    if let Ok(undelivered) = db::messages::get_undelivered(&state.pool, user_id).await {
-        let ids: Vec<Uuid> = undelivered.iter().map(|m| m.id).collect();
-        for msg in &undelivered {
-            let server_msg = ServerMessage::NewMessage {
-                message_id: msg.id,
-                from_user_id: msg.sender_id,
-                from_username: msg.sender_username.clone(),
-                conversation_id: msg.conversation_id,
-                channel_id: msg.channel_id,
-                content: msg.content.clone(),
-                timestamp: msg.created_at,
-                reply_to_id: msg.reply_to_id,
-                reply_to_content: msg.reply_to_content.clone(),
-                reply_to_username: msg.reply_to_username.clone(),
-            };
-            if let Ok(json) = serde_json::to_string(&server_msg) {
-                let _ = state.hub.send_to(&user_id, WsMessage::Text(json.into()));
-            }
-        }
-        if !ids.is_empty() {
-            let _ = db::messages::mark_delivered(&state.pool, &ids).await;
+    deliver_undelivered_messages(&state, user_id).await;
 
-            // Notify original senders that their messages were delivered
-            for msg in &undelivered {
-                let delivered_event = ServerMessage::Delivered {
-                    message_id: msg.id,
-                    conversation_id: msg.conversation_id,
-                };
-                if let Ok(json) = serde_json::to_string(&delivered_event) {
-                    state
-                        .hub
-                        .send_to(&msg.sender_id, WsMessage::Text(json.into()));
-                }
-            }
+    run_receive_loop(&mut receiver, user_id, &username, &state).await;
+
+    // Cleanup
+    state.hub.unregister(user_id);
+    send_task.abort();
+
+    cleanup_user_voice_sessions(&state, user_id).await;
+
+    // Broadcast offline presence to contacts
+    broadcast_presence(&state, user_id, &username, "offline").await;
+
+    tracing::info!("WebSocket disconnected: {} ({})", username, user_id);
+}
+
+/// Deliver any messages that were stored while the user was offline, then mark
+/// them delivered and notify the original senders.
+async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid) {
+    let undelivered = match db::messages::get_undelivered(&state.pool, user_id).await {
+        Ok(msgs) => msgs,
+        Err(_) => return,
+    };
+
+    let ids: Vec<Uuid> = undelivered.iter().map(|m| m.id).collect();
+
+    for msg in &undelivered {
+        let server_msg = ServerMessage::NewMessage {
+            message_id: msg.id,
+            from_user_id: msg.sender_id,
+            from_username: msg.sender_username.clone(),
+            conversation_id: msg.conversation_id,
+            channel_id: msg.channel_id,
+            content: msg.content.clone(),
+            timestamp: msg.created_at,
+            reply_to_id: msg.reply_to_id,
+            reply_to_content: msg.reply_to_content.clone(),
+            reply_to_username: msg.reply_to_username.clone(),
+        };
+        if let Ok(json) = serde_json::to_string(&server_msg) {
+            let _ = state.hub.send_to(&user_id, WsMessage::Text(json.into()));
         }
     }
 
-    // Message receive loop with rate limiting (token bucket: 20 msg/s, burst 50)
+    if ids.is_empty() {
+        return;
+    }
+
+    let _ = db::messages::mark_delivered(&state.pool, &ids).await;
+
+    // Notify original senders that their messages were delivered
+    for msg in &undelivered {
+        let delivered_event = ServerMessage::Delivered {
+            message_id: msg.id,
+            conversation_id: msg.conversation_id,
+        };
+        if let Ok(json) = serde_json::to_string(&delivered_event) {
+            state
+                .hub
+                .send_to(&msg.sender_id, WsMessage::Text(json.into()));
+        }
+    }
+}
+
+/// Rate-limited WebSocket receive loop (token bucket: 20 msg/s, burst 50).
+async fn run_receive_loop(
+    receiver: &mut futures_util::stream::SplitStream<WebSocket>,
+    user_id: Uuid,
+    username: &str,
+    state: &AppState,
+) {
     const RATE_LIMIT: f64 = 20.0;
     const BURST: f64 = 50.0;
     let mut tokens: f64 = BURST;
@@ -177,52 +209,42 @@ pub async fn handle_socket(
         match msg {
             WsMessage::Text(text) => {
                 if tokens < 1.0 {
-                    let err = serde_json::json!({
-                        "type": "error",
-                        "message": "Rate limit exceeded"
-                    });
-                    let _ = state
-                        .hub
-                        .send_to(&user_id, WsMessage::Text(err.to_string().into()));
+                    send_error(state, user_id, "Rate limit exceeded");
                     continue;
                 }
                 tokens -= 1.0;
-                handle_text_message(&text, user_id, &username, &state).await;
+                handle_text_message(&text, user_id, username, state).await;
             }
             WsMessage::Close(_) => break,
             _ => {}
         }
     }
+}
 
-    // Cleanup
-    state.hub.unregister(user_id);
-    send_task.abort();
+/// Clean up stale voice sessions for a disconnecting user and broadcast
+/// leave events to group members.
+async fn cleanup_user_voice_sessions(state: &AppState, user_id: Uuid) {
+    let removed_sessions =
+        match db::channels::leave_all_user_voice_sessions(&state.pool, user_id).await {
+            Ok(sessions) => sessions,
+            Err(_) => return,
+        };
 
-    // Clean up stale voice sessions for this user (handles client crashes).
-    if let Ok(removed_sessions) =
-        db::channels::leave_all_user_voice_sessions(&state.pool, user_id).await
-    {
-        for (channel_id, conversation_id) in removed_sessions {
-            let member_ids =
-                db::groups::get_conversation_member_ids(&state.pool, conversation_id).await;
-            if let Ok(member_ids) = member_ids {
-                let event = serde_json::json!({
-                    "type": "voice_session_left",
-                    "group_id": conversation_id,
-                    "channel_id": channel_id,
-                    "user_id": user_id,
-                });
-                if let Ok(json) = serde_json::to_string(&event) {
-                    state.hub.broadcast_json(&member_ids, &json, None);
-                }
+    for (channel_id, conversation_id) in removed_sessions {
+        let member_ids =
+            db::groups::get_conversation_member_ids(&state.pool, conversation_id).await;
+        if let Ok(member_ids) = member_ids {
+            let event = serde_json::json!({
+                "type": "voice_session_left",
+                "group_id": conversation_id,
+                "channel_id": channel_id,
+                "user_id": user_id,
+            });
+            if let Ok(json) = serde_json::to_string(&event) {
+                state.hub.broadcast_json(&member_ids, &json, None);
             }
         }
     }
-
-    // Broadcast offline presence to contacts
-    broadcast_presence(&state, user_id, &username, "offline").await;
-
-    tracing::info!("WebSocket disconnected: {} ({})", username, user_id);
 }
 
 async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str, state: &AppState) {
@@ -466,50 +488,69 @@ async fn resolve_channel(
     channel_id: Option<Uuid>,
     conv_kind: Option<ConversationKind>,
 ) -> Option<Option<Uuid>> {
-    if conv_kind == Some(ConversationKind::Group) {
-        if let Some(cid) = channel_id {
-            let channel = match db::channels::get_channel(&state.pool, cid).await {
-                Ok(Some(c)) => c,
-                Ok(None) => {
-                    send_error(state, sender_id, "Channel not found");
-                    return None;
-                }
-                Err(_) => {
-                    send_error(state, sender_id, "Database error");
-                    return None;
-                }
-            };
+    if conv_kind != Some(ConversationKind::Group) {
+        return Some(None);
+    }
 
-            if channel.conversation_id != conv_id {
-                send_error(state, sender_id, "Channel is not part of this conversation");
-                return None;
-            }
-
-            if channel.kind != "text" {
-                send_error(
-                    state,
-                    sender_id,
-                    "Messages can only be sent to text channels",
-                );
-                return None;
-            }
-
-            Some(Some(cid))
-        } else {
-            match db::channels::get_default_text_channel(&state.pool, conv_id).await {
-                Ok(Some(channel)) => Some(Some(channel.id)),
-                Ok(None) => {
-                    send_error(state, sender_id, "No text channel found for this group");
-                    None
-                }
-                Err(_) => {
-                    send_error(state, sender_id, "Database error");
-                    None
-                }
-            }
-        }
+    if let Some(cid) = channel_id {
+        validate_explicit_channel(state, sender_id, conv_id, cid).await
     } else {
-        Some(None)
+        resolve_default_text_channel(state, sender_id, conv_id).await
+    }
+}
+
+/// Validate that an explicit channel_id belongs to the conversation and is a text channel.
+async fn validate_explicit_channel(
+    state: &AppState,
+    sender_id: Uuid,
+    conv_id: Uuid,
+    channel_id: Uuid,
+) -> Option<Option<Uuid>> {
+    let channel = match db::channels::get_channel(&state.pool, channel_id).await {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            send_error(state, sender_id, "Channel not found");
+            return None;
+        }
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return None;
+        }
+    };
+
+    if channel.conversation_id != conv_id {
+        send_error(state, sender_id, "Channel is not part of this conversation");
+        return None;
+    }
+
+    if channel.kind != "text" {
+        send_error(
+            state,
+            sender_id,
+            "Messages can only be sent to text channels",
+        );
+        return None;
+    }
+
+    Some(Some(channel_id))
+}
+
+/// Look up the default text channel for a group conversation.
+async fn resolve_default_text_channel(
+    state: &AppState,
+    sender_id: Uuid,
+    conv_id: Uuid,
+) -> Option<Option<Uuid>> {
+    match db::channels::get_default_text_channel(&state.pool, conv_id).await {
+        Ok(Some(channel)) => Some(Some(channel.id)),
+        Ok(None) => {
+            send_error(state, sender_id, "No text channel found for this group");
+            None
+        }
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            None
+        }
     }
 }
 

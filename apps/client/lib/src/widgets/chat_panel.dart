@@ -555,6 +555,241 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   }
 
   // ---------------------------------------------------------------------------
+  // Build helpers
+  // ---------------------------------------------------------------------------
+
+  Widget _buildNoConversationPlaceholder() {
+    return Container(
+      color: context.chatBg,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.chat_bubble_outline_rounded,
+              size: 56,
+              color: context.textMuted.withValues(alpha: 0.4),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Select a conversation',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Pick someone from the left to start chatting',
+              style: TextStyle(color: context.textMuted, fontSize: 14),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyMessagePlaceholder(String displayName) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: context.accent,
+            child: Text(
+              displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
+              style: const TextStyle(fontSize: 22, color: Colors.white),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            displayName,
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Start your conversation with $displayName',
+            style: TextStyle(color: context.textMuted, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageAtIndex({
+    required int i,
+    required List<ChatMessage> messages,
+    required Map<String, String?> memberAvatars,
+    required String myUserId,
+    required String serverUrl,
+    required String authToken,
+  }) {
+    final msg = messages[i];
+
+    if (_isSystemTimelineMessage(msg)) {
+      return _buildSystemTimelineMessage(msg);
+    }
+
+    final needsDateDivider =
+        i == 0 || _differentDay(messages[i - 1].timestamp, msg.timestamp);
+
+    final showHeader =
+        i == 0 ||
+        messages[i - 1].fromUserId != msg.fromUserId ||
+        !_withinTwoMinutes(messages[i - 1].timestamp, msg.timestamp);
+
+    final isLastInGroup =
+        i == messages.length - 1 ||
+        messages[i + 1].fromUserId != msg.fromUserId;
+
+    final senderAvatarUrl = memberAvatars[msg.fromUserId];
+    final isHighlighted = _highlightedMessageId == msg.id;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (needsDateDivider) _buildDateDivider(msg.timestamp),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 400),
+          color: isHighlighted
+              ? context.accent.withValues(alpha: 0.15)
+              : Colors.transparent,
+          child: MessageItem(
+            message: msg,
+            showHeader: showHeader,
+            isLastInGroup: isLastInGroup,
+            myUserId: myUserId,
+            serverUrl: serverUrl,
+            authToken: authToken,
+            senderAvatarUrl: senderAvatarUrl,
+            compactLayout:
+                ref.watch(messageLayoutProvider) == MessageLayout.compact,
+            onReactionTap: _showReactionPicker,
+            onReactionSelect: (message, emoji) {
+              final alreadyReacted = message.reactions.any(
+                (r) => r.emoji == emoji && r.userId == myUserId,
+              );
+              _toggleReaction(message, emoji, alreadyReacted);
+            },
+            onDelete: _confirmDelete,
+            onEdit: (msg) {
+              _chatInputBarKey.currentState?.enterEditMode(msg);
+            },
+            onReply: (msg) {
+              // TODO: implement reply forwarding to input bar
+            },
+            onAvatarTap: (userId) {
+              UserProfileScreen.show(context, ref, userId);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMessageListOrEmpty({
+    required Conversation conv,
+    required List<ChatMessage> messages,
+    required bool isLoadingHistory,
+    required String displayName,
+    required ChatState chatState,
+    required Map<String, String?> memberAvatars,
+    required String myUserId,
+    required String serverUrl,
+    required String authToken,
+  }) {
+    if (messages.isEmpty && !isLoadingHistory) {
+      return _buildEmptyMessagePlaceholder(displayName);
+    }
+
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.only(bottom: 8),
+      itemCount: messages.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return (chatState.hasMore[conv.id] ?? true)
+              ? const SizedBox(height: 40)
+              : const SizedBox(height: 8);
+        }
+        return _buildMessageAtIndex(
+          i: index - 1,
+          messages: messages,
+          memberAvatars: memberAvatars,
+          myUserId: myUserId,
+          serverUrl: serverUrl,
+          authToken: authToken,
+        );
+      },
+    );
+  }
+
+  void _handleKeyboardScroll() {
+    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
+    if (keyboardInset != _lastKeyboardInset) {
+      final wasNearBottom = _isNearBottom();
+      _lastKeyboardInset = keyboardInset;
+      if (wasNearBottom) {
+        _scrollToBottom(animated: false, settleRetries: 2);
+      }
+    }
+  }
+
+  void _setupAutoScroll(
+    Conversation conv,
+    String? selectedChannelId,
+    bool includeUnchanneled,
+  ) {
+    ref.listen<ChatState>(chatProvider, (prev, next) {
+      int visibleCount(ChatState s) {
+        if (!conv.isGroup) return s.messagesForConversation(conv.id).length;
+        return s
+            .messagesForConversationChannel(
+              conv.id,
+              channelId: selectedChannelId,
+              includeUnchanneled: includeUnchanneled,
+            )
+            .length;
+      }
+
+      final prevCount = prev == null ? 0 : visibleCount(prev);
+      final nextCount = visibleCount(next);
+      if (nextCount > prevCount && _isNearBottom()) {
+        _scrollToBottom(settleRetries: 2);
+      }
+    });
+  }
+
+  String _displayNameFor(Conversation conv, String myUserId) {
+    if (conv.isGroup) return conv.name ?? 'Group';
+    return conv.members
+            .where((m) => m.userId != myUserId)
+            .firstOrNull
+            ?.username ??
+        'Chat';
+  }
+
+  List<Widget> _buildVoiceRenderers() {
+    return ref
+        .watch(voiceRtcProvider.notifier)
+        .remoteAudioRenderers
+        .values
+        .map(
+          (renderer) => Opacity(
+            opacity: 0,
+            child: SizedBox(width: 1, height: 1, child: RTCVideoView(renderer)),
+          ),
+        )
+        .toList();
+  }
+
+  // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
 
@@ -562,37 +797,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   Widget build(BuildContext context) {
     final conv = widget.conversation;
 
-    if (conv == null) {
-      return Container(
-        color: context.chatBg,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.chat_bubble_outline_rounded,
-                size: 56,
-                color: context.textMuted.withValues(alpha: 0.4),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Select a conversation',
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Pick someone from the left to start chatting',
-                style: TextStyle(color: context.textMuted, fontSize: 14),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+    if (conv == null) return _buildNoConversationPlaceholder();
 
     // Load on first build + scroll to newest message
     if (_loadedHistoryKey == null) {
@@ -604,14 +809,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       });
     }
 
-    final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
-    if (keyboardInset != _lastKeyboardInset) {
-      final wasNearBottom = _isNearBottom();
-      _lastKeyboardInset = keyboardInset;
-      if (wasNearBottom) {
-        _scrollToBottom(animated: false, settleRetries: 2);
-      }
-    }
+    _handleKeyboardScroll();
 
     final chatState = ref.watch(chatProvider);
     final wsState = ref.watch(websocketProvider);
@@ -633,7 +831,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
     final isLoadingHistory = chatState.loadingHistory[conv.id] ?? false;
 
-    // Typing indicators
     final typingUsers = wsState
         .typingIn(conv.id, channelId: selectedChannelId)
         .where((u) => u != myUserId)
@@ -643,36 +840,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
         })
         .toList();
 
-    // Auto-scroll on new messages (only when near bottom)
-    ref.listen<ChatState>(chatProvider, (prev, next) {
-      int visibleCount(ChatState s) {
-        if (!conv.isGroup) return s.messagesForConversation(conv.id).length;
-        return s
-            .messagesForConversationChannel(
-              conv.id,
-              channelId: selectedChannelId,
-              includeUnchanneled: includeUnchanneled,
-            )
-            .length;
-      }
+    _setupAutoScroll(conv, selectedChannelId, includeUnchanneled);
 
-      final prevCount = prev == null ? 0 : visibleCount(prev);
-      final nextCount = visibleCount(next);
-      if (nextCount > prevCount && _isNearBottom()) {
-        _scrollToBottom(settleRetries: 2);
-      }
-    });
+    final displayName = _displayNameFor(conv, myUserId);
 
-    // Compute display name for header
-    final displayName = conv.isGroup
-        ? (conv.name ?? 'Group')
-        : conv.members
-                  .where((m) => m.userId != myUserId)
-                  .firstOrNull
-                  ?.username ??
-              'Chat';
-
-    // Member avatar URLs for message items
     final memberAvatars = <String, String?>{};
     for (final m in conv.members) {
       memberAvatars[m.userId] = m.avatarUrl;
@@ -682,7 +853,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       color: context.chatBg,
       child: Column(
         children: [
-          // Header
           ChatHeaderBar(
             conversation: conv,
             myUserId: myUserId,
@@ -696,7 +866,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             hideEncryptionBanner: _hideEncryptionBanner,
           ),
 
-          // Channel bar (groups only)
           if (conv.isGroup)
             ChannelBar(
               conversationId: conv.id,
@@ -708,7 +877,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               },
             ),
 
-          // Search overlay
           if (_showSearch)
             MessageSearchOverlay(
               conversationId: conv.id,
@@ -719,7 +887,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               onClose: () => setState(() => _showSearch = false),
             ),
 
-          // Loading indicator
           if (isLoadingHistory)
             LinearProgressIndicator(
               minHeight: 2,
@@ -727,135 +894,20 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
               backgroundColor: context.surface,
             ),
 
-          // Message list
           Expanded(
-            child: messages.isEmpty && !isLoadingHistory
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircleAvatar(
-                          radius: 28,
-                          backgroundColor: context.accent,
-                          child: Text(
-                            displayName.isNotEmpty
-                                ? displayName[0].toUpperCase()
-                                : '?',
-                            style: const TextStyle(
-                              fontSize: 22,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          displayName,
-                          style: TextStyle(
-                            color: context.textPrimary,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Start your conversation with $displayName',
-                          style: TextStyle(
-                            color: context.textMuted,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.only(bottom: 8),
-                    itemCount: messages.length + 1,
-                    itemBuilder: (context, index) {
-                      if (index == 0) {
-                        return (chatState.hasMore[conv.id] ?? true)
-                            ? const SizedBox(height: 40)
-                            : const SizedBox(height: 8);
-                      }
-                      final i = index - 1;
-                      final msg = messages[i];
-
-                      if (_isSystemTimelineMessage(msg)) {
-                        return _buildSystemTimelineMessage(msg);
-                      }
-
-                      // Date divider
-                      final needsDateDivider =
-                          i == 0 ||
-                          _differentDay(
-                            messages[i - 1].timestamp,
-                            msg.timestamp,
-                          );
-
-                      final showHeader =
-                          i == 0 ||
-                          messages[i - 1].fromUserId != msg.fromUserId ||
-                          !_withinTwoMinutes(
-                            messages[i - 1].timestamp,
-                            msg.timestamp,
-                          );
-                      final isLastInGroup =
-                          i == messages.length - 1 ||
-                          messages[i + 1].fromUserId != msg.fromUserId;
-
-                      final senderAvatarUrl = memberAvatars[msg.fromUserId];
-                      final isHighlighted = _highlightedMessageId == msg.id;
-
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (needsDateDivider)
-                            _buildDateDivider(msg.timestamp),
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 400),
-                            color: isHighlighted
-                                ? context.accent.withValues(alpha: 0.15)
-                                : Colors.transparent,
-                            child: MessageItem(
-                              message: msg,
-                              showHeader: showHeader,
-                              isLastInGroup: isLastInGroup,
-                              myUserId: myUserId,
-                              serverUrl: serverUrl,
-                              authToken: authToken,
-                              senderAvatarUrl: senderAvatarUrl,
-                              compactLayout:
-                                  ref.watch(messageLayoutProvider) ==
-                                  MessageLayout.compact,
-                              onReactionTap: _showReactionPicker,
-                              onReactionSelect: (message, emoji) {
-                                final alreadyReacted = message.reactions.any(
-                                  (r) =>
-                                      r.emoji == emoji && r.userId == myUserId,
-                                );
-                                _toggleReaction(message, emoji, alreadyReacted);
-                              },
-                              onDelete: _confirmDelete,
-                              onEdit: (msg) {
-                                _chatInputBarKey.currentState?.enterEditMode(
-                                  msg,
-                                );
-                              },
-                              onReply: (msg) {
-                                // TODO: implement reply forwarding to input bar
-                              },
-                              onAvatarTap: (userId) {
-                                UserProfileScreen.show(context, ref, userId);
-                              },
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+            child: _buildMessageListOrEmpty(
+              conv: conv,
+              messages: messages,
+              isLoadingHistory: isLoadingHistory,
+              displayName: displayName,
+              chatState: chatState,
+              memberAvatars: memberAvatars,
+              myUserId: myUserId,
+              serverUrl: serverUrl,
+              authToken: authToken,
+            ),
           ),
 
-          // Input bar
           ChatInputBar(
             key: _chatInputBarKey,
             conversation: conv,
@@ -868,21 +920,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
             },
           ),
 
-          // Hidden RTCVideoView widgets for voice audio playback
-          ...ref
-              .watch(voiceRtcProvider.notifier)
-              .remoteAudioRenderers
-              .values
-              .map(
-                (renderer) => Opacity(
-                  opacity: 0,
-                  child: SizedBox(
-                    width: 1,
-                    height: 1,
-                    child: RTCVideoView(renderer),
-                  ),
-                ),
-              ),
+          ..._buildVoiceRenderers(),
         ],
       ),
     );
