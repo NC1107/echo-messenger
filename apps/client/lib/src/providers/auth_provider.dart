@@ -241,8 +241,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       // Clean up legacy password key if it exists
       await _clearLegacyCredentials(prefs);
-    } catch (_) {
-      // Best effort
+    } catch (e) {
+      debugPrint('[Auth] _storeTokens failed: $e');
     }
   }
 
@@ -255,8 +255,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await prefs.remove(_keyUserId);
       await prefs.remove(_keyUsername);
       await _clearLegacyCredentials(prefs);
-    } catch (_) {
-      // Best effort
+    } catch (e) {
+      debugPrint('[Auth] _clearStoredTokens failed: $e');
     }
   }
 
@@ -264,8 +264,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> _clearLegacyCredentials(SharedPreferences prefs) async {
     try {
       await prefs.remove('echo_auth_password');
-    } catch (_) {
-      // Best effort
+    } catch (e) {
+      debugPrint('[Auth] _clearLegacyCredentials failed: $e');
     }
   }
 
@@ -304,7 +304,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
         try {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
           errorMsg = data['error'] as String? ?? errorMsg;
-        } catch (_) {
+        } catch (e) {
+          debugPrint('[Auth] register response parse failed: $e');
           errorMsg = 'Server error (${response.statusCode})';
         }
         state = state.copyWith(isLoading: false, error: errorMsg);
@@ -353,7 +354,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
         try {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
           errorMsg = data['error'] as String? ?? errorMsg;
-        } catch (_) {
+        } catch (e) {
+          debugPrint('[Auth] login response parse failed: $e');
           errorMsg = 'Server error (${response.statusCode})';
         }
         state = state.copyWith(isLoading: false, error: errorMsg);

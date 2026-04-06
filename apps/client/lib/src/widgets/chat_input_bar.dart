@@ -107,6 +107,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _isTextEmpty = true;
       _showEmojiPicker = false;
       _showGifPicker = false;
+      ref.read(chatProvider.notifier).clearReplyTo();
     }
   }
 
@@ -129,6 +130,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _messageController.text = message.content;
       _isTextEmpty = false;
     });
+    _inputFocusNode.requestFocus();
+  }
+
+  /// Focus the input text field (e.g. after starting a reply).
+  void requestInputFocus() {
     _inputFocusNode.requestFocus();
   }
 
@@ -192,6 +198,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     if (text.isEmpty) return;
     final conv = widget.conversation;
     final myUserId = ref.read(authProvider).userId ?? '';
+    final chatState = ref.read(chatProvider);
+    final replyTo = chatState.replyToMessage;
 
     String peerUserId = '';
     String? channelId;
@@ -213,17 +221,35 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           myUserId,
           conversationId: conv.id,
           channelId: channelId,
+          replyToId: replyTo?.id,
+          replyToContent: replyTo?.content,
+          replyToUsername: replyTo?.fromUsername,
         );
+
+    // Clear reply state after capturing the reply info.
+    if (replyTo != null) {
+      ref.read(chatProvider.notifier).clearReplyTo();
+    }
 
     try {
       if (conv.isGroup) {
         await ref
             .read(websocketProvider.notifier)
-            .sendGroupMessage(conv.id, text, channelId: channelId);
+            .sendGroupMessage(
+              conv.id,
+              text,
+              channelId: channelId,
+              replyToId: replyTo?.id,
+            );
       } else {
         await ref
             .read(websocketProvider.notifier)
-            .sendMessage(peerUserId, text, conversationId: conv.id);
+            .sendMessage(
+              peerUserId,
+              text,
+              conversationId: conv.id,
+              replyToId: replyTo?.id,
+            );
       }
     } catch (e) {
       if (mounted) {
@@ -752,6 +778,57 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     );
   }
 
+  Widget _buildReplyPreviewBar(ChatMessage replyTo) {
+    final truncated = replyTo.content.length > 120
+        ? '${replyTo.content.substring(0, 120)}...'
+        : replyTo.content;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border(left: BorderSide(color: context.accent, width: 3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.reply_outlined, size: 14, color: context.accent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Replying to ${replyTo.fromUsername}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: context.accent,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  truncated,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: context.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => ref.read(chatProvider.notifier).clearReplyTo(),
+            child: Icon(Icons.close, size: 14, color: context.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAttachmentThumbnail() {
     if (_pendingAttachmentBytes != null) {
       return Image.memory(
@@ -1006,6 +1083,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _clearPendingAttachment();
     } else if (_isEditing) {
       _cancelEditMode();
+    } else if (ref.read(chatProvider).replyToMessage != null) {
+      ref.read(chatProvider.notifier).clearReplyTo();
     }
   }
 
@@ -1313,6 +1392,9 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final conv = widget.conversation;
     final myUserId = ref.watch(authProvider).userId ?? '';
     final voiceSettings = ref.watch(voiceSettingsProvider);
+    final replyToMessage = ref.watch(
+      chatProvider.select((s) => s.replyToMessage),
+    );
 
     final displayName = conv.displayName(myUserId);
     final typingText = _computeTypingText(displayName);
@@ -1342,6 +1424,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (showInputStatus) _buildInputStatusBar(inputStatusText),
+              // Reply preview bar
+              if (replyToMessage != null) _buildReplyPreviewBar(replyToMessage),
               // Attachment preview bar (Discord-style)
               if (_hasPendingAttachment) _buildAttachmentPreview(),
               _buildInputRow(

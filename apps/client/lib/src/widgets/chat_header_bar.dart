@@ -8,7 +8,7 @@ import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
-import 'conversation_panel.dart' show buildAvatar, groupAvatarColor;
+import 'avatar_utils.dart' show buildAvatar, groupAvatarColor;
 
 class ChatHeaderBar extends ConsumerWidget {
   final Conversation conversation;

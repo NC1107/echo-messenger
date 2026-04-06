@@ -24,10 +24,14 @@ class ChatState {
   /// Key format: conversationId:channelId (channelId empty for full conversation).
   final Map<String, bool> hasMore;
 
+  /// The message being replied to (shown in the input bar).
+  final ChatMessage? replyToMessage;
+
   const ChatState({
     this.messagesByConversation = const {},
     this.loadingHistory = const {},
     this.hasMore = const {},
+    this.replyToMessage,
   });
 
   /// Get messages for a conversation ID.
@@ -81,6 +85,25 @@ class ChatState {
       messagesByConversation: updatedConv,
       loadingHistory: loadingHistory,
       hasMore: hasMore,
+      replyToMessage: replyToMessage,
+    );
+  }
+
+  ChatState copyWith({
+    Map<String, List<ChatMessage>>? messagesByConversation,
+    Map<String, bool>? loadingHistory,
+    Map<String, bool>? hasMore,
+    ChatMessage? replyToMessage,
+    bool clearReply = false,
+  }) {
+    return ChatState(
+      messagesByConversation:
+          messagesByConversation ?? this.messagesByConversation,
+      loadingHistory: loadingHistory ?? this.loadingHistory,
+      hasMore: hasMore ?? this.hasMore,
+      replyToMessage: clearReply
+          ? null
+          : (replyToMessage ?? this.replyToMessage),
     );
   }
 }
@@ -94,6 +117,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   void addMessage(ChatMessage msg) {
     state = state.withMessage(msg);
+  }
+
+  /// Set the message being replied to (shown in the input bar).
+  void setReplyTo(ChatMessage message) {
+    state = state.copyWith(replyToMessage: message);
+  }
+
+  /// Clear the active reply.
+  void clearReplyTo() {
+    state = state.copyWith(clearReply: true);
   }
 
   void addSystemEvent(String conversationId, String event) {
@@ -125,6 +158,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String myUserId, {
     String conversationId = '',
     String? channelId,
+    String? replyToId,
+    String? replyToContent,
+    String? replyToUsername,
   }) {
     final msg = ChatMessage(
       id: 'pending_${DateTime.now().millisecondsSinceEpoch}',
@@ -136,6 +172,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
       timestamp: DateTime.now().toIso8601String(),
       isMine: true,
       status: MessageStatus.sending,
+      replyToId: replyToId,
+      replyToContent: replyToContent,
+      replyToUsername: replyToUsername,
     );
     state = state.withMessage(msg);
   }
@@ -167,6 +206,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messagesByConversation: updatedConv,
       loadingHistory: state.loadingHistory,
       hasMore: state.hasMore,
+      replyToMessage: state.replyToMessage,
     );
   }
 
@@ -317,6 +357,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messagesByConversation: state.messagesByConversation,
       loadingHistory: updatedLoading,
       hasMore: state.hasMore,
+      replyToMessage: state.replyToMessage,
     );
   }
 
@@ -346,6 +387,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messagesByConversation: updatedConv,
       loadingHistory: state.loadingHistory,
       hasMore: updatedHasMore,
+      replyToMessage: state.replyToMessage,
     );
   }
 
@@ -374,6 +416,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messagesByConversation: updatedConv,
       loadingHistory: state.loadingHistory,
       hasMore: state.hasMore,
+      replyToMessage: state.replyToMessage,
     );
   }
 
@@ -403,6 +446,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messagesByConversation: updatedConv,
       loadingHistory: state.loadingHistory,
       hasMore: state.hasMore,
+      replyToMessage: state.replyToMessage,
     );
   }
 
@@ -429,6 +473,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messagesByConversation: updatedConv,
       loadingHistory: state.loadingHistory,
       hasMore: state.hasMore,
+      replyToMessage: state.replyToMessage,
     );
   }
 
@@ -453,6 +498,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messagesByConversation: updatedConv,
       loadingHistory: state.loadingHistory,
       hasMore: state.hasMore,
+      replyToMessage: state.replyToMessage,
     );
   }
 
@@ -472,6 +518,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messagesByConversation: updatedConv,
       loadingHistory: state.loadingHistory,
       hasMore: state.hasMore,
+      replyToMessage: state.replyToMessage,
     );
   }
 
@@ -502,6 +549,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messagesByConversation: updatedConv,
       loadingHistory: state.loadingHistory,
       hasMore: state.hasMore,
+      replyToMessage: state.replyToMessage,
     );
   }
 

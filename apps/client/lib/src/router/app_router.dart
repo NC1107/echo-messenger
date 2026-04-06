@@ -12,10 +12,12 @@ import '../screens/join_group_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/register_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/splash_screen.dart';
 import '../screens/user_profile_screen.dart';
 
 const _routeHome = '/home';
 const _routeLogin = '/login';
+const _routeSplash = '/splash';
 
 /// Shared fade transition used by all routes.
 CustomTransitionPage<void> _fadePage({
@@ -44,18 +46,27 @@ final routerProvider = Provider<GoRouter>((ref) {
   }
 
   return GoRouter(
-    initialLocation: _routeLogin,
+    initialLocation: _routeSplash,
     redirect: (context, state) {
       final isLoggedIn = authState.isLoggedIn;
+      final isSplash = state.matchedLocation == _routeSplash;
       final isAuthRoute =
           state.matchedLocation == _routeLogin ||
           state.matchedLocation == '/register';
+
+      // Let the splash screen handle its own navigation
+      if (isSplash) return null;
 
       if (!isLoggedIn && !isAuthRoute) return _routeLogin;
       if (isLoggedIn && isAuthRoute) return _routeHome;
       return null;
     },
     routes: [
+      GoRoute(
+        path: _routeSplash,
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const SplashScreen()),
+      ),
       GoRoute(
         path: _routeLogin,
         pageBuilder: (context, state) =>

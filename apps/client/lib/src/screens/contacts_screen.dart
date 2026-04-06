@@ -8,7 +8,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
 import '../services/toast_service.dart';
-import '../widgets/conversation_panel.dart' show buildAvatar;
+import '../widgets/avatar_utils.dart' show buildAvatar;
 import 'user_profile_screen.dart';
 
 class ContactsScreen extends ConsumerStatefulWidget {

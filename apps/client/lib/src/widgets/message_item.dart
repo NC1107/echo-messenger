@@ -12,7 +12,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/download_helper.dart';
 import '../utils/time_utils.dart';
-import 'conversation_panel.dart' show buildAvatar, avatarColor;
+import 'avatar_utils.dart' show buildAvatar, avatarColor;
 
 /// Common emojis for the reaction picker.
 const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🎉'];

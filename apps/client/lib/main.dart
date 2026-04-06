@@ -4,8 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/app.dart';
-import 'src/providers/auth_provider.dart';
-import 'src/providers/crypto_provider.dart';
 import 'src/providers/server_url_provider.dart';
 import 'src/services/notification_service.dart';
 
@@ -27,31 +25,10 @@ void main() async {
     }
   }
 
-  final auth = container.read(authProvider.notifier);
-
-  // Try auto-login from stored credentials (SharedPreferences)
-  final autoLoggedIn = await auth.tryAutoLogin();
-
-  // If auto-login worked, init crypto
-  if (autoLoggedIn) {
-    await container.read(cryptoProvider.notifier).initAndUploadKeys();
-  }
-
-  // Also support compile-time env vars (for CI/testing)
-  if (!autoLoggedIn && !kIsWeb) {
-    const envUser = String.fromEnvironment('ECHO_USERNAME');
-    const envPass = String.fromEnvironment('ECHO_PASSWORD');
-    if (envUser.isNotEmpty && envPass.isNotEmpty) {
-      await auth.login(envUser, envPass);
-      if (container.read(authProvider).isLoggedIn) {
-        await container.read(cryptoProvider.notifier).initAndUploadKeys();
-      }
-    }
-  }
-
   // Request browser notification permission (no-op on non-web platforms)
   NotificationService().requestPermission();
 
+  // Auto-login + crypto init is handled by SplashScreen
   runApp(
     UncontrolledProviderScope(container: container, child: const EchoApp()),
   );

@@ -14,7 +14,7 @@ import '../providers/channels_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../widgets/conversation_panel.dart' show buildAvatar;
+import '../widgets/avatar_utils.dart' show buildAvatar;
 
 const _kJsonHeaders = {'Content-Type': 'application/json'};
 const _kGroupInfoTitle = 'Group Info';
@@ -85,7 +85,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       } else if (mounted) {
         setState(() => _isLoading = false);
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[GroupInfo] _loadGroupInfo failed: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -154,7 +155,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           ToastService.show(context, 'Member added', type: ToastType.success);
         }
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[GroupInfo] _addMember failed: $e');
       if (mounted) {
         ToastService.show(
           context,
@@ -215,7 +217,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           type: ToastType.error,
         );
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[GroupInfo] _deleteGroup failed: $e');
       if (mounted) {
         ToastService.show(
           context,
@@ -265,7 +268,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         await ref.read(conversationsProvider.notifier).loadConversations();
         if (mounted) context.go('/home');
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[GroupInfo] _leaveGroup failed: $e');
       if (mounted) {
         ToastService.show(
           context,
@@ -322,7 +326,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           );
         }
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[GroupInfo] _kickMember failed: $e');
       if (mounted) {
         ToastService.show(
           context,
@@ -382,7 +387,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           );
         }
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[GroupInfo] _banMember failed: $e');
       if (mounted) {
         ToastService.show(
           context,
@@ -412,7 +418,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         await _loadGroupInfo();
         await ref.read(conversationsProvider.notifier).loadConversations();
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[GroupInfo] _saveGroupName failed: $e');
       if (mounted) {
         ToastService.show(
           context,
@@ -441,7 +448,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         await _loadGroupInfo();
         await ref.read(conversationsProvider.notifier).loadConversations();
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[GroupInfo] _saveDescription failed: $e');
       if (mounted) {
         ToastService.show(
           context,
