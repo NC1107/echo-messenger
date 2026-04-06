@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/crypto_service.dart';
+import '../services/group_crypto_service.dart';
 import 'auth_provider.dart';
 import 'server_url_provider.dart';
 
@@ -10,6 +11,14 @@ import 'server_url_provider.dart';
 /// to encrypt outgoing and decrypt incoming messages.
 final cryptoServiceProvider = Provider<CryptoService>((ref) {
   return CryptoService(serverUrl: ref.watch(serverUrlProvider));
+});
+
+/// Provider for the GroupCryptoService singleton.
+///
+/// Handles AES-256-GCM group encryption: key generation, encrypt/decrypt,
+/// and key distribution via the server.
+final groupCryptoServiceProvider = Provider<GroupCryptoService>((ref) {
+  return GroupCryptoService(serverUrl: ref.watch(serverUrlProvider));
 });
 
 /// State for tracking crypto initialization.
@@ -83,7 +92,37 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
   Future<void> clear() async {
     final crypto = ref.read(cryptoServiceProvider);
     await crypto.clearKeys();
+    final groupCrypto = ref.read(groupCryptoServiceProvider);
+    await groupCrypto.clearAll();
     state = const CryptoState();
+  }
+
+  // -----------------------------------------------------------------------
+  // Group encryption key management
+  // -----------------------------------------------------------------------
+
+  /// Generate a new group key, upload it to the server, and cache it.
+  ///
+  /// Returns the new key version, or null on failure.
+  Future<int?> rotateGroupKey(String conversationId) async {
+    final groupCrypto = ref.read(groupCryptoServiceProvider);
+    final token = ref.read(authProvider).token ?? '';
+    groupCrypto.setToken(token);
+    return groupCrypto.rotateGroupKey(conversationId);
+  }
+
+  /// Fetch the latest group key from the server and cache it locally.
+  Future<(int, String)?> fetchGroupKey(String conversationId) async {
+    final groupCrypto = ref.read(groupCryptoServiceProvider);
+    final token = ref.read(authProvider).token ?? '';
+    groupCrypto.setToken(token);
+    return groupCrypto.fetchGroupKey(conversationId);
+  }
+
+  /// Invalidate cached group key so the next access re-fetches from server.
+  Future<void> invalidateGroupKey(String conversationId) async {
+    final groupCrypto = ref.read(groupCryptoServiceProvider);
+    await groupCrypto.invalidateCache(conversationId);
   }
 }
 

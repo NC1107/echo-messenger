@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
+import '../services/group_crypto_service.dart';
 import '../services/notification_service.dart';
 import '../services/sound_service.dart';
 import '../utils/crypto_utils.dart';
@@ -117,6 +118,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _refreshVoiceSessionsFromEvent(json);
       case 'mention':
         _handleMention(json, myUserId);
+      case 'group_key_rotated':
+        _handleGroupKeyRotated(json);
       case 'error':
         break;
       case 'voice_signal':
@@ -235,9 +238,30 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     String senderUsername,
   ) async {
     String decryptedContent;
-    final wasEncrypted = looksEncrypted(rawContent);
+    final isGroupEncrypted = rawContent.startsWith(groupEncryptedPrefix);
+    final wasEncrypted = isGroupEncrypted || looksEncrypted(rawContent);
 
-    if (!wasEncrypted) {
+    if (isGroupEncrypted) {
+      // Group-encrypted message -- decrypt with AES-256-GCM group key.
+      try {
+        final groupCrypto = ref.read(groupCryptoServiceProvider);
+        final token = ref.read(authProvider).token ?? '';
+        groupCrypto.setToken(token);
+        final keyResult = await groupCrypto.getGroupKey(conversationId);
+        if (keyResult != null) {
+          final (_, keyBase64) = keyResult;
+          decryptedContent = await GroupCryptoService.decryptGroupMessage(
+            rawContent,
+            keyBase64,
+          );
+        } else {
+          decryptedContent = '[Encrypted group message - key unavailable]';
+        }
+      } catch (e) {
+        debugPrint('[WebSocket] Group decrypt failed for $conversationId: $e');
+        decryptedContent = '[Could not decrypt group message]';
+      }
+    } else if (!wasEncrypted) {
       // Content does not look encrypted (e.g. plaintext group messages) --
       // deliver as-is without attempting decryption.
       decryptedContent = rawContent;
@@ -420,6 +444,21 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
             senderUsername: fromUsername,
           );
     }
+  }
+
+  /// Handle group key rotation event -- invalidate cached key so the next
+  /// encrypt/decrypt fetches the fresh version from the server.
+  void _handleGroupKeyRotated(Map<String, dynamic> json) {
+    final conversationId = json['conversation_id'] as String? ?? '';
+    if (conversationId.isEmpty) return;
+
+    final groupCrypto = ref.read(groupCryptoServiceProvider);
+    final token = ref.read(authProvider).token ?? '';
+    groupCrypto.setToken(token);
+    groupCrypto.invalidateCache(conversationId);
+
+    // Pre-fetch the new key so subsequent messages decrypt immediately.
+    groupCrypto.fetchGroupKey(conversationId);
   }
 
   void _handlePresence(Map<String, dynamic> json) {

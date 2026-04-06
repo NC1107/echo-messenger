@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
+import '../services/group_crypto_service.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
 import 'server_url_provider.dart';
@@ -239,7 +240,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   /// Load history with the user's own ID for isMine determination.
   /// If [crypto] is provided, attempts to decrypt encrypted messages.
-  /// Set [isGroup] to true to skip decryption (group messages are plaintext).
+  /// Set [isGroup] to true to skip 1:1 decryption. If [groupCrypto] is
+  /// provided, group-encrypted messages (prefixed with `GRP1:`) are
+  /// decrypted using the AES-256-GCM group key.
   Future<void> loadHistoryWithUserId(
     String conversationId,
     String token,
@@ -248,6 +251,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String? before,
     CryptoService? crypto,
     bool isGroup = false,
+    GroupCryptoService? groupCrypto,
   }) async {
     final historyKey = '$conversationId:${channelId ?? ''}';
     if (state.isLoadingHistory(conversationId, channelId: channelId)) return;
@@ -265,6 +269,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
           myUserId,
           isGroup: isGroup,
           crypto: crypto,
+          groupCrypto: groupCrypto,
+          conversationId: conversationId,
         );
         _mergeMessages(conversationId, newMessages, channelId: channelId);
       }
@@ -317,11 +323,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String myUserId, {
     required bool isGroup,
     CryptoService? crypto,
+    GroupCryptoService? groupCrypto,
+    String? conversationId,
   }) async {
     final newMessages = <ChatMessage>[];
     for (final e in messagesList) {
       var msg = ChatMessage.fromServerJson(e as Map<String, dynamic>, myUserId);
-      msg = await _decryptIfNeeded(msg, isGroup: isGroup, crypto: crypto);
+      msg = await _decryptIfNeeded(
+        msg,
+        isGroup: isGroup,
+        crypto: crypto,
+        groupCrypto: groupCrypto,
+        conversationId: conversationId,
+      );
       newMessages.add(msg);
     }
     return newMessages;
@@ -331,7 +345,41 @@ class ChatNotifier extends StateNotifier<ChatState> {
     ChatMessage msg, {
     required bool isGroup,
     CryptoService? crypto,
+    GroupCryptoService? groupCrypto,
+    String? conversationId,
   }) async {
+    // Group-encrypted messages (prefixed with GRP1:)
+    if (msg.content.startsWith(groupEncryptedPrefix)) {
+      if (groupCrypto == null || conversationId == null) {
+        return msg.copyWith(
+          content: '[Encrypted group message]',
+          isEncrypted: true,
+        );
+      }
+      try {
+        final keyResult = await groupCrypto.getGroupKey(conversationId);
+        if (keyResult == null) {
+          return msg.copyWith(
+            content: '[Encrypted group message - key unavailable]',
+            isEncrypted: true,
+          );
+        }
+        final (_, keyBase64) = keyResult;
+        final decrypted = await GroupCryptoService.decryptGroupMessage(
+          msg.content,
+          keyBase64,
+        );
+        return msg.copyWith(content: decrypted, isEncrypted: true);
+      } catch (e) {
+        debugPrint('[Chat] Group history decrypt failed for ${msg.id}: $e');
+        return msg.copyWith(
+          content: '[Could not decrypt group message]',
+          isEncrypted: true,
+        );
+      }
+    }
+
+    // Skip decryption for non-encrypted group messages
     if (isGroup || !looksEncrypted(msg.content)) return msg;
 
     if (crypto == null) {

@@ -12,6 +12,7 @@ import 'package:echo_app/src/providers/theme_provider.dart';
 import 'package:echo_app/src/providers/voice_rtc_provider.dart';
 import 'package:echo_app/src/providers/voice_settings_provider.dart';
 import 'package:echo_app/src/services/crypto_service.dart';
+import 'package:echo_app/src/services/group_crypto_service.dart';
 import 'package:echo_app/src/widgets/chat_panel.dart';
 
 import '../helpers/mock_providers.dart';
@@ -34,6 +35,7 @@ class _FakeChatNotifier extends ChatNotifier {
     String? channelId,
     String? before,
     CryptoService? crypto,
+    GroupCryptoService? groupCrypto,
     bool isGroup = false,
   }) async {}
 

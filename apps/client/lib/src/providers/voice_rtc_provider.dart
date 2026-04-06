@@ -20,6 +20,7 @@ class VoiceRtcState {
   final bool isActive;
   final bool isCaptureEnabled;
   final bool isDeafened;
+  final bool isVideoEnabled;
   final Map<String, String> peerConnectionStates;
   final String? error;
 
@@ -30,6 +31,7 @@ class VoiceRtcState {
     this.isActive = false,
     this.isCaptureEnabled = true,
     this.isDeafened = false,
+    this.isVideoEnabled = false,
     this.peerConnectionStates = const {},
     this.error,
   });
@@ -41,6 +43,7 @@ class VoiceRtcState {
     bool? isActive,
     bool? isCaptureEnabled,
     bool? isDeafened,
+    bool? isVideoEnabled,
     Map<String, String>? peerConnectionStates,
     String? error,
   }) {
@@ -51,6 +54,7 @@ class VoiceRtcState {
       isActive: isActive ?? this.isActive,
       isCaptureEnabled: isCaptureEnabled ?? this.isCaptureEnabled,
       isDeafened: isDeafened ?? this.isDeafened,
+      isVideoEnabled: isVideoEnabled ?? this.isVideoEnabled,
       peerConnectionStates: peerConnectionStates ?? this.peerConnectionStates,
       error: error,
     );
@@ -64,8 +68,10 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
 
   StreamSubscription<Map<String, dynamic>>? _signalSubscription;
   MediaStream? _localStream;
+  MediaStream? _localVideoStream;
   final Map<String, RTCPeerConnection> _peerConnections = {};
   final Map<String, RTCVideoRenderer> _remoteAudioRenderers = {};
+  final Map<String, RTCVideoRenderer> _remoteVideoRenderers = {};
   final Map<String, List<(RTCIceCandidate, DateTime)>> _pendingIceCandidates =
       {};
   Set<String> _currentParticipants = const {};
@@ -82,6 +88,13 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   /// [RTCVideoView] widgets that enable audio playback on web/desktop.
   Map<String, RTCVideoRenderer> get remoteAudioRenderers =>
       Map.unmodifiable(_remoteAudioRenderers);
+
+  /// Expose remote video renderers for displaying peer video streams.
+  Map<String, RTCVideoRenderer> get remoteVideoRenderers =>
+      Map.unmodifiable(_remoteVideoRenderers);
+
+  /// Expose the local video stream so the UI can show a self-preview.
+  MediaStream? get localVideoStream => _localVideoStream;
 
   VoiceRtcNotifier(this.ref) : super(VoiceRtcState.empty) {
     _signalSubscription = ref
@@ -193,9 +206,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         await pc.close();
       } catch (_) {}
       await _disposeRemoteRenderer(userId);
+      await _disposeRemoteVideoRenderer(userId);
     }
     _peerConnections.clear();
     _remoteAudioRenderers.clear();
+    _remoteVideoRenderers.clear();
     _pendingIceCandidates.clear();
     _currentParticipants = const {};
 
@@ -205,6 +220,15 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       }
       await _localStream!.dispose();
       _localStream = null;
+    }
+
+    // Stop and dispose the local video stream if active.
+    if (_localVideoStream != null) {
+      for (final track in _localVideoStream!.getTracks()) {
+        track.stop();
+      }
+      await _localVideoStream!.dispose();
+      _localVideoStream = null;
     }
 
     state = VoiceRtcState.empty;
@@ -239,6 +263,60 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       }
     }
     state = state.copyWith(isDeafened: deafened);
+  }
+
+  /// Toggle local video on/off. When enabling, acquires a camera stream and
+  /// adds the video track to all active peer connections. When disabling,
+  /// removes and stops the video track.
+  Future<void> toggleVideo() async {
+    if (_disposed || !state.isActive) return;
+
+    if (state.isVideoEnabled) {
+      // --- Disable video ---
+      // Remove video tracks from all peer connections.
+      for (final pc in _peerConnections.values) {
+        final senders = await pc.getSenders();
+        for (final sender in senders) {
+          if (sender.track?.kind == 'video') {
+            await pc.removeTrack(sender);
+          }
+        }
+      }
+      // Stop and dispose the local video stream.
+      if (_localVideoStream != null) {
+        for (final track in _localVideoStream!.getTracks()) {
+          track.stop();
+        }
+        await _localVideoStream!.dispose();
+        _localVideoStream = null;
+      }
+      state = state.copyWith(isVideoEnabled: false);
+    } else {
+      // --- Enable video ---
+      try {
+        _localVideoStream = await navigator.mediaDevices.getUserMedia({
+          'audio': false,
+          'video': {'facingMode': 'user', 'width': 640, 'height': 480},
+        });
+        final videoTracks = _localVideoStream!.getVideoTracks();
+        debugPrint(
+          '[VoiceRTC] Got local video stream: '
+          '${videoTracks.length} video tracks',
+        );
+
+        // Add video track to every existing peer connection.
+        for (final pc in _peerConnections.values) {
+          for (final track in videoTracks) {
+            await pc.addTrack(track, _localVideoStream!);
+          }
+        }
+
+        state = state.copyWith(isVideoEnabled: true);
+      } catch (e) {
+        debugPrint('[VoiceRTC] toggleVideo failed: $e');
+        state = state.copyWith(error: 'Failed to enable camera');
+      }
+    }
   }
 
   Future<void> syncParticipants({
@@ -278,6 +356,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         } catch (_) {}
       }
       await _disposeRemoteRenderer(userId);
+      await _disposeRemoteVideoRenderer(userId);
       _pendingIceCandidates.remove(userId);
     }
   }
@@ -344,6 +423,18 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       }
     }
 
+    // If video is already enabled, add video tracks to the new peer connection.
+    final videoStream = _localVideoStream;
+    if (videoStream != null && state.isVideoEnabled) {
+      final videoTracks = videoStream.getVideoTracks();
+      debugPrint(
+        '[VoiceRTC] Adding ${videoTracks.length} video tracks to PC for $remoteUserId',
+      );
+      for (final track in videoTracks) {
+        await pc.addTrack(track, videoStream);
+      }
+    }
+
     pc.onIceCandidate = (candidate) {
       final candidateValue = candidate.candidate;
       if (candidateValue == null || candidateValue.isEmpty) {
@@ -381,13 +472,12 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         '[VoiceRTC] onTrack from $remoteUserId: kind=${event.track.kind} '
         'streams=${event.streams.length}',
       );
-      if (event.track.kind != 'audio') {
-        return;
+      if (event.streams.isEmpty) return;
+      if (event.track.kind == 'audio') {
+        _attachRemoteAudioStream(remoteUserId, event.streams.first);
+      } else if (event.track.kind == 'video') {
+        _attachRemoteVideoStream(remoteUserId, event.streams.first);
       }
-      if (event.streams.isEmpty) {
-        return;
-      }
-      _attachRemoteAudioStream(remoteUserId, event.streams.first);
     };
 
     return pc;
@@ -429,6 +519,33 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     await renderer.dispose();
   }
 
+  Future<void> _attachRemoteVideoStream(
+    String remoteUserId,
+    MediaStream stream,
+  ) async {
+    final existing = _remoteVideoRenderers[remoteUserId];
+    if (existing != null) {
+      existing.srcObject = stream;
+      return;
+    }
+
+    final renderer = RTCVideoRenderer();
+    await renderer.initialize();
+    renderer.srcObject = stream;
+    _remoteVideoRenderers[remoteUserId] = renderer;
+    // Trigger a state rebuild so widgets can pick up the new renderer.
+    state = state.copyWith(
+      peerConnectionStates: Map.of(state.peerConnectionStates),
+    );
+  }
+
+  Future<void> _disposeRemoteVideoRenderer(String remoteUserId) async {
+    final renderer = _remoteVideoRenderers.remove(remoteUserId);
+    if (renderer == null) return;
+    renderer.srcObject = null;
+    await renderer.dispose();
+  }
+
   Future<void> _createAndSendOffer(
     String remoteUserId,
     RTCPeerConnection pc,
@@ -436,7 +553,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     try {
       final offer = await pc.createOffer({
         'offerToReceiveAudio': 1,
-        'offerToReceiveVideo': 0,
+        'offerToReceiveVideo': 1,
       });
       await pc.setLocalDescription(offer);
       _sendSignal(remoteUserId, {'type': 'offer', 'sdp': offer.sdp});
