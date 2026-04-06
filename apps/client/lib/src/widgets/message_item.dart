@@ -120,8 +120,11 @@ class _MessageItemState extends State<MessageItem> {
     if (url.startsWith('http')) return url; // external URLs (GIFs)
     final base = widget.serverUrl ?? '';
     final token = widget.authToken ?? '';
+    // Relative paths (e.g. /api/media/UUID) need the server origin prepended
+    // so CachedNetworkImage gets an absolute URL it can fetch.
+    final resolved = url.startsWith('/') && base.isNotEmpty ? '$base$url' : url;
     // Append token as query param -- web <img> elements can't set headers
-    return token.isNotEmpty ? '$base$url?token=$token' : '$base$url';
+    return token.isNotEmpty ? '$resolved?token=$token' : resolved;
   }
 
   Map<String, String> _mediaHeaders() {
@@ -1106,7 +1109,9 @@ class _MessageItemState extends State<MessageItem> {
         ),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: isMine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
           Text(
             msg.replyToUsername ?? 'Unknown',

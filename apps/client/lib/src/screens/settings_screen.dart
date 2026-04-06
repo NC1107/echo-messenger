@@ -10,10 +10,11 @@ import 'settings/about_section.dart';
 import 'settings/account_section.dart';
 import 'settings/appearance_section.dart';
 import 'settings/audio_section.dart';
+import 'settings/debug_section.dart';
 import 'settings/privacy_section.dart';
 
 /// Section identifiers for the settings navigation.
-enum SettingsSection { account, privacy, audio, appearance, about }
+enum SettingsSection { account, privacy, audio, appearance, about, debug }
 
 /// Returns a human-readable label for a settings section.
 String settingsSectionLabel(SettingsSection section) {
@@ -28,6 +29,8 @@ String settingsSectionLabel(SettingsSection section) {
       return 'Appearance';
     case SettingsSection.about:
       return 'About';
+    case SettingsSection.debug:
+      return 'Debug Logs';
   }
 }
 
@@ -81,6 +84,12 @@ class SettingsNavList extends StatelessWidget {
           icon: Icons.info_outline,
           label: 'About',
           section: SettingsSection.about,
+        ),
+        _navItem(
+          context: context,
+          icon: Icons.bug_report_outlined,
+          label: 'Debug Logs',
+          section: SettingsSection.debug,
         ),
         const Spacer(),
         // Logout button
@@ -169,6 +178,8 @@ class SettingsContent extends StatelessWidget {
         return const AppearanceSection();
       case SettingsSection.about:
         return const AboutSection();
+      case SettingsSection.debug:
+        return const DebugSection();
     }
   }
 }

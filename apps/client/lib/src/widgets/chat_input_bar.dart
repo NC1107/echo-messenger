@@ -176,18 +176,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final text = caption;
     if (text.isEmpty) return;
 
-    final conv = widget.conversation;
-
-    // Direct messages are encrypted-only.
-    if (!conv.isGroup && !conv.isEncrypted) {
-      ToastService.show(
-        context,
-        'This direct conversation is not encrypted yet. Sending is blocked.',
-        type: ToastType.warning,
-      );
-      return;
-    }
-
     await _doSend(text);
     _messageController.clear();
     if (_showEmojiPicker) setState(() => _showEmojiPicker = false);

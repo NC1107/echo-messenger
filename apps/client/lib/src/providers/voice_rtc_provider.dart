@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
 
+import '../services/debug_log_service.dart';
 import '../services/sound_service.dart';
 import 'auth_provider.dart';
 import 'channels_provider.dart';
@@ -85,6 +86,10 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   Timer? _latencyTimer;
   List<Map<String, dynamic>>? _cachedIceServers;
 
+  /// Tracks whether mic was muted before deafening, so un-deafen restores
+  /// the previous mute state instead of always enabling the mic.
+  bool _wasMutedBeforeDeafen = false;
+
   /// Maximum pending ICE candidates per peer before oldest are dropped.
   static const _maxPendingIceCandidatesPerPeer = 50;
 
@@ -162,6 +167,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         '[VoiceRTC] Got local stream: '
         '${_localStream!.getAudioTracks().length} audio tracks',
       );
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'VoiceRTC',
+        'Got local stream: ${_localStream!.getAudioTracks().length} audio tracks',
+      );
 
       setCaptureEnabled(!startMuted);
 
@@ -189,6 +199,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       _startLatencyPolling();
     } catch (e) {
       debugPrint('[VoiceRTC] join failed: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'VoiceRTC',
+        'Join failed: $e',
+      );
       await leaveChannel();
       state = state.copyWith(
         isJoining: false,
@@ -254,9 +269,24 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
 
   /// Mute/unmute all incoming audio from remote peers.
   ///
+  /// Following Discord convention, deafening also mutes the microphone.
+  /// Un-deafening restores mic to whatever state it was before deafening.
+  ///
   /// Uses [RTCRtpReceiver] to reliably access remote audio tracks under
   /// unified-plan SDP semantics (`getRemoteStreams()` can be empty).
   Future<void> setDeafened(bool deafened) async {
+    if (deafened) {
+      // Save current mic state before deafening so we can restore it later
+      _wasMutedBeforeDeafen = !state.isCaptureEnabled;
+      // Mute mic when deafening (Discord convention)
+      setCaptureEnabled(false);
+    } else {
+      // Restore mic to pre-deafen state
+      if (!_wasMutedBeforeDeafen) {
+        setCaptureEnabled(true);
+      }
+    }
+
     for (final renderer in _remoteAudioRenderers.values) {
       renderer.muted = deafened;
     }
@@ -312,6 +342,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
           '[VoiceRTC] Got local video stream: '
           '${videoTracks.length} video tracks',
         );
+        DebugLogService.instance.log(
+          LogLevel.info,
+          'VoiceRTC',
+          'Got local video stream: ${videoTracks.length} video tracks',
+        );
 
         // Add video track to every existing peer connection.
         for (final pc in _peerConnections.values) {
@@ -323,6 +358,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         state = state.copyWith(isVideoEnabled: true);
       } catch (e) {
         debugPrint('[VoiceRTC] toggleVideo failed: $e');
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'VoiceRTC',
+          'toggleVideo failed: $e',
+        );
         state = state.copyWith(error: 'Failed to enable camera');
       }
     }
@@ -403,6 +443,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       }
     } catch (e) {
       debugPrint('[VoiceRTC] Failed to fetch ICE config: $e');
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'VoiceRTC',
+        'Failed to fetch ICE config: $e',
+      );
     }
     // Fallback to STUN only
     return [
@@ -427,6 +472,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       debugPrint(
         '[VoiceRTC] Adding ${audioTracks.length} audio tracks to PC for $remoteUserId',
       );
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'VoiceRTC',
+        'Adding ${audioTracks.length} audio tracks to PC for $remoteUserId',
+      );
       for (final track in audioTracks) {
         await pc.addTrack(track, stream);
       }
@@ -438,6 +488,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       final videoTracks = videoStream.getVideoTracks();
       debugPrint(
         '[VoiceRTC] Adding ${videoTracks.length} video tracks to PC for $remoteUserId',
+      );
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'VoiceRTC',
+        'Adding ${videoTracks.length} video tracks to PC for $remoteUserId',
       );
       for (final track in videoTracks) {
         await pc.addTrack(track, videoStream);
@@ -459,27 +514,46 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     };
 
     pc.onConnectionState = (connectionState) {
+      final stateStr = connectionState.toString().split('.').last;
       debugPrint(
         '[VoiceRTC] Connection state for $remoteUserId: $connectionState',
       );
-      _updatePeerState(
-        remoteUserId,
-        connectionState.toString().split('.').last,
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'VoiceRTC',
+        'Connection state for $remoteUserId: $stateStr',
       );
+      _updatePeerState(remoteUserId, stateStr);
     };
 
     pc.onIceConnectionState = (iceState) {
       debugPrint('[VoiceRTC] ICE state for $remoteUserId: $iceState');
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'VoiceRTC',
+        'ICE state for $remoteUserId: $iceState',
+      );
     };
 
     pc.onIceGatheringState = (gatherState) {
       debugPrint('[VoiceRTC] ICE gathering for $remoteUserId: $gatherState');
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'VoiceRTC',
+        'ICE gathering for $remoteUserId: $gatherState',
+      );
     };
 
     pc.onTrack = (event) {
       debugPrint(
         '[VoiceRTC] onTrack from $remoteUserId: kind=${event.track.kind} '
         'streams=${event.streams.length}',
+      );
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'VoiceRTC',
+        'onTrack from $remoteUserId: kind=${event.track.kind} '
+            'streams=${event.streams.length}',
       );
       if (event.streams.isEmpty) return;
       if (event.track.kind == 'audio') {
@@ -568,6 +642,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       _sendSignal(remoteUserId, {'type': 'offer', 'sdp': offer.sdp});
     } catch (e) {
       debugPrint('[VoiceRTC] createOffer failed for $remoteUserId: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'VoiceRTC',
+        'createOffer failed for $remoteUserId: $e',
+      );
       _updatePeerState(remoteUserId, 'offer_failed');
     }
   }
@@ -630,6 +709,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       _updatePeerState(fromUserId, 'answer_sent');
     } catch (e) {
       debugPrint('[VoiceRTC] handleOffer failed from $fromUserId: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'VoiceRTC',
+        'handleOffer failed from $fromUserId: $e',
+      );
       _updatePeerState(fromUserId, 'offer_error');
     }
   }
@@ -646,6 +730,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       _updatePeerState(fromUserId, 'answer_applied');
     } catch (e) {
       debugPrint('[VoiceRTC] handleAnswer failed from $fromUserId: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'VoiceRTC',
+        'handleAnswer failed from $fromUserId: $e',
+      );
       _updatePeerState(fromUserId, 'answer_error');
     }
   }
@@ -682,6 +771,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         RTCIceCandidate(candidate, sdpMid, sdpMLineIndex),
       );
       debugPrint('[VoiceRTC] addCandidate deferred for $fromUserId: $e');
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'VoiceRTC',
+        'addCandidate deferred for $fromUserId: $e',
+      );
     }
   }
 
@@ -703,6 +797,12 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         debugPrint(
           '[VoiceRTC] Dropping stale ICE candidate for $userId '
           '(age: ${now.difference(timestamp).inSeconds}s)',
+        );
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'VoiceRTC',
+          'Dropping stale ICE candidate for $userId '
+              '(age: ${now.difference(timestamp).inSeconds}s)',
         );
         continue;
       }
@@ -742,6 +842,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
           );
     } catch (e) {
       debugPrint('[VoiceRTC] sendSignal failed: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'VoiceRTC',
+        'sendSignal failed: $e',
+      );
     }
   }
 
@@ -871,6 +976,11 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         );
       } catch (e) {
         debugPrint('[VoiceRTC] periodic sync failed: $e');
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'VoiceRTC',
+          'Periodic sync failed: $e',
+        );
       }
     });
   }
