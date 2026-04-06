@@ -231,12 +231,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           ),
         ),
         if (conv.isGroup)
-          PopupMenuItem<String>(
+          const PopupMenuItem<String>(
             value: 'leave_group',
             child: Row(
               children: [
                 Icon(Icons.exit_to_app, size: 16, color: EchoTheme.danger),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 Text(
                   'Leave Group',
                   style: TextStyle(color: EchoTheme.danger, fontSize: 13),
@@ -265,7 +265,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(color: context.border),
         ),
-        title: Text(
+        title: const Text(
           'Leave Group',
           style: TextStyle(
             color: EchoTheme.danger,

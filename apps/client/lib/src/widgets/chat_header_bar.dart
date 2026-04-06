@@ -160,7 +160,7 @@ class ChatHeaderBar extends ConsumerWidget {
   ) {
     return [
       if (!conv.isGroup)
-        Tooltip(
+        const Tooltip(
           message: 'End-to-end encrypted',
           child: Icon(Icons.lock_outlined, size: 20, color: EchoTheme.online),
         ),

@@ -26,6 +26,18 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
   bool _checkingHealth = true;
   String? _serverVersion;
 
+  Color get _serverHealthColor {
+    if (_checkingHealth) return EchoTheme.warning;
+    if (_serverOnline) return EchoTheme.online;
+    return EchoTheme.danger;
+  }
+
+  String get _serverHealthLabel {
+    if (_checkingHealth) return 'Checking...';
+    if (_serverOnline) return 'Online';
+    return 'Offline';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -254,7 +266,7 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
                     color: context.textMuted,
                   ),
                 )
-              : Icon(Icons.refresh, size: 16),
+              : const Icon(Icons.refresh, size: 16),
           label: Text(update.checking ? 'Checking...' : 'Check for Updates'),
           style: OutlinedButton.styleFrom(
             foregroundColor: context.textSecondary,
@@ -335,15 +347,9 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: Icon(
-            Icons.circle,
-            color: _checkingHealth
-                ? EchoTheme.warning
-                : (_serverOnline ? EchoTheme.online : EchoTheme.danger),
-            size: 12,
-          ),
+          leading: Icon(Icons.circle, color: _serverHealthColor, size: 12),
           title: Text(
-            'Status: ${_checkingHealth ? "Checking..." : (_serverOnline ? "Online" : "Offline")}',
+            'Status: $_serverHealthLabel',
             style: TextStyle(color: context.textPrimary, fontSize: 15),
           ),
           subtitle: Text(

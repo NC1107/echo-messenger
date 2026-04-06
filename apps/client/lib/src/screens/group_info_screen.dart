@@ -558,23 +558,438 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Extracted build helpers
+  // ---------------------------------------------------------------------------
+
+  Widget _buildLoadingState() {
+    return Scaffold(
+      appBar: AppBar(title: const Text(_kGroupInfoTitle)),
+      body: const Center(child: CircularProgressIndicator()),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Scaffold(
+      appBar: AppBar(title: const Text(_kGroupInfoTitle)),
+      body: const Center(child: Text('Could not load group information')),
+    );
+  }
+
+  Widget _buildGroupAvatar() {
+    return Center(
+      child: CircleAvatar(
+        radius: 40,
+        backgroundColor: Theme.of(context).colorScheme.tertiary,
+        child: const Icon(Icons.group_outlined, size: 40),
+      ),
+    );
+  }
+
+  Widget _buildGroupNameSection({
+    required String displayName,
+    required bool isOwnerOrAdmin,
+  }) {
+    if (_isEditingName) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 48),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _nameController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Group name',
+                  isDense: true,
+                ),
+                onSubmitted: (_) => _saveGroupName(),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.check),
+              onPressed: _saveGroupName,
+            ),
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => setState(() => _isEditingName = false),
+            ),
+          ],
+        ),
+      );
+    }
+    return Center(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(displayName, style: Theme.of(context).textTheme.headlineSmall),
+          if (isOwnerOrAdmin)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              tooltip: 'Edit group name',
+              onPressed: () {
+                _nameController.text = displayName;
+                setState(() => _isEditingName = true);
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMemberCount(int count) {
+    return Center(
+      child: Text(
+        '$count member${count == 1 ? '' : 's'}',
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDescriptionSection({
+    required Conversation conv,
+    required bool isOwnerOrAdmin,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Row(
+            children: [
+              Text(
+                'Description',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const Spacer(),
+              if (isOwnerOrAdmin && !_isEditingDescription)
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  tooltip: 'Edit description',
+                  onPressed: () {
+                    _descriptionController.text = conv.description ?? '';
+                    setState(() => _isEditingDescription = true);
+                  },
+                ),
+            ],
+          ),
+        ),
+        if (_isEditingDescription)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _descriptionController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Group description',
+                      isDense: true,
+                    ),
+                    onSubmitted: (_) => _saveDescription(),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.check),
+                  onPressed: _saveDescription,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () =>
+                      setState(() => _isEditingDescription = false),
+                ),
+              ],
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              conv.description?.isNotEmpty == true
+                  ? conv.description!
+                  : 'No description',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: conv.description?.isNotEmpty == true
+                    ? Theme.of(context).colorScheme.onSurface
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  List<Widget> _buildRoleBadge(String role) {
+    if (role == 'owner') {
+      return [
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.primary.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            'Owner',
+            style: TextStyle(
+              fontSize: 11,
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ];
+    }
+    if (role == 'admin') {
+      return [
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+          decoration: BoxDecoration(
+            color: EchoTheme.warning.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: const Text(
+            'Admin',
+            style: TextStyle(
+              fontSize: 11,
+              color: EchoTheme.warning,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ];
+    }
+    return [];
+  }
+
+  Widget? _buildMemberActions({
+    required ConversationMember member,
+    required bool isOwnerOrAdmin,
+    required bool isMe,
+    required String role,
+  }) {
+    if (!isOwnerOrAdmin || isMe || role == 'owner') return null;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: Icon(
+            Icons.person_remove_outlined,
+            size: 18,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          tooltip: 'Kick member',
+          onPressed: () => _kickMember(member),
+        ),
+        IconButton(
+          icon: Icon(
+            Icons.block_outlined,
+            size: 18,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          tooltip: 'Ban member',
+          onPressed: () => _banMember(member),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMemberTile({
+    required ConversationMember member,
+    required String myUserId,
+    required bool isOwnerOrAdmin,
+  }) {
+    final serverUrl = ref.read(serverUrlProvider);
+    final isMe = member.userId == myUserId;
+    final role = member.role ?? 'member';
+    return ListTile(
+      leading: buildAvatar(
+        name: member.username,
+        radius: 20,
+        imageUrl: member.avatarUrl != null
+            ? '$serverUrl${member.avatarUrl}'
+            : null,
+      ),
+      title: Row(children: [Text(member.username), ..._buildRoleBadge(role)]),
+      subtitle: isMe ? const Text('You') : null,
+      trailing: _buildMemberActions(
+        member: member,
+        isOwnerOrAdmin: isOwnerOrAdmin,
+        isMe: isMe,
+        role: role,
+      ),
+    );
+  }
+
+  List<Widget> _buildMembersSection({
+    required Conversation conv,
+    required String myUserId,
+    required bool isOwnerOrAdmin,
+  }) {
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        child: Row(
+          children: [
+            Text(
+              'Members',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.person_add_outlined),
+              tooltip: 'Add member',
+              onPressed: _addMember,
+            ),
+          ],
+        ),
+      ),
+      ...conv.members.map(
+        (member) => _buildMemberTile(
+          member: member,
+          myUserId: myUserId,
+          isOwnerOrAdmin: isOwnerOrAdmin,
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _buildChannelsSection() {
+    return [
+      const Divider(),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        child: Row(
+          children: [
+            Text(
+              'Channels',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.add_outlined),
+              tooltip: 'Add channel',
+              onPressed: _showAddChannelDialog,
+            ),
+          ],
+        ),
+      ),
+      _buildChannelsList(),
+    ];
+  }
+
+  Widget _buildChannelsList() {
+    final channelsState = ref.watch(channelsProvider);
+    final channels = channelsState.channelsFor(widget.conversationId);
+    if (channels.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Text(
+          channelsState.isLoadingConversation(widget.conversationId)
+              ? 'Loading channels...'
+              : 'No channels',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      );
+    }
+    return Column(
+      children: channels.map((channel) {
+        return ListTile(
+          leading: Icon(
+            channel.isText ? Icons.tag : Icons.headset_mic_outlined,
+            size: 20,
+          ),
+          title: Text(channel.name),
+          subtitle: Text(channel.kind),
+          trailing: IconButton(
+            icon: Icon(
+              Icons.delete_outline,
+              size: 18,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            tooltip: 'Delete channel',
+            onPressed: () => _deleteChannel(channel.id, channel.name),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  List<Widget> _buildActionButtons({required String myRole}) {
+    return [
+      const Divider(),
+      const SizedBox(height: 16),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: OutlinedButton.icon(
+          onPressed: () {
+            final link =
+                'https://echo-messenger.us/#/join/${widget.conversationId}';
+            Clipboard.setData(ClipboardData(text: link));
+            ToastService.show(
+              context,
+              'Invite link copied to clipboard',
+              type: ToastType.success,
+            );
+          },
+          icon: const Icon(Icons.link_outlined),
+          label: const Text('Copy Invite Link'),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: OutlinedButton.icon(
+          onPressed: _leaveGroup,
+          icon: const Icon(Icons.logout_outlined),
+          label: const Text('Leave Group'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.error,
+          ),
+        ),
+      ),
+      if (myRole == 'owner') ...[
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: FilledButton.icon(
+            onPressed: _deleteGroup,
+            icon: const Icon(Icons.delete_forever_outlined),
+            label: const Text('Delete Group'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+          ),
+        ),
+      ],
+      const SizedBox(height: 24),
+    ];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
     final myUserId = ref.watch(authProvider).userId ?? '';
 
-    if (_isLoading) {
-      return Scaffold(
-        appBar: AppBar(title: const Text(_kGroupInfoTitle)),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_conversation == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text(_kGroupInfoTitle)),
-        body: const Center(child: Text('Could not load group information')),
-      );
-    }
+    if (_isLoading) return _buildLoadingState();
+    if (_conversation == null) return _buildErrorState();
 
     final conv = _conversation!;
     final displayName = conv.displayName(myUserId);
@@ -592,365 +1007,28 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           child: ListView(
             children: [
               const SizedBox(height: 24),
-              Center(
-                child: CircleAvatar(
-                  radius: 40,
-                  backgroundColor: Theme.of(context).colorScheme.tertiary,
-                  child: const Icon(Icons.group_outlined, size: 40),
-                ),
-              ),
+              _buildGroupAvatar(),
               const SizedBox(height: 16),
-              if (_isEditingName)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 48),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _nameController,
-                          autofocus: true,
-                          decoration: const InputDecoration(
-                            hintText: 'Group name',
-                            isDense: true,
-                          ),
-                          onSubmitted: (_) => _saveGroupName(),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.check),
-                        onPressed: _saveGroupName,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => setState(() => _isEditingName = false),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        displayName,
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      if (isOwnerOrAdmin)
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 18),
-                          tooltip: 'Edit group name',
-                          onPressed: () {
-                            _nameController.text = displayName;
-                            setState(() => _isEditingName = true);
-                          },
-                        ),
-                    ],
-                  ),
-                ),
-              Center(
-                child: Text(
-                  '${conv.members.length} member${conv.members.length == 1 ? '' : 's'}',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
+              _buildGroupNameSection(
+                displayName: displayName,
+                isOwnerOrAdmin: isOwnerOrAdmin,
               ),
+              _buildMemberCount(conv.members.length),
               const SizedBox(height: 16),
               const Divider(),
-              // Description section
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: Row(
-                  children: [
-                    Text(
-                      'Description',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (isOwnerOrAdmin && !_isEditingDescription)
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined, size: 18),
-                        tooltip: 'Edit description',
-                        onPressed: () {
-                          _descriptionController.text = conv.description ?? '';
-                          setState(() => _isEditingDescription = true);
-                        },
-                      ),
-                  ],
-                ),
+              _buildDescriptionSection(
+                conv: conv,
+                isOwnerOrAdmin: isOwnerOrAdmin,
               ),
-              if (_isEditingDescription)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _descriptionController,
-                          autofocus: true,
-                          decoration: const InputDecoration(
-                            hintText: 'Group description',
-                            isDense: true,
-                          ),
-                          onSubmitted: (_) => _saveDescription(),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.check),
-                        onPressed: _saveDescription,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () =>
-                            setState(() => _isEditingDescription = false),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    conv.description?.isNotEmpty == true
-                        ? conv.description!
-                        : 'No description',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: conv.description?.isNotEmpty == true
-                          ? Theme.of(context).colorScheme.onSurface
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
               const SizedBox(height: 8),
               const Divider(),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                child: Row(
-                  children: [
-                    Text(
-                      'Members',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.person_add_outlined),
-                      tooltip: 'Add member',
-                      onPressed: _addMember,
-                    ),
-                  ],
-                ),
+              ..._buildMembersSection(
+                conv: conv,
+                myUserId: myUserId,
+                isOwnerOrAdmin: isOwnerOrAdmin,
               ),
-              ...conv.members.map((member) {
-                final serverUrl = ref.read(serverUrlProvider);
-                final isMe = member.userId == myUserId;
-                final role = member.role ?? 'member';
-                return ListTile(
-                  leading: buildAvatar(
-                    name: member.username,
-                    radius: 20,
-                    imageUrl: member.avatarUrl != null
-                        ? '$serverUrl${member.avatarUrl}'
-                        : null,
-                  ),
-                  title: Row(
-                    children: [
-                      Text(member.username),
-                      if (role == 'owner') ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Owner',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ] else if (role == 'admin') ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: EchoTheme.warning.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            'Admin',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: EchoTheme.warning,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  subtitle: isMe ? const Text('You') : null,
-                  trailing: (isOwnerOrAdmin && !isMe && role != 'owner')
-                      ? Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: Icon(
-                                Icons.person_remove_outlined,
-                                size: 18,
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                              tooltip: 'Kick member',
-                              onPressed: () => _kickMember(member),
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                Icons.block_outlined,
-                                size: 18,
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                              tooltip: 'Ban member',
-                              onPressed: () => _banMember(member),
-                            ),
-                          ],
-                        )
-                      : null,
-                );
-              }),
-              if (isOwnerOrAdmin) ...[
-                const Divider(),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                  child: Row(
-                    children: [
-                      Text(
-                        'Channels',
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.add_outlined),
-                        tooltip: 'Add channel',
-                        onPressed: _showAddChannelDialog,
-                      ),
-                    ],
-                  ),
-                ),
-                Builder(
-                  builder: (context) {
-                    final channelsState = ref.watch(channelsProvider);
-                    final channels = channelsState.channelsFor(
-                      widget.conversationId,
-                    );
-                    if (channels.isEmpty) {
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          channelsState.isLoadingConversation(
-                                widget.conversationId,
-                              )
-                              ? 'Loading channels...'
-                              : 'No channels',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                        ),
-                      );
-                    }
-                    return Column(
-                      children: channels.map((channel) {
-                        return ListTile(
-                          leading: Icon(
-                            channel.isText
-                                ? Icons.tag
-                                : Icons.headset_mic_outlined,
-                            size: 20,
-                          ),
-                          title: Text(channel.name),
-                          subtitle: Text(channel.kind),
-                          trailing: IconButton(
-                            icon: Icon(
-                              Icons.delete_outline,
-                              size: 18,
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                            tooltip: 'Delete channel',
-                            onPressed: () =>
-                                _deleteChannel(channel.id, channel.name),
-                          ),
-                        );
-                      }).toList(),
-                    );
-                  },
-                ),
-              ],
-              const Divider(),
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    final link =
-                        'https://echo-messenger.us/#/join/${widget.conversationId}';
-                    Clipboard.setData(ClipboardData(text: link));
-                    ToastService.show(
-                      context,
-                      'Invite link copied to clipboard',
-                      type: ToastType.success,
-                    );
-                  },
-                  icon: const Icon(Icons.link_outlined),
-                  label: const Text('Copy Invite Link'),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: OutlinedButton.icon(
-                  onPressed: _leaveGroup,
-                  icon: const Icon(Icons.logout_outlined),
-                  label: const Text('Leave Group'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.error,
-                  ),
-                ),
-              ),
-              if (myRole == 'owner') ...[
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: FilledButton.icon(
-                    onPressed: _deleteGroup,
-                    icon: const Icon(Icons.delete_forever_outlined),
-                    label: const Text('Delete Group'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 24),
+              if (isOwnerOrAdmin) ..._buildChannelsSection(),
+              ..._buildActionButtons(myRole: myRole),
             ],
           ),
         ),

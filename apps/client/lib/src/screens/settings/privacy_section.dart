@@ -31,7 +31,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(color: context.border),
         ),
-        title: Text(
+        title: const Text(
           'Reset Encryption Keys',
           style: TextStyle(
             color: EchoTheme.danger,

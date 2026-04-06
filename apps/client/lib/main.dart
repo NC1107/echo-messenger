@@ -39,8 +39,8 @@ void main() async {
 
   // Also support compile-time env vars (for CI/testing)
   if (!autoLoggedIn && !kIsWeb) {
-    final envUser = const String.fromEnvironment('ECHO_USERNAME');
-    final envPass = const String.fromEnvironment('ECHO_PASSWORD');
+    const envUser = String.fromEnvironment('ECHO_USERNAME');
+    const envPass = String.fromEnvironment('ECHO_PASSWORD');
     if (envUser.isNotEmpty && envPass.isNotEmpty) {
       await auth.login(envUser, envPass);
       if (container.read(authProvider).isLoggedIn) {
