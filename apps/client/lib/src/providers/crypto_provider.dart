@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/crypto_service.dart';
+import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
 import 'auth_provider.dart';
 import 'server_url_provider.dart';
@@ -52,6 +55,10 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
   CryptoNotifier(this.ref) : super(const CryptoState());
 
   /// Initialize crypto and upload keys to the server.
+  ///
+  /// On Linux, libsecret may fail to unlock the keyring (PlatformException).
+  /// In that case crypto degrades gracefully -- the user can still chat
+  /// without encryption rather than seeing a red error toast.
   Future<void> initAndUploadKeys() async {
     if (state.isInitialized) return;
 
@@ -71,9 +78,30 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
       await crypto.init();
       if (crypto.keysAreFresh) {
         await crypto.uploadKeys();
+        DebugLogService.instance.log(
+          LogLevel.info,
+          'Crypto',
+          'Keys uploaded to server',
+        );
       }
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'Crypto',
+        'Initialized successfully',
+      );
       state = state.copyWith(isInitialized: true, isUploading: false);
+    } on PlatformException catch (e) {
+      // Linux libsecret / keyring failures -- degrade gracefully so the
+      // user can still use the app without end-to-end encryption.
+      debugPrint('[Crypto] PlatformException during init (degraded mode): $e');
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'Crypto',
+        'PlatformException during init (degraded mode): $e',
+      );
+      state = state.copyWith(isUploading: false);
     } catch (e) {
+      DebugLogService.instance.log(LogLevel.error, 'Crypto', 'Init failed: $e');
       state = state.copyWith(
         isUploading: false,
         error: 'Crypto init failed: $e',

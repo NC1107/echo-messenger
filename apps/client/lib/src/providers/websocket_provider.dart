@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/chat_message.dart';
+import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
 import 'auth_provider.dart';
 import 'chat_provider.dart';
@@ -81,6 +82,11 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       }
     } catch (e) {
       debugPrint('[WebSocket] Failed to fetch ws ticket: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'WebSocket',
+        'Failed to fetch ws ticket: $e',
+      );
     }
     return null;
   }
@@ -107,6 +113,11 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     if (ticket == null || ticket.isEmpty) {
       // Ticket fetch failed -- don't connect, schedule retry with backoff
       debugPrint('[WebSocket] Failed to obtain ticket, will retry...');
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'WebSocket',
+        'Failed to obtain ticket, will retry...',
+      );
       state = state.copyWith(isConnected: false);
       _scheduleReconnect();
       return;
@@ -117,6 +128,11 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     state = state.copyWith(isConnected: true);
     _reconnectAttempts = 0;
     retriedPeers.clear();
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'WebSocket',
+      'Connected to $wsBase',
+    );
 
     // Reload conversations now that WebSocket is connected -- ensures the
     // list is up-to-date even if the initial REST call raced with connection.
@@ -125,10 +141,20 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     _subscription = _channel!.stream.listen(
       (data) => _onMessage(data as String),
       onDone: () {
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'WebSocket',
+          'Connection closed (onDone)',
+        );
         state = state.copyWith(isConnected: false);
         _scheduleReconnect();
       },
       onError: (_) {
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'WebSocket',
+          'Connection error (onError)',
+        );
         state = state.copyWith(isConnected: false);
         _scheduleReconnect();
       },
@@ -149,6 +175,11 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
         '[WebSocket] Max reconnect attempts ($_maxReconnectAttempts) '
         'reached -- server unreachable',
       );
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'WebSocket',
+        'Max reconnect attempts ($_maxReconnectAttempts) reached',
+      );
       state = state.copyWith(isConnected: false);
       return;
     }
@@ -161,6 +192,12 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     debugPrint(
       '[WebSocket] Reconnecting in ${delayMs}ms '
       '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
+    );
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'WebSocket',
+      'Reconnecting in ${delayMs}ms '
+          '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
     );
 
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
@@ -177,6 +214,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     _channel?.sink.close();
     _channel = null;
     state = state.copyWith(isConnected: false);
+    DebugLogService.instance.log(LogLevel.info, 'WebSocket', 'Disconnected');
   }
 
   /// Send a DM message to a peer.
@@ -252,9 +290,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
 
   /// Send a message to a group conversation.
   ///
-  /// If a group encryption key is available for this conversation, the
-  /// message content is AES-256-GCM encrypted before being sent. Otherwise
-  /// the message is sent as plaintext (backward compatible).
+  /// If the conversation has encryption enabled and a group encryption key is
+  /// available, the message content is AES-256-GCM encrypted before being
+  /// sent. Otherwise the message is sent as plaintext (backward compatible).
   Future<void> sendGroupMessage(
     String conversationId,
     String content, {
@@ -263,21 +301,32 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   }) async {
     String payload = content;
 
-    // Attempt group encryption if a key is available
-    try {
-      final groupCrypto = ref.read(groupCryptoServiceProvider);
-      final token = ref.read(authProvider).token ?? '';
-      groupCrypto.setToken(token);
-      final keyResult = await groupCrypto.getGroupKey(conversationId);
-      if (keyResult != null) {
-        final (_, keyBase64) = keyResult;
-        payload = await GroupCryptoService.encryptGroupMessage(
-          content,
-          keyBase64,
+    // Only attempt group encryption if the conversation is marked encrypted
+    final conversation = ref
+        .read(conversationsProvider)
+        .conversations
+        .where((c) => c.id == conversationId)
+        .firstOrNull;
+    final isEncrypted = conversation?.isEncrypted ?? false;
+
+    if (isEncrypted) {
+      try {
+        final groupCrypto = ref.read(groupCryptoServiceProvider);
+        final token = ref.read(authProvider).token ?? '';
+        groupCrypto.setToken(token);
+        final keyResult = await groupCrypto.getGroupKey(conversationId);
+        if (keyResult != null) {
+          final (_, keyBase64) = keyResult;
+          payload = await GroupCryptoService.encryptGroupMessage(
+            content,
+            keyBase64,
+          );
+        }
+      } catch (e) {
+        debugPrint(
+          '[WebSocket] Group encryption failed, sending plaintext: $e',
         );
       }
-    } catch (e) {
-      debugPrint('[WebSocket] Group encryption failed, sending plaintext: $e');
     }
 
     final msg = <String, dynamic>{

@@ -238,11 +238,11 @@ class ChatHeaderBar extends ConsumerWidget {
     bool isGroup, {
     bool isEncrypted = false,
   }) {
-    if (hideEncryptionBanner) {
+    if (hideEncryptionBanner || isGroup) {
       return const SizedBox.shrink();
     }
 
-    final encrypted = !isGroup && isEncrypted;
+    final encrypted = isEncrypted;
     final String label;
     if (isGroup) {
       label = 'Group messages are not encrypted';

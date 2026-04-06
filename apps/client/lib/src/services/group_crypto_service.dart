@@ -26,9 +26,23 @@ class GroupCryptoService {
   /// In-memory cache: conversationId -> (version, raw key bytes).
   final Map<String, (int, Uint8List)> _keyCache = {};
 
+  /// Groups known to not have encryption enabled. Prevents repeated 400
+  /// requests against the server for plaintext groups.
+  final Set<String> _unencryptedGroups = {};
+
   static final _aesGcm = AesGcm.with256bits();
 
   GroupCryptoService({required this.serverUrl});
+
+  /// Mark a group as unencrypted so [getGroupKey] short-circuits.
+  void markUnencrypted(String conversationId) {
+    _unencryptedGroups.add(conversationId);
+  }
+
+  /// Mark a group as encrypted (removes from the unencrypted set).
+  void markEncrypted(String conversationId) {
+    _unencryptedGroups.remove(conversationId);
+  }
 
   void setToken(String token) {
     _token = token;
@@ -119,6 +133,9 @@ class GroupCryptoService {
   ///
   /// Returns `(version, keyBase64)` or null if unavailable.
   Future<(int, String)?> getGroupKey(String conversationId) async {
+    // Skip server call for groups known to be unencrypted
+    if (_unencryptedGroups.contains(conversationId)) return null;
+
     // 1. In-memory cache
     if (_keyCache.containsKey(conversationId)) {
       final (version, bytes) = _keyCache[conversationId]!;
@@ -230,6 +247,7 @@ class GroupCryptoService {
   /// Clear all group keys (for logout).
   Future<void> clearAll() async {
     _keyCache.clear();
+    _unencryptedGroups.clear();
     final store = SecureKeyStore.instance;
     final allEntries = await store.readAll();
     for (final key in allEntries.keys) {

@@ -24,7 +24,6 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 use uuid::Uuid;
 
-use crate::auth::middleware::AuthUser;
 use crate::middleware::rate_limit;
 use crate::ws::hub::Hub;
 
@@ -249,8 +248,9 @@ pub async fn health() -> impl IntoResponse {
 }
 
 /// Returns ICE server configuration from environment variables.
+/// Public endpoint — no auth required (ICE config is not sensitive).
 /// Set TURN_URL, TURN_USERNAME, TURN_CREDENTIAL to configure TURN.
-pub async fn ice_config(_auth: AuthUser) -> impl IntoResponse {
+pub async fn ice_config() -> impl IntoResponse {
     let mut servers = vec![serde_json::json!({"urls": "stun:stun.l.google.com:19302"})];
 
     if let Ok(turn_url) = std::env::var("TURN_URL") {

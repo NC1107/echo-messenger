@@ -239,7 +239,18 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   ) async {
     String decryptedContent;
     final isGroupEncrypted = rawContent.startsWith(groupEncryptedPrefix);
-    final wasEncrypted = isGroupEncrypted || looksEncrypted(rawContent);
+
+    // Check if this is a group conversation -- group messages that don't have
+    // the GRP1: prefix are plaintext and should never be DM-decrypted.
+    final conversation = ref
+        .read(conversationsProvider)
+        .conversations
+        .where((c) => c.id == conversationId)
+        .firstOrNull;
+    final isGroupConversation = conversation?.isGroup ?? false;
+    final wasEncrypted =
+        isGroupEncrypted ||
+        (!isGroupConversation && looksEncrypted(rawContent));
 
     if (isGroupEncrypted) {
       // Group-encrypted message -- decrypt with AES-256-GCM group key.

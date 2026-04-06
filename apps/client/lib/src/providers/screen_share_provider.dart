@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
@@ -115,6 +116,12 @@ class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
     }
     if (msg.contains('https') || msg.contains('secure context')) {
       return 'Screen sharing requires a secure (HTTPS) connection.';
+    }
+    // Linux-specific guidance: PipeWire + XDG Desktop Portal are required
+    // for getDisplayMedia to work on native Linux builds.
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+      return 'Screen sharing on Linux requires PipeWire and '
+          'XDG Desktop Portal support.';
     }
     return 'Could not start screen sharing: $error';
   }
