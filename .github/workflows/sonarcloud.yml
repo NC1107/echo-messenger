@@ -1,0 +1,63 @@
+name: SonarCloud
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: sonar-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonarcloud:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    environment: ProId
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: echo_test
+          POSTGRES_USER: echo
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U echo -d echo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # -- Rust coverage --
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+      - name: Generate Rust coverage
+        run: |
+          cargo tarpaulin --workspace --out lcov --output-dir coverage/rust
+        env:
+          DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
+          JWT_SECRET: ci-test-secret-do-not-use-in-production
+
+      # -- Flutter coverage --
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.x"
+          channel: stable
+          cache: true
+      - name: Generate Flutter coverage
+        working-directory: apps/client
+        run: |
+          flutter pub get
+          flutter test --coverage
+
+      # -- SonarCloud scan --
+      - uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
