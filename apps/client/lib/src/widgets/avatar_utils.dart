@@ -26,15 +26,12 @@ Widget buildAvatar({
   );
 
   if (imageUrl != null && imageUrl.isNotEmpty) {
-    final effectiveUrl = (authToken != null && authToken.isNotEmpty)
-        ? '$imageUrl${imageUrl.contains('?') ? '&' : '?'}token=$authToken'
-        : imageUrl;
     return ClipOval(
       child: SizedBox(
         width: radius * 2,
         height: radius * 2,
         child: CachedNetworkImage(
-          imageUrl: effectiveUrl,
+          imageUrl: imageUrl,
           fit: BoxFit.cover,
           placeholder: (_, _) => fallback,
           errorWidget: (_, _, _) => fallback,

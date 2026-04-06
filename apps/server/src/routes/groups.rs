@@ -746,8 +746,8 @@ pub async fn upload_group_avatar(
 }
 
 /// GET /api/groups/:id/avatar -- Serve the group avatar image.
+/// Public endpoint — no auth required.
 pub async fn get_group_avatar(
-    _auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Path(group_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
