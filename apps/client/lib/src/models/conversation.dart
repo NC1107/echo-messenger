@@ -2,6 +2,7 @@ class Conversation {
   final String id;
   final String? name;
   final String? description;
+  final String? iconUrl;
   final bool isGroup;
   final bool isEncrypted;
   final String? lastMessage;
@@ -15,6 +16,7 @@ class Conversation {
     required this.id,
     this.name,
     this.description,
+    this.iconUrl,
     required this.isGroup,
     this.isEncrypted = false,
     this.lastMessage,
@@ -65,6 +67,7 @@ class Conversation {
       id: json['conversation_id'] as String? ?? json['id'] as String,
       name: (json['title'] ?? json['name']) as String?,
       description: json['description'] as String?,
+      iconUrl: json['icon_url'] as String?,
       isGroup: isGroupValue,
       isEncrypted: json['is_encrypted'] as bool? ?? false,
       lastMessage: lastMsg,
@@ -88,6 +91,7 @@ class Conversation {
     String? id,
     String? name,
     String? description,
+    String? iconUrl,
     bool? isGroup,
     bool? isEncrypted,
     String? lastMessage,
@@ -101,6 +105,7 @@ class Conversation {
       id: id ?? this.id,
       name: name ?? this.name,
       description: description ?? this.description,
+      iconUrl: iconUrl ?? this.iconUrl,
       isGroup: isGroup ?? this.isGroup,
       isEncrypted: isEncrypted ?? this.isEncrypted,
       lastMessage: lastMessage ?? this.lastMessage,
@@ -119,6 +124,7 @@ class Conversation {
             id == other.id &&
             name == other.name &&
             description == other.description &&
+            iconUrl == other.iconUrl &&
             isGroup == other.isGroup &&
             isEncrypted == other.isEncrypted &&
             lastMessage == other.lastMessage &&
@@ -134,6 +140,7 @@ class Conversation {
     id,
     name,
     description,
+    iconUrl,
     isGroup,
     isEncrypted,
     lastMessage,

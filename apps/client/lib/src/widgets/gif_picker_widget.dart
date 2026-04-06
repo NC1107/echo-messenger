@@ -192,12 +192,25 @@ class _GifPickerWidgetState extends State<GifPickerWidget> {
         ),
       );
     }
+    final screenWidth = MediaQuery.of(context).size.width;
+    final int crossAxisCount;
+    final double spacing;
+    if (screenWidth > 1200) {
+      crossAxisCount = 5;
+      spacing = 4;
+    } else if (screenWidth >= 600) {
+      crossAxisCount = 4;
+      spacing = 4;
+    } else {
+      crossAxisCount = 2;
+      spacing = 6;
+    }
     return GridView.builder(
       padding: const EdgeInsets.all(8),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 6,
-        mainAxisSpacing: 6,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        crossAxisSpacing: spacing,
+        mainAxisSpacing: spacing,
       ),
       itemCount: _results.length,
       itemBuilder: (ctx, i) {

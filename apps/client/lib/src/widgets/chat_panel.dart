@@ -48,7 +48,8 @@ class ChatPanel extends ConsumerStatefulWidget {
   ConsumerState<ChatPanel> createState() => _ChatPanelState();
 }
 
-class _ChatPanelState extends ConsumerState<ChatPanel> {
+class _ChatPanelState extends ConsumerState<ChatPanel>
+    with WidgetsBindingObserver {
   final _scrollController = ScrollController();
   final _chatInputBarKey = GlobalKey<ChatInputBarState>();
 
@@ -57,6 +58,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   String? _activeVoiceChannelId;
   String? _loadedHistoryKey;
   String? _loadedChannelsConversationId;
+  String? _autoScrollConversationKey;
 
   bool _showSearch = false;
   String? _highlightedMessageId;
@@ -69,6 +71,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
@@ -79,6 +82,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       _selectedTextChannelId = null;
       _activeVoiceChannelId = null;
       _loadedHistoryKey = null;
+      _autoScrollConversationKey = null;
       _showSearch = false;
       _highlightedMessageId = null;
       _highlightTimer?.cancel();
@@ -88,11 +92,20 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _dismissReactionPicker();
     _highlightTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed && widget.conversation != null) {
+      _markAsRead();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -106,7 +119,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     }
   }
 
-  void _scrollToBottom({bool animated = true, int settleRetries = 2}) {
+  void _scrollToBottom({bool animated = true, int settleRetries = 3}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
 
@@ -117,7 +130,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
 
       Future<void> settleIfNeeded() async {
         if (settleRetries <= 0 || !_scrollController.hasClients) return;
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
         _scrollToBottom(animated: false, settleRetries: settleRetries - 1);
       }
 
@@ -879,6 +892,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     String? selectedChannelId,
     bool includeUnchanneled,
   ) {
+    final key = '${conv.id}:${selectedChannelId ?? ""}';
+    if (_autoScrollConversationKey == key) return;
+    _autoScrollConversationKey = key;
+
     ref.listen<ChatState>(chatProvider, (prev, next) {
       int visibleCount(ChatState s) {
         if (!conv.isGroup) return s.messagesForConversation(conv.id).length;
@@ -894,7 +911,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
       final prevCount = prev == null ? 0 : visibleCount(prev);
       final nextCount = visibleCount(next);
       if (nextCount > prevCount && _isNearBottom()) {
-        _scrollToBottom(settleRetries: 2);
+        _scrollToBottom(settleRetries: 3);
       }
     });
   }

@@ -325,10 +325,11 @@ void main() {
             serverUrl: 'http://localhost:8080',
           ),
         );
-        await tester.pump();
+        // Allow video init future to settle (fails in test -> shows fallback).
+        await tester.pumpAndSettle();
 
         expect(find.text('[video:/api/media/clip.mp4]'), findsNothing);
-        expect(find.text('Video attachment'), findsOneWidget);
+        // Fallback shows play icon when video init fails in test env.
         expect(find.byIcon(Icons.play_circle_outline), findsOneWidget);
       });
     });

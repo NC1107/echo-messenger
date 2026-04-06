@@ -1,10 +1,12 @@
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../models/conversation.dart';
 import '../services/toast_service.dart';
@@ -460,6 +462,65 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     }
   }
 
+  Future<void> _uploadGroupAvatar() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final file = result.files.first;
+    if (file.bytes == null) return;
+
+    final serverUrl = ref.read(serverUrlProvider);
+    final token = ref.read(authProvider).token;
+    if (token == null) return;
+
+    final uri = Uri.parse(
+      '$serverUrl/api/groups/${widget.conversationId}/avatar',
+    );
+    final request = http.MultipartRequest('PUT', uri)
+      ..headers['Authorization'] = 'Bearer $token'
+      ..files.add(
+        http.MultipartFile.fromBytes(
+          'avatar',
+          file.bytes!,
+          filename: file.name,
+          contentType: MediaType('image', 'png'),
+        ),
+      );
+
+    try {
+      final streamedResponse = await request.send();
+      // Drain the response body to close the stream.
+      await streamedResponse.stream.bytesToString();
+      if (!mounted) return;
+
+      if (streamedResponse.statusCode == 200) {
+        await ref.read(conversationsProvider.notifier).loadConversations();
+        await _loadGroupInfo(force: true);
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Group avatar updated',
+            type: ToastType.success,
+          );
+        }
+      } else {
+        ToastService.show(
+          context,
+          'Failed to upload avatar (${streamedResponse.statusCode})',
+          type: ToastType.error,
+        );
+      }
+    } catch (e) {
+      debugPrint('[GroupInfo] _uploadGroupAvatar failed: $e');
+      if (mounted) {
+        ToastService.show(context, 'Upload error: $e', type: ToastType.error);
+      }
+    }
+  }
+
   Future<void> _showAddChannelDialog() async {
     final nameController = TextEditingController();
     String selectedKind = 'text';
@@ -584,12 +645,56 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     );
   }
 
-  Widget _buildGroupAvatar() {
-    return Center(
-      child: CircleAvatar(
+  Widget _buildGroupAvatar({required bool isOwnerOrAdmin, String? iconUrl}) {
+    final serverUrl = ref.read(serverUrlProvider);
+    final token = ref.read(authProvider).token;
+    final hasIcon = iconUrl != null && iconUrl.isNotEmpty;
+
+    Widget avatar;
+    if (hasIcon) {
+      final fullUrl = token != null && token.isNotEmpty
+          ? '$serverUrl$iconUrl?token=$token'
+          : '$serverUrl$iconUrl';
+      avatar = CircleAvatar(
+        radius: 40,
+        backgroundColor: Theme.of(context).colorScheme.tertiary,
+        backgroundImage: NetworkImage(fullUrl),
+        onBackgroundImageError: (_, _) {},
+        child: null,
+      );
+    } else {
+      avatar = CircleAvatar(
         radius: 40,
         backgroundColor: Theme.of(context).colorScheme.tertiary,
         child: const Icon(Icons.group_outlined, size: 40),
+      );
+    }
+
+    return Center(
+      child: GestureDetector(
+        onTap: isOwnerOrAdmin ? _uploadGroupAvatar : null,
+        child: Stack(
+          children: [
+            avatar,
+            if (isOwnerOrAdmin)
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.camera_alt_outlined,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onPrimary,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1015,7 +1120,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           child: ListView(
             children: [
               const SizedBox(height: 24),
-              _buildGroupAvatar(),
+              _buildGroupAvatar(
+                isOwnerOrAdmin: isOwnerOrAdmin,
+                iconUrl: conv.iconUrl,
+              ),
               const SizedBox(height: 16),
               _buildGroupNameSection(
                 displayName: displayName,

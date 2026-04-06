@@ -609,12 +609,24 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     );
   }
 
+  /// Format peer latency as a compact string, e.g. "42ms".
+  String _formatLatency(VoiceRtcState voiceRtc) {
+    final latencies = voiceRtc.peerLatencies;
+    if (latencies.isEmpty) return '';
+    // Show average RTT across all peers.
+    final avgMs =
+        (latencies.values.reduce((a, b) => a + b) / latencies.length * 1000)
+            .round();
+    return '${avgMs}ms';
+  }
+
   Widget _buildCompactVoiceDock({
     required GroupChannel activeVoiceChannel,
     required VoiceRtcState voiceRtc,
     required VoiceSettingsState voiceSettings,
     required bool iAmConnected,
   }) {
+    final latencyLabel = _formatLatency(voiceRtc);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -626,7 +638,8 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
             Expanded(
               child: Text(
                 'Connected to ${activeVoiceChannel.name} '
-                '${voiceRtc.peerConnectionStates.length} peer(s)',
+                '${voiceRtc.peerConnectionStates.length} peer(s)'
+                '${latencyLabel.isNotEmpty ? ' \u00b7 $latencyLabel' : ''}',
                 style: TextStyle(
                   color: context.textPrimary,
                   fontSize: 12,
@@ -667,6 +680,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     required VoiceSettingsState voiceSettings,
     required bool iAmConnected,
   }) {
+    final latencyLabel = _formatLatency(voiceRtc);
     return Row(
       children: [
         Icon(Icons.graphic_eq, size: 16, color: context.accent),
@@ -674,7 +688,8 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
         Expanded(
           child: Text(
             'Connected to ${activeVoiceChannel.name} '
-            '${voiceRtc.peerConnectionStates.length} peer(s)',
+            '${voiceRtc.peerConnectionStates.length} peer(s)'
+            '${latencyLabel.isNotEmpty ? ' \u00b7 $latencyLabel' : ''}',
             style: TextStyle(
               color: context.textPrimary,
               fontSize: 12,

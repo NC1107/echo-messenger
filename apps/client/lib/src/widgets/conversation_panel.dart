@@ -477,7 +477,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   Widget _buildHeaderActions(BuildContext context, int pendingCount) {
     return Flexible(
       child: Row(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.max,
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
           _buildNewChatButton(context, pendingCount),
           IconButton(
@@ -496,7 +497,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           ),
-          if (widget.onCollapseSidebar != null)
+          if (widget.onCollapseSidebar != null) ...[
+            const Spacer(),
             IconButton(
               icon: const Icon(Icons.chevron_left, size: 18),
               color: context.textMuted,
@@ -505,6 +507,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
+          ],
         ],
       ),
     );

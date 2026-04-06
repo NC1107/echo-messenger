@@ -78,7 +78,7 @@ class MembersPanel extends ConsumerWidget {
               },
             ),
           ),
-          // Leave / Delete group buttons
+          // Leave group button (non-owners only)
           Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             decoration: BoxDecoration(

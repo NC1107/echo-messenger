@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/update_provider.dart';
+import '../router/app_router.dart' show pendingDeepLink;
 import '../theme/echo_theme.dart';
 import '../widgets/echo_logo_icon.dart';
 
@@ -85,7 +86,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     if (!mounted) return;
 
     final isLoggedIn = ref.read(authProvider).isLoggedIn;
-    context.go(isLoggedIn ? '/home' : '/login');
+    if (isLoggedIn && pendingDeepLink != null) {
+      final destination = pendingDeepLink!;
+      pendingDeepLink = null;
+      context.go(destination);
+    } else {
+      context.go(isLoggedIn ? '/home' : '/login');
+    }
   }
 
   @override
