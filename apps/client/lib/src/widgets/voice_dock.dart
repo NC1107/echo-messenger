@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/channels_provider.dart';
+import '../providers/screen_share_provider.dart';
 import '../providers/voice_rtc_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
@@ -20,6 +23,14 @@ class VoiceDock extends ConsumerWidget {
     return 'Waiting for peers';
   }
 
+  /// Screen sharing is only useful on desktop and web platforms.
+  static bool get _supportsScreenShare {
+    if (kIsWeb) return true;
+    return defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.macOS;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final voiceLk = ref.watch(voiceRtcProvider);
@@ -30,6 +41,7 @@ class VoiceDock extends ConsumerWidget {
 
     final voiceSettings = ref.watch(voiceSettingsProvider);
     final channelsState = ref.watch(channelsProvider);
+    final screenShare = ref.watch(screenShareProvider);
     final conversationId = voiceLk.conversationId ?? '';
     final channelId = voiceLk.channelId!;
 
@@ -83,6 +95,19 @@ class VoiceDock extends ConsumerWidget {
               ],
             ),
           ),
+          // Video toggle
+          _DockIconButton(
+            icon: voiceLk.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
+            color: voiceLk.isVideoEnabled
+                ? context.accent
+                : context.textSecondary,
+            tooltip: voiceLk.isVideoEnabled
+                ? 'Turn off camera'
+                : 'Turn on camera',
+            onPressed: () async {
+              await ref.read(voiceRtcProvider.notifier).toggleVideo();
+            },
+          ),
           // Mute
           _DockIconButton(
             icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
@@ -118,12 +143,46 @@ class VoiceDock extends ConsumerWidget {
                   .setDeafened(nextDeafened);
             },
           ),
+          // Screen share (desktop / web only)
+          if (_supportsScreenShare)
+            _DockIconButton(
+              icon: screenShare.isScreenSharing
+                  ? Icons.stop_screen_share
+                  : Icons.screen_share,
+              color: screenShare.isScreenSharing
+                  ? EchoTheme.online
+                  : context.textSecondary,
+              tooltip: screenShare.isScreenSharing
+                  ? 'Stop sharing'
+                  : 'Share screen',
+              onPressed: () async {
+                final notifier = ref.read(screenShareProvider.notifier);
+                if (screenShare.isScreenSharing) {
+                  await notifier.stopScreenShare();
+                } else {
+                  await notifier.startScreenShare();
+                  final updated = ref.read(screenShareProvider);
+                  if (updated.error != null && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(updated.error!),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
           // Hangup
           _DockIconButton(
             icon: Icons.call_end,
             color: EchoTheme.danger,
             tooltip: 'Leave',
             onPressed: () async {
+              // Stop screen sharing when leaving the channel.
+              if (screenShare.isScreenSharing) {
+                await ref.read(screenShareProvider.notifier).stopScreenShare();
+              }
               // Leave both server-side voice membership and local WebRTC state
               // so channel selection state clears consistently in the UI.
               await ref

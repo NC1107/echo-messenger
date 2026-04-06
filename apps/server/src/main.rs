@@ -157,6 +157,10 @@ async fn delete_group_dependents(pool: &PgPool, gid: uuid::Uuid) {
         .bind(gid)
         .execute(pool)
         .await;
+    let _ = sqlx::query("DELETE FROM group_keys WHERE conversation_id = $1")
+        .bind(gid)
+        .execute(pool)
+        .await;
     let _ = sqlx::query("DELETE FROM banned_members WHERE conversation_id = $1")
         .bind(gid)
         .execute(pool)

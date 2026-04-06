@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod channels;
 pub mod contacts;
+pub mod group_keys;
 pub mod groups;
 pub mod keys;
 pub mod media;
@@ -142,6 +143,12 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let group_routes = Router::new()
         .route("/", post(groups::create_group))
         .route("/public", get(groups::list_public_groups))
+        .route("/{id}/keys", post(group_keys::upload_group_key))
+        .route("/{id}/keys/latest", get(group_keys::get_latest_group_key))
+        .route(
+            "/{id}/keys/{version}",
+            get(group_keys::get_group_key_version),
+        )
         .route(
             "/{id}/channels",
             get(channels::list_channels).post(channels::create_channel),

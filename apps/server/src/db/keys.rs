@@ -1,5 +1,6 @@
-//! PreKey bundle database queries.
+//! PreKey bundle and group-key database queries.
 
+use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -172,4 +173,78 @@ pub async fn count_one_time_prekeys(pool: &PgPool, user_id: Uuid) -> Result<i64,
             .fetch_one(pool)
             .await?;
     Ok(row.0)
+}
+
+// -------------------------------------------------------------------------
+// Group encryption keys
+// -------------------------------------------------------------------------
+
+/// Row returned by group_keys queries.
+#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+pub struct GroupKeyRow {
+    pub id: Uuid,
+    pub conversation_id: Uuid,
+    pub key_version: i32,
+    pub encrypted_key: String,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Insert a new group key version.
+pub async fn store_group_key(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    key_version: i32,
+    encrypted_key: &str,
+    created_by: Uuid,
+) -> Result<GroupKeyRow, sqlx::Error> {
+    sqlx::query_as::<_, GroupKeyRow>(
+        "INSERT INTO group_keys \
+             (conversation_id, key_version, encrypted_key, created_by) \
+         VALUES ($1, $2, $3, $4) \
+         RETURNING id, conversation_id, key_version, encrypted_key, \
+                   created_by, created_at",
+    )
+    .bind(conversation_id)
+    .bind(key_version)
+    .bind(encrypted_key)
+    .bind(created_by)
+    .fetch_one(pool)
+    .await
+}
+
+/// Get the latest (highest-version) group key for a conversation.
+pub async fn get_latest_group_key(
+    pool: &PgPool,
+    conversation_id: Uuid,
+) -> Result<Option<GroupKeyRow>, sqlx::Error> {
+    sqlx::query_as::<_, GroupKeyRow>(
+        "SELECT id, conversation_id, key_version, encrypted_key, \
+                created_by, created_at \
+         FROM group_keys \
+         WHERE conversation_id = $1 \
+         ORDER BY key_version DESC \
+         LIMIT 1",
+    )
+    .bind(conversation_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Get a specific group key version for a conversation.
+pub async fn get_group_key(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    key_version: i32,
+) -> Result<Option<GroupKeyRow>, sqlx::Error> {
+    sqlx::query_as::<_, GroupKeyRow>(
+        "SELECT id, conversation_id, key_version, encrypted_key, \
+                created_by, created_at \
+         FROM group_keys \
+         WHERE conversation_id = $1 AND key_version = $2",
+    )
+    .bind(conversation_id)
+    .bind(key_version)
+    .fetch_optional(pool)
+    .await
 }

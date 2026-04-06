@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../models/channel.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
+import '../providers/screen_share_provider.dart';
 import '../providers/voice_rtc_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
@@ -157,6 +159,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     final voiceRtc = ref.watch(voiceRtcProvider);
     final voiceSettings = ref.watch(voiceSettingsProvider);
     final authState = ref.watch(authProvider);
+    final screenShare = ref.watch(screenShareProvider);
     final myUserId = authState.userId ?? '';
 
     ref.listen<ChannelsState>(channelsProvider, (previous, next) {
@@ -179,6 +182,8 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
           voiceSettings,
           activeVoice,
         ),
+        if (screenShare.isScreenSharing) _buildScreenSharePreview(),
+        if (activeVoice != null && voiceRtc.isActive) _buildVideoGrid(voiceRtc),
         if (activeVoice != null && !widget.hideVoiceDock)
           _buildVoiceControlDock(
             channels,
@@ -375,6 +380,82 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   }
 
   // ---------------------------------------------------------------------------
+  // Screen share preview
+  // ---------------------------------------------------------------------------
+
+  Widget _buildScreenSharePreview() {
+    final renderer = ref.read(screenShareProvider.notifier).screenRenderer;
+    if (renderer == null) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(maxHeight: 240),
+      decoration: BoxDecoration(
+        color: context.surface,
+        border: Border(bottom: BorderSide(color: context.border, width: 1)),
+      ),
+      child: Stack(
+        children: [
+          Center(
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: RTCVideoView(
+                  renderer,
+                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 6,
+            left: 10,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: EchoTheme.danger.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.screen_share, size: 12, color: Colors.white),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Screen sharing',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.95),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 4,
+            right: 6,
+            child: IconButton(
+              icon: const Icon(Icons.close, size: 16, color: Colors.white),
+              tooltip: 'Stop sharing',
+              onPressed: () async {
+                await ref.read(screenShareProvider.notifier).stopScreenShare();
+              },
+              style: IconButton.styleFrom(
+                backgroundColor: EchoTheme.danger.withValues(alpha: 0.7),
+                padding: const EdgeInsets.all(4),
+                minimumSize: const Size(24, 24),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Voice control dock helpers
   // ---------------------------------------------------------------------------
 
@@ -460,6 +541,74 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     );
   }
 
+  Widget _buildVideoButton(VoiceRtcState voiceRtc) {
+    return IconButton(
+      icon: Icon(
+        voiceRtc.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
+        size: 18,
+      ),
+      color: voiceRtc.isVideoEnabled ? context.accent : context.textSecondary,
+      tooltip: voiceRtc.isVideoEnabled ? 'Turn off camera' : 'Turn on camera',
+      onPressed: () => ref.read(voiceRtcProvider.notifier).toggleVideo(),
+    );
+  }
+
+  /// Build a grid of video tiles for participants with active video.
+  Widget _buildVideoGrid(VoiceRtcState voiceRtc) {
+    final notifier = ref.read(voiceRtcProvider.notifier);
+    final remoteVideoRenderers = notifier.remoteVideoRenderers;
+    final localVideoStream = notifier.localVideoStream;
+
+    // Count total video tiles: local (if sending) + remote renderers.
+    final hasLocalVideo = voiceRtc.isVideoEnabled && localVideoStream != null;
+    final totalTiles = (hasLocalVideo ? 1 : 0) + remoteVideoRenderers.length;
+
+    if (totalTiles == 0) return const SizedBox.shrink();
+
+    // Calculate grid columns based on tile count.
+    final crossAxisCount = totalTiles <= 1
+        ? 1
+        : totalTiles <= 4
+        ? 2
+        : 3;
+
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(maxHeight: 300),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.black,
+        border: Border(bottom: BorderSide(color: context.border, width: 1)),
+      ),
+      child: GridView.count(
+        crossAxisCount: crossAxisCount,
+        shrinkWrap: true,
+        mainAxisSpacing: 4,
+        crossAxisSpacing: 4,
+        childAspectRatio: 4 / 3,
+        children: [
+          // Local self-preview tile.
+          if (hasLocalVideo)
+            _VideoTile(
+              key: const ValueKey('local-video'),
+              stream: localVideoStream,
+              label: 'You',
+              mirror: true,
+            ),
+          // Remote video tiles.
+          for (final entry in remoteVideoRenderers.entries)
+            _RendererVideoTile(
+              key: ValueKey('remote-video-${entry.key}'),
+              renderer: entry.value,
+              label: entry.key.length >= 8
+                  ? entry.key.substring(0, 8)
+                  : entry.key,
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCompactVoiceDock({
     required GroupChannel activeVoiceChannel,
     required VoiceRtcState voiceRtc,
@@ -495,6 +644,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
           runSpacing: 4,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
+            _buildVideoButton(voiceRtc),
             _buildMuteButton(voiceSettings),
             _buildDeafenButton(voiceSettings),
             _buildPttButton(voiceSettings),
@@ -537,6 +687,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
             padding: const EdgeInsets.only(right: 8),
             child: _buildJoiningIndicator(),
           ),
+        _buildVideoButton(voiceRtc),
         _buildMuteButton(voiceSettings),
         _buildDeafenButton(voiceSettings),
         _buildPttButton(voiceSettings),
@@ -588,6 +739,158 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
               voiceSettings: voiceSettings,
               iAmConnected: iAmConnected,
             ),
+    );
+  }
+}
+
+/// A video tile that creates its own [RTCVideoRenderer] from a [MediaStream].
+/// Used for the local self-preview where we have the stream directly.
+class _VideoTile extends StatefulWidget {
+  final MediaStream? stream;
+  final String label;
+  final bool mirror;
+
+  const _VideoTile({
+    super.key,
+    required this.stream,
+    required this.label,
+    this.mirror = false,
+  });
+
+  @override
+  State<_VideoTile> createState() => _VideoTileState();
+}
+
+class _VideoTileState extends State<_VideoTile> {
+  RTCVideoRenderer? _renderer;
+
+  @override
+  void initState() {
+    super.initState();
+    _initRenderer();
+  }
+
+  Future<void> _initRenderer() async {
+    final renderer = RTCVideoRenderer();
+    await renderer.initialize();
+    renderer.srcObject = widget.stream;
+    if (mounted) {
+      setState(() => _renderer = renderer);
+    } else {
+      renderer.srcObject = null;
+      await renderer.dispose();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _VideoTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.stream != oldWidget.stream) {
+      _renderer?.srcObject = widget.stream;
+    }
+  }
+
+  @override
+  void dispose() {
+    final r = _renderer;
+    if (r != null) {
+      r.srcObject = null;
+      r.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final renderer = _renderer;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        color: Colors.black87,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (renderer != null)
+              RTCVideoView(
+                renderer,
+                mirror: widget.mirror,
+                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+              )
+            else
+              const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            Positioned(
+              bottom: 4,
+              left: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  widget.label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A video tile that uses an already-initialized [RTCVideoRenderer].
+/// Used for remote peer video streams.
+class _RendererVideoTile extends StatelessWidget {
+  final RTCVideoRenderer renderer;
+  final String label;
+
+  const _RendererVideoTile({
+    super.key,
+    required this.renderer,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        color: Colors.black87,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            RTCVideoView(
+              renderer,
+              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+            ),
+            Positioned(
+              bottom: 4,
+              left: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

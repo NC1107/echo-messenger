@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/chat_message.dart';
+import '../services/group_crypto_service.dart';
 import 'auth_provider.dart';
 import 'chat_provider.dart';
 import 'conversations_provider.dart';
@@ -269,16 +270,39 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   }
 
   /// Send a message to a group conversation.
+  ///
+  /// If a group encryption key is available for this conversation, the
+  /// message content is AES-256-GCM encrypted before being sent. Otherwise
+  /// the message is sent as plaintext (backward compatible).
   Future<void> sendGroupMessage(
     String conversationId,
     String content, {
     String? channelId,
     String? replyToId,
   }) async {
+    String payload = content;
+
+    // Attempt group encryption if a key is available
+    try {
+      final groupCrypto = ref.read(groupCryptoServiceProvider);
+      final token = ref.read(authProvider).token ?? '';
+      groupCrypto.setToken(token);
+      final keyResult = await groupCrypto.getGroupKey(conversationId);
+      if (keyResult != null) {
+        final (_, keyBase64) = keyResult;
+        payload = await GroupCryptoService.encryptGroupMessage(
+          content,
+          keyBase64,
+        );
+      }
+    } catch (e) {
+      debugPrint('[WebSocket] Group encryption failed, sending plaintext: $e');
+    }
+
     final msg = <String, dynamic>{
       'type': 'send_message',
       'conversation_id': conversationId,
-      'content': content,
+      'content': payload,
     };
     if (channelId != null && channelId.isNotEmpty) {
       msg['channel_id'] = channelId;

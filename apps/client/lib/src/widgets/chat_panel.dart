@@ -12,6 +12,7 @@ import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/crypto_provider.dart';
 import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
@@ -151,6 +152,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     final auth = ref.read(authProvider);
     if (auth.token == null || auth.userId == null) return;
 
+    final groupCrypto = conv.isGroup
+        ? ref.read(groupCryptoServiceProvider)
+        : null;
+    if (groupCrypto != null) {
+      groupCrypto.setToken(auth.token!);
+    }
+
     ref
         .read(chatProvider.notifier)
         .loadHistoryWithUserId(
@@ -159,6 +167,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           auth.userId!,
           channelId: _selectedTextChannelId,
           isGroup: conv.isGroup,
+          groupCrypto: groupCrypto,
         );
   }
 
@@ -192,6 +201,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     final auth = ref.read(authProvider);
     if (auth.token == null || auth.userId == null) return;
 
+    final groupCryptoOlder = conv.isGroup
+        ? ref.read(groupCryptoServiceProvider)
+        : null;
+    if (groupCryptoOlder != null) {
+      groupCryptoOlder.setToken(auth.token!);
+    }
+
     ref
         .read(chatProvider.notifier)
         .loadHistoryWithUserId(
@@ -201,6 +217,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
           channelId: _selectedTextChannelId,
           before: oldestTimestamp,
           isGroup: conv.isGroup,
+          groupCrypto: groupCryptoOlder,
         );
   }
 
