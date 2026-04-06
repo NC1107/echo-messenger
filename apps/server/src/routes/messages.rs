@@ -56,6 +56,7 @@ pub struct ConversationListItem {
     pub conversation_id: Uuid,
     pub kind: String,
     pub title: Option<String>,
+    pub icon_url: Option<String>,
     pub is_encrypted: bool,
     pub is_muted: bool,
     pub members: Vec<MemberInfo>,
@@ -84,6 +85,7 @@ struct ConversationFullRow {
     conversation_id: Uuid,
     kind: String,
     title: Option<String>,
+    icon_url: Option<String>,
     is_encrypted: bool,
     is_muted: bool,
     members_json: Option<serde_json::Value>,
@@ -102,6 +104,7 @@ pub async fn list_conversations(
             c.id AS conversation_id, \
             c.kind, \
             c.title, \
+            c.icon_url, \
             c.is_encrypted, \
             cm.is_muted, \
             (SELECT json_agg(json_build_object( \
@@ -160,6 +163,7 @@ pub async fn list_conversations(
             conversation_id: row.conversation_id,
             kind: row.kind,
             title: row.title,
+            icon_url: row.icon_url,
             is_encrypted: row.is_encrypted,
             is_muted: row.is_muted,
             members,

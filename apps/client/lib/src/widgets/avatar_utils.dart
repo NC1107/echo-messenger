@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 /// Shared avatar builder used across conversation panel widgets.
@@ -7,14 +8,9 @@ Widget buildAvatar({
   required double radius,
   Color? bgColor,
   Widget? fallbackIcon,
+  String? authToken,
 }) {
-  if (imageUrl != null && imageUrl.isNotEmpty) {
-    return CircleAvatar(
-      radius: radius,
-      backgroundImage: NetworkImage(imageUrl),
-    );
-  }
-  return CircleAvatar(
+  final fallback = CircleAvatar(
     radius: radius,
     backgroundColor: bgColor ?? avatarColor(name),
     child:
@@ -28,6 +24,25 @@ Widget buildAvatar({
           ),
         ),
   );
+
+  if (imageUrl != null && imageUrl.isNotEmpty) {
+    final effectiveUrl = (authToken != null && authToken.isNotEmpty)
+        ? '$imageUrl${imageUrl.contains('?') ? '&' : '?'}token=$authToken'
+        : imageUrl;
+    return ClipOval(
+      child: SizedBox(
+        width: radius * 2,
+        height: radius * 2,
+        child: CachedNetworkImage(
+          imageUrl: effectiveUrl,
+          fit: BoxFit.cover,
+          placeholder: (_, _) => fallback,
+          errorWidget: (_, _, _) => fallback,
+        ),
+      ),
+    );
+  }
+  return fallback;
 }
 
 /// Deterministic color from a name string.

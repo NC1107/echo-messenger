@@ -188,7 +188,11 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/{id}/join", post(groups::join_group))
         .route("/{id}/leave", post(groups::leave_group))
         .route("/{id}/ban/{user_id}", post(groups::ban_member))
-        .route("/{id}/unban/{user_id}", post(groups::unban_member));
+        .route("/{id}/unban/{user_id}", post(groups::unban_member))
+        .route(
+            "/{id}/avatar",
+            put(groups::upload_group_avatar).get(groups::get_group_avatar),
+        );
 
     let user_routes = Router::new()
         .route("/me", delete(users::delete_account))

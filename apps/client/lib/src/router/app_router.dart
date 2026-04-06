@@ -19,6 +19,11 @@ const _routeHome = '/home';
 const _routeLogin = '/login';
 const _routeSplash = '/splash';
 
+/// Stores a deep link path that was requested before the user was
+/// authenticated. After login or splash auto-login, the app navigates
+/// here instead of /home.
+String? pendingDeepLink;
+
 /// Shared fade transition used by all routes.
 CustomTransitionPage<void> _fadePage({
   required LocalKey key,
@@ -66,7 +71,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Let the splash screen handle its own navigation
       if (isSplash) return null;
 
-      if (!isLoggedIn && !isAuthRoute) return _routeLogin;
+      if (!isLoggedIn && !isAuthRoute) {
+        // Save the intended path so we can navigate there after login
+        final intended = state.matchedLocation;
+        if (intended != _routeHome && intended != _routeLogin) {
+          pendingDeepLink = state.uri.toString();
+        }
+        return _routeLogin;
+      }
       if (isLoggedIn && isAuthRoute) return _routeHome;
       return null;
     },

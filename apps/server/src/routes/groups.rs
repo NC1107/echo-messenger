@@ -1,11 +1,15 @@
 //! Group management REST endpoints.
 
 use axum::Json;
-use axum::extract::{Path, Query, State};
+use axum::body::Body;
+use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::http::header::CONTENT_TYPE;
+use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::Arc;
+use tokio::fs;
 use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
@@ -47,6 +51,7 @@ pub struct GroupResponse {
     pub title: Option<String>,
     pub kind: String,
     pub description: Option<String>,
+    pub icon_url: Option<String>,
     pub members: Vec<GroupMemberResponse>,
 }
 
@@ -137,6 +142,7 @@ pub async fn create_group(
         title: group.title,
         kind: group.kind,
         description: group.description,
+        icon_url: group.icon_url,
         members: members
             .into_iter()
             .map(|m| GroupMemberResponse {
@@ -189,6 +195,7 @@ pub async fn get_group(
         title: group.title,
         kind: group.kind,
         description: group.description,
+        icon_url: group.icon_url,
         members: members
             .into_iter()
             .map(|m| GroupMemberResponse {
@@ -612,4 +619,172 @@ pub async fn unban_member(
     }
 
     Ok(Json(serde_json::json!({ "status": "unbanned" })))
+}
+
+// ---------------------------------------------------------------------------
+// Group avatar upload/download
+// ---------------------------------------------------------------------------
+
+/// Maximum group avatar size: 2 MB.
+const MAX_GROUP_AVATAR_SIZE: usize = 2 * 1024 * 1024;
+
+/// Allowed group avatar MIME types.
+const ALLOWED_GROUP_AVATAR_TYPES: &[&str] = &["image/jpeg", "image/png", "image/webp"];
+
+fn avatar_extension_for_mime(mime: &str) -> &str {
+    match mime {
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/webp" => "webp",
+        _ => "bin",
+    }
+}
+
+fn avatar_mime_for_extension(ext: &str) -> &str {
+    match ext {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        _ => "application/octet-stream",
+    }
+}
+
+/// PUT /api/groups/:id/avatar -- Upload a group avatar (owner/admin only).
+///
+/// Accepts multipart form data with an `avatar` field. Saves to
+/// `./uploads/avatars/group_{id}.{ext}` and sets `icon_url` on the
+/// conversation row.
+pub async fn upload_group_avatar(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<Uuid>,
+    mut multipart: Multipart,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify caller is owner or admin
+    let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in upload_group_avatar/get_role: {e:?}");
+            AppError::internal("Database error")
+        })?
+        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+
+    let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
+    if !caller_role_enum.is_admin_or_above() {
+        return Err(AppError::unauthorized(
+            "Only the group owner or admin can change the avatar",
+        ));
+    }
+
+    fs::create_dir_all("./uploads/avatars")
+        .await
+        .map_err(|e| AppError::internal(format!("Failed to create avatars directory: {e}")))?;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::bad_request(format!("Invalid multipart data: {e}")))?
+    {
+        let field_name = field.name().unwrap_or_default().to_string();
+        if field_name != "avatar" {
+            continue;
+        }
+
+        let mime_type = field
+            .content_type()
+            .unwrap_or("application/octet-stream")
+            .to_string();
+
+        if !ALLOWED_GROUP_AVATAR_TYPES.contains(&mime_type.as_str()) {
+            return Err(AppError::bad_request(format!(
+                "Avatar type '{mime_type}' is not allowed. \
+                 Allowed: {}",
+                ALLOWED_GROUP_AVATAR_TYPES.join(", ")
+            )));
+        }
+
+        let data = field
+            .bytes()
+            .await
+            .map_err(|e| AppError::bad_request(format!("Failed to read avatar data: {e}")))?;
+
+        if data.len() > MAX_GROUP_AVATAR_SIZE {
+            return Err(AppError::bad_request(format!(
+                "Avatar too large. Maximum size is {} bytes",
+                MAX_GROUP_AVATAR_SIZE
+            )));
+        }
+
+        let ext = avatar_extension_for_mime(&mime_type);
+        let disk_filename = format!("group_{group_id}.{ext}");
+        let disk_path = format!("./uploads/avatars/{disk_filename}");
+
+        // Remove old avatar files for this group (different extensions)
+        for old_ext in &["jpg", "png", "webp"] {
+            let old = format!("./uploads/avatars/group_{group_id}.{old_ext}");
+            let _ = fs::remove_file(&old).await;
+        }
+
+        fs::write(&disk_path, &data)
+            .await
+            .map_err(|e| AppError::internal(format!("Failed to save avatar: {e}")))?;
+
+        let icon_url = format!("/api/groups/{group_id}/avatar");
+        db::groups::update_group_icon_url(&state.pool, group_id, &icon_url)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error in upload_group_avatar/set_icon: {e:?}");
+                AppError::internal("Failed to update group avatar")
+            })?;
+
+        return Ok((StatusCode::OK, Json(json!({ "avatar_url": icon_url }))));
+    }
+
+    Err(AppError::bad_request(
+        "Missing 'avatar' field in multipart form data",
+    ))
+}
+
+/// GET /api/groups/:id/avatar -- Serve the group avatar image.
+pub async fn get_group_avatar(
+    _auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let icon_url = db::groups::get_group_icon_url(&state.pool, group_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in get_group_avatar/icon_url: {e:?}");
+            AppError::internal("Database error")
+        })?
+        .ok_or_else(|| AppError {
+            status: StatusCode::NOT_FOUND,
+            message: "No avatar set for this group".to_string(),
+        })?;
+
+    let expected = format!("/api/groups/{group_id}/avatar");
+    if icon_url != expected {
+        return Err(AppError {
+            status: StatusCode::NOT_FOUND,
+            message: "No avatar set for this group".to_string(),
+        });
+    }
+
+    for ext in &["jpg", "png", "webp"] {
+        let disk_path = format!("./uploads/avatars/group_{group_id}.{ext}");
+        if let Ok(data) = fs::read(&disk_path).await {
+            let mime = avatar_mime_for_extension(ext);
+            let response = Response::builder()
+                .status(StatusCode::OK)
+                .header(CONTENT_TYPE, mime)
+                .body(Body::from(data))
+                .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))?;
+            return Ok(response);
+        }
+    }
+
+    Err(AppError {
+        status: StatusCode::NOT_FOUND,
+        message: "Avatar file not found on disk".to_string(),
+    })
 }

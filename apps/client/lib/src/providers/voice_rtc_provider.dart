@@ -22,6 +22,9 @@ class VoiceRtcState {
   final bool isDeafened;
   final bool isVideoEnabled;
   final Map<String, String> peerConnectionStates;
+
+  /// Round-trip latency in seconds per peer, extracted from RTCStats.
+  final Map<String, double> peerLatencies;
   final String? error;
 
   const VoiceRtcState({
@@ -33,6 +36,7 @@ class VoiceRtcState {
     this.isDeafened = false,
     this.isVideoEnabled = false,
     this.peerConnectionStates = const {},
+    this.peerLatencies = const {},
     this.error,
   });
 
@@ -45,6 +49,7 @@ class VoiceRtcState {
     bool? isDeafened,
     bool? isVideoEnabled,
     Map<String, String>? peerConnectionStates,
+    Map<String, double>? peerLatencies,
     String? error,
   }) {
     return VoiceRtcState(
@@ -56,6 +61,7 @@ class VoiceRtcState {
       isDeafened: isDeafened ?? this.isDeafened,
       isVideoEnabled: isVideoEnabled ?? this.isVideoEnabled,
       peerConnectionStates: peerConnectionStates ?? this.peerConnectionStates,
+      peerLatencies: peerLatencies ?? this.peerLatencies,
       error: error,
     );
   }
@@ -76,6 +82,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       {};
   Set<String> _currentParticipants = const {};
   Timer? _participantSyncTimer;
+  Timer? _latencyTimer;
   List<Map<String, dynamic>>? _cachedIceServers;
 
   /// Maximum pending ICE candidates per peer before oldest are dropped.
@@ -179,6 +186,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
 
       // Start periodic participant sync to reconcile stale peer state.
       _startPeriodicParticipantSync(conversationId, channelId);
+      _startLatencyPolling();
     } catch (e) {
       debugPrint('[VoiceRTC] join failed: $e');
       await leaveChannel();
@@ -196,6 +204,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     }
     _participantSyncTimer?.cancel();
     _participantSyncTimer = null;
+    _stopLatencyPolling();
 
     for (final userId in _peerConnections.keys.toList()) {
       final pc = _peerConnections[userId];
@@ -753,6 +762,51 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     state = state.copyWith(peerConnectionStates: updated);
   }
 
+  // ---------------------------------------------------------------------------
+  // Latency polling -- extracts currentRoundTripTime from RTCStats every 5s
+  // ---------------------------------------------------------------------------
+
+  void _startLatencyPolling() {
+    _latencyTimer?.cancel();
+    _latencyTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (_disposed) {
+        _latencyTimer?.cancel();
+        _latencyTimer = null;
+        return;
+      }
+      _pollPeerLatencies();
+    });
+  }
+
+  void _stopLatencyPolling() {
+    _latencyTimer?.cancel();
+    _latencyTimer = null;
+  }
+
+  Future<void> _pollPeerLatencies() async {
+    final latencies = <String, double>{};
+    for (final entry in _peerConnections.entries) {
+      try {
+        final stats = await entry.value.getStats();
+        for (final report in stats) {
+          // Look for the nominated candidate-pair stat.
+          if (report.type == 'candidate-pair') {
+            final rtt = report.values['currentRoundTripTime'];
+            if (rtt is double && rtt > 0) {
+              latencies[entry.key] = rtt;
+              break;
+            }
+          }
+        }
+      } catch (_) {
+        // getStats can fail if the peer connection is closing.
+      }
+    }
+    if (!_disposed && latencies.isNotEmpty) {
+      state = state.copyWith(peerLatencies: latencies);
+    }
+  }
+
   /// Periodically fetch voice participants from the server and reconcile
   /// with local peer state. Catches stale peers that may have disconnected
   /// without sending a proper leave event.
@@ -825,6 +879,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   void dispose() {
     _disposed = true;
     _participantSyncTimer?.cancel();
+    _latencyTimer?.cancel();
     _signalSubscription?.cancel();
     unawaited(leaveChannel());
     super.dispose();

@@ -11,6 +11,7 @@ pub struct GroupInfo {
     pub title: Option<String>,
     pub kind: String,
     pub description: Option<String>,
+    pub icon_url: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -35,8 +36,9 @@ pub async fn create_group_with_visibility(
     let mut tx = pool.begin().await?;
 
     let group: GroupInfo = sqlx::query_as(
-        "INSERT INTO conversations (kind, title, is_public, description) VALUES ('group', $1, $2, $3) \
-         RETURNING id, title, kind, description, created_at",
+        "INSERT INTO conversations (kind, title, is_public, description) \
+         VALUES ('group', $1, $2, $3) \
+         RETURNING id, title, kind, description, icon_url, created_at",
     )
     .bind(name)
     .bind(is_public)
@@ -171,7 +173,8 @@ pub async fn join_public_group(
 /// Get group info by conversation ID.
 pub async fn get_group(pool: &PgPool, group_id: Uuid) -> Result<Option<GroupInfo>, sqlx::Error> {
     sqlx::query_as::<_, GroupInfo>(
-        "SELECT id, title, kind, description, created_at FROM conversations WHERE id = $1 AND kind = 'group'",
+        "SELECT id, title, kind, description, icon_url, created_at \
+         FROM conversations WHERE id = $1 AND kind = 'group'",
     )
     .bind(group_id)
     .fetch_optional(pool)
@@ -412,6 +415,33 @@ pub async fn force_delete_conversation(
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Update the icon_url (group avatar) for a conversation.
+pub async fn update_group_icon_url(
+    pool: &PgPool,
+    group_id: Uuid,
+    icon_url: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE conversations SET icon_url = $1 WHERE id = $2")
+        .bind(icon_url)
+        .bind(group_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Get the icon_url for a conversation. Returns None if unset.
+pub async fn get_group_icon_url(
+    pool: &PgPool,
+    group_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT icon_url FROM conversations WHERE id = $1")
+            .bind(group_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.and_then(|(url,)| url))
 }
 
 /// Unban a user from a group.

@@ -181,34 +181,15 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
 
   /// Send a DM message to a peer.
   ///
-  /// Direct messages are encrypted-only. If a legacy conversation is not
-  /// marked encrypted yet, sending is blocked.
+  /// Direct messages are encrypted via the Signal Protocol. Encryption is
+  /// attempted regardless of the conversation's isEncrypted flag to avoid
+  /// blocking on newly created conversations where the flag may lag.
   Future<void> sendMessage(
     String toUserId,
     String content, {
     String? conversationId,
     String? replyToId,
   }) async {
-    // Check if encryption is enabled for this conversation.
-    final isEncrypted =
-        conversationId != null &&
-        ref
-                .read(conversationsProvider)
-                .conversations
-                .where((c) => c.id == conversationId)
-                .firstOrNull
-                ?.isEncrypted ==
-            true;
-
-    if (!isEncrypted) {
-      _addFailedMessage(
-        toUserId,
-        'This direct conversation is not encrypted. Sending is blocked.',
-        conversationId: conversationId ?? '',
-      );
-      return;
-    }
-
     String payload;
     final cryptoState = ref.read(cryptoProvider);
     if (!cryptoState.isInitialized) {
@@ -239,7 +220,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       'to_user_id': toUserId,
       'content': payload,
     };
-    if (conversationId.isNotEmpty) {
+    if (conversationId != null && conversationId.isNotEmpty) {
       msg['conversation_id'] = conversationId;
     }
     if (replyToId != null && replyToId.isNotEmpty) {

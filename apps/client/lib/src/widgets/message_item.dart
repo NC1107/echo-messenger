@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
@@ -242,58 +243,75 @@ class _MessageItemState extends State<MessageItem> {
     final headers = _mediaHeaders();
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => Dialog(
-        backgroundColor: Colors.black.withValues(alpha: 0.85),
-        insetPadding: const EdgeInsets.all(20),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: InteractiveViewer(
-                minScale: 0.8,
-                maxScale: 4,
-                child: Center(
-                  child: CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    httpHeaders: headers,
-                    fit: BoxFit.contain,
-                    placeholder: (_, _) => const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
-                    ),
-                    errorWidget: (_, _, _) => const Center(
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.white54,
-                        size: 48,
+      barrierColor: Colors.black.withValues(alpha: 0.85),
+      builder: (dialogContext) {
+        final screenSize = MediaQuery.of(dialogContext).size;
+        final maxWidth = screenSize.width * 0.8;
+        final maxHeight = screenSize.height * 0.8;
+        return GestureDetector(
+          onTap: () => Navigator.of(dialogContext).pop(),
+          behavior: HitTestBehavior.opaque,
+          child: Center(
+            child: GestureDetector(
+              onTap: () {}, // absorb taps on the image itself
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: maxWidth,
+                  maxHeight: maxHeight,
+                ),
+                child: Stack(
+                  children: [
+                    InteractiveViewer(
+                      minScale: 0.8,
+                      maxScale: 4,
+                      child: Center(
+                        child: CachedNetworkImage(
+                          imageUrl: imageUrl,
+                          httpHeaders: headers,
+                          fit: BoxFit.contain,
+                          placeholder: (_, _) => const Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
+                          ),
+                          errorWidget: (_, _, _) => const Center(
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              color: Colors.white54,
+                              size: 48,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.download_outlined),
+                            color: Colors.white,
+                            tooltip: 'Download',
+                            onPressed: () => _downloadMedia(imageUrl),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            color: Colors.white,
+                            tooltip: 'Close',
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.download_outlined),
-                    color: Colors.white,
-                    tooltip: 'Download',
-                    onPressed: () => _downloadMedia(imageUrl),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    color: Colors.white,
-                    tooltip: 'Close',
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -455,58 +473,17 @@ class _MessageItemState extends State<MessageItem> {
             : null);
     if (videoUrl != null) {
       final rawUrl = videoUrl;
-      return Container(
-        width: 300,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: context.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 140,
-              decoration: BoxDecoration(
-                color: context.mainBg,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.play_circle_outline,
-                  size: 44,
-                  color: context.textMuted,
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Video attachment',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: () => _openMedia(rawUrl),
-                  icon: const Icon(Icons.open_in_new, size: 14),
-                  label: const Text('Open'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _downloadMedia(rawUrl),
-                  icon: const Icon(Icons.download_outlined, size: 14),
-                  label: const Text('Download'),
-                ),
-              ],
-            ),
-          ],
-        ),
+      return _InlineVideoPlayer(
+        videoUrl: _resolveMediaUrl(rawUrl),
+        rawUrl: rawUrl,
+        headers: _mediaHeaders(),
+        surface: context.surface,
+        mainBg: context.mainBg,
+        border: context.border,
+        textPrimary: context.textPrimary,
+        textMuted: context.textMuted,
+        onOpen: () => _openMedia(rawUrl),
+        onDownload: () => _downloadMedia(rawUrl),
       );
     }
 
@@ -1076,12 +1053,15 @@ class _MessageItemState extends State<MessageItem> {
   }
 
   /// Resolve the bubble border radius with a flat corner on the sender's side.
+  /// In compact mode all messages are left-aligned, so the flat corner is
+  /// always on the bottom-left regardless of sender.
   BorderRadius _bubbleBorderRadius({required bool isMine}) {
+    final isRight = isMine && !widget.compactLayout;
     return BorderRadius.only(
       topLeft: const Radius.circular(16),
       topRight: const Radius.circular(16),
-      bottomLeft: Radius.circular(isMine ? 16 : 4),
-      bottomRight: Radius.circular(isMine ? 4 : 16),
+      bottomLeft: Radius.circular(isRight ? 16 : 4),
+      bottomRight: Radius.circular(isRight ? 4 : 16),
     );
   }
 
@@ -1155,8 +1135,26 @@ class _MessageItemState extends State<MessageItem> {
     );
   }
 
+  /// Regex for image extensions in URLs (used for inline embed detection).
+  static final _imageUrlEmbedRegex = RegExp(
+    r'https?://[^\s]+\.(?:gif|png|jpe?g|webp)',
+    caseSensitive: false,
+  );
+
+  /// Extract image URLs embedded within text (not standalone).
+  List<String> _extractEmbeddedImageUrls(String content) {
+    // Skip standalone media URLs -- those are handled by _buildMediaContent.
+    if (_isStandaloneMediaUrl(content)) return [];
+    if (_imgRegex.hasMatch(content)) return [];
+    return _imageUrlEmbedRegex
+        .allMatches(content)
+        .map((m) => m.group(0)!)
+        .toList();
+  }
+
   /// Select and build the primary message content (media, decrypt error, or
-  /// rich text).
+  /// rich text). When the text contains embedded image URLs mixed with
+  /// regular text, image previews are appended below the text.
   Widget _buildBubbleContent({
     required ChatMessage msg,
     required bool isMine,
@@ -1167,9 +1165,58 @@ class _MessageItemState extends State<MessageItem> {
     if (msg.content.startsWith('[Could not decrypt')) {
       return _buildDecryptionFailure();
     }
-    return _buildMessageText(
-      msg.content,
-      textColor: _contentTextColor(isMine: isMine, isFailed: isFailed),
+
+    final textColor = _contentTextColor(isMine: isMine, isFailed: isFailed);
+    final textWidget = _buildMessageText(msg.content, textColor: textColor);
+
+    final embeddedImages = _extractEmbeddedImageUrls(msg.content);
+    if (embeddedImages.isEmpty) return textWidget;
+
+    final headers = _mediaHeaders();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        textWidget,
+        for (final imgUrl in embeddedImages) ...[
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: GestureDetector(
+              onTap: () => _showImageViewer(imageUrl: imgUrl, isMine: isMine),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: imgUrl.endsWith('.gif')
+                    ? Image.network(
+                        imgUrl,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      )
+                    : CachedNetworkImage(
+                        imageUrl: imgUrl,
+                        fit: BoxFit.cover,
+                        httpHeaders: headers,
+                        errorWidget: (_, _, _) => const SizedBox.shrink(),
+                        placeholder: (_, _) => SizedBox(
+                          height: 60,
+                          child: Center(
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: context.textMuted,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -1501,6 +1548,189 @@ class _HoverActionButton extends StatelessWidget {
             child: Icon(icon, size: 14, color: context.textSecondary),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Inline video player widget with play/pause controls and download
+/// fallback. Initialises a [VideoPlayerController] on first build and
+/// disposes it when removed from the tree.
+class _InlineVideoPlayer extends StatefulWidget {
+  final String videoUrl;
+  final String rawUrl;
+  final Map<String, String> headers;
+  final Color surface;
+  final Color mainBg;
+  final Color border;
+  final Color textPrimary;
+  final Color textMuted;
+  final VoidCallback onOpen;
+  final VoidCallback onDownload;
+
+  const _InlineVideoPlayer({
+    required this.videoUrl,
+    required this.rawUrl,
+    required this.headers,
+    required this.surface,
+    required this.mainBg,
+    required this.border,
+    required this.textPrimary,
+    required this.textMuted,
+    required this.onOpen,
+    required this.onDownload,
+  });
+
+  @override
+  State<_InlineVideoPlayer> createState() => _InlineVideoPlayerState();
+}
+
+class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
+  VideoPlayerController? _controller;
+  bool _initFailed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initVideo();
+  }
+
+  Future<void> _initVideo() async {
+    try {
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(widget.videoUrl),
+        httpHeaders: widget.headers,
+      );
+      await controller.initialize();
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      setState(() => _controller = controller);
+    } catch (_) {
+      if (mounted) setState(() => _initFailed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _togglePlayPause() {
+    final c = _controller;
+    if (c == null) return;
+    setState(() {
+      c.value.isPlaying ? c.pause() : c.play();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 300,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: widget.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: widget.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: _buildVideoArea(),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: widget.onOpen,
+                  icon: const Icon(Icons.open_in_new, size: 14),
+                  label: const Text('Open'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: widget.onDownload,
+                  icon: const Icon(Icons.download_outlined, size: 14),
+                  label: const Text('Download'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoArea() {
+    final c = _controller;
+
+    // Still loading
+    if (c == null && !_initFailed) {
+      return Container(
+        height: 170,
+        color: widget.mainBg,
+        child: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: widget.textMuted,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Init failed -- show static placeholder
+    if (_initFailed || c == null) {
+      return GestureDetector(
+        onTap: widget.onOpen,
+        child: Container(
+          height: 170,
+          color: widget.mainBg,
+          child: Center(
+            child: Icon(
+              Icons.play_circle_outline,
+              size: 44,
+              color: widget.textMuted,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Initialised -- show player with controls
+    return GestureDetector(
+      onTap: _togglePlayPause,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          AspectRatio(
+            aspectRatio: c.value.aspectRatio.clamp(0.5, 3.0),
+            child: VideoPlayer(c),
+          ),
+          if (!c.value.isPlaying)
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.play_arrow,
+                size: 32,
+                color: Colors.white,
+              ),
+            ),
+        ],
       ),
     );
   }
