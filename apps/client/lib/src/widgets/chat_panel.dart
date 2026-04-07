@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/chat_message.dart';
@@ -16,7 +15,6 @@ import '../providers/crypto_provider.dart';
 import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
-import '../providers/voice_rtc_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
@@ -975,19 +973,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         'Chat';
   }
 
-  List<Widget> _buildVoiceRenderers() {
-    return ref
-        .watch(voiceRtcProvider.notifier)
-        .remoteAudioRenderers
-        .values
-        .map(
-          (renderer) => Opacity(
-            opacity: 0,
-            child: SizedBox(width: 1, height: 1, child: RTCVideoView(renderer)),
-          ),
-        )
-        .toList();
-  }
+  /// LiveKit handles remote audio playback automatically -- no hidden renderer
+  /// widgets needed (unlike the legacy P2P WebRTC approach).
+  List<Widget> _buildVoiceRenderers() => const [];
 
   // ---------------------------------------------------------------------------
   // Build

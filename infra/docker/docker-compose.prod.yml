@@ -8,6 +8,8 @@ services:
       RUST_LOG: echo_server=info
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
     volumes:
       - uploads:/app/uploads
     depends_on:
@@ -51,6 +53,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - echo-internal
+
+  livekit:
+    image: livekit/livekit-server:latest
+    restart: unless-stopped
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+      - "50000-50200:50000-50200/udp"
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    command: ["--config", "/etc/livekit.yaml"]
     networks:
       - echo-internal
 

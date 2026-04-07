@@ -17,7 +17,7 @@ import '../providers/chat_provider.dart';
 import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
-import '../providers/voice_rtc_provider.dart';
+import '../providers/livekit_voice_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/chat_panel.dart';
@@ -43,7 +43,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Conversation? _selectedConversation;
   bool _showMembers = false;
   Timer? _pendingRefreshTimer;
-  late final VoiceRtcNotifier _voiceRtcNotifier;
+  late final LiveKitVoiceNotifier _voiceRtcNotifier;
 
   // For narrow screen navigation
   int _narrowPanelIndex = 0; // 0 = conv list, 1 = chat
@@ -555,14 +555,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       }
     });
 
-    ref.listen<VoiceRtcState>(voiceRtcProvider, (prev, next) {
+    ref.listen<LiveKitVoiceState>(voiceRtcProvider, (prev, next) {
       if (next.error == null || next.error == prev?.error) return;
       ToastService.show(context, next.error!, type: ToastType.error);
       _handleVoiceDisconnectRedirect(next);
     });
   }
 
-  void _handleVoiceDisconnectRedirect(VoiceRtcState next) {
+  void _handleVoiceDisconnectRedirect(LiveKitVoiceState next) {
     if (next.error == 'Voice disconnected. Please sign in again.' &&
         !ref.read(authProvider).isLoggedIn &&
         mounted) {

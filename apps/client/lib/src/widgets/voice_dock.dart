@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/channels_provider.dart';
+import '../providers/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
-import '../providers/voice_rtc_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
 
@@ -33,7 +33,7 @@ class VoiceDock extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final voiceLk = ref.watch(voiceRtcProvider);
+    final voiceLk = ref.watch(livekitVoiceProvider);
 
     if (!voiceLk.isActive || voiceLk.channelId == null) {
       return const SizedBox.shrink();
@@ -105,7 +105,7 @@ class VoiceDock extends ConsumerWidget {
                 ? 'Turn off camera'
                 : 'Turn on camera',
             onPressed: () async {
-              await ref.read(voiceRtcProvider.notifier).toggleVideo();
+              await ref.read(livekitVoiceProvider.notifier).toggleVideo();
             },
           ),
           // Mute
@@ -130,7 +130,9 @@ class VoiceDock extends ConsumerWidget {
               duration: const Duration(milliseconds: 100),
               width:
                   (ref.watch(
-                            voiceRtcProvider.select((s) => s.localAudioLevel),
+                            livekitVoiceProvider.select(
+                              (s) => s.localAudioLevel,
+                            ),
                           ) *
                           40)
                       .clamp(0.0, 40.0),
@@ -204,7 +206,7 @@ class VoiceDock extends ConsumerWidget {
               await ref
                   .read(channelsProvider.notifier)
                   .leaveVoiceChannel(conversationId, channelId);
-              await ref.read(voiceRtcProvider.notifier).leaveChannel();
+              await ref.read(livekitVoiceProvider.notifier).leaveChannel();
             },
           ),
         ],
