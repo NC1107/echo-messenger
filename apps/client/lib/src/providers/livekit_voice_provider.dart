@@ -307,16 +307,15 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final lkToken = data['token'] as String?;
-        final lkUrl = data['url'] as String?;
+        // Server may not return url — derive from serverUrl
+        final lkUrl = data['url'] as String? ?? _deriveLiveKitUrl(serverUrl);
 
-        if (lkToken != null && lkUrl != null) {
+        if (lkToken != null) {
+          debugPrint('[LiveKitVoice] token obtained, connecting to $lkUrl');
           return _LiveKitTokenResult(url: lkUrl, token: lkToken);
         }
       }
 
-      // If the server doesn't have a /api/voice/token endpoint yet, derive
-      // the LiveKit URL from the server URL and return null so the caller
-      // can surface an appropriate error.
       debugPrint(
         '[LiveKitVoice] token request failed: ${resp.statusCode} ${resp.body}',
       );
@@ -490,6 +489,14 @@ class _LiveKitTokenResult {
   final String url;
   final String token;
   const _LiveKitTokenResult({required this.url, required this.token});
+}
+
+/// Derive LiveKit WebSocket URL from the Echo server URL.
+/// https://echo-messenger.us → wss://echo-messenger.us:7881
+String _deriveLiveKitUrl(String serverUrl) {
+  final uri = Uri.parse(serverUrl);
+  final scheme = uri.scheme == 'https' ? 'wss' : 'ws';
+  return '$scheme://${uri.host}:7881';
 }
 
 // ---------------------------------------------------------------------------
