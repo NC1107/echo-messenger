@@ -112,6 +112,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Widget _buildUsernameField() {
     return TextFormField(
       controller: _usernameController,
+      autofillHints: const [],
       decoration: const InputDecoration(
         labelText: 'Username',
         border: OutlineInputBorder(),
@@ -130,6 +131,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     return TextFormField(
       controller: _passwordController,
       obscureText: true,
+      autofillHints: const [],
       decoration: const InputDecoration(
         labelText: 'Password',
         border: OutlineInputBorder(),
