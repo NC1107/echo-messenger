@@ -902,60 +902,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: context.surface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: context.border),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: context.accent.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
+          child: Container(
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: context.border),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
                         Icons.system_update,
-                        size: 14,
+                        size: 16,
                         color: context.accent,
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        label,
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                    action,
-                    // ignore: use_null_aware_elements
-                    if (trailing != null) trailing,
-                  ],
-                ),
-              ),
-              if (progress != null)
-                ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(10),
-                    bottomRight: Radius.circular(10),
+                      action,
+                      ?trailing,
+                    ],
                   ),
-                  child: progress,
                 ),
-            ],
+                ?progress,
+              ],
+            ),
           ),
         ),
       ),
