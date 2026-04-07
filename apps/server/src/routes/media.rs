@@ -24,12 +24,31 @@ const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
 
 /// Allowed MIME types for upload.
 const ALLOWED_MIME_TYPES: &[&str] = &[
+    // Images
     "image/jpeg",
     "image/png",
     "image/gif",
     "image/webp",
+    // Video
     "video/mp4",
+    // Audio
+    "audio/mpeg",
+    "audio/ogg",
+    "audio/wav",
+    // Documents
     "application/pdf",
+    "text/plain",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    // Archives
+    "application/zip",
+    "application/x-7z-compressed",
+    "application/x-tar",
+    "application/gzip",
+    // Generic binary
+    "application/octet-stream",
 ];
 
 /// Derive a file extension from a MIME type.
@@ -40,7 +59,19 @@ fn extension_for_mime(mime: &str) -> &str {
         "image/gif" => "gif",
         "image/webp" => "webp",
         "video/mp4" => "mp4",
+        "audio/mpeg" => "mp3",
+        "audio/ogg" => "ogg",
+        "audio/wav" => "wav",
         "application/pdf" => "pdf",
+        "text/plain" => "txt",
+        "application/msword" => "doc",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => "docx",
+        "application/vnd.ms-excel" => "xls",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => "xlsx",
+        "application/zip" => "zip",
+        "application/x-7z-compressed" => "7z",
+        "application/x-tar" => "tar",
+        "application/gzip" => "gz",
         _ => "bin",
     }
 }

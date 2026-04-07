@@ -97,14 +97,30 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
   }
 
   Future<void> _loadSafetyNumber() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
     try {
       final store = SecureKeyStore.instance;
+      final crypto = ref.read(cryptoServiceProvider);
 
-      // Load my identity public key
-      final myPubB64 = await store.read('echo_identity_pub_key');
+      // Load my identity public key -- if missing, try initializing crypto
+      // first, since the user may have just logged in.
+      var myPubB64 = await store.read('echo_identity_pub_key');
+      if (myPubB64 == null && crypto.isInitialized) {
+        final pubBytes = await crypto.getIdentityPublicKey();
+        if (pubBytes != null) {
+          myPubB64 = base64Encode(pubBytes);
+        }
+      }
       if (myPubB64 == null) {
         setState(() {
-          _error = 'Identity key not found. Encryption may not be initialized.';
+          _error =
+              'Your encryption keys have not been set up yet. '
+              'Send a message first to initialize encryption, then '
+              'come back to verify the safety number.';
           _isLoading = false;
         });
         return;
@@ -115,24 +131,26 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
       final peerPubB64 = await store.read(
         'echo_peer_identity_${widget.peerUserId}',
       );
-      if (peerPubB64 == null) {
-        // Try to fetch from server via crypto service
-        final crypto = ref.read(cryptoServiceProvider);
-        final fetched = await crypto.fetchPeerIdentityKey(widget.peerUserId);
-        if (fetched == null) {
-          setState(() {
-            _error =
-                'Peer identity key not available. '
-                'Start a conversation first to exchange keys.';
-            _isLoading = false;
-          });
-          return;
-        }
-        _safetyNumber = await SafetyNumberService.generate(myPub, fetched);
+      Uint8List? peerPub;
+      if (peerPubB64 != null) {
+        peerPub = Uint8List.fromList(base64Decode(peerPubB64));
       } else {
-        final peerPub = Uint8List.fromList(base64Decode(peerPubB64));
-        _safetyNumber = await SafetyNumberService.generate(myPub, peerPub);
+        // Try to fetch from server via crypto service
+        peerPub = await crypto.fetchPeerIdentityKey(widget.peerUserId);
       }
+
+      if (peerPub == null) {
+        setState(() {
+          _error =
+              '${widget.peerUsername}\'s identity key is not available yet. '
+              'Exchange at least one message so both devices can share '
+              'keys, then check back here.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      _safetyNumber = await SafetyNumberService.generate(myPub, peerPub);
 
       // Load verification state
       final prefs = await SharedPreferences.getInstance();
@@ -191,19 +209,25 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.warning_amber_rounded,
-                size: 48,
-                color: context.textMuted,
-              ),
+              Icon(Icons.lock_outline, size: 48, color: context.textMuted),
               const SizedBox(height: 16),
               Text(
                 _error!,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: context.textSecondary, fontSize: 14),
               ),
+              const SizedBox(height: 20),
+              OutlinedButton.icon(
+                onPressed: _loadSafetyNumber,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Retry'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: context.accent,
+                  side: BorderSide(color: context.accent),
+                ),
+              ),
               if (isDialog) ...[
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text('Close'),
