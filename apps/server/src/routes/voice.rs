@@ -13,8 +13,12 @@ use crate::routes::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct TokenRequest {
-    pub room: String,
-    pub identity: String,
+    pub room: Option<String>,
+    pub identity: Option<String>,
+    /// Alternative field name used by some mobile clients.
+    pub channel_id: Option<String>,
+    /// Conversation context -- used to derive room name when `room` is absent.
+    pub conversation_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -52,14 +56,25 @@ pub async fn generate_token(
     _state: State<Arc<AppState>>,
     Json(body): Json<TokenRequest>,
 ) -> Result<Json<TokenResponse>, AppError> {
-    // Verify the requested identity matches the authenticated user
-    if body.identity != auth.user_id.to_string() {
+    // Resolve identity: use provided value or default to authenticated user ID.
+    let identity = body.identity.unwrap_or_else(|| auth.user_id.to_string());
+
+    // Verify the resolved identity matches the authenticated user
+    if identity != auth.user_id.to_string() {
         return Err(AppError::bad_request(
             "Identity must match authenticated user",
         ));
     }
 
-    if body.room.is_empty() {
+    // Resolve room: prefer explicit `room`, fall back to channel_id or
+    // conversation_id so mobile clients that send either field still work.
+    let room = body
+        .room
+        .or(body.channel_id)
+        .or(body.conversation_id)
+        .unwrap_or_default();
+
+    if room.is_empty() {
         return Err(AppError::bad_request("Room name is required"));
     }
 
@@ -71,11 +86,11 @@ pub async fn generate_token(
     let now = Utc::now().timestamp();
     let claims = LiveKitClaims {
         iss: api_key,
-        sub: body.identity,
+        sub: identity,
         iat: now,
         exp: now + 3600, // 1 hour
         video: VideoGrant {
-            room: body.room,
+            room,
             room_join: true,
             can_publish: true,
             can_subscribe: true,

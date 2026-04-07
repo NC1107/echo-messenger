@@ -37,7 +37,6 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   String? _lastAutoSelectedConversationId;
   bool _voiceCleanupInFlight = false;
   late final LiveKitVoiceNotifier _voiceRtcNotifier;
-  final Set<String> _collapsedCategories = {};
 
   @override
   void initState() {
@@ -204,88 +203,41 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     return 'No channels yet';
   }
 
-  /// Build a sorted list of unique category names preserving the order they
-  /// appear in channels (which are already sorted by kind+position).
-  List<String> _orderedCategories(List<GroupChannel> channels) {
-    final seen = <String>{};
-    final result = <String>[];
-    for (final ch in channels) {
-      if (seen.add(ch.category)) result.add(ch.category);
-    }
-    return result;
-  }
-
-  Widget _buildCategoryHeader(String category) {
-    final collapsed = _collapsedCategories.contains(category);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          setState(() {
-            if (collapsed) {
-              _collapsedCategories.remove(category);
-            } else {
-              _collapsedCategories.add(category);
-            }
-          });
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-          child: Row(
-            children: [
-              Icon(
-                collapsed
-                    ? Icons.keyboard_arrow_right
-                    : Icons.keyboard_arrow_down,
-                size: 14,
-                color: context.textMuted,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                category.toUpperCase(),
-                style: TextStyle(
-                  color: context.textMuted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextChannelRow(GroupChannel channel) {
+  Widget _buildTextChannelChip(GroupChannel channel) {
     final isSelected = widget.selectedTextChannelId == channel.id;
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(20),
         onTap: () => widget.onTextChannelChanged(channel.id),
         child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: isSelected
-                ? context.accent.withValues(alpha: 0.12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
+                ? context.accent.withValues(alpha: 0.15)
+                : context.surface.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected
+                  ? context.accent.withValues(alpha: 0.4)
+                  : context.border,
+            ),
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.tag, size: 16, color: context.textSecondary),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  channel.name,
-                  style: TextStyle(
-                    color: isSelected ? context.accent : context.textPrimary,
-                    fontSize: 13,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+              Icon(
+                Icons.tag,
+                size: 14,
+                color: isSelected ? context.accent : context.textSecondary,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                channel.name,
+                style: TextStyle(
+                  color: isSelected ? context.accent : context.textPrimary,
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),
             ],
@@ -295,7 +247,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     );
   }
 
-  Widget _buildVoiceChannelRow(
+  Widget _buildVoiceChannelChip(
     GroupChannel channel,
     int participantCount,
     VoiceSettingsState voiceSettings,
@@ -305,7 +257,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(20),
         onTap: () async {
           final channelsNotifier = ref.read(channelsProvider.notifier);
           final rtcNotifier = ref.read(livekitVoiceProvider.notifier);
@@ -330,41 +282,41 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
           }
         },
         child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: isActive
-                ? context.accent.withValues(alpha: 0.12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(4),
+                ? context.accent.withValues(alpha: 0.15)
+                : context.surface.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isActive
+                  ? context.accent.withValues(alpha: 0.4)
+                  : context.border,
+            ),
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 Icons.headset_mic_outlined,
-                size: 16,
-                color: context.textSecondary,
+                size: 14,
+                color: isActive ? context.accent : context.textSecondary,
               ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  channel.name,
-                  style: TextStyle(
-                    color: isActive ? context.accent : context.textPrimary,
-                    fontSize: 13,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+              const SizedBox(width: 4),
+              Text(
+                channel.name,
+                style: TextStyle(
+                  color: isActive ? context.accent : context.textPrimary,
+                  fontSize: 12,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),
               if (participantCount > 0) ...[
                 const SizedBox(width: 4),
                 Text(
-                  '$participantCount',
+                  '($participantCount)',
                   style: TextStyle(color: context.textMuted, fontSize: 11),
                 ),
-                const SizedBox(width: 2),
-                Icon(Icons.person, size: 12, color: context.textMuted),
               ],
             ],
           ),
@@ -383,41 +335,38 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   ) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
       decoration: BoxDecoration(
         color: context.sidebarBg,
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
       child: channels.isEmpty
           ? Padding(
-              padding: const EdgeInsets.only(top: 8, left: 4),
+              padding: const EdgeInsets.only(top: 4, left: 4, bottom: 4),
               child: Text(
                 _channelStatusLabel(channelsState),
                 style: TextStyle(color: context.textMuted, fontSize: 12),
               ),
             )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final category in _orderedCategories(channels)) ...[
-                  _buildCategoryHeader(category),
-                  if (!_collapsedCategories.contains(category))
-                    ...channels.where((c) => c.category == category).map((
+          : SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final channel in textChannels) ...[
+                    _buildTextChannelChip(channel),
+                    const SizedBox(width: 6),
+                  ],
+                  for (final channel in voiceChannels) ...[
+                    _buildVoiceChannelChip(
                       channel,
-                    ) {
-                      if (channel.isVoice) {
-                        return _buildVoiceChannelRow(
-                          channel,
-                          channelsState.voiceSessionsFor(channel.id).length,
-                          voiceSettings,
-                          activeVoiceChannelId,
-                        );
-                      }
-                      return _buildTextChannelRow(channel);
-                    }),
+                      channelsState.voiceSessionsFor(channel.id).length,
+                      voiceSettings,
+                      activeVoiceChannelId,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
                 ],
-              ],
+              ),
             ),
     );
   }
