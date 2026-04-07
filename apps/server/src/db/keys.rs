@@ -248,3 +248,84 @@ pub async fn get_group_key(
     .fetch_optional(pool)
     .await
 }
+
+// -------------------------------------------------------------------------
+// Per-member encrypted group key envelopes
+// -------------------------------------------------------------------------
+
+/// Row returned by group_key_envelopes queries.
+#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+pub struct GroupKeyEnvelopeRow {
+    pub id: Uuid,
+    pub conversation_id: Uuid,
+    pub key_version: i32,
+    pub recipient_user_id: Uuid,
+    pub encrypted_key: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Store an encrypted group key envelope for a specific recipient.
+pub async fn store_group_key_envelope(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    key_version: i32,
+    recipient_user_id: Uuid,
+    encrypted_key: &str,
+) -> Result<GroupKeyEnvelopeRow, sqlx::Error> {
+    sqlx::query_as::<_, GroupKeyEnvelopeRow>(
+        "INSERT INTO group_key_envelopes \
+             (conversation_id, key_version, recipient_user_id, encrypted_key) \
+         VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (conversation_id, key_version, recipient_user_id) \
+         DO UPDATE SET encrypted_key = $4 \
+         RETURNING id, conversation_id, key_version, recipient_user_id, \
+                   encrypted_key, created_at",
+    )
+    .bind(conversation_id)
+    .bind(key_version)
+    .bind(recipient_user_id)
+    .bind(encrypted_key)
+    .fetch_one(pool)
+    .await
+}
+
+/// Get the latest group key envelope for a specific user in a conversation.
+pub async fn get_my_group_key_envelope(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<GroupKeyEnvelopeRow>, sqlx::Error> {
+    sqlx::query_as::<_, GroupKeyEnvelopeRow>(
+        "SELECT id, conversation_id, key_version, recipient_user_id, \
+                encrypted_key, created_at \
+         FROM group_key_envelopes \
+         WHERE conversation_id = $1 AND recipient_user_id = $2 \
+         ORDER BY key_version DESC \
+         LIMIT 1",
+    )
+    .bind(conversation_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Get a specific version of a group key envelope for a user.
+pub async fn get_my_group_key_envelope_version(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    user_id: Uuid,
+    key_version: i32,
+) -> Result<Option<GroupKeyEnvelopeRow>, sqlx::Error> {
+    sqlx::query_as::<_, GroupKeyEnvelopeRow>(
+        "SELECT id, conversation_id, key_version, recipient_user_id, \
+                encrypted_key, created_at \
+         FROM group_key_envelopes \
+         WHERE conversation_id = $1 AND recipient_user_id = $2 \
+               AND key_version = $3",
+    )
+    .bind(conversation_id)
+    .bind(user_id)
+    .bind(key_version)
+    .fetch_optional(pool)
+    .await
+}

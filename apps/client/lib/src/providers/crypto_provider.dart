@@ -19,9 +19,11 @@ final cryptoServiceProvider = Provider<CryptoService>((ref) {
 /// Provider for the GroupCryptoService singleton.
 ///
 /// Handles AES-256-GCM group encryption: key generation, encrypt/decrypt,
-/// and key distribution via the server.
+/// and per-member envelope-based key distribution via the server.
 final groupCryptoServiceProvider = Provider<GroupCryptoService>((ref) {
-  return GroupCryptoService(serverUrl: ref.watch(serverUrlProvider));
+  final service = GroupCryptoService(serverUrl: ref.watch(serverUrlProvider));
+  service.setCryptoService(ref.watch(cryptoServiceProvider));
+  return service;
 });
 
 /// State for tracking crypto initialization.
@@ -198,14 +200,21 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
   // Group encryption key management
   // -----------------------------------------------------------------------
 
-  /// Generate a new group key, upload it to the server, and cache it.
+  /// Generate a new group key, encrypt it for each member, and upload
+  /// per-member envelopes to the server.
+  ///
+  /// [members] is a list of `{'user_id': String, 'identity_key': String?}`
+  /// maps. Members without an identity key are skipped.
   ///
   /// Returns the new key version, or null on failure.
-  Future<int?> rotateGroupKey(String conversationId) async {
+  Future<int?> rotateGroupKey(
+    String conversationId,
+    List<Map<String, dynamic>> members,
+  ) async {
     final groupCrypto = ref.read(groupCryptoServiceProvider);
     final token = ref.read(authProvider).token ?? '';
     groupCrypto.setToken(token);
-    return groupCrypto.rotateGroupKey(conversationId);
+    return groupCrypto.rotateGroupKey(conversationId, members);
   }
 
   /// Fetch the latest group key from the server and cache it locally.

@@ -11,6 +11,7 @@ import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../screens/safety_number_screen.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
@@ -174,9 +175,13 @@ class ChatHeaderBar extends ConsumerWidget {
 
     return [
       if (!conv.isGroup)
-        const Tooltip(
-          message: 'End-to-end encrypted',
-          child: Icon(Icons.lock_outlined, size: 20, color: EchoTheme.online),
+        IconButton(
+          icon: const Icon(Icons.lock_outlined, size: 20),
+          color: EchoTheme.online,
+          tooltip: 'Verify safety number',
+          onPressed: () => _openSafetyNumber(context, ref, conv),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         ),
       if (!conv.isGroup && conv.isEncrypted)
         IconButton(
@@ -288,6 +293,26 @@ class ChatHeaderBar extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _openSafetyNumber(
+    BuildContext context,
+    WidgetRef ref,
+    Conversation conv,
+  ) {
+    final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
+    if (peer == null) return;
+
+    final authState = ref.read(authProvider);
+    final myName = authState.username ?? 'You';
+
+    SafetyNumberScreen.show(
+      context,
+      ref,
+      peerUserId: peer.userId,
+      peerUsername: peer.username,
+      myUsername: myName,
     );
   }
 
