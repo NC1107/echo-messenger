@@ -188,6 +188,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Widget _buildUsernameField() {
     return TextFormField(
       controller: _usernameController,
+      autofillHints: const [],
       decoration: const InputDecoration(
         labelText: 'Username',
         border: OutlineInputBorder(),
@@ -201,6 +202,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     return TextFormField(
       controller: _passwordController,
       obscureText: true,
+      autofillHints: const [],
       decoration: const InputDecoration(
         labelText: 'Password',
         border: OutlineInputBorder(),
@@ -258,6 +260,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     return TextFormField(
       controller: _confirmController,
       obscureText: true,
+      autofillHints: const [],
       decoration: const InputDecoration(
         labelText: 'Confirm password',
         border: OutlineInputBorder(),
