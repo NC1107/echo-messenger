@@ -7,6 +7,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 
 import '../../providers/voice_settings_provider.dart';
 import '../../theme/echo_theme.dart';
+import '../../utils/audio_level_analyzer.dart';
 
 class AudioSection extends ConsumerStatefulWidget {
   const AudioSection({super.key});
@@ -32,6 +33,7 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
   double _micLevel = 0.0;
   Timer? _micTestTimer;
   webrtc.MediaStream? _micTestStream;
+  AudioLevelAnalyzer? _audioLevelAnalyzer;
 
   // Sound test state
   bool _isPlayingTestSound = false;
@@ -100,23 +102,20 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
         'video': false,
       });
 
-      // Simulate a level meter for 3 seconds using a timer.
-      int ticks = 0;
-      _micTestTimer = Timer.periodic(const Duration(milliseconds: 100), (
-        timer,
-      ) {
-        ticks++;
-        if (ticks >= 30 || !mounted) {
+      // Create an audio level analyzer from the real mic stream
+      _audioLevelAnalyzer = AudioLevelAnalyzer.fromStream(_micTestStream!);
+
+      // Poll the real mic level every 50ms for responsive metering.
+      // Runs until the user stops manually -- no auto-stop timer.
+      _micTestTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+        if (!mounted) {
           _stopMicTest();
           return;
         }
-        if (mounted) {
-          setState(() {
-            // Simulate fluctuating mic levels
-            _micLevel = 0.3 + (ticks % 5) * 0.12;
-            if (_micLevel > 1.0) _micLevel = 1.0;
-          });
-        }
+        final level = _audioLevelAnalyzer?.getLevel() ?? 0.0;
+        setState(() {
+          _micLevel = level;
+        });
       });
     } catch (_) {
       if (mounted) {
@@ -131,6 +130,9 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
   void _stopMicTest() {
     _micTestTimer?.cancel();
     _micTestTimer = null;
+
+    _audioLevelAnalyzer?.dispose();
+    _audioLevelAnalyzer = null;
 
     final stream = _micTestStream;
     if (stream != null) {

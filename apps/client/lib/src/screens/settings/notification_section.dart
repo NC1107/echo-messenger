@@ -26,6 +26,7 @@ class _NotificationSectionState extends State<NotificationSection> {
       NotificationService().showMessageNotification(
         senderUsername: 'Echo',
         body: 'This is a test notification!',
+        forceShow: true,
       );
       if (mounted) {
         ToastService.show(

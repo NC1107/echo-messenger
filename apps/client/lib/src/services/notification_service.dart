@@ -14,10 +14,12 @@ abstract class NotificationService {
   Future<void> requestPermission();
 
   /// Show a notification for an incoming message.
-  /// On web, only shows when the document is not focused.
+  /// On web, only shows when the document is not focused unless
+  /// [forceShow] is true (used by the test notification button).
   void showMessageNotification({
     required String senderUsername,
     required String body,
+    bool forceShow = false,
   });
 
   /// Update the browser tab title badge with total unread count.

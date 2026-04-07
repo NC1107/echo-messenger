@@ -199,16 +199,21 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       60000,
     );
     _reconnectAttempts++;
-    debugPrint(
-      '[WebSocket] Reconnecting in ${delayMs}ms '
-      '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
-    );
-    DebugLogService.instance.log(
-      LogLevel.info,
-      'WebSocket',
-      'Reconnecting in ${delayMs}ms '
-          '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
-    );
+
+    // First reconnect is normal after a connection drop -- only log repeated
+    // failures so the debug log stays clean.
+    if (_reconnectAttempts > 1) {
+      debugPrint(
+        '[WebSocket] Reconnecting in ${delayMs}ms '
+        '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
+      );
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'WebSocket',
+        'Reconnecting in ${delayMs}ms '
+            '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
+      );
+    }
 
     _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
       if (ref.read(authProvider).isLoggedIn) {

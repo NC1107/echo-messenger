@@ -11,6 +11,7 @@ class _StubNotificationService implements NotificationService {
   void showMessageNotification({
     required String senderUsername,
     required String body,
+    bool forceShow = false,
   }) {
     // TODO: Implement desktop/mobile visual notifications with
     // flutter_local_notifications. Requires native setup:
