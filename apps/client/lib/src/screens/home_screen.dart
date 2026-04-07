@@ -27,6 +27,7 @@ import '../widgets/members_panel.dart';
 import '../utils/web_lifecycle.dart';
 import '../widgets/voice_dock.dart';
 import 'contacts_screen.dart';
+import 'voice_lounge_screen.dart';
 import 'create_group_screen.dart';
 import 'discover_groups_screen.dart';
 import 'settings_screen.dart';
@@ -47,6 +48,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   // For narrow screen navigation
   int _narrowPanelIndex = 0; // 0 = conv list, 1 = chat
+
+  // Voice lounge: when true and voice is active, show lounge instead of chat
+  bool _showingLounge = true;
 
   // Settings inline state
   bool _showSettings = false;
@@ -589,12 +593,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget _buildDesktopLayout() {
     const sidebarWidth = 320.0;
 
+    final voiceRtc = ref.watch(voiceRtcProvider);
+    final voiceActive = voiceRtc.isActive && voiceRtc.channelId != null;
+
+    // Auto-show lounge when voice becomes active
+    if (voiceActive && !_showingLounge) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _showingLounge = true);
+      });
+    }
+
     // Determine what the right panel shows
     Widget rightPanel;
     if (_showSettings) {
       rightPanel = SettingsContent(
         key: ValueKey(_settingsSection),
         section: _settingsSection,
+      );
+    } else if (voiceActive && _showingLounge) {
+      rightPanel = VoiceLoungeScreen(
+        onBackToChat: () {
+          setState(() => _showingLounge = false);
+        },
       );
     } else if (_selectedConversation != null) {
       rightPanel = ChatPanel(
@@ -610,8 +630,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     final animatedSidebarWidth = _sidebarCollapsed ? 60.0 : sidebarWidth;
-    final voiceRtc = ref.watch(voiceRtcProvider);
-    final showVoiceDock = voiceRtc.isActive && voiceRtc.channelId != null;
+    final showVoiceDock = voiceActive;
 
     return Scaffold(
       body: Stack(
@@ -679,11 +698,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   /// Tablet layout (600-899px): sidebar + flex chat
   Widget _buildWideLayout() {
+    final voiceRtc = ref.watch(voiceRtcProvider);
+    final voiceActive = voiceRtc.isActive && voiceRtc.channelId != null;
+
     Widget rightPanel;
     if (_showSettings) {
       rightPanel = SettingsContent(
         key: ValueKey(_settingsSection),
         section: _settingsSection,
+      );
+    } else if (voiceActive && _showingLounge) {
+      rightPanel = VoiceLoungeScreen(
+        onBackToChat: () {
+          setState(() => _showingLounge = false);
+        },
       );
     } else if (_selectedConversation != null) {
       rightPanel = ChatPanel(
