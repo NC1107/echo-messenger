@@ -20,11 +20,18 @@ use super::AppState;
 // -------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
-pub struct UploadGroupKeyRequest {
-    /// Base64-encoded encrypted group key material.
+pub struct KeyEnvelope {
+    pub user_id: Uuid,
     pub encrypted_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UploadGroupKeyRequest {
     /// The version number for this key (must be higher than any existing).
     pub key_version: i32,
+    /// Per-member encrypted envelopes. Each contains the group AES key
+    /// encrypted specifically for that member using their identity public key.
+    pub envelopes: Vec<KeyEnvelope>,
 }
 
 #[derive(Debug, Serialize)]
@@ -50,8 +57,29 @@ impl GroupKeyResponse {
     }
 }
 
+#[derive(Debug, Serialize)]
+pub struct GroupKeyEnvelopeResponse {
+    pub id: Uuid,
+    pub conversation_id: Uuid,
+    pub key_version: i32,
+    pub encrypted_key: String,
+    pub created_at: String,
+}
+
+impl GroupKeyEnvelopeResponse {
+    fn from_row(row: db::keys::GroupKeyEnvelopeRow) -> Self {
+        Self {
+            id: row.id,
+            conversation_id: row.conversation_id,
+            key_version: row.key_version,
+            encrypted_key: row.encrypted_key,
+            created_at: row.created_at.to_rfc3339(),
+        }
+    }
+}
+
 // -------------------------------------------------------------------------
-// POST /api/groups/:id/keys -- Upload a new group key (owner/admin only)
+// POST /api/groups/:id/keys -- Upload group key envelopes (owner/admin only)
 // -------------------------------------------------------------------------
 
 pub async fn upload_group_key(
@@ -76,8 +104,8 @@ pub async fn upload_group_key(
         ));
     }
 
-    if body.encrypted_key.is_empty() {
-        return Err(AppError::bad_request("encrypted_key cannot be empty"));
+    if body.envelopes.is_empty() {
+        return Err(AppError::bad_request("envelopes array cannot be empty"));
     }
     if body.key_version < 1 {
         return Err(AppError::bad_request(
@@ -85,11 +113,21 @@ pub async fn upload_group_key(
         ));
     }
 
+    for envelope in &body.envelopes {
+        if envelope.encrypted_key.is_empty() {
+            return Err(AppError::bad_request(
+                "encrypted_key cannot be empty in envelope",
+            ));
+        }
+    }
+
+    // Store a sentinel row in group_keys for version tracking (encrypted_key
+    // is a placeholder -- the real per-member keys live in group_key_envelopes).
     let row = db::keys::store_group_key(
         &state.pool,
         group_id,
         body.key_version,
-        &body.encrypted_key,
+        "__envelope__",
         auth.user_id,
     )
     .await
@@ -102,6 +140,25 @@ pub async fn upload_group_key(
             AppError::internal("Failed to store group key")
         }
     })?;
+
+    // Store per-member envelopes
+    for envelope in &body.envelopes {
+        db::keys::store_group_key_envelope(
+            &state.pool,
+            group_id,
+            body.key_version,
+            envelope.user_id,
+            &envelope.encrypted_key,
+        )
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "DB error storing envelope for user {}: {e:?}",
+                envelope.user_id
+            );
+            AppError::internal("Failed to store group key envelope")
+        })?;
+    }
 
     // Broadcast key_rotated event to all group members
     let member_ids = db::groups::get_conversation_member_ids(&state.pool, group_id)
@@ -129,7 +186,7 @@ pub async fn upload_group_key(
 }
 
 // -------------------------------------------------------------------------
-// GET /api/groups/:id/keys/latest -- Get latest group key
+// GET /api/groups/:id/keys/latest -- Get latest group key envelope for me
 // -------------------------------------------------------------------------
 
 pub async fn get_latest_group_key(
@@ -148,6 +205,19 @@ pub async fn get_latest_group_key(
         return Err(AppError::unauthorized("Not a member of this group"));
     }
 
+    // Try envelope-based lookup first (new E2E scheme)
+    let envelope = db::keys::get_my_group_key_envelope(&state.pool, group_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in get_latest_group_key/envelope: {e:?}");
+            AppError::internal("Database error")
+        })?;
+
+    if let Some(env) = envelope {
+        return Ok(Json(GroupKeyEnvelopeResponse::from_row(env)).into_response());
+    }
+
+    // Fallback: legacy group_keys table (for groups that haven't rotated yet)
     let row = db::keys::get_latest_group_key(&state.pool, group_id)
         .await
         .map_err(|e| {
@@ -156,7 +226,7 @@ pub async fn get_latest_group_key(
         })?
         .ok_or_else(|| AppError::bad_request("No group key found for this conversation"))?;
 
-    Ok(Json(GroupKeyResponse::from_row(row)))
+    Ok(Json(GroupKeyResponse::from_row(row)).into_response())
 }
 
 // -------------------------------------------------------------------------
@@ -179,6 +249,20 @@ pub async fn get_group_key_version(
         return Err(AppError::unauthorized("Not a member of this group"));
     }
 
+    // Try envelope-based lookup first
+    let envelope =
+        db::keys::get_my_group_key_envelope_version(&state.pool, group_id, auth.user_id, version)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error in get_group_key_version/envelope: {e:?}");
+                AppError::internal("Database error")
+            })?;
+
+    if let Some(env) = envelope {
+        return Ok(Json(GroupKeyEnvelopeResponse::from_row(env)).into_response());
+    }
+
+    // Fallback: legacy group_keys table
     let row = db::keys::get_group_key(&state.pool, group_id, version)
         .await
         .map_err(|e| {
@@ -187,5 +271,5 @@ pub async fn get_group_key_version(
         })?
         .ok_or_else(|| AppError::bad_request("Group key version not found"))?;
 
-    Ok(Json(GroupKeyResponse::from_row(row)))
+    Ok(Json(GroupKeyResponse::from_row(row)).into_response())
 }

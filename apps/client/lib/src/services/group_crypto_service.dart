@@ -1,6 +1,11 @@
-/// AES-256-GCM group encryption service.
+/// AES-256-GCM group encryption service with per-member key distribution.
 ///
-/// Each group conversation has a symmetric key that all members share.
+/// Each group conversation has a symmetric AES key shared by all members.
+/// Instead of uploading the raw key to the server, the key is encrypted
+/// individually for each member using their X25519 identity public key
+/// (ECDH + HKDF + AES-GCM wrapping). The server only ever sees per-member
+/// encrypted envelopes and cannot recover the plaintext group key.
+///
 /// Messages are encrypted with a random 12-byte nonce; the wire format is
 /// `nonce(12) || ciphertext || tag(16)`, base64-encoded for transport.
 ///
@@ -13,6 +18,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'crypto_service.dart';
 import 'secure_key_store.dart';
 
 /// Prefix used to mark group-encrypted payloads so we can distinguish them
@@ -22,6 +28,10 @@ const groupEncryptedPrefix = 'GRP1:';
 class GroupCryptoService {
   final String serverUrl;
   String _token = '';
+
+  /// Reference to the CryptoService for identity key operations and
+  /// per-user encryption/decryption (ECDH key wrapping).
+  CryptoService? _cryptoService;
 
   /// In-memory cache: conversationId -> (version, raw key bytes).
   final Map<String, (int, Uint8List)> _keyCache = {};
@@ -33,6 +43,11 @@ class GroupCryptoService {
   static final _aesGcm = AesGcm.with256bits();
 
   GroupCryptoService({required this.serverUrl});
+
+  /// Set the CryptoService instance for identity key operations.
+  void setCryptoService(CryptoService service) {
+    _cryptoService = service;
+  }
 
   /// Mark a group as unencrypted so [getGroupKey] short-circuits.
   void markUnencrypted(String conversationId) {
@@ -172,6 +187,9 @@ class GroupCryptoService {
 
   /// Fetch the latest group key from the server and cache it.
   ///
+  /// The server returns a per-member encrypted envelope. We decrypt it using
+  /// our identity private key to recover the raw AES group key.
+  ///
   /// Returns `(version, keyBase64)` or null on failure.
   Future<(int, String)?> fetchGroupKey(String conversationId) async {
     try {
@@ -192,23 +210,82 @@ class GroupCryptoService {
       final encryptedKey = data['encrypted_key'] as String;
       final version = data['key_version'] as int;
 
-      await _cacheKey(conversationId, version, encryptedKey);
-      return (version, encryptedKey);
+      // Try to decrypt the envelope using our identity key.
+      // If _cryptoService is available, the encrypted_key is a per-member
+      // envelope that must be unwrapped. If not, assume legacy plaintext key.
+      String rawKeyB64;
+      if (_cryptoService != null && encryptedKey != '__envelope__') {
+        try {
+          final rawKeyBytes = await _cryptoService!.decryptFromUser(
+            encryptedKey,
+          );
+          rawKeyB64 = base64Encode(rawKeyBytes);
+        } catch (e) {
+          // Fallback: treat as legacy plaintext key (migration path)
+          debugPrint(
+            '[GroupCrypto] Envelope decrypt failed, trying as legacy: $e',
+          );
+          rawKeyB64 = encryptedKey;
+        }
+      } else {
+        rawKeyB64 = encryptedKey;
+      }
+
+      await _cacheKey(conversationId, version, rawKeyB64);
+      return (version, rawKeyB64);
     } catch (e) {
       debugPrint('[GroupCrypto] fetchGroupKey error: $e');
       return null;
     }
   }
 
-  /// Generate a new group key and upload it to the server.
+  /// Generate a new group key and upload per-member encrypted envelopes.
+  ///
+  /// For each group member, the raw AES key is encrypted using their identity
+  /// public key via ECDH + HKDF + AES-GCM (CryptoService.encryptForUser).
+  /// The server never sees the plaintext key.
   ///
   /// Returns the new version number, or null on failure.
-  Future<int?> rotateGroupKey(String conversationId) async {
+  Future<int?> rotateGroupKey(
+    String conversationId,
+    List<Map<String, dynamic>> members,
+  ) async {
+    if (_cryptoService == null) {
+      debugPrint('[GroupCrypto] Cannot rotate key: no CryptoService set');
+      return null;
+    }
+
     // Determine next version
     final current = await getGroupKey(conversationId);
     final nextVersion = current != null ? current.$1 + 1 : 1;
 
     final newKey = generateGroupKey();
+    final newKeyBytes = Uint8List.fromList(base64Decode(newKey));
+
+    // Build per-member envelopes
+    final envelopes = <Map<String, dynamic>>[];
+    for (final member in members) {
+      final userId = member['user_id'] as String;
+      final identityKeyB64 = member['identity_key'] as String?;
+
+      if (identityKeyB64 == null) {
+        debugPrint('[GroupCrypto] Skipping member $userId: no identity key');
+        continue;
+      }
+
+      final identityKeyBytes = base64Decode(identityKeyB64);
+      final encryptedEnvelope = await _cryptoService!.encryptForUser(
+        newKeyBytes,
+        Uint8List.fromList(identityKeyBytes),
+      );
+
+      envelopes.add({'user_id': userId, 'encrypted_key': encryptedEnvelope});
+    }
+
+    if (envelopes.isEmpty) {
+      debugPrint('[GroupCrypto] No valid envelopes to upload');
+      return null;
+    }
 
     try {
       final response = await http.post(
@@ -217,7 +294,7 @@ class GroupCryptoService {
           'Authorization': 'Bearer $_token',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({'encrypted_key': newKey, 'key_version': nextVersion}),
+        body: jsonEncode({'key_version': nextVersion, 'envelopes': envelopes}),
       );
 
       if (response.statusCode != 201) {
