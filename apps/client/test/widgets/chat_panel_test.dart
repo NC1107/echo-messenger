@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
-
 import 'package:echo_app/src/models/chat_message.dart';
 import 'package:echo_app/src/models/conversation.dart';
 import 'package:echo_app/src/providers/channels_provider.dart';
 import 'package:echo_app/src/providers/chat_provider.dart';
 import 'package:echo_app/src/providers/privacy_provider.dart';
 import 'package:echo_app/src/providers/theme_provider.dart';
-import 'package:echo_app/src/providers/voice_rtc_provider.dart';
+import 'package:echo_app/src/providers/livekit_voice_provider.dart';
 import 'package:echo_app/src/providers/voice_settings_provider.dart';
 import 'package:echo_app/src/services/crypto_service.dart';
 import 'package:echo_app/src/services/group_crypto_service.dart';
@@ -66,14 +64,8 @@ class _FakeVoiceSettingsNotifier extends VoiceSettingsNotifier {
   }
 }
 
-class _FakeVoiceRtcNotifier extends VoiceRtcNotifier {
-  _FakeVoiceRtcNotifier(super.ref) {
-    state = VoiceRtcState.empty;
-  }
-
-  @override
-  Map<String, RTCVideoRenderer> get remoteAudioRenderers =>
-      const <String, RTCVideoRenderer>{};
+class _FakeVoiceRtcNotifier extends LiveKitVoiceNotifier {
+  _FakeVoiceRtcNotifier(super.ref);
 }
 
 /// Builds the full set of overrides needed for ChatPanel widget tests.

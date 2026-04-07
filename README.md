@@ -16,19 +16,19 @@ Get the latest build from the [Releases page](https://github.com/NC1107/echo-mes
 
 ## Features
 
-- **End-to-end encryption** -- Signal Protocol (X3DH + Double Ratchet). Optional per-conversation -- users choose when to encrypt.
+- **End-to-end encryption** -- Signal Protocol (X3DH + Double Ratchet).
 - **1:1 and group messaging** -- Real-time via WebSocket
 - **Group management** -- Public/private groups, owner/admin roles, kick members, edit group name, invite links
 - **Public group discovery** -- Browse and join public groups with membership badges
 - **Media sharing** -- Upload images, videos, PDFs. Inline image previews with lightbox viewer.
 - **Message editing and deletion** -- Edit/delete your messages, changes propagate in real-time
 - **Message reactions** -- Tap to react with emoji
-- **Privacy controls** -- Toggle read receipts, control unencrypted DM policy
+- **Privacy controls** -- Toggle read receipts
 - **Per-message encryption indicator** -- Lock icon shows which messages were encrypted
 - **Typing indicators** -- See when someone is typing
 - **Conversations list** -- Last message preview, unread badges, timestamps
-- **Cross-platform** -- Windows, Linux, Web
-- **Lightweight** -- <80MB RAM idle (vs Discord's 500MB+)
+- **Cross-platform** -- Windows, Linux, Web, iOS, Android
+- **Lightweight** -- <150MB RAM idle (vs Discord's 500MB+)
 
 ## Status
 

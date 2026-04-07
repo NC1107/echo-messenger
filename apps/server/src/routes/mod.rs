@@ -8,6 +8,7 @@ pub mod media;
 pub mod messages;
 pub mod reactions;
 pub mod users;
+pub mod voice;
 pub mod ws;
 
 use axum::Json;
@@ -217,6 +218,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api/users", user_routes)
         .nest("/api/media", media_routes)
         .nest("/api", message_routes)
+        .route("/api/voice/token", post(voice::generate_token))
         .route("/api/health", get(health))
         .route("/api/config/ice", get(ice_config))
         .route("/ws", get(ws::ws_upgrade))

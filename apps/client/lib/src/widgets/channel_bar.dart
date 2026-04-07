@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
 
 import '../models/channel.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
+import '../providers/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
-import '../providers/voice_rtc_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
 
@@ -35,13 +36,13 @@ class ChannelBar extends ConsumerStatefulWidget {
 class _ChannelBarState extends ConsumerState<ChannelBar> {
   String? _lastAutoSelectedConversationId;
   bool _voiceCleanupInFlight = false;
-  late final VoiceRtcNotifier _voiceRtcNotifier;
+  late final LiveKitVoiceNotifier _voiceRtcNotifier;
   final Set<String> _collapsedCategories = {};
 
   @override
   void initState() {
     super.initState();
-    _voiceRtcNotifier = ref.read(voiceRtcProvider.notifier);
+    _voiceRtcNotifier = ref.read(livekitVoiceProvider.notifier);
   }
 
   void _syncDerivedState(ChannelsState channelsState, String myUserId) {
@@ -144,7 +145,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
 
   Future<void> _leaveVoiceChannel(String channelId) async {
     final channelsNotifier = ref.read(channelsProvider.notifier);
-    final rtcNotifier = ref.read(voiceRtcProvider.notifier);
+    final rtcNotifier = ref.read(livekitVoiceProvider.notifier);
 
     // Leave: always clean up local state, even if server returns 400.
     await channelsNotifier.leaveVoiceChannel(widget.conversationId, channelId);
@@ -157,7 +158,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   @override
   Widget build(BuildContext context) {
     final channelsState = ref.watch(channelsProvider);
-    final voiceRtc = ref.watch(voiceRtcProvider);
+    final voiceRtc = ref.watch(livekitVoiceProvider);
     final voiceSettings = ref.watch(voiceSettingsProvider);
     final authState = ref.watch(authProvider);
     final screenShare = ref.watch(screenShareProvider);
@@ -309,7 +310,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
         borderRadius: BorderRadius.circular(4),
         onTap: () async {
           final channelsNotifier = ref.read(channelsProvider.notifier);
-          final rtcNotifier = ref.read(voiceRtcProvider.notifier);
+          final rtcNotifier = ref.read(livekitVoiceProvider.notifier);
           if (isActive) {
             await _leaveVoiceChannel(channel.id);
           } else {
@@ -508,7 +509,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     final nextMuted = !voiceSettings.selfMuted;
     await notifier.setSelfMuted(nextMuted);
     ref
-        .read(voiceRtcProvider.notifier)
+        .read(livekitVoiceProvider.notifier)
         .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
     await _syncVoiceState();
   }
@@ -517,9 +518,9 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     final notifier = ref.read(voiceSettingsProvider.notifier);
     final nextDeafened = !voiceSettings.selfDeafened;
     await notifier.setSelfDeafened(nextDeafened);
-    final lk = ref.read(voiceRtcProvider.notifier);
-    lk.setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
-    await lk.setDeafened(nextDeafened);
+    final lkNotifier = ref.read(livekitVoiceProvider.notifier);
+    lkNotifier.setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
+    await lkNotifier.setDeafened(nextDeafened);
     await _syncVoiceState();
   }
 
@@ -528,7 +529,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     final next = !voiceSettings.pushToTalkEnabled;
     await notifier.setPushToTalkEnabled(next);
     ref
-        .read(voiceRtcProvider.notifier)
+        .read(livekitVoiceProvider.notifier)
         .setCaptureEnabled(
           !next && !voiceSettings.selfMuted && !voiceSettings.selfDeafened,
         );
@@ -585,7 +586,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     );
   }
 
-  Widget _buildVideoButton(VoiceRtcState voiceRtc) {
+  Widget _buildVideoButton(LiveKitVoiceState voiceRtc) {
     return IconButton(
       icon: Icon(
         voiceRtc.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
@@ -593,26 +594,59 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
       ),
       color: voiceRtc.isVideoEnabled ? context.accent : context.textSecondary,
       tooltip: voiceRtc.isVideoEnabled ? 'Turn off camera' : 'Turn on camera',
-      onPressed: () => ref.read(voiceRtcProvider.notifier).toggleVideo(),
+      onPressed: () => ref.read(livekitVoiceProvider.notifier).toggleVideo(),
     );
   }
 
   /// Build a grid of video tiles for participants with active video.
-  Widget _buildVideoGrid(VoiceRtcState voiceRtc) {
-    final notifier = ref.read(voiceRtcProvider.notifier);
-    final remoteVideoRenderers = notifier.remoteVideoRenderers;
-    final localVideoStream = notifier.localVideoStream;
+  Widget _buildVideoGrid(LiveKitVoiceState voiceRtc) {
+    final room = ref.read(livekitVoiceProvider.notifier).room;
+    if (room == null) return const SizedBox.shrink();
 
-    // Count total video tiles: local (if sending) + remote renderers.
-    final hasLocalVideo = voiceRtc.isVideoEnabled && localVideoStream != null;
-    final totalTiles = (hasLocalVideo ? 1 : 0) + remoteVideoRenderers.length;
+    // Collect video tracks: local camera + remote video tracks.
+    final tiles = <Widget>[];
 
-    if (totalTiles == 0) return const SizedBox.shrink();
+    // Local video tile.
+    final localVideo = room.localParticipant?.videoTrackPublications
+        .where(
+          (pub) => pub.track != null && pub.source == lk.TrackSource.camera,
+        )
+        .firstOrNull;
+    if (localVideo != null && localVideo.track is lk.VideoTrack) {
+      tiles.add(
+        _LiveKitVideoTile(
+          key: const ValueKey('local-video'),
+          track: localVideo.track! as lk.VideoTrack,
+          label: 'You',
+          mirror: true,
+        ),
+      );
+    }
 
-    // Calculate grid columns based on tile count.
-    final crossAxisCount = totalTiles <= 1
+    // Remote video tiles.
+    for (final participant in room.remoteParticipants.values) {
+      for (final pub in participant.videoTrackPublications) {
+        if (pub.track != null && pub.track is lk.VideoTrack) {
+          final identity = participant.identity.isNotEmpty
+              ? participant.identity
+              : participant.sid.toString();
+          tiles.add(
+            _LiveKitVideoTile(
+              key: ValueKey('remote-video-${participant.sid}'),
+              track: pub.track! as lk.VideoTrack,
+              label: identity.length >= 8 ? identity.substring(0, 8) : identity,
+              mirror: false,
+            ),
+          );
+        }
+      }
+    }
+
+    if (tiles.isEmpty) return const SizedBox.shrink();
+
+    final crossAxisCount = tiles.length <= 1
         ? 1
-        : totalTiles <= 4
+        : tiles.length <= 4
         ? 2
         : 3;
 
@@ -630,31 +664,13 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
         mainAxisSpacing: 4,
         crossAxisSpacing: 4,
         childAspectRatio: 4 / 3,
-        children: [
-          // Local self-preview tile.
-          if (hasLocalVideo)
-            _VideoTile(
-              key: const ValueKey('local-video'),
-              stream: localVideoStream,
-              label: 'You',
-              mirror: true,
-            ),
-          // Remote video tiles.
-          for (final entry in remoteVideoRenderers.entries)
-            _RendererVideoTile(
-              key: ValueKey('remote-video-${entry.key}'),
-              renderer: entry.value,
-              label: entry.key.length >= 8
-                  ? entry.key.substring(0, 8)
-                  : entry.key,
-            ),
-        ],
+        children: tiles,
       ),
     );
   }
 
   /// Format peer latency as a compact string, e.g. "42ms".
-  String _formatLatency(VoiceRtcState voiceRtc) {
+  String _formatLatency(LiveKitVoiceState voiceRtc) {
     final latencies = voiceRtc.peerLatencies;
     if (latencies.isEmpty) return '';
     // Show average RTT across all peers.
@@ -666,7 +682,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
 
   Widget _buildCompactVoiceDock({
     required GroupChannel activeVoiceChannel,
-    required VoiceRtcState voiceRtc,
+    required LiveKitVoiceState voiceRtc,
     required VoiceSettingsState voiceSettings,
     required bool iAmConnected,
   }) {
@@ -720,7 +736,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
 
   Widget _buildWideVoiceDock({
     required GroupChannel activeVoiceChannel,
-    required VoiceRtcState voiceRtc,
+    required LiveKitVoiceState voiceRtc,
     required VoiceSettingsState voiceSettings,
     required bool iAmConnected,
   }) {
@@ -766,7 +782,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     ChannelsState channelsState,
     VoiceSettingsState voiceSettings,
     String myUserId,
-    VoiceRtcState voiceRtc,
+    LiveKitVoiceState voiceRtc,
     String? activeVoiceChannelId,
   ) {
     final activeVoiceChannel = channels
@@ -802,120 +818,21 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   }
 }
 
-/// A video tile that creates its own [RTCVideoRenderer] from a [MediaStream].
-/// Used for the local self-preview where we have the stream directly.
-class _VideoTile extends StatefulWidget {
-  final MediaStream? stream;
+/// A video tile that renders a LiveKit [lk.VideoTrack] using the SDK's
+/// built-in [lk.VideoTrackRenderer] widget.
+class _LiveKitVideoTile extends StatelessWidget {
+  final lk.VideoTrack track;
   final String label;
   final bool mirror;
 
-  const _VideoTile({
+  const _LiveKitVideoTile({
     super.key,
-    required this.stream,
+    required this.track,
     required this.label,
     this.mirror = false,
   });
 
   @override
-  State<_VideoTile> createState() => _VideoTileState();
-}
-
-class _VideoTileState extends State<_VideoTile> {
-  RTCVideoRenderer? _renderer;
-
-  @override
-  void initState() {
-    super.initState();
-    _initRenderer();
-  }
-
-  Future<void> _initRenderer() async {
-    final renderer = RTCVideoRenderer();
-    await renderer.initialize();
-    renderer.srcObject = widget.stream;
-    if (mounted) {
-      setState(() => _renderer = renderer);
-    } else {
-      renderer.srcObject = null;
-      await renderer.dispose();
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _VideoTile oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.stream != oldWidget.stream) {
-      _renderer?.srcObject = widget.stream;
-    }
-  }
-
-  @override
-  void dispose() {
-    final r = _renderer;
-    if (r != null) {
-      r.srcObject = null;
-      r.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final renderer = _renderer;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        color: Colors.black87,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (renderer != null)
-              RTCVideoView(
-                renderer,
-                mirror: widget.mirror,
-                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
-              )
-            else
-              const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-            Positioned(
-              bottom: 4,
-              left: 6,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(3),
-                ),
-                child: Text(
-                  widget.label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A video tile that uses an already-initialized [RTCVideoRenderer].
-/// Used for remote peer video streams.
-class _RendererVideoTile extends StatelessWidget {
-  final RTCVideoRenderer renderer;
-  final String label;
-
-  const _RendererVideoTile({
-    super.key,
-    required this.renderer,
-    required this.label,
-  });
-
-  @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
@@ -924,9 +841,12 @@ class _RendererVideoTile extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            RTCVideoView(
-              renderer,
-              objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+            lk.VideoTrackRenderer(
+              track,
+              fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+              mirrorMode: mirror
+                  ? lk.VideoViewMirrorMode.mirror
+                  : lk.VideoViewMirrorMode.off,
             ),
             Positioned(
               bottom: 4,

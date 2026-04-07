@@ -1082,8 +1082,9 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   }
 }
 
-final voiceRtcProvider = StateNotifierProvider<VoiceRtcNotifier, VoiceRtcState>(
-  (ref) {
-    return VoiceRtcNotifier(ref);
-  },
-);
+/// Legacy P2P WebRTC voice provider. Kept as a fallback; primary voice is now
+/// handled by [livekitVoiceProvider] in `livekit_voice_provider.dart`.
+final legacyVoiceRtcProvider =
+    StateNotifierProvider<VoiceRtcNotifier, VoiceRtcState>((ref) {
+      return VoiceRtcNotifier(ref);
+    });

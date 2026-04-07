@@ -312,6 +312,58 @@ docker compose -f docker-compose.prod.yml --env-file .env up -d
 docker compose -f docker-compose.prod.yml logs coturn
 ```
 
+## Voice/Video (LiveKit)
+
+Echo Messenger uses [LiveKit](https://github.com/livekit/livekit), an open-source SFU (Selective Forwarding Unit), for voice and video channels. LiveKit handles media routing server-side, which scales far better than P2P mesh for groups larger than 5-8 users.
+
+### Required environment variables
+
+Add these to your `.env` file:
+
+```bash
+LIVEKIT_API_KEY=your-api-key
+LIVEKIT_API_SECRET=your-api-secret
+```
+
+### Generate keys
+
+```bash
+docker run --rm livekit/generate-keys
+```
+
+This prints a key pair you can paste directly into `.env`.
+
+### Port requirements
+
+LiveKit requires the following ports open on your server firewall:
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 7880 | TCP | HTTP API |
+| 7881 | TCP | WebSocket (signaling) |
+| 7882 | UDP | WebRTC (ICE/DTLS) |
+| 50000-50200 | UDP | RTP media relay range |
+
+```bash
+# UFW example
+sudo ufw allow 7880/tcp
+sudo ufw allow 7881/tcp
+sudo ufw allow 7882/udp
+sudo ufw allow 50000:50200/udp
+```
+
+### How it works
+
+The Echo server exposes `POST /api/voice/token` which generates a LiveKit-compatible JWT. The client calls this endpoint before joining a voice channel, then connects directly to LiveKit using the returned token. LiveKit handles all media routing, eliminating the need for a separate TURN server for voice/video traffic.
+
+### Verify LiveKit is running
+
+```bash
+docker compose -f docker-compose.prod.yml logs livekit
+```
+
+You should see `starting in single-node mode` in the output.
+
 ## Troubleshooting
 
 ### Check container logs
