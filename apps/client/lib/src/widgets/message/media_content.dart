@@ -212,6 +212,7 @@ class MediaContentState extends State<MediaContent> {
     final headers = _headers();
     showDialog<void>(
       context: context,
+      barrierDismissible: true,
       barrierColor: Colors.black.withValues(alpha: 0.85),
       builder: (dialogContext) {
         final screenSize = MediaQuery.of(dialogContext).size;
