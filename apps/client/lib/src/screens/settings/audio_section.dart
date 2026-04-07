@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 
 import '../../providers/voice_settings_provider.dart';
+import '../../services/sound_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../utils/audio_level_analyzer.dart';
 
@@ -73,16 +74,9 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
     setState(() => _isPlayingTestSound = true);
 
     try {
-      // Play a short beep by creating a brief audio stream then stopping it.
-      // On web this triggers the browser audio pipeline confirmation.
-      final stream = await webrtc.navigator.mediaDevices.getUserMedia({
-        'audio': true,
-      });
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      for (final track in stream.getTracks()) {
-        track.stop();
-      }
-      await stream.dispose();
+      await SoundService().playMessageReceived();
+      // Brief delay so the button shows "Playing..." while the sound plays.
+      await Future<void>.delayed(const Duration(milliseconds: 600));
     } catch (_) {
       // Audio not available
     }

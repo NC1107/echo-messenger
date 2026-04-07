@@ -35,13 +35,18 @@ cd apps/client && flutter pub get && flutter run -d linux
 flutter build web --release --pwa-strategy=none --dart-define=APP_VERSION=X.Y.Z
 ```
 
+**Other scripts**: `scripts/demo_two_apps.sh` (launch two client instances for testing), `scripts/seed_demo_data.sh` (populate test data).
+
 ## Tests
 
 ```bash
 cargo test --workspace                            # Rust: 53 tests (Signal Protocol + server)
+cargo test -p echo-server -- test_name            # Run a single Rust test
 cd apps/client && flutter test                    # Flutter: 51 tests (crypto, models, state)
+cd apps/client && flutter test test/path_test.dart # Run a single Flutter test file
 ./scripts/test_e2e.sh                             # E2E integration tests
-npx playwright test                               # Visual tests
+npx playwright test                               # Visual tests (Playwright, tests/e2e/)
+npx playwright test tests/e2e/some.spec.ts        # Run a single Playwright spec
 ```
 
 ## Lint & Format
@@ -53,7 +58,7 @@ cd apps/client && dart format --set-exit-if-changed .   # Dart format
 cd apps/client && flutter analyze --fatal-infos   # Dart lint
 ```
 
-Pre-commit hooks (lefthook): cargo fmt check + clippy on .rs files, commitlint on commit messages. Conventional commits enforced.
+Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warnings` on .rs files, dart format + flutter analyze on .dart files, commitlint on commit messages. Conventional commits enforced.
 
 ## Architecture
 
@@ -62,14 +67,14 @@ Pre-commit hooks (lefthook): cargo fmt check + clippy on .rs files, commitlint o
 - `apps/client/` -- Flutter app, Riverpod state management, GoRouter navigation
 - `core/rust-core/` -- Shared Rust library: Signal Protocol (X3DH + Double Ratchet), crypto primitives, FFI bridge
 
-**Server startup sequence** (main.rs): load .env -> tracing -> Config::from_env() -> PG pool + auto-migrate 13 SQL files -> spawn WebSocket Hub (DashMap) -> build Axum router -> bind.
+**Server startup sequence** (main.rs): load .env -> tracing -> Config::from_env() -> PG pool + auto-migrate SQL files (`apps/server/migrations/`) -> spawn WebSocket Hub (DashMap) -> build Axum router -> bind.
 
 **Key server modules**:
 - `auth/` -- JWT (15-min access + 7-day refresh), Argon2id passwords, AuthUser middleware extractor
 - `ws/hub.rs` -- DashMap<user_id, mpsc::Sender> for lock-free WS routing
 - `ws/handler.rs` -- WS upgrade, message parsing, event dispatch (MessageRelayed, TypingIndicator, Reaction, Online/Offline)
 - `db/` -- 9 query modules (users, messages, contacts, groups, keys, reactions, media, tokens)
-- `routes/` -- REST: /api/auth, /api/users, /api/contacts, /api/messages, /api/groups, /api/keys, /api/reactions, /api/media
+- `routes/` -- REST: /api/auth, /api/users, /api/contacts, /api/messages, /api/groups, /api/keys, /api/reactions, /api/media, /api/channels, /api/voice, /api/group_keys
 
 **Client state** (Riverpod StateNotifiers with immutable copyWith):
 - `auth_provider` -- login/register/logout/auto-login, persists to SharedPreferences
@@ -82,7 +87,12 @@ Pre-commit hooks (lefthook): cargo fmt check + clippy on .rs files, commitlint o
 - Rust reference: `core/rust-core/src/signal/`
 - Dart production: `apps/client/lib/src/services/signal_protocol.dart`, `signal_x3dh.dart`, `signal_session.dart`
 - 1:1 messages: X3DH key exchange + Double Ratchet (end-to-end encrypted)
-- Group messages: currently unencrypted (server relays plaintext)
+- Group messages: group key envelopes infrastructure exists (`group_crypto_service.dart`, `routes/group_keys.rs`) but not fully wired
+
+**Voice & Video** (LiveKit integration):
+- Server: `routes/voice.rs` handles call signaling and LiveKit token generation
+- Client: `livekit_voice_provider.dart`, `voice_rtc_provider.dart`, `voice_settings_provider.dart`
+- Requires `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` env vars in production
 
 ## Critical Conventions
 
@@ -102,7 +112,9 @@ Conventional commits, short and human-readable. One line subject, optional brief
 - `feat: Signal Protocol integration -- X3DH + Double Ratchet in Dart + device-aware server`
 - `refactor: upgrade theme to ThemeExtension for scalable custom themes`
 
-Keep it concise -- no multi-paragraph explanations, no bullet lists in commit messages.
+Keep it concise -- no multi-paragraph explanations, no bullet lists in commit messages. No co-author tags.
+
+Allowed types: `feat fix docs style refactor perf test build ci chore revert security`. Optional scopes: `core server client infra proto crypto ci deps`. Subject must be lowercase, max 72 chars.
 
 ## Known Limitations
 

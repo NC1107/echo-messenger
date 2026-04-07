@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../services/debug_log_service.dart';
@@ -28,6 +29,31 @@ class _DebugSectionState extends State<DebugSection> {
     _logService.removeListener(_onLogsChanged);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _copyAllLogs(List<DebugLogEntry> entries) {
+    final buffer = StringBuffer();
+    for (final e in entries) {
+      final h = e.timestamp.hour.toString().padLeft(2, '0');
+      final m = e.timestamp.minute.toString().padLeft(2, '0');
+      final s = e.timestamp.second.toString().padLeft(2, '0');
+      final level = switch (e.level) {
+        LogLevel.info => 'INF',
+        LogLevel.warning => 'WRN',
+        LogLevel.error => 'ERR',
+      };
+      buffer.writeln('$h:$m:$s [$level] ${e.source}: ${e.message}');
+    }
+    Clipboard.setData(ClipboardData(text: buffer.toString()));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${entries.length} log entries copied to clipboard'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   void _onLogsChanged() {
@@ -67,6 +93,25 @@ class _DebugSectionState extends State<DebugSection> {
                   ),
                 ),
               ),
+              OutlinedButton.icon(
+                onPressed: entries.isEmpty ? null : () => _copyAllLogs(entries),
+                icon: const Icon(Icons.copy_outlined, size: 16),
+                label: const Text('Copy All'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: context.textSecondary,
+                  disabledForegroundColor: context.textMuted,
+                  side: BorderSide(color: context.border),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  textStyle: const TextStyle(fontSize: 13),
+                ),
+              ),
+              const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: entries.isEmpty ? null : _logService.clear,
                 icon: const Icon(Icons.delete_sweep_outlined, size: 16),

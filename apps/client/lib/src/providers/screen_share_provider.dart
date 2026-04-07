@@ -117,11 +117,10 @@ class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
     if (msg.contains('https') || msg.contains('secure context')) {
       return 'Screen sharing requires a secure (HTTPS) connection.';
     }
-    // Linux-specific guidance: PipeWire + XDG Desktop Portal are required
-    // for getDisplayMedia to work on native Linux builds.
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
-      return 'Screen sharing on Linux requires PipeWire and '
-          'XDG Desktop Portal support.';
+      return 'Screen sharing failed on Linux. '
+          'Ensure PipeWire, XDG Desktop Portal, and xdg-desktop-portal-gtk '
+          'or xdg-desktop-portal-kde are installed and running.';
     }
     return 'Could not start screen sharing: $error';
   }

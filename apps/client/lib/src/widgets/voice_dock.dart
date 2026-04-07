@@ -169,7 +169,7 @@ class VoiceDock extends ConsumerWidget {
                   .setDeafened(nextDeafened);
             },
           ),
-          // Screen share (desktop / web only)
+          // Screen share (desktop / web only, published via LiveKit SDK)
           if (_supportsScreenShare)
             _DockIconButton(
               icon: screenShare.isScreenSharing
@@ -182,16 +182,17 @@ class VoiceDock extends ConsumerWidget {
                   ? 'Stop sharing'
                   : 'Share screen',
               onPressed: () async {
-                final notifier = ref.read(screenShareProvider.notifier);
+                final lkNotifier = ref.read(livekitVoiceProvider.notifier);
+                final ssNotifier = ref.read(screenShareProvider.notifier);
                 if (screenShare.isScreenSharing) {
-                  await notifier.stopScreenShare();
+                  await lkNotifier.setScreenShareEnabled(false);
+                  await ssNotifier.stopScreenShare();
                 } else {
-                  await notifier.startScreenShare();
-                  final updated = ref.read(screenShareProvider);
-                  if (updated.error != null && context.mounted) {
+                  final ok = await lkNotifier.setScreenShareEnabled(true);
+                  if (!ok && context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(updated.error!),
+                      const SnackBar(
+                        content: Text('Could not start screen sharing.'),
                         behavior: SnackBarBehavior.floating,
                       ),
                     );

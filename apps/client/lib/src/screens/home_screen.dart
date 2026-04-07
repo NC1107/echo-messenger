@@ -51,6 +51,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   // Voice lounge: when true and voice is active, show lounge instead of chat
   bool _showingLounge = true;
+  bool _userDismissedLounge = false;
 
   // Settings inline state
   bool _showSettings = false;
@@ -596,11 +597,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final voiceRtc = ref.watch(voiceRtcProvider);
     final voiceActive = voiceRtc.isActive && voiceRtc.channelId != null;
 
-    // Auto-show lounge when voice becomes active
-    if (voiceActive && !_showingLounge) {
+    // Auto-show lounge when voice becomes active (only on initial join,
+    // not after user dismissed it via "Back to chat").
+    if (voiceActive && !_showingLounge && !_userDismissedLounge) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() => _showingLounge = true);
       });
+    }
+    // Reset dismiss flag when voice becomes inactive so next join auto-shows.
+    if (!voiceActive && _userDismissedLounge) {
+      _userDismissedLounge = false;
     }
 
     // Determine what the right panel shows
@@ -613,7 +619,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     } else if (voiceActive && _showingLounge) {
       rightPanel = VoiceLoungeScreen(
         onBackToChat: () {
-          setState(() => _showingLounge = false);
+          setState(() {
+            _showingLounge = false;
+            _userDismissedLounge = true;
+          });
         },
       );
     } else if (_selectedConversation != null) {
@@ -710,7 +719,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     } else if (voiceActive && _showingLounge) {
       rightPanel = VoiceLoungeScreen(
         onBackToChat: () {
-          setState(() => _showingLounge = false);
+          setState(() {
+            _showingLounge = false;
+            _userDismissedLounge = true;
+          });
         },
       );
     } else if (_selectedConversation != null) {

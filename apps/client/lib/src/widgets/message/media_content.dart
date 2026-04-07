@@ -60,18 +60,41 @@ bool isImageUrl(String url) => _imageExtensions.contains(urlExtension(url));
 /// Returns true if the URL points to a known file extension.
 bool isFileUrl(String url) => _fileExtensions.contains(urlExtension(url));
 
-/// Resolves a potentially relative media URL to an absolute URL, appending
-/// an auth token as a query parameter when available.
+/// Resolves a potentially relative media URL to an absolute URL.
+///
+/// Does NOT append auth tokens -- callers should use [mediaHeaders] for
+/// authenticated requests, or fetch a media ticket for browser-opened URLs.
 String resolveMediaUrl(String url, {String? serverUrl, String? authToken}) {
-  if (url.startsWith('http')) {
-    // external URLs (GIFs) -- just append token if needed
-    final token = authToken ?? '';
-    return token.isNotEmpty ? '$url?token=$token' : url;
-  }
+  if (url.startsWith('http')) return url;
   final base = serverUrl ?? '';
-  final token = authToken ?? '';
-  final resolved = url.startsWith('/') && base.isNotEmpty ? '$base$url' : url;
-  return token.isNotEmpty ? '$resolved?token=$token' : resolved;
+  return url.startsWith('/') && base.isNotEmpty ? '$base$url' : url;
+}
+
+/// Fetches a single-use media ticket from the server for use in browser URLs.
+Future<String?> _fetchMediaTicket({
+  required String serverUrl,
+  required String authToken,
+}) async {
+  try {
+    final response = await http.post(
+      Uri.parse('$serverUrl/api/media/ticket'),
+      headers: {'Authorization': 'Bearer $authToken'},
+    );
+    if (response.statusCode == 200) {
+      final data = (response.body.contains('{'))
+          ? Uri.splitQueryString(response.body)
+          : {};
+      // Parse JSON manually to avoid adding dart:convert import dependency
+      // when it may already be imported. The response is {"ticket":"..."}.
+      final match = RegExp(
+        r'"ticket"\s*:\s*"([^"]+)"',
+      ).firstMatch(response.body);
+      return match?.group(1) ?? data['ticket'];
+    }
+  } catch (_) {
+    // Ticket fetch failed -- fall through to direct open.
+  }
+  return null;
 }
 
 /// Extracts a media URL from message content, checking for [img:], [video:],
@@ -154,7 +177,27 @@ class MediaContentState extends State<MediaContent> {
 
   // ignore: public_member_api_docs
   Future<void> openMedia(String rawUrl) async {
-    final uri = Uri.tryParse(_resolveUrl(rawUrl));
+    final baseUrl = _resolveUrl(rawUrl);
+
+    // Fetch a single-use media ticket so the browser can authenticate
+    // without leaking the JWT in the URL.
+    String url = baseUrl;
+    final serverUrl = widget.serverUrl;
+    final token = widget.authToken;
+    if (serverUrl != null &&
+        serverUrl.isNotEmpty &&
+        token != null &&
+        token.isNotEmpty) {
+      final ticket = await _fetchMediaTicket(
+        serverUrl: serverUrl,
+        authToken: token,
+      );
+      if (ticket != null) {
+        url = '$baseUrl?ticket=$ticket';
+      }
+    }
+
+    final uri = Uri.tryParse(url);
     if (uri != null) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -545,7 +588,8 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         return;
       }
       setState(() => _controller = controller);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[InlineVideoPlayer] init failed for ${widget.rawUrl}: $e');
       if (mounted) setState(() => _initFailed = true);
     }
   }
