@@ -39,7 +39,13 @@ class ReactionBar extends StatelessWidget {
             for (final emoji in uniqueEmojis)
               Padding(
                 padding: const EdgeInsets.only(right: 2),
-                child: Text(emoji, style: const TextStyle(fontSize: 14)),
+                child: Text(
+                  emoji,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
               ),
             if (totalCount > 1) ...[
               const SizedBox(width: 2),

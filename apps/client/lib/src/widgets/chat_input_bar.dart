@@ -881,6 +881,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           focusNode: _inputFocusNode,
           maxLines: 5,
           minLines: 1,
+          autofillHints: const [],
           style: TextStyle(fontSize: 14, color: context.textPrimary),
           decoration: InputDecoration(
             hintText: _isEditing ? 'Edit your message...' : 'Type a message...',
