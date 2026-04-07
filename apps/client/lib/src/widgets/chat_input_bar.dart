@@ -783,10 +783,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
   /// Handles Ctrl+V paste shortcut. Returns a [KeyEventResult] indicating
   /// whether the event was consumed.
+  ///
+  /// Previously returned `ignored` on web and Linux, which meant
+  /// `_handlePaste()` (including image paste) was never called on those
+  /// platforms. Now always invokes `_handlePaste()` and marks handled.
   KeyEventResult _handlePasteShortcut() {
-    if (kIsWeb || defaultTargetPlatform == TargetPlatform.linux) {
-      return KeyEventResult.ignored;
-    }
     _handlePaste();
     return KeyEventResult.handled;
   }

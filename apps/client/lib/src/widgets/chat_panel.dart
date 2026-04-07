@@ -216,6 +216,17 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       groupCrypto.setToken(auth.token!);
     }
 
+    // For 1:1 DMs, pass the crypto service so encrypted messages can be
+    // decrypted. Without this, _decryptIfNeeded sees crypto==null and
+    // shows "[Encrypted history]" instead of the actual message content.
+    final cryptoState = ref.read(cryptoProvider);
+    final crypto = (!conv.isGroup && cryptoState.isInitialized)
+        ? ref.read(cryptoServiceProvider)
+        : null;
+    if (crypto != null) {
+      crypto.setToken(auth.token!);
+    }
+
     ref
         .read(chatProvider.notifier)
         .loadHistoryWithUserId(
@@ -223,6 +234,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           auth.token!,
           auth.userId!,
           channelId: _selectedTextChannelId,
+          crypto: crypto,
           isGroup: conv.isGroup,
           groupCrypto: groupCrypto,
         );
@@ -265,6 +277,15 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       groupCryptoOlder.setToken(auth.token!);
     }
 
+    // Pass crypto for 1:1 DM decryption (same as _loadHistory)
+    final cryptoStateOlder = ref.read(cryptoProvider);
+    final cryptoOlder = (!conv.isGroup && cryptoStateOlder.isInitialized)
+        ? ref.read(cryptoServiceProvider)
+        : null;
+    if (cryptoOlder != null) {
+      cryptoOlder.setToken(auth.token!);
+    }
+
     ref
         .read(chatProvider.notifier)
         .loadHistoryWithUserId(
@@ -273,6 +294,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           auth.userId!,
           channelId: _selectedTextChannelId,
           before: oldestTimestamp,
+          crypto: cryptoOlder,
           isGroup: conv.isGroup,
           groupCrypto: groupCryptoOlder,
         );

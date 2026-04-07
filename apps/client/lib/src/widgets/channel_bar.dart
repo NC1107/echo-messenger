@@ -484,10 +484,19 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   }
 
   Widget _buildMuteButton(VoiceSettingsState voiceSettings) {
+    final micOff = voiceSettings.selfMuted || voiceSettings.selfDeafened;
     return IconButton(
-      icon: Icon(voiceSettings.selfMuted ? Icons.mic_off : Icons.mic, size: 18),
-      color: voiceSettings.selfMuted ? EchoTheme.danger : context.textSecondary,
-      tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
+      icon: Icon(micOff ? Icons.mic_off : Icons.mic, size: 18),
+      color: voiceSettings.selfMuted
+          ? EchoTheme.danger
+          : voiceSettings.selfDeafened
+          ? context.textMuted
+          : context.textSecondary,
+      tooltip: voiceSettings.selfDeafened
+          ? 'Muted by deafen'
+          : voiceSettings.selfMuted
+          ? 'Unmute'
+          : 'Mute',
       onPressed: () => _toggleMute(voiceSettings),
     );
   }

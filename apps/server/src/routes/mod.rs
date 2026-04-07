@@ -241,7 +241,16 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         ))
         .layer(SetResponseHeaderLayer::overriding(
             header::CONTENT_SECURITY_POLICY,
-            header::HeaderValue::from_static("default-src 'self'"),
+            header::HeaderValue::from_static(
+                "default-src 'self'; \
+                 connect-src 'self' wss: https:; \
+                 img-src 'self' https: data: blob:; \
+                 font-src 'self' https://fonts.gstatic.com; \
+                 style-src 'self' 'unsafe-inline'; \
+                 script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
+                 media-src 'self' blob:; \
+                 worker-src 'self' blob:",
+            ),
         ))
         .with_state(state)
 }

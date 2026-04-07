@@ -5,9 +5,17 @@ import 'package:web/web.dart' as web;
 import 'notification_service.dart';
 
 /// Web implementation using the browser Notifications API.
-NotificationService createNotificationService() => _WebNotificationService();
+///
+/// Uses a singleton so that permission state is retained across calls.
+/// Previous code created a new instance each time via the factory constructor,
+/// losing the `_permissionGranted` flag set by `requestPermission()`.
+NotificationService createNotificationService() =>
+    _WebNotificationService._instance;
 
 class _WebNotificationService implements NotificationService {
+  static final _WebNotificationService _instance = _WebNotificationService._();
+  _WebNotificationService._();
+
   bool _permissionGranted = false;
 
   @override
@@ -34,11 +42,13 @@ class _WebNotificationService implements NotificationService {
   void showMessageNotification({
     required String senderUsername,
     required String body,
+    bool forceShow = false,
   }) {
     if (!_permissionGranted) return;
     try {
-      // Only show when the document is not visible (user tabbed away)
-      if (web.document.hidden) {
+      // Show when the document is not visible (user tabbed away),
+      // or when forceShow is true (e.g. test notification button).
+      if (web.document.hidden || forceShow) {
         web.Notification(senderUsername, web.NotificationOptions(body: body));
       }
     } catch (_) {

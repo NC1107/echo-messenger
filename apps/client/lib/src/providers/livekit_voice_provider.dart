@@ -169,6 +169,12 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
 
       await room.connect(livekitUrl, livekitToken);
 
+      // Set display name so peers see a username instead of a UUID identity.
+      final username = ref.read(authProvider).username;
+      if (username != null && username.isNotEmpty) {
+        room.localParticipant?.setName(username);
+      }
+
       // 3. Enable microphone (unless starting muted).
       final micEnabled = !startMuted;
       await room.localParticipant?.setMicrophoneEnabled(micEnabled);
@@ -210,7 +216,18 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
     if (state.isActive) {
       SoundService().playVoiceLeave();
     }
-    await _cleanupRoom();
+    try {
+      await _cleanupRoom();
+    } catch (e) {
+      // Ensure state is always cleaned up even if disconnect throws
+      // (e.g. SocketException on connection timeout).
+      debugPrint('[LiveKitVoice] cleanup error during leave: $e');
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'LiveKitVoice',
+        'Cleanup error during leave (ignored): $e',
+      );
+    }
     state = LiveKitVoiceState.empty;
   }
 
@@ -404,8 +421,12 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
     final participants = room.remoteParticipants;
     final peerStates = <String, String>{};
     for (final p in participants.values) {
-      final identity = p.identity.isNotEmpty ? p.identity : p.sid.toString();
-      peerStates[identity] = 'connected';
+      final label = p.name.isNotEmpty
+          ? p.name
+          : p.identity.isNotEmpty
+          ? p.identity
+          : p.sid.toString();
+      peerStates[label] = 'connected';
     }
 
     state = state.copyWith(
@@ -441,8 +462,12 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
     // Remote audio levels.
     final peerLevels = <String, double>{};
     for (final p in room.remoteParticipants.values) {
-      final identity = p.identity.isNotEmpty ? p.identity : p.sid.toString();
-      peerLevels[identity] = p.audioLevel;
+      final label = p.name.isNotEmpty
+          ? p.name
+          : p.identity.isNotEmpty
+          ? p.identity
+          : p.sid.toString();
+      peerLevels[label] = p.audioLevel;
     }
 
     if (!_disposed) {
@@ -463,13 +488,19 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
     _roomListener = null;
 
     final room = _room;
+    _room = null;
     if (room != null) {
       try {
         await room.disconnect();
-      } catch (_) {}
-      await room.dispose();
+      } catch (_) {
+        // SocketException / TimeoutException on flaky connections -- ignore.
+      }
+      try {
+        await room.dispose();
+      } catch (_) {
+        // Dispose may throw if disconnect left resources in a bad state.
+      }
     }
-    _room = null;
   }
 
   @override
