@@ -124,6 +124,22 @@ class VoiceDock extends ConsumerWidget {
                   .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
             },
           ),
+          // Mic level indicator
+          if (!voiceSettings.selfMuted && !voiceSettings.selfDeafened)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 100),
+              width:
+                  (ref.watch(
+                            voiceRtcProvider.select((s) => s.localAudioLevel),
+                          ) *
+                          40)
+                      .clamp(0.0, 40.0),
+              height: 4,
+              decoration: BoxDecoration(
+                color: EchoTheme.online,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
           // Deafen
           _DockIconButton(
             icon: voiceSettings.selfDeafened

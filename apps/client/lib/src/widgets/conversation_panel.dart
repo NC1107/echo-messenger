@@ -331,30 +331,36 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   @override
   Widget build(BuildContext context) {
     final conversationsState = ref.watch(conversationsProvider);
-    final authState = ref.watch(authProvider);
-    final myUserId = authState.userId ?? '';
-    final myUsername = authState.username ?? 'User';
+    final (myUserId, myUsername, myAvatarUrl) = ref.watch(
+      authProvider.select((s) => (s.userId, s.username, s.avatarUrl)),
+    );
+    final userId = myUserId ?? '';
+    final username = myUsername ?? 'User';
     final serverUrl = ref.watch(serverUrlProvider);
-    final wsState = ref.watch(websocketProvider);
+    final (wsConnected, wsReplaced, wsOnlineUsers) = ref.watch(
+      websocketProvider.select(
+        (s) => (s.isConnected, s.wasReplaced, s.onlineUsers),
+      ),
+    );
     final contactsState = ref.watch(contactsProvider);
 
     final pendingCount = contactsState.pendingRequests.length;
 
     final allConversations = conversationsState.conversations;
 
-    final conversations = _filterConversations(allConversations, myUserId);
+    final conversations = _filterConversations(allConversations, userId);
     final groupConversations = conversations.where((c) => c.isGroup).toList();
 
     return Container(
       color: context.sidebarBg,
       child: Column(
         children: [
-          _buildLogoHeader(context, wsState, pendingCount),
+          _buildLogoHeader(context, wsConnected, pendingCount),
           _buildSearchBar(context),
           _buildTabBar(),
           const SizedBox(height: 8),
           _buildPendingBanner(context, pendingCount),
-          _buildReplacedBanner(context, wsState),
+          _buildReplacedBanner(context, wsReplaced),
           Expanded(
             child: _buildTabContent(
               conversationsState: conversationsState,
@@ -362,15 +368,18 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               groupConversations: groupConversations,
               allConversations: allConversations,
               contactsState: contactsState,
-              myUserId: myUserId,
+              myUserId: userId,
+              serverUrl: serverUrl,
+              wsOnlineUsers: wsOnlineUsers,
             ),
           ),
           _buildUserStatusBar(
             context,
-            myUsername: myUsername,
+            myUsername: username,
             serverUrl: serverUrl,
-            authState: authState,
-            wsState: wsState,
+            avatarUrl: myAvatarUrl,
+            wsConnected: wsConnected,
+            wsReplaced: wsReplaced,
           ),
         ],
       ),
@@ -392,13 +401,13 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
   Widget _buildLogoHeader(
     BuildContext context,
-    WebSocketState wsState,
+    bool wsConnected,
     int pendingCount,
   ) {
-    final conversationsState = ref.watch(conversationsProvider);
-    final totalUnread = conversationsState.conversations.fold<int>(
-      0,
-      (sum, c) => sum + c.unreadCount,
+    final totalUnread = ref.watch(
+      conversationsProvider.select(
+        (s) => s.conversations.fold<int>(0, (sum, c) => sum + c.unreadCount),
+      ),
     );
 
     return Container(
@@ -421,7 +430,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ),
           ),
           const SizedBox(width: 8),
-          _buildConnectionDot(context, wsState),
+          _buildConnectionDot(context, wsConnected),
           const Spacer(),
           _buildHeaderActions(context, pendingCount),
         ],
@@ -464,12 +473,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
-  Widget _buildConnectionDot(BuildContext context, WebSocketState wsState) {
+  Widget _buildConnectionDot(BuildContext context, bool wsConnected) {
     return Container(
       width: 8,
       height: 8,
       decoration: BoxDecoration(
-        color: wsState.isConnected ? EchoTheme.online : context.textMuted,
+        color: wsConnected ? EchoTheme.online : context.textMuted,
         shape: BoxShape.circle,
       ),
     );
@@ -708,8 +717,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
-  Widget _buildReplacedBanner(BuildContext context, WebSocketState wsState) {
-    if (!wsState.wasReplaced) return const SizedBox.shrink();
+  Widget _buildReplacedBanner(BuildContext context, bool wsReplaced) {
+    if (!wsReplaced) return const SizedBox.shrink();
     return Column(
       children: [
         GestureDetector(
@@ -758,8 +767,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     BuildContext context, {
     required String myUsername,
     required String serverUrl,
-    required AuthState authState,
-    required WebSocketState wsState,
+    required String? avatarUrl,
+    required bool wsConnected,
+    required bool wsReplaced,
   }) {
     return Container(
       height: 60,
@@ -770,9 +780,15 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       ),
       child: Row(
         children: [
-          _buildUserAvatar(context, myUsername, serverUrl, authState, wsState),
+          _buildUserAvatar(
+            context,
+            myUsername,
+            serverUrl,
+            avatarUrl,
+            wsConnected,
+          ),
           const SizedBox(width: 10),
-          _buildUserNameAndStatus(context, myUsername, wsState),
+          _buildUserNameAndStatus(context, myUsername, wsConnected, wsReplaced),
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 18),
             color: context.textSecondary,
@@ -790,8 +806,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     BuildContext context,
     String myUsername,
     String serverUrl,
-    AuthState authState,
-    WebSocketState wsState,
+    String? avatarUrl,
+    bool wsConnected,
   ) {
     return Stack(
       children: [
@@ -799,9 +815,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           name: myUsername,
           radius: 16,
           bgColor: context.accent,
-          imageUrl: authState.avatarUrl != null
-              ? '$serverUrl${authState.avatarUrl}'
-              : null,
+          imageUrl: avatarUrl != null ? '$serverUrl$avatarUrl' : null,
         ),
         Positioned(
           bottom: 0,
@@ -810,7 +824,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             width: 10,
             height: 10,
             decoration: BoxDecoration(
-              color: wsState.isConnected ? EchoTheme.online : EchoTheme.warning,
+              color: wsConnected ? EchoTheme.online : EchoTheme.warning,
               shape: BoxShape.circle,
               border: Border.all(color: context.mainBg, width: 2),
             ),
@@ -823,7 +837,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   Widget _buildUserNameAndStatus(
     BuildContext context,
     String myUsername,
-    WebSocketState wsState,
+    bool wsConnected,
+    bool wsReplaced,
   ) {
     return Expanded(
       child: Column(
@@ -840,13 +855,13 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             overflow: TextOverflow.ellipsis,
           ),
           Text(
-            wsState.wasReplaced
+            wsReplaced
                 ? 'Session replaced'
-                : wsState.isConnected
+                : wsConnected
                 ? 'Online'
                 : 'Reconnecting...',
             style: TextStyle(
-              color: wsState.isConnected ? EchoTheme.online : EchoTheme.warning,
+              color: wsConnected ? EchoTheme.online : EchoTheme.warning,
               fontSize: 11,
             ),
           ),
@@ -890,10 +905,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     required List<Conversation> allConversations,
     required ContactsState contactsState,
     required String myUserId,
+    required String serverUrl,
+    required Set<String> wsOnlineUsers,
   }) {
     switch (_selectedTab) {
       case 1:
-        return _buildContactsTab(contactsState, myUserId);
+        return _buildContactsTab(contactsState, myUserId, serverUrl);
       case 2:
         return _buildGroupsTab(groupConversations, myUserId);
       default:
@@ -902,6 +919,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           conversations,
           allConversations,
           myUserId,
+          serverUrl,
+          wsOnlineUsers,
         );
     }
   }
@@ -911,6 +930,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     List<Conversation> conversations,
     List<Conversation> allConversations,
     String myUserId,
+    String serverUrl,
+    Set<String> wsOnlineUsers,
   ) {
     if (conversationsState.isLoading && allConversations.isEmpty) {
       return Center(
@@ -922,7 +943,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     }
 
     final sorted = _sortConversations(conversations);
-    return _buildConversationList(sorted, myUserId);
+    return _buildConversationList(sorted, myUserId, serverUrl, wsOnlineUsers);
   }
 
   Widget _buildChatsEmptyState() {
@@ -973,19 +994,23 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
-  Widget _buildConversationList(List<Conversation> sorted, String myUserId) {
+  Widget _buildConversationList(
+    List<Conversation> sorted,
+    String myUserId,
+    String serverUrl,
+    Set<String> wsOnlineUsers,
+  ) {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
       itemCount: sorted.length,
       itemBuilder: (context, index) {
         final conv = sorted[index];
         final isPinned = _pinnedIds.contains(conv.id);
-        final wsState = ref.watch(websocketProvider);
         final peer = conv.isGroup
             ? null
             : conv.members.where((m) => m.userId != myUserId).firstOrNull;
-        final isPeerOnline = peer != null && wsState.isUserOnline(peer.userId);
-        final serverUrl = ref.watch(serverUrlProvider);
+        final isPeerOnline =
+            peer != null && wsOnlineUsers.contains(peer.userId);
         String? peerAvatarUrl;
         if (!conv.isGroup && peer != null && peer.avatarUrl != null) {
           peerAvatarUrl = '$serverUrl${peer.avatarUrl}';
@@ -1006,7 +1031,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
-  Widget _buildContactsTab(ContactsState contactsState, String myUserId) {
+  Widget _buildContactsTab(
+    ContactsState contactsState,
+    String myUserId,
+    String serverUrl,
+  ) {
     final contacts = contactsState.contacts;
 
     if (contactsState.isLoading && contacts.isEmpty) {
@@ -1062,7 +1091,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       itemCount: contacts.length,
       itemBuilder: (context, index) {
         final contact = contacts[index];
-        final serverUrl = ref.watch(serverUrlProvider);
         return ContactItem(
           contact: contact,
           serverUrl: serverUrl,

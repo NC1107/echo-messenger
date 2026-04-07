@@ -102,6 +102,26 @@ class ChatMessage {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'message_id': id,
+      'from_user_id': fromUserId,
+      'from_username': fromUsername,
+      'conversation_id': conversationId,
+      'channel_id': channelId,
+      'content': content,
+      'created_at': timestamp,
+      'is_encrypted': isEncrypted,
+      'edited_at': editedAt,
+      'reply_to_id': replyToId,
+      'reply_to_content': replyToContent,
+      'reply_to_username': replyToUsername,
+      'pinned_by_id': pinnedById,
+      'pinned_at': pinnedAt?.toIso8601String(),
+      'reactions': reactions.map((r) => r.toJson()).toList(),
+    };
+  }
+
   ChatMessage copyWith({
     String? id,
     String? fromUserId,
