@@ -5,6 +5,7 @@ class GroupChannel {
   final String kind;
   final String? topic;
   final int position;
+  final String category;
   final String createdAt;
 
   const GroupChannel({
@@ -14,6 +15,7 @@ class GroupChannel {
     required this.kind,
     this.topic,
     required this.position,
+    this.category = 'Text Channels',
     required this.createdAt,
   });
 
@@ -21,13 +23,18 @@ class GroupChannel {
   bool get isVoice => kind == 'voice';
 
   factory GroupChannel.fromJson(Map<String, dynamic> json) {
+    final kind = (json['kind'] ?? 'text').toString();
+    final defaultCategory = kind == 'voice'
+        ? 'Voice Channels'
+        : 'Text Channels';
     return GroupChannel(
       id: (json['id'] ?? '').toString(),
       conversationId: (json['conversation_id'] ?? '').toString(),
       name: (json['name'] ?? '').toString(),
-      kind: (json['kind'] ?? 'text').toString(),
+      kind: kind,
       topic: json['topic'] as String?,
       position: (json['position'] as num?)?.toInt() ?? 0,
+      category: (json['category'] as String?) ?? defaultCategory,
       createdAt: (json['created_at'] ?? '').toString(),
     );
   }

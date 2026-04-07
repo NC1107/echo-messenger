@@ -24,6 +24,10 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/clipboard_image_helper.dart';
 import 'gif_picker_widget.dart';
+import 'input/attachment_preview.dart';
+import 'input/input_status_bar.dart';
+import 'input/mention_autocomplete.dart';
+import 'input/reply_preview_bar.dart';
 
 /// Extracted chat input bar from ChatPanel (~850 lines).
 ///
@@ -267,26 +271,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _detectMention(text);
   }
 
-  /// Attempts to extract a partial mention query from [text] at the cursor
-  /// position. Returns the query string (lowercased, possibly empty) when an
-  /// active `@` trigger is found, or `null` when no mention autocomplete
-  /// should be shown.
-  String? _extractMentionQuery(String text) {
-    final cursorPos = _messageController.selection.baseOffset;
-    if (cursorPos < 0 || cursorPos > text.length) return null;
-
-    final beforeCursor = text.substring(0, cursorPos);
-    final atIndex = beforeCursor.lastIndexOf('@');
-    if (atIndex < 0) return null;
-
-    if (atIndex > 0 && beforeCursor[atIndex - 1] != ' ') return null;
-
-    final partial = beforeCursor.substring(atIndex + 1);
-    if (partial.contains(' ')) return null;
-
-    return partial.toLowerCase();
-  }
-
   void _detectMention(String text) {
     final conv = widget.conversation;
     if (!conv.isGroup) {
@@ -299,7 +283,10 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       return;
     }
 
-    final query = _extractMentionQuery(text);
+    final query = extractMentionQuery(
+      text,
+      _messageController.selection.baseOffset,
+    );
     if (query == null) {
       if (_showMentionPicker) setState(() => _showMentionPicker = false);
       return;
@@ -311,23 +298,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     });
   }
 
-  void _insertMention(String username) {
+  void _handleMentionSelected(String username) {
     final text = _messageController.text;
     final cursorPos = _messageController.selection.baseOffset;
-    if (cursorPos < 0) return;
 
-    final beforeCursor = text.substring(0, cursorPos);
-    final atIndex = beforeCursor.lastIndexOf('@');
-    if (atIndex < 0) return;
-
-    final afterCursor = text.substring(cursorPos);
-    final replacement = '@$username ';
-    final newText = text.substring(0, atIndex) + replacement + afterCursor;
-    final newCursorPos = atIndex + replacement.length;
-
-    _messageController.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: newCursorPos),
+    _messageController.value = insertMention(
+      text: text,
+      cursorPosition: cursorPos,
+      username: username,
     );
 
     setState(() {
@@ -340,11 +318,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   List<ConversationMember> get _filteredMentionMembers {
     final conv = widget.conversation;
     final myUserId = ref.read(authProvider).userId ?? '';
-    return conv.members.where((m) {
-      if (m.userId == myUserId) return false;
-      if (_mentionQuery.isEmpty) return true;
-      return m.username.toLowerCase().startsWith(_mentionQuery);
-    }).toList();
+    return conv.members.where((m) => m.userId != myUserId).toList();
   }
 
   // ---------------------------------------------------------------------------
@@ -665,277 +639,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   // ---------------------------------------------------------------------------
-  // Build helpers -- extracted to reduce cognitive complexity
+  // Build helpers -- kept in root widget
   // ---------------------------------------------------------------------------
-
-  Widget _buildMentionAutocomplete() {
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 160),
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(
-        color: context.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-        border: Border.all(color: context.border),
-      ),
-      child: ListView.builder(
-        shrinkWrap: true,
-        reverse: true,
-        padding: EdgeInsets.zero,
-        itemCount: _filteredMentionMembers.length,
-        itemBuilder: (context, i) {
-          final member = _filteredMentionMembers[i];
-          return _buildMentionItem(member);
-        },
-      ),
-    );
-  }
-
-  Widget _buildMentionItem(ConversationMember member) {
-    return InkWell(
-      onTap: () => _insertMention(member.username),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          children: [
-            Icon(Icons.alternate_email, size: 14, color: context.accent),
-            const SizedBox(width: 8),
-            Text(
-              member.username,
-              style: TextStyle(
-                fontSize: 13,
-                color: context.textPrimary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            if (member.role != null) ...[
-              const SizedBox(width: 6),
-              Text(
-                member.role!,
-                style: TextStyle(fontSize: 11, color: context.textMuted),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInputStatusBar(String inputStatusText) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: _isEditing
-            ? context.accent.withValues(alpha: 0.12)
-            : context.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: _isEditing
-              ? context.accent.withValues(alpha: 0.4)
-              : context.border,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _isEditing ? Icons.edit_outlined : Icons.more_horiz_rounded,
-            size: 12,
-            color: _isEditing ? context.accent : context.textMuted,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              inputStatusText,
-              style: TextStyle(
-                fontSize: 12,
-                fontStyle: _isEditing ? FontStyle.normal : FontStyle.italic,
-                color: _isEditing ? context.accent : context.textMuted,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (_isEditing)
-            GestureDetector(
-              onTap: _cancelEditMode,
-              child: Icon(Icons.close, size: 14, color: context.textMuted),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReplyPreviewBar(ChatMessage replyTo) {
-    final truncated = replyTo.content.length > 120
-        ? '${replyTo.content.substring(0, 120)}...'
-        : replyTo.content;
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: context.accent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border(left: BorderSide(color: context.accent, width: 3)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.reply_outlined, size: 14, color: context.accent),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Replying to ${replyTo.fromUsername}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: context.accent,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  truncated,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: context.textSecondary),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () => ref.read(chatProvider.notifier).clearReplyTo(),
-            child: Icon(Icons.close, size: 14, color: context.textMuted),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAttachmentThumbnail() {
-    if (_pendingAttachmentBytes != null) {
-      return Image.memory(
-        _pendingAttachmentBytes!,
-        width: 48,
-        height: 48,
-        fit: BoxFit.cover,
-        errorBuilder: (_, e, st) => Container(
-          width: 48,
-          height: 48,
-          color: context.mainBg,
-          child: Icon(
-            Icons.insert_drive_file_outlined,
-            color: context.textMuted,
-            size: 24,
-          ),
-        ),
-      );
-    }
-    return Container(
-      width: 48,
-      height: 48,
-      color: context.mainBg,
-      child: Icon(Icons.gif_box_outlined, color: context.accent, size: 24),
-    );
-  }
-
-  Widget _buildAttachmentStatusText() {
-    final String statusLabel;
-    final Color statusColor;
-
-    if (_isUploadingAttachment) {
-      statusLabel = 'Uploading...';
-      statusColor = context.textMuted;
-    } else if (_pendingAttachmentUrl != null) {
-      statusLabel = 'Ready to send';
-      statusColor = EchoTheme.online;
-    } else {
-      statusLabel = 'Preparing...';
-      statusColor = context.textMuted;
-    }
-
-    return Text(
-      statusLabel,
-      style: TextStyle(fontSize: 11, color: statusColor),
-    );
-  }
-
-  Widget _buildAttachmentTrailingWidgets() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_isUploadingAttachment)
-          SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: context.accent,
-            ),
-          )
-        else if (_pendingAttachmentUrl != null)
-          const Icon(
-            Icons.check_circle_outline,
-            size: 16,
-            color: EchoTheme.online,
-          ),
-        const SizedBox(width: 6),
-        // Remove button
-        GestureDetector(
-          onTap: _clearPendingAttachment,
-          child: Icon(Icons.close, size: 16, color: context.textMuted),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAttachmentPreview() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: context.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: context.border, width: 1),
-      ),
-      child: Row(
-        children: [
-          // Thumbnail
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: _buildAttachmentThumbnail(),
-          ),
-          const SizedBox(width: 10),
-          // Filename + status
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _pendingAttachmentFileName ?? 'Attachment',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: context.textPrimary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                _buildAttachmentStatusText(),
-              ],
-            ),
-          ),
-          _buildAttachmentTrailingWidgets(),
-        ],
-      ),
-    );
-  }
 
   Widget _buildPlusMenuButton({
     required bool showEmojiPicker,
@@ -1357,21 +1062,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // Build
   // ---------------------------------------------------------------------------
 
-  String _computeInputStatusText(String typingText) {
-    if (_isEditing && widget.typingUsers.isNotEmpty) {
-      return 'Editing message \u2022 $typingText';
-    }
-    if (_isEditing) return 'Editing message...';
-    return typingText;
-  }
-
-  String _computeTypingText(String displayName) {
-    final typingUsers = widget.typingUsers;
-    if (!widget.conversation.isGroup) return '$displayName is typing...';
-    if (typingUsers.length == 1) return '${typingUsers.first} is typing...';
-    return '${typingUsers.join(", ")} are typing...';
-  }
-
   bool get _hasPendingAttachment =>
       _pendingAttachmentBytes != null || _pendingAttachmentUrl != null;
 
@@ -1385,9 +1075,17 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     );
 
     final displayName = conv.displayName(myUserId);
-    final typingText = _computeTypingText(displayName);
+    final typingText = computeTypingText(
+      typingUsers: widget.typingUsers,
+      isGroup: conv.isGroup,
+      displayName: displayName,
+    );
     final showInputStatus = _isEditing || widget.typingUsers.isNotEmpty;
-    final inputStatusText = _computeInputStatusText(typingText);
+    final inputStatusText = computeInputStatusText(
+      isEditing: _isEditing,
+      typingText: typingText,
+      hasTypingUsers: widget.typingUsers.isNotEmpty,
+    );
     final viewportWidth = MediaQuery.of(context).size.width;
     final isMobileLayout = viewportWidth < 600;
     final isDesktopLayout = viewportWidth >= 900;
@@ -1402,8 +1100,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       mainAxisSize: MainAxisSize.min,
       children: [
         // Mention autocomplete picker
-        if (_showMentionPicker && _filteredMentionMembers.isNotEmpty)
-          _buildMentionAutocomplete(),
+        if (_showMentionPicker)
+          MentionAutocomplete(
+            members: _filteredMentionMembers,
+            mentionQuery: _mentionQuery,
+            onMentionSelected: _handleMentionSelected,
+          ),
         // Input area
         Container(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -1411,11 +1113,29 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (showInputStatus) _buildInputStatusBar(inputStatusText),
+              if (showInputStatus)
+                InputStatusBar(
+                  isEditing: _isEditing,
+                  statusText: inputStatusText,
+                  onCancelEdit: _cancelEditMode,
+                ),
               // Reply preview bar
-              if (replyToMessage != null) _buildReplyPreviewBar(replyToMessage),
+              if (replyToMessage != null)
+                ReplyPreviewBar(
+                  replyToMessage: replyToMessage,
+                  onDismiss: () =>
+                      ref.read(chatProvider.notifier).clearReplyTo(),
+                ),
               // Attachment preview bar (Discord-style)
-              if (_hasPendingAttachment) _buildAttachmentPreview(),
+              if (_hasPendingAttachment)
+                AttachmentPreview(
+                  attachmentBytes: _pendingAttachmentBytes,
+                  fileName: _pendingAttachmentFileName,
+                  mimeType: _pendingAttachmentMimeType,
+                  uploadedUrl: _pendingAttachmentUrl,
+                  isUploading: _isUploadingAttachment,
+                  onClear: _clearPendingAttachment,
+                ),
               _buildInputRow(
                 showEmojiPicker: showEmojiPicker,
                 isMobileLayout: isMobileLayout,

@@ -1,0 +1,1 @@
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'Text Channels';
