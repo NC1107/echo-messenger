@@ -30,11 +30,15 @@ use crate::ws::hub::Hub;
 /// Map from ticket string to (user_id, created_at).
 pub type TicketStore = Mutex<HashMap<String, (Uuid, Instant)>>;
 
+/// Map from media ticket string to (user_id, created_at).
+pub type MediaTicketStore = Mutex<HashMap<String, (Uuid, Instant)>>;
+
 pub struct AppState {
     pub pool: PgPool,
     pub jwt_secret: String,
     pub hub: Hub,
     pub ticket_store: TicketStore,
+    pub media_tickets: MediaTicketStore,
 }
 
 pub fn create_router(state: Arc<AppState>) -> Router {
@@ -137,6 +141,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let media_routes = Router::new()
         .route("/upload", post(media::upload))
+        .route("/ticket", post(media::request_media_ticket))
         .route("/{id}", get(media::download));
 
     let group_routes = Router::new()
@@ -248,9 +253,9 @@ pub async fn health() -> impl IntoResponse {
 }
 
 /// Returns ICE server configuration from environment variables.
-/// Public endpoint — no auth required (ICE config is not sensitive).
+/// Requires authentication to prevent unauthenticated access.
 /// Set TURN_URL, TURN_USERNAME, TURN_CREDENTIAL to configure TURN.
-pub async fn ice_config() -> impl IntoResponse {
+pub async fn ice_config(_auth: crate::auth::middleware::AuthUser) -> impl IntoResponse {
     let mut servers = vec![serde_json::json!({"urls": "stun:stun.l.google.com:19302"})];
 
     if let Ok(turn_url) = std::env::var("TURN_URL") {

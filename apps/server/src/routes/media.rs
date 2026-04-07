@@ -1,13 +1,15 @@
 //! Media upload and download endpoints.
 
+use axum::Json;
 use axum::body::Body;
 use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::response::{IntoResponse, Response};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::fs;
 use uuid::Uuid;
 
@@ -159,35 +161,91 @@ pub async fn upload(
     Ok((StatusCode::CREATED, axum::Json(body)))
 }
 
-/// Query param for media download -- allows `?token=JWT` for web clients
-/// where `<img>` elements can't set Authorization headers.
+// ---------------------------------------------------------------------------
+// POST /api/media/ticket
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct MediaTicketResponse {
+    pub ticket: String,
+}
+
+/// Issue a short-lived, single-use ticket for media downloads.
+/// Prevents JWT leakage in query strings, browser history, and referrer
+/// headers (same pattern as WebSocket tickets).
+pub async fn request_media_ticket(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+) -> Result<impl IntoResponse, AppError> {
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use rand::RngCore;
+
+    let mut bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    let ticket = URL_SAFE_NO_PAD.encode(bytes);
+
+    const TICKET_TTL: Duration = Duration::from_secs(300); // 5 minutes
+    const MAX_TICKETS: usize = 100_000;
+
+    let mut store = state
+        .media_tickets
+        .lock()
+        .map_err(|_| AppError::internal("Internal state error"))?;
+
+    // Clean up expired tickets to bound memory
+    let now = Instant::now();
+    store.retain(|_, (_, ts)| now.duration_since(*ts) < TICKET_TTL);
+
+    if store.len() >= MAX_TICKETS {
+        return Err(AppError::bad_request(
+            "Too many pending media tickets, try again later",
+        ));
+    }
+
+    store.insert(ticket.clone(), (auth_user.user_id, now));
+    drop(store);
+
+    Ok(Json(MediaTicketResponse { ticket }))
+}
+
+/// Query param for media download -- accepts `?ticket=` (single-use media
+/// ticket) or legacy `?token=` (validated as media ticket, not JWT).
 #[derive(Debug, Deserialize)]
 pub struct MediaDownloadQuery {
+    pub ticket: Option<String>,
     pub token: Option<String>,
 }
 
 /// GET /api/media/:id
 ///
 /// Returns the file with correct Content-Type and Content-Disposition headers.
-/// Accepts auth via `Authorization: Bearer` header OR `?token=JWT` query param.
+/// Accepts auth via:
+///   1. `Authorization: Bearer <JWT>` header
+///   2. `?ticket=<media_ticket>` query param (single-use, consumed on use)
+///   3. `?token=<media_ticket>` query param (legacy compat, same as ticket)
 pub async fn download(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
     Query(query): Query<MediaDownloadQuery>,
     headers: axum::http::HeaderMap,
 ) -> Result<Response, AppError> {
-    // Accept auth from header or query param (web <img> can't set headers)
-    let token_str = headers
+    // 1. Try Authorization header (JWT)
+    let user_id = if let Some(token_str) = headers
         .get("Authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
-        .map(String::from)
-        .or(query.token)
-        .ok_or_else(|| AppError::unauthorized("Missing authentication"))?;
-
-    let claims = jwt::validate_token(&token_str, &state.jwt_secret)?;
-    let user_id = Uuid::parse_str(&claims.sub)
-        .map_err(|_| AppError::unauthorized("Invalid user ID in token"))?;
+    {
+        let claims = jwt::validate_token(token_str, &state.jwt_secret)?;
+        Uuid::parse_str(&claims.sub)
+            .map_err(|_| AppError::unauthorized("Invalid user ID in token"))?
+    }
+    // 2. Try ?ticket= or legacy ?token= as media ticket
+    else if let Some(ticket_str) = query.ticket.or(query.token) {
+        validate_media_ticket(&state, &ticket_str)?
+    } else {
+        return Err(AppError::unauthorized("Missing authentication"));
+    };
     let row = db::media::get_media(&state.pool, id)
         .await?
         .ok_or_else(|| AppError {
@@ -244,4 +302,25 @@ pub async fn download(
         .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))?;
 
     Ok(response)
+}
+
+/// Validate a single-use media ticket. Removes the ticket from the store
+/// on success (single-use). Returns the associated `user_id`.
+fn validate_media_ticket(state: &AppState, ticket: &str) -> Result<Uuid, AppError> {
+    const TICKET_TTL: Duration = Duration::from_secs(300);
+
+    let mut store = state
+        .media_tickets
+        .lock()
+        .map_err(|_| AppError::internal("Internal state error"))?;
+
+    let (user_id, created_at) = store
+        .remove(ticket)
+        .ok_or_else(|| AppError::unauthorized("Invalid or expired media ticket"))?;
+
+    if Instant::now().duration_since(created_at) >= TICKET_TTL {
+        return Err(AppError::unauthorized("Invalid or expired media ticket"));
+    }
+
+    Ok(user_id)
 }

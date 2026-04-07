@@ -62,8 +62,27 @@ impl RateLimiter {
     }
 }
 
-/// Extract client IP from ConnectInfo or return a loopback fallback.
+/// Extract client IP from request headers or connection info.
+/// Priority: X-Forwarded-For (first IP) > X-Real-IP > ConnectInfo > localhost.
 fn extract_ip(req: &Request<Body>) -> IpAddr {
+    // Try X-Forwarded-For header first (first IP in comma-separated list)
+    if let Some(xff) = req.headers().get("x-forwarded-for")
+        && let Ok(value) = xff.to_str()
+        && let Some(first_ip) = value.split(',').next()
+        && let Ok(ip) = first_ip.trim().parse::<IpAddr>()
+    {
+        return ip;
+    }
+
+    // Fallback to X-Real-IP header
+    if let Some(xri) = req.headers().get("x-real-ip")
+        && let Ok(value) = xri.to_str()
+        && let Ok(ip) = value.trim().parse::<IpAddr>()
+    {
+        return ip;
+    }
+
+    // Fallback to ConnectInfo
     req.extensions()
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ci| ci.0.ip())

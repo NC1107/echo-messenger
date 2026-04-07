@@ -354,6 +354,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           _buildTabBar(),
           const SizedBox(height: 8),
           _buildPendingBanner(context, pendingCount),
+          _buildReplacedBanner(context, wsState),
           Expanded(
             child: _buildTabContent(
               conversationsState: conversationsState,
@@ -707,6 +708,52 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
+  Widget _buildReplacedBanner(BuildContext context, WebSocketState wsState) {
+    if (!wsState.wasReplaced) return const SizedBox.shrink();
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: () {
+            // Trigger a fresh connect (clears wasReplaced and reconnects)
+            ref.read(websocketProvider.notifier).connect();
+          },
+          child: Container(
+            height: 48,
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: EchoTheme.warning, width: 1),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.devices_other,
+                  size: 18,
+                  color: EchoTheme.warning,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Signed in on another device. Tap to reconnect.',
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const Icon(Icons.refresh, size: 18, color: EchoTheme.warning),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
   Widget _buildUserStatusBar(
     BuildContext context, {
     required String myUsername,
@@ -793,7 +840,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             overflow: TextOverflow.ellipsis,
           ),
           Text(
-            wsState.isConnected ? 'Online' : 'Reconnecting...',
+            wsState.wasReplaced
+                ? 'Session replaced'
+                : wsState.isConnected
+                ? 'Online'
+                : 'Reconnecting...',
             style: TextStyle(
               color: wsState.isConnected ? EchoTheme.online : EchoTheme.warning,
               fontSize: 11,

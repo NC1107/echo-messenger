@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
+import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
 import '../services/notification_service.dart';
 import '../services/sound_service.dart';
@@ -26,21 +27,28 @@ class WebSocketState {
   /// Set of user IDs currently known to be online (from presence events).
   final Set<String> onlineUsers;
 
+  /// True when the server sent a `session_replaced` event, meaning another
+  /// device/tab took over this user's WebSocket session.
+  final bool wasReplaced;
+
   const WebSocketState({
     this.isConnected = false,
     this.typingUsers = const {},
     this.onlineUsers = const {},
+    this.wasReplaced = false,
   });
 
   WebSocketState copyWith({
     bool? isConnected,
     Map<String, Map<String, DateTime>>? typingUsers,
     Set<String>? onlineUsers,
+    bool? wasReplaced,
   }) {
     return WebSocketState(
       isConnected: isConnected ?? this.isConnected,
       typingUsers: typingUsers ?? this.typingUsers,
       onlineUsers: onlineUsers ?? this.onlineUsers,
+      wasReplaced: wasReplaced ?? this.wasReplaced,
     );
   }
 
@@ -120,6 +128,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleMention(json, myUserId);
       case 'group_key_rotated':
         _handleGroupKeyRotated(json);
+      case 'session_replaced':
+        _handleSessionReplaced(json);
       case 'error':
         break;
       case 'voice_signal':
@@ -129,6 +139,16 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
 
   void _handleVoiceSignal(Map<String, dynamic> json) {
     voiceSignalController.add(json);
+  }
+
+  void _handleSessionReplaced(Map<String, dynamic> json) {
+    final reason = json['reason'] as String? ?? 'Signed in on another device';
+    DebugLogService.instance.log(
+      LogLevel.warning,
+      'WebSocket',
+      'Session replaced by another connection: $reason',
+    );
+    state = state.copyWith(wasReplaced: true, isConnected: false);
   }
 
   void _refreshChannelsFromEvent(Map<String, dynamic> json) {

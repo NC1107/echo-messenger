@@ -42,6 +42,7 @@ pub async fn spawn_server() -> String {
         jwt_secret: TEST_JWT_SECRET.to_string(),
         hub,
         ticket_store: Mutex::new(HashMap::new()),
+        media_tickets: Mutex::new(HashMap::new()),
     });
 
     let app = routes::create_router(state);

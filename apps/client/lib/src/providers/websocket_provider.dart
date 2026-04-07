@@ -99,6 +99,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
 
     disconnect();
     _reconnectAttempts = 0;
+    // Clear wasReplaced so a manual reconnect (e.g. page refresh) works.
+    state = state.copyWith(wasReplaced: false);
 
     // Attempt ticket-based connection, falling back to token-based for
     // backward compatibility with servers that don't support ws-ticket.
@@ -172,6 +174,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   /// be cancelled in [disconnect] and [dispose].
   void _scheduleReconnect() {
     _reconnectTimer?.cancel();
+
+    // Do not reconnect if this session was replaced by another device/tab.
+    if (state.wasReplaced) return;
 
     if (!ref.read(authProvider).isLoggedIn) return;
 
@@ -468,6 +473,18 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     final json = jsonDecode(data) as Map<String, dynamic>;
     final myUserId = ref.read(authProvider).userId ?? '';
     handleServerMessage(json, myUserId);
+
+    // If the handler flagged session_replaced, disconnect cleanly and do NOT
+    // auto-reconnect -- the other session is the active one.
+    if (state.wasReplaced) {
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = null;
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      _subscription?.cancel();
+      _channel?.sink.close();
+      _channel = null;
+    }
   }
 
   /// Remove stale typing indicators (older than 5 seconds).

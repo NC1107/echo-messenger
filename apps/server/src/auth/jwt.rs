@@ -14,11 +14,15 @@ use crate::error::AppError;
 pub struct Claims {
     pub sub: String,
     pub exp: usize,
+    pub iat: usize,
+    pub iss: String,
+    pub aud: String,
 }
 
 /// Create a short-lived access token (15 minutes).
 pub fn create_token(user_id: Uuid, secret: &str) -> Result<String, AppError> {
-    let exp = chrono::Utc::now()
+    let now = chrono::Utc::now();
+    let exp = now
         .checked_add_signed(chrono::Duration::minutes(15))
         .expect("valid timestamp")
         .timestamp() as usize;
@@ -26,6 +30,9 @@ pub fn create_token(user_id: Uuid, secret: &str) -> Result<String, AppError> {
     let claims = Claims {
         sub: user_id.to_string(),
         exp,
+        iat: now.timestamp() as usize,
+        iss: "echo-messenger".to_string(),
+        aud: "echo-app".to_string(),
     };
 
     let token = encode(
@@ -39,10 +46,14 @@ pub fn create_token(user_id: Uuid, secret: &str) -> Result<String, AppError> {
 
 #[allow(dead_code)] // Used by AuthUser middleware extractor
 pub fn validate_token(token: &str, secret: &str) -> Result<Claims, AppError> {
+    let mut validation = Validation::default();
+    validation.set_issuer(&["echo-messenger"]);
+    validation.set_audience(&["echo-app"]);
+
     let token_data = decode::<Claims>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),
-        &Validation::default(),
+        &validation,
     )?;
 
     Ok(token_data.claims)

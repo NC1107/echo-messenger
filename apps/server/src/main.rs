@@ -36,6 +36,7 @@ async fn main() {
         jwt_secret: config.jwt_secret,
         hub: hub.clone(),
         ticket_store: Mutex::new(HashMap::new()),
+        media_tickets: Mutex::new(HashMap::new()),
     });
 
     // Background task: clean up stale voice sessions every 60 seconds.
