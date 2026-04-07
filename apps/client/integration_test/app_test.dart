@@ -90,11 +90,82 @@ void main() {
       expect(scaffold, isNotNull);
       expect(find.text('Theme Test'), findsOneWidget);
     });
+
+    testWidgets('login button is disabled while loading', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            serverUrlProvider.overrideWith((ref) => ServerUrlNotifier()),
+            authProvider.overrideWith((ref) => _LoadingAuthNotifier(ref)),
+          ],
+          child: MaterialApp(
+            theme: EchoTheme.darkTheme,
+            darkTheme: EchoTheme.darkTheme,
+            themeMode: ThemeMode.dark,
+            home: const _LoginShell(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // When auth state is loading, the button should show a progress indicator
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('error message displays when auth has error', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            serverUrlProvider.overrideWith((ref) => ServerUrlNotifier()),
+            authProvider.overrideWith((ref) => _ErrorAuthNotifier(ref)),
+          ],
+          child: MaterialApp(
+            theme: EchoTheme.darkTheme,
+            darkTheme: EchoTheme.darkTheme,
+            themeMode: ThemeMode.dark,
+            home: const _LoginShell(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Invalid credentials'), findsOneWidget);
+    });
   });
 }
 
 /// Minimal shell that renders the login screen imports without pulling in
 /// the full GoRouter (which requires all screens and their heavy deps).
+class _LoadingAuthNotifier extends AuthNotifier {
+  _LoadingAuthNotifier(super.ref) {
+    state = const AuthState(isLoading: true);
+  }
+
+  @override
+  Future<void> login(String username, String password) async {}
+  @override
+  Future<void> register(String username, String password) async {}
+  @override
+  Future<bool> tryAutoLogin() async => false;
+  @override
+  void logout() => state = const AuthState();
+}
+
+class _ErrorAuthNotifier extends AuthNotifier {
+  _ErrorAuthNotifier(super.ref) {
+    state = const AuthState(error: 'Invalid credentials');
+  }
+
+  @override
+  Future<void> login(String username, String password) async {}
+  @override
+  Future<void> register(String username, String password) async {}
+  @override
+  Future<bool> tryAutoLogin() async => false;
+  @override
+  void logout() => state = const AuthState();
+}
+
 class _LoginShell extends ConsumerStatefulWidget {
   const _LoginShell();
 

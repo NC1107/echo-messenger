@@ -85,9 +85,34 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
     }
   }
 
+  Future<void> _retryKeyUpload() async {
+    try {
+      await ref.read(cryptoProvider.notifier).retryKeyUpload();
+      if (mounted) {
+        final succeeded = !ref.read(cryptoProvider).keysUploadFailed;
+        ToastService.show(
+          context,
+          succeeded
+              ? 'Encryption keys uploaded successfully.'
+              : 'Key upload failed. Please try again later.',
+          type: succeeded ? ToastType.success : ToastType.error,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Failed to upload keys: $e',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final privacy = ref.watch(privacyProvider);
+    final crypto = ref.watch(cryptoProvider);
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -154,6 +179,45 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
             height: 1.5,
           ),
         ),
+        if (crypto.keysUploadFailed) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Encryption key upload failed. New conversations will not be '
+            'encrypted until keys are uploaded.',
+            style: TextStyle(
+              color: EchoTheme.danger,
+              fontSize: 12,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: crypto.isUploading ? null : _retryKeyUpload,
+              icon: crypto.isUploading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.upload_outlined, size: 18),
+              label: Text(
+                crypto.isUploading
+                    ? 'Uploading...'
+                    : 'Re-upload Encryption Keys',
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: context.textPrimary,
+                side: BorderSide(color: context.border),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,

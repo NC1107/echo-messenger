@@ -28,22 +28,26 @@ final groupCryptoServiceProvider = Provider<GroupCryptoService>((ref) {
 class CryptoState {
   final bool isInitialized;
   final bool isUploading;
+  final bool keysUploadFailed;
   final String? error;
 
   const CryptoState({
     this.isInitialized = false,
     this.isUploading = false,
+    this.keysUploadFailed = false,
     this.error,
   });
 
   CryptoState copyWith({
     bool? isInitialized,
     bool? isUploading,
+    bool? keysUploadFailed,
     String? error,
   }) {
     return CryptoState(
       isInitialized: isInitialized ?? this.isInitialized,
       isUploading: isUploading ?? this.isUploading,
+      keysUploadFailed: keysUploadFailed ?? this.keysUploadFailed,
       error: error,
     );
   }
@@ -77,19 +81,40 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
       crypto.setToken(token);
       await crypto.init();
       if (crypto.keysAreFresh) {
-        await crypto.uploadKeys();
-        DebugLogService.instance.log(
-          LogLevel.info,
-          'Crypto',
-          'Keys uploaded to server',
-        );
+        try {
+          await crypto.uploadKeys();
+          DebugLogService.instance.log(
+            LogLevel.info,
+            'Crypto',
+            'Keys uploaded to server',
+          );
+        } catch (uploadError) {
+          // Key upload failed -- mark the failure but do not block the app.
+          // The user can still chat (without encryption for new conversations)
+          // and retry from Settings > Privacy.
+          DebugLogService.instance.log(
+            LogLevel.error,
+            'Crypto',
+            'Key upload failed (app continues without upload): $uploadError',
+          );
+          state = state.copyWith(
+            isInitialized: true,
+            isUploading: false,
+            keysUploadFailed: true,
+          );
+          return;
+        }
       }
       DebugLogService.instance.log(
         LogLevel.info,
         'Crypto',
         'Initialized successfully',
       );
-      state = state.copyWith(isInitialized: true, isUploading: false);
+      state = state.copyWith(
+        isInitialized: true,
+        isUploading: false,
+        keysUploadFailed: false,
+      );
     } on PlatformException catch (e) {
       // Linux libsecret / keyring failures -- degrade gracefully so the
       // user can still use the app without end-to-end encryption.
@@ -105,6 +130,50 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
       state = state.copyWith(
         isUploading: false,
         error: 'Crypto init failed: $e',
+      );
+    }
+  }
+
+  /// Retry uploading encryption keys to the server.
+  ///
+  /// Called from the privacy settings screen when a previous upload failed.
+  Future<void> retryKeyUpload() async {
+    if (!state.isInitialized) return;
+
+    state = state.copyWith(isUploading: true);
+    try {
+      final token = ref.read(authProvider).token;
+      if (token == null || token.isEmpty) {
+        state = state.copyWith(
+          isUploading: false,
+          error: 'No auth token available',
+        );
+        return;
+      }
+
+      final crypto = ref.read(cryptoServiceProvider);
+      crypto.setToken(token);
+      await crypto.uploadKeys();
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'Crypto',
+        'Keys re-uploaded successfully',
+      );
+      state = state.copyWith(
+        isUploading: false,
+        keysUploadFailed: false,
+        error: null,
+      );
+    } catch (e) {
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Crypto',
+        'Key re-upload failed: $e',
+      );
+      state = state.copyWith(
+        isUploading: false,
+        keysUploadFailed: true,
+        error: 'Key upload failed: $e',
       );
     }
   }
