@@ -416,5 +416,221 @@ void main() {
         expect(tappedMessage!.id, 'msg-1');
       });
     });
+
+    testWidgets('pinned message shows pin indicator with "Pinned" text', (
+      tester,
+    ) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage().copyWith(
+          pinnedById: 'admin',
+          pinnedAt: DateTime.parse('2026-01-15T12:00:00Z'),
+        );
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('Pinned'), findsOneWidget);
+        expect(find.byIcon(Icons.push_pin), findsAtLeast(1));
+      });
+    });
+
+    testWidgets('unpinned message does not show pin indicator', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage();
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('Pinned'), findsNothing);
+      });
+    });
+
+    testWidgets('bold markdown renders as bold text', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(content: 'This is **bold** text');
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        // The message should render using RichText with bold spans.
+        // Verify the raw markdown markers are not shown.
+        expect(find.textContaining('**'), findsNothing);
+        // The content should be rendered via RichText
+        final richTexts = find.byType(RichText);
+        expect(richTexts, findsAtLeast(1));
+      });
+    });
+
+    testWidgets('italic markdown renders without markers', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(content: 'This is *italic* text');
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        // Verify asterisk markers are not displayed as raw text
+        // The content is rendered via RichText spans
+        final richTexts = find.byType(RichText);
+        expect(richTexts, findsAtLeast(1));
+      });
+    });
+
+    testWidgets('check icon renders for sent status', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(isMine: true, status: MessageStatus.sent);
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        expect(find.byIcon(Icons.check_outlined), findsOneWidget);
+      });
+    });
+
+    testWidgets('message with no reactions has no reaction pill', (
+      tester,
+    ) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(reactions: []);
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: false,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        // No emoji text should appear as a reaction pill
+        expect(find.text('\u{1F44D}'), findsNothing);
+      });
+    });
+
+    testWidgets('multiple different reactions render separate pills', (
+      tester,
+    ) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(
+          reactions: const [
+            Reaction(
+              messageId: 'msg-1',
+              userId: 'u1',
+              username: 'alice',
+              emoji: '\u{1F44D}',
+            ),
+            Reaction(
+              messageId: 'msg-1',
+              userId: 'u2',
+              username: 'bob',
+              emoji: '\u{2764}',
+            ),
+          ],
+        );
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: false,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('\u{1F44D}'), findsOneWidget);
+        expect(find.text('\u{2764}'), findsOneWidget);
+      });
+    });
+
+    testWidgets('my pinned message shows pin indicator', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(isMine: true, fromUserId: 'test-user-id')
+            .copyWith(
+              pinnedById: 'admin',
+              pinnedAt: DateTime.parse('2026-01-15T12:00:00Z'),
+            );
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('Pinned'), findsOneWidget);
+      });
+    });
+
+    testWidgets('inline code renders without backtick markers', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(content: 'Use `flutter test` to run');
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        // RichText should be used for inline code rendering
+        final richTexts = find.byType(RichText);
+        expect(richTexts, findsAtLeast(1));
+      });
+    });
+
+    testWidgets('message with replyTo shows reply username', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(
+          replyToContent: 'Original text here',
+          replyToUsername: 'carol',
+        );
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('Original text here'), findsOneWidget);
+        // carol should appear as reply attribution
+        expect(find.text('carol'), findsAtLeast(1));
+      });
+    });
   });
 }

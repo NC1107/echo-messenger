@@ -56,8 +56,23 @@ class _ConversationItemState extends State<ConversationItem> {
     snippet = _maskEncryptedSnippet(snippet);
     snippet = _applyMediaLabel(snippet);
     snippet = _prependSenderLabel(snippet, conv);
+    if (snippet != null) snippet = _stripMarkdown(snippet);
 
     return snippet;
+  }
+
+  /// Remove common markdown syntax from the snippet preview while keeping
+  /// the underlying text content.
+  String _stripMarkdown(String text) {
+    // Remove code block markers (```)
+    text = text.replaceAll('```', '');
+    // Remove bold markers (**)
+    text = text.replaceAll('**', '');
+    // Remove italic markers (*) -- single asterisks only since ** already gone
+    text = text.replaceAll('*', '');
+    // Remove inline code markers (`)
+    text = text.replaceAll('`', '');
+    return text;
   }
 
   String? _maskEncryptedSnippet(String? snippet) {

@@ -11,10 +11,19 @@ import 'settings/account_section.dart';
 import 'settings/appearance_section.dart';
 import 'settings/audio_section.dart';
 import 'settings/debug_section.dart';
+import 'settings/notification_section.dart';
 import 'settings/privacy_section.dart';
 
 /// Section identifiers for the settings navigation.
-enum SettingsSection { account, privacy, audio, appearance, about, debug }
+enum SettingsSection {
+  account,
+  privacy,
+  notifications,
+  audio,
+  appearance,
+  about,
+  debug,
+}
 
 /// Returns a human-readable label for a settings section.
 String settingsSectionLabel(SettingsSection section) {
@@ -23,6 +32,8 @@ String settingsSectionLabel(SettingsSection section) {
       return 'Account';
     case SettingsSection.privacy:
       return 'Privacy';
+    case SettingsSection.notifications:
+      return 'Notifications';
     case SettingsSection.audio:
       return 'Audio';
     case SettingsSection.appearance:
@@ -66,6 +77,12 @@ class SettingsNavList extends StatelessWidget {
           icon: Icons.lock_outline,
           label: 'Privacy',
           section: SettingsSection.privacy,
+        ),
+        _navItem(
+          context: context,
+          icon: Icons.notifications_outlined,
+          label: 'Notifications',
+          section: SettingsSection.notifications,
         ),
         _navItem(
           context: context,
@@ -172,6 +189,8 @@ class SettingsContent extends StatelessWidget {
         return const AccountSection();
       case SettingsSection.privacy:
         return const PrivacySection();
+      case SettingsSection.notifications:
+        return const NotificationSection();
       case SettingsSection.audio:
         return const AudioSection();
       case SettingsSection.appearance:
@@ -269,46 +288,60 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget _buildDesktopLayout() {
     return Scaffold(
       backgroundColor: context.mainBg,
-      appBar: AppBar(
-        backgroundColor: context.sidebarBg,
-        title: Text(
-          'Settings',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: context.textSecondary),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 200,
-                child: SettingsNavList(
-                  selected: _selectedSection,
-                  onTap: (section) =>
-                      setState(() => _selectedSection = section),
-                  onLogout: _logout,
+      body: Row(
+        children: [
+          // Nav sidebar -- flush left, matches conversation sidebar
+          Container(
+            width: 250,
+            color: context.sidebarBg,
+            child: Column(
+              children: [
+                // Header with back arrow
+                SizedBox(
+                  height: 56,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: Icon(
+                          Icons.arrow_back,
+                          color: context.textSecondary,
+                        ),
+                        onPressed: () => context.pop(),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Settings',
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Container(width: 1, color: context.border),
-              Expanded(
-                child: SettingsContent(
-                  key: ValueKey(_selectedSection),
-                  section: _selectedSection,
+                Container(height: 1, color: context.border),
+                Expanded(
+                  child: SettingsNavList(
+                    selected: _selectedSection,
+                    onTap: (section) =>
+                        setState(() => _selectedSection = section),
+                    onLogout: _logout,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          Container(width: 1, color: context.border),
+          // Content area -- fills remaining width
+          Expanded(
+            child: SettingsContent(
+              key: ValueKey(_selectedSection),
+              section: _selectedSection,
+            ),
+          ),
+        ],
       ),
     );
   }

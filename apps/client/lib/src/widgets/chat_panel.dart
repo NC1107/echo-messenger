@@ -53,6 +53,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   final _scrollController = ScrollController();
   final _chatInputBarKey = GlobalKey<ChatInputBarState>();
 
+  /// Cache scroll offsets keyed by conversation ID so switching conversations
+  /// preserves the user's position.
+  static final Map<String, double> _scrollPositions = {};
+
   bool _hideEncryptionBanner = false;
   String? _selectedTextChannelId;
   String? _activeVoiceChannelId;
@@ -64,6 +68,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   String? _highlightedMessageId;
   Timer? _highlightTimer;
   double _lastKeyboardInset = 0;
+
+  /// True when a new message arrives while the user has scrolled up.
+  bool _hasNewMessagesBelow = false;
 
   OverlayEntry? _reactionOverlay;
 
@@ -78,6 +85,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   void didUpdateWidget(covariant ChatPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.conversation?.id != oldWidget.conversation?.id) {
+      // Save scroll offset for the old conversation
+      final oldId = oldWidget.conversation?.id;
+      if (oldId != null && _scrollController.hasClients) {
+        _scrollPositions[oldId] = _scrollController.offset;
+      }
+
       _hideEncryptionBanner = false;
       _selectedTextChannelId = null;
       _activeVoiceChannelId = null;
@@ -85,8 +98,26 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       _autoScrollConversationKey = null;
       _showSearch = false;
       _highlightedMessageId = null;
+      _hasNewMessagesBelow = false;
       _highlightTimer?.cancel();
       _dismissReactionPicker();
+
+      // Restore cached scroll position for the new conversation, or scroll
+      // to bottom if no cached position exists.
+      final newId = widget.conversation?.id;
+      if (newId != null) {
+        final cached = _scrollPositions[newId];
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_scrollController.hasClients) return;
+          if (cached != null) {
+            _scrollController.jumpTo(
+              cached.clamp(0, _scrollController.position.maxScrollExtent),
+            );
+          } else {
+            _scrollToBottom(animated: false, settleRetries: 3);
+          }
+        });
+      }
     }
   }
 
@@ -117,6 +148,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         _scrollController.position.minScrollExtent + 50) {
       _loadOlderMessages();
     }
+    // Clear "new messages" pill when user scrolls near the bottom.
+    if (_hasNewMessagesBelow && _isNearBottom()) {
+      setState(() => _hasNewMessagesBelow = false);
+    }
   }
 
   void _scrollToBottom({bool animated = true, int settleRetries = 3}) {
@@ -145,6 +180,15 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       } else {
         _scrollController.jumpTo(target);
         settleIfNeeded();
+      }
+
+      // Update the scroll cache and dismiss the new-messages pill.
+      final convId = widget.conversation?.id;
+      if (convId != null) {
+        _scrollPositions[convId] = target;
+      }
+      if (_hasNewMessagesBelow) {
+        setState(() => _hasNewMessagesBelow = false);
       }
     });
   }
@@ -910,8 +954,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
       final prevCount = prev == null ? 0 : visibleCount(prev);
       final nextCount = visibleCount(next);
-      if (nextCount > prevCount && _isNearBottom()) {
-        _scrollToBottom(settleRetries: 3);
+      if (nextCount > prevCount) {
+        if (_isNearBottom()) {
+          _scrollToBottom(settleRetries: 3);
+        } else {
+          setState(() => _hasNewMessagesBelow = true);
+        }
       }
     });
   }
@@ -1046,16 +1094,67 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             ),
 
           Expanded(
-            child: _buildMessageListOrEmpty(
-              conv: conv,
-              messages: messages,
-              isLoadingHistory: isLoadingHistory,
-              displayName: displayName,
-              chatState: chatState,
-              memberAvatars: memberAvatars,
-              myUserId: myUserId,
-              serverUrl: serverUrl,
-              authToken: authToken,
+            child: Stack(
+              children: [
+                _buildMessageListOrEmpty(
+                  conv: conv,
+                  messages: messages,
+                  isLoadingHistory: isLoadingHistory,
+                  displayName: displayName,
+                  chatState: chatState,
+                  memberAvatars: memberAvatars,
+                  myUserId: myUserId,
+                  serverUrl: serverUrl,
+                  authToken: authToken,
+                ),
+                if (_hasNewMessagesBelow)
+                  Positioned(
+                    bottom: 12,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: GestureDetector(
+                        onTap: () => _scrollToBottom(settleRetries: 2),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: context.accent,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.25),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'New messages',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.arrow_downward,
+                                size: 14,
+                                color: Colors.white,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
 

@@ -28,6 +28,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   StreamSubscription? _subscription;
   Timer? _typingCleanupTimer;
   Timer? _reconnectTimer;
+  Timer? _heartbeatTimer;
+  DateTime _lastMessageTime = DateTime.now();
   int _reconnectAttempts = 0;
   static const _maxReconnectAttempts = 10;
   final _voiceSignalController =
@@ -138,6 +140,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     // list is up-to-date even if the initial REST call raced with connection.
     ref.read(conversationsProvider.notifier).loadConversations();
 
+    _lastMessageTime = DateTime.now();
+    _startHeartbeatMonitor();
+
     _subscription = _channel!.stream.listen(
       (data) => _onMessage(data as String),
       onDone: () {
@@ -208,6 +213,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   }
 
   void disconnect() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _subscription?.cancel();
@@ -434,7 +441,30 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     );
   }
 
+  /// Start a periodic timer that checks whether the server has gone silent.
+  ///
+  /// If no message (including Pong frames surfaced as data) arrives within
+  /// 60 seconds, the connection is assumed dead and a reconnect is triggered.
+  /// The server sends Ping frames every 30 s, so under normal conditions we
+  /// receive traffic well within the 60 s window.
+  void _startHeartbeatMonitor() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      final elapsed = DateTime.now().difference(_lastMessageTime);
+      if (elapsed.inSeconds > 60) {
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'WebSocket',
+          'Heartbeat timeout (${elapsed.inSeconds}s since last message)',
+        );
+        disconnect();
+        _scheduleReconnect();
+      }
+    });
+  }
+
   void _onMessage(String data) {
+    _lastMessageTime = DateTime.now();
     final json = jsonDecode(data) as Map<String, dynamic>;
     final myUserId = ref.read(authProvider).userId ?? '';
     handleServerMessage(json, myUserId);
@@ -472,6 +502,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
 
   @override
   void dispose() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _typingCleanupTimer?.cancel();

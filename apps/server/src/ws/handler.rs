@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use uuid::Uuid;
@@ -123,6 +124,24 @@ pub async fn handle_socket(
         }
     });
 
+    // Task: send WebSocket Ping frames every 30 seconds to keep the
+    // connection alive through reverse-proxy (Traefik/Cloudflare) idle
+    // timeouts. Pings are routed through the hub so they share the same
+    // mpsc channel as regular messages -- no sink contention.
+    let ping_hub = state.hub.clone();
+    let ping_user_id = user_id;
+    let ping_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        // The first tick fires immediately; skip it.
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            if !ping_hub.send_to(&ping_user_id, WsMessage::Ping(vec![].into())) {
+                break;
+            }
+        }
+    });
+
     deliver_undelivered_messages(&state, user_id).await;
 
     run_receive_loop(&mut receiver, user_id, &username, &state).await;
@@ -130,6 +149,7 @@ pub async fn handle_socket(
     // Cleanup
     state.hub.unregister(user_id);
     send_task.abort();
+    ping_task.abort();
 
     cleanup_user_voice_sessions(&state, user_id).await;
 
