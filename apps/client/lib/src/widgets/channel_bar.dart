@@ -277,7 +277,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                 startMuted:
                     voiceSettings.selfMuted || voiceSettings.selfDeafened,
               );
-              widget.onVoiceChannelChanged(channel.id);
+              if (mounted) widget.onVoiceChannelChanged(channel.id);
             }
           }
         },
