@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class VoiceSettingsState {
   final String inputDeviceId;
   final String outputDeviceId;
+  final String cameraDeviceId;
   final double inputGain;
   final double outputVolume;
   final bool pushToTalkEnabled;
@@ -16,6 +17,7 @@ class VoiceSettingsState {
   const VoiceSettingsState({
     this.inputDeviceId = 'default',
     this.outputDeviceId = 'default',
+    this.cameraDeviceId = 'default',
     this.inputGain = 1.0,
     this.outputVolume = 1.0,
     this.pushToTalkEnabled = false,
@@ -28,6 +30,7 @@ class VoiceSettingsState {
   VoiceSettingsState copyWith({
     String? inputDeviceId,
     String? outputDeviceId,
+    String? cameraDeviceId,
     double? inputGain,
     double? outputVolume,
     bool? pushToTalkEnabled,
@@ -39,6 +42,7 @@ class VoiceSettingsState {
     return VoiceSettingsState(
       inputDeviceId: inputDeviceId ?? this.inputDeviceId,
       outputDeviceId: outputDeviceId ?? this.outputDeviceId,
+      cameraDeviceId: cameraDeviceId ?? this.cameraDeviceId,
       inputGain: inputGain ?? this.inputGain,
       outputVolume: outputVolume ?? this.outputVolume,
       pushToTalkEnabled: pushToTalkEnabled ?? this.pushToTalkEnabled,
@@ -57,6 +61,7 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
 
   static const _keyInputDevice = 'voice_input_device_id';
   static const _keyOutputDevice = 'voice_output_device_id';
+  static const _keyCameraDevice = 'voice_camera_device_id';
   static const _keyInputGain = 'voice_input_gain';
   static const _keyOutputVolume = 'voice_output_volume';
   static const _keyPushToTalk = 'voice_push_to_talk_enabled';
@@ -71,6 +76,7 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
       state = state.copyWith(
         inputDeviceId: prefs.getString(_keyInputDevice) ?? 'default',
         outputDeviceId: prefs.getString(_keyOutputDevice) ?? 'default',
+        cameraDeviceId: prefs.getString(_keyCameraDevice) ?? 'default',
         inputGain: prefs.getDouble(_keyInputGain) ?? 1.0,
         outputVolume: prefs.getDouble(_keyOutputVolume) ?? 1.0,
         pushToTalkEnabled: prefs.getBool(_keyPushToTalk) ?? false,
@@ -89,6 +95,7 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_keyInputDevice, next.inputDeviceId);
       await prefs.setString(_keyOutputDevice, next.outputDeviceId);
+      await prefs.setString(_keyCameraDevice, next.cameraDeviceId);
       await prefs.setDouble(_keyInputGain, next.inputGain);
       await prefs.setDouble(_keyOutputVolume, next.outputVolume);
       await prefs.setBool(_keyPushToTalk, next.pushToTalkEnabled);
@@ -109,6 +116,12 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
 
   Future<void> setOutputDevice(String value) async {
     final next = state.copyWith(outputDeviceId: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setCameraDevice(String value) async {
+    final next = state.copyWith(cameraDeviceId: value);
     state = next;
     await _persist(next);
   }

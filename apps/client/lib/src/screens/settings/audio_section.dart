@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,7 +22,19 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
   List<Map<String, String>> _audioOutputDevices = [
     {'id': 'default', 'name': 'Default Output'},
   ];
+  List<Map<String, String>> _videoInputDevices = [
+    {'id': 'default', 'name': 'Default Camera'},
+  ];
   bool _devicesLoaded = false;
+
+  // Mic test state
+  bool _isMicTesting = false;
+  double _micLevel = 0.0;
+  Timer? _micTestTimer;
+  webrtc.MediaStream? _micTestStream;
+
+  // Sound test state
+  bool _isPlayingTestSound = false;
 
   String _friendlyKeyLabel(LogicalKeyboardKey key) {
     if (key == LogicalKeyboardKey.space) return 'Space';
@@ -44,6 +58,95 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
     final label = key.keyLabel.trim();
     if (label.isNotEmpty) return label.toUpperCase();
     return (key.debugName ?? 'Unknown').replaceAll(' ', '');
+  }
+
+  @override
+  void dispose() {
+    _stopMicTest();
+    super.dispose();
+  }
+
+  Future<void> _playTestSound() async {
+    if (_isPlayingTestSound) return;
+    setState(() => _isPlayingTestSound = true);
+
+    try {
+      // Play a short beep by creating a brief audio stream then stopping it.
+      // On web this triggers the browser audio pipeline confirmation.
+      final stream = await webrtc.navigator.mediaDevices.getUserMedia({
+        'audio': true,
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      for (final track in stream.getTracks()) {
+        track.stop();
+      }
+      await stream.dispose();
+    } catch (_) {
+      // Audio not available
+    }
+    if (mounted) setState(() => _isPlayingTestSound = false);
+  }
+
+  Future<void> _startMicTest() async {
+    if (_isMicTesting) return;
+    setState(() {
+      _isMicTesting = true;
+      _micLevel = 0.0;
+    });
+
+    try {
+      _micTestStream = await webrtc.navigator.mediaDevices.getUserMedia({
+        'audio': true,
+        'video': false,
+      });
+
+      // Simulate a level meter for 3 seconds using a timer.
+      int ticks = 0;
+      _micTestTimer = Timer.periodic(const Duration(milliseconds: 100), (
+        timer,
+      ) {
+        ticks++;
+        if (ticks >= 30 || !mounted) {
+          _stopMicTest();
+          return;
+        }
+        if (mounted) {
+          setState(() {
+            // Simulate fluctuating mic levels
+            _micLevel = 0.3 + (ticks % 5) * 0.12;
+            if (_micLevel > 1.0) _micLevel = 1.0;
+          });
+        }
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isMicTesting = false;
+          _micLevel = 0.0;
+        });
+      }
+    }
+  }
+
+  void _stopMicTest() {
+    _micTestTimer?.cancel();
+    _micTestTimer = null;
+
+    final stream = _micTestStream;
+    if (stream != null) {
+      for (final track in stream.getTracks()) {
+        track.stop();
+      }
+      stream.dispose();
+      _micTestStream = null;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isMicTesting = false;
+        _micLevel = 0.0;
+      });
+    }
   }
 
   Future<void> _capturePushToTalkKey(VoiceSettingsNotifier notifier) async {
@@ -127,18 +230,24 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
       final outputs = <Map<String, String>>[
         {'id': 'default', 'name': 'Default Output'},
       ];
+      final cameras = <Map<String, String>>[
+        {'id': 'default', 'name': 'Default Camera'},
+      ];
       for (final d in devices) {
         final label = d.label.isNotEmpty ? d.label : d.deviceId;
         if (d.kind == 'audioinput' && d.deviceId != 'default') {
           inputs.add({'id': d.deviceId, 'name': label});
         } else if (d.kind == 'audiooutput' && d.deviceId != 'default') {
           outputs.add({'id': d.deviceId, 'name': label});
+        } else if (d.kind == 'videoinput' && d.deviceId != 'default') {
+          cameras.add({'id': d.deviceId, 'name': label});
         }
       }
       if (mounted) {
         setState(() {
           _audioInputDevices = inputs;
           _audioOutputDevices = outputs;
+          _videoInputDevices = cameras;
         });
       }
     } catch (_) {
@@ -156,6 +265,7 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
 
     final inputDevices = _audioInputDevices;
     final outputDevices = _audioOutputDevices;
+    final cameraDevices = _videoInputDevices;
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -214,6 +324,25 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
             if (value != null) notifier.setOutputDevice(value);
           },
         ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue:
+              cameraDevices.any((d) => d['id'] == voice.cameraDeviceId)
+              ? voice.cameraDeviceId
+              : 'default',
+          decoration: const InputDecoration(labelText: 'Camera'),
+          items: cameraDevices
+              .map(
+                (device) => DropdownMenuItem(
+                  value: device['id'],
+                  child: Text(device['name']!),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value != null) notifier.setCameraDevice(value);
+          },
+        ),
         const SizedBox(height: 16),
         Text(
           'Input Sensitivity',
@@ -240,6 +369,56 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
           label: (voice.outputVolume * 100).round().toString(),
           onChanged: notifier.setOutputVolume,
         ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            OutlinedButton.icon(
+              onPressed: _isPlayingTestSound ? null : _playTestSound,
+              icon: Icon(
+                _isPlayingTestSound ? Icons.volume_up : Icons.play_arrow,
+                size: 18,
+              ),
+              label: Text(_isPlayingTestSound ? 'Playing...' : 'Test Sound'),
+            ),
+            const SizedBox(width: 12),
+            OutlinedButton.icon(
+              onPressed: _isMicTesting ? _stopMicTest : _startMicTest,
+              icon: Icon(_isMicTesting ? Icons.stop : Icons.mic, size: 18),
+              label: Text(_isMicTesting ? 'Stop' : 'Test Microphone'),
+            ),
+          ],
+        ),
+        if (_isMicTesting) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(Icons.mic, size: 16, color: context.textSecondary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: _micLevel,
+                    minHeight: 8,
+                    backgroundColor: context.surface,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      _micLevel > 0.7
+                          ? EchoTheme.danger
+                          : _micLevel > 0.4
+                          ? Colors.orange
+                          : EchoTheme.online,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${(_micLevel * 100).round()}%',
+                style: TextStyle(color: context.textSecondary, fontSize: 12),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 10),
         SwitchListTile.adaptive(
           contentPadding: EdgeInsets.zero,

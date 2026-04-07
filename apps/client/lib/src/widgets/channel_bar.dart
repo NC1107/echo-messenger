@@ -36,6 +36,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   String? _lastAutoSelectedConversationId;
   bool _voiceCleanupInFlight = false;
   late final VoiceRtcNotifier _voiceRtcNotifier;
+  final Set<String> _collapsedCategories = {};
 
   @override
   void initState() {
@@ -197,72 +198,121 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     );
   }
 
-  Widget _buildTextChannelChip(GroupChannel channel) {
-    final isSelected = widget.selectedTextChannelId == channel.id;
+  String _channelStatusLabel(ChannelsState channelsState) {
+    if (channelsState.isLoadingConversation(widget.conversationId)) {
+      return 'Loading channels...';
+    }
+    return 'No channels yet';
+  }
 
+  /// Build a sorted list of unique category names preserving the order they
+  /// appear in channels (which are already sorted by kind+position).
+  List<String> _orderedCategories(List<GroupChannel> channels) {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final ch in channels) {
+      if (seen.add(ch.category)) result.add(ch.category);
+    }
+    return result;
+  }
+
+  Widget _buildCategoryHeader(String category) {
+    final collapsed = _collapsedCategories.contains(category);
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
         onTap: () {
-          widget.onTextChannelChanged(channel.id);
+          setState(() {
+            if (collapsed) {
+              _collapsedCategories.remove(category);
+            } else {
+              _collapsedCategories.add(category);
+            }
+          });
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? context.accent.withValues(alpha: 0.18)
-                  : context.surface,
-              borderRadius: BorderRadius.circular(7),
-              border: Border.all(
-                color: isSelected
-                    ? context.accent.withValues(alpha: 0.6)
-                    : context.border,
-                width: 1,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Row(
+            children: [
+              Icon(
+                collapsed
+                    ? Icons.keyboard_arrow_right
+                    : Icons.keyboard_arrow_down,
+                size: 14,
+                color: context.textMuted,
               ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.tag, size: 13, color: context.textSecondary),
-                const SizedBox(width: 5),
-                Text(
-                  channel.name,
-                  style: TextStyle(
-                    color: isSelected ? context.accent : context.textPrimary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
+              const SizedBox(width: 4),
+              Text(
+                category.toUpperCase(),
+                style: TextStyle(
+                  color: context.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildVoiceChannelChip(
+  Widget _buildTextChannelRow(GroupChannel channel) {
+    final isSelected = widget.selectedTextChannelId == channel.id;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: () => widget.onTextChannelChanged(channel.id),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? context.accent.withValues(alpha: 0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.tag, size: 16, color: context.textSecondary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  channel.name,
+                  style: TextStyle(
+                    color: isSelected ? context.accent : context.textPrimary,
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVoiceChannelRow(
     GroupChannel channel,
     int participantCount,
     VoiceSettingsState voiceSettings,
     String? activeVoiceChannelId,
   ) {
     final isActive = activeVoiceChannelId == channel.id;
-
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(4),
         onTap: () async {
           final channelsNotifier = ref.read(channelsProvider.notifier);
           final rtcNotifier = ref.read(voiceRtcProvider.notifier);
           if (isActive) {
             await _leaveVoiceChannel(channel.id);
           } else {
-            // Join
             final shouldJoin = await _confirmVoiceJoin(channel.name);
             if (!shouldJoin) return;
             final success = await channelsNotifier.joinVoiceChannel(
@@ -280,59 +330,48 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
             }
           }
         },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: isActive
-                  ? context.accent.withValues(alpha: 0.18)
-                  : context.surface,
-              borderRadius: BorderRadius.circular(7),
-              border: Border.all(
-                color: isActive
-                    ? context.accent.withValues(alpha: 0.6)
-                    : context.border,
-                width: 1,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: isActive
+                ? context.accent.withValues(alpha: 0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.headset_mic_outlined,
+                size: 16,
+                color: context.textSecondary,
               ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.headset_mic_outlined,
-                  size: 13,
-                  color: context.textSecondary,
-                ),
-                const SizedBox(width: 5),
-                Text(
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
                   channel.name,
                   style: TextStyle(
                     color: isActive ? context.accent : context.textPrimary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-                if (participantCount > 0) ...[
-                  const SizedBox(width: 4),
-                  Text(
-                    '($participantCount)',
-                    style: TextStyle(color: context.textMuted, fontSize: 10),
-                  ),
-                ],
+              ),
+              if (participantCount > 0) ...[
+                const SizedBox(width: 4),
+                Text(
+                  '$participantCount',
+                  style: TextStyle(color: context.textMuted, fontSize: 11),
+                ),
+                const SizedBox(width: 2),
+                Icon(Icons.person, size: 12, color: context.textMuted),
               ],
-            ),
+            ],
           ),
         ),
       ),
     );
-  }
-
-  String _channelStatusLabel(ChannelsState channelsState) {
-    if (channelsState.isLoadingConversation(widget.conversationId)) {
-      return 'Loading channels...';
-    }
-    return 'No channels yet';
   }
 
   Widget _buildInlineGroupChannels(
@@ -345,36 +384,41 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   ) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
       decoration: BoxDecoration(
         color: context.sidebarBg,
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
       child: channels.isEmpty
           ? Padding(
-              padding: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.only(top: 8, left: 4),
               child: Text(
                 _channelStatusLabel(channelsState),
                 style: TextStyle(color: context.textMuted, fontSize: 12),
               ),
             )
-          : SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  ...textChannels.map(
-                    (channel) => _buildTextChannelChip(channel),
-                  ),
-                  ...voiceChannels.map(
-                    (channel) => _buildVoiceChannelChip(
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final category in _orderedCategories(channels)) ...[
+                  _buildCategoryHeader(category),
+                  if (!_collapsedCategories.contains(category))
+                    ...channels.where((c) => c.category == category).map((
                       channel,
-                      channelsState.voiceSessionsFor(channel.id).length,
-                      voiceSettings,
-                      activeVoiceChannelId,
-                    ),
-                  ),
+                    ) {
+                      if (channel.isVoice) {
+                        return _buildVoiceChannelRow(
+                          channel,
+                          channelsState.voiceSessionsFor(channel.id).length,
+                          voiceSettings,
+                          activeVoiceChannelId,
+                        );
+                      }
+                      return _buildTextChannelRow(channel);
+                    }),
                 ],
-              ),
+              ],
             ),
     );
   }

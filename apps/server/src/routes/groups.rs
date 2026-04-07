@@ -117,18 +117,34 @@ pub async fn create_group(
     })?;
 
     // Seed default channels for new groups.
-    db::channels::create_channel(&state.pool, group.id, "general", "text", None, 0)
-        .await
-        .map_err(|e| {
-            tracing::error!("DB error in create_group/create_text_channel: {e:?}");
-            AppError::internal("Failed to create default text channel")
-        })?;
-    db::channels::create_channel(&state.pool, group.id, "lounge", "voice", None, 0)
-        .await
-        .map_err(|e| {
-            tracing::error!("DB error in create_group/create_voice_channel: {e:?}");
-            AppError::internal("Failed to create default voice channel")
-        })?;
+    db::channels::create_channel(
+        &state.pool,
+        group.id,
+        "general",
+        "text",
+        None,
+        0,
+        Some("Text Channels"),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("DB error in create_group/create_text_channel: {e:?}");
+        AppError::internal("Failed to create default text channel")
+    })?;
+    db::channels::create_channel(
+        &state.pool,
+        group.id,
+        "lounge",
+        "voice",
+        None,
+        0,
+        Some("Voice Channels"),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("DB error in create_group/create_voice_channel: {e:?}");
+        AppError::internal("Failed to create default voice channel")
+    })?;
 
     let members = db::groups::get_group_members(&state.pool, group.id)
         .await

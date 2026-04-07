@@ -21,6 +21,7 @@ pub struct CreateChannelRequest {
     pub kind: String,
     pub topic: Option<String>,
     pub position: Option<i32>,
+    pub category: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,6 +46,7 @@ pub struct ChannelResponse {
     pub kind: String,
     pub topic: Option<String>,
     pub position: i32,
+    pub category: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -175,6 +177,7 @@ pub async fn list_channels(
             kind: row.kind,
             topic: row.topic,
             position: row.position,
+            category: row.category,
             created_at: row.created_at,
         })
         .collect();
@@ -224,6 +227,7 @@ pub async fn create_channel(
         &kind,
         body.topic.as_deref(),
         position,
+        body.category.as_deref(),
     )
     .await
     .map_err(|e| match e {
@@ -240,6 +244,7 @@ pub async fn create_channel(
         kind: created.kind,
         topic: created.topic,
         position: created.position,
+        category: created.category,
         created_at: created.created_at,
     };
 
@@ -301,6 +306,7 @@ pub async fn update_channel(
         kind: updated.kind,
         topic: updated.topic,
         position: updated.position,
+        category: updated.category,
         created_at: updated.created_at,
     };
 

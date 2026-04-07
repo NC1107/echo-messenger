@@ -21,6 +21,7 @@ class _FakeChannelsNotifier extends ChannelsNotifier {
             name: 'lounge',
             kind: 'voice',
             position: 0,
+            category: 'Voice Channels',
             createdAt: '2026-01-01T00:00:00Z',
           ),
         ],

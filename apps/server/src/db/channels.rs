@@ -12,6 +12,7 @@ pub struct ChannelRow {
     pub kind: String,
     pub topic: Option<String>,
     pub position: i32,
+    pub category: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -44,7 +45,7 @@ pub async fn list_channels(
     conversation_id: Uuid,
 ) -> Result<Vec<ChannelRow>, sqlx::Error> {
     sqlx::query_as::<_, ChannelRow>(
-        "SELECT id, conversation_id, name, kind, topic, position, created_at
+        "SELECT id, conversation_id, name, kind, topic, position, category, created_at
          FROM channels
          WHERE conversation_id = $1 AND deleted_at IS NULL
          ORDER BY kind ASC, position ASC, created_at ASC",
@@ -59,7 +60,7 @@ pub async fn get_channel(
     channel_id: Uuid,
 ) -> Result<Option<ChannelRow>, sqlx::Error> {
     sqlx::query_as::<_, ChannelRow>(
-        "SELECT id, conversation_id, name, kind, topic, position, created_at
+        "SELECT id, conversation_id, name, kind, topic, position, category, created_at
          FROM channels
          WHERE id = $1 AND deleted_at IS NULL",
     )
@@ -73,7 +74,7 @@ pub async fn get_default_text_channel(
     conversation_id: Uuid,
 ) -> Result<Option<ChannelRow>, sqlx::Error> {
     sqlx::query_as::<_, ChannelRow>(
-        "SELECT id, conversation_id, name, kind, topic, position, created_at
+        "SELECT id, conversation_id, name, kind, topic, position, category, created_at
          FROM channels
          WHERE conversation_id = $1 AND kind = 'text' AND deleted_at IS NULL
          ORDER BY position ASC, created_at ASC
@@ -91,17 +92,26 @@ pub async fn create_channel(
     kind: &str,
     topic: Option<&str>,
     position: i32,
+    category: Option<&str>,
 ) -> Result<ChannelRow, sqlx::Error> {
+    let default_category = if kind == "voice" {
+        "Voice Channels"
+    } else {
+        "Text Channels"
+    };
+    let cat = category.unwrap_or(default_category);
+
     sqlx::query_as::<_, ChannelRow>(
-        "INSERT INTO channels (conversation_id, name, kind, topic, position)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, conversation_id, name, kind, topic, position, created_at",
+        "INSERT INTO channels (conversation_id, name, kind, topic, position, category)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, conversation_id, name, kind, topic, position, category, created_at",
     )
     .bind(conversation_id)
     .bind(name)
     .bind(kind)
     .bind(topic)
     .bind(position)
+    .bind(cat)
     .fetch_one(pool)
     .await
 }
@@ -136,7 +146,7 @@ pub async fn update_channel(
              topic = CASE WHEN $3::text IS NULL THEN topic ELSE $3 END,
              position = COALESCE($4, position)
          WHERE id = $1 AND deleted_at IS NULL
-         RETURNING id, conversation_id, name, kind, topic, position, created_at",
+         RETURNING id, conversation_id, name, kind, topic, position, category, created_at",
     )
     .bind(channel_id)
     .bind(name)

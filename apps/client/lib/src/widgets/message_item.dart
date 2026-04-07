@@ -1,57 +1,23 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
-import 'package:video_player/video_player.dart';
 
 import '../models/chat_message.dart';
-import '../models/reaction.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/download_helper.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, avatarColor;
+import 'message/media_content.dart';
+import 'message/message_status_icon.dart';
+import 'message/reaction_bar.dart';
+import 'message/reply_quote.dart';
+import 'message/rich_text_content.dart';
 
 /// Common emojis for the reaction picker.
 const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🎉'];
-
-/// Regex for detecting URLs in message text.
-final _urlRegex = RegExp(r'https?://[^\s]+');
-
-/// Regex for detecting standalone URL messages.
-final _standaloneUrlRegex = RegExp(r'^https?://[^\s]+$', caseSensitive: false);
-
-/// Regex for detecting @mentions in message text.
-final _mentionRegex = RegExp(r'@(\w+)');
-
-/// Regex for detecting fenced code blocks: ```\n...\n``` (multiline).
-final _codeBlockRegex = RegExp(r'```\n?([\s\S]*?)```', multiLine: true);
-
-/// Regex for detecting inline code: `...` (single backtick, no nesting).
-final _inlineCodeRegex = RegExp(r'`([^`\n]+)`');
-
-/// Regex for detecting bold text: **...**
-final _boldRegex = RegExp(r'\*\*(.+?)\*\*');
-
-/// Regex for detecting italic text: *...*
-/// Negative lookahead/lookbehind to avoid matching ** (bold delimiters).
-final _italicRegex = RegExp(r'(?<!\*)\*([^*]+?)\*(?!\*)');
-
-/// Regex for detecting image markers: [img:URL]
-final _imgRegex = RegExp(r'^\[img:(.+)\]$');
-
-/// Regex for detecting video markers: [video:URL]
-final _videoRegex = RegExp(r'^\[video:(.+)\]$');
-
-/// Regex for detecting generic file markers: [file:URL]
-final _fileRegex = RegExp(r'^\[file:(.+)\]$');
-
-const _imageExtensions = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
-const _videoExtensions = {'mp4', 'webm', 'mov'};
-const _fileExtensions = {'pdf'};
 
 class MessageItem extends StatefulWidget {
   final ChatMessage message;
@@ -106,100 +72,26 @@ class MessageItem extends StatefulWidget {
 
 class _MessageItemState extends State<MessageItem> {
   bool _isHovered = false;
-  final List<TapGestureRecognizer> _linkRecognizers = [];
 
-  @override
-  void dispose() {
-    for (final r in _linkRecognizers) {
-      r.dispose();
-    }
-    super.dispose();
+  /// Consistent color for a username -- matches sidebar avatar colors.
+  Color _getUserColor(String userId) {
+    final name = widget.message.fromUsername;
+    return avatarColor(name);
   }
 
-  String _resolveMediaUrl(String url) {
-    if (url.startsWith('http')) return url; // external URLs (GIFs)
-    final base = widget.serverUrl ?? '';
-    final token = widget.authToken ?? '';
-    // Relative paths (e.g. /api/media/UUID) need the server origin prepended
-    // so CachedNetworkImage gets an absolute URL it can fetch.
-    final resolved = url.startsWith('/') && base.isNotEmpty ? '$base$url' : url;
-    // Append token as query param -- web <img> elements can't set headers
-    return token.isNotEmpty ? '$resolved?token=$token' : resolved;
-  }
+  Map<String, String> _mediaHeaders() =>
+      mediaHeaders(authToken: widget.authToken);
 
-  Map<String, String> _mediaHeaders() {
-    final headers = <String, String>{};
-    if (widget.authToken != null && widget.authToken!.isNotEmpty) {
-      headers['Authorization'] = 'Bearer ${widget.authToken}';
-    }
-    return headers;
-  }
-
-  String _urlExtension(String url) {
-    final uri = Uri.tryParse(url);
-    final path = uri?.path ?? '';
-    if (path.isEmpty || !path.contains('.')) return '';
-    return path.split('.').last.toLowerCase();
-  }
-
-  bool _isStandaloneMediaUrl(String content) {
-    final trimmed = content.trim();
-    if (!_standaloneUrlRegex.hasMatch(trimmed)) return false;
-
-    final ext = _urlExtension(trimmed);
-    return _imageExtensions.contains(ext) ||
-        _videoExtensions.contains(ext) ||
-        _fileExtensions.contains(ext);
-  }
-
-  bool _isImageUrl(String url) => _imageExtensions.contains(_urlExtension(url));
-
-  bool _isVideoUrl(String url) => _videoExtensions.contains(_urlExtension(url));
-
-  bool _isFileUrl(String url) => _fileExtensions.contains(_urlExtension(url));
-
-  String? _extractMediaUrl(String content) {
-    final imageMatch = _imgRegex.firstMatch(content);
-    if (imageMatch != null) return imageMatch.group(1);
-
-    final videoMatch = _videoRegex.firstMatch(content);
-    if (videoMatch != null) return videoMatch.group(1);
-
-    final fileMatch = _fileRegex.firstMatch(content);
-    if (fileMatch != null) return fileMatch.group(1);
-
-    if (_isStandaloneMediaUrl(content)) {
-      return content.trim();
-    }
-
-    return null;
-  }
-
-  String _filenameFromUrl(String url) {
-    final parsed = Uri.tryParse(url);
-    final lastSegment = (parsed?.pathSegments.isNotEmpty ?? false)
-        ? parsed!.pathSegments.last
-        : '';
-    if (lastSegment.isEmpty) {
-      return 'media.bin';
-    }
-    return lastSegment;
-  }
-
-  Future<void> _openMedia(String rawUrl) async {
-    final uri = Uri.tryParse(_resolveMediaUrl(rawUrl));
-    if (uri != null) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
+  String _resolveUrl(String url) => resolveMediaUrl(
+    url,
+    serverUrl: widget.serverUrl,
+    authToken: widget.authToken,
+  );
 
   Future<void> _downloadMedia(String rawUrl) async {
-    final mediaUrl = _resolveMediaUrl(rawUrl);
+    final url = _resolveUrl(rawUrl);
     try {
-      final response = await http.get(
-        Uri.parse(mediaUrl),
-        headers: _mediaHeaders(),
-      );
+      final response = await http.get(Uri.parse(url), headers: _mediaHeaders());
       if (!mounted) return;
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -213,8 +105,10 @@ class _MessageItemState extends State<MessageItem> {
 
       final contentType =
           response.headers['content-type'] ?? 'application/octet-stream';
+      final filename =
+          Uri.tryParse(url)?.pathSegments.lastOrNull ?? 'media.bin';
       final downloaded = await saveBytesAsFile(
-        fileName: _filenameFromUrl(mediaUrl),
+        fileName: filename,
         bytes: response.bodyBytes,
         mimeType: contentType,
       );
@@ -225,7 +119,7 @@ class _MessageItemState extends State<MessageItem> {
         return;
       }
 
-      await Clipboard.setData(ClipboardData(text: mediaUrl));
+      await Clipboard.setData(ClipboardData(text: url));
       if (!mounted) return;
       ToastService.show(
         context,
@@ -242,7 +136,7 @@ class _MessageItemState extends State<MessageItem> {
     }
   }
 
-  void _showImageViewer({required String imageUrl, required bool isMine}) {
+  void _showImageViewer({required String imageUrl}) {
     final headers = _mediaHeaders();
     showDialog<void>(
       context: context,
@@ -318,244 +212,6 @@ class _MessageItemState extends State<MessageItem> {
     );
   }
 
-  Widget _buildStatusIcon(MessageStatus? status) {
-    if (status == null) return const SizedBox.shrink();
-    IconData icon;
-    Color color;
-    String tooltip;
-    switch (status) {
-      case MessageStatus.sending:
-        icon = Icons.schedule_outlined;
-        color = context.textMuted;
-        tooltip = 'Sending';
-      case MessageStatus.sent:
-        icon = Icons.check_outlined;
-        color = context.textMuted;
-        tooltip = 'Sent';
-      case MessageStatus.delivered:
-        icon = Icons.done_all_outlined;
-        color = context.textMuted;
-        tooltip = 'Delivered';
-      case MessageStatus.read:
-        icon = Icons.done_all_outlined;
-        color = EchoTheme.online;
-        tooltip = 'Read';
-      case MessageStatus.failed:
-        icon = Icons.error_outline;
-        color = EchoTheme.danger;
-        tooltip = 'Failed to send';
-    }
-    return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: Tooltip(
-        message: tooltip,
-        child: Icon(icon, size: 12, color: color),
-      ),
-    );
-  }
-
-  /// Consistent color for a username -- matches sidebar avatar colors.
-  Color _getUserColor(String userId) {
-    final name = widget.message.fromUsername;
-    return avatarColor(name);
-  }
-
-  /// Check if the message content is an image marker and build the image widget.
-  Widget? _buildMediaContent(String content, {required bool isMine}) {
-    final headers = _mediaHeaders();
-    final imageMatch = _imgRegex.firstMatch(content);
-    final standaloneUrl = _isStandaloneMediaUrl(content)
-        ? content.trim()
-        : null;
-    final imageUrl =
-        imageMatch?.group(1) ??
-        (standaloneUrl != null && _isImageUrl(standaloneUrl)
-            ? standaloneUrl
-            : null);
-    if (imageUrl != null) {
-      final rawUrl = imageUrl;
-      final fullUrl = _resolveMediaUrl(rawUrl);
-
-      return Semantics(
-        label: 'Image attachment. Tap to view full size.',
-        image: true,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: GestureDetector(
-            onTap: () => _showImageViewer(imageUrl: fullUrl, isMine: isMine),
-            child: Stack(
-              children: [
-                // Use Image.network for external GIFs to preserve animation
-                fullUrl.startsWith('http') && _urlExtension(rawUrl) == 'gif'
-                    ? Image.network(
-                        fullUrl,
-                        width: 300,
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                        errorBuilder: (_, e, st) => Container(
-                          width: 300,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: context.surface,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Center(
-                            child: Text(
-                              '[GIF failed to load]',
-                              style: TextStyle(
-                                color: context.textMuted,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ),
-                      )
-                    : CachedNetworkImage(
-                        imageUrl: fullUrl,
-                        width: 300,
-                        fit: BoxFit.cover,
-                        httpHeaders: headers,
-                        errorWidget: (_, e, st) => Container(
-                          width: 300,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: context.surface,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Center(
-                            child: Text(
-                              '[Image failed to load]',
-                              style: TextStyle(
-                                color: context.textMuted,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ),
-                        placeholder: (_, _) => Container(
-                          width: 300,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: context.surface,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Center(
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: context.textMuted,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                Positioned(
-                  right: 8,
-                  bottom: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.open_in_full,
-                      size: 14,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    final videoMatch = _videoRegex.firstMatch(content);
-    final videoUrl =
-        videoMatch?.group(1) ??
-        (standaloneUrl != null && _isVideoUrl(standaloneUrl)
-            ? standaloneUrl
-            : null);
-    if (videoUrl != null) {
-      final rawUrl = videoUrl;
-      return _InlineVideoPlayer(
-        videoUrl: _resolveMediaUrl(rawUrl),
-        rawUrl: rawUrl,
-        headers: _mediaHeaders(),
-        surface: context.surface,
-        mainBg: context.mainBg,
-        border: context.border,
-        textPrimary: context.textPrimary,
-        textMuted: context.textMuted,
-        onOpen: () => _openMedia(rawUrl),
-        onDownload: () => _downloadMedia(rawUrl),
-      );
-    }
-
-    final fileMatch = _fileRegex.firstMatch(content);
-    final fileUrl =
-        fileMatch?.group(1) ??
-        (standaloneUrl != null && _isFileUrl(standaloneUrl)
-            ? standaloneUrl
-            : null);
-    if (fileUrl != null) {
-      final rawUrl = fileUrl;
-      final displayName = _filenameFromUrl(rawUrl);
-      return Container(
-        width: 300,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: context.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: context.mainBg,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.insert_drive_file_outlined,
-                color: context.textMuted,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.download_outlined, size: 18),
-              onPressed: () => _downloadMedia(rawUrl),
-              tooltip: 'Download',
-            ),
-          ],
-        ),
-      );
-    }
-
-    return null;
-  }
-
   Widget _buildHoverActions(ChatMessage msg, bool isMine, {String? mediaUrl}) {
     return Container(
       decoration: BoxDecoration(
@@ -571,7 +227,7 @@ class _MessageItemState extends State<MessageItem> {
             tooltip: 'Copy',
             onPressed: () {
               final copyText = mediaUrl != null
-                  ? _resolveMediaUrl(mediaUrl)
+                  ? _resolveUrl(mediaUrl)
                   : msg.content;
               Clipboard.setData(ClipboardData(text: copyText));
               ToastService.show(
@@ -635,174 +291,42 @@ class _MessageItemState extends State<MessageItem> {
     );
   }
 
-  /// Base text style used throughout message rendering.
-  TextStyle _baseStyle({required Color textColor}) =>
-      TextStyle(fontSize: 15, color: textColor, height: 1.47);
-
-  /// Build spans for plain text that may contain @mentions.
-  /// Called for segments that have already been stripped of URLs, code, bold,
-  /// and italic markers.
-  List<InlineSpan> _buildMentionSpans(String text, {required Color textColor}) {
-    final mentionMatches = _mentionRegex.allMatches(text).toList();
-    if (mentionMatches.isEmpty) {
-      return [
-        TextSpan(
-          text: text,
-          style: _baseStyle(textColor: textColor),
-        ),
-      ];
-    }
-
-    final spans = <InlineSpan>[];
-    int lastEnd = 0;
-    for (final match in mentionMatches) {
-      if (match.start > lastEnd) {
-        spans.add(
-          TextSpan(
-            text: text.substring(lastEnd, match.start),
-            style: _baseStyle(textColor: textColor),
-          ),
-        );
-      }
-      spans.add(
-        TextSpan(
-          text: match.group(0),
-          style: TextStyle(
-            fontSize: 15,
-            color: context.accentHover,
-            fontWeight: FontWeight.w600,
-            height: 1.47,
-          ),
-        ),
-      );
-      lastEnd = match.end;
-    }
-    if (lastEnd < text.length) {
-      spans.add(
-        TextSpan(
-          text: text.substring(lastEnd),
-          style: _baseStyle(textColor: textColor),
-        ),
-      );
-    }
-    return spans;
+  /// Resolve the bubble background color based on message state.
+  Color _bubbleColor({required bool isMine, required bool isFailed}) {
+    if (isFailed) return EchoTheme.danger.withValues(alpha: 0.2);
+    if (isMine) return context.sentBubble;
+    return context.recvBubble;
   }
 
-  TapGestureRecognizer _createLinkRecognizer(String url) {
-    final recognizer = TapGestureRecognizer()
-      ..onTap = () async {
-        final uri = Uri.tryParse(url);
-        if (uri != null && await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-      };
-    _linkRecognizers.add(recognizer);
-    return recognizer;
+  /// Resolve the bubble border radius with a flat corner on the sender's side.
+  /// In compact mode all messages are left-aligned, so the flat corner is
+  /// always on the bottom-left regardless of sender.
+  BorderRadius _bubbleBorderRadius({required bool isMine}) {
+    final isRight = isMine && !widget.compactLayout;
+    return BorderRadius.only(
+      topLeft: const Radius.circular(16),
+      topRight: const Radius.circular(16),
+      bottomLeft: Radius.circular(isRight ? 16 : 4),
+      bottomRight: Radius.circular(isRight ? 4 : 16),
+    );
   }
 
-  /// Build spans for a segment that may contain bold, italic, URLs, and
-  /// mentions (but NOT code -- code is stripped before this is called).
-  List<InlineSpan> _buildFormattedSpans(
-    String text, {
-    required Color textColor,
+  /// Build the sender name label shown above the message bubble.
+  Widget _buildSenderNameLabel({
+    required ChatMessage msg,
+    required bool hasMedia,
   }) {
-    // Collect all matches for bold, italic, and URLs with a tag so we can
-    // process them in document order.
-    final entries = <({int start, int end, String tag, RegExpMatch match})>[];
-
-    for (final m in _boldRegex.allMatches(text)) {
-      entries.add((start: m.start, end: m.end, tag: 'bold', match: m));
-    }
-    for (final m in _italicRegex.allMatches(text)) {
-      entries.add((start: m.start, end: m.end, tag: 'italic', match: m));
-    }
-    for (final m in _urlRegex.allMatches(text)) {
-      entries.add((start: m.start, end: m.end, tag: 'url', match: m));
-    }
-
-    // Sort by start position; break ties by preferring longer matches.
-    entries.sort((a, b) {
-      final cmp = a.start.compareTo(b.start);
-      if (cmp != 0) return cmp;
-      return b.end.compareTo(a.end);
-    });
-
-    // Remove overlapping entries (first match wins).
-    final filtered = <({int start, int end, String tag, RegExpMatch match})>[];
-    int cursor = 0;
-    for (final e in entries) {
-      if (e.start < cursor) continue; // overlaps with a previous match
-      filtered.add(e);
-      cursor = e.end;
-    }
-
-    if (filtered.isEmpty) {
-      return _buildMentionSpans(text, textColor: textColor);
-    }
-
-    final spans = <InlineSpan>[];
-    int lastEnd = 0;
-
-    for (final e in filtered) {
-      // Gap before this match -- may contain mentions
-      if (e.start > lastEnd) {
-        spans.addAll(
-          _buildMentionSpans(
-            text.substring(lastEnd, e.start),
-            textColor: textColor,
-          ),
-        );
-      }
-
-      switch (e.tag) {
-        case 'bold':
-          final inner = e.match.group(1)!;
-          spans.add(
-            TextSpan(
-              text: inner,
-              style: _baseStyle(
-                textColor: textColor,
-              ).copyWith(fontWeight: FontWeight.bold),
-            ),
-          );
-        case 'italic':
-          final inner = e.match.group(1)!;
-          spans.add(
-            TextSpan(
-              text: inner,
-              style: _baseStyle(
-                textColor: textColor,
-              ).copyWith(fontStyle: FontStyle.italic),
-            ),
-          );
-        case 'url':
-          final url = e.match.group(0)!;
-          spans.add(
-            TextSpan(
-              text: url,
-              style: TextStyle(
-                fontSize: 15,
-                color: context.accentHover,
-                decoration: TextDecoration.underline,
-                decorationColor: context.accentHover,
-                height: 1.47,
-              ),
-              recognizer: _createLinkRecognizer(url),
-            ),
-          );
-      }
-
-      lastEnd = e.end;
-    }
-
-    // Remaining text after last match
-    if (lastEnd < text.length) {
-      spans.addAll(
-        _buildMentionSpans(text.substring(lastEnd), textColor: textColor),
-      );
-    }
-
-    return spans;
+    return Padding(
+      padding: EdgeInsets.only(bottom: 4, left: hasMedia ? 8 : 0),
+      child: Text(
+        msg.fromUsername,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: _getUserColor(msg.fromUserId),
+        ),
+      ),
+    );
   }
 
   /// Build a friendly decryption failure message with a recovery action.
@@ -844,326 +368,11 @@ class _MessageItemState extends State<MessageItem> {
     );
   }
 
-  /// Build spans for a segment that may contain inline code, bold, italic,
-  /// URLs, and mentions (but NOT fenced code blocks).
-  List<InlineSpan> _buildInlineCodeAndFormatting(
-    String text, {
-    required Color textColor,
-  }) {
-    final inlineCodeMatches = _inlineCodeRegex.allMatches(text).toList();
-    if (inlineCodeMatches.isEmpty) {
-      return _buildFormattedSpans(text, textColor: textColor);
-    }
-
-    final spans = <InlineSpan>[];
-    int lastEnd = 0;
-
-    for (final match in inlineCodeMatches) {
-      // Gap before inline code -- process for bold/italic/URL/mention
-      if (match.start > lastEnd) {
-        spans.addAll(
-          _buildFormattedSpans(
-            text.substring(lastEnd, match.start),
-            textColor: textColor,
-          ),
-        );
-      }
-
-      // Inline code span with monospace + subtle background
-      final code = match.group(1)!;
-      spans.add(
-        WidgetSpan(
-          alignment: PlaceholderAlignment.baseline,
-          baseline: TextBaseline.alphabetic,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-            decoration: BoxDecoration(
-              color: context.textSecondary.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              code,
-              style: TextStyle(
-                fontSize: 14,
-                fontFamily: 'monospace',
-                color: textColor,
-                height: 1.47,
-              ),
-            ),
-          ),
-        ),
-      );
-
-      lastEnd = match.end;
-    }
-
-    // Remaining text after last inline code
-    if (lastEnd < text.length) {
-      spans.addAll(
-        _buildFormattedSpans(text.substring(lastEnd), textColor: textColor),
-      );
-    }
-
-    return spans;
-  }
-
-  /// Build a RichText widget that renders markdown formatting, URLs as tappable
-  /// links, and @mentions with accent color + bold weight.
-  ///
-  /// Precedence: code blocks > inline code > bold > italic > URLs > mentions.
-  Widget _buildMessageText(String text, {required Color textColor}) {
-    // Dispose old recognizers on each rebuild
-    for (final r in _linkRecognizers) {
-      r.dispose();
-    }
-    _linkRecognizers.clear();
-
-    // Check for fenced code blocks first (highest precedence).
-    final codeBlockMatches = _codeBlockRegex.allMatches(text).toList();
-
-    if (codeBlockMatches.isEmpty) {
-      // No code blocks -- check if any formatting exists at all.
-      final hasUrl = _urlRegex.hasMatch(text);
-      final hasMention = _mentionRegex.hasMatch(text);
-      final hasBold = _boldRegex.hasMatch(text);
-      final hasItalic = _italicRegex.hasMatch(text);
-      final hasInlineCode = _inlineCodeRegex.hasMatch(text);
-
-      if (!hasUrl && !hasMention && !hasBold && !hasItalic && !hasInlineCode) {
-        return Text(text, style: _baseStyle(textColor: textColor));
-      }
-
-      return RichText(
-        text: TextSpan(
-          children: _buildInlineCodeAndFormatting(text, textColor: textColor),
-        ),
-      );
-    }
-
-    // Has code blocks -- build a Column with interleaved text and code blocks.
-    final children = <Widget>[];
-    int lastEnd = 0;
-
-    for (final match in codeBlockMatches) {
-      // Text segment before the code block
-      if (match.start > lastEnd) {
-        final segment = text.substring(lastEnd, match.start);
-        if (segment.trim().isNotEmpty) {
-          children.add(
-            RichText(
-              text: TextSpan(
-                children: _buildInlineCodeAndFormatting(
-                  segment.trim(),
-                  textColor: textColor,
-                ),
-              ),
-            ),
-          );
-        }
-      }
-
-      // The code block itself
-      final code = match.group(1) ?? '';
-      children.add(
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: context.textSecondary.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text(
-            code.trimRight(),
-            style: TextStyle(
-              fontSize: 13,
-              fontFamily: 'monospace',
-              color: textColor,
-              height: 1.5,
-            ),
-          ),
-        ),
-      );
-
-      lastEnd = match.end;
-    }
-
-    // Remaining text after the last code block
-    if (lastEnd < text.length) {
-      final segment = text.substring(lastEnd);
-      if (segment.trim().isNotEmpty) {
-        children.add(
-          RichText(
-            text: TextSpan(
-              children: _buildInlineCodeAndFormatting(
-                segment.trim(),
-                textColor: textColor,
-              ),
-            ),
-          ),
-        );
-      }
-    }
-
-    if (children.length == 1) return children.first;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: children,
-    );
-  }
-
-  Widget _buildReactionPill(List<Reaction> reactions, bool isMine) {
-    if (reactions.isEmpty) return const SizedBox.shrink();
-
-    // Collect unique emojis preserving order of first appearance.
-    final seen = <String>{};
-    final uniqueEmojis = <String>[];
-    for (final r in reactions) {
-      if (seen.add(r.emoji)) uniqueEmojis.add(r.emoji);
-    }
-
-    final totalCount = reactions.length;
-
-    return GestureDetector(
-      onTapUp: (details) =>
-          widget.onReactionTap?.call(widget.message, details.globalPosition),
-      child: Container(
-        height: 24,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        decoration: BoxDecoration(
-          color: context.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.border, width: 1),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final emoji in uniqueEmojis)
-              Padding(
-                padding: const EdgeInsets.only(right: 2),
-                child: Text(emoji, style: const TextStyle(fontSize: 14)),
-              ),
-            if (totalCount > 1) ...[
-              const SizedBox(width: 2),
-              Text(
-                '$totalCount',
-                style: TextStyle(fontSize: 12, color: context.textMuted),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Resolve the bubble background color based on message state.
-  Color _bubbleColor({required bool isMine, required bool isFailed}) {
-    if (isFailed) return EchoTheme.danger.withValues(alpha: 0.2);
-    if (isMine) return context.sentBubble;
-    return context.recvBubble;
-  }
-
-  /// Resolve the bubble border radius with a flat corner on the sender's side.
-  /// In compact mode all messages are left-aligned, so the flat corner is
-  /// always on the bottom-left regardless of sender.
-  BorderRadius _bubbleBorderRadius({required bool isMine}) {
-    final isRight = isMine && !widget.compactLayout;
-    return BorderRadius.only(
-      topLeft: const Radius.circular(16),
-      topRight: const Radius.circular(16),
-      bottomLeft: Radius.circular(isRight ? 16 : 4),
-      bottomRight: Radius.circular(isRight ? 4 : 16),
-    );
-  }
-
-  /// Build the sender name label shown above the message bubble.
-  Widget _buildSenderNameLabel({
-    required ChatMessage msg,
-    required bool hasMedia,
-  }) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: 4, left: hasMedia ? 8 : 0),
-      child: Text(
-        msg.fromUsername,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: _getUserColor(msg.fromUserId),
-        ),
-      ),
-    );
-  }
-
-  /// Build the reply-to quote block shown above the message content.
-  Widget _buildReplyQuote({required ChatMessage msg, required bool isMine}) {
-    final replyContent = msg.replyToContent!;
-    final truncated = replyContent.length > 100
-        ? '${replyContent.substring(0, 100)}...'
-        : replyContent;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: (isMine ? Colors.white : context.accent).withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border(
-          left: BorderSide(
-            color: isMine
-                ? Colors.white.withValues(alpha: 0.5)
-                : context.accent,
-            width: 3,
-          ),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: isMine
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
-        children: [
-          Text(
-            msg.replyToUsername ?? 'Unknown',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: isMine
-                  ? Colors.white.withValues(alpha: 0.8)
-                  : context.accent,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            truncated,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              color: isMine
-                  ? Colors.white.withValues(alpha: 0.7)
-                  : context.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Regex for image extensions in URLs (used for inline embed detection).
-  static final _imageUrlEmbedRegex = RegExp(
-    r'https?://[^\s]+\.(?:gif|png|jpe?g|webp)',
-    caseSensitive: false,
-  );
-
-  /// Extract image URLs embedded within text (not standalone).
-  List<String> _extractEmbeddedImageUrls(String content) {
-    // Skip standalone media URLs -- those are handled by _buildMediaContent.
-    if (_isStandaloneMediaUrl(content)) return [];
-    if (_imgRegex.hasMatch(content)) return [];
-    return _imageUrlEmbedRegex
-        .allMatches(content)
-        .map((m) => m.group(0)!)
-        .toList();
+  /// Resolve text color for message content.
+  Color _contentTextColor({required bool isMine, required bool isFailed}) {
+    if (isFailed) return EchoTheme.danger;
+    if (isMine) return Colors.white;
+    return context.textPrimary;
   }
 
   /// Select and build the primary message content (media, decrypt error, or
@@ -1173,17 +382,29 @@ class _MessageItemState extends State<MessageItem> {
     required ChatMessage msg,
     required bool isMine,
     required bool isFailed,
-    required Widget? mediaWidget,
+    required bool hasMedia,
   }) {
-    if (mediaWidget != null) return mediaWidget;
+    if (hasMedia) {
+      return MediaContent(
+        content: msg.content,
+        isMine: isMine,
+        serverUrl: widget.serverUrl,
+        authToken: widget.authToken,
+      );
+    }
     if (msg.content.startsWith('[Could not decrypt')) {
       return _buildDecryptionFailure();
     }
 
     final textColor = _contentTextColor(isMine: isMine, isFailed: isFailed);
-    final textWidget = _buildMessageText(msg.content, textColor: textColor);
+    final textWidget = RichTextContent(
+      text: msg.content,
+      textColor: textColor,
+      accentHoverColor: context.accentHover,
+      textSecondaryColor: context.textSecondary,
+    );
 
-    final embeddedImages = _extractEmbeddedImageUrls(msg.content);
+    final embeddedImages = extractEmbeddedImageUrls(msg.content);
     if (embeddedImages.isEmpty) return textWidget;
 
     final headers = _mediaHeaders();
@@ -1197,7 +418,7 @@ class _MessageItemState extends State<MessageItem> {
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: GestureDetector(
-              onTap: () => _showImageViewer(imageUrl: imgUrl, isMine: isMine),
+              onTap: () => _showImageViewer(imageUrl: imgUrl),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 400),
                 child: imgUrl.endsWith('.gif')
@@ -1232,13 +453,6 @@ class _MessageItemState extends State<MessageItem> {
         ],
       ],
     );
-  }
-
-  /// Resolve text color for message content.
-  Color _contentTextColor({required bool isMine, required bool isFailed}) {
-    if (isFailed) return EchoTheme.danger;
-    if (isMine) return Colors.white;
-    return context.textPrimary;
   }
 
   /// Build a small pinned indicator shown inside the bubble.
@@ -1276,19 +490,23 @@ class _MessageItemState extends State<MessageItem> {
     required ChatMessage msg,
     required bool isMine,
     required bool isFailed,
-    required Widget? mediaWidget,
+    required bool hasMedia,
   }) {
     return [
       if (msg.pinnedAt != null) _buildPinnedIndicator(isMine: isMine),
       if (widget.showHeader && (!isMine || widget.compactLayout))
-        _buildSenderNameLabel(msg: msg, hasMedia: mediaWidget != null),
+        _buildSenderNameLabel(msg: msg, hasMedia: hasMedia),
       if (msg.replyToContent != null)
-        _buildReplyQuote(msg: msg, isMine: isMine),
+        ReplyQuote(
+          replyToUsername: msg.replyToUsername,
+          replyToContent: msg.replyToContent!,
+          isMine: isMine,
+        ),
       _buildBubbleContent(
         msg: msg,
         isMine: isMine,
         isFailed: isFailed,
-        mediaWidget: mediaWidget,
+        hasMedia: hasMedia,
       ),
     ];
   }
@@ -1298,11 +516,11 @@ class _MessageItemState extends State<MessageItem> {
     required ChatMessage msg,
     required bool isMine,
     required bool isFailed,
-    required Widget? mediaWidget,
+    required bool hasMedia,
   }) {
     return Container(
       constraints: const BoxConstraints(maxWidth: 520),
-      padding: mediaWidget != null
+      padding: hasMedia
           ? const EdgeInsets.all(4)
           : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -1315,7 +533,7 @@ class _MessageItemState extends State<MessageItem> {
           msg: msg,
           isMine: isMine,
           isFailed: isFailed,
-          mediaWidget: mediaWidget,
+          hasMedia: hasMedia,
         ),
       ),
     );
@@ -1407,7 +625,7 @@ class _MessageItemState extends State<MessageItem> {
                 ),
               ),
             ),
-          if (isMine) _buildStatusIcon(msg.status),
+          if (isMine) MessageStatusIcon(status: msg.status),
         ],
       ),
     );
@@ -1461,17 +679,20 @@ class _MessageItemState extends State<MessageItem> {
     final isMine = msg.isMine;
     final isFailed = msg.status == MessageStatus.failed;
 
-    final mediaWidget = _buildMediaContent(msg.content, isMine: isMine);
-    final mediaUrl = _extractMediaUrl(msg.content);
+    final mediaUrl = extractMediaUrl(msg.content);
+    final hasMedia = mediaUrl != null;
 
     final hasReactions = msg.reactions.isNotEmpty;
-    final reactionPill = _buildReactionPill(msg.reactions, isMine);
+    final reactionPill = ReactionBar(
+      reactions: msg.reactions,
+      onTap: (pos) => widget.onReactionTap?.call(msg, pos),
+    );
 
     final bubble = _buildBubble(
       msg: msg,
       isMine: isMine,
       isFailed: isFailed,
-      mediaWidget: mediaWidget,
+      hasMedia: hasMedia,
     );
 
     final bubbleWithReactions = _buildBubbleWithReactions(
@@ -1562,189 +783,6 @@ class _HoverActionButton extends StatelessWidget {
             child: Icon(icon, size: 14, color: context.textSecondary),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Inline video player widget with play/pause controls and download
-/// fallback. Initialises a [VideoPlayerController] on first build and
-/// disposes it when removed from the tree.
-class _InlineVideoPlayer extends StatefulWidget {
-  final String videoUrl;
-  final String rawUrl;
-  final Map<String, String> headers;
-  final Color surface;
-  final Color mainBg;
-  final Color border;
-  final Color textPrimary;
-  final Color textMuted;
-  final VoidCallback onOpen;
-  final VoidCallback onDownload;
-
-  const _InlineVideoPlayer({
-    required this.videoUrl,
-    required this.rawUrl,
-    required this.headers,
-    required this.surface,
-    required this.mainBg,
-    required this.border,
-    required this.textPrimary,
-    required this.textMuted,
-    required this.onOpen,
-    required this.onDownload,
-  });
-
-  @override
-  State<_InlineVideoPlayer> createState() => _InlineVideoPlayerState();
-}
-
-class _InlineVideoPlayerState extends State<_InlineVideoPlayer> {
-  VideoPlayerController? _controller;
-  bool _initFailed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _initVideo();
-  }
-
-  Future<void> _initVideo() async {
-    try {
-      final controller = VideoPlayerController.networkUrl(
-        Uri.parse(widget.videoUrl),
-        httpHeaders: widget.headers,
-      );
-      await controller.initialize();
-      if (!mounted) {
-        controller.dispose();
-        return;
-      }
-      setState(() => _controller = controller);
-    } catch (_) {
-      if (mounted) setState(() => _initFailed = true);
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  void _togglePlayPause() {
-    final c = _controller;
-    if (c == null) return;
-    setState(() {
-      c.value.isPlaying ? c.pause() : c.play();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 300,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: widget.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: widget.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: _buildVideoArea(),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Wrap(
-              spacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: widget.onOpen,
-                  icon: const Icon(Icons.open_in_new, size: 14),
-                  label: const Text('Open'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: widget.onDownload,
-                  icon: const Icon(Icons.download_outlined, size: 14),
-                  label: const Text('Download'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVideoArea() {
-    final c = _controller;
-
-    // Still loading
-    if (c == null && !_initFailed) {
-      return Container(
-        height: 170,
-        color: widget.mainBg,
-        child: Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: widget.textMuted,
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Init failed -- show static placeholder
-    if (_initFailed || c == null) {
-      return GestureDetector(
-        onTap: widget.onOpen,
-        child: Container(
-          height: 170,
-          color: widget.mainBg,
-          child: Center(
-            child: Icon(
-              Icons.play_circle_outline,
-              size: 44,
-              color: widget.textMuted,
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Initialised -- show player with controls
-    return GestureDetector(
-      onTap: _togglePlayPause,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          AspectRatio(
-            aspectRatio: c.value.aspectRatio.clamp(0.5, 3.0),
-            child: VideoPlayer(c),
-          ),
-          if (!c.value.isPlaying)
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.play_arrow,
-                size: 32,
-                color: Colors.white,
-              ),
-            ),
-        ],
       ),
     );
   }
