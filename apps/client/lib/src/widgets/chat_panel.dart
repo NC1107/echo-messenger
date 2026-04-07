@@ -27,8 +27,7 @@ import 'chat_input_bar.dart';
 import 'message_item.dart';
 import 'message_search_overlay.dart';
 
-/// Reaction emojis used in the picker.
-const reactionEmojis = ['👍', '❤️', '😂', '😐', '😟', '🔥', '👎', '🎉'];
+// reactionEmojis imported from message_item.dart
 
 class ChatPanel extends ConsumerStatefulWidget {
   final Conversation? conversation;
@@ -1009,16 +1008,15 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
     _handleKeyboardScroll();
 
-    final chatState = ref.watch(chatProvider);
-    final wsState = ref.watch(websocketProvider);
-    final authState = ref.watch(authProvider);
-    final myUserId = authState.userId ?? '';
+    final myUserId = ref.watch(authProvider.select((s) => s.userId)) ?? '';
+    final authToken = ref.watch(authProvider.select((s) => s.token)) ?? '';
     final serverUrl = ref.watch(serverUrlProvider);
-    final authToken = authState.token ?? '';
+    final wsState = ref.watch(websocketProvider);
 
     final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
     final includeUnchanneled = conv.isGroup && _selectedTextChannelId == null;
 
+    final chatState = ref.watch(chatProvider);
     final messages = conv.isGroup
         ? chatState.messagesForConversationChannel(
             conv.id,
