@@ -76,18 +76,16 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   void didUpdateWidget(covariant ChannelBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.conversationId != oldWidget.conversationId) {
-      if (oldWidget.activeVoiceChannelId != null) {
-        _voiceRtcNotifier.leaveChannel();
-      }
+      // Voice state persists globally across conversation navigation.
+      // The user explicitly leaves via the hangup button.
       _lastAutoSelectedConversationId = null;
     }
   }
 
   @override
   void dispose() {
-    if (widget.activeVoiceChannelId != null) {
-      _voiceRtcNotifier.leaveChannel();
-    }
+    // Voice state persists globally -- the user disconnects via the hangup
+    // button, not by navigating away from a channel bar.
     super.dispose();
   }
 
