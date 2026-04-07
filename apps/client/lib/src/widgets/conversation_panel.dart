@@ -508,16 +508,13 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           ),
           if (widget.onCollapseSidebar != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: IconButton(
-                icon: const Icon(Icons.chevron_left, size: 16),
-                color: context.textMuted,
-                tooltip: 'Collapse sidebar',
-                onPressed: widget.onCollapseSidebar,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              ),
+            IconButton(
+              icon: const Icon(Icons.chevron_left, size: 14),
+              color: context.textMuted,
+              tooltip: 'Collapse sidebar',
+              onPressed: widget.onCollapseSidebar,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
             ),
         ],
       ),

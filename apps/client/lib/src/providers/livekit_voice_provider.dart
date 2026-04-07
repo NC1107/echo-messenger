@@ -492,11 +492,11 @@ class _LiveKitTokenResult {
 }
 
 /// Derive LiveKit WebSocket URL from the Echo server URL.
-/// https://echo-messenger.us → wss://echo-messenger.us:7881
+/// https://echo-messenger.us → wss://livekit.echo-messenger.us
 String _deriveLiveKitUrl(String serverUrl) {
   final uri = Uri.parse(serverUrl);
   final scheme = uri.scheme == 'https' ? 'wss' : 'ws';
-  return '$scheme://${uri.host}:7881';
+  return '$scheme://livekit.${uri.host}';
 }
 
 // ---------------------------------------------------------------------------
