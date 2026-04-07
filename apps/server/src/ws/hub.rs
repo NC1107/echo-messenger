@@ -20,7 +20,16 @@ impl Hub {
     }
 
     pub fn register(&self, user_id: Uuid, tx: WsTx) {
-        self.connections.insert(user_id, tx);
+        if let Some(old_tx) = self.connections.insert(user_id, tx) {
+            let msg = serde_json::json!({
+                "type": "session_replaced",
+                "reason": "Signed in on another device"
+            });
+            if let Ok(s) = serde_json::to_string(&msg) {
+                let _ = old_tx.send(WsMessage::Text(s.into()));
+            }
+            let _ = old_tx.send(WsMessage::Close(None));
+        }
     }
 
     pub fn unregister(&self, user_id: Uuid) {

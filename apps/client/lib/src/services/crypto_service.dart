@@ -312,6 +312,36 @@ class CryptoService {
     final bobIdentityKeyBytes = base64Decode(data['identity_key'] as String);
     final bobSignedPrekeyBytes = base64Decode(data['signed_prekey'] as String);
 
+    // Verify the signed prekey signature to prevent MITM / malicious server
+    // substitution. The server returns `signing_key` and
+    // `signed_prekey_signature` alongside the prekey bundle.
+    final signingKeyB64 = data['signing_key'] as String?;
+    final signatureB64 = data['signed_prekey_signature'] as String?;
+    if (signingKeyB64 == null || signatureB64 == null) {
+      throw Exception(
+        'Prekey bundle for $peerUserId is missing signing_key or '
+        'signed_prekey_signature -- cannot verify prekey authenticity',
+      );
+    }
+
+    final signingKeyBytes = base64Decode(signingKeyB64);
+    final signatureBytes = base64Decode(signatureB64);
+
+    final signingPublicKey = SimplePublicKey(
+      signingKeyBytes,
+      type: KeyPairType.ed25519,
+    );
+    final isValid = await _ed25519.verify(
+      bobSignedPrekeyBytes,
+      signature: Signature(signatureBytes, publicKey: signingPublicKey),
+    );
+    if (!isValid) {
+      throw Exception(
+        'Signed prekey signature verification failed for $peerUserId '
+        '-- possible MITM attack',
+      );
+    }
+
     final bobIdentityKey = SimplePublicKey(
       bobIdentityKeyBytes,
       type: KeyPairType.x25519,
