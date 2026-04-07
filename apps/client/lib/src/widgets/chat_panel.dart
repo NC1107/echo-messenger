@@ -1063,7 +1063,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               hideVoiceDock: widget.hideVoiceDock,
               onTextChannelChanged: _onTextChannelChanged,
               onVoiceChannelChanged: (channelId) {
-                setState(() => _activeVoiceChannelId = channelId);
+                if (mounted) {
+                  setState(() => _activeVoiceChannelId = channelId);
+                }
               },
             ),
 
