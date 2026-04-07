@@ -292,6 +292,29 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
     }
   }
 
+  /// Enable or disable screen sharing via LiveKit.
+  ///
+  /// Uses the SDK's built-in [setScreenShareEnabled] which handles both
+  /// capture (getDisplayMedia) and publishing the track to the room.
+  Future<bool> setScreenShareEnabled(bool enabled) async {
+    if (_disposed || !state.isActive) return false;
+    final room = _room;
+    if (room == null) return false;
+
+    try {
+      await room.localParticipant?.setScreenShareEnabled(enabled);
+      return true;
+    } catch (e) {
+      debugPrint('[LiveKitVoice] setScreenShareEnabled($enabled) failed: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'LiveKitVoice',
+        'Screen share toggle failed: $e',
+      );
+      return false;
+    }
+  }
+
   /// Access the LiveKit [Room] directly for advanced widget rendering
   /// (e.g. [VideoTrackRenderer]).
   Room? get room => _room;
@@ -507,7 +530,21 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
   void dispose() {
     _disposed = true;
     _stopAudioLevelPolling();
-    unawaited(_cleanupRoom());
+
+    // Synchronously null out references so in-flight callbacks hit null checks
+    // instead of accessing freed memory. The actual network disconnect is
+    // fire-and-forget on captured local references.
+    final listener = _roomListener;
+    final room = _room;
+    _roomListener = null;
+    _room = null;
+    listener?.dispose();
+    if (room != null) {
+      unawaited(
+        room.disconnect().then((_) => room.dispose()).catchError((_) => false),
+      );
+    }
+
     super.dispose();
   }
 }

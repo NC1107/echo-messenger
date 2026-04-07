@@ -248,11 +248,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     String payload;
     final cryptoState = ref.read(cryptoProvider);
     if (!cryptoState.isInitialized) {
-      _addFailedMessage(
-        toUserId,
-        'Encryption not initialized',
-        conversationId: conversationId,
-      );
+      final reason = cryptoState.error ?? 'Encryption not initialized';
+      _addFailedMessage(toUserId, reason, conversationId: conversationId);
       return;
     }
 
@@ -261,10 +258,11 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       final token = ref.read(authProvider).token ?? '';
       crypto.setToken(token);
       payload = await crypto.encryptMessage(toUserId, content);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[WS] Encryption failed: $e');
       _addFailedMessage(
         toUserId,
-        'Encryption setup failed. Verify both users have encryption keys.',
+        'Encryption failed: $e',
         conversationId: conversationId,
       );
       return;

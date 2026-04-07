@@ -514,7 +514,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               tooltip: 'Collapse sidebar',
               onPressed: widget.onCollapseSidebar,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
         ],
       ),

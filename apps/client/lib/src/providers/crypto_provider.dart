@@ -126,7 +126,10 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
         'Crypto',
         'PlatformException during init (degraded mode): $e',
       );
-      state = state.copyWith(isUploading: false);
+      state = state.copyWith(
+        isUploading: false,
+        error: 'Secure storage unavailable: $e',
+      );
     } catch (e) {
       DebugLogService.instance.log(LogLevel.error, 'Crypto', 'Init failed: $e');
       state = state.copyWith(

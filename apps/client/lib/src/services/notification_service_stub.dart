@@ -1,11 +1,55 @@
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
 import 'notification_service.dart';
 
-/// Stub (non-web) implementation -- notifications are a no-op.
-NotificationService createNotificationService() => _StubNotificationService();
+/// Native (non-web) implementation using flutter_local_notifications.
+NotificationService createNotificationService() => _NativeNotificationService();
 
-class _StubNotificationService implements NotificationService {
+class _NativeNotificationService implements NotificationService {
+  static final _plugin = FlutterLocalNotificationsPlugin();
+  static bool _initialized = false;
+  static int _notificationId = 0;
+
+  static const _channel = AndroidNotificationDetails(
+    'echo_messages',
+    'Messages',
+    channelDescription: 'Incoming message notifications',
+    importance: Importance.high,
+    priority: Priority.high,
+  );
+
+  Future<void> _ensureInitialized() async {
+    if (_initialized) return;
+    try {
+      const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const linux = LinuxInitializationSettings(defaultActionName: 'Open');
+      const initSettings = InitializationSettings(
+        android: android,
+        linux: linux,
+      );
+      await _plugin.initialize(initSettings);
+      _initialized = true;
+    } catch (e) {
+      debugPrint('[Notifications] init failed: $e');
+    }
+  }
+
   @override
-  Future<void> requestPermission() async {}
+  Future<void> requestPermission() async {
+    if (kIsWeb) return;
+    await _ensureInitialized();
+    // Android 13+ runtime permission
+    try {
+      await _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.requestNotificationsPermission();
+    } catch (_) {
+      // Not on Android or permission denied -- non-fatal.
+    }
+  }
 
   @override
   void showMessageNotification({
@@ -13,18 +57,22 @@ class _StubNotificationService implements NotificationService {
     required String body,
     bool forceShow = false,
   }) {
-    // TODO: Implement desktop/mobile visual notifications with
-    // flutter_local_notifications. Requires native setup:
-    // - Android: AndroidManifest permissions, notification channel
-    // - Linux: libnotify-dev in CMakeLists.txt
-    // - Windows: no extra setup but needs testing
-    // The sound service already handles audio -- this just needs the popup.
+    _ensureInitialized().then((_) {
+      if (!_initialized) return;
+      _plugin.show(
+        _notificationId++,
+        senderUsername,
+        body,
+        const NotificationDetails(
+          android: _channel,
+          linux: LinuxNotificationDetails(),
+        ),
+      );
+    });
   }
 
   @override
   void updateTabBadge(int totalUnread) {
-    // No-op on non-web platforms.
-    // TODO: Implement desktop notifications with flutter_local_notifications
-    // once native platform setup (AndroidManifest, Linux libnotify) is done.
+    // No-op on native platforms (tab badge is a web concept).
   }
 }

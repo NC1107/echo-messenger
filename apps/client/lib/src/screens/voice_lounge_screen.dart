@@ -5,9 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
+import 'package:cached_network_image/cached_network_image.dart';
+
+import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
+import '../providers/server_url_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
 
@@ -18,6 +22,13 @@ class VoiceLoungeScreen extends ConsumerWidget {
   final VoidCallback? onBackToChat;
 
   const VoiceLoungeScreen({super.key, this.onBackToChat});
+
+  static String? _buildAvatarUrl(WidgetRef ref) {
+    final avatarPath = ref.read(authProvider).avatarUrl;
+    if (avatarPath == null || avatarPath.isEmpty) return null;
+    final serverUrl = ref.read(serverUrlProvider);
+    return '$serverUrl$avatarPath';
+  }
 
   /// Screen sharing is only useful on desktop and web platforms.
   static bool get _supportsScreenShare {
@@ -66,7 +77,11 @@ class VoiceLoungeScreen extends ConsumerWidget {
                   // Remote screen shares
                   if (room != null) _RemoteScreenShares(room: room),
                   // Participant grid
-                  _ParticipantGrid(room: room, voiceState: voiceLk),
+                  _ParticipantGrid(
+                    room: room,
+                    voiceState: voiceLk,
+                    localAvatarUrl: _buildAvatarUrl(ref),
+                  ),
                 ],
               ),
             ),
@@ -161,8 +176,13 @@ class _LoungeHeader extends StatelessWidget {
 class _ParticipantGrid extends StatelessWidget {
   final lk.Room? room;
   final LiveKitVoiceState voiceState;
+  final String? localAvatarUrl;
 
-  const _ParticipantGrid({required this.room, required this.voiceState});
+  const _ParticipantGrid({
+    required this.room,
+    required this.voiceState,
+    this.localAvatarUrl,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -193,6 +213,7 @@ class _ParticipantGrid extends StatelessWidget {
         _ParticipantTile(
           key: const ValueKey('local'),
           name: 'You',
+          avatarUrl: localAvatarUrl,
           hasVideo: localVideo?.track != null,
           videoTrack: localVideo?.track as lk.VideoTrack?,
           mirror: true,
@@ -204,7 +225,9 @@ class _ParticipantGrid extends StatelessWidget {
 
     // Remote participant tiles
     for (final participant in room!.remoteParticipants.values) {
-      final identity = participant.identity.isNotEmpty
+      final displayName = participant.name.isNotEmpty
+          ? participant.name
+          : participant.identity.isNotEmpty
           ? participant.identity
           : participant.sid.toString();
 
@@ -217,12 +240,18 @@ class _ParticipantGrid extends StatelessWidget {
           )
           .firstOrNull;
 
+      // Audio levels are keyed by identity (UUID), not display name.
+      final identity = participant.identity.isNotEmpty
+          ? participant.identity
+          : participant.sid.toString();
       final audioLevel = voiceState.peerAudioLevels[identity] ?? 0.0;
 
       tiles.add(
         _ParticipantTile(
           key: ValueKey('remote-${participant.sid}'),
-          name: identity.length > 12 ? identity.substring(0, 12) : identity,
+          name: displayName.length > 16
+              ? displayName.substring(0, 16)
+              : displayName,
           hasVideo: videoTrack?.track != null,
           videoTrack: videoTrack?.track as lk.VideoTrack?,
           mirror: false,
@@ -269,6 +298,7 @@ class _ParticipantGrid extends StatelessWidget {
 
 class _ParticipantTile extends StatelessWidget {
   final String name;
+  final String? avatarUrl;
   final bool hasVideo;
   final lk.VideoTrack? videoTrack;
   final bool mirror;
@@ -278,6 +308,7 @@ class _ParticipantTile extends StatelessWidget {
   const _ParticipantTile({
     super.key,
     required this.name,
+    this.avatarUrl,
     required this.hasVideo,
     this.videoTrack,
     this.mirror = false,
@@ -313,7 +344,11 @@ class _ParticipantTile extends StatelessWidget {
                   : lk.VideoViewMirrorMode.off,
             )
           else
-            _AvatarCircle(name: name, isSpeaking: isSpeaking),
+            _AvatarCircle(
+              name: name,
+              avatarUrl: avatarUrl,
+              isSpeaking: isSpeaking,
+            ),
           // Name label overlay at bottom
           Positioned(
             bottom: 0,
@@ -369,9 +404,14 @@ class _ParticipantTile extends StatelessWidget {
 
 class _AvatarCircle extends StatelessWidget {
   final String name;
+  final String? avatarUrl;
   final bool isSpeaking;
 
-  const _AvatarCircle({required this.name, required this.isSpeaking});
+  const _AvatarCircle({
+    required this.name,
+    this.avatarUrl,
+    required this.isSpeaking,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -394,16 +434,44 @@ class _AvatarCircle extends StatelessWidget {
             width: 3,
           ),
         ),
-        child: Center(
-          child: Text(
-            initial,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 28,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
+        clipBehavior: Clip.antiAlias,
+        child: avatarUrl != null
+            ? CachedNetworkImage(
+                imageUrl: avatarUrl!,
+                fit: BoxFit.cover,
+                width: 72,
+                height: 72,
+                placeholder: (_, _) => Center(
+                  child: Text(
+                    initial,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                errorWidget: (_, _, _) => Center(
+                  child: Text(
+                    initial,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              )
+            : Center(
+                child: Text(
+                  initial,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
       ),
     );
   }
@@ -657,7 +725,7 @@ class _ControlBar extends ConsumerWidget {
             },
           ),
           const SizedBox(width: 8),
-          // Screen share
+          // Screen share (published via LiveKit SDK)
           if (VoiceLoungeScreen._supportsScreenShare) ...[
             _ControlButton(
               icon: screenShare.isScreenSharing
@@ -667,16 +735,17 @@ class _ControlBar extends ConsumerWidget {
               isActive: screenShare.isScreenSharing,
               activeColor: EchoTheme.online,
               onPressed: () async {
-                final notifier = ref.read(screenShareProvider.notifier);
+                final lkNotifier = ref.read(livekitVoiceProvider.notifier);
+                final ssNotifier = ref.read(screenShareProvider.notifier);
                 if (screenShare.isScreenSharing) {
-                  await notifier.stopScreenShare();
+                  await lkNotifier.setScreenShareEnabled(false);
+                  await ssNotifier.stopScreenShare();
                 } else {
-                  await notifier.startScreenShare();
-                  final updated = ref.read(screenShareProvider);
-                  if (updated.error != null && context.mounted) {
+                  final ok = await lkNotifier.setScreenShareEnabled(true);
+                  if (!ok && context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(updated.error!),
+                      const SnackBar(
+                        content: Text('Could not start screen sharing.'),
                         behavior: SnackBarBehavior.floating,
                       ),
                     );
@@ -695,6 +764,9 @@ class _ControlBar extends ConsumerWidget {
             isDestructive: true,
             onPressed: () async {
               if (screenShare.isScreenSharing) {
+                await ref
+                    .read(livekitVoiceProvider.notifier)
+                    .setScreenShareEnabled(false);
                 await ref.read(screenShareProvider.notifier).stopScreenShare();
               }
               await ref
