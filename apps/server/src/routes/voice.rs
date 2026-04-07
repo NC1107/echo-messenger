@@ -78,10 +78,18 @@ pub async fn generate_token(
         return Err(AppError::bad_request("Room name is required"));
     }
 
-    let api_key = std::env::var("LIVEKIT_API_KEY")
-        .map_err(|_| AppError::internal("LiveKit is not configured"))?;
-    let api_secret = std::env::var("LIVEKIT_API_SECRET")
-        .map_err(|_| AppError::internal("LiveKit is not configured"))?;
+    let api_key = std::env::var("LIVEKIT_API_KEY").map_err(|_| {
+        AppError::bad_request(
+            "Voice chat is not configured on this server. \
+             Set LIVEKIT_API_KEY and LIVEKIT_API_SECRET.",
+        )
+    })?;
+    let api_secret = std::env::var("LIVEKIT_API_SECRET").map_err(|_| {
+        AppError::bad_request(
+            "Voice chat is not configured on this server. \
+             Set LIVEKIT_API_SECRET.",
+        )
+    })?;
 
     let now = Utc::now().timestamp();
     let claims = LiveKitClaims {
