@@ -26,6 +26,12 @@ class VoiceRtcState {
 
   /// Round-trip latency in seconds per peer, extracted from RTCStats.
   final Map<String, double> peerLatencies;
+
+  /// Audio levels per peer (0.0–1.0), polled from RTCStats.
+  final Map<String, double> peerAudioLevels;
+
+  /// Local microphone audio level (0.0–1.0).
+  final double localAudioLevel;
   final String? error;
 
   const VoiceRtcState({
@@ -38,6 +44,8 @@ class VoiceRtcState {
     this.isVideoEnabled = false,
     this.peerConnectionStates = const {},
     this.peerLatencies = const {},
+    this.peerAudioLevels = const {},
+    this.localAudioLevel = 0.0,
     this.error,
   });
 
@@ -51,6 +59,8 @@ class VoiceRtcState {
     bool? isVideoEnabled,
     Map<String, String>? peerConnectionStates,
     Map<String, double>? peerLatencies,
+    Map<String, double>? peerAudioLevels,
+    double? localAudioLevel,
     String? error,
   }) {
     return VoiceRtcState(
@@ -63,6 +73,8 @@ class VoiceRtcState {
       isVideoEnabled: isVideoEnabled ?? this.isVideoEnabled,
       peerConnectionStates: peerConnectionStates ?? this.peerConnectionStates,
       peerLatencies: peerLatencies ?? this.peerLatencies,
+      peerAudioLevels: peerAudioLevels ?? this.peerAudioLevels,
+      localAudioLevel: localAudioLevel ?? this.localAudioLevel,
       error: error,
     );
   }
@@ -197,6 +209,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       // Start periodic participant sync to reconcile stale peer state.
       _startPeriodicParticipantSync(conversationId, channelId);
       _startLatencyPolling();
+      _startAudioLevelPolling();
     } catch (e) {
       debugPrint('[VoiceRTC] join failed: $e');
       DebugLogService.instance.log(
@@ -220,6 +233,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     _participantSyncTimer?.cancel();
     _participantSyncTimer = null;
     _stopLatencyPolling();
+    _stopAudioLevelPolling();
 
     for (final userId in _peerConnections.keys.toList()) {
       final pc = _peerConnections[userId];
@@ -888,6 +902,77 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     _latencyTimer = null;
   }
 
+  // -- Audio level polling (VAD) --
+
+  Timer? _audioLevelTimer;
+
+  void _startAudioLevelPolling() {
+    _audioLevelTimer?.cancel();
+    _audioLevelTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (_disposed) {
+        _audioLevelTimer?.cancel();
+        _audioLevelTimer = null;
+        return;
+      }
+      _pollAudioLevels();
+    });
+  }
+
+  void _stopAudioLevelPolling() {
+    _audioLevelTimer?.cancel();
+    _audioLevelTimer = null;
+  }
+
+  Future<void> _pollAudioLevels() async {
+    final levels = <String, double>{};
+    double localLevel = 0.0;
+
+    for (final entry in _peerConnections.entries) {
+      try {
+        final stats = await entry.value.getStats();
+        for (final report in stats) {
+          if (report.type == 'inbound-rtp') {
+            final kind = report.values['kind'];
+            if (kind == 'audio') {
+              final level = report.values['audioLevel'];
+              if (level is double) {
+                levels[entry.key] = level;
+              }
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Local audio level from outbound stats
+    for (final entry in _peerConnections.entries) {
+      try {
+        final stats = await entry.value.getStats();
+        for (final report in stats) {
+          if (report.type == 'media-source') {
+            final kind = report.values['kind'];
+            if (kind == 'audio') {
+              final level = report.values['audioLevel'];
+              if (level is double) {
+                localLevel = level;
+              }
+              break;
+            }
+          }
+        }
+        if (localLevel > 0) break;
+      } catch (_) {}
+    }
+
+    if (!_disposed) {
+      state = state.copyWith(
+        peerAudioLevels: levels,
+        localAudioLevel: localLevel,
+      );
+    }
+  }
+
   Future<void> _pollPeerLatencies() async {
     final latencies = <String, double>{};
     for (final entry in _peerConnections.entries) {
@@ -990,6 +1075,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     _disposed = true;
     _participantSyncTimer?.cancel();
     _latencyTimer?.cancel();
+    _audioLevelTimer?.cancel();
     _signalSubscription?.cancel();
     unawaited(leaveChannel());
     super.dispose();

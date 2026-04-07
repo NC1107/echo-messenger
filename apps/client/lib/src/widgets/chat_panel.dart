@@ -208,6 +208,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     final auth = ref.read(authProvider);
     if (auth.token == null || auth.userId == null) return;
 
+    // Load cached messages first for instant display
+    ref.read(chatProvider.notifier).loadFromCache(conv.id, auth.userId!);
+
     final groupCrypto = conv.isGroup
         ? ref.read(groupCryptoServiceProvider)
         : null;
@@ -1011,10 +1014,16 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     final myUserId = ref.watch(authProvider.select((s) => s.userId)) ?? '';
     final authToken = ref.watch(authProvider.select((s) => s.token)) ?? '';
     final serverUrl = ref.watch(serverUrlProvider);
-    final wsState = ref.watch(websocketProvider);
-
     final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
     final includeUnchanneled = conv.isGroup && _selectedTextChannelId == null;
+
+    // Only rebuild when typing users for THIS conversation change,
+    // not on isConnected/onlineUsers/wasReplaced changes.
+    final typingUserIds = ref.watch(
+      websocketProvider.select(
+        (s) => s.typingIn(conv.id, channelId: selectedChannelId),
+      ),
+    );
 
     final chatState = ref.watch(chatProvider);
     final messages = conv.isGroup
@@ -1027,14 +1036,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
     final isLoadingHistory = chatState.loadingHistory[conv.id] ?? false;
 
-    final typingUsers = wsState
-        .typingIn(conv.id, channelId: selectedChannelId)
-        .where((u) => u != myUserId)
-        .map((uid) {
-          final member = conv.members.where((m) => m.userId == uid).firstOrNull;
-          return member?.username ?? uid;
-        })
-        .toList();
+    final typingUsers = typingUserIds.where((u) => u != myUserId).map((uid) {
+      final member = conv.members.where((m) => m.userId == uid).firstOrNull;
+      return member?.username ?? uid;
+    }).toList();
 
     _setupAutoScroll(conv, selectedChannelId, includeUnchanneled);
 

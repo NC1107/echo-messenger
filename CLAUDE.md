@@ -106,7 +106,7 @@ Keep it concise -- no multi-paragraph explanations, no bullet lists in commit me
 
 ## Known Limitations
 
-1. Private keys stored in SharedPreferences (should use flutter_secure_storage / platform keystore)
+1. ~~Private keys stored in SharedPreferences~~ -- RESOLVED: migrated to flutter_secure_storage (platform keystore)
 2. Session keys cached forever in memory (no TTL)
 3. Multi-device: schema exists but single-device in practice
 4. `core/rust-core/src/api.rs` has `todo!()` stubs (FFI bridge not integrated)

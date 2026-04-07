@@ -2,14 +2,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import 'src/app.dart';
 import 'src/providers/server_url_provider.dart';
+import 'src/services/message_cache.dart';
 import 'src/services/notification_service.dart';
 import 'src/services/sound_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await Hive.initFlutter();
+  await MessageCache.init();
 
   final container = ProviderContainer();
 

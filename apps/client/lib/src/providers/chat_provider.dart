@@ -9,6 +9,7 @@ import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
 import '../services/group_crypto_service.dart';
+import '../services/message_cache.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
 import 'server_url_provider.dart';
@@ -116,6 +117,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   String get _serverUrl => ref.read(serverUrlProvider);
 
+  /// Load cached messages from Hive for instant display before server fetch.
+  void loadFromCache(String conversationId, String myUserId) {
+    final cached = MessageCache.getCachedMessages(conversationId, myUserId);
+    if (cached.isEmpty) return;
+    _mergeMessages(conversationId, cached);
+  }
+
   void addMessage(ChatMessage msg) {
     state = state.withMessage(msg);
   }
@@ -209,6 +217,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
       hasMore: state.hasMore,
       replyToMessage: state.replyToMessage,
     );
+
+    // Cache the confirmed message
+    final confirmed = state
+        .messagesForConversation(conversationId)
+        .where((m) => m.id == messageId)
+        .toList();
+    if (confirmed.isNotEmpty) {
+      MessageCache.cacheMessages(conversationId, confirmed);
+    }
   }
 
   void _replacePendingMessage(
@@ -273,6 +290,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
           conversationId: conversationId,
         );
         _mergeMessages(conversationId, newMessages, channelId: channelId);
+        MessageCache.cacheMessages(conversationId, newMessages);
       }
     } catch (e) {
       debugPrint(
