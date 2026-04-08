@@ -26,4 +26,10 @@ abstract class NotificationService {
   /// On web, sets document.title to "(N) Echo Messenger" or "Echo Messenger".
   /// No-op on non-web platforms.
   void updateTabBadge(int totalUnread);
+
+  /// Tell the service whether the app is currently focused.
+  ///
+  /// On native platforms, notifications are suppressed while the app is in the
+  /// foreground (matching the web behaviour which checks `document.hidden`).
+  void setAppFocused(bool focused) {}
 }

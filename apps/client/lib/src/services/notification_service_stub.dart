@@ -1,15 +1,25 @@
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import 'debug_log_service.dart';
 import 'notification_service.dart';
 
 /// Native (non-web) implementation using flutter_local_notifications.
-NotificationService createNotificationService() => _NativeNotificationService();
+///
+/// Uses a singleton so that the [_appFocused] flag and init state are shared
+/// across all callers (mirrors the web implementation pattern).
+NotificationService createNotificationService() =>
+    _NativeNotificationService._instance;
 
 class _NativeNotificationService implements NotificationService {
+  static final _NativeNotificationService _instance =
+      _NativeNotificationService._();
+  _NativeNotificationService._();
+
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
   static int _notificationId = 0;
+  static bool _appFocused = true;
 
   static const _channel = AndroidNotificationDetails(
     'echo_messages',
@@ -32,6 +42,12 @@ class _NativeNotificationService implements NotificationService {
       _initialized = true;
     } catch (e) {
       debugPrint('[Notifications] init failed: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Notifications',
+        'Init failed (notifications will not be shown). '
+            'On Linux, ensure a D-Bus notification daemon is running: $e',
+      );
     }
   }
 
@@ -57,6 +73,9 @@ class _NativeNotificationService implements NotificationService {
     required String body,
     bool forceShow = false,
   }) {
+    // Suppress when the app is focused (matches web behaviour).
+    if (_appFocused && !forceShow) return;
+
     _ensureInitialized().then((_) {
       if (!_initialized) return;
       _plugin.show(
@@ -74,5 +93,10 @@ class _NativeNotificationService implements NotificationService {
   @override
   void updateTabBadge(int totalUnread) {
     // No-op on native platforms (tab badge is a web concept).
+  }
+
+  @override
+  void setAppFocused(bool focused) {
+    _appFocused = focused;
   }
 }

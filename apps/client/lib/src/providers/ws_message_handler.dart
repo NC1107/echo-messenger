@@ -130,6 +130,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleGroupKeyRotated(json);
       case 'session_replaced':
         _handleSessionReplaced(json);
+      case 'heartbeat':
+        break; // Server keepalive; _onMessage already updated _lastMessageTime.
       case 'error':
         break;
       case 'voice_signal':

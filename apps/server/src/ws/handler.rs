@@ -124,10 +124,15 @@ pub async fn handle_socket(
         }
     });
 
-    // Task: send WebSocket Ping frames every 30 seconds to keep the
-    // connection alive through reverse-proxy (Traefik/Cloudflare) idle
-    // timeouts. Pings are routed through the hub so they share the same
-    // mpsc channel as regular messages -- no sink contention.
+    // Task: send heartbeat every 30 seconds to keep the connection alive
+    // through reverse-proxy (Traefik/Cloudflare) idle timeouts.
+    //
+    // We send BOTH a WebSocket protocol Ping (for proxy keepalive) and an
+    // application-level JSON heartbeat. Browser WebSocket APIs handle
+    // Ping/Pong transparently without surfacing them to JavaScript, so the
+    // client's heartbeat monitor would never see protocol Pings.  The JSON
+    // heartbeat triggers the browser's onMessage callback, letting the
+    // client know the connection is still alive.
     let ping_hub = state.hub.clone();
     let ping_user_id = user_id;
     let ping_task = tokio::spawn(async move {
@@ -136,7 +141,11 @@ pub async fn handle_socket(
         interval.tick().await;
         loop {
             interval.tick().await;
-            if !ping_hub.send_to(&ping_user_id, WsMessage::Ping(vec![].into())) {
+            // Protocol-level Ping (proxy keepalive; invisible to browsers).
+            ping_hub.send_to(&ping_user_id, WsMessage::Ping(vec![].into()));
+            // Application-level heartbeat (visible to all clients).
+            let hb = r#"{"type":"heartbeat"}"#.to_string();
+            if !ping_hub.send_to(&ping_user_id, WsMessage::Text(hb.into())) {
                 break;
             }
         }
@@ -638,7 +647,7 @@ async fn fanout_message(
         .await
         .unwrap_or_default();
 
-    let mut delivered_ids = Vec::new();
+    let mut any_delivered = false;
     for member_id in &member_ids {
         if *member_id == sender_id {
             continue;
@@ -650,11 +659,11 @@ async fn fanout_message(
             .hub
             .send_to(member_id, WsMessage::Text(json.clone().into()))
         {
-            delivered_ids.push(stored_id);
+            any_delivered = true;
         }
     }
 
-    if !delivered_ids.is_empty() {
+    if any_delivered {
         let _ = db::messages::mark_delivered(&state.pool, &[stored_id]).await;
 
         // Send delivery confirmation back to the sender

@@ -323,19 +323,22 @@ pub async fn set_mute_status(
 // ---------------------------------------------------------------------------
 
 /// Pin a message. Sets pinned_by_id and pinned_at on the message row.
-/// Returns the conversation_id if the pin was successful, None if message not found.
+/// Returns the conversation_id if the pin was successful, None if message not
+/// found or does not belong to the given conversation.
 pub async fn pin_message(
     pool: &PgPool,
     message_id: Uuid,
     user_id: Uuid,
+    conversation_id: Uuid,
 ) -> Result<Option<Uuid>, sqlx::Error> {
     let row: Option<(Uuid,)> = sqlx::query_as(
         "UPDATE messages SET pinned_by_id = $2, pinned_at = now() \
-         WHERE id = $1 AND deleted_at IS NULL \
+         WHERE id = $1 AND conversation_id = $3 AND deleted_at IS NULL \
          RETURNING conversation_id",
     )
     .bind(message_id)
     .bind(user_id)
+    .bind(conversation_id)
     .fetch_optional(pool)
     .await?;
     Ok(row.map(|(conv_id,)| conv_id))

@@ -489,23 +489,17 @@ pub async fn pin_message(
         }
     }
 
-    // Pin the message
-    let conv_id = db::messages::pin_message(&state.pool, message_id, auth.user_id)
-        .await
-        .map_err(|e| {
-            tracing::error!("DB error in pin_message: {e:?}");
-            AppError::internal("Database error")
-        })?
-        .ok_or_else(|| AppError::bad_request("Message not found"))?;
-
-    // Verify the message belongs to this conversation
-    if conv_id != conversation_id {
-        // Undo the pin -- message is in a different conversation
-        let _ = db::messages::unpin_message(&state.pool, message_id).await;
-        return Err(AppError::bad_request(
-            "Message does not belong to this conversation",
-        ));
-    }
+    // Pin the message (atomically verified against the correct conversation)
+    let _conv_id =
+        db::messages::pin_message(&state.pool, message_id, auth.user_id, conversation_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error in pin_message: {e:?}");
+                AppError::internal("Database error")
+            })?
+            .ok_or_else(|| {
+                AppError::bad_request("Message not found or does not belong to this conversation")
+            })?;
 
     // Look up pinner's username for the broadcast event
     let pinner = db::users::find_by_id(&state.pool, auth.user_id)

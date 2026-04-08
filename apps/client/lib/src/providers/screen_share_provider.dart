@@ -102,6 +102,16 @@ class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
     }
   }
 
+  /// Mark screen sharing as active/inactive without acquiring a stream.
+  ///
+  /// Used when LiveKit SDK manages the capture internally via
+  /// [LocalParticipant.setScreenShareEnabled].
+  void setLiveKitScreenShareActive(bool active) {
+    if (mounted) {
+      state = state.copyWith(isScreenSharing: active, error: null);
+    }
+  }
+
   /// Map common exceptions to user-readable messages.
   static String _friendlyError(Object error) {
     final msg = error.toString().toLowerCase();

@@ -240,7 +240,7 @@ class _ParticipantGrid extends StatelessWidget {
           )
           .firstOrNull;
 
-      // Audio levels are keyed by identity (UUID), not display name.
+      // Audio levels are keyed by identity (now username, not UUID).
       final identity = participant.identity.isNotEmpty
           ? participant.identity
           : participant.sid.toString();
@@ -577,7 +577,9 @@ class _RemoteScreenShares extends StatelessWidget {
         if (pub.track != null &&
             pub.track is lk.VideoTrack &&
             pub.source == lk.TrackSource.screenShareVideo) {
-          final identity = participant.identity.isNotEmpty
+          final screenShareName = participant.name.isNotEmpty
+              ? participant.name
+              : participant.identity.isNotEmpty
               ? participant.identity
               : participant.sid.toString();
           tiles.add(
@@ -624,7 +626,7 @@ class _RemoteScreenShares extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            '$identity\'s screen',
+                            '$screenShareName\'s screen',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 11,
@@ -739,10 +741,12 @@ class _ControlBar extends ConsumerWidget {
                 final ssNotifier = ref.read(screenShareProvider.notifier);
                 if (screenShare.isScreenSharing) {
                   await lkNotifier.setScreenShareEnabled(false);
-                  await ssNotifier.stopScreenShare();
+                  ssNotifier.setLiveKitScreenShareActive(false);
                 } else {
                   final ok = await lkNotifier.setScreenShareEnabled(true);
-                  if (!ok && context.mounted) {
+                  if (ok) {
+                    ssNotifier.setLiveKitScreenShareActive(true);
+                  } else if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Could not start screen sharing.'),
@@ -767,7 +771,9 @@ class _ControlBar extends ConsumerWidget {
                 await ref
                     .read(livekitVoiceProvider.notifier)
                     .setScreenShareEnabled(false);
-                await ref.read(screenShareProvider.notifier).stopScreenShare();
+                ref
+                    .read(screenShareProvider.notifier)
+                    .setLiveKitScreenShareActive(false);
               }
               await ref
                   .read(channelsProvider.notifier)
