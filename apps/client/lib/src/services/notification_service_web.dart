@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:js_interop';
 
 import 'package:web/web.dart' as web;
@@ -7,8 +8,6 @@ import 'notification_service.dart';
 /// Web implementation using the browser Notifications API.
 ///
 /// Uses a singleton so that permission state is retained across calls.
-/// Previous code created a new instance each time via the factory constructor,
-/// losing the `_permissionGranted` flag set by `requestPermission()`.
 NotificationService createNotificationService() =>
     _WebNotificationService._instance;
 
@@ -17,6 +16,12 @@ class _WebNotificationService implements NotificationService {
   _WebNotificationService._();
 
   bool _permissionGranted = false;
+
+  /// Stream controller for notification tap events (conversation IDs).
+  final _tapController = StreamController<String>.broadcast();
+
+  @override
+  Stream<String> get onNotificationTap => _tapController.stream;
 
   @override
   Future<void> requestPermission() async {
@@ -42,6 +47,8 @@ class _WebNotificationService implements NotificationService {
   void showMessageNotification({
     required String senderUsername,
     required String body,
+    String? conversationId,
+    bool isGroup = false,
     bool forceShow = false,
   }) {
     if (!_permissionGranted) return;
@@ -49,11 +56,33 @@ class _WebNotificationService implements NotificationService {
       // Show when the document is not visible (user tabbed away),
       // or when forceShow is true (e.g. test notification button).
       if (web.document.hidden || forceShow) {
-        web.Notification(senderUsername, web.NotificationOptions(body: body));
+        final notification = web.Notification(
+          senderUsername,
+          web.NotificationOptions(body: body),
+        );
+        // Navigate to the conversation when the user clicks the notification.
+        if (conversationId != null && conversationId.isNotEmpty) {
+          notification.onclick = (web.Event e) {
+            web.window.focus();
+            _tapController.add(conversationId);
+          }.toJS;
+        }
       }
     } catch (_) {
       // Best-effort -- silently ignore errors
     }
+  }
+
+  @override
+  void cancelConversationNotifications(String conversationId) {
+    // Browser Notifications API does not support cancelling by ID.
+    // We could track Notification objects in a map, but the value is low
+    // on web since notifications auto-dismiss.
+  }
+
+  @override
+  void cancelAll() {
+    // Not supported by browser Notifications API.
   }
 
   @override
@@ -67,6 +96,11 @@ class _WebNotificationService implements NotificationService {
     } catch (_) {
       // Best-effort -- silently ignore errors
     }
+  }
+
+  @override
+  void refreshPreferences() {
+    // Web notifications don't cache SharedPreferences -- no-op.
   }
 
   @override

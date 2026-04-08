@@ -46,6 +46,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _showMembers = false;
   Timer? _pendingRefreshTimer;
   late final LiveKitVoiceNotifier _voiceRtcNotifier;
+  StreamSubscription<String>? _notificationTapSub;
 
   // For narrow screen navigation
   int _narrowPanelIndex = 0; // 0 = conv list, 1 = chat
@@ -72,6 +73,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initData();
     });
+    // Navigate to conversation when user taps a notification
+    _notificationTapSub = NotificationService().onNotificationTap.listen(
+      _onNotificationTap,
+    );
     // Web: leave voice call on tab close
     registerBeforeUnload(() {
       _voiceRtcNotifier.leaveChannel();
@@ -80,6 +85,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   void dispose() {
+    _notificationTapSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     unregisterBeforeUnload();
     _pendingRefreshTimer?.cancel();
@@ -195,6 +201,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _narrowPanelIndex = 1;
       _showSettings = false;
     });
+    // Clear notifications for this conversation now that the user is viewing it.
+    NotificationService().cancelConversationNotifications(conv.id);
+  }
+
+  /// Called when the user taps a notification — find the conversation and select it.
+  void _onNotificationTap(String conversationId) {
+    if (!mounted || conversationId.isEmpty) return;
+    final conversations = ref.read(conversationsProvider).conversations;
+    final conv = conversations.where((c) => c.id == conversationId).firstOrNull;
+    if (conv != null) {
+      _selectConversation(conv);
+    }
   }
 
   bool get _isDesktop => MediaQuery.of(context).size.width >= 900;

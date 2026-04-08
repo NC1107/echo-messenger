@@ -1,13 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'debug_log_service.dart';
 import 'notification_service.dart';
 
 /// Native (non-web) implementation using flutter_local_notifications.
 ///
-/// Uses a singleton so that the [_appFocused] flag and init state are shared
-/// across all callers (mirrors the web implementation pattern).
+/// Features:
+/// - Separate Android channels for DMs and groups
+/// - Conversation-based notification IDs (replace instead of stack)
+/// - Tap-to-open-conversation via payload stream
+/// - Focus-aware suppression (no notifications when app is in foreground)
 NotificationService createNotificationService() =>
     _NativeNotificationService._instance;
 
@@ -18,16 +24,44 @@ class _NativeNotificationService implements NotificationService {
 
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
-  static int _notificationId = 0;
   static bool _appFocused = true;
+  static int _fallbackId = 100000;
 
-  static const _channel = AndroidNotificationDetails(
-    'echo_messages',
-    'Messages',
-    channelDescription: 'Incoming message notifications',
+  // Cached notification preferences (loaded from SharedPreferences).
+  static bool _notificationsEnabled = true;
+  static bool _dmEnabled = true;
+  static bool _groupEnabled = true;
+
+  /// Stream controller for notification tap events (conversation IDs).
+  static final _tapController = StreamController<String>.broadcast();
+
+  // ---------------------------------------------------------------------------
+  // Android notification channels
+  // ---------------------------------------------------------------------------
+
+  static const _dmChannel = AndroidNotificationDetails(
+    'echo_dm',
+    'Direct Messages',
+    channelDescription: 'Notifications for direct messages',
     importance: Importance.high,
     priority: Priority.high,
+    groupKey: 'echo_dm_group',
   );
+
+  static const _groupChannel = AndroidNotificationDetails(
+    'echo_group',
+    'Group Messages',
+    channelDescription: 'Notifications for group messages',
+    importance: Importance.defaultImportance,
+    priority: Priority.defaultPriority,
+    groupKey: 'echo_group_group',
+  );
+
+  static const _linuxDetails = LinuxNotificationDetails();
+
+  // ---------------------------------------------------------------------------
+  // Initialization
+  // ---------------------------------------------------------------------------
 
   Future<void> _ensureInitialized() async {
     if (_initialized) return;
@@ -38,7 +72,10 @@ class _NativeNotificationService implements NotificationService {
         android: android,
         linux: linux,
       );
-      await _plugin.initialize(initSettings);
+      await _plugin.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: _onNotificationTap,
+      );
       _initialized = true;
     } catch (e) {
       debugPrint('[Notifications] init failed: $e');
@@ -51,10 +88,26 @@ class _NativeNotificationService implements NotificationService {
     }
   }
 
+  /// Called when the user taps a notification.
+  static void _onNotificationTap(NotificationResponse response) {
+    final conversationId = response.payload;
+    if (conversationId != null && conversationId.isNotEmpty) {
+      _tapController.add(conversationId);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // NotificationService interface
+  // ---------------------------------------------------------------------------
+
+  @override
+  Stream<String> get onNotificationTap => _tapController.stream;
+
   @override
   Future<void> requestPermission() async {
     if (kIsWeb) return;
     await _ensureInitialized();
+    await _loadPreferences();
     // Android 13+ runtime permission
     try {
       await _plugin
@@ -67,27 +120,64 @@ class _NativeNotificationService implements NotificationService {
     }
   }
 
+  /// Load user notification preferences from SharedPreferences.
+  /// Called at startup and can be called again when settings change.
+  static Future<void> _loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    _notificationsEnabled = prefs.getBool('notifications_enabled') ?? true;
+    _dmEnabled = prefs.getBool('dm_notifications_enabled') ?? true;
+    _groupEnabled = prefs.getBool('group_notifications_enabled') ?? true;
+  }
+
+  @override
+  void refreshPreferences() {
+    _loadPreferences();
+  }
+
   @override
   void showMessageNotification({
     required String senderUsername,
     required String body,
+    String? conversationId,
+    bool isGroup = false,
     bool forceShow = false,
   }) {
     // Suppress when the app is focused (matches web behaviour).
     if (_appFocused && !forceShow) return;
 
+    // Respect user notification preferences.
+    if (!forceShow) {
+      if (!_notificationsEnabled) return;
+      if (isGroup && !_groupEnabled) return;
+      if (!isGroup && !_dmEnabled) return;
+    }
+
     _ensureInitialized().then((_) {
       if (!_initialized) return;
+
+      final notificationId = _idForConversation(conversationId);
+      final androidDetails = isGroup ? _groupChannel : _dmChannel;
+
       _plugin.show(
-        _notificationId++,
+        notificationId,
         senderUsername,
         body,
-        const NotificationDetails(
-          android: _channel,
-          linux: LinuxNotificationDetails(),
-        ),
+        NotificationDetails(android: androidDetails, linux: _linuxDetails),
+        payload: conversationId,
       );
     });
+  }
+
+  @override
+  void cancelConversationNotifications(String conversationId) {
+    if (!_initialized) return;
+    _plugin.cancel(_idForConversation(conversationId));
+  }
+
+  @override
+  void cancelAll() {
+    if (!_initialized) return;
+    _plugin.cancelAll();
   }
 
   @override
@@ -98,5 +188,20 @@ class _NativeNotificationService implements NotificationService {
   @override
   void setAppFocused(bool focused) {
     _appFocused = focused;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  /// Deterministic notification ID from conversation ID.
+  ///
+  /// Messages in the same conversation reuse the same notification ID so
+  /// new messages replace the existing notification instead of stacking.
+  static int _idForConversation(String? conversationId) {
+    if (conversationId == null || conversationId.isEmpty) {
+      return _fallbackId++;
+    }
+    return conversationId.hashCode & 0x7FFFFFFF;
   }
 }
