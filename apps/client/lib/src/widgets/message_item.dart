@@ -71,6 +71,8 @@ class MessageItem extends StatefulWidget {
 
 class _MessageItemState extends State<MessageItem> {
   bool _isHovered = false;
+  double _swipeDx = 0;
+  bool _swipeTriggered = false;
 
   /// Consistent color for a username -- matches sidebar avatar colors.
   Color _getUserColor(String userId) {
@@ -733,6 +735,47 @@ class _MessageItemState extends State<MessageItem> {
     );
 
     final isAlignedEnd = isMine && !widget.compactLayout;
+    final canSwipeToReply = widget.onReply != null && !msg.isSystemEvent;
+
+    final messageWidget = Container(
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: widget.showHeader ? 8 : 2,
+        bottom: hasReactions ? 4 : 2,
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Column(
+            crossAxisAlignment: isAlignedEnd
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: isAlignedEnd
+                    ? MainAxisAlignment.end
+                    : MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: _buildMessageRowChildren(
+                  msg: msg,
+                  isMine: isMine,
+                  bubbleWithReactions: bubbleWithReactions,
+                ),
+              ),
+              if (widget.isLastInGroup)
+                _buildTimestampRow(msg: msg, isMine: isMine),
+            ],
+          ),
+          if (!hasReactions)
+            _buildHoverOverlay(
+              msg: msg,
+              isMine: isMine,
+              mediaUrl: mediaUrl,
+            ),
+        ],
+      ),
+    );
 
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 300),
@@ -747,44 +790,71 @@ class _MessageItemState extends State<MessageItem> {
                 ? (details) =>
                       widget.onReactionTap?.call(msg, details.globalPosition)
                 : null,
-            child: Container(
-              padding: EdgeInsets.only(
-                left: 24,
-                right: 24,
-                top: widget.showHeader ? 8 : 2,
-                bottom: hasReactions ? 4 : 2,
-              ),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Column(
-                    crossAxisAlignment: isAlignedEnd
-                        ? CrossAxisAlignment.end
-                        : CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: isAlignedEnd
-                            ? MainAxisAlignment.end
-                            : MainAxisAlignment.start,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: _buildMessageRowChildren(
-                          msg: msg,
-                          isMine: isMine,
-                          bubbleWithReactions: bubbleWithReactions,
+            onHorizontalDragUpdate: canSwipeToReply
+                ? (details) {
+                    // Only allow rightward swipe (positive dx)
+                    final newDx = (_swipeDx + details.delta.dx).clamp(
+                      0.0,
+                      72.0,
+                    );
+                    setState(() => _swipeDx = newDx);
+                    if (!_swipeTriggered && newDx >= 60) {
+                      _swipeTriggered = true;
+                      HapticFeedback.lightImpact();
+                    }
+                  }
+                : null,
+            onHorizontalDragEnd: canSwipeToReply
+                ? (_) {
+                    if (_swipeTriggered) {
+                      widget.onReply?.call(msg);
+                    }
+                    setState(() {
+                      _swipeDx = 0;
+                      _swipeTriggered = false;
+                    });
+                  }
+                : null,
+            onHorizontalDragCancel: canSwipeToReply
+                ? () => setState(() {
+                    _swipeDx = 0;
+                    _swipeTriggered = false;
+                  })
+                : null,
+            child: Stack(
+              children: [
+                // Reply icon revealed during swipe
+                if (canSwipeToReply && _swipeDx > 0)
+                  Positioned(
+                    left: 8,
+                    top: 0,
+                    bottom: 0,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Opacity(
+                        opacity: (_swipeDx / 60).clamp(0.0, 1.0),
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: context.accent.withValues(alpha: 0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.reply_rounded,
+                            size: 16,
+                            color: context.accent,
+                          ),
                         ),
                       ),
-                      if (widget.isLastInGroup)
-                        _buildTimestampRow(msg: msg, isMine: isMine),
-                    ],
-                  ),
-                  if (!hasReactions)
-                    _buildHoverOverlay(
-                      msg: msg,
-                      isMine: isMine,
-                      mediaUrl: mediaUrl,
                     ),
-                ],
-              ),
+                  ),
+                // Message content, shifted right during swipe
+                Transform.translate(
+                  offset: Offset(_swipeDx, 0),
+                  child: messageWidget,
+                ),
+              ],
             ),
           ),
         ),
