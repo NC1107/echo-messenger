@@ -62,6 +62,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   // Collapsible sidebar state
   bool _sidebarCollapsed = false;
+  double _sidebarWidth = 320;
+  static const _sidebarMinWidth = 200.0;
+  static const _sidebarMaxWidth = 500.0;
+  static const _sidebarCollapsedWidth = 60.0;
+  static const _sidebarDefaultWidth = 320.0;
 
   // Search focus node for Ctrl+K shortcut
   final _searchFocusNode = FocusNode();
@@ -389,7 +394,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final conversations = conversationsState.conversations;
 
     return Container(
-      width: 60,
+      width: _sidebarCollapsedWidth,
       color: context.sidebarBg,
       child: Column(
         children: [
@@ -591,6 +596,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           type: ToastType.error,
         );
       }
+      if (next.keysWereRegenerated && !(prev?.keysWereRegenerated ?? false)) {
+        ToastService.show(
+          context,
+          'Your encryption keys were regenerated. '
+          'Previous encrypted messages may not be readable.',
+          type: ToastType.error,
+        );
+      }
     });
 
     ref.listen<LiveKitVoiceState>(voiceRtcProvider, (prev, next) {
@@ -625,7 +638,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   /// Desktop layout: sidebar + flex chat + optional 280px members panel
   Widget _buildDesktopLayout() {
-    const sidebarWidth = 320.0;
+    final sidebarWidth = _sidebarWidth;
 
     final voiceRtc = ref.watch(voiceRtcProvider);
     final voiceActive = voiceRtc.isActive && voiceRtc.channelId != null;
@@ -671,7 +684,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       rightPanel = _buildEmptyState();
     }
 
-    final animatedSidebarWidth = _sidebarCollapsed ? 60.0 : sidebarWidth;
+    final animatedSidebarWidth = _sidebarCollapsed
+        ? _sidebarCollapsedWidth
+        : sidebarWidth;
     final showVoiceDock = voiceActive;
 
     return Scaffold(
@@ -696,8 +711,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                               setState(() => _sidebarCollapsed = true),
                         ),
                 ),
-              // Thin vertical divider
-              Container(width: 1, color: context.border),
+              // Draggable resize handle
+              MouseRegion(
+                cursor: SystemMouseCursors.resizeColumn,
+                child: GestureDetector(
+                  onHorizontalDragUpdate: (details) {
+                    if (_sidebarCollapsed) return;
+                    setState(() {
+                      _sidebarWidth = (_sidebarWidth + details.delta.dx).clamp(
+                        _sidebarMinWidth,
+                        _sidebarMaxWidth,
+                      );
+                    });
+                  },
+                  onHorizontalDragEnd: (details) {
+                    // Snap to collapsed if dragged below threshold
+                    if (_sidebarWidth < 150) {
+                      setState(() => _sidebarCollapsed = true);
+                    }
+                  },
+                  onDoubleTap: () {
+                    setState(() {
+                      if (_sidebarCollapsed) {
+                        _sidebarCollapsed = false;
+                        _sidebarWidth = _sidebarDefaultWidth;
+                      } else {
+                        _sidebarCollapsed = true;
+                      }
+                    });
+                  },
+                  child: Container(width: 4, color: context.border),
+                ),
+              ),
               // Center: content area (flex) + optional update banner
               Expanded(
                 child: Column(

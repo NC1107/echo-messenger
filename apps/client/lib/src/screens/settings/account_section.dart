@@ -27,6 +27,8 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
   final _pronounsController = TextEditingController();
   final _timezoneController = TextEditingController();
   final _websiteController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   bool _profileLoaded = false;
   bool _saving = false;
 
@@ -51,6 +53,8 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     _newPasswordController.dispose();
     _timezoneController.dispose();
     _websiteController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
@@ -79,6 +83,8 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           _pronounsController.text = data['pronouns'] as String? ?? '';
           _timezoneController.text = data['timezone'] as String? ?? '';
           _websiteController.text = data['website'] as String? ?? '';
+          _emailController.text = data['email'] as String? ?? '';
+          _phoneController.text = data['phone'] as String? ?? '';
           _profileLoaded = true;
           _profileError = false;
         });
@@ -104,6 +110,8 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
         'pronouns': _pronounsController.text,
         'timezone': _timezoneController.text,
         'website': _websiteController.text,
+        'email': _emailController.text,
+        'phone': _phoneController.text,
       };
 
       final resp = await ref
@@ -581,12 +589,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
             maxLength: 50,
           ),
           const SizedBox(height: 12),
-          _profileField(
-            controller: _pronounsController,
-            label: 'Pronouns',
-            hint: 'e.g. he/him, she/her, they/them',
-            maxLength: 30,
-          ),
+          _buildPronounsField(),
           const SizedBox(height: 12),
           _profileField(
             controller: _statusController,
@@ -603,18 +606,27 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
             maxLines: 3,
           ),
           const SizedBox(height: 12),
-          _profileField(
-            controller: _timezoneController,
-            label: 'Timezone',
-            hint: 'e.g. America/New_York',
-            maxLength: 50,
-          ),
+          _buildTimezoneDropdown(),
           const SizedBox(height: 12),
           _profileField(
             controller: _websiteController,
             label: 'Website',
             hint: 'https://example.com',
             maxLength: 200,
+          ),
+          const SizedBox(height: 12),
+          _profileField(
+            controller: _emailController,
+            label: 'Email',
+            hint: 'you@example.com',
+            maxLength: 254,
+          ),
+          const SizedBox(height: 12),
+          _profileField(
+            controller: _phoneController,
+            label: 'Phone',
+            hint: '+1 555 123 4567',
+            maxLength: 30,
           ),
           const SizedBox(height: 20),
           SizedBox(
@@ -675,6 +687,156 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           ),
         ),
       ],
+    );
+  }
+
+  // Common pronoun options
+  static const _pronounOptions = [
+    'he/him',
+    'she/her',
+    'they/them',
+    'he/they',
+    'she/they',
+    'any pronouns',
+  ];
+
+  bool get _isCustomPronoun =>
+      _pronounsController.text.isNotEmpty &&
+      !_pronounOptions.contains(_pronounsController.text);
+
+  Widget _buildPronounsField() {
+    final currentValue = _pronounsController.text;
+    final isOther = _isCustomPronoun;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<String>(
+          initialValue: isOther
+              ? 'other'
+              : currentValue.isEmpty
+              ? null
+              : currentValue,
+          decoration: InputDecoration(
+            labelText: 'Pronouns',
+            labelStyle: TextStyle(color: context.textSecondary),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: context.border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: context.accent),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+          ),
+          dropdownColor: context.surface,
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+          items: [
+            ..._pronounOptions.map(
+              (p) => DropdownMenuItem(value: p, child: Text(p)),
+            ),
+            const DropdownMenuItem(value: 'other', child: Text('Other...')),
+          ],
+          onChanged: (value) {
+            setState(() {
+              if (value == 'other') {
+                _pronounsController.text = '';
+              } else {
+                _pronounsController.text = value ?? '';
+              }
+            });
+          },
+        ),
+        if (isOther || currentValue.isEmpty && _pronounsController.text == '')
+          if (isOther) ...[
+            const SizedBox(height: 8),
+            _profileField(
+              controller: _pronounsController,
+              label: 'Custom pronouns',
+              hint: 'Enter your pronouns',
+              maxLength: 30,
+            ),
+          ],
+      ],
+    );
+  }
+
+  // Common IANA timezones
+  static const _timezones = [
+    'America/New_York',
+    'America/Chicago',
+    'America/Denver',
+    'America/Los_Angeles',
+    'America/Anchorage',
+    'Pacific/Honolulu',
+    'America/Toronto',
+    'America/Vancouver',
+    'America/Mexico_City',
+    'America/Sao_Paulo',
+    'America/Argentina/Buenos_Aires',
+    'Europe/London',
+    'Europe/Paris',
+    'Europe/Berlin',
+    'Europe/Madrid',
+    'Europe/Rome',
+    'Europe/Amsterdam',
+    'Europe/Stockholm',
+    'Europe/Moscow',
+    'Europe/Istanbul',
+    'Africa/Cairo',
+    'Africa/Lagos',
+    'Africa/Johannesburg',
+    'Asia/Dubai',
+    'Asia/Kolkata',
+    'Asia/Bangkok',
+    'Asia/Shanghai',
+    'Asia/Tokyo',
+    'Asia/Seoul',
+    'Asia/Singapore',
+    'Australia/Sydney',
+    'Australia/Melbourne',
+    'Australia/Perth',
+    'Pacific/Auckland',
+  ];
+
+  Widget _buildTimezoneDropdown() {
+    final current = _timezoneController.text;
+    final isInList = _timezones.contains(current);
+
+    return DropdownButtonFormField<String>(
+      initialValue: isInList ? current : null,
+      decoration: InputDecoration(
+        labelText: 'Timezone',
+        hintText: current.isNotEmpty && !isInList ? current : 'Select timezone',
+        hintStyle: TextStyle(color: context.textMuted),
+        labelStyle: TextStyle(color: context.textSecondary),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: context.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: context.accent),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+      ),
+      dropdownColor: context.surface,
+      style: TextStyle(color: context.textPrimary, fontSize: 14),
+      isExpanded: true,
+      menuMaxHeight: 300,
+      items: _timezones
+          .map((tz) => DropdownMenuItem(value: tz, child: Text(tz)))
+          .toList(),
+      onChanged: (value) {
+        setState(() => _timezoneController.text = value ?? '');
+      },
     );
   }
 

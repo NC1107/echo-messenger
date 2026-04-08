@@ -2,7 +2,7 @@
 
 use axum::Json;
 use axum::body::Body;
-use axum::extract::{Multipart, Path, State};
+use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
@@ -31,6 +31,8 @@ pub struct UserProfile {
     pub timezone: Option<String>,
     pub pronouns: Option<String>,
     pub website: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -42,18 +44,28 @@ pub struct UpdateProfileRequest {
     pub timezone: Option<String>,
     pub pronouns: Option<String>,
     pub website: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct PrivacyPreferencesResponse {
     pub read_receipts_enabled: bool,
     pub allow_unencrypted_dm: bool,
+    pub email_visible: bool,
+    pub phone_visible: bool,
+    pub email_discoverable: bool,
+    pub phone_discoverable: bool,
 }
 
 #[derive(Deserialize)]
 pub struct UpdatePrivacyPreferencesRequest {
     pub read_receipts_enabled: Option<bool>,
     pub allow_unencrypted_dm: Option<bool>,
+    pub email_visible: Option<bool>,
+    pub phone_visible: Option<bool>,
+    pub email_discoverable: Option<bool>,
+    pub phone_discoverable: Option<bool>,
 }
 
 /// GET /api/users/me/privacy
@@ -72,6 +84,10 @@ pub async fn get_my_privacy(
     Ok(Json(PrivacyPreferencesResponse {
         read_receipts_enabled: privacy.read_receipts_enabled,
         allow_unencrypted_dm: false,
+        email_visible: privacy.email_visible,
+        phone_visible: privacy.phone_visible,
+        email_discoverable: privacy.email_discoverable,
+        phone_discoverable: privacy.phone_discoverable,
     }))
 }
 
@@ -89,23 +105,34 @@ pub async fn update_my_privacy(
         })?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
-    let updated = db::users::update_privacy_preferences(
-        &state.pool,
-        auth.user_id,
-        payload
+    let prefs = db::users::PrivacyUpdate {
+        read_receipts_enabled: payload
             .read_receipts_enabled
             .unwrap_or(current.read_receipts_enabled),
-        false,
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!("DB error in update_my_privacy: {e:?}");
-        AppError::internal("Failed to update privacy settings")
-    })?;
+        allow_unencrypted_dm: false,
+        email_visible: payload.email_visible.unwrap_or(current.email_visible),
+        phone_visible: payload.phone_visible.unwrap_or(current.phone_visible),
+        email_discoverable: payload
+            .email_discoverable
+            .unwrap_or(current.email_discoverable),
+        phone_discoverable: payload
+            .phone_discoverable
+            .unwrap_or(current.phone_discoverable),
+    };
+    let updated = db::users::update_privacy_preferences(&state.pool, auth.user_id, &prefs)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in update_my_privacy: {e:?}");
+            AppError::internal("Failed to update privacy settings")
+        })?;
 
     Ok(Json(PrivacyPreferencesResponse {
         read_receipts_enabled: updated.read_receipts_enabled,
         allow_unencrypted_dm: false,
+        email_visible: updated.email_visible,
+        phone_visible: updated.phone_visible,
+        email_discoverable: updated.email_discoverable,
+        phone_discoverable: updated.phone_discoverable,
     }))
 }
 
@@ -135,6 +162,8 @@ pub async fn get_profile(
         timezone: profile.timezone,
         pronouns: profile.pronouns,
         website: profile.website,
+        email: profile.email,
+        phone: profile.phone,
         created_at: profile.created_at,
     }))
 }
@@ -182,6 +211,34 @@ pub async fn update_profile(
             "Website must be 200 characters or less",
         ));
     }
+    if let Some(ref email) = body.email
+        && !email.is_empty()
+        && !email.contains('@')
+    {
+        return Err(AppError::bad_request("Email must contain an @ symbol"));
+    }
+    if let Some(ref email) = body.email
+        && email.len() > 254
+    {
+        return Err(AppError::bad_request(
+            "Email must be 254 characters or less",
+        ));
+    }
+    if let Some(ref phone) = body.phone
+        && !phone.is_empty()
+        && !phone
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '+' || c == '-' || c == ' ')
+    {
+        return Err(AppError::bad_request(
+            "Phone must contain only digits, +, -, or spaces",
+        ));
+    }
+    if let Some(ref phone) = body.phone
+        && phone.len() > 30
+    {
+        return Err(AppError::bad_request("Phone must be 30 characters or less"));
+    }
 
     let fields = db::users::ProfileUpdate {
         display_name: body.display_name.as_deref(),
@@ -190,6 +247,8 @@ pub async fn update_profile(
         timezone: body.timezone.as_deref(),
         pronouns: body.pronouns.as_deref(),
         website: body.website.as_deref(),
+        email: body.email.as_deref(),
+        phone: body.phone.as_deref(),
     };
     let profile = db::users::update_profile(&state.pool, auth.user_id, &fields)
         .await
@@ -208,6 +267,8 @@ pub async fn update_profile(
         timezone: profile.timezone,
         pronouns: profile.pronouns,
         website: profile.website,
+        email: profile.email,
+        phone: profile.phone,
         created_at: profile.created_at,
     }))
 }
@@ -325,6 +386,47 @@ pub async fn online_users(
     Ok(Json(
         serde_json::json!({ "online_user_ids": online_contacts }),
     ))
+}
+
+/// GET /api/users/search?q=<query>
+///
+/// Search users by username prefix. Returns up to 10 public profile results.
+pub async fn search_users(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<UserSearchQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let query = params.q.trim();
+    if query.is_empty() || query.len() < 2 {
+        return Ok(Json(serde_json::json!({ "users": [] })));
+    }
+
+    let results = db::users::search_users(&state.pool, query, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in search_users: {e:?}");
+            AppError::internal("Database error")
+        })?;
+
+    let users: Vec<_> = results
+        .into_iter()
+        .map(|p| {
+            serde_json::json!({
+                "user_id": p.id,
+                "username": p.username,
+                "display_name": p.display_name,
+                "avatar_url": p.avatar_url,
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({ "users": users })))
+}
+
+#[derive(Deserialize)]
+pub struct UserSearchQuery {
+    #[serde(default)]
+    pub q: String,
 }
 
 /// Maximum avatar size: 2 MB.

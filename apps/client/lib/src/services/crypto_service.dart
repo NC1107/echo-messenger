@@ -64,6 +64,7 @@ class CryptoService {
   X3dhInitResult? _lastX3dhResult;
   int? _lastOtpKeyId;
   bool _keysAreFresh = false;
+  bool _keysWereRegenerated = false;
 
   final _x25519 = X25519();
   final _ed25519 = Ed25519();
@@ -76,6 +77,10 @@ class CryptoService {
 
   bool get isInitialized => _identityKeyPair != null;
   bool get keysAreFresh => _keysAreFresh;
+
+  /// True if identity keys were regenerated (not restored from storage).
+  /// This means old encrypted messages cannot be decrypted.
+  bool get keysWereRegenerated => _keysWereRegenerated;
 
   /// Migrate crypto keys from SharedPreferences to SecureKeyStore.
   ///
@@ -185,7 +190,8 @@ class CryptoService {
         // Check if signed prekey needs rotation
         await _rotateSignedPrekeyIfNeeded(store);
       } else {
-        // Generate all keys fresh
+        // Generate all keys fresh — previous encryption sessions are lost.
+        _keysWereRegenerated = true;
         _identityKeyPair = await _x25519.newKeyPair();
         _signingKeyPair = await _ed25519.newKeyPair();
         _signedPrekeyPair = await _x25519.newKeyPair();

@@ -334,6 +334,67 @@ pub async fn is_public(pool: &PgPool, group_id: Uuid) -> Result<bool, sqlx::Erro
     Ok(row.map(|(p,)| p).unwrap_or(false))
 }
 
+/// Preview row returned by [`get_group_preview`].
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub struct GroupPreviewRow {
+    pub id: Uuid,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub icon_url: Option<String>,
+    pub member_count: i64,
+    pub is_public: bool,
+    pub is_member: bool,
+}
+
+/// Get a lightweight preview of a group.
+///
+/// Returns data for **public** groups even if the caller is not a member.
+/// For private groups the caller must already be a member; otherwise `None`
+/// is returned.
+pub async fn get_group_preview(
+    pool: &PgPool,
+    group_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<GroupPreviewRow>, sqlx::Error> {
+    sqlx::query_as::<_, GroupPreviewRow>(
+        "SELECT c.id, c.title, c.description, c.icon_url, c.is_public, \
+         COUNT(cm.user_id) AS member_count, \
+         EXISTS(SELECT 1 FROM conversation_members cm2 \
+                WHERE cm2.conversation_id = c.id AND cm2.user_id = $2) AS is_member \
+         FROM conversations c \
+         LEFT JOIN conversation_members cm ON cm.conversation_id = c.id \
+         WHERE c.id = $1 AND c.kind = 'group' \
+           AND (c.is_public = true OR EXISTS( \
+                SELECT 1 FROM conversation_members cm3 \
+                WHERE cm3.conversation_id = c.id AND cm3.user_id = $2)) \
+         GROUP BY c.id",
+    )
+    .bind(group_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Get up to `limit` member avatars/usernames for a group (for preview strips).
+pub async fn get_group_member_previews(
+    pool: &PgPool,
+    group_id: Uuid,
+    limit: i64,
+) -> Result<Vec<GroupMember>, sqlx::Error> {
+    sqlx::query_as::<_, GroupMember>(
+        "SELECT cm.user_id, u.username, cm.joined_at, cm.role, u.avatar_url \
+         FROM conversation_members cm \
+         JOIN users u ON u.id = cm.user_id \
+         WHERE cm.conversation_id = $1 \
+         ORDER BY cm.joined_at \
+         LIMIT $2",
+    )
+    .bind(group_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn update_group_title(
     pool: &PgPool,
     group_id: Uuid,

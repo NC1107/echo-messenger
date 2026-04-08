@@ -9,22 +9,38 @@ import 'server_url_provider.dart';
 
 class PrivacyState {
   final bool readReceiptsEnabled;
+  final bool emailVisible;
+  final bool phoneVisible;
+  final bool emailDiscoverable;
+  final bool phoneDiscoverable;
   final bool isLoading;
   final String? error;
 
   const PrivacyState({
     this.readReceiptsEnabled = true,
+    this.emailVisible = false,
+    this.phoneVisible = false,
+    this.emailDiscoverable = false,
+    this.phoneDiscoverable = false,
     this.isLoading = false,
     this.error,
   });
 
   PrivacyState copyWith({
     bool? readReceiptsEnabled,
+    bool? emailVisible,
+    bool? phoneVisible,
+    bool? emailDiscoverable,
+    bool? phoneDiscoverable,
     bool? isLoading,
     String? error,
   }) {
     return PrivacyState(
       readReceiptsEnabled: readReceiptsEnabled ?? this.readReceiptsEnabled,
+      emailVisible: emailVisible ?? this.emailVisible,
+      phoneVisible: phoneVisible ?? this.phoneVisible,
+      emailDiscoverable: emailDiscoverable ?? this.emailDiscoverable,
+      phoneDiscoverable: phoneDiscoverable ?? this.phoneDiscoverable,
       isLoading: isLoading ?? this.isLoading,
       error: error,
     );
@@ -68,6 +84,10 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         state = state.copyWith(
           readReceiptsEnabled: data['read_receipts_enabled'] as bool? ?? true,
+          emailVisible: data['email_visible'] as bool? ?? false,
+          phoneVisible: data['phone_visible'] as bool? ?? false,
+          emailDiscoverable: data['email_discoverable'] as bool? ?? false,
+          phoneDiscoverable: data['phone_discoverable'] as bool? ?? false,
           isLoading: false,
           error: null,
         );
@@ -83,10 +103,20 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
     }
   }
 
-  Future<void> _patch({bool? readReceiptsEnabled}) async {
+  Future<void> _patch({
+    bool? readReceiptsEnabled,
+    bool? emailVisible,
+    bool? phoneVisible,
+    bool? emailDiscoverable,
+    bool? phoneDiscoverable,
+  }) async {
     final prev = state;
     state = state.copyWith(
       readReceiptsEnabled: readReceiptsEnabled ?? state.readReceiptsEnabled,
+      emailVisible: emailVisible ?? state.emailVisible,
+      phoneVisible: phoneVisible ?? state.phoneVisible,
+      emailDiscoverable: emailDiscoverable ?? state.emailDiscoverable,
+      phoneDiscoverable: phoneDiscoverable ?? state.phoneDiscoverable,
       isLoading: true,
       error: null,
     );
@@ -100,6 +130,16 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
             // ignore: use_null_aware_elements
             if (readReceiptsEnabled != null)
               'read_receipts_enabled': readReceiptsEnabled,
+            // ignore: use_null_aware_elements
+            if (emailVisible != null) 'email_visible': emailVisible,
+            // ignore: use_null_aware_elements
+            if (phoneVisible != null) 'phone_visible': phoneVisible,
+            // ignore: use_null_aware_elements
+            if (emailDiscoverable != null)
+              'email_discoverable': emailDiscoverable,
+            // ignore: use_null_aware_elements
+            if (phoneDiscoverable != null)
+              'phone_discoverable': phoneDiscoverable,
           }),
         ),
       );
@@ -108,6 +148,10 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         state = state.copyWith(
           readReceiptsEnabled: data['read_receipts_enabled'] as bool? ?? true,
+          emailVisible: data['email_visible'] as bool? ?? false,
+          phoneVisible: data['phone_visible'] as bool? ?? false,
+          emailDiscoverable: data['email_discoverable'] as bool? ?? false,
+          phoneDiscoverable: data['phone_discoverable'] as bool? ?? false,
           isLoading: false,
           error: null,
         );
@@ -125,6 +169,22 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
 
   Future<void> setReadReceiptsEnabled(bool value) async {
     await _patch(readReceiptsEnabled: value);
+  }
+
+  Future<void> setEmailVisible(bool value) async {
+    await _patch(emailVisible: value);
+  }
+
+  Future<void> setPhoneVisible(bool value) async {
+    await _patch(phoneVisible: value);
+  }
+
+  Future<void> setEmailDiscoverable(bool value) async {
+    await _patch(emailDiscoverable: value);
+  }
+
+  Future<void> setPhoneDiscoverable(bool value) async {
+    await _patch(phoneDiscoverable: value);
   }
 }
 

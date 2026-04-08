@@ -31,12 +31,14 @@ class CryptoState {
   final bool isInitialized;
   final bool isUploading;
   final bool keysUploadFailed;
+  final bool keysWereRegenerated;
   final String? error;
 
   const CryptoState({
     this.isInitialized = false,
     this.isUploading = false,
     this.keysUploadFailed = false,
+    this.keysWereRegenerated = false,
     this.error,
   });
 
@@ -44,12 +46,14 @@ class CryptoState {
     bool? isInitialized,
     bool? isUploading,
     bool? keysUploadFailed,
+    bool? keysWereRegenerated,
     String? error,
   }) {
     return CryptoState(
       isInitialized: isInitialized ?? this.isInitialized,
       isUploading: isUploading ?? this.isUploading,
       keysUploadFailed: keysUploadFailed ?? this.keysUploadFailed,
+      keysWereRegenerated: keysWereRegenerated ?? this.keysWereRegenerated,
       error: error,
     );
   }
@@ -107,15 +111,26 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
           return;
         }
       }
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'Crypto',
-        'Initialized successfully',
-      );
+      final regenerated = crypto.keysWereRegenerated;
+      if (regenerated) {
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'Crypto',
+          'Encryption keys were regenerated. Previous encrypted messages '
+              'cannot be decrypted.',
+        );
+      } else {
+        DebugLogService.instance.log(
+          LogLevel.info,
+          'Crypto',
+          'Initialized successfully',
+        );
+      }
       state = state.copyWith(
         isInitialized: true,
         isUploading: false,
         keysUploadFailed: false,
+        keysWereRegenerated: regenerated,
       );
     } on PlatformException catch (e) {
       // Linux libsecret / keyring failures -- degrade gracefully so the

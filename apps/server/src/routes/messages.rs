@@ -411,6 +411,39 @@ pub async fn search_messages(
 }
 
 // ---------------------------------------------------------------------------
+// GET /api/messages/search?q=<query>&limit=20 -- global full-text search
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct GlobalSearchQuery {
+    pub q: String,
+    #[serde(default = "default_search_limit")]
+    pub limit: i64,
+}
+
+pub async fn search_messages_global(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<GlobalSearchQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let q = params.q.trim();
+    if q.is_empty() {
+        return Err(AppError::bad_request("Search query cannot be empty"));
+    }
+
+    let limit = params.limit.clamp(1, 50);
+
+    let results = db::messages::search_messages_global(&state.pool, auth.user_id, q, limit)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in search_messages_global: {e:?}");
+            AppError::internal("Search failed")
+        })?;
+
+    Ok(Json(results))
+}
+
+// ---------------------------------------------------------------------------
 // PUT /api/conversations/:conversation_id/mute -- toggle mute
 // ---------------------------------------------------------------------------
 

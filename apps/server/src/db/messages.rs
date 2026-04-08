@@ -288,6 +288,43 @@ pub async fn search_messages(
     .await
 }
 
+#[derive(Debug, sqlx::FromRow, serde::Serialize)]
+pub struct GlobalSearchResult {
+    pub message_id: Uuid,
+    pub conversation_id: Uuid,
+    pub sender_username: String,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Search messages across ALL conversations the user is a member of.
+/// Uses the existing GIN full-text search index on `messages.content`.
+pub async fn search_messages_global(
+    pool: &PgPool,
+    user_id: Uuid,
+    query: &str,
+    limit: i64,
+) -> Result<Vec<GlobalSearchResult>, sqlx::Error> {
+    sqlx::query_as::<_, GlobalSearchResult>(
+        "SELECT m.id AS message_id, m.conversation_id, \
+                u.username AS sender_username, \
+                m.content, m.created_at \
+         FROM messages m \
+         JOIN users u ON u.id = m.sender_id \
+         JOIN conversation_members cm ON cm.conversation_id = m.conversation_id \
+              AND cm.user_id = $1 \
+         WHERE m.deleted_at IS NULL \
+           AND to_tsvector('english', m.content) @@ plainto_tsquery('english', $2) \
+         ORDER BY m.created_at DESC \
+         LIMIT $3",
+    )
+    .bind(user_id)
+    .bind(query)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn get_conversation_security(
     pool: &PgPool,
     conversation_id: Uuid,

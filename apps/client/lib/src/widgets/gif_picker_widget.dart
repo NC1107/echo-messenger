@@ -14,7 +14,16 @@ class GifPickerWidget extends StatefulWidget {
   final void Function(String gifUrl, String? slug) onGifSelected;
   final VoidCallback? onClose;
 
-  const GifPickerWidget({super.key, required this.onGifSelected, this.onClose});
+  /// When true, removes the outer fixed-height container and border so the
+  /// widget can be embedded inside a parent layout (e.g. a TabBarView).
+  final bool embedMode;
+
+  const GifPickerWidget({
+    super.key,
+    required this.onGifSelected,
+    this.onClose,
+    this.embedMode = false,
+  });
 
   @override
   State<GifPickerWidget> createState() => _GifPickerWidgetState();
@@ -123,43 +132,38 @@ class _GifPickerWidgetState extends State<GifPickerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 300,
-      decoration: BoxDecoration(
-        color: context.surface,
-        border: Border(top: BorderSide(color: context.border)),
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: _onSearchChanged,
-                    style: TextStyle(fontSize: 14, color: context.textPrimary),
-                    decoration: InputDecoration(
-                      hintText: 'Search KLIPY',
-                      hintStyle: TextStyle(color: context.textMuted),
-                      prefixIcon: Icon(
-                        Icons.search,
-                        size: 18,
-                        color: context.textMuted,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: context.border),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        vertical: 8,
-                        horizontal: 12,
-                      ),
-                      isDense: true,
+    final body = Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: _onSearchChanged,
+                  style: TextStyle(fontSize: 14, color: context.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'Search KLIPY',
+                    hintStyle: TextStyle(color: context.textMuted),
+                    prefixIcon: Icon(
+                      Icons.search,
+                      size: 18,
+                      color: context.textMuted,
                     ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide(color: context.border),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 12,
+                    ),
+                    isDense: true,
                   ),
                 ),
+              ),
+              if (!widget.embedMode) ...[
                 const SizedBox(width: 4),
                 IconButton(
                   icon: Icon(Icons.close, size: 18, color: context.textMuted),
@@ -172,11 +176,22 @@ class _GifPickerWidgetState extends State<GifPickerWidget> {
                   ),
                 ),
               ],
-            ),
+            ],
           ),
-          Expanded(child: _buildGifContent(context)),
-        ],
+        ),
+        Expanded(child: _buildGifContent(context)),
+      ],
+    );
+
+    if (widget.embedMode) return body;
+
+    return Container(
+      height: 300,
+      decoration: BoxDecoration(
+        color: context.surface,
+        border: Border(top: BorderSide(color: context.border)),
       ),
+      child: body,
     );
   }
 
