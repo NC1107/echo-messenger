@@ -216,21 +216,29 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
 
   /// Reset in-memory crypto state on logout without deleting stored keys.
   ///
-  /// Clears only the in-memory state (key pairs, sessions) and resets
-  /// [CryptoState.isInitialized] to false.  Stored identity and session keys
-  /// are intentionally preserved so that [initAndUploadKeys()] can reload them
-  /// on the next login — avoiding the key-loss bug where deletion of stored
-  /// keys caused [init()] to regenerate a new identity and make all prior
-  /// encrypted messages permanently unreadable.
+  /// Resets [CryptoState] to its initial state (including setting
+  /// [CryptoState.isInitialized] to false) and clears all in-memory key
+  /// material (key pairs, sessions).  Stored identity and session keys are
+  /// intentionally preserved so that [initAndUploadKeys()] can reload them on
+  /// the next login — avoiding the key-loss bug where deletion of stored keys
+  /// caused [init()] to regenerate a new identity and make all prior encrypted
+  /// messages permanently unreadable.
   ///
-  /// Group key caches are also cleared (they are short-lived and will be
-  /// re-fetched from the server on the next login).
+  /// The Riverpod state is reset synchronously before any async work so that
+  /// callers that do not await this future (e.g. fire-and-forget logout paths)
+  /// still see [CryptoState.isInitialized] == false immediately.
+  ///
+  /// Group key caches are cleared asynchronously (they are short-lived and
+  /// will be re-fetched from the server on the next login).
   Future<void> resetState() async {
+    // Reset synchronously first so the guard in initAndUploadKeys() sees the
+    // correct state immediately, even before the async cleanup below finishes.
     final crypto = ref.read(cryptoServiceProvider);
     crypto.clearInMemoryState();
+    state = const CryptoState();
+    // Async cleanup: remove cached group keys from secure storage.
     final groupCrypto = ref.read(groupCryptoServiceProvider);
     await groupCrypto.clearAll();
-    state = const CryptoState();
   }
 
   // -----------------------------------------------------------------------
