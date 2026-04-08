@@ -256,48 +256,30 @@ class ChatHeaderBar extends ConsumerWidget {
     bool isGroup, {
     bool isEncrypted = false,
   }) {
-    if (hideEncryptionBanner || isGroup) {
+    // Encryption banner removed — status shown via lock icon in header instead.
+    // Only show banner for unencrypted DMs as a warning.
+    if (hideEncryptionBanner || isGroup || isEncrypted) {
       return const SizedBox.shrink();
     }
 
-    final encrypted = isEncrypted;
-    final String label;
-    if (isGroup) {
-      label = 'Group messages are not encrypted';
-    } else if (isEncrypted) {
-      label = 'Messages are end-to-end encrypted';
-    } else {
-      label = 'Encryption is off -- messages are sent as plaintext';
-    }
+    const label = 'Encryption is off — messages are sent as plaintext';
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: context.surface,
-        border: Border.all(
-          color: encrypted
-              ? EchoTheme.online.withValues(alpha: 0.45)
-              : context.border,
-          width: 1,
-        ),
+        border: Border.all(color: EchoTheme.warning.withValues(alpha: 0.4)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         children: [
-          Icon(
-            encrypted ? Icons.lock_outlined : Icons.lock_open_outlined,
-            size: 14,
-            color: encrypted ? EchoTheme.online : context.textMuted,
-          ),
+          Icon(Icons.lock_open_outlined, size: 14, color: EchoTheme.warning),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               label,
-              style: TextStyle(
-                fontSize: encrypted ? 12 : 11,
-                color: encrypted ? EchoTheme.online : context.textMuted,
-              ),
+              style: TextStyle(fontSize: 11, color: EchoTheme.warning),
             ),
           ),
           GestureDetector(
@@ -324,6 +306,11 @@ class ChatHeaderBar extends ConsumerWidget {
     ref
         .read(livekitVoiceProvider.notifier)
         .joinChannel(conversationId: conv.id, channelId: conv.id);
+
+    // Add system event to chat timeline
+    ref
+        .read(chatProvider.notifier)
+        .addSystemEvent(conv.id, 'Voice call started');
   }
 
   void _openSafetyNumber(
@@ -417,6 +404,15 @@ class ChatHeaderBar extends ConsumerWidget {
       final crypto = ref.read(cryptoServiceProvider);
       crypto.setToken(ref.read(authProvider).token ?? '');
       await crypto.invalidateSessionKey(peerId);
+
+      // Add system event to chat timeline
+      ref
+          .read(chatProvider.notifier)
+          .addSystemEvent(
+            conv.id,
+            'Encryption keys reset — next message will establish new session',
+          );
+
       if (context.mounted) {
         ToastService.show(
           context,

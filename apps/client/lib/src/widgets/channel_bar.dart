@@ -249,10 +249,11 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
 
   Widget _buildVoiceChannelChip(
     GroupChannel channel,
-    int participantCount,
+    List<VoiceSessionMember> participants,
     VoiceSettingsState voiceSettings,
     String? activeVoiceChannelId,
   ) {
+    final participantCount = participants.length;
     // Check both the local activeVoiceChannelId AND the LiveKit provider
     // state — after returning from the voice lounge the local ID may be
     // cleared while the LiveKit room is still connected.
@@ -300,31 +301,36 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                   : context.border,
             ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.headset_mic_outlined,
-                size: 14,
-                color: isActive ? context.accent : context.textSecondary,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                channel.name,
-                style: TextStyle(
-                  color: isActive ? context.accent : context.textPrimary,
-                  fontSize: 12,
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+          child: Tooltip(
+            message: participants.isEmpty
+                ? 'No one in voice'
+                : participants.map((p) => p.username).join('\n'),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.volume_up_outlined,
+                  size: 14,
+                  color: isActive ? context.accent : context.textSecondary,
                 ),
-              ),
-              if (participantCount > 0) ...[
                 const SizedBox(width: 4),
                 Text(
-                  '($participantCount)',
-                  style: TextStyle(color: context.textMuted, fontSize: 11),
+                  channel.name,
+                  style: TextStyle(
+                    color: isActive ? context.accent : context.textPrimary,
+                    fontSize: 12,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                  ),
                 ),
+                if (participantCount > 0) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    '($participantCount)',
+                    style: TextStyle(color: context.textMuted, fontSize: 11),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -365,7 +371,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                   for (final channel in voiceChannels) ...[
                     _buildVoiceChannelChip(
                       channel,
-                      channelsState.voiceSessionsFor(channel.id).length,
+                      channelsState.voiceSessionsFor(channel.id),
                       voiceSettings,
                       activeVoiceChannelId,
                     ),

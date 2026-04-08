@@ -240,19 +240,19 @@ class EchoTheme {
     );
   }
 
-  // Light theme colors
-  static const lightMainBg = Color(0xFFF8F8FA);
-  static const lightSidebarBg = Color(0xFFFFFFFF);
-  static const lightChatBg = Color(0xFFF2F2F5);
-  static const lightSurface = Color(0xFFFFFFFF);
-  static const lightSurfaceHover = Color(0xFFF0F0F2);
-  static const lightTextPrimary = Color(0xFF18181B);
-  static const lightTextSecondary = Color(0xFF71717A);
-  static const lightTextMuted = Color(0xFFA1A1AA);
-  static const lightSentBubble = Color(0xFF6366F1);
-  static const lightRecvBubble = Color(0xFFE4E4E7);
-  static const lightBorder = Color(0xFFE4E4E7);
-  static const lightAccentLight = Color(0x1A6366F1);
+  // Light theme colors — tuned to avoid harsh pure white
+  static const lightMainBg = Color(0xFFF5F5F7);
+  static const lightSidebarBg = Color(0xFFF0F0F3);
+  static const lightChatBg = Color(0xFFF8F8FA);
+  static const lightSurface = Color(0xFFFAFAFC);
+  static const lightSurfaceHover = Color(0xFFEEEEF1);
+  static const lightTextPrimary = Color(0xFF1A1A1E);
+  static const lightTextSecondary = Color(0xFF5C5C66);
+  static const lightTextMuted = Color(0xFF9494A0);
+  static const lightSentBubble = Color(0xFF5B5EE6);
+  static const lightRecvBubble = Color(0xFFE8E8EC);
+  static const lightBorder = Color(0xFFDFDFE5);
+  static const lightAccentLight = Color(0x1A5B5EE6);
 
   // Graphite theme colors (high-contrast dark with teal accent)
   static const graphiteMainBg = Color(0xFF0B1114);
