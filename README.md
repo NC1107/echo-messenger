@@ -85,7 +85,7 @@ Encryption is implemented using the Signal Protocol (X3DH key exchange + Double 
 - **Tokens**: Short-lived JWT (15 min) + refresh tokens (7 days)
 
 Known limitations:
-- Private keys stored in SharedPreferences (should migrate to platform keystore)
+- ~~Private keys stored in SharedPreferences~~ Resolved: migrated to flutter_secure_storage (platform keystore)
 - Session keys cached in memory with no TTL
 - No forward secrecy for one-time prekeys (OTP private keys not yet persisted)
 

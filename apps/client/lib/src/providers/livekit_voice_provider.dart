@@ -4,12 +4,50 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:livekit_client/livekit_client.dart';
+import 'package:livekit_client/livekit_client.dart' hide VideoQuality;
 
 import '../services/debug_log_service.dart';
 import '../services/sound_service.dart';
 import 'auth_provider.dart';
 import 'server_url_provider.dart';
+import 'voice_settings_provider.dart';
+
+// ---------------------------------------------------------------------------
+// Video quality presets
+// ---------------------------------------------------------------------------
+
+enum VideoQuality {
+  low,
+  medium,
+  high,
+  hd;
+
+  String get label {
+    switch (this) {
+      case VideoQuality.low:
+        return 'Low';
+      case VideoQuality.medium:
+        return 'Medium';
+      case VideoQuality.high:
+        return 'High';
+      case VideoQuality.hd:
+        return 'HD';
+    }
+  }
+
+  VideoEncoding get encoding {
+    switch (this) {
+      case VideoQuality.low:
+        return const VideoEncoding(maxBitrate: 250000, maxFramerate: 15);
+      case VideoQuality.medium:
+        return const VideoEncoding(maxBitrate: 500000, maxFramerate: 24);
+      case VideoQuality.high:
+        return const VideoEncoding(maxBitrate: 1500000, maxFramerate: 30);
+      case VideoQuality.hd:
+        return const VideoEncoding(maxBitrate: 3000000, maxFramerate: 30);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // State
@@ -21,6 +59,7 @@ class LiveKitVoiceState {
   final bool isCaptureEnabled;
   final bool isDeafened;
   final bool isVideoEnabled;
+  final VideoQuality videoQuality;
   final String? conversationId;
   final String? channelId;
   final Map<String, double> peerAudioLevels;
@@ -41,6 +80,7 @@ class LiveKitVoiceState {
     this.isCaptureEnabled = true,
     this.isDeafened = false,
     this.isVideoEnabled = false,
+    this.videoQuality = VideoQuality.medium,
     this.conversationId,
     this.channelId,
     this.peerAudioLevels = const {},
@@ -57,6 +97,7 @@ class LiveKitVoiceState {
     bool? isCaptureEnabled,
     bool? isDeafened,
     bool? isVideoEnabled,
+    VideoQuality? videoQuality,
     String? conversationId,
     String? channelId,
     Map<String, double>? peerAudioLevels,
@@ -72,6 +113,7 @@ class LiveKitVoiceState {
       isCaptureEnabled: isCaptureEnabled ?? this.isCaptureEnabled,
       isDeafened: isDeafened ?? this.isDeafened,
       isVideoEnabled: isVideoEnabled ?? this.isVideoEnabled,
+      videoQuality: videoQuality ?? this.videoQuality,
       conversationId: conversationId ?? this.conversationId,
       channelId: channelId ?? this.channelId,
       peerAudioLevels: peerAudioLevels ?? this.peerAudioLevels,
@@ -151,15 +193,21 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
       final livekitToken = tokenResult.token;
 
       // 2. Create and connect a LiveKit Room.
+      final voiceSettings = ref.read(voiceSettingsProvider);
       final room = Room(
-        roomOptions: const RoomOptions(
+        roomOptions: RoomOptions(
           adaptiveStream: true,
           dynacast: true,
-          defaultAudioPublishOptions: AudioPublishOptions(
+          defaultAudioCaptureOptions: AudioCaptureOptions(
+            noiseSuppression: voiceSettings.noiseSuppression,
+            echoCancellation: voiceSettings.echoCancellation,
+            autoGainControl: voiceSettings.autoGainControl,
+          ),
+          defaultAudioPublishOptions: const AudioPublishOptions(
             audioBitrate: AudioPreset.speech,
           ),
           defaultVideoPublishOptions: VideoPublishOptions(
-            videoEncoding: VideoEncoding(maxBitrate: 500000, maxFramerate: 24),
+            videoEncoding: state.videoQuality.encoding,
           ),
         ),
       );
@@ -313,6 +361,38 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
       );
       state = state.copyWith(error: _friendlyMediaError(e, 'screen share'));
       return false;
+    }
+  }
+
+  /// Change the video stream quality preset.
+  ///
+  /// Updates the encoding parameters on the currently published video track
+  /// (if any) and stores the preference in state for future publishes.
+  Future<void> setVideoQuality(VideoQuality quality) async {
+    state = state.copyWith(videoQuality: quality);
+
+    // Apply to the active camera track if video is enabled.
+    final room = _room;
+    if (room == null || !state.isVideoEnabled) return;
+
+    final cameraPub = room.localParticipant?.videoTrackPublications
+        .where((pub) => pub.source == TrackSource.camera && pub.track != null)
+        .firstOrNull;
+
+    if (cameraPub != null) {
+      try {
+        await room.localParticipant?.publishVideoTrack(
+          cameraPub.track!,
+          publishOptions: VideoPublishOptions(videoEncoding: quality.encoding),
+        );
+      } catch (e) {
+        debugPrint('[LiveKitVoice] setVideoQuality failed: $e');
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'LiveKitVoice',
+          'Video quality change failed: $e',
+        );
+      }
     }
   }
 

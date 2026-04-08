@@ -35,7 +35,9 @@ import 'discover_groups_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  final String? initialConversationId;
+
+  const HomeScreen({super.key, this.initialConversationId});
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -62,11 +64,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   // Collapsible sidebar state
   bool _sidebarCollapsed = false;
-  double _sidebarWidth = 320;
+  double _sidebarWidth = 350;
   static const _sidebarMinWidth = 200.0;
   static const _sidebarMaxWidth = 500.0;
   static const _sidebarCollapsedWidth = 60.0;
-  static const _sidebarDefaultWidth = 320.0;
+  static const _sidebarDefaultWidth = 350.0;
 
   // Search focus node for Ctrl+K shortcut
   final _searchFocusNode = FocusNode();
@@ -130,6 +132,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     // 3. Load conversations AFTER crypto and WS are set up
     await ref.read(conversationsProvider.notifier).loadConversations();
+
+    // 3b. Auto-select conversation if passed via query parameter
+    if (widget.initialConversationId != null && _selectedConversation == null) {
+      final conversations = ref.read(conversationsProvider).conversations;
+      final conv = conversations
+          .where((c) => c.id == widget.initialConversationId)
+          .firstOrNull;
+      if (conv != null) {
+        _selectConversation(conv);
+      }
+    }
 
     // 4. Load contacts for pending badge
     ref.read(contactsProvider.notifier).loadContacts();
@@ -776,7 +789,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             Positioned(
               bottom: 60,
               left: 0,
-              child: VoiceDock(width: animatedSidebarWidth),
+              child: VoiceDock(
+                width: animatedSidebarWidth,
+                onNavigateToLounge: () {
+                  setState(() {
+                    _showingLounge = true;
+                    _userDismissedLounge = false;
+                  });
+                },
+              ),
             ),
         ],
       ),
@@ -1103,23 +1124,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.chat_bubble_outline_rounded,
-              size: 56,
+              Icons.forum_rounded,
+              size: 64,
               color: context.textMuted.withValues(alpha: 0.4),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             Text(
-              'Select a conversation',
+              'No conversation selected',
               style: TextStyle(
-                color: context.textSecondary,
+                color: context.textPrimary,
                 fontSize: 18,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Pick someone from the left to start chatting',
+              'Choose a conversation from the sidebar or start a new chat',
               style: TextStyle(color: context.textMuted, fontSize: 14),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _openContacts,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('New Conversation'),
+              style: FilledButton.styleFrom(
+                backgroundColor: context.accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
             ),
           ],
         ),

@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Rust (latest stable): `rustup`
-- Flutter 3.29+
+- Flutter 3.41+
 - Docker + Docker Compose
 - Node.js 20+ (for commitlint)
 

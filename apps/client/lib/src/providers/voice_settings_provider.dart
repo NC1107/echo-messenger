@@ -13,6 +13,9 @@ class VoiceSettingsState {
   final String pushToTalkKeyLabel;
   final bool selfMuted;
   final bool selfDeafened;
+  final bool noiseSuppression;
+  final bool echoCancellation;
+  final bool autoGainControl;
 
   const VoiceSettingsState({
     this.inputDeviceId = 'default',
@@ -25,6 +28,9 @@ class VoiceSettingsState {
     this.pushToTalkKeyLabel = 'Space',
     this.selfMuted = false,
     this.selfDeafened = false,
+    this.noiseSuppression = true,
+    this.echoCancellation = true,
+    this.autoGainControl = true,
   });
 
   VoiceSettingsState copyWith({
@@ -38,6 +44,9 @@ class VoiceSettingsState {
     String? pushToTalkKeyLabel,
     bool? selfMuted,
     bool? selfDeafened,
+    bool? noiseSuppression,
+    bool? echoCancellation,
+    bool? autoGainControl,
   }) {
     return VoiceSettingsState(
       inputDeviceId: inputDeviceId ?? this.inputDeviceId,
@@ -50,6 +59,9 @@ class VoiceSettingsState {
       pushToTalkKeyLabel: pushToTalkKeyLabel ?? this.pushToTalkKeyLabel,
       selfMuted: selfMuted ?? this.selfMuted,
       selfDeafened: selfDeafened ?? this.selfDeafened,
+      noiseSuppression: noiseSuppression ?? this.noiseSuppression,
+      echoCancellation: echoCancellation ?? this.echoCancellation,
+      autoGainControl: autoGainControl ?? this.autoGainControl,
     );
   }
 }
@@ -69,6 +81,9 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
   static const _keyPushToTalkKeyLabel = 'voice_push_to_talk_key_label';
   static const _keySelfMuted = 'voice_self_muted';
   static const _keySelfDeafened = 'voice_self_deafened';
+  static const _keyNoiseSuppression = 'voice_noise_suppression';
+  static const _keyEchoCancellation = 'voice_echo_cancellation';
+  static const _keyAutoGainControl = 'voice_auto_gain_control';
 
   Future<void> _load() async {
     try {
@@ -84,6 +99,9 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
         pushToTalkKeyLabel: prefs.getString(_keyPushToTalkKeyLabel) ?? 'Space',
         selfMuted: prefs.getBool(_keySelfMuted) ?? false,
         selfDeafened: prefs.getBool(_keySelfDeafened) ?? false,
+        noiseSuppression: prefs.getBool(_keyNoiseSuppression) ?? true,
+        echoCancellation: prefs.getBool(_keyEchoCancellation) ?? true,
+        autoGainControl: prefs.getBool(_keyAutoGainControl) ?? true,
       );
     } catch (e) {
       debugPrint('[VoiceSettings] load failed: $e');
@@ -103,6 +121,9 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
       await prefs.setString(_keyPushToTalkKeyLabel, next.pushToTalkKeyLabel);
       await prefs.setBool(_keySelfMuted, next.selfMuted);
       await prefs.setBool(_keySelfDeafened, next.selfDeafened);
+      await prefs.setBool(_keyNoiseSuppression, next.noiseSuppression);
+      await prefs.setBool(_keyEchoCancellation, next.echoCancellation);
+      await prefs.setBool(_keyAutoGainControl, next.autoGainControl);
     } catch (e) {
       debugPrint('[VoiceSettings] persist failed: $e');
     }
@@ -164,6 +185,24 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
 
   Future<void> setSelfDeafened(bool value) async {
     final next = state.copyWith(selfDeafened: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setNoiseSuppression(bool value) async {
+    final next = state.copyWith(noiseSuppression: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setEchoCancellation(bool value) async {
+    final next = state.copyWith(echoCancellation: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setAutoGainControl(bool value) async {
+    final next = state.copyWith(autoGainControl: value);
     state = next;
     await _persist(next);
   }

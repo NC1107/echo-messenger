@@ -69,11 +69,14 @@ final routerProvider = Provider<GoRouter>((ref) {
           state.matchedLocation == _routeLogin ||
           state.matchedLocation == '/register';
       final isOnboarding = state.matchedLocation == '/onboarding';
+      final isJoinRoute =
+          state.matchedLocation.startsWith('/join') ||
+          state.matchedLocation.startsWith('/invite');
 
       // Let the splash screen handle its own navigation
       if (isSplash) return null;
 
-      if (!isLoggedIn && !isAuthRoute && !isOnboarding) {
+      if (!isLoggedIn && !isAuthRoute && !isOnboarding && !isJoinRoute) {
         // Save the intended path so we can navigate there after login
         final intended = state.matchedLocation;
         if (intended != _routeHome && intended != _routeLogin) {
@@ -81,7 +84,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         }
         return _routeLogin;
       }
-      if (isLoggedIn && isAuthRoute) return _routeHome;
+      if (isLoggedIn && isAuthRoute) {
+        if (pendingDeepLink != null) {
+          final destination = pendingDeepLink!;
+          pendingDeepLink = null;
+          return destination;
+        }
+        return _routeHome;
+      }
       return null;
     },
     routes: [
@@ -107,8 +117,13 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: _routeHome,
-        pageBuilder: (context, state) =>
-            _fadePage(key: state.pageKey, child: const HomeScreen()),
+        pageBuilder: (context, state) {
+          final conversationId = state.uri.queryParameters['conversation'];
+          return _fadePage(
+            key: state.pageKey,
+            child: HomeScreen(initialConversationId: conversationId),
+          );
+        },
       ),
       GoRoute(
         path: '/contacts',

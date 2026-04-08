@@ -243,7 +243,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         focusNode: _searchFocusNode,
         style: TextStyle(color: context.textPrimary, fontSize: 14),
         decoration: InputDecoration(
-          hintText: 'Search users by name...',
+          hintText: 'Search by username, email, or phone...',
           prefixIcon: Icon(Icons.search, color: context.textMuted, size: 20),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
@@ -290,7 +290,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         child: Padding(
           padding: const EdgeInsets.all(48),
           child: Text(
-            'Type to search users...',
+            'Type to search by username, email, or phone...',
             style: TextStyle(color: context.textMuted, fontSize: 14),
           ),
         ),

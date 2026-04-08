@@ -451,6 +451,65 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
             ),
           ),
         ),
+        const SizedBox(height: 16),
+        Divider(color: context.border),
+        const SizedBox(height: 16),
+        Text(
+          'Audio Processing',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'These settings apply the next time you join a voice channel.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 12,
+            height: 1.5,
+          ),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Noise Suppression',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Reduce background noise like fans, typing, and ambient sounds.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: voice.noiseSuppression,
+          onChanged: (v) => notifier.setNoiseSuppression(v),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Echo Cancellation',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Prevent your speakers from feeding back into your microphone.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: voice.echoCancellation,
+          onChanged: (v) => notifier.setEchoCancellation(v),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Auto Gain Control',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Automatically adjust microphone volume for consistent levels.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: voice.autoGainControl,
+          onChanged: (v) => notifier.setAutoGainControl(v),
+        ),
       ],
     );
   }
