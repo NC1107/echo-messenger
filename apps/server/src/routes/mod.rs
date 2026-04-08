@@ -17,9 +17,9 @@ use axum::http::{HeaderValue, Method, header};
 use axum::middleware;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post, put};
+use dashmap::DashMap;
 use sqlx::PgPool;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
@@ -29,10 +29,11 @@ use crate::middleware::rate_limit;
 use crate::ws::hub::Hub;
 
 /// Map from ticket string to (user_id, created_at).
-pub type TicketStore = Mutex<HashMap<String, (Uuid, Instant)>>;
+/// Uses DashMap for lock-free concurrent access in async context.
+pub type TicketStore = DashMap<String, (Uuid, Instant)>;
 
 /// Map from media ticket string to (user_id, created_at).
-pub type MediaTicketStore = Mutex<HashMap<String, (Uuid, Instant)>>;
+pub type MediaTicketStore = DashMap<String, (Uuid, Instant)>;
 
 pub struct AppState {
     pub pool: PgPool,

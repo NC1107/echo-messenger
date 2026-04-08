@@ -1,6 +1,5 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use axum::extract::ws::Message as WsMessage;
 use echo_server::{config, db, routes, ws};
@@ -35,8 +34,8 @@ async fn main() {
         pool: pool.clone(),
         jwt_secret: config.jwt_secret,
         hub: hub.clone(),
-        ticket_store: Mutex::new(HashMap::new()),
-        media_tickets: Mutex::new(HashMap::new()),
+        ticket_store: dashmap::DashMap::new(),
+        media_tickets: dashmap::DashMap::new(),
     });
 
     // Background task: clean up stale voice sessions every 60 seconds.

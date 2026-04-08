@@ -290,7 +290,26 @@ async fn cleanup_user_voice_sessions(state: &AppState, user_id: Uuid) {
     }
 }
 
+/// Maximum WebSocket text frame size (64 KB).  Frames larger than this are
+/// rejected before JSON parsing to prevent memory exhaustion from oversized
+/// payloads.  Legitimate messages are well under this limit (max message
+/// content is 10 KB, and the JSON envelope adds minimal overhead).
+const MAX_WS_FRAME_BYTES: usize = 65_536;
+
 async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str, state: &AppState) {
+    if text.len() > MAX_WS_FRAME_BYTES {
+        send_error(
+            state,
+            sender_id,
+            &format!(
+                "Message too large ({} bytes, max {})",
+                text.len(),
+                MAX_WS_FRAME_BYTES
+            ),
+        );
+        return;
+    }
+
     let msg: ClientMessage = match serde_json::from_str(text) {
         Ok(m) => m,
         Err(e) => {

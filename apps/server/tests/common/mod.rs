@@ -5,9 +5,8 @@
 
 #![allow(dead_code)]
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use echo_server::{db, routes, ws};
 use reqwest::Client;
@@ -41,8 +40,8 @@ pub async fn spawn_server() -> String {
         pool,
         jwt_secret: TEST_JWT_SECRET.to_string(),
         hub,
-        ticket_store: Mutex::new(HashMap::new()),
-        media_tickets: Mutex::new(HashMap::new()),
+        ticket_store: dashmap::DashMap::new(),
+        media_tickets: dashmap::DashMap::new(),
     });
 
     let app = routes::create_router(state);

@@ -1146,7 +1146,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                               ),
                             ],
                           ),
-                          child: Row(
+                          child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
@@ -1157,7 +1157,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              const SizedBox(width: 4),
+                              SizedBox(width: 4),
                               Icon(
                                 Icons.arrow_downward,
                                 size: 14,

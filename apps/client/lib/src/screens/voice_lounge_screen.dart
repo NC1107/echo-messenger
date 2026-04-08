@@ -15,6 +15,13 @@ import '../providers/server_url_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
 
+/// Resolve a LiveKit participant's display name, preferring name > identity > sid.
+String _participantDisplayName(lk.Participant participant) {
+  if (participant.name.isNotEmpty) return participant.name;
+  if (participant.identity.isNotEmpty) return participant.identity;
+  return participant.sid.toString();
+}
+
 /// Discord-style voice lounge that replaces the chat content area when the
 /// user is in a voice call and chooses to view the lounge.
 class VoiceLoungeScreen extends ConsumerWidget {
@@ -126,7 +133,7 @@ class _LoungeHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.graphic_eq, size: 20, color: EchoTheme.online),
+          const Icon(Icons.graphic_eq, size: 20, color: EchoTheme.online),
           const SizedBox(width: 10),
           Text(
             channelName,
@@ -225,11 +232,7 @@ class _ParticipantGrid extends StatelessWidget {
 
     // Remote participant tiles
     for (final participant in room!.remoteParticipants.values) {
-      final displayName = participant.name.isNotEmpty
-          ? participant.name
-          : participant.identity.isNotEmpty
-          ? participant.identity
-          : participant.sid.toString();
+      final displayName = _participantDisplayName(participant);
 
       final videoTrack = participant.videoTrackPublications
           .where(
@@ -274,11 +277,14 @@ class _ParticipantGrid extends StatelessWidget {
     }
 
     // Responsive grid: 1 col for 1, 2 cols for 2-4, 3 cols for 5+
-    final crossAxisCount = tiles.length <= 1
-        ? 1
-        : tiles.length <= 4
-        ? 2
-        : 3;
+    final int crossAxisCount;
+    if (tiles.length <= 1) {
+      crossAxisCount = 1;
+    } else if (tiles.length <= 4) {
+      crossAxisCount = 2;
+    } else {
+      crossAxisCount = 3;
+    }
 
     return GridView.count(
       crossAxisCount: crossAxisCount,
@@ -577,11 +583,7 @@ class _RemoteScreenShares extends StatelessWidget {
         if (pub.track != null &&
             pub.track is lk.VideoTrack &&
             pub.source == lk.TrackSource.screenShareVideo) {
-          final screenShareName = participant.name.isNotEmpty
-              ? participant.name
-              : participant.identity.isNotEmpty
-              ? participant.identity
-              : participant.sid.toString();
+          final screenShareName = _participantDisplayName(participant);
           tiles.add(
             Container(
               width: double.infinity,
@@ -810,14 +812,15 @@ class _ControlButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bgColor = isDestructive
-        ? activeColor.withValues(alpha: 0.2)
-        : isActive
-        ? activeColor.withValues(alpha: 0.15)
-        : context.surfaceHover;
-    final iconColor = isDestructive
-        ? activeColor
-        : isActive
+    final Color bgColor;
+    if (isDestructive) {
+      bgColor = activeColor.withValues(alpha: 0.2);
+    } else if (isActive) {
+      bgColor = activeColor.withValues(alpha: 0.15);
+    } else {
+      bgColor = context.surfaceHover;
+    }
+    final iconColor = (isDestructive || isActive)
         ? activeColor
         : context.textSecondary;
 

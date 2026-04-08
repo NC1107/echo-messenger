@@ -28,20 +28,16 @@ pub async fn ws_upgrade(
     Query(params): Query<WsParams>,
 ) -> Result<impl IntoResponse, AppError> {
     // Look up and consume the ticket (single-use).
-    let (user_id, created_at) = {
-        let mut store = state
-            .ticket_store
-            .lock()
-            .map_err(|_| AppError::internal("Internal state error"))?;
+    // Opportunistic cleanup of expired tickets.
+    let now = Instant::now();
+    state
+        .ticket_store
+        .retain(|_, (_, ts)| now.duration_since(*ts) < TICKET_TTL);
 
-        // Opportunistic cleanup of expired tickets.
-        let now = Instant::now();
-        store.retain(|_, (_, ts)| now.duration_since(*ts) < TICKET_TTL);
-
-        store
-            .remove(&params.ticket)
-            .ok_or_else(|| AppError::unauthorized("Invalid or expired WebSocket ticket"))?
-    };
+    let (_, (user_id, created_at)) = state
+        .ticket_store
+        .remove(&params.ticket)
+        .ok_or_else(|| AppError::unauthorized("Invalid or expired WebSocket ticket"))?;
 
     // Verify the ticket hasn't expired (belt-and-suspenders after cleanup).
     if Instant::now().duration_since(created_at) >= TICKET_TTL {

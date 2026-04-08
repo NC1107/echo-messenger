@@ -444,11 +444,14 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
     final participants = room.remoteParticipants;
     final peerStates = <String, String>{};
     for (final p in participants.values) {
-      final label = p.name.isNotEmpty
-          ? p.name
-          : p.identity.isNotEmpty
-          ? p.identity
-          : p.sid.toString();
+      final String label;
+      if (p.name.isNotEmpty) {
+        label = p.name;
+      } else if (p.identity.isNotEmpty) {
+        label = p.identity;
+      } else {
+        label = p.sid.toString();
+      }
       peerStates[label] = 'connected';
     }
 

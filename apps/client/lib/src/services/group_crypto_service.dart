@@ -114,7 +114,9 @@ class GroupCryptoService {
     String keyBase64,
   ) async {
     if (!ciphertextWithPrefix.startsWith(groupEncryptedPrefix)) {
-      throw FormatException('Not a group-encrypted message (missing prefix)');
+      throw const FormatException(
+        'Not a group-encrypted message (missing prefix)',
+      );
     }
 
     final b64 = ciphertextWithPrefix.substring(groupEncryptedPrefix.length);
