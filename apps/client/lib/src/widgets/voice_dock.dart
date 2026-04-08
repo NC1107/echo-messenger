@@ -113,16 +113,8 @@ class VoiceDock extends ConsumerWidget {
             icon: voiceSettings.selfMuted || voiceSettings.selfDeafened
                 ? Icons.mic_off
                 : Icons.mic,
-            color: voiceSettings.selfMuted
-                ? EchoTheme.danger
-                : voiceSettings.selfDeafened
-                ? context.textMuted
-                : context.textSecondary,
-            tooltip: voiceSettings.selfDeafened
-                ? 'Muted by deafen'
-                : voiceSettings.selfMuted
-                ? 'Unmute'
-                : 'Mute',
+            color: _muteColor(context, voiceSettings),
+            tooltip: _muteTooltip(voiceSettings),
             onPressed: () async {
               final notifier = ref.read(voiceSettingsProvider.notifier);
               final nextMuted = !voiceSettings.selfMuted;
@@ -229,6 +221,18 @@ class VoiceDock extends ConsumerWidget {
       ),
     );
   }
+}
+
+Color _muteColor(BuildContext context, VoiceSettingsState vs) {
+  if (vs.selfMuted) return EchoTheme.danger;
+  if (vs.selfDeafened) return context.textMuted;
+  return context.textSecondary;
+}
+
+String _muteTooltip(VoiceSettingsState vs) {
+  if (vs.selfDeafened) return 'Muted by deafen';
+  if (vs.selfMuted) return 'Unmute';
+  return 'Mute';
 }
 
 class _DockIconButton extends StatelessWidget {

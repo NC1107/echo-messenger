@@ -63,21 +63,30 @@ impl RateLimiter {
 }
 
 /// Extract client IP from request headers or connection info.
-/// Priority: X-Forwarded-For (first IP) > X-Real-IP > ConnectInfo > localhost.
+///
+/// Priority: X-Real-IP (set by trusted proxies) > X-Forwarded-For (last
+/// non-private IP) > ConnectInfo > localhost.
+///
+/// **Security note**: X-Forwarded-For can be forged by clients.  We use the
+/// LAST IP in the chain because Traefik *appends* the real client IP.  The
+/// first IP is whatever the client sent and cannot be trusted.  X-Real-IP is
+/// preferred because Traefik (when configured) sets it from the direct
+/// connection.
 fn extract_ip(req: &Request<Body>) -> IpAddr {
-    // Try X-Forwarded-For header first (first IP in comma-separated list)
-    if let Some(xff) = req.headers().get("x-forwarded-for")
-        && let Ok(value) = xff.to_str()
-        && let Some(first_ip) = value.split(',').next()
-        && let Ok(ip) = first_ip.trim().parse::<IpAddr>()
+    // Prefer X-Real-IP (trusted, set by reverse proxy)
+    if let Some(xri) = req.headers().get("x-real-ip")
+        && let Ok(value) = xri.to_str()
+        && let Ok(ip) = value.trim().parse::<IpAddr>()
     {
         return ip;
     }
 
-    // Fallback to X-Real-IP header
-    if let Some(xri) = req.headers().get("x-real-ip")
-        && let Ok(value) = xri.to_str()
-        && let Ok(ip) = value.trim().parse::<IpAddr>()
+    // Fallback to X-Forwarded-For -- use the LAST IP (appended by our proxy),
+    // not the first (attacker-controlled).
+    if let Some(xff) = req.headers().get("x-forwarded-for")
+        && let Ok(value) = xff.to_str()
+        && let Some(last_ip) = value.rsplit(',').next()
+        && let Ok(ip) = last_ip.trim().parse::<IpAddr>()
     {
         return ip;
     }

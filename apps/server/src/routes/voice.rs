@@ -85,12 +85,31 @@ pub async fn generate_token(
     // conversation_id so mobile clients that send either field still work.
     let room = body
         .room
-        .or(body.channel_id)
-        .or(body.conversation_id)
+        .or(body.channel_id.clone())
+        .or(body.conversation_id.clone())
         .unwrap_or_default();
 
     if room.is_empty() {
         return Err(AppError::bad_request("Room name is required"));
+    }
+
+    // Security: verify the user is a member of the conversation they are
+    // requesting a voice token for.  Without this check any authenticated
+    // user could generate a token for an arbitrary room and eavesdrop on
+    // voice channels they should not have access to.
+    let conversation_id_str = body.conversation_id.or(body.channel_id);
+    if let Some(ref cid) = conversation_id_str {
+        let conv_uuid = uuid::Uuid::parse_str(cid)
+            .map_err(|_| AppError::bad_request("Invalid conversation_id or channel_id"))?;
+        let members = db::groups::get_conversation_member_ids(&state.pool, conv_uuid)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error checking voice token membership: {e:?}");
+                AppError::internal("Database error")
+            })?;
+        if !members.contains(&auth.user_id) {
+            return Err(AppError::bad_request("Not a member of this conversation"));
+        }
     }
 
     let api_key = std::env::var("LIVEKIT_API_KEY").map_err(|_| {

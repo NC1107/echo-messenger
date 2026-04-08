@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +8,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'src/app.dart';
 import 'src/providers/server_url_provider.dart';
+import 'src/services/debug_log_service.dart';
 import 'src/services/message_cache.dart';
 import 'src/services/notification_service.dart';
 import 'src/services/sound_service.dart';
@@ -13,6 +16,34 @@ import 'src/services/sound_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Global error boundary: catch unhandled Flutter framework errors so that
+  // the red error screen is never shown in production.
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    DebugLogService.instance.log(
+      LogLevel.error,
+      'FlutterError',
+      '${details.exceptionAsString()}\n${details.stack}',
+    );
+  };
+
+  // Catch async errors not handled by the Flutter framework.
+  runZonedGuarded(
+    () async {
+      await _initAndRun();
+    },
+    (error, stack) {
+      debugPrint('[Unhandled] $error\n$stack');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Unhandled',
+        '$error\n$stack',
+      );
+    },
+  );
+}
+
+Future<void> _initAndRun() async {
   await Hive.initFlutter();
   await MessageCache.init();
 

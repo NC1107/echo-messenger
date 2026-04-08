@@ -181,7 +181,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
         ),
         if (crypto.keysUploadFailed) ...[
           const SizedBox(height: 12),
-          Text(
+          const Text(
             'Encryption key upload failed. New conversations will not be '
             'encrypted until keys are uploaded.',
             style: TextStyle(

@@ -251,6 +251,12 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
     }
   }
 
+  Color _micLevelColor() {
+    if (_micLevel > 0.7) return EchoTheme.danger;
+    if (_micLevel > 0.4) return Colors.orange;
+    return EchoTheme.online;
+  }
+
   @override
   Widget build(BuildContext context) {
     final voice = ref.watch(voiceSettingsProvider);
@@ -397,13 +403,7 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
                     value: _micLevel,
                     minHeight: 8,
                     backgroundColor: context.surface,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      _micLevel > 0.7
-                          ? EchoTheme.danger
-                          : _micLevel > 0.4
-                          ? Colors.orange
-                          : EchoTheme.online,
-                    ),
+                    valueColor: AlwaysStoppedAnimation<Color>(_micLevelColor()),
                   ),
                 ),
               ),

@@ -219,23 +219,21 @@ pub async fn request_media_ticket(
     const TICKET_TTL: Duration = Duration::from_secs(300); // 5 minutes
     const MAX_TICKETS: usize = 100_000;
 
-    let mut store = state
-        .media_tickets
-        .lock()
-        .map_err(|_| AppError::internal("Internal state error"))?;
-
     // Clean up expired tickets to bound memory
     let now = Instant::now();
-    store.retain(|_, (_, ts)| now.duration_since(*ts) < TICKET_TTL);
+    state
+        .media_tickets
+        .retain(|_, (_, ts)| now.duration_since(*ts) < TICKET_TTL);
 
-    if store.len() >= MAX_TICKETS {
+    if state.media_tickets.len() >= MAX_TICKETS {
         return Err(AppError::bad_request(
             "Too many pending media tickets, try again later",
         ));
     }
 
-    store.insert(ticket.clone(), (auth_user.user_id, now));
-    drop(store);
+    state
+        .media_tickets
+        .insert(ticket.clone(), (auth_user.user_id, now));
 
     Ok(Json(MediaTicketResponse { ticket }))
 }
@@ -340,12 +338,8 @@ pub async fn download(
 fn validate_media_ticket(state: &AppState, ticket: &str) -> Result<Uuid, AppError> {
     const TICKET_TTL: Duration = Duration::from_secs(300);
 
-    let mut store = state
+    let (_, (user_id, created_at)) = state
         .media_tickets
-        .lock()
-        .map_err(|_| AppError::internal("Internal state error"))?;
-
-    let (user_id, created_at) = store
         .remove(ticket)
         .ok_or_else(|| AppError::unauthorized("Invalid or expired media ticket"))?;
 

@@ -1,6 +1,6 @@
 services:
   server:
-    image: ghcr.io/nc1107/echo-messenger/server:latest
+    image: ghcr.io/nc1107/echo-messenger/server:${SERVER_VERSION:-latest}
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://echo:${DB_PASSWORD}@postgres:5432/echo_prod
@@ -27,7 +27,7 @@ services:
       - echo-internal
 
   web:
-    image: ghcr.io/nc1107/echo-messenger/web:latest
+    image: ghcr.io/nc1107/echo-messenger/web:${WEB_VERSION:-latest}
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
@@ -72,20 +72,37 @@ services:
     networks:
       - echo-internal
 
-  watchtower:
-    image: containrrr/watchtower
+  # Watchtower removed: auto-pulling `latest` every 5 minutes risks deploying
+  # broken builds with zero human review.  Pin image versions via SERVER_VERSION
+  # and WEB_VERSION env vars and deploy manually or via CI/CD.
+  # To update:
+  #   SERVER_VERSION=v1.2.3 WEB_VERSION=v1.2.3 docker compose pull && docker compose up -d
+
+  backup:
+    image: prodrigestivill/postgres-backup-local:17
     restart: unless-stopped
     environment:
-      WATCHTOWER_CLEANUP: "true"
-      WATCHTOWER_POLL_INTERVAL: 300
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: echo_prod
+      POSTGRES_USER: echo
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+      HEALTHCHECK_PORT: 8081
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - echo-internal
 
 volumes:
   pgdata:
   uploads:
+  backups:
 
 networks:
   traefik:

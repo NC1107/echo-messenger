@@ -488,16 +488,8 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     final micOff = voiceSettings.selfMuted || voiceSettings.selfDeafened;
     return IconButton(
       icon: Icon(micOff ? Icons.mic_off : Icons.mic, size: 18),
-      color: voiceSettings.selfMuted
-          ? EchoTheme.danger
-          : voiceSettings.selfDeafened
-          ? context.textMuted
-          : context.textSecondary,
-      tooltip: voiceSettings.selfDeafened
-          ? 'Muted by deafen'
-          : voiceSettings.selfMuted
-          ? 'Unmute'
-          : 'Mute',
+      color: _muteIconColor(context, voiceSettings),
+      tooltip: _muteTooltip(voiceSettings),
       onPressed: () => _toggleMute(voiceSettings),
     );
   }
@@ -514,6 +506,18 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
       tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
       onPressed: () => _toggleDeafen(voiceSettings),
     );
+  }
+
+  Color _muteIconColor(BuildContext context, VoiceSettingsState vs) {
+    if (vs.selfMuted) return EchoTheme.danger;
+    if (vs.selfDeafened) return context.textMuted;
+    return context.textSecondary;
+  }
+
+  String _muteTooltip(VoiceSettingsState vs) {
+    if (vs.selfDeafened) return 'Muted by deafen';
+    if (vs.selfMuted) return 'Unmute';
+    return 'Mute';
   }
 
   Widget _buildPttButton(VoiceSettingsState voiceSettings) {
@@ -601,11 +605,14 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
 
     if (tiles.isEmpty) return const SizedBox.shrink();
 
-    final crossAxisCount = tiles.length <= 1
-        ? 1
-        : tiles.length <= 4
-        ? 2
-        : 3;
+    final int crossAxisCount;
+    if (tiles.length <= 1) {
+      crossAxisCount = 1;
+    } else if (tiles.length <= 4) {
+      crossAxisCount = 2;
+    } else {
+      crossAxisCount = 3;
+    }
 
     return Container(
       width: double.infinity,

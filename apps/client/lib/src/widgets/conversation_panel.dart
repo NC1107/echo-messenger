@@ -832,6 +832,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
+  static String _connectionStatusLabel(bool wsReplaced, bool wsConnected) {
+    if (wsReplaced) return 'Session replaced';
+    if (wsConnected) return 'Online';
+    return 'Reconnecting...';
+  }
+
   Widget _buildUserNameAndStatus(
     BuildContext context,
     String myUsername,
@@ -853,11 +859,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             overflow: TextOverflow.ellipsis,
           ),
           Text(
-            wsReplaced
-                ? 'Session replaced'
-                : wsConnected
-                ? 'Online'
-                : 'Reconnecting...',
+            _connectionStatusLabel(wsReplaced, wsConnected),
             style: TextStyle(
               color: wsConnected ? EchoTheme.online : EchoTheme.warning,
               fontSize: 11,
