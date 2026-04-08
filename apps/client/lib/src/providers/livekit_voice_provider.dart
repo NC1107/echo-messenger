@@ -181,7 +181,8 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
             autoGainControl: voiceSettings.autoGainControl,
           ),
           defaultAudioPublishOptions: const AudioPublishOptions(
-            audioBitrate: AudioPreset.speech,
+            audioBitrate: AudioPreset.music,
+            dtx: true,
           ),
           defaultVideoPublishOptions: VideoPublishOptions(
             videoEncoding: VideoEncoding(
@@ -493,6 +494,7 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
     listener
       ..on<ParticipantConnectedEvent>((event) {
         _syncPeerState();
+        SoundService().playVoiceJoin();
         DebugLogService.instance.log(
           LogLevel.info,
           'LiveKitVoice',
@@ -501,6 +503,7 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
       })
       ..on<ParticipantDisconnectedEvent>((event) {
         _syncPeerState();
+        SoundService().playVoiceLeave();
         DebugLogService.instance.log(
           LogLevel.info,
           'LiveKitVoice',

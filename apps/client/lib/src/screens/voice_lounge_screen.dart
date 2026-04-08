@@ -288,6 +288,7 @@ class _ParticipantGrid extends StatelessWidget {
           mirror: true,
           audioLevel: voiceState.localAudioLevel,
           isMuted: !voiceState.isCaptureEnabled,
+          isLocal: true,
         ),
       );
     }
@@ -323,6 +324,19 @@ class _ParticipantGrid extends StatelessWidget {
           audioLevel: audioLevel,
           isMuted: participant.isMuted,
           connectionState: voiceState.peerConnectionStates[identity],
+          onMuteForMe: () async {
+            // Toggle mute for this remote participant's audio tracks
+            for (final pub in participant.audioTrackPublications) {
+              final track = pub.track;
+              if (track != null) {
+                if (pub.subscribed) {
+                  await track.disable();
+                } else {
+                  await track.enable();
+                }
+              }
+            }
+          },
         ),
       );
     }
@@ -384,6 +398,8 @@ class _ParticipantTile extends StatelessWidget {
   final double audioLevel;
   final bool isMuted;
   final String? connectionState;
+  final bool isLocal;
+  final VoidCallback? onMuteForMe;
 
   const _ParticipantTile({
     super.key,
@@ -395,107 +411,153 @@ class _ParticipantTile extends StatelessWidget {
     this.audioLevel = 0.0,
     this.isMuted = false,
     this.connectionState,
+    this.isLocal = false,
+    this.onMuteForMe,
   });
 
   @override
   Widget build(BuildContext context) {
     final isSpeaking = audioLevel > 0.01;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      decoration: BoxDecoration(
-        color: context.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isSpeaking ? EchoTheme.online : context.border,
-          width: isSpeaking ? 2.0 : 1.0,
+    return GestureDetector(
+      onSecondaryTapUp: !isLocal && onMuteForMe != null
+          ? (details) => _showParticipantMenu(context, details.globalPosition)
+          : null,
+      onLongPress: !isLocal && onMuteForMe != null ? onMuteForMe : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: BoxDecoration(
+          color: context.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSpeaking ? EchoTheme.online : context.border,
+            width: isSpeaking ? 2.0 : 1.0,
+          ),
+          boxShadow: isSpeaking
+              ? [
+                  BoxShadow(
+                    color: EchoTheme.online.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : null,
         ),
-        boxShadow: isSpeaking
-            ? [
-                BoxShadow(
-                  color: EchoTheme.online.withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  spreadRadius: 1,
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Video or avatar
+            if (hasVideo && videoTrack != null)
+              lk.VideoTrackRenderer(
+                videoTrack!,
+                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                mirrorMode: mirror
+                    ? lk.VideoViewMirrorMode.mirror
+                    : lk.VideoViewMirrorMode.off,
+              )
+            else
+              _AvatarCircle(
+                name: name,
+                avatarUrl: avatarUrl,
+                isSpeaking: isSpeaking,
+              ),
+            // Name label overlay at bottom
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
                 ),
-              ]
-            : null,
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Video or avatar
-          if (hasVideo && videoTrack != null)
-            lk.VideoTrackRenderer(
-              videoTrack!,
-              fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-              mirrorMode: mirror
-                  ? lk.VideoViewMirrorMode.mirror
-                  : lk.VideoViewMirrorMode.off,
-            )
-          else
-            _AvatarCircle(
-              name: name,
-              avatarUrl: avatarUrl,
-              isSpeaking: isSpeaking,
-            ),
-          // Name label overlay at bottom
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.7),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.7),
+                    ],
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isMuted)
+                      const Padding(
+                        padding: EdgeInsets.only(left: 4),
+                        child: Icon(
+                          Icons.mic_off,
+                          size: 14,
+                          color: EchoTheme.danger,
+                        ),
+                      ),
+                    if (connectionState != null &&
+                        connectionState != 'connected')
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Icon(
+                          Icons.signal_cellular_alt,
+                          size: 14,
+                          color: connectionState == 'reconnecting'
+                              ? EchoTheme.warning
+                              : context.textMuted,
+                        ),
+                      ),
                   ],
                 ),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (isMuted)
-                    const Padding(
-                      padding: EdgeInsets.only(left: 4),
-                      child: Icon(
-                        Icons.mic_off,
-                        size: 14,
-                        color: EchoTheme.danger,
-                      ),
-                    ),
-                  if (connectionState != null && connectionState != 'connected')
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: Icon(
-                        Icons.signal_cellular_alt,
-                        size: 14,
-                        color: connectionState == 'reconnecting'
-                            ? EchoTheme.warning
-                            : context.textMuted,
-                      ),
-                    ),
-                ],
-              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
+  }
+
+  void _showParticipantMenu(BuildContext context, Offset position) {
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx,
+        position.dy,
+        position.dx + 1,
+        position.dy + 1,
+      ),
+      color: context.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: context.border),
+      ),
+      items: [
+        PopupMenuItem(
+          value: 'mute',
+          child: Row(
+            children: [
+              Icon(Icons.volume_off, size: 16, color: context.textSecondary),
+              const SizedBox(width: 8),
+              Text(
+                'Toggle mute for me',
+                style: TextStyle(color: context.textPrimary, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == 'mute') onMuteForMe?.call();
+    });
   }
 }
 
