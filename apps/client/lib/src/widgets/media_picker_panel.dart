@@ -47,8 +47,8 @@ class _MediaPickerPanelState extends State<MediaPickerPanel>
     return Align(
       alignment: Alignment.bottomRight,
       child: Container(
-        width: 420,
-        height: 400,
+        width: 380,
+        height: 350,
         margin: const EdgeInsets.only(right: 8, bottom: 4),
         decoration: BoxDecoration(
           color: context.surface,
@@ -128,7 +128,7 @@ class _MediaPickerPanelState extends State<MediaPickerPanel>
     return EmojiPicker(
       onEmojiSelected: widget.onEmojiSelected,
       config: Config(
-        height: 362,
+        height: 312,
         checkPlatformCompatibility: true,
         emojiViewConfig: EmojiViewConfig(
           backgroundColor: context.surface,

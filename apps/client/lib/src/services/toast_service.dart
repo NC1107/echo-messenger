@@ -163,6 +163,15 @@ class _ToastWidgetState extends State<_ToastWidget>
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: widget.onDismiss,
+                    child: const Icon(
+                      Icons.close,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                  ),
                 ],
               ),
             ),

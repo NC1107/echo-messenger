@@ -286,11 +286,23 @@ class _ConversationItemState extends State<ConversationItem> {
         if (hasUnread)
           Container(
             margin: const EdgeInsets.only(left: 8),
-            width: 10,
-            height: 10,
+            constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 5),
             decoration: BoxDecoration(
               color: context.accent,
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              widget.conversation.unreadCount > 99
+                  ? '99+'
+                  : '${widget.conversation.unreadCount}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                height: 1,
+              ),
             ),
           ),
       ],

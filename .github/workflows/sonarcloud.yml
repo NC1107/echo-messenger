@@ -9,6 +9,9 @@ concurrency:
   group: sonar-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FLUTTER_VERSION: '3.41.x'
+
 jobs:
   sonarcloud:
     name: SonarCloud Analysis
@@ -48,7 +51,7 @@ jobs:
       # -- Flutter coverage --
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.41.x"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
       - name: Generate Flutter coverage

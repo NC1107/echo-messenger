@@ -148,6 +148,126 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     }
   }
 
+  /// Compute the current local time string for an IANA timezone name.
+  /// Uses a hardcoded offset map for common timezones; falls back to
+  /// the device's local offset when the zone is unknown.
+  String _formatLocalTime(String iana) {
+    final offset = _ianaOffsetMinutes[iana];
+    final now = DateTime.now().toUtc();
+    final local = offset != null
+        ? now.add(Duration(minutes: offset))
+        : now.add(DateTime.now().timeZoneOffset);
+
+    final hour24 = local.hour;
+    final minute = local.minute;
+    final isPm = hour24 >= 12;
+    final hour12 = hour24 == 0
+        ? 12
+        : hour24 > 12
+        ? hour24 - 12
+        : hour24;
+    final minuteStr = minute.toString().padLeft(2, '0');
+    final period = isPm ? 'PM' : 'AM';
+    return '$hour12:$minuteStr $period';
+  }
+
+  /// Common IANA timezone -> UTC offset in minutes.
+  /// Covers major world timezones. DST is approximated for standard offset;
+  /// for perfect DST handling a full tz database would be needed.
+  static const _ianaOffsetMinutes = <String, int>{
+    // UTC / GMT
+    'UTC': 0,
+    'GMT': 0,
+    'Etc/UTC': 0,
+    'Etc/GMT': 0,
+    // North America
+    'America/New_York': -300,
+    'America/Toronto': -300,
+    'America/Detroit': -300,
+    'America/Chicago': -360,
+    'America/Winnipeg': -360,
+    'America/Denver': -420,
+    'America/Edmonton': -420,
+    'America/Phoenix': -420,
+    'America/Los_Angeles': -480,
+    'America/Vancouver': -480,
+    'America/Anchorage': -540,
+    'Pacific/Honolulu': -600,
+    'America/Halifax': -240,
+    'America/St_Johns': -210,
+    // Central / South America
+    'America/Mexico_City': -360,
+    'America/Bogota': -300,
+    'America/Lima': -300,
+    'America/Santiago': -240,
+    'America/Sao_Paulo': -180,
+    'America/Argentina/Buenos_Aires': -180,
+    'America/Caracas': -240,
+    // Europe
+    'Europe/London': 0,
+    'Europe/Dublin': 0,
+    'Europe/Lisbon': 0,
+    'Europe/Paris': 60,
+    'Europe/Berlin': 60,
+    'Europe/Amsterdam': 60,
+    'Europe/Brussels': 60,
+    'Europe/Madrid': 60,
+    'Europe/Rome': 60,
+    'Europe/Vienna': 60,
+    'Europe/Zurich': 60,
+    'Europe/Stockholm': 60,
+    'Europe/Oslo': 60,
+    'Europe/Copenhagen': 60,
+    'Europe/Warsaw': 60,
+    'Europe/Prague': 60,
+    'Europe/Budapest': 60,
+    'Europe/Helsinki': 120,
+    'Europe/Bucharest': 120,
+    'Europe/Athens': 120,
+    'Europe/Istanbul': 180,
+    'Europe/Moscow': 180,
+    'Europe/Kiev': 120,
+    'Europe/Kyiv': 120,
+    // Africa
+    'Africa/Cairo': 120,
+    'Africa/Lagos': 60,
+    'Africa/Johannesburg': 120,
+    'Africa/Nairobi': 180,
+    'Africa/Casablanca': 60,
+    // Middle East
+    'Asia/Dubai': 240,
+    'Asia/Riyadh': 180,
+    'Asia/Tehran': 210,
+    'Asia/Jerusalem': 120,
+    // South / Southeast Asia
+    'Asia/Kolkata': 330,
+    'Asia/Colombo': 330,
+    'Asia/Dhaka': 360,
+    'Asia/Karachi': 300,
+    'Asia/Bangkok': 420,
+    'Asia/Jakarta': 420,
+    'Asia/Ho_Chi_Minh': 420,
+    'Asia/Singapore': 480,
+    'Asia/Kuala_Lumpur': 480,
+    'Asia/Manila': 480,
+    // East Asia
+    'Asia/Shanghai': 480,
+    'Asia/Hong_Kong': 480,
+    'Asia/Taipei': 480,
+    'Asia/Seoul': 540,
+    'Asia/Tokyo': 540,
+    // Oceania
+    'Australia/Sydney': 600,
+    'Australia/Melbourne': 600,
+    'Australia/Brisbane': 600,
+    'Australia/Perth': 480,
+    'Australia/Adelaide': 570,
+    'Australia/Darwin': 570,
+    'Pacific/Auckland': 720,
+    'Pacific/Fiji': 720,
+    'Pacific/Guam': 600,
+  };
+
   String _formatMemberSince(String? isoDate) {
     if (isoDate == null) return 'Unknown';
     try {
@@ -317,7 +437,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
             ),
             const SizedBox(height: 8),
           ],
-          // Timezone
+          // Timezone with local time
           if (_timezone != null && _timezone!.isNotEmpty) ...[
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -325,7 +445,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                 Icon(Icons.schedule, size: 14, color: context.textMuted),
                 const SizedBox(width: 4),
                 Text(
-                  _timezone!,
+                  'Local time: ${_formatLocalTime(_timezone!)} ($_timezone)',
                   style: TextStyle(color: context.textMuted, fontSize: 13),
                 ),
               ],

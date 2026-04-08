@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../router/app_router.dart' show pendingDeepLink;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 
@@ -229,10 +230,19 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen>
   }
 
   void _openGroup() {
-    context.go(_routeHome);
+    // Find the conversation matching this group so the home screen auto-selects it.
+    final conversations = ref.read(conversationsProvider).conversations;
+    final conv = conversations.where((c) => c.id == widget.groupId).firstOrNull;
+    if (conv != null) {
+      context.go('$_routeHome?conversation=${conv.id}');
+    } else {
+      context.go('$_routeHome?conversation=${widget.groupId}');
+    }
   }
 
   void _goToLogin() {
+    // Preserve the join URL so the user returns here after login.
+    pendingDeepLink = '/join/${widget.groupId}';
     context.go(_routeLogin);
   }
 

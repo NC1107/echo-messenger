@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
 
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -589,8 +589,23 @@ class _ScreenShareViewer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final renderer = ref.read(screenShareProvider.notifier).screenRenderer;
-    if (renderer == null) return const SizedBox.shrink();
+    // Use the LiveKit room's local participant screen share track directly
+    // instead of screenShareProvider.screenRenderer (which is null when
+    // LiveKit SDK handles capture via setScreenShareEnabled).
+    final room = ref.read(livekitVoiceProvider.notifier).room;
+    final localParticipant = room?.localParticipant;
+    if (localParticipant == null) return const SizedBox.shrink();
+
+    final screenPub = localParticipant.videoTrackPublications
+        .where(
+          (pub) =>
+              pub.track != null &&
+              pub.source == lk.TrackSource.screenShareVideo,
+        )
+        .firstOrNull;
+
+    final screenTrack = screenPub?.track as lk.VideoTrack?;
+    if (screenTrack == null) return const SizedBox.shrink();
 
     return Container(
       width: double.infinity,
@@ -606,9 +621,9 @@ class _ScreenShareViewer extends StatelessWidget {
           Center(
             child: AspectRatio(
               aspectRatio: 16 / 9,
-              child: RTCVideoView(
-                renderer,
-                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+              child: lk.VideoTrackRenderer(
+                screenTrack,
+                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
               ),
             ),
           ),
@@ -645,7 +660,12 @@ class _ScreenShareViewer extends StatelessWidget {
               icon: const Icon(Icons.close, size: 18, color: Colors.white),
               tooltip: 'Stop sharing',
               onPressed: () async {
-                await ref.read(screenShareProvider.notifier).stopScreenShare();
+                await ref
+                    .read(livekitVoiceProvider.notifier)
+                    .setScreenShareEnabled(false);
+                ref
+                    .read(screenShareProvider.notifier)
+                    .setLiveKitScreenShareActive(false);
               },
               style: IconButton.styleFrom(
                 backgroundColor: EchoTheme.danger.withValues(alpha: 0.7),
@@ -827,6 +847,10 @@ class _ControlBar extends ConsumerWidget {
             },
           ),
           const SizedBox(width: 8),
+          // Video quality selector
+          if (voiceState.isVideoEnabled)
+            _VideoQualitySelector(quality: voiceState.videoQuality),
+          if (voiceState.isVideoEnabled) const SizedBox(width: 8),
           // Screen share (published via LiveKit SDK)
           if (VoiceLoungeScreen._supportsScreenShare) ...[
             _ControlButton(
@@ -884,6 +908,89 @@ class _ControlBar extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Video quality selector
+// ---------------------------------------------------------------------------
+
+class _VideoQualitySelector extends ConsumerWidget {
+  final VideoQuality quality;
+
+  const _VideoQualitySelector({required this.quality});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<VideoQuality>(
+      onSelected: (q) {
+        ref.read(livekitVoiceProvider.notifier).setVideoQuality(q);
+      },
+      tooltip: 'Stream quality',
+      offset: const Offset(0, -200),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: context.border),
+      ),
+      color: context.surface,
+      itemBuilder: (_) => VideoQuality.values.map((q) {
+        final isSelected = q == quality;
+        return PopupMenuItem<VideoQuality>(
+          value: q,
+          child: Row(
+            children: [
+              Icon(
+                isSelected ? Icons.check : Icons.circle_outlined,
+                size: 16,
+                color: isSelected ? context.accent : context.textMuted,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                q.label,
+                style: TextStyle(
+                  color: isSelected ? context.accent : context.textPrimary,
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _bitrateLabel(q),
+                style: TextStyle(color: context.textMuted, fontSize: 11),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: context.surfaceHover,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.tune, size: 18, color: context.textSecondary),
+            const SizedBox(width: 6),
+            Text(
+              quality.label,
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _bitrateLabel(VideoQuality q) {
+    final kbps = q.encoding.maxBitrate ~/ 1000;
+    final fps = q.encoding.maxFramerate;
+    return '${kbps}kbps ${fps}fps';
   }
 }
 

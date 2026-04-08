@@ -714,30 +714,34 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     try {
       final dt = DateTime.parse(timestamp).toLocal();
       final now = DateTime.now();
+      final yesterday = now.subtract(const Duration(days: 1));
       String label;
       if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
         label = 'Today';
-      } else if (dt.year == now.year &&
-          dt.month == now.month &&
-          dt.day == now.day - 1) {
+      } else if (dt.year == yesterday.year &&
+          dt.month == yesterday.month &&
+          dt.day == yesterday.day) {
         label = 'Yesterday';
       } else {
-        label = '${_monthName(dt.month)} ${dt.day}, ${dt.year}';
+        label = '${_fullMonthName(dt.month)} ${dt.day}, ${dt.year}';
       }
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Row(
-          children: [
-            Expanded(child: Divider(color: context.border, thickness: 1)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                label,
-                style: TextStyle(fontSize: 11, color: context.textMuted),
-              ),
+        child: Center(
+          child: Container(
+            height: 24,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.border),
             ),
-            Expanded(child: Divider(color: context.border, thickness: 1)),
-          ],
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 11, color: context.textMuted),
+            ),
+          ),
         ),
       );
     } catch (_) {
@@ -745,21 +749,21 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     }
   }
 
-  String _monthName(int m) {
+  String _fullMonthName(int m) {
     const names = [
       '',
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
+      'January',
+      'February',
+      'March',
+      'April',
       'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return names[m.clamp(1, 12)];
   }

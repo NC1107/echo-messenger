@@ -103,8 +103,10 @@ pub struct UserPrivacyRow {
     pub phone_discoverable: bool,
 }
 
-/// Search users by username prefix (case-insensitive). Returns up to 10 results.
-/// Excludes the calling user from results.
+/// Search users by username, email, or phone prefix (case-insensitive).
+/// Returns up to 10 results. Excludes the calling user from results.
+/// Email matches only when the user has `email_discoverable` enabled;
+/// phone matches only when `phone_discoverable` is enabled.
 pub async fn search_users(
     pool: &PgPool,
     query: &str,
@@ -118,7 +120,11 @@ pub async fn search_users(
          CASE WHEN phone_visible THEN phone ELSE NULL END AS phone, \
          created_at \
          FROM users \
-         WHERE LOWER(username) LIKE $1 AND id != $2 \
+         WHERE id != $2 AND ( \
+           LOWER(username) LIKE $1 \
+           OR (email_discoverable AND LOWER(email) LIKE $1) \
+           OR (phone_discoverable AND phone LIKE $1) \
+         ) \
          ORDER BY username \
          LIMIT 10",
     )
