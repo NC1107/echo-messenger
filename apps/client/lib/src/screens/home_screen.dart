@@ -219,6 +219,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _selectedConversation = conv;
       _narrowPanelIndex = 1;
       _showSettings = false;
+      // Dismiss the voice lounge so the selected chat is visible.
+      _showingLounge = false;
+      _userDismissedLounge = true;
     });
     // Clear notifications for this conversation now that the user is viewing it.
     NotificationService().cancelConversationNotifications(conv.id);

@@ -1070,130 +1070,143 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
     return Container(
       color: context.chatBg,
-      child: Column(
+      child: Stack(
         children: [
-          ChatHeaderBar(
-            conversation: conv,
-            myUserId: myUserId,
-            serverUrl: serverUrl,
-            showSearch: _showSearch,
-            onToggleSearch: () => setState(() => _showSearch = !_showSearch),
-            onMembersToggle: widget.onMembersToggle,
-            onGroupInfo: widget.onGroupInfo,
-            onDismissEncryptionBanner: () =>
-                setState(() => _hideEncryptionBanner = true),
-            hideEncryptionBanner: _hideEncryptionBanner,
-          ),
+          Column(
+            children: [
+              ChatHeaderBar(
+                conversation: conv,
+                myUserId: myUserId,
+                serverUrl: serverUrl,
+                showSearch: _showSearch,
+                onToggleSearch: () =>
+                    setState(() => _showSearch = !_showSearch),
+                onMembersToggle: widget.onMembersToggle,
+                onGroupInfo: widget.onGroupInfo,
+                onDismissEncryptionBanner: () =>
+                    setState(() => _hideEncryptionBanner = true),
+                hideEncryptionBanner: _hideEncryptionBanner,
+              ),
 
-          if (conv.isGroup)
-            ChannelBar(
-              conversationId: conv.id,
-              selectedTextChannelId: _selectedTextChannelId,
-              activeVoiceChannelId: _activeVoiceChannelId,
-              hideVoiceDock: widget.hideVoiceDock,
-              onTextChannelChanged: _onTextChannelChanged,
-              onVoiceChannelChanged: (channelId) {
-                if (mounted) {
-                  setState(() => _activeVoiceChannelId = channelId);
-                }
-              },
-            ),
-
-          if (_showSearch)
-            MessageSearchOverlay(
-              conversationId: conv.id,
-              onMessageSelected: (messageId) {
-                setState(() => _showSearch = false);
-                _highlightMessage(messageId);
-              },
-              onClose: () => setState(() => _showSearch = false),
-            ),
-
-          if (isLoadingHistory)
-            LinearProgressIndicator(
-              minHeight: 2,
-              color: context.accent,
-              backgroundColor: context.surface,
-            ),
-
-          Expanded(
-            child: Stack(
-              children: [
-                _buildMessageListOrEmpty(
-                  conv: conv,
-                  messages: messages,
-                  isLoadingHistory: isLoadingHistory,
-                  displayName: displayName,
-                  chatState: chatState,
-                  memberAvatars: memberAvatars,
-                  myUserId: myUserId,
-                  serverUrl: serverUrl,
-                  authToken: authToken,
+              if (conv.isGroup)
+                ChannelBar(
+                  conversationId: conv.id,
+                  selectedTextChannelId: _selectedTextChannelId,
+                  activeVoiceChannelId: _activeVoiceChannelId,
+                  hideVoiceDock: widget.hideVoiceDock,
+                  onTextChannelChanged: _onTextChannelChanged,
+                  onVoiceChannelChanged: (channelId) {
+                    if (mounted) {
+                      setState(() => _activeVoiceChannelId = channelId);
+                    }
+                  },
                 ),
-                if (_hasNewMessagesBelow)
-                  Positioned(
-                    bottom: 12,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: GestureDetector(
-                        onTap: () => _scrollToBottom(settleRetries: 2),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: context.accent,
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.25),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
+
+              if (_showSearch)
+                MessageSearchOverlay(
+                  conversationId: conv.id,
+                  onMessageSelected: (messageId) {
+                    setState(() => _showSearch = false);
+                    _highlightMessage(messageId);
+                  },
+                  onClose: () => setState(() => _showSearch = false),
+                ),
+
+              if (isLoadingHistory)
+                LinearProgressIndicator(
+                  minHeight: 2,
+                  color: context.accent,
+                  backgroundColor: context.surface,
+                ),
+
+              Expanded(
+                child: Stack(
+                  children: [
+                    _buildMessageListOrEmpty(
+                      conv: conv,
+                      messages: messages,
+                      isLoadingHistory: isLoadingHistory,
+                      displayName: displayName,
+                      chatState: chatState,
+                      memberAvatars: memberAvatars,
+                      myUserId: myUserId,
+                      serverUrl: serverUrl,
+                      authToken: authToken,
+                    ),
+                    if (_hasNewMessagesBelow)
+                      Positioned(
+                        bottom: 12,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: GestureDetector(
+                            onTap: () => _scrollToBottom(settleRetries: 2),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
                               ),
-                            ],
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'New messages',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                              decoration: BoxDecoration(
+                                color: context.accent,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.25),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
-                              SizedBox(width: 4),
-                              Icon(
-                                Icons.arrow_downward,
-                                size: 14,
-                                color: Colors.white,
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'New messages',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  SizedBox(width: 4),
+                                  Icon(
+                                    Icons.arrow_downward,
+                                    size: 14,
+                                    color: Colors.white,
+                                  ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
-              ],
+                  ],
+                ),
+              ),
+
+              ChatInputBar(
+                key: _chatInputBarKey,
+                conversation: conv,
+                selectedTextChannelId: _selectedTextChannelId,
+                effectiveActiveVoiceChannelId: _activeVoiceChannelId,
+                typingUsers: typingUsers,
+                onMessageSent: () {
+                  _scrollToBottom(settleRetries: 2);
+                  _markAsRead();
+                },
+              ),
+
+              ..._buildVoiceRenderers(),
+            ],
+          ),
+          // Floating emoji/GIF picker — rendered above the message list so taps
+          // aren't absorbed by the ListView's gesture recognizers.
+          if (_chatInputBarKey.currentState?.showMediaPicker ?? false)
+            Positioned(
+              bottom: 80,
+              right: 16,
+              child: _chatInputBarKey.currentState!.buildMediaPickerPanel(),
             ),
-          ),
-
-          ChatInputBar(
-            key: _chatInputBarKey,
-            conversation: conv,
-            selectedTextChannelId: _selectedTextChannelId,
-            effectiveActiveVoiceChannelId: _activeVoiceChannelId,
-            typingUsers: typingUsers,
-            onMessageSent: () {
-              _scrollToBottom(settleRetries: 2);
-              _markAsRead();
-            },
-          ),
-
-          ..._buildVoiceRenderers(),
         ],
       ),
     );

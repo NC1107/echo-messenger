@@ -4,50 +4,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:livekit_client/livekit_client.dart' hide VideoQuality;
+import 'package:livekit_client/livekit_client.dart';
 
 import '../services/debug_log_service.dart';
 import '../services/sound_service.dart';
 import 'auth_provider.dart';
 import 'server_url_provider.dart';
 import 'voice_settings_provider.dart';
-
-// ---------------------------------------------------------------------------
-// Video quality presets
-// ---------------------------------------------------------------------------
-
-enum VideoQuality {
-  low,
-  medium,
-  high,
-  hd;
-
-  String get label {
-    switch (this) {
-      case VideoQuality.low:
-        return 'Low';
-      case VideoQuality.medium:
-        return 'Medium';
-      case VideoQuality.high:
-        return 'High';
-      case VideoQuality.hd:
-        return 'HD';
-    }
-  }
-
-  VideoEncoding get encoding {
-    switch (this) {
-      case VideoQuality.low:
-        return const VideoEncoding(maxBitrate: 250000, maxFramerate: 15);
-      case VideoQuality.medium:
-        return const VideoEncoding(maxBitrate: 500000, maxFramerate: 24);
-      case VideoQuality.high:
-        return const VideoEncoding(maxBitrate: 1500000, maxFramerate: 30);
-      case VideoQuality.hd:
-        return const VideoEncoding(maxBitrate: 3000000, maxFramerate: 30);
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // State
@@ -59,7 +22,15 @@ class LiveKitVoiceState {
   final bool isCaptureEnabled;
   final bool isDeafened;
   final bool isVideoEnabled;
-  final VideoQuality videoQuality;
+
+  /// Video bitrate in bits per second (e.g. 500000 = 500kbps).
+  final int videoBitrate;
+
+  /// Video frames per second.
+  final int videoFps;
+
+  /// When true, LiveKit adaptive stream handles quality automatically.
+  final bool autoQuality;
   final String? conversationId;
   final String? channelId;
   final Map<String, double> peerAudioLevels;
@@ -80,7 +51,9 @@ class LiveKitVoiceState {
     this.isCaptureEnabled = true,
     this.isDeafened = false,
     this.isVideoEnabled = false,
-    this.videoQuality = VideoQuality.medium,
+    this.videoBitrate = 500000,
+    this.videoFps = 24,
+    this.autoQuality = false,
     this.conversationId,
     this.channelId,
     this.peerAudioLevels = const {},
@@ -97,7 +70,9 @@ class LiveKitVoiceState {
     bool? isCaptureEnabled,
     bool? isDeafened,
     bool? isVideoEnabled,
-    VideoQuality? videoQuality,
+    int? videoBitrate,
+    int? videoFps,
+    bool? autoQuality,
     String? conversationId,
     String? channelId,
     Map<String, double>? peerAudioLevels,
@@ -113,7 +88,9 @@ class LiveKitVoiceState {
       isCaptureEnabled: isCaptureEnabled ?? this.isCaptureEnabled,
       isDeafened: isDeafened ?? this.isDeafened,
       isVideoEnabled: isVideoEnabled ?? this.isVideoEnabled,
-      videoQuality: videoQuality ?? this.videoQuality,
+      videoBitrate: videoBitrate ?? this.videoBitrate,
+      videoFps: videoFps ?? this.videoFps,
+      autoQuality: autoQuality ?? this.autoQuality,
       conversationId: conversationId ?? this.conversationId,
       channelId: channelId ?? this.channelId,
       peerAudioLevels: peerAudioLevels ?? this.peerAudioLevels,
@@ -207,7 +184,10 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
             audioBitrate: AudioPreset.speech,
           ),
           defaultVideoPublishOptions: VideoPublishOptions(
-            videoEncoding: state.videoQuality.encoding,
+            videoEncoding: VideoEncoding(
+              maxBitrate: state.videoBitrate,
+              maxFramerate: state.videoFps,
+            ),
           ),
         ),
       );
@@ -364,16 +344,36 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
     }
   }
 
-  /// Change the video stream quality preset.
+  /// Change the video bitrate and FPS.
   ///
   /// Updates the encoding parameters on the currently published video track
   /// (if any) and stores the preference in state for future publishes.
-  Future<void> setVideoQuality(VideoQuality quality) async {
-    state = state.copyWith(videoQuality: quality);
+  Future<void> setVideoParams({int? bitrate, int? fps}) async {
+    state = state.copyWith(
+      videoBitrate: bitrate ?? state.videoBitrate,
+      videoFps: fps ?? state.videoFps,
+    );
 
-    // Apply to the active camera track if video is enabled.
+    await _applyVideoEncoding();
+  }
+
+  /// Toggle auto quality mode.
+  ///
+  /// When enabled, LiveKit adaptive stream manages quality automatically
+  /// and manual bitrate/fps settings are ignored.
+  Future<void> setAutoQuality(bool enabled) async {
+    state = state.copyWith(autoQuality: enabled);
+    // Auto quality is handled by the room's adaptiveStream option;
+    // manual encoding is only applied when auto quality is off.
+    if (!enabled) {
+      await _applyVideoEncoding();
+    }
+  }
+
+  /// Apply the current videoBitrate / videoFps to the active camera track.
+  Future<void> _applyVideoEncoding() async {
     final room = _room;
-    if (room == null || !state.isVideoEnabled) return;
+    if (room == null || !state.isVideoEnabled || state.autoQuality) return;
 
     final cameraPub = room.localParticipant?.videoTrackPublications
         .where((pub) => pub.source == TrackSource.camera && pub.track != null)
@@ -383,14 +383,19 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
       try {
         await room.localParticipant?.publishVideoTrack(
           cameraPub.track!,
-          publishOptions: VideoPublishOptions(videoEncoding: quality.encoding),
+          publishOptions: VideoPublishOptions(
+            videoEncoding: VideoEncoding(
+              maxBitrate: state.videoBitrate,
+              maxFramerate: state.videoFps,
+            ),
+          ),
         );
       } catch (e) {
-        debugPrint('[LiveKitVoice] setVideoQuality failed: $e');
+        debugPrint('[LiveKitVoice] setVideoParams failed: $e');
         DebugLogService.instance.log(
           LogLevel.warning,
           'LiveKitVoice',
-          'Video quality change failed: $e',
+          'Video params change failed: $e',
         );
       }
     }

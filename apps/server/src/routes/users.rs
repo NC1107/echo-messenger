@@ -240,6 +240,17 @@ pub async fn update_profile(
         return Err(AppError::bad_request("Phone must be 30 characters or less"));
     }
 
+    // Normalize phone to E.164: strip all non-digit chars except leading +.
+    let normalized_phone = body.phone.as_deref().map(|p| {
+        if p.is_empty() {
+            String::new()
+        } else {
+            p.chars()
+                .filter(|c| c.is_ascii_digit() || *c == '+')
+                .collect::<String>()
+        }
+    });
+
     let fields = db::users::ProfileUpdate {
         display_name: body.display_name.as_deref(),
         bio: body.bio.as_deref(),
@@ -248,7 +259,7 @@ pub async fn update_profile(
         pronouns: body.pronouns.as_deref(),
         website: body.website.as_deref(),
         email: body.email.as_deref(),
-        phone: body.phone.as_deref(),
+        phone: normalized_phone.as_deref(),
     };
     let profile = db::users::update_profile(&state.pool, auth.user_id, &fields)
         .await

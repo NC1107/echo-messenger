@@ -944,7 +944,13 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     );
   }
 
-  Widget _buildMediaPickerPanel() {
+  /// Whether the media picker is currently shown. Exposed for ChatPanel
+  /// to render the picker in its own overlay Stack.
+  bool get showMediaPicker => _showMediaPicker;
+
+  /// Build the media picker panel. Called by ChatPanel to render it
+  /// above the message list (not inside the input bar's Stack).
+  Widget buildMediaPickerPanel() {
     return MediaPickerPanel(
       onEmojiSelected: (category, emoji) {
         final text = _messageController.text;
@@ -1069,9 +1075,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
             ),
           ],
         ),
-        // Floating media picker (Discord-style popup above input)
-        if (showMediaPicker)
-          Positioned(bottom: 80, right: 0, child: _buildMediaPickerPanel()),
+        // Media picker is rendered by ChatPanel in its own Stack (above message list).
       ],
     );
   }

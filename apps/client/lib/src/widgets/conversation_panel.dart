@@ -487,37 +487,41 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
   Widget _buildHeaderActions(BuildContext context, int pendingCount) {
     return Flexible(
-      child: Row(
-        mainAxisSize: MainAxisSize.max,
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          _buildNewChatButton(context, pendingCount),
-          IconButton(
-            icon: const Icon(Icons.group_add_outlined, size: 18),
-            color: context.textSecondary,
-            tooltip: 'New Group',
-            onPressed: widget.onNewGroup,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-          IconButton(
-            icon: const Icon(Icons.explore_outlined, size: 18),
-            color: context.textSecondary,
-            tooltip: 'Discover Groups',
-            onPressed: widget.onDiscover,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-          if (widget.onCollapseSidebar != null)
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        reverse: true,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            _buildNewChatButton(context, pendingCount),
             IconButton(
-              icon: const Icon(Icons.chevron_left, size: 14),
-              color: context.textMuted,
-              tooltip: 'Collapse sidebar',
-              onPressed: widget.onCollapseSidebar,
+              icon: const Icon(Icons.group_add_outlined, size: 18),
+              color: context.textSecondary,
+              tooltip: 'New Group',
+              onPressed: widget.onNewGroup,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
-        ],
+            IconButton(
+              icon: const Icon(Icons.explore_outlined, size: 18),
+              color: context.textSecondary,
+              tooltip: 'Discover Groups',
+              onPressed: widget.onDiscover,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+            if (widget.onCollapseSidebar != null)
+              IconButton(
+                icon: const Icon(Icons.chevron_left, size: 14),
+                color: context.textMuted,
+                tooltip: 'Collapse sidebar',
+                onPressed: widget.onCollapseSidebar,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -656,14 +660,31 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   Widget _buildTabBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          _buildTabChip('Chats', 0),
-          const SizedBox(width: 6),
-          _buildTabChip('Contacts', 1),
-          const SizedBox(width: 6),
-          _buildTabChip('Groups', 2),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final narrow = constraints.maxWidth < 300;
+          return Row(
+            children: [
+              _buildTabChip(
+                'Chats',
+                0,
+                icon: narrow ? Icons.chat_bubble_outline : null,
+              ),
+              const SizedBox(width: 6),
+              _buildTabChip(
+                'Contacts',
+                1,
+                icon: narrow ? Icons.people_outline : null,
+              ),
+              const SizedBox(width: 6),
+              _buildTabChip(
+                'Groups',
+                2,
+                icon: narrow ? Icons.groups_outlined : null,
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -871,7 +892,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
-  Widget _buildTabChip(String label, int index) {
+  Widget _buildTabChip(String label, int index, {IconData? icon}) {
     final isSelected = _selectedTab == index;
     return Expanded(
       child: GestureDetector(
@@ -883,16 +904,26 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             borderRadius: BorderRadius.circular(8),
           ),
           child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: isSelected
-                    ? Theme.of(context).colorScheme.onPrimary
-                    : context.textSecondary,
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-              ),
-            ),
+            child: icon != null
+                ? Icon(
+                    icon,
+                    size: 16,
+                    color: isSelected
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : context.textSecondary,
+                  )
+                : Text(
+                    label,
+                    style: TextStyle(
+                      color: isSelected
+                          ? Theme.of(context).colorScheme.onPrimary
+                          : context.textSecondary,
+                      fontSize: 12,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.w500,
+                    ),
+                  ),
           ),
         ),
       ),
