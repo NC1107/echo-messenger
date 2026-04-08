@@ -78,6 +78,8 @@ class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
   }
 
   /// Stop screen sharing and release all resources.
+  ///
+  /// Safe to call even if no screen share is active — silently no-ops.
   Future<void> stopScreenShare() async {
     final stream = _screenStream;
     final renderer = _screenRenderer;
@@ -86,15 +88,24 @@ class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
     _screenRenderer = null;
 
     if (stream != null) {
-      for (final track in stream.getTracks()) {
-        track.stop();
+      try {
+        for (final track in stream.getTracks()) {
+          track.stop();
+        }
+        await stream.dispose();
+      } catch (_) {
+        // Platform may throw "No active stream to cancel" if the capture
+        // was already released (e.g. getDisplayMedia failed on Linux).
       }
-      await stream.dispose();
     }
 
     if (renderer != null) {
-      renderer.srcObject = null;
-      await renderer.dispose();
+      try {
+        renderer.srcObject = null;
+        await renderer.dispose();
+      } catch (_) {
+        // Renderer may already be disposed.
+      }
     }
 
     if (mounted) {
