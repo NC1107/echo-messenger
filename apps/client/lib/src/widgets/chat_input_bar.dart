@@ -944,15 +944,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     );
   }
 
-  Widget _buildMediaPickerPanel({
-    required double height,
-    required int columns,
-    required double emojiSize,
-  }) {
+  Widget _buildMediaPickerPanel() {
     return MediaPickerPanel(
-      height: height,
-      emojiColumns: columns,
-      emojiSize: emojiSize,
       onEmojiSelected: (category, emoji) {
         final text = _messageController.text;
         final selection = _messageController.selection;
@@ -1018,70 +1011,67 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     );
     final viewportWidth = MediaQuery.of(context).size.width;
     final isMobileLayout = viewportWidth < 600;
-    final isDesktopLayout = viewportWidth >= 900;
     final showMediaPicker = _showMediaPicker && !isMobileLayout;
-    final mediaPickerHeight = isDesktopLayout ? 250.0 : 260.0;
-    final emojiColumns = isDesktopLayout ? 9 : 8;
-    final emojiSize = isDesktopLayout ? 24.0 : 28.0;
-
     final effectiveActiveVoiceChannelId = widget.effectiveActiveVoiceChannelId;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
-        // Mention autocomplete picker
-        if (_showMentionPicker)
-          MentionAutocomplete(
-            members: _filteredMentionMembers,
-            mentionQuery: _mentionQuery,
-            onMentionSelected: _handleMentionSelected,
-          ),
-        // Input area
-        Container(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-          color: context.chatBg,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (showInputStatus)
-                InputStatusBar(
-                  isEditing: _isEditing,
-                  statusText: inputStatusText,
-                  onCancelEdit: _cancelEditMode,
-                ),
-              // Reply preview bar
-              if (replyToMessage != null)
-                ReplyPreviewBar(
-                  replyToMessage: replyToMessage,
-                  onDismiss: () =>
-                      ref.read(chatProvider.notifier).clearReplyTo(),
-                ),
-              // Attachment preview bar (Discord-style)
-              if (_hasPendingAttachment)
-                AttachmentPreview(
-                  attachmentBytes: _pendingAttachmentBytes,
-                  fileName: _pendingAttachmentFileName,
-                  mimeType: _pendingAttachmentMimeType,
-                  uploadedUrl: _pendingAttachmentUrl,
-                  isUploading: _isUploadingAttachment,
-                  onClear: _clearPendingAttachment,
-                ),
-              _buildInputRow(
-                showMediaPicker: showMediaPicker,
-                isMobileLayout: isMobileLayout,
-                voiceSettings: voiceSettings,
-                effectiveActiveVoiceChannelId: effectiveActiveVoiceChannelId,
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Mention autocomplete picker
+            if (_showMentionPicker)
+              MentionAutocomplete(
+                members: _filteredMentionMembers,
+                mentionQuery: _mentionQuery,
+                onMentionSelected: _handleMentionSelected,
               ),
-            ],
-          ),
+            // Input area
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              color: context.chatBg,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (showInputStatus)
+                    InputStatusBar(
+                      isEditing: _isEditing,
+                      statusText: inputStatusText,
+                      onCancelEdit: _cancelEditMode,
+                    ),
+                  // Reply preview bar
+                  if (replyToMessage != null)
+                    ReplyPreviewBar(
+                      replyToMessage: replyToMessage,
+                      onDismiss: () =>
+                          ref.read(chatProvider.notifier).clearReplyTo(),
+                    ),
+                  // Attachment preview bar (Discord-style)
+                  if (_hasPendingAttachment)
+                    AttachmentPreview(
+                      attachmentBytes: _pendingAttachmentBytes,
+                      fileName: _pendingAttachmentFileName,
+                      mimeType: _pendingAttachmentMimeType,
+                      uploadedUrl: _pendingAttachmentUrl,
+                      isUploading: _isUploadingAttachment,
+                      onClear: _clearPendingAttachment,
+                    ),
+                  _buildInputRow(
+                    showMediaPicker: showMediaPicker,
+                    isMobileLayout: isMobileLayout,
+                    voiceSettings: voiceSettings,
+                    effectiveActiveVoiceChannelId:
+                        effectiveActiveVoiceChannelId,
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        // Unified media picker panel (Emoji + GIF tabs)
+        // Floating media picker (Discord-style popup above input)
         if (showMediaPicker)
-          _buildMediaPickerPanel(
-            height: mediaPickerHeight,
-            columns: emojiColumns,
-            emojiSize: emojiSize,
-          ),
+          Positioned(bottom: 80, right: 0, child: _buildMediaPickerPanel()),
       ],
     );
   }

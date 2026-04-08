@@ -4,38 +4,22 @@ import 'package:flutter/material.dart';
 import '../theme/echo_theme.dart';
 import 'gif_picker_widget.dart';
 
-/// A tabbed panel combining the Emoji picker and GIF picker into a single
-/// Discord-style panel. Shown below the chat input bar when the user taps
-/// the + button.
+/// Discord-style floating emoji + GIF picker panel.
+///
+/// Renders as a card anchored to the bottom-right of the chat area with:
+/// - Tabs at the top: Emoji | GIF
+/// - Emoji tab: search bar + category sidebar (left) + emoji grid (right)
+/// - GIF tab: search + trending/results grid
 class MediaPickerPanel extends StatefulWidget {
-  /// Called when an emoji is selected. The caller is responsible for inserting
-  /// the emoji character into the text field at the correct cursor position.
   final void Function(Category? category, Emoji emoji) onEmojiSelected;
-
-  /// Called when a GIF is selected. [gifUrl] is the HD URL to send, [slug]
-  /// is the Klipy slug for share tracking.
   final void Function(String gifUrl, String? slug) onGifSelected;
-
-  /// Called when the user requests to close the panel (e.g. close button).
   final VoidCallback onClose;
-
-  /// Total height of the panel.
-  final double height;
-
-  /// Number of emoji columns (responsive).
-  final int emojiColumns;
-
-  /// Max emoji size (responsive).
-  final double emojiSize;
 
   const MediaPickerPanel({
     super.key,
     required this.onEmojiSelected,
     required this.onGifSelected,
     required this.onClose,
-    this.height = 250,
-    this.emojiColumns = 9,
-    this.emojiSize = 24,
   });
 
   @override
@@ -60,81 +44,101 @@ class _MediaPickerPanelState extends State<MediaPickerPanel>
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: widget.height,
-      decoration: BoxDecoration(
-        color: context.surface,
-        border: Border(top: BorderSide(color: context.border)),
-      ),
-      child: Column(
-        children: [
-          _buildTabBar(context),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [_buildEmojiTab(context), _buildGifTab()],
+    return Align(
+      alignment: Alignment.bottomRight,
+      child: Container(
+        width: 420,
+        height: 400,
+        margin: const EdgeInsets.only(right: 8, bottom: 4),
+        decoration: BoxDecoration(
+          color: context.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: context.border),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 16,
+              offset: const Offset(0, -4),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabBar(BuildContext context) {
-    return SizedBox(
-      height: 36,
-      child: Row(
-        children: [
-          Expanded(
-            child: TabBar(
-              controller: _tabController,
-              indicatorColor: context.accent,
-              indicatorWeight: 2,
-              labelColor: context.accent,
-              unselectedLabelColor: context.textMuted,
-              labelStyle: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+          ],
+        ),
+        child: Column(
+          children: [
+            // Tab bar header
+            Container(
+              height: 36,
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: context.border, width: 1),
+                ),
               ),
-              unselectedLabelStyle: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TabBar(
+                      controller: _tabController,
+                      indicatorColor: context.accent,
+                      indicatorWeight: 2,
+                      indicatorSize: TabBarIndicatorSize.label,
+                      labelColor: context.textPrimary,
+                      unselectedLabelColor: context.textMuted,
+                      labelStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      unselectedLabelStyle: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      dividerColor: Colors.transparent,
+                      labelPadding: const EdgeInsets.symmetric(horizontal: 16),
+                      tabs: const [
+                        Tab(height: 34, text: 'Emoji'),
+                        Tab(height: 34, text: 'GIFs'),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, size: 16, color: context.textMuted),
+                    onPressed: widget.onClose,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 28,
+                      minHeight: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
               ),
-              dividerColor: Colors.transparent,
-              tabs: const [
-                Tab(text: 'Emoji'),
-                Tab(text: 'GIF'),
-              ],
             ),
-          ),
-          IconButton(
-            icon: Icon(Icons.close, size: 16, color: context.textMuted),
-            onPressed: widget.onClose,
-            tooltip: 'Close',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-          const SizedBox(width: 4),
-        ],
+            // Content
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [_buildEmojiTab(context), _buildGifTab()],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildEmojiTab(BuildContext context) {
-    // Height available for the emoji picker is total height minus tab bar (36).
-    final emojiHeight = widget.height - 36;
     return EmojiPicker(
       onEmojiSelected: widget.onEmojiSelected,
       config: Config(
-        height: emojiHeight,
+        height: 362,
         checkPlatformCompatibility: true,
         emojiViewConfig: EmojiViewConfig(
           backgroundColor: context.surface,
-          columns: widget.emojiColumns,
-          emojiSizeMax: widget.emojiSize,
+          columns: 9,
+          emojiSizeMax: 28,
+          verticalSpacing: 0,
+          horizontalSpacing: 0,
           noRecents: Text(
-            'No recents yet. Pick one below.',
-            style: TextStyle(fontSize: 14, color: context.textMuted),
+            'No recents yet.',
+            style: TextStyle(fontSize: 12, color: context.textMuted),
           ),
         ),
         categoryViewConfig: CategoryViewConfig(
@@ -154,7 +158,7 @@ class _MediaPickerPanelState extends State<MediaPickerPanel>
         searchViewConfig: SearchViewConfig(
           backgroundColor: context.surface,
           buttonIconColor: context.textSecondary,
-          hintText: 'Search emoji...',
+          hintText: 'Find an emoji...',
         ),
       ),
     );
@@ -163,7 +167,6 @@ class _MediaPickerPanelState extends State<MediaPickerPanel>
   Widget _buildGifTab() {
     return GifPickerWidget(
       onGifSelected: widget.onGifSelected,
-      // No close button -- the panel-level close handles it.
       onClose: null,
       embedMode: true,
     );
