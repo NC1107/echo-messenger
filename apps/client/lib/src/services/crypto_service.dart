@@ -87,6 +87,10 @@ class CryptoService {
   /// Checks SharedPreferences for each crypto key; if found, copies it to
   /// secure storage and deletes from SharedPreferences. Session keys (prefixed
   /// with [_sessionPrefix]) are also migrated.
+  ///
+  /// Each write is guarded: if [SecureKeyStore.write] throws (e.g. keyring
+  /// unavailable), the key is left in SharedPreferences so the next launch can
+  /// retry the migration instead of losing the data.
   Future<void> _migrateFromSharedPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     final store = SecureKeyStore.instance;
@@ -95,12 +99,19 @@ class CryptoService {
     for (final key in _allCryptoKeys) {
       final value = prefs.getString(key);
       if (value != null) {
-        await store.write(key, value);
-        await prefs.remove(key);
-        debugPrint(
-          '[Crypto] Migrated $key from SharedPreferences to '
-          'secure storage',
-        );
+        try {
+          await store.write(key, value);
+          await prefs.remove(key);
+          debugPrint(
+            '[Crypto] Migrated $key from SharedPreferences to '
+            'secure storage',
+          );
+        } catch (e) {
+          debugPrint(
+            '[Crypto] Migration of $key failed (keeping in SharedPreferences '
+            'for next attempt): $e',
+          );
+        }
       }
     }
 
@@ -109,9 +120,16 @@ class CryptoService {
       if (key.startsWith(_sessionPrefix)) {
         final value = prefs.getString(key);
         if (value != null) {
-          await store.write(key, value);
-          await prefs.remove(key);
-          debugPrint('[Crypto] Migrated session $key to secure storage');
+          try {
+            await store.write(key, value);
+            await prefs.remove(key);
+            debugPrint('[Crypto] Migrated session $key to secure storage');
+          } catch (e) {
+            debugPrint(
+              '[Crypto] Migration of session $key failed '
+              '(keeping in SharedPreferences): $e',
+            );
+          }
         }
       }
     }
@@ -810,6 +828,24 @@ class CryptoService {
         await store.delete(key);
       }
     }
+  }
+
+  /// Clear in-memory crypto state without touching secure storage.
+  ///
+  /// Safe to call on logout when the same user (or any user) will log back in
+  /// on this device. Stored keys remain intact so [init()] can reload them on
+  /// the next [initAndUploadKeys()] call.  Identity keys must NOT be deleted
+  /// on logout because deleting them causes [init()] to regenerate a brand-new
+  /// identity, permanently breaking decryption of all prior messages.
+  void clearInMemoryState() {
+    _identityKeyPair = null;
+    _signingKeyPair = null;
+    _signedPrekeyPair = null;
+    _sessions.clear();
+    _lastX3dhResult = null;
+    _lastOtpKeyId = null;
+    _keysAreFresh = false;
+    _keysWereRegenerated = false;
   }
 
   // -----------------------------------------------------------------------

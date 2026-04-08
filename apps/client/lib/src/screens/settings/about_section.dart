@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../providers/crypto_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../providers/update_provider.dart';
 import '../../providers/websocket_provider.dart';
@@ -255,6 +256,7 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
         // Clear all local data and navigate to login
         ref.read(websocketProvider.notifier).disconnect();
         ref.read(chatProvider.notifier).clear();
+        await ref.read(cryptoProvider.notifier).resetState();
         ref.read(authProvider.notifier).logout();
         if (mounted) {
           ToastService.show(

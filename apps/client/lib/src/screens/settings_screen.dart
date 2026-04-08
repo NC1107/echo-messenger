@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
+import '../providers/crypto_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import 'settings/about_section.dart';
@@ -298,6 +299,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     ref.read(websocketProvider.notifier).disconnect();
     ref.read(chatProvider.notifier).clear();
+    await ref.read(cryptoProvider.notifier).resetState();
     ref.read(authProvider.notifier).logout();
     if (mounted) context.go('/login');
   }
