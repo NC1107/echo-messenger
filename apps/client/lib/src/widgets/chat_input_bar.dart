@@ -46,6 +46,7 @@ class ChatInputBar extends ConsumerStatefulWidget {
   final String? effectiveActiveVoiceChannelId;
   final List<String> typingUsers;
   final VoidCallback onMessageSent;
+  final VoidCallback? onMediaPickerChanged;
 
   const ChatInputBar({
     super.key,
@@ -54,6 +55,7 @@ class ChatInputBar extends ConsumerStatefulWidget {
     this.effectiveActiveVoiceChannelId,
     this.typingUsers = const [],
     required this.onMessageSent,
+    this.onMediaPickerChanged,
   });
 
   @override
@@ -670,6 +672,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
       onPressed: () {
         setState(() => _showMediaPicker = !_showMediaPicker);
+        widget.onMediaPickerChanged?.call();
         if (!_showMediaPicker) {
           _inputFocusNode.requestFocus();
         }

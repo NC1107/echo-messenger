@@ -1194,6 +1194,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                   _scrollToBottom(settleRetries: 2);
                   _markAsRead();
                 },
+                onMediaPickerChanged: () => setState(() {}),
               ),
 
               ..._buildVoiceRenderers(),
