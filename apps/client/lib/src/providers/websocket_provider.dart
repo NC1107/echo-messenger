@@ -262,7 +262,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       debugPrint('[WS] Encryption failed: $e');
       _addFailedMessage(
         toUserId,
-        'Encryption failed: $e',
+        _friendlyEncryptionError(e),
         conversationId: conversationId,
       );
       return;
@@ -281,6 +281,24 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     }
 
     _channel?.sink.add(jsonEncode(msg));
+  }
+
+  /// Map raw encryption exceptions to user-readable messages.
+  static String _friendlyEncryptionError(Object e) {
+    final msg = e.toString();
+    if (msg.contains('No PreKey bundle found')) {
+      return 'This user hasn\'t set up encryption yet. '
+          'Ask them to log in so their keys are uploaded.';
+    }
+    if (msg.contains('Failed to fetch keys')) {
+      return 'Could not retrieve encryption keys for this user. '
+          'They may need to log in again.';
+    }
+    if (msg.contains('Encryption not initialized')) {
+      return 'Your encryption is not initialized. '
+          'Try logging out and back in.';
+    }
+    return 'Encryption failed: $msg';
   }
 
   /// Add a failed message to the chat so the user can see the error.

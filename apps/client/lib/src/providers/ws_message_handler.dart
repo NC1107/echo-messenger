@@ -238,14 +238,24 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
 
     // Play notification sound and show push notification for incoming messages
     if (fromUserId != myUserId) {
-      SoundService().playMessageReceived();
-      // Fire browser/desktop notification (only shows when app not focused)
-      NotificationService().showMessageNotification(
-        senderUsername: senderUsername,
-        body: rawContent.length > 100
-            ? '${rawContent.substring(0, 100)}...'
-            : rawContent,
-      );
+      // Respect muted conversations
+      final conversations = ref.read(conversationsProvider).conversations;
+      final conv = conversations
+          .where((c) => c.id == conversationId)
+          .firstOrNull;
+      final isMuted = conv?.isMuted ?? false;
+
+      if (!isMuted) {
+        SoundService().playMessageReceived();
+        NotificationService().showMessageNotification(
+          senderUsername: senderUsername,
+          body: rawContent.length > 100
+              ? '${rawContent.substring(0, 100)}...'
+              : rawContent,
+          conversationId: conversationId,
+          isGroup: conv?.isGroup ?? false,
+        );
+      }
     }
   }
 
@@ -462,8 +472,10 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
 
     SoundService().playMessageReceived();
     NotificationService().showMessageNotification(
-      senderUsername: fromUsername,
+      senderUsername: '@$fromUsername',
       body: content.length > 100 ? '${content.substring(0, 100)}...' : content,
+      conversationId: conversationId,
+      isGroup: true, // Mentions are always in group contexts
     );
 
     // Bump unread count for the conversation

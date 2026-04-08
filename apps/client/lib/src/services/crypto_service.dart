@@ -172,9 +172,12 @@ class CryptoService {
           _keysAreFresh = true;
         }
 
-        if (!_keysAreFresh) {
-          _keysAreFresh = false;
-        }
+        // Always mark keys as needing upload so the server has the current
+        // bundle.  The upload endpoint is idempotent (UPSERT), so re-uploading
+        // unchanged keys is harmless.  Without this, returning users who
+        // restore keys from secure storage would never upload, leaving the
+        // server without a PreKey bundle for them (breaking DMs).
+        _keysAreFresh = true;
 
         // Load persisted sessions
         await _loadSessions(store);
