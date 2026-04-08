@@ -42,11 +42,6 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   /// Throttle: track last typing event sent per conversation.
   final Map<String, DateTime> _lastTypingSent = {};
 
-  /// Peers that already had a decrypt-retry this connection, to prevent
-  /// cascading session invalidation.
-  @override
-  final Set<String> retriedPeers = {};
-
   WebSocketNotifier(this.ref) : super(const WebSocketState()) {
     // Periodically clean up stale typing indicators
     _typingCleanupTimer = Timer.periodic(
@@ -131,7 +126,6 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     _channel = WebSocketChannel.connect(uri);
     state = state.copyWith(isConnected: true);
     _reconnectAttempts = 0;
-    retriedPeers.clear();
     DebugLogService.instance.log(
       LogLevel.info,
       'WebSocket',

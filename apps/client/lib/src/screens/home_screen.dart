@@ -383,8 +383,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _logout() {
     ref.read(websocketProvider.notifier).disconnect();
     ref.read(chatProvider.notifier).clear();
+    unawaited(ref.read(cryptoProvider.notifier).resetState());
     ref.read(authProvider.notifier).logout();
-    context.go('/login');
+    if (mounted) context.go('/login');
   }
 
   ConversationPanel _buildConversationPanel({VoidCallback? onCollapseSidebar}) {

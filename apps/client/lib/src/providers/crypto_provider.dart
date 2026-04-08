@@ -214,6 +214,25 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
     state = const CryptoState();
   }
 
+  /// Reset in-memory crypto state on logout without deleting stored keys.
+  ///
+  /// Clears only the in-memory state (key pairs, sessions) and resets
+  /// [CryptoState.isInitialized] to false.  Stored identity and session keys
+  /// are intentionally preserved so that [initAndUploadKeys()] can reload them
+  /// on the next login — avoiding the key-loss bug where deletion of stored
+  /// keys caused [init()] to regenerate a new identity and make all prior
+  /// encrypted messages permanently unreadable.
+  ///
+  /// Group key caches are also cleared (they are short-lived and will be
+  /// re-fetched from the server on the next login).
+  Future<void> resetState() async {
+    final crypto = ref.read(cryptoServiceProvider);
+    crypto.clearInMemoryState();
+    final groupCrypto = ref.read(groupCryptoServiceProvider);
+    await groupCrypto.clearAll();
+    state = const CryptoState();
+  }
+
   // -----------------------------------------------------------------------
   // Group encryption key management
   // -----------------------------------------------------------------------

@@ -80,7 +80,6 @@ class WebSocketState {
 mixin WsMessageHandler on StateNotifier<WebSocketState> {
   Ref get ref;
   StreamController<Map<String, dynamic>> get voiceSignalController;
-  Set<String> get retriedPeers;
 
   /// Dispatch an incoming server message to the appropriate handler.
   void handleServerMessage(Map<String, dynamic> json, String myUserId) {
@@ -297,34 +296,18 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     } else {
       try {
         decryptedContent = await crypto.decryptMessage(fromUserId, rawContent);
-      } catch (firstError) {
-        if (!retriedPeers.contains(fromUserId)) {
-          // First failure for this peer this connection -- invalidate session
-          // and retry once.
-          retriedPeers.add(fromUserId);
-          try {
-            await crypto.invalidateSessionKey(fromUserId);
-            decryptedContent = await crypto.decryptMessage(
-              fromUserId,
-              rawContent,
-            );
-          } catch (retryError) {
-            debugPrint(
-              '[WebSocket] Decryption failed for message in $conversationId '
-              'from $fromUserId. First error: $firstError, '
-              'Retry error: $retryError',
-            );
-            decryptedContent =
-                '[Could not decrypt - encryption keys may be out of sync]';
-          }
-        } else {
-          debugPrint(
-            '[WebSocket] Skipping retry for $fromUserId '
-            '(already retried this connection): $firstError',
-          );
-          decryptedContent =
-              '[Could not decrypt - encryption keys may be out of sync]';
-        }
+      } catch (e) {
+        // Do NOT invalidate the session here. Invalidating and re-creating a
+        // new X3DH outgoing session would put Alice and Bob out of sync,
+        // permanently breaking all future messages in the conversation.
+        // decryptMessage() already handles the legitimate peer-key-reset case
+        // internally by detecting the X3DH magic prefix.
+        debugPrint(
+          '[WebSocket] Decryption failed for message in $conversationId '
+          'from $fromUserId: $e',
+        );
+        decryptedContent =
+            '[Could not decrypt - encryption keys may be out of sync]';
       }
     }
 

@@ -37,21 +37,31 @@ class SecureKeyStore {
   }
 
   /// Read a value by key. Returns null if not found.
+  ///
+  /// Throws if the underlying storage backend fails (e.g. keyring locked on
+  /// Linux).  Callers that rely on stored keys — most importantly [init()] —
+  /// must propagate the exception so that [initAndUploadKeys()] can surface it
+  /// to the user instead of silently regenerating new identity keys.
   Future<String?> read(String key) async {
     try {
       return await _storage.read(key: key);
     } catch (e) {
       debugPrint('[SecureKeyStore] read($key) failed: $e');
-      return null;
+      rethrow;
     }
   }
 
   /// Write a key-value pair.
+  ///
+  /// Throws if the underlying storage backend fails so that callers can avoid
+  /// treating the operation as a success (e.g. the migration helper should not
+  /// remove the SharedPreferences entry if this write fails).
   Future<void> write(String key, String value) async {
     try {
       await _storage.write(key: key, value: value);
     } catch (e) {
       debugPrint('[SecureKeyStore] write($key) failed: $e');
+      rethrow;
     }
   }
 
