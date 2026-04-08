@@ -245,14 +245,20 @@ void main() {
       expect(find.text('Replying to alice'), findsNothing);
     });
 
-    testWidgets('plus menu button is present', (tester) async {
+    testWidgets('media picker and attach buttons are present', (tester) async {
       await tester.pumpApp(
         ChatInputBar(conversation: _dmConversation, onMessageSent: () {}),
         overrides: _chatInputOverrides(),
       );
       await tester.pump();
 
-      expect(find.byIcon(Icons.add_circle_outline), findsOneWidget);
+      // Emoji/GIF toggle button
+      expect(
+        find.byIcon(Icons.sentiment_satisfied_alt_outlined),
+        findsOneWidget,
+      );
+      // File attach button
+      expect(find.byIcon(Icons.attach_file_outlined), findsOneWidget);
     });
   });
 }

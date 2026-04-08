@@ -399,6 +399,48 @@ pub async fn list_public_groups(
     Ok(Json(response))
 }
 
+/// GET /api/groups/:id/preview -- Public group preview for invite links.
+///
+/// Returns group metadata (title, description, avatar, member count,
+/// first 5 members) without requiring membership in the group.
+/// Private groups return 404 unless the caller is already a member.
+pub async fn get_group_preview(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let preview = db::groups::get_group_preview(&state.pool, group_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in get_group_preview: {e:?}");
+            AppError::internal("Database error")
+        })?
+        .ok_or_else(|| AppError::not_found("Group not found"))?;
+
+    let members = db::groups::get_group_member_previews(&state.pool, group_id, 5)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in get_group_preview/members: {e:?}");
+            AppError::internal("Database error")
+        })?;
+
+    Ok(Json(json!({
+        "id": preview.id,
+        "title": preview.title,
+        "description": preview.description,
+        "icon_url": preview.icon_url,
+        "member_count": preview.member_count,
+        "is_public": preview.is_public,
+        "is_member": preview.is_member,
+        "members": members.iter().map(|m| json!({
+            "user_id": m.user_id,
+            "username": m.username,
+            "avatar_url": m.avatar_url,
+            "role": m.role,
+        })).collect::<Vec<_>>(),
+    })))
+}
+
 /// POST /api/groups/:id/join -- Join a public group.
 pub async fn join_group(
     auth: AuthUser,

@@ -88,6 +88,8 @@ pub struct UserProfileRow {
     pub timezone: Option<String>,
     pub pronouns: Option<String>,
     pub website: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -95,6 +97,35 @@ pub struct UserProfileRow {
 pub struct UserPrivacyRow {
     pub read_receipts_enabled: bool,
     pub allow_unencrypted_dm: bool,
+    pub email_visible: bool,
+    pub phone_visible: bool,
+    pub email_discoverable: bool,
+    pub phone_discoverable: bool,
+}
+
+/// Search users by username prefix (case-insensitive). Returns up to 10 results.
+/// Excludes the calling user from results.
+pub async fn search_users(
+    pool: &PgPool,
+    query: &str,
+    exclude_user_id: Uuid,
+) -> Result<Vec<UserProfileRow>, sqlx::Error> {
+    let pattern = format!("{}%", query.to_lowercase());
+    sqlx::query_as::<_, UserProfileRow>(
+        "SELECT id, username, display_name, avatar_url, bio, status_message, \
+         timezone, pronouns, website, \
+         CASE WHEN email_visible THEN email ELSE NULL END AS email, \
+         CASE WHEN phone_visible THEN phone ELSE NULL END AS phone, \
+         created_at \
+         FROM users \
+         WHERE LOWER(username) LIKE $1 AND id != $2 \
+         ORDER BY username \
+         LIMIT 10",
+    )
+    .bind(&pattern)
+    .bind(exclude_user_id)
+    .fetch_all(pool)
+    .await
 }
 
 /// Fetch the public profile for a user by ID.
@@ -104,7 +135,10 @@ pub async fn find_public_profile(
 ) -> Result<Option<UserProfileRow>, sqlx::Error> {
     sqlx::query_as::<_, UserProfileRow>(
         "SELECT id, username, display_name, avatar_url, bio, status_message, \
-         timezone, pronouns, website, created_at \
+         timezone, pronouns, website, \
+         CASE WHEN email_visible THEN email ELSE NULL END AS email, \
+         CASE WHEN phone_visible THEN phone ELSE NULL END AS phone, \
+         created_at \
          FROM users WHERE id = $1",
     )
     .bind(user_id)
@@ -120,6 +154,8 @@ pub struct ProfileUpdate<'a> {
     pub timezone: Option<&'a str>,
     pub pronouns: Option<&'a str>,
     pub website: Option<&'a str>,
+    pub email: Option<&'a str>,
+    pub phone: Option<&'a str>,
 }
 
 /// Update profile fields for a user. Only non-null fields are updated.
@@ -138,10 +174,12 @@ pub async fn update_profile(
          status_message = CASE WHEN $4 IS NULL THEN status_message ELSE NULLIF($4, '') END, \
          timezone = CASE WHEN $5 IS NULL THEN timezone ELSE NULLIF($5, '') END, \
          pronouns = CASE WHEN $6 IS NULL THEN pronouns ELSE NULLIF($6, '') END, \
-         website = CASE WHEN $7 IS NULL THEN website ELSE NULLIF($7, '') END \
+         website = CASE WHEN $7 IS NULL THEN website ELSE NULLIF($7, '') END, \
+         email = CASE WHEN $8 IS NULL THEN email ELSE NULLIF($8, '') END, \
+         phone = CASE WHEN $9 IS NULL THEN phone ELSE NULLIF($9, '') END \
          WHERE id = $1 \
          RETURNING id, username, display_name, avatar_url, bio, status_message, \
-                  timezone, pronouns, website, created_at",
+                  timezone, pronouns, website, email, phone, created_at",
     )
     .bind(user_id)
     .bind(fields.display_name)
@@ -150,6 +188,8 @@ pub async fn update_profile(
     .bind(fields.timezone)
     .bind(fields.pronouns)
     .bind(fields.website)
+    .bind(fields.email)
+    .bind(fields.phone)
     .fetch_one(pool)
     .await
 }
@@ -182,27 +222,45 @@ pub async fn get_privacy_preferences(
     user_id: Uuid,
 ) -> Result<Option<UserPrivacyRow>, sqlx::Error> {
     sqlx::query_as::<_, UserPrivacyRow>(
-        "SELECT read_receipts_enabled, allow_unencrypted_dm FROM users WHERE id = $1",
+        "SELECT read_receipts_enabled, allow_unencrypted_dm, \
+         email_visible, phone_visible, email_discoverable, phone_discoverable \
+         FROM users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(pool)
     .await
 }
 
+/// All privacy preference fields for an update.
+pub struct PrivacyUpdate {
+    pub read_receipts_enabled: bool,
+    pub allow_unencrypted_dm: bool,
+    pub email_visible: bool,
+    pub phone_visible: bool,
+    pub email_discoverable: bool,
+    pub phone_discoverable: bool,
+}
+
 pub async fn update_privacy_preferences(
     pool: &PgPool,
     user_id: Uuid,
-    read_receipts_enabled: bool,
-    allow_unencrypted_dm: bool,
+    prefs: &PrivacyUpdate,
 ) -> Result<UserPrivacyRow, sqlx::Error> {
     sqlx::query_as::<_, UserPrivacyRow>(
-        "UPDATE users
-         SET read_receipts_enabled = $1, allow_unencrypted_dm = $2
-         WHERE id = $3
-         RETURNING read_receipts_enabled, allow_unencrypted_dm",
+        "UPDATE users \
+         SET read_receipts_enabled = $1, allow_unencrypted_dm = $2, \
+             email_visible = $3, phone_visible = $4, \
+             email_discoverable = $5, phone_discoverable = $6 \
+         WHERE id = $7 \
+         RETURNING read_receipts_enabled, allow_unencrypted_dm, \
+                  email_visible, phone_visible, email_discoverable, phone_discoverable",
     )
-    .bind(read_receipts_enabled)
-    .bind(allow_unencrypted_dm)
+    .bind(prefs.read_receipts_enabled)
+    .bind(prefs.allow_unencrypted_dm)
+    .bind(prefs.email_visible)
+    .bind(prefs.phone_visible)
+    .bind(prefs.email_discoverable)
+    .bind(prefs.phone_discoverable)
     .bind(user_id)
     .fetch_one(pool)
     .await

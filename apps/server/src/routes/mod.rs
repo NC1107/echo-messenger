@@ -121,6 +121,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/conversations/{conversation_id}/messages/{message_id}/pin",
             post(messages::pin_message).delete(messages::unpin_message),
         )
+        .route("/messages/search", get(messages::search_messages_global))
         .route(
             "/messages/{id}",
             get(messages::get_messages)
@@ -184,6 +185,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/{id}/channels/{channel_id}/voice/state",
             put(channels::update_voice_state),
         )
+        .route("/{id}/preview", get(groups::get_group_preview))
         .route(
             "/{id}",
             get(groups::get_group)
@@ -211,6 +213,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         )
         .route("/me/avatar", put(users::upload_avatar))
         .route("/online", get(users::online_users))
+        .route("/search", get(users::search_users))
         .route("/{id}/profile", get(users::get_profile))
         .route("/{id}/avatar", get(users::get_avatar));
 

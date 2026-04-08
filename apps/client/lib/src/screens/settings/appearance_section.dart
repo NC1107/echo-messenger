@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
+
+/// SharedPreferences key for GIF autoplay setting.
+const kGifAutoplayKey = 'gif_autoplay_enabled';
 
 /// Preview color data for rendering a miniature theme thumbnail.
 class _ThemePreviewColors {
@@ -71,11 +75,37 @@ const _emberPreview = _ThemePreviewColors(
   textSecondary: EchoTheme.emberTextSecondary,
 );
 
-class AppearanceSection extends ConsumerWidget {
+class AppearanceSection extends ConsumerStatefulWidget {
   const AppearanceSection({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AppearanceSection> createState() => _AppearanceSectionState();
+}
+
+class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
+  bool _gifAutoplay = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGifPref();
+  }
+
+  Future<void> _loadGifPref() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() => _gifAutoplay = prefs.getBool(kGifAutoplayKey) ?? true);
+    }
+  }
+
+  Future<void> _setGifAutoplay(bool value) async {
+    setState(() => _gifAutoplay = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kGifAutoplayKey, value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final currentTheme = ref.watch(themeProvider);
 
     final themeOptions = <_ThemeCardData>[
@@ -174,6 +204,21 @@ class AppearanceSection extends ConsumerWidget {
           onTap: () => ref
               .read(messageLayoutProvider.notifier)
               .setLayout(MessageLayout.compact),
+        ),
+        const SizedBox(height: 24),
+        // GIF autoplay
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Auto-play GIFs',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'When off, GIFs show as static thumbnails with a play button.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: _gifAutoplay,
+          onChanged: _setGifAutoplay,
         ),
       ],
     );

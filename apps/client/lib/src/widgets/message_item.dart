@@ -139,73 +139,71 @@ class _MessageItemState extends State<MessageItem> {
     final headers = _mediaHeaders();
     showDialog<void>(
       context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.85),
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.9),
       builder: (dialogContext) {
-        final screenSize = MediaQuery.of(dialogContext).size;
-        final maxWidth = screenSize.width * 0.8;
-        final maxHeight = screenSize.height * 0.8;
-        return GestureDetector(
-          onTap: () => Navigator.of(dialogContext).pop(),
-          behavior: HitTestBehavior.opaque,
-          child: Center(
-            child: GestureDetector(
-              onTap: () {}, // absorb taps on the image itself
+        return Stack(
+          children: [
+            // Dismiss layer — covers entire screen. Tapping anywhere outside
+            // the image closes the viewer.
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => Navigator.of(dialogContext).pop(),
+                behavior: HitTestBehavior.opaque,
+                child: const SizedBox.expand(),
+              ),
+            ),
+            // Image content — centered, constrained, does NOT fill screen
+            Center(
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: maxWidth,
-                  maxHeight: maxHeight,
+                  maxWidth: MediaQuery.of(dialogContext).size.width * 0.85,
+                  maxHeight: MediaQuery.of(dialogContext).size.height * 0.85,
                 ),
-                child: Stack(
-                  children: [
-                    InteractiveViewer(
-                      minScale: 0.8,
-                      maxScale: 4,
-                      child: Center(
-                        child: CachedNetworkImage(
-                          imageUrl: imageUrl,
-                          httpHeaders: headers,
-                          fit: BoxFit.contain,
-                          placeholder: (_, _) => const Center(
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                            ),
-                          ),
-                          errorWidget: (_, _, _) => const Center(
-                            child: Icon(
-                              Icons.broken_image_outlined,
-                              color: Colors.white54,
-                              size: 48,
-                            ),
-                          ),
-                        ),
+                child: InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 4,
+                  child: CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    httpHeaders: headers,
+                    fit: BoxFit.contain,
+                    placeholder: (_, _) => const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    ),
+                    errorWidget: (_, _, _) => const Center(
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white54,
+                        size: 48,
                       ),
                     ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.download_outlined),
-                            color: Colors.white,
-                            tooltip: 'Download',
-                            onPressed: () => _downloadMedia(imageUrl),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            color: Colors.white,
-                            tooltip: 'Close',
-                            onPressed: () => Navigator.of(dialogContext).pop(),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
+            // Action buttons
+            Positioned(
+              top: 16,
+              right: 16,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.download_outlined),
+                    color: Colors.white,
+                    tooltip: 'Download',
+                    onPressed: () => _downloadMedia(imageUrl),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    color: Colors.white,
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                  ),
+                ],
+              ),
+            ),
+          ],
         );
       },
     );

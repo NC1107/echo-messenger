@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
@@ -23,11 +22,11 @@ import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/clipboard_image_helper.dart';
-import 'gif_picker_widget.dart';
 import 'input/attachment_preview.dart';
 import 'input/input_status_bar.dart';
 import 'input/mention_autocomplete.dart';
 import 'input/reply_preview_bar.dart';
+import 'media_picker_panel.dart';
 
 /// Extracted chat input bar from ChatPanel (~850 lines).
 ///
@@ -66,8 +65,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   final _inputFocusNode = FocusNode();
 
   bool _isTextEmpty = true;
-  bool _showEmojiPicker = false;
-  bool _showGifPicker = false;
+  bool _showMediaPicker = false;
 
   // File picker guard
   bool _isPickingFile = false;
@@ -109,8 +107,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _messageController.clear();
       _editingMessage = null;
       _isTextEmpty = true;
-      _showEmojiPicker = false;
-      _showGifPicker = false;
+      _showMediaPicker = false;
       ref.read(chatProvider.notifier).clearReplyTo();
     }
   }
@@ -182,7 +179,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
     await _doSend(text);
     _messageController.clear();
-    if (_showEmojiPicker) setState(() => _showEmojiPicker = false);
+    if (_showMediaPicker) setState(() => _showMediaPicker = false);
     widget.onMessageSent();
   }
 
@@ -642,94 +639,42 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // Build helpers -- kept in root widget
   // ---------------------------------------------------------------------------
 
-  Widget _buildPlusMenuButton({
-    required bool showEmojiPicker,
-    required bool isMobileLayout,
-  }) {
+  Widget _buildAttachFileButton() {
     return Padding(
       padding: const EdgeInsets.only(left: 4),
-      child: PopupMenuButton<String>(
+      child: IconButton(
         icon: Icon(
-          showEmojiPicker ? Icons.keyboard_outlined : Icons.add_circle_outline,
+          Icons.attach_file_outlined,
           size: 20,
-          color: showEmojiPicker ? context.accent : context.textSecondary,
+          color: context.textSecondary,
         ),
-        tooltip: 'Attach or emoji',
+        tooltip: 'Attach file',
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-        onSelected: (value) {
-          _handlePlusMenuSelection(value, showEmojiPicker);
-        },
-        itemBuilder: (context) => _buildPlusMenuItems(
-          showEmojiPicker: showEmojiPicker,
-          isMobileLayout: isMobileLayout,
-        ),
+        onPressed: _pickFile,
       ),
     );
   }
 
-  void _handlePlusMenuSelection(String value, bool showEmojiPicker) {
-    switch (value) {
-      case 'file':
-        _pickFile();
-      case 'emoji':
-        setState(() {
-          _showEmojiPicker = !_showEmojiPicker;
-          _showGifPicker = false;
-        });
-        if (!_showEmojiPicker) {
+  Widget _buildMediaPickerToggle({required bool showMediaPicker}) {
+    return IconButton(
+      icon: Icon(
+        showMediaPicker
+            ? Icons.keyboard_outlined
+            : Icons.sentiment_satisfied_alt_outlined,
+        size: 20,
+        color: showMediaPicker ? context.accent : context.textSecondary,
+      ),
+      tooltip: showMediaPicker ? 'Keyboard' : 'Emoji & GIF',
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      onPressed: () {
+        setState(() => _showMediaPicker = !_showMediaPicker);
+        if (!_showMediaPicker) {
           _inputFocusNode.requestFocus();
         }
-      case 'gif':
-        setState(() {
-          _showGifPicker = !_showGifPicker;
-          _showEmojiPicker = false;
-        });
-    }
-  }
-
-  List<PopupMenuEntry<String>> _buildPlusMenuItems({
-    required bool showEmojiPicker,
-    required bool isMobileLayout,
-  }) {
-    return [
-      const PopupMenuItem(
-        value: 'file',
-        child: Row(
-          children: [
-            Icon(Icons.attach_file_outlined, size: 18),
-            SizedBox(width: 8),
-            Text('File'),
-          ],
-        ),
-      ),
-      if (!isMobileLayout)
-        PopupMenuItem(
-          value: 'emoji',
-          child: Row(
-            children: [
-              Icon(
-                showEmojiPicker
-                    ? Icons.keyboard_outlined
-                    : Icons.sentiment_satisfied_alt_outlined,
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              Text(showEmojiPicker ? 'Keyboard' : 'Emoji'),
-            ],
-          ),
-        ),
-      const PopupMenuItem(
-        value: 'gif',
-        child: Row(
-          children: [
-            Icon(Icons.gif_box_outlined, size: 18),
-            SizedBox(width: 8),
-            Text('GIF'),
-          ],
-        ),
-      ),
-    ];
+      },
+    );
   }
 
   /// Handles push-to-talk key events. Returns true if the event was consumed.
@@ -765,11 +710,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         _showMentionPicker = false;
         _mentionQuery = '';
       });
-    } else if (_showEmojiPicker) {
-      setState(() => _showEmojiPicker = false);
-      _inputFocusNode.requestFocus();
-    } else if (_showGifPicker) {
-      setState(() => _showGifPicker = false);
+    } else if (_showMediaPicker) {
+      setState(() => _showMediaPicker = false);
       _inputFocusNode.requestFocus();
     } else if (_pendingAttachmentBytes != null ||
         _pendingAttachmentUrl != null) {
@@ -883,7 +825,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   Widget _buildTextField({
-    required bool showEmojiPicker,
+    required bool showMediaPicker,
     required VoiceSettingsState voiceSettings,
     required String? effectiveActiveVoiceChannelId,
   }) {
@@ -912,8 +854,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           ),
           onChanged: _onInputChanged,
           onTap: () {
-            if (showEmojiPicker) {
-              setState(() => _showEmojiPicker = false);
+            if (showMediaPicker) {
+              setState(() => _showMediaPicker = false);
             }
           },
           onSubmitted: (_) => _isEditing ? _submitEdit() : _sendMessage(),
@@ -966,7 +908,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   Widget _buildInputRow({
-    required bool showEmojiPicker,
+    required bool showMediaPicker,
     required bool isMobileLayout,
     required VoiceSettingsState voiceSettings,
     required String? effectiveActiveVoiceChannelId,
@@ -984,16 +926,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Consolidated + button (hidden in edit mode)
-          if (!_isEditing)
-            _buildPlusMenuButton(
-              showEmojiPicker: showEmojiPicker,
-              isMobileLayout: isMobileLayout,
-            ),
+          // Attach file + media picker toggle (hidden in edit mode)
+          if (!_isEditing) _buildAttachFileButton(),
+          if (!_isEditing && !isMobileLayout)
+            _buildMediaPickerToggle(showMediaPicker: showMediaPicker),
           if (_isEditing) const SizedBox(width: 12),
           // Text field
           _buildTextField(
-            showEmojiPicker: showEmojiPicker,
+            showMediaPicker: showMediaPicker,
             voiceSettings: voiceSettings,
             effectiveActiveVoiceChannelId: effectiveActiveVoiceChannelId,
           ),
@@ -1004,73 +944,34 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     );
   }
 
-  Widget _buildEmojiPickerPanel({
+  Widget _buildMediaPickerPanel({
     required double height,
     required int columns,
     required double emojiSize,
   }) {
-    return Container(
+    return MediaPickerPanel(
       height: height,
-      color: context.surface,
-      child: EmojiPicker(
-        onEmojiSelected: (category, emoji) {
-          final text = _messageController.text;
-          final selection = _messageController.selection;
-          final cursorPos = selection.baseOffset >= 0
-              ? selection.baseOffset
-              : text.length;
-          final newText =
-              text.substring(0, cursorPos) +
-              emoji.emoji +
-              text.substring(cursorPos);
-          _messageController.text = newText;
-          final newCursor = cursorPos + emoji.emoji.length;
-          _messageController.selection = TextSelection.collapsed(
-            offset: newCursor,
-          );
-        },
-        config: Config(
-          height: height,
-          checkPlatformCompatibility: true,
-          emojiViewConfig: EmojiViewConfig(
-            backgroundColor: context.surface,
-            columns: columns,
-            emojiSizeMax: emojiSize,
-            noRecents: Text(
-              'No recents yet. Pick one below.',
-              style: TextStyle(fontSize: 14, color: context.textMuted),
-            ),
-          ),
-          categoryViewConfig: CategoryViewConfig(
-            initCategory: Category.SMILEYS,
-            recentTabBehavior: RecentTabBehavior.RECENT,
-            backgroundColor: context.surface,
-            indicatorColor: context.accent,
-            iconColorSelected: context.accent,
-            iconColor: context.textMuted,
-          ),
-          skinToneConfig: SkinToneConfig(
-            enabled: true,
-            dialogBackgroundColor: context.surface,
-            indicatorColor: context.accent,
-          ),
-          bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
-          searchViewConfig: SearchViewConfig(
-            backgroundColor: context.surface,
-            buttonIconColor: context.textSecondary,
-            hintText: 'Search emoji...',
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGifPickerPanel() {
-    return GifPickerWidget(
-      onClose: () => setState(() => _showGifPicker = false),
+      emojiColumns: columns,
+      emojiSize: emojiSize,
+      onEmojiSelected: (category, emoji) {
+        final text = _messageController.text;
+        final selection = _messageController.selection;
+        final cursorPos = selection.baseOffset >= 0
+            ? selection.baseOffset
+            : text.length;
+        final newText =
+            text.substring(0, cursorPos) +
+            emoji.emoji +
+            text.substring(cursorPos);
+        _messageController.text = newText;
+        final newCursor = cursorPos + emoji.emoji.length;
+        _messageController.selection = TextSelection.collapsed(
+          offset: newCursor,
+        );
+      },
       onGifSelected: (gifUrl, slug) {
         setState(() {
-          _showGifPicker = false;
+          _showMediaPicker = false;
           // GIF is external URL -- no upload needed, set directly
           _pendingAttachmentUrl = gifUrl;
           _pendingAttachmentExt = 'gif';
@@ -1079,6 +980,10 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           _pendingAttachmentBytes = null; // no local bytes for GIFs
           _isUploadingAttachment = false;
         });
+      },
+      onClose: () {
+        setState(() => _showMediaPicker = false);
+        _inputFocusNode.requestFocus();
       },
     );
   }
@@ -1114,8 +1019,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final viewportWidth = MediaQuery.of(context).size.width;
     final isMobileLayout = viewportWidth < 600;
     final isDesktopLayout = viewportWidth >= 900;
-    final showEmojiPicker = _showEmojiPicker && !isMobileLayout;
-    final emojiPickerHeight = isDesktopLayout ? 160.0 : 180.0;
+    final showMediaPicker = _showMediaPicker && !isMobileLayout;
+    final mediaPickerHeight = isDesktopLayout ? 250.0 : 260.0;
     final emojiColumns = isDesktopLayout ? 9 : 8;
     final emojiSize = isDesktopLayout ? 24.0 : 28.0;
 
@@ -1162,7 +1067,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                   onClear: _clearPendingAttachment,
                 ),
               _buildInputRow(
-                showEmojiPicker: showEmojiPicker,
+                showMediaPicker: showMediaPicker,
                 isMobileLayout: isMobileLayout,
                 voiceSettings: voiceSettings,
                 effectiveActiveVoiceChannelId: effectiveActiveVoiceChannelId,
@@ -1170,15 +1075,13 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
             ],
           ),
         ),
-        // Emoji picker panel
-        if (showEmojiPicker)
-          _buildEmojiPickerPanel(
-            height: emojiPickerHeight,
+        // Unified media picker panel (Emoji + GIF tabs)
+        if (showMediaPicker)
+          _buildMediaPickerPanel(
+            height: mediaPickerHeight,
             columns: emojiColumns,
             emojiSize: emojiSize,
           ),
-        // GIF picker panel
-        if (_showGifPicker) _buildGifPickerPanel(),
       ],
     );
   }

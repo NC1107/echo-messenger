@@ -70,6 +70,8 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
   String? _pronouns;
   String? _timezone;
   String? _website;
+  String? _email;
+  String? _phone;
   bool _isContact = false;
 
   @override
@@ -108,6 +110,8 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
           _pronouns = data['pronouns'] as String?;
           _timezone = data['timezone'] as String?;
           _website = data['website'] as String?;
+          _email = data['email'] as String?;
+          _phone = data['phone'] as String?;
           _isLoading = false;
         });
       } else {
@@ -278,6 +282,36 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                     decoration: TextDecoration.underline,
                     decorationColor: context.accent,
                   ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+          // Email
+          if (_email != null && _email!.isNotEmpty) ...[
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.email_outlined, size: 14, color: context.textMuted),
+                const SizedBox(width: 4),
+                Text(
+                  _email!,
+                  style: TextStyle(color: context.textMuted, fontSize: 13),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+          // Phone
+          if (_phone != null && _phone!.isNotEmpty) ...[
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.phone_outlined, size: 14, color: context.textMuted),
+                const SizedBox(width: 4),
+                Text(
+                  _phone!,
+                  style: TextStyle(color: context.textMuted, fontSize: 13),
                 ),
               ],
             ),

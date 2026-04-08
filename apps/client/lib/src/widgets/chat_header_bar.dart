@@ -13,6 +13,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/safety_number_screen.dart';
 import '../screens/user_profile_screen.dart';
+import '../providers/livekit_voice_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
@@ -192,6 +193,18 @@ class ChatHeaderBar extends ConsumerWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         ),
+      // Voice call button (DM and group)
+      IconButton(
+        icon: Icon(
+          conv.isGroup ? Icons.headset_mic_outlined : Icons.call_outlined,
+          size: 20,
+        ),
+        color: context.textSecondary,
+        tooltip: conv.isGroup ? 'Voice channel' : 'Start call',
+        onPressed: () => _startVoiceCall(context, ref, conv),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      ),
       IconButton(
         icon: Badge(
           isLabelVisible: pinnedCount > 0,
@@ -294,6 +307,23 @@ class ChatHeaderBar extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  void _startVoiceCall(BuildContext context, WidgetRef ref, Conversation conv) {
+    final voiceState = ref.read(livekitVoiceProvider);
+    if (voiceState.isActive) {
+      // Already in a call — show info
+      ToastService.show(
+        context,
+        'Already in a voice call.',
+        type: ToastType.info,
+      );
+      return;
+    }
+
+    ref
+        .read(livekitVoiceProvider.notifier)
+        .joinChannel(conversationId: conv.id, channelId: conv.id);
   }
 
   void _openSafetyNumber(

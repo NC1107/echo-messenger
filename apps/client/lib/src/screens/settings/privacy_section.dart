@@ -195,6 +195,91 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
         ),
         const SizedBox(height: 24),
         Text(
+          'Contact Info Visibility',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Control who can see your email and phone on your profile.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Show Email on Profile',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Allow other users to see your email address.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: privacy.emailVisible,
+          onChanged: privacy.isLoading
+              ? null
+              : (value) =>
+                    ref.read(privacyProvider.notifier).setEmailVisible(value),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Show Phone on Profile',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Allow other users to see your phone number.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: privacy.phoneVisible,
+          onChanged: privacy.isLoading
+              ? null
+              : (value) =>
+                    ref.read(privacyProvider.notifier).setPhoneVisible(value),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Discoverable by Email',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Allow others to find you by searching your email.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: privacy.emailDiscoverable,
+          onChanged: privacy.isLoading
+              ? null
+              : (value) => ref
+                    .read(privacyProvider.notifier)
+                    .setEmailDiscoverable(value),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Discoverable by Phone',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Allow others to find you by searching your phone number.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: privacy.phoneDiscoverable,
+          onChanged: privacy.isLoading
+              ? null
+              : (value) => ref
+                    .read(privacyProvider.notifier)
+                    .setPhoneDiscoverable(value),
+        ),
+        const SizedBox(height: 24),
+        Text(
           'Encryption',
           style: TextStyle(
             color: context.textPrimary,
