@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -69,6 +70,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
   /// True when a new message arrives while the user has scrolled up.
   bool _hasNewMessagesBelow = false;
+  int _newMessagesBelowCount = 0;
 
   OverlayEntry? _reactionOverlay;
 
@@ -97,6 +99,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       _showSearch = false;
       _highlightedMessageId = null;
       _hasNewMessagesBelow = false;
+      _newMessagesBelowCount = 0;
       _highlightTimer?.cancel();
       _dismissReactionPicker();
 
@@ -148,7 +151,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     }
     // Clear "new messages" pill when user scrolls near the bottom.
     if (_hasNewMessagesBelow && _isNearBottom()) {
-      setState(() => _hasNewMessagesBelow = false);
+      setState(() {
+        _hasNewMessagesBelow = false;
+        _newMessagesBelowCount = 0;
+      });
     }
   }
 
@@ -186,7 +192,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         _scrollPositions[convId] = target;
       }
       if (_hasNewMessagesBelow) {
-        setState(() => _hasNewMessagesBelow = false);
+        setState(() {
+          _hasNewMessagesBelow = false;
+          _newMessagesBelowCount = 0;
+        });
       }
     });
   }
@@ -316,6 +325,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     setState(() {
       _selectedTextChannelId = channelId;
       _loadedHistoryKey = null;
+      _hasNewMessagesBelow = false;
+      _newMessagesBelowCount = 0;
     });
     _loadHistory();
     _markAsRead();
@@ -371,7 +382,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
     final myUserId = ref.read(authProvider).userId ?? '';
     final overlay = Overlay.of(context);
-    const pickerWidth = 340.0;
+    const pickerWidth = 385.0;  // wider to accommodate the "+" button
     const pickerHeight = 44.0;
     final screenWidth = MediaQuery.of(context).size.width;
 
@@ -428,37 +439,64 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: reactionEmojis.map((emoji) {
-                    final alreadyReacted = message.reactions.any(
-                      (r) => r.emoji == emoji && r.userId == myUserId,
-                    );
-                    return GestureDetector(
+                  children: [
+                    ...reactionEmojis.map((emoji) {
+                      final alreadyReacted = message.reactions.any(
+                        (r) => r.emoji == emoji && r.userId == myUserId,
+                      );
+                      return GestureDetector(
+                        onTap: () {
+                          _dismissReactionPicker();
+                          _toggleReaction(message, emoji, alreadyReacted);
+                          FocusManager.instance.primaryFocus?.unfocus();
+                        },
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          decoration: BoxDecoration(
+                            color: alreadyReacted
+                                ? context.accent.withValues(alpha: 0.2)
+                                : null,
+                            borderRadius: BorderRadius.circular(8),
+                            border: alreadyReacted
+                                ? Border.all(color: context.accent, width: 2)
+                                : null,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 22),
+                          ),
+                        ),
+                      );
+                    }),
+                    // Full emoji picker button
+                    GestureDetector(
                       onTap: () {
                         _dismissReactionPicker();
-                        _toggleReaction(message, emoji, alreadyReacted);
-                        FocusManager.instance.primaryFocus?.unfocus();
+                        _showFullReactionPicker(message, myUserId);
                       },
                       child: Container(
                         width: 36,
                         height: 36,
-                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                        margin: const EdgeInsets.only(left: 4, right: 2),
                         decoration: BoxDecoration(
-                          color: alreadyReacted
-                              ? context.accent.withValues(alpha: 0.2)
-                              : null,
                           borderRadius: BorderRadius.circular(8),
-                          border: alreadyReacted
-                              ? Border.all(color: context.accent, width: 2)
-                              : null,
+                          border: Border.all(
+                            color: context.border,
+                            width: 1,
+                          ),
                         ),
                         alignment: Alignment.center,
-                        child: Text(
-                          emoji,
-                          style: const TextStyle(fontSize: 22),
+                        child: Icon(
+                          Icons.add,
+                          size: 18,
+                          color: context.textSecondary,
                         ),
                       ),
-                    );
-                  }).toList(),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -493,6 +531,63 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             ),
           );
     }
+  }
+
+  void _showFullReactionPicker(ChatMessage message, String myUserId) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => SizedBox(
+        height: 380,
+        child: EmojiPicker(
+          onEmojiSelected: (_, emoji) {
+            Navigator.of(sheetContext).pop();
+            final alreadyReacted = message.reactions.any(
+              (r) => r.emoji == emoji.emoji && r.userId == myUserId,
+            );
+            _toggleReaction(message, emoji.emoji, alreadyReacted);
+          },
+          config: Config(
+            height: 380,
+            checkPlatformCompatibility: true,
+            emojiViewConfig: EmojiViewConfig(
+              backgroundColor: context.surface,
+              columns: 9,
+              emojiSizeMax: 28,
+              verticalSpacing: 0,
+              horizontalSpacing: 0,
+              noRecents: Text(
+                'No recents yet.',
+                style: TextStyle(fontSize: 12, color: context.textMuted),
+              ),
+            ),
+            categoryViewConfig: CategoryViewConfig(
+              initCategory: Category.SMILEYS,
+              recentTabBehavior: RecentTabBehavior.RECENT,
+              backgroundColor: context.surface,
+              indicatorColor: context.accent,
+              iconColorSelected: context.accent,
+              iconColor: context.textMuted,
+            ),
+            skinToneConfig: SkinToneConfig(
+              enabled: true,
+              dialogBackgroundColor: context.surface,
+              indicatorColor: context.accent,
+            ),
+            bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
+            searchViewConfig: SearchViewConfig(
+              backgroundColor: context.surface,
+              buttonIconColor: context.textSecondary,
+              hintText: 'Find an emoji...',
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -988,7 +1083,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         if (_isNearBottom()) {
           _scrollToBottom(settleRetries: 3);
         } else {
-          setState(() => _hasNewMessagesBelow = true);
+          setState(() {
+            _hasNewMessagesBelow = true;
+            _newMessagesBelowCount += nextCount - prevCount;
+          });
         }
       }
     });
@@ -1157,19 +1255,21 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                                   ),
                                 ],
                               ),
-                              child: const Row(
+                              child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    'New messages',
-                                    style: TextStyle(
+                                    _newMessagesBelowCount > 0
+                                        ? '$_newMessagesBelowCount new ${_newMessagesBelowCount == 1 ? 'message' : 'messages'}'
+                                        : 'New messages',
+                                    style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  SizedBox(width: 4),
-                                  Icon(
+                                  const SizedBox(width: 4),
+                                  const Icon(
                                     Icons.arrow_downward,
                                     size: 14,
                                     color: Colors.white,

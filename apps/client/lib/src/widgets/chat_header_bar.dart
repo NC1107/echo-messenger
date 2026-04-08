@@ -18,6 +18,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor;
+import 'shared_media_gallery.dart';
 
 class ChatHeaderBar extends ConsumerWidget {
   final Conversation conversation;
@@ -229,6 +230,14 @@ class ChatHeaderBar extends ConsumerWidget {
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
       ),
+      IconButton(
+        icon: const Icon(Icons.photo_library_outlined, size: 20),
+        color: context.textSecondary,
+        tooltip: 'Shared media',
+        onPressed: () => _openSharedMedia(context, conv),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      ),
       if (conv.isGroup) ...[
         if (onMembersToggle != null)
           IconButton(
@@ -287,6 +296,22 @@ class ChatHeaderBar extends ConsumerWidget {
             child: Icon(Icons.close, size: 14, color: context.textMuted),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openSharedMedia(BuildContext context, Conversation conv) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height * 0.85,
+          child: SharedMediaGallery(conversationId: conv.id),
+        ),
       ),
     );
   }

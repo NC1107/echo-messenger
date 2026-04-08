@@ -574,6 +574,62 @@ class EchoTheme {
       ),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // High-contrast themes
+  // ---------------------------------------------------------------------------
+
+  static ThemeData get highContrastDarkTheme {
+    final base = darkTheme;
+    return base.copyWith(
+      colorScheme: base.colorScheme.copyWith(
+        surface: Colors.black,
+        onSurface: Colors.white,
+        primary: Colors.yellow,
+        secondary: const Color(0xFFFFFF66),
+        onSurfaceVariant: const Color(0xFFCCCCCC),
+      ),
+      dividerColor: Colors.white54,
+      scaffoldBackgroundColor: Colors.black,
+      extensions: [
+        EchoColorExtension.dark.copyWith(
+          sidebarBg: const Color(0xFF0A0A0A),
+          chatBg: Colors.black,
+          surfaceHover: const Color(0xFF1A1A1A),
+          sentBubble: const Color(0xFF444400),
+          recvBubble: const Color(0xFF1A1A1A),
+          textMuted: const Color(0xFFAAAAAA),
+          accentLight: const Color(0x33FFFF00),
+        ),
+      ],
+    );
+  }
+
+  static ThemeData get highContrastLightTheme {
+    final base = lightTheme;
+    return base.copyWith(
+      colorScheme: base.colorScheme.copyWith(
+        surface: Colors.white,
+        onSurface: Colors.black,
+        primary: const Color(0xFF0000CC),
+        secondary: const Color(0xFF0000AA),
+        onSurfaceVariant: const Color(0xFF333333),
+      ),
+      dividerColor: Colors.black54,
+      scaffoldBackgroundColor: Colors.white,
+      extensions: [
+        EchoColorExtension.light.copyWith(
+          sidebarBg: const Color(0xFFF0F0F0),
+          chatBg: Colors.white,
+          surfaceHover: const Color(0xFFE8E8E8),
+          sentBubble: const Color(0xFF0000CC),
+          recvBubble: const Color(0xFFE8E8E8),
+          textMuted: const Color(0xFF555555),
+          accentLight: const Color(0x220000CC),
+        ),
+      ],
+    );
+  }
 }
 
 /// Custom theme extension for Echo-specific colors not in Material's ColorScheme.

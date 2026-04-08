@@ -1,60 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../providers/accessibility_provider.dart';
 import '../../theme/echo_theme.dart';
 
-const _kFontScale = 'accessibility_font_scale';
-const _kReducedMotion = 'accessibility_reduced_motion';
-const _kHighContrast = 'accessibility_high_contrast';
-
-class AccessibilitySection extends StatefulWidget {
+class AccessibilitySection extends ConsumerWidget {
   const AccessibilitySection({super.key});
 
   @override
-  State<AccessibilitySection> createState() => _AccessibilitySectionState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(accessibilityProvider);
+    final notifier = ref.read(accessibilityProvider.notifier);
 
-class _AccessibilitySectionState extends State<AccessibilitySection> {
-  double _fontScale = 1.0;
-  bool _reducedMotion = false;
-  bool _highContrast = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() {
-      _fontScale = prefs.getDouble(_kFontScale) ?? 1.0;
-      _reducedMotion = prefs.getBool(_kReducedMotion) ?? false;
-      _highContrast = prefs.getBool(_kHighContrast) ?? false;
-    });
-  }
-
-  Future<void> _setFontScale(double value) async {
-    setState(() => _fontScale = value);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_kFontScale, value);
-  }
-
-  Future<void> _setReducedMotion(bool value) async {
-    setState(() => _reducedMotion = value);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kReducedMotion, value);
-  }
-
-  Future<void> _setHighContrast(bool value) async {
-    setState(() => _highContrast = value);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kHighContrast, value);
-  }
-
-  @override
-  Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
@@ -99,12 +56,12 @@ class _AccessibilitySectionState extends State<AccessibilitySection> {
             ),
             Expanded(
               child: Slider(
-                value: _fontScale,
+                value: state.fontScale,
                 min: 0.8,
                 max: 1.5,
                 divisions: 7,
-                label: '${(_fontScale * 100).round()}%',
-                onChanged: _setFontScale,
+                label: '${(state.fontScale * 100).round()}%',
+                onChanged: notifier.setFontScale,
               ),
             ),
             Text(
@@ -114,7 +71,7 @@ class _AccessibilitySectionState extends State<AccessibilitySection> {
           ],
         ),
         Text(
-          'Current: ${(_fontScale * 100).round()}%',
+          'Current: ${(state.fontScale * 100).round()}%',
           style: TextStyle(color: context.textSecondary, fontSize: 12),
           textAlign: TextAlign.center,
         ),
@@ -130,8 +87,8 @@ class _AccessibilitySectionState extends State<AccessibilitySection> {
             'Disable animated transitions and effects.',
             style: TextStyle(color: context.textMuted, fontSize: 12),
           ),
-          value: _reducedMotion,
-          onChanged: _setReducedMotion,
+          value: state.reducedMotion,
+          onChanged: notifier.setReducedMotion,
         ),
         const SizedBox(height: 8),
         // High contrast
@@ -145,8 +102,8 @@ class _AccessibilitySectionState extends State<AccessibilitySection> {
             'Increase contrast for better readability.',
             style: TextStyle(color: context.textMuted, fontSize: 12),
           ),
-          value: _highContrast,
-          onChanged: _setHighContrast,
+          value: state.highContrast,
+          onChanged: notifier.setHighContrast,
         ),
         const SizedBox(height: 24),
         // Preview
@@ -161,7 +118,7 @@ class _AccessibilitySectionState extends State<AccessibilitySection> {
             'The quick brown fox jumps over the lazy dog.',
             style: TextStyle(
               color: context.textPrimary,
-              fontSize: 14 * _fontScale,
+              fontSize: 14,
               height: 1.5,
             ),
           ),

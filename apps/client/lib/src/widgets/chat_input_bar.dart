@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
@@ -90,16 +91,27 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // kept here to match the cancel contract in dispose/didUpdateWidget).
   Timer? _searchDebounce;
 
+  // Draft auto-save
+  static const _draftKeyPrefix = 'chat_draft_';
+  Timer? _draftSaveTimer;
+  // Suppresses draft saves during cancel-edit to avoid race with _loadDraft.
+  bool _suppressDraftSave = false;
+
   @override
   void initState() {
     super.initState();
     _messageController.addListener(_onTextChanged);
+    _loadDraft(widget.conversation.id);
   }
 
   @override
   void didUpdateWidget(covariant ChatInputBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.conversation.id != oldWidget.conversation.id) {
+      // Save draft for the outgoing conversation
+      _saveDraftImmediate(oldWidget.conversation.id, _messageController.text);
+      _draftSaveTimer?.cancel();
+
       _showMentionPicker = false;
       _mentionQuery = '';
       _searchDebounce?.cancel();
@@ -109,11 +121,15 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _isTextEmpty = true;
       _showMediaPicker = false;
       ref.read(chatProvider.notifier).clearReplyTo();
+
+      // Load draft for the new conversation
+      _loadDraft(widget.conversation.id);
     }
   }
 
   @override
   void dispose() {
+    _draftSaveTimer?.cancel();
     _searchDebounce?.cancel();
     _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
@@ -140,13 +156,49 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   // ---------------------------------------------------------------------------
+  // Draft auto-save
+  // ---------------------------------------------------------------------------
+
+  Future<void> _loadDraft(String conversationId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = '$_draftKeyPrefix$conversationId';
+    final draft = prefs.getString(key);
+    if (draft != null && draft.isNotEmpty && mounted && !_isEditing) {
+      _messageController.text = draft;
+      setState(() => _isTextEmpty = draft.trim().isEmpty);
+    }
+  }
+
+  void _scheduleDraftSave(String text) {
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = Timer(const Duration(milliseconds: 600), () {
+      _saveDraftImmediate(widget.conversation.id, text);
+    });
+  }
+
+  Future<void> _saveDraftImmediate(String conversationId, String text) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = '$_draftKeyPrefix$conversationId';
+    if (text.isEmpty) {
+      await prefs.remove(key);
+    } else {
+      await prefs.setString(key, text);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Text listener
   // ---------------------------------------------------------------------------
 
   void _onTextChanged() {
-    final empty = _messageController.text.trim().isEmpty;
+    final text = _messageController.text;
+    final empty = text.trim().isEmpty;
     if (empty != _isTextEmpty) {
       setState(() => _isTextEmpty = empty);
+    }
+    // Schedule draft save when not in edit mode and not suppressed
+    if (!_isEditing && !_suppressDraftSave) {
+      _scheduleDraftSave(text);
     }
   }
 
@@ -165,6 +217,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       );
       _clearPendingAttachment();
       _messageController.clear();
+      _saveDraftImmediate(widget.conversation.id, '');
       await _doSend(marker);
       // If user typed a caption, send it as a second message
       if (caption.isNotEmpty) {
@@ -179,6 +232,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
     await _doSend(text);
     _messageController.clear();
+    _saveDraftImmediate(widget.conversation.id, '');
     if (_showMediaPicker) setState(() => _showMediaPicker = false);
     widget.onMessageSent();
   }
@@ -572,10 +626,16 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // ---------------------------------------------------------------------------
 
   void _cancelEditMode() {
+    _draftSaveTimer?.cancel();
+    _suppressDraftSave = true;
     setState(() {
       _editingMessage = null;
       _messageController.clear();
       _isTextEmpty = true;
+    });
+    // Restore the saved draft (if any) after leaving edit mode.
+    _loadDraft(widget.conversation.id).then((_) {
+      _suppressDraftSave = false;
     });
   }
 

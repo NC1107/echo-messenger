@@ -26,6 +26,7 @@ import '../widgets/conversation_panel.dart'
     show ConversationPanel, buildAvatar, groupAvatarColor;
 import '../widgets/members_panel.dart';
 import '../utils/web_lifecycle.dart';
+import '../widgets/keyboard_shortcuts_overlay.dart';
 import '../widgets/quick_switcher_overlay.dart';
 import '../widgets/voice_dock.dart';
 import 'contacts_screen.dart';
@@ -233,6 +234,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       barrierColor: Colors.transparent,
       builder: (ctx) =>
           QuickSwitcherOverlay(onSelect: (conv) => _selectConversation(conv)),
+    );
+  }
+
+  void _showKeyboardShortcuts() {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (_) => const KeyboardShortcutsOverlay(),
     );
   }
 
@@ -591,6 +600,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
           _showQuickSwitcher();
+        },
+        const SingleActivator(LogicalKeyboardKey.slash, control: true): () {
+          _showKeyboardShortcuts();
         },
       },
       child: Focus(autofocus: true, child: layout),

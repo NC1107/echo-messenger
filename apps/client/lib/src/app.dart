@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'providers/accessibility_provider.dart';
 import 'providers/theme_provider.dart';
 import 'router/app_router.dart';
 import 'theme/echo_theme.dart';
@@ -12,6 +13,8 @@ class EchoApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
     final themeSelection = ref.watch(themeProvider);
+    final accessibility = ref.watch(accessibilityProvider);
+
     final themeMode = switch (themeSelection) {
       AppThemeSelection.system => ThemeMode.system,
       AppThemeSelection.dark => ThemeMode.dark,
@@ -27,11 +30,27 @@ class EchoApp extends ConsumerWidget {
 
     return MaterialApp.router(
       title: 'Echo',
-      theme: EchoTheme.lightTheme,
-      darkTheme: darkTheme,
+      theme: accessibility.highContrast
+          ? EchoTheme.highContrastLightTheme
+          : EchoTheme.lightTheme,
+      darkTheme: accessibility.highContrast
+          ? EchoTheme.highContrastDarkTheme
+          : darkTheme,
       themeMode: themeMode,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
+      // Apply font-scale and reduced-motion overrides via MaterialApp builder.
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(
+            textScaler: TextScaler.linear(accessibility.fontScale),
+            disableAnimations:
+                accessibility.reducedMotion || mq.disableAnimations,
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }
