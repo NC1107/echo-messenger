@@ -21,6 +21,188 @@ class AccountSection extends ConsumerStatefulWidget {
 }
 
 class _AccountSectionState extends ConsumerState<AccountSection> {
+  final _displayNameController = TextEditingController();
+  final _bioController = TextEditingController();
+  final _statusController = TextEditingController();
+  final _pronounsController = TextEditingController();
+  final _timezoneController = TextEditingController();
+  final _websiteController = TextEditingController();
+  bool _profileLoaded = false;
+  bool _saving = false;
+
+  // Password change
+  final _currentPasswordController = TextEditingController();
+  final _newPasswordController = TextEditingController();
+  bool _changingPassword = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  @override
+  void dispose() {
+    _displayNameController.dispose();
+    _bioController.dispose();
+    _statusController.dispose();
+    _pronounsController.dispose();
+    _currentPasswordController.dispose();
+    _newPasswordController.dispose();
+    _timezoneController.dispose();
+    _websiteController.dispose();
+    super.dispose();
+  }
+
+  bool _profileError = false;
+
+  Future<void> _loadProfile() async {
+    final serverUrl = ref.read(serverUrlProvider);
+    final auth = ref.read(authProvider);
+    if (auth.userId == null) return;
+
+    try {
+      final resp = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.get(
+              Uri.parse('$serverUrl/api/users/${auth.userId}/profile'),
+              headers: {'Authorization': 'Bearer $token'},
+            ),
+          );
+      if (resp.statusCode == 200 && mounted) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        setState(() {
+          _displayNameController.text = data['display_name'] as String? ?? '';
+          _bioController.text = data['bio'] as String? ?? '';
+          _statusController.text = data['status_message'] as String? ?? '';
+          _pronounsController.text = data['pronouns'] as String? ?? '';
+          _timezoneController.text = data['timezone'] as String? ?? '';
+          _websiteController.text = data['website'] as String? ?? '';
+          _profileLoaded = true;
+          _profileError = false;
+        });
+      } else if (mounted) {
+        setState(() => _profileError = true);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _profileError = true);
+    }
+  }
+
+  Future<void> _saveProfile() async {
+    final serverUrl = ref.read(serverUrlProvider);
+
+    setState(() => _saving = true);
+    try {
+      // Always send every field value — the server uses empty string as
+      // "clear the field" (NULLIF in SQL) and NULL as "keep existing value".
+      final body = <String, dynamic>{
+        'display_name': _displayNameController.text,
+        'bio': _bioController.text,
+        'status_message': _statusController.text,
+        'pronouns': _pronounsController.text,
+        'timezone': _timezoneController.text,
+        'website': _websiteController.text,
+      };
+
+      final resp = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.patch(
+              Uri.parse('$serverUrl/api/users/me/profile'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode(body),
+            ),
+          );
+
+      if (!mounted) return;
+      if (resp.statusCode == 200) {
+        ToastService.show(context, 'Profile updated', type: ToastType.success);
+      } else {
+        final err =
+            jsonDecode(resp.body)['error'] as String? ?? 'Unknown error';
+        ToastService.show(context, err, type: ToastType.error);
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(context, 'Failed to save: $e', type: ToastType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  static MediaType _mimeFromFilename(String name) {
+    final ext = name.split('.').last.toLowerCase();
+    return switch (ext) {
+      'jpg' || 'jpeg' => MediaType('image', 'jpeg'),
+      'webp' => MediaType('image', 'webp'),
+      'gif' => MediaType('image', 'gif'),
+      _ => MediaType('image', 'png'),
+    };
+  }
+
+  Future<void> _changePassword() async {
+    final serverUrl = ref.read(serverUrlProvider);
+
+    if (_newPasswordController.text.length < 8) {
+      ToastService.show(
+        context,
+        'New password must be at least 8 characters',
+        type: ToastType.error,
+      );
+      return;
+    }
+
+    setState(() => _changingPassword = true);
+    try {
+      final resp = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.patch(
+              Uri.parse('$serverUrl/api/users/me/password'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({
+                'current_password': _currentPasswordController.text,
+                'new_password': _newPasswordController.text,
+              }),
+            ),
+          );
+
+      if (!mounted) return;
+      if (resp.statusCode == 200) {
+        _currentPasswordController.clear();
+        _newPasswordController.clear();
+        ToastService.show(
+          context,
+          'Password changed successfully',
+          type: ToastType.success,
+        );
+      } else {
+        final err =
+            jsonDecode(resp.body)['error'] as String? ?? 'Unknown error';
+        ToastService.show(context, err, type: ToastType.error);
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Failed to change password: $e',
+          type: ToastType.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _changingPassword = false);
+    }
+  }
+
   static String _avatarInitial(String username) {
     if (username.isNotEmpty) return username[0].toUpperCase();
     return '?';
@@ -67,7 +249,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           'avatar',
           file.bytes!,
           filename: file.name,
-          contentType: MediaType('image', 'png'),
+          contentType: _mimeFromFilename(file.name),
         ),
       );
   }
@@ -184,95 +366,351 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        Row(
-          children: [
-            Stack(
-              children: [
-                CircleAvatar(
-                  radius: 32,
-                  backgroundColor: context.accent,
-                  backgroundImage: authState.avatarUrl != null
-                      ? NetworkImage(
-                          '${ref.read(serverUrlProvider)}${authState.avatarUrl}',
-                          headers: {
-                            'Authorization': 'Bearer ${authState.token}',
-                          },
-                        )
-                      : null,
-                  child: authState.avatarUrl == null
-                      ? Text(
-                          _avatarInitial(username),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 26,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        )
-                      : null,
-                ),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: GestureDetector(
-                    onTap: _uploadAvatar,
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: context.surface,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: context.border, width: 2),
-                      ),
-                      child: Icon(
-                        Icons.edit,
-                        size: 12,
-                        color: context.textSecondary,
+        // Profile card
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: context.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: context.border),
+          ),
+          child: Row(
+            children: [
+              // Avatar with accent ring + edit overlay
+              Stack(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: context.accent, width: 2),
+                    ),
+                    child: CircleAvatar(
+                      radius: 34,
+                      backgroundColor: context.accent,
+                      backgroundImage: authState.avatarUrl != null
+                          ? NetworkImage(
+                              '${ref.read(serverUrlProvider)}${authState.avatarUrl}',
+                              headers: {
+                                'Authorization': 'Bearer ${authState.token}',
+                              },
+                            )
+                          : null,
+                      child: authState.avatarUrl == null
+                          ? Text(
+                              _avatarInitial(username),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 28,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: GestureDetector(
+                      onTap: _uploadAvatar,
+                      child: Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: context.surface,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: context.border, width: 2),
+                        ),
+                        child: Icon(
+                          Icons.camera_alt,
+                          size: 13,
+                          color: context.textSecondary,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(width: 20),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  username,
-                  style: TextStyle(
-                    color: context.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
+                  // Online indicator
+                  Positioned(
+                    top: 2,
+                    right: 2,
+                    child: Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: EchoTheme.online,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: context.surface, width: 2),
+                      ),
+                    ),
                   ),
+                ],
+              ),
+              const SizedBox(width: 16),
+              // Name + username + status
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_displayNameController.text.isNotEmpty)
+                      Text(
+                        _displayNameController.text,
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        Text(
+                          '@$username',
+                          style: TextStyle(
+                            color: _displayNameController.text.isNotEmpty
+                                ? context.textMuted
+                                : context.textPrimary,
+                            fontSize: _displayNameController.text.isNotEmpty
+                                ? 13
+                                : 18,
+                            fontWeight: _displayNameController.text.isNotEmpty
+                                ? FontWeight.normal
+                                : FontWeight.w700,
+                          ),
+                        ),
+                        if (_pronounsController.text.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: context.surfaceHover,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              _pronounsController.text,
+                              style: TextStyle(
+                                color: context.textMuted,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (_statusController.text.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        _statusController.text,
+                        style: TextStyle(
+                          color: context.textSecondary,
+                          fontSize: 13,
+                          fontStyle: FontStyle.italic,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'Online',
-                  style: TextStyle(color: context.textMuted, fontSize: 13),
-                ),
-              ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Action buttons row
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _uploadAvatar,
+                icon: const Icon(Icons.upload, size: 16),
+                label: const Text('Upload Avatar'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _showQrCodeDialog,
+                icon: const Icon(Icons.qr_code, size: 16),
+                label: const Text('QR Code'),
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 24),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _uploadAvatar,
-            icon: const Icon(Icons.upload, size: 18),
-            label: const Text('Upload Avatar'),
+        if (_profileError) ...[
+          const Divider(height: 40),
+          Row(
+            children: [
+              Icon(Icons.error_outline, size: 18, color: EchoTheme.danger),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Failed to load profile. Check your connection.',
+                  style: TextStyle(color: EchoTheme.danger, fontSize: 13),
+                ),
+              ),
+              TextButton(onPressed: _loadProfile, child: const Text('Retry')),
+            ],
+          ),
+        ],
+        if (_profileLoaded) ...[
+          const Divider(height: 40),
+          Text(
+            'Profile',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Customize your public profile information.',
+            style: TextStyle(
+              color: context.textSecondary,
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+          const Divider(height: 24),
+          _profileField(
+            controller: _displayNameController,
+            label: 'Display Name',
+            hint: 'How others see you',
+            maxLength: 50,
+          ),
+          const SizedBox(height: 12),
+          _profileField(
+            controller: _pronounsController,
+            label: 'Pronouns',
+            hint: 'e.g. he/him, she/her, they/them',
+            maxLength: 30,
+          ),
+          const SizedBox(height: 12),
+          _profileField(
+            controller: _statusController,
+            label: 'Status',
+            hint: 'What are you up to?',
+            maxLength: 100,
+          ),
+          const SizedBox(height: 12),
+          _profileField(
+            controller: _bioController,
+            label: 'Bio',
+            hint: 'Tell others about yourself',
+            maxLength: 300,
+            maxLines: 3,
+          ),
+          const SizedBox(height: 12),
+          _profileField(
+            controller: _timezoneController,
+            label: 'Timezone',
+            hint: 'e.g. America/New_York',
+            maxLength: 50,
+          ),
+          const SizedBox(height: 12),
+          _profileField(
+            controller: _websiteController,
+            label: 'Website',
+            hint: 'https://example.com',
+            maxLength: 200,
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _saving ? null : _saveProfile,
+              child: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Save Profile'),
+            ),
+          ),
+        ],
+        // Password change section (always visible, outside _profileLoaded gate)
+        const Divider(height: 40),
+        Text(
+          'Change Password',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
           ),
         ),
+        const SizedBox(height: 16),
+        _profileField(
+          controller: _currentPasswordController,
+          label: 'Current Password',
+          hint: 'Enter your current password',
+          maxLength: 128,
+          obscure: true,
+        ),
         const SizedBox(height: 12),
+        _profileField(
+          controller: _newPasswordController,
+          label: 'New Password',
+          hint: 'At least 8 characters',
+          maxLength: 128,
+          obscure: true,
+        ),
+        const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _showQrCodeDialog,
-            icon: const Icon(Icons.qr_code, size: 18),
-            label: const Text('My QR Code'),
+          child: OutlinedButton(
+            onPressed: _changingPassword ? null : _changePassword,
+            child: _changingPassword
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Change Password'),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _profileField({
+    required TextEditingController controller,
+    required String label,
+    String? hint,
+    int maxLength = 100,
+    int maxLines = 1,
+    bool obscure = false,
+  }) {
+    return TextFormField(
+      controller: controller,
+      maxLength: maxLength,
+      maxLines: maxLines,
+      obscureText: obscure,
+      style: TextStyle(color: context.textPrimary, fontSize: 14),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        labelStyle: TextStyle(color: context.textSecondary),
+        hintStyle: TextStyle(color: context.textMuted),
+        counterStyle: TextStyle(color: context.textMuted, fontSize: 10),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: context.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: context.accent),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+      ),
     );
   }
 }

@@ -26,6 +26,7 @@ import '../widgets/conversation_panel.dart'
     show ConversationPanel, buildAvatar, groupAvatarColor;
 import '../widgets/members_panel.dart';
 import '../utils/web_lifecycle.dart';
+import '../widgets/quick_switcher_overlay.dart';
 import '../widgets/voice_dock.dart';
 import 'contacts_screen.dart';
 import 'voice_lounge_screen.dart';
@@ -203,6 +204,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     });
     // Clear notifications for this conversation now that the user is viewing it.
     NotificationService().cancelConversationNotifications(conv.id);
+  }
+
+  void _showQuickSwitcher() {
+    showDialog(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (ctx) =>
+          QuickSwitcherOverlay(onSelect: (conv) => _selectConversation(conv)),
+    );
   }
 
   /// Called when the user taps a notification — find the conversation and select it.
@@ -559,7 +569,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
-          _searchFocusNode.requestFocus();
+          _showQuickSwitcher();
         },
       },
       child: Focus(autofocus: true, child: layout),
@@ -813,7 +823,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       );
     }
 
-    return Scaffold(body: _buildConversationPanel());
+    return Scaffold(
+      body: _showSettings
+          ? Scaffold(
+              appBar: AppBar(
+                backgroundColor: context.sidebarBg,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => setState(() => _showSettings = false),
+                ),
+                title: Text(
+                  'Settings',
+                  style: TextStyle(color: context.textPrimary, fontSize: 18),
+                ),
+              ),
+              body: const SettingsScreen(),
+            )
+          : _buildConversationPanel(),
+      bottomNavigationBar: _showSettings
+          ? null
+          : BottomNavigationBar(
+              currentIndex: 0,
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: context.sidebarBg,
+              selectedItemColor: context.accent,
+              unselectedItemColor: context.textMuted,
+              selectedFontSize: 11,
+              unselectedFontSize: 11,
+              onTap: (index) {
+                switch (index) {
+                  case 0:
+                    break; // Already on chats
+                  case 1:
+                    _openContacts();
+                  case 2:
+                    setState(() => _showSettings = true);
+                }
+              },
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.chat_bubble_outline, size: 22),
+                  activeIcon: Icon(Icons.chat_bubble, size: 22),
+                  label: 'Chats',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.people_outline, size: 22),
+                  activeIcon: Icon(Icons.people, size: 22),
+                  label: 'Contacts',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.settings_outlined, size: 22),
+                  activeIcon: Icon(Icons.settings, size: 22),
+                  label: 'Settings',
+                ),
+              ],
+            ),
+    );
   }
 
   Widget _buildUpdateBanner() {

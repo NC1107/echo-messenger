@@ -88,7 +88,7 @@ class _DebugSectionState extends State<DebugSection> {
                   'Debug Logs',
                   style: TextStyle(
                     color: context.textPrimary,
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

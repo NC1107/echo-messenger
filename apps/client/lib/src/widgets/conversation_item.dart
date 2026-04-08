@@ -180,13 +180,14 @@ class _ConversationItemState extends State<ConversationItem> {
           Positioned(
             bottom: 0,
             right: 0,
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
               width: 12,
               height: 12,
               decoration: BoxDecoration(
                 color: widget.isPeerOnline
                     ? EchoTheme.online
-                    : context.textMuted,
+                    : context.textMuted.withValues(alpha: 0.4),
                 shape: BoxShape.circle,
                 border: Border.all(color: context.sidebarBg, width: 2),
               ),

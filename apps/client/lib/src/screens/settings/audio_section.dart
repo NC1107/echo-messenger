@@ -276,8 +276,8 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
           'Voice & Audio',
           style: TextStyle(
             color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 8),
@@ -429,19 +429,26 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
           value: voice.pushToTalkEnabled,
           onChanged: notifier.setPushToTalkEnabled,
         ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Push-to-Talk Key',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            voice.pushToTalkKeyLabel,
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          trailing: OutlinedButton(
-            onPressed: () => _capturePushToTalkKey(notifier),
-            child: const Text('Set Key'),
+        AnimatedOpacity(
+          opacity: voice.pushToTalkEnabled ? 1.0 : 0.4,
+          duration: const Duration(milliseconds: 200),
+          child: IgnorePointer(
+            ignoring: !voice.pushToTalkEnabled,
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'Push-to-Talk Key',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                voice.pushToTalkKeyLabel,
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              trailing: OutlinedButton(
+                onPressed: () => _capturePushToTalkKey(notifier),
+                child: const Text('Set Key'),
+              ),
+            ),
           ),
         ),
       ],

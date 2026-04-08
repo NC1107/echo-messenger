@@ -84,7 +84,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       _usernameController.text.trim(),
       _passwordController.text,
     );
-    // Crypto init happens in contacts_screen._initData() after navigation
+
+    // After successful registration, redirect to onboarding wizard
+    if (mounted && ref.read(authProvider).isLoggedIn) {
+      context.go('/onboarding');
+    }
   }
 
   String? _validateUsername(String? value) {

@@ -253,7 +253,13 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     VoiceSettingsState voiceSettings,
     String? activeVoiceChannelId,
   ) {
-    final isActive = activeVoiceChannelId == channel.id;
+    // Check both the local activeVoiceChannelId AND the LiveKit provider
+    // state — after returning from the voice lounge the local ID may be
+    // cleared while the LiveKit room is still connected.
+    final voiceRtc = ref.read(livekitVoiceProvider);
+    final isActive =
+        activeVoiceChannelId == channel.id ||
+        (voiceRtc.isActive && voiceRtc.channelId == channel.id);
     return Material(
       color: Colors.transparent,
       child: InkWell(

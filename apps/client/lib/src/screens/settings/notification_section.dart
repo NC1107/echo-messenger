@@ -102,8 +102,8 @@ class _NotificationSectionState extends State<NotificationSection> {
           'Notifications',
           style: TextStyle(
             color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 8),
@@ -171,41 +171,43 @@ class _NotificationSectionState extends State<NotificationSection> {
           value: _soundEnabled,
           onChanged: _toggleSound,
         ),
-        const SizedBox(height: 24),
-        Text(
-          'Test',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Send a test notification to verify your settings.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 13,
-            height: 1.5,
-          ),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _sendTestNotification,
-            icon: const Icon(Icons.notifications_active_outlined, size: 18),
-            label: const Text('Send Test Notification'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: context.accent,
-              side: BorderSide(color: context.accent),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
+        if (_notificationsEnabled) ...[
+          const SizedBox(height: 24),
+          Text(
+            'Test',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
             ),
           ),
-        ),
+          const SizedBox(height: 8),
+          Text(
+            'Send a test notification to verify your settings.',
+            style: TextStyle(
+              color: context.textSecondary,
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _sendTestNotification,
+              icon: const Icon(Icons.notifications_active_outlined, size: 18),
+              label: const Text('Send Test Notification'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: context.accent,
+                side: BorderSide(color: context.accent),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

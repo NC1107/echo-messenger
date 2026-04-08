@@ -17,6 +17,7 @@ import 'avatar_utils.dart';
 import 'contact_item.dart';
 import 'conversation_item.dart';
 import 'echo_logo_icon.dart';
+import 'skeleton_loader.dart';
 
 // Re-export avatar utilities so existing `show` imports keep working.
 export 'avatar_utils.dart' show buildAvatar, avatarColor, groupAvatarColor;
@@ -934,9 +935,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     Set<String> wsOnlineUsers,
   ) {
     if (conversationsState.isLoading && allConversations.isEmpty) {
-      return Center(
-        child: CircularProgressIndicator(color: context.accent, strokeWidth: 2),
-      );
+      return const ConversationListSkeleton();
     }
     if (conversations.isEmpty) {
       return _buildChatsEmptyState();
@@ -1000,34 +999,103 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     String serverUrl,
     Set<String> wsOnlineUsers,
   ) {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      itemCount: sorted.length,
-      itemBuilder: (context, index) {
-        final conv = sorted[index];
-        final isPinned = _pinnedIds.contains(conv.id);
-        final peer = conv.isGroup
-            ? null
-            : conv.members.where((m) => m.userId != myUserId).firstOrNull;
-        final isPeerOnline =
-            peer != null && wsOnlineUsers.contains(peer.userId);
-        String? peerAvatarUrl;
-        if (!conv.isGroup && peer != null && peer.avatarUrl != null) {
-          peerAvatarUrl = '$serverUrl${peer.avatarUrl}';
-        }
-        return ConversationItem(
-          conversation: conv,
-          myUserId: myUserId,
-          isSelected: conv.id == widget.selectedConversationId,
-          isPinned: isPinned,
-          isPeerOnline: isPeerOnline,
-          peerAvatarUrl: peerAvatarUrl,
-          timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
-          onTap: () => widget.onConversationTap(conv),
-          onContextMenu: (position) =>
-              _showConversationContextMenu(context, conv, position),
-        );
-      },
+    // Count how many pinned items are at the front of the sorted list.
+    final pinnedCount = sorted.where((c) => _pinnedIds.contains(c.id)).length;
+    // Extra items: section header for pinned (if any) + divider after pinned.
+    final extraItems = pinnedCount > 0 ? 2 : 0;
+
+    return RefreshIndicator(
+      onRefresh: () =>
+          ref.read(conversationsProvider.notifier).loadConversations(),
+      color: context.accent,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        itemCount: sorted.length + extraItems,
+        itemBuilder: (context, index) {
+          if (pinnedCount > 0) {
+            // First item: "PINNED" section header
+            if (index == 0) {
+              return Padding(
+                padding: const EdgeInsets.only(left: 8, top: 4, bottom: 2),
+                child: Text(
+                  'PINNED',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: context.textMuted,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              );
+            }
+            // After pinned items: divider
+            if (index == pinnedCount + 1) {
+              return Divider(
+                height: 12,
+                thickness: 1,
+                indent: 8,
+                endIndent: 8,
+                color: context.border,
+              );
+            }
+            // Adjust index for the extra header/divider items
+            final convIndex = index <= pinnedCount ? index - 1 : index - 2;
+            if (convIndex >= sorted.length) {
+              return const SizedBox.shrink();
+            }
+            final conv = sorted[convIndex];
+            final isPinned = _pinnedIds.contains(conv.id);
+            return _buildConversationTile(
+              conv,
+              isPinned,
+              myUserId,
+              serverUrl,
+              wsOnlineUsers,
+            );
+          }
+
+          // No pinned items — render normally
+          final conv = sorted[index];
+          final isPinned = _pinnedIds.contains(conv.id);
+          return _buildConversationTile(
+            conv,
+            isPinned,
+            myUserId,
+            serverUrl,
+            wsOnlineUsers,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildConversationTile(
+    Conversation conv,
+    bool isPinned,
+    String myUserId,
+    String serverUrl,
+    Set<String> wsOnlineUsers,
+  ) {
+    final peer = conv.isGroup
+        ? null
+        : conv.members.where((m) => m.userId != myUserId).firstOrNull;
+    final isPeerOnline = peer != null && wsOnlineUsers.contains(peer.userId);
+    String? peerAvatarUrl;
+    if (!conv.isGroup && peer != null && peer.avatarUrl != null) {
+      peerAvatarUrl = '$serverUrl${peer.avatarUrl}';
+    }
+    return ConversationItem(
+      conversation: conv,
+      myUserId: myUserId,
+      isSelected: conv.id == widget.selectedConversationId,
+      isPinned: isPinned,
+      isPeerOnline: isPeerOnline,
+      peerAvatarUrl: peerAvatarUrl,
+      timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
+      onTap: () => widget.onConversationTap(conv),
+      onContextMenu: (position) =>
+          _showConversationContextMenu(context, conv, position),
     );
   }
 
@@ -1039,9 +1107,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final contacts = contactsState.contacts;
 
     if (contactsState.isLoading && contacts.isEmpty) {
-      return Center(
-        child: CircularProgressIndicator(color: context.accent, strokeWidth: 2),
-      );
+      return const ConversationListSkeleton(count: 4);
     }
 
     if (contacts.isEmpty) {

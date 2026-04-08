@@ -7,9 +7,11 @@ import '../providers/chat_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import 'settings/about_section.dart';
+import 'settings/accessibility_section.dart';
 import 'settings/account_section.dart';
 import 'settings/appearance_section.dart';
 import 'settings/audio_section.dart';
+import 'settings/data_storage_section.dart';
 import 'settings/debug_section.dart';
 import 'settings/notification_section.dart';
 import 'settings/privacy_section.dart';
@@ -21,7 +23,9 @@ enum SettingsSection {
   notifications,
   audio,
   appearance,
+  accessibility,
   about,
+  dataStorage,
   debug,
 }
 
@@ -31,15 +35,19 @@ String settingsSectionLabel(SettingsSection section) {
     case SettingsSection.account:
       return 'Account';
     case SettingsSection.privacy:
-      return 'Privacy';
+      return 'Privacy & Safety';
     case SettingsSection.notifications:
       return 'Notifications';
     case SettingsSection.audio:
-      return 'Audio';
+      return 'Voice & Video';
     case SettingsSection.appearance:
       return 'Appearance';
+    case SettingsSection.accessibility:
+      return 'Accessibility';
     case SettingsSection.about:
       return 'About';
+    case SettingsSection.dataStorage:
+      return 'Data & Storage';
     case SettingsSection.debug:
       return 'Debug Logs';
   }
@@ -61,11 +69,27 @@ class SettingsNavList extends StatelessWidget {
     required this.onLogout,
   });
 
+  Widget _categoryHeader(BuildContext context, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, top: 16, bottom: 4),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: context.textMuted,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         const SizedBox(height: 8),
+        _categoryHeader(context, 'USER SETTINGS'),
         _navItem(
           context: context,
           icon: Icons.person_outlined,
@@ -75,7 +99,7 @@ class SettingsNavList extends StatelessWidget {
         _navItem(
           context: context,
           icon: Icons.lock_outline,
-          label: 'Privacy',
+          label: 'Privacy & Safety',
           section: SettingsSection.privacy,
         ),
         _navItem(
@@ -87,9 +111,10 @@ class SettingsNavList extends StatelessWidget {
         _navItem(
           context: context,
           icon: Icons.graphic_eq,
-          label: 'Audio',
+          label: 'Voice & Video',
           section: SettingsSection.audio,
         ),
+        _categoryHeader(context, 'APP SETTINGS'),
         _navItem(
           context: context,
           icon: Icons.palette_outlined,
@@ -98,9 +123,30 @@ class SettingsNavList extends StatelessWidget {
         ),
         _navItem(
           context: context,
+          icon: Icons.accessibility_new,
+          label: 'Accessibility',
+          section: SettingsSection.accessibility,
+        ),
+        // Logout button in nav list
+        _navItem(
+          context: context,
+          icon: Icons.logout,
+          label: 'Log Out',
+          section: null,
+          isLogout: true,
+        ),
+        _categoryHeader(context, 'ADVANCED'),
+        _navItem(
+          context: context,
           icon: Icons.info_outline,
           label: 'About',
           section: SettingsSection.about,
+        ),
+        _navItem(
+          context: context,
+          icon: Icons.storage_outlined,
+          label: 'Data & Storage',
+          section: SettingsSection.dataStorage,
         ),
         _navItem(
           context: context,
@@ -109,28 +155,6 @@ class SettingsNavList extends StatelessWidget {
           section: SettingsSection.debug,
         ),
         const Spacer(),
-        // Logout button
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: onLogout,
-              icon: const Icon(Icons.logout, size: 18, color: EchoTheme.danger),
-              label: const Text(
-                'Log out',
-                style: TextStyle(color: EchoTheme.danger),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: EchoTheme.danger),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -139,13 +163,14 @@ class SettingsNavList extends StatelessWidget {
     required BuildContext context,
     required IconData icon,
     required String label,
-    required SettingsSection section,
+    required SettingsSection? section,
+    bool isLogout = false,
   }) {
-    final isSelected = selected == section;
+    final isSelected = !isLogout && selected == section;
     return Material(
       color: isSelected ? context.accentLight : Colors.transparent,
       child: InkWell(
-        onTap: () => onTap(section),
+        onTap: isLogout ? onLogout : () => onTap(section!),
         hoverColor: context.surfaceHover,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -154,13 +179,21 @@ class SettingsNavList extends StatelessWidget {
               Icon(
                 icon,
                 size: 20,
-                color: isSelected ? context.accent : context.textSecondary,
+                color: isLogout
+                    ? EchoTheme.danger
+                    : isSelected
+                    ? context.accent
+                    : context.textSecondary,
               ),
               const SizedBox(width: 12),
               Text(
                 label,
                 style: TextStyle(
-                  color: isSelected ? context.accent : context.textPrimary,
+                  color: isLogout
+                      ? EchoTheme.danger
+                      : isSelected
+                      ? context.accent
+                      : context.textPrimary,
                   fontSize: 14,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 ),
@@ -195,8 +228,12 @@ class SettingsContent extends StatelessWidget {
         return const AudioSection();
       case SettingsSection.appearance:
         return const AppearanceSection();
+      case SettingsSection.accessibility:
+        return const AccessibilitySection();
       case SettingsSection.about:
         return const AboutSection();
+      case SettingsSection.dataStorage:
+        return const DataStorageSection();
       case SettingsSection.debug:
         return const DebugSection();
     }
@@ -218,11 +255,51 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   SettingsSection _selectedSection = SettingsSection.account;
   SettingsSection? _mobileDetailSection;
 
-  void _logout() {
+  Future<void> _logout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: Text(
+          'Log Out',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to log out?',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Log Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
     ref.read(websocketProvider.notifier).disconnect();
     ref.read(chatProvider.notifier).clear();
     ref.read(authProvider.notifier).logout();
-    context.go('/login');
+    if (mounted) context.go('/login');
   }
 
   bool get _isMobile => MediaQuery.of(context).size.width < 600;

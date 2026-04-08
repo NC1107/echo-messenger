@@ -4,6 +4,7 @@ pub mod contacts;
 pub mod group_keys;
 pub mod groups;
 pub mod keys;
+pub mod link_preview;
 pub mod media;
 pub mod messages;
 pub mod reactions;
@@ -16,7 +17,7 @@ use axum::Router;
 use axum::http::{HeaderValue, Method, header};
 use axum::middleware;
 use axum::response::IntoResponse;
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, patch, post, put};
 use dashmap::DashMap;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -202,6 +203,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let user_routes = Router::new()
         .route("/me", delete(users::delete_account))
+        .route("/me/profile", patch(users::update_profile))
+        .route("/me/password", patch(users::change_password))
         .route(
             "/me/privacy",
             get(users::get_my_privacy).patch(users::update_my_privacy),
@@ -220,6 +223,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api/media", media_routes)
         .nest("/api", message_routes)
         .route("/api/voice/token", post(voice::generate_token))
+        .route("/api/link-preview", post(link_preview::fetch_preview))
         .route("/api/health", get(health))
         .route("/api/config/ice", get(ice_config))
         .route("/ws", get(ws::ws_upgrade))

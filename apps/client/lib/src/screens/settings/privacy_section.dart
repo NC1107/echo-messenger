@@ -25,42 +25,75 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
   Future<void> _resetEncryptionKeys() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: const Text(
-          'Reset Encryption Keys',
-          style: TextStyle(
-            color: EchoTheme.danger,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
-          'This will regenerate your encryption keys. You won\'t be able '
-          'to read old encrypted messages. Both you and your contacts will '
-          'need to exchange new messages.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Reset Keys'),
-          ),
-        ],
-      ),
+      builder: (dialogContext) {
+        final controller = TextEditingController();
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final matches = controller.text.trim().toUpperCase() == 'RESET';
+            return AlertDialog(
+              backgroundColor: context.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: context.border),
+              ),
+              title: const Text(
+                'Reset Encryption Keys',
+                style: TextStyle(
+                  color: EchoTheme.danger,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'This will regenerate your encryption keys. You won\'t be able '
+                    'to read old encrypted messages. Both you and your contacts will '
+                    'need to exchange new messages.',
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Type RESET to confirm:',
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controller,
+                    style: TextStyle(color: context.textPrimary, fontSize: 14),
+                    decoration: const InputDecoration(hintText: 'RESET'),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: matches
+                      ? () => Navigator.pop(dialogContext, true)
+                      : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: EchoTheme.danger,
+                  ),
+                  child: const Text('Reset Keys'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
 
     if (confirmed != true) return;
@@ -129,8 +162,8 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
           'Messaging Privacy',
           style: TextStyle(
             color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 8),
