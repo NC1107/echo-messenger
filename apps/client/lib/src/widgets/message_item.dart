@@ -737,7 +737,7 @@ class _MessageItemState extends State<MessageItem> {
     final isAlignedEnd = isMine && !widget.compactLayout;
     final canSwipeToReply = widget.onReply != null && !msg.isSystemEvent;
 
-    final messageContent = Container(
+    final messageWidget = Container(
       padding: EdgeInsets.only(
         left: 24,
         right: 24,
@@ -852,7 +852,7 @@ class _MessageItemState extends State<MessageItem> {
                 // Message content, shifted right during swipe
                 Transform.translate(
                   offset: Offset(_swipeDx, 0),
-                  child: messageContent,
+                  child: messageWidget,
                 ),
               ],
             ),

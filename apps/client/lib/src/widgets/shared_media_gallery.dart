@@ -331,7 +331,6 @@ class _FileList extends StatelessWidget {
             style: TextStyle(color: context.textMuted, fontSize: 11),
           ),
           onTap: () {
-            // Copy URL to clipboard
             Navigator.of(context).pop();
           },
         );
