@@ -68,4 +68,10 @@ class _WebNotificationService implements NotificationService {
       // Best-effort -- silently ignore errors
     }
   }
+
+  @override
+  void setAppFocused(bool focused) {
+    // On web, `document.hidden` is checked directly in showMessageNotification,
+    // so there's nothing to track here.
+  }
 }

@@ -34,8 +34,9 @@ void main() async {
   // Load persisted sound preference
   await SoundService().init();
 
-  // Request browser notification permission (no-op on non-web platforms)
-  NotificationService().requestPermission();
+  // Request browser notification permission (no-op on non-web platforms).
+  // Awaited so that the permission flag is set before any messages arrive.
+  await NotificationService().requestPermission();
 
   // Auto-login + crypto init is handled by SplashScreen
   runApp(

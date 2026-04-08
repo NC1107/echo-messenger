@@ -466,7 +466,8 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     final nextDeafened = !voiceSettings.selfDeafened;
     await notifier.setSelfDeafened(nextDeafened);
     final lkNotifier = ref.read(livekitVoiceProvider.notifier);
-    lkNotifier.setCaptureEnabled(!voiceSettings.selfMuted && !nextDeafened);
+    // Let setDeafened handle mic state internally -- calling
+    // setCaptureEnabled before setDeafened corrupts _wasMutedBeforeDeafen.
     await lkNotifier.setDeafened(nextDeafened);
     await _syncVoiceState();
   }

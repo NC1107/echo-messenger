@@ -482,15 +482,12 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
     // Local audio level.
     final localLevel = room.localParticipant?.audioLevel ?? 0.0;
 
-    // Remote audio levels.
+    // Remote audio levels -- keyed by identity (stable, unique per participant)
+    // so the voice lounge UI can look them up consistently.
     final peerLevels = <String, double>{};
     for (final p in room.remoteParticipants.values) {
-      final label = p.name.isNotEmpty
-          ? p.name
-          : p.identity.isNotEmpty
-          ? p.identity
-          : p.sid.toString();
-      peerLevels[label] = p.audioLevel;
+      final key = p.identity.isNotEmpty ? p.identity : p.sid.toString();
+      peerLevels[key] = p.audioLevel;
     }
 
     if (!_disposed) {

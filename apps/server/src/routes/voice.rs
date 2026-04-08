@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::auth::middleware::AuthUser;
+use crate::db;
 use crate::error::AppError;
 use crate::routes::AppState;
 
@@ -53,14 +54,28 @@ struct LiveKitClaims {
 /// auth token to prevent impersonation.
 pub async fn generate_token(
     auth: AuthUser,
-    _state: State<Arc<AppState>>,
+    state: State<Arc<AppState>>,
     Json(body): Json<TokenRequest>,
 ) -> Result<Json<TokenResponse>, AppError> {
-    // Resolve identity: use provided value or default to authenticated user ID.
-    let identity = body.identity.unwrap_or_else(|| auth.user_id.to_string());
+    // Look up the username so LiveKit participants display human-readable
+    // names instead of UUIDs.  The identity field doubles as the display
+    // name inside LiveKit, so using the username here means the client no
+    // longer has to race a post-connect `setName` call.
+    let user = db::users::find_by_id(&state.pool, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error looking up user for voice token: {e:?}");
+            AppError::internal("Database error")
+        })?
+        .ok_or_else(|| AppError::bad_request("User not found"))?;
 
-    // Verify the resolved identity matches the authenticated user
-    if identity != auth.user_id.to_string() {
+    let username = user.username;
+    let identity = body.identity.unwrap_or_else(|| username.clone());
+
+    // The provided identity must be either the username or the user_id.
+    // This prevents impersonation while still allowing legacy clients that
+    // send the UUID.
+    if identity != username && identity != auth.user_id.to_string() {
         return Err(AppError::bad_request(
             "Identity must match authenticated user",
         ));

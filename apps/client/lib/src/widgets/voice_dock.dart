@@ -186,10 +186,12 @@ class VoiceDock extends ConsumerWidget {
                 final ssNotifier = ref.read(screenShareProvider.notifier);
                 if (screenShare.isScreenSharing) {
                   await lkNotifier.setScreenShareEnabled(false);
-                  await ssNotifier.stopScreenShare();
+                  ssNotifier.setLiveKitScreenShareActive(false);
                 } else {
                   final ok = await lkNotifier.setScreenShareEnabled(true);
-                  if (!ok && context.mounted) {
+                  if (ok) {
+                    ssNotifier.setLiveKitScreenShareActive(true);
+                  } else if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Could not start screen sharing.'),
@@ -208,7 +210,12 @@ class VoiceDock extends ConsumerWidget {
             onPressed: () async {
               // Stop screen sharing when leaving the channel.
               if (screenShare.isScreenSharing) {
-                await ref.read(screenShareProvider.notifier).stopScreenShare();
+                await ref
+                    .read(livekitVoiceProvider.notifier)
+                    .setScreenShareEnabled(false);
+                ref
+                    .read(screenShareProvider.notifier)
+                    .setLiveKitScreenShareActive(false);
               }
               // Leave both server-side voice membership and local WebRTC state
               // so channel selection state clears consistently in the UI.

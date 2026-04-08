@@ -19,6 +19,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../services/notification_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/chat_panel.dart';
 import '../widgets/conversation_panel.dart'
@@ -88,6 +89,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Keep the notification service in sync with app focus so that native
+    // notifications are suppressed while the user is looking at the app.
+    NotificationService().setAppFocused(state == AppLifecycleState.resumed);
+
     if (state == AppLifecycleState.resumed) {
       ref.read(contactsProvider.notifier).loadPending(force: true);
     } else if (state == AppLifecycleState.detached ||
