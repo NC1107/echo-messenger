@@ -1,7 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/chat_message.dart';
@@ -352,17 +351,10 @@ class _MessageItemState extends State<MessageItem> {
           ],
         ),
         const SizedBox(height: 4),
-        GestureDetector(
-          onTap: () => context.push('/settings'),
-          child: Text(
-            'Reset encryption keys in Settings',
-            style: TextStyle(
-              color: context.accent,
-              fontSize: 12,
-              decoration: TextDecoration.underline,
-              decorationColor: context.accent,
-            ),
-          ),
+        Text(
+          'Tap the key icon in the chat header to reset '
+          'this conversation\'s encryption session.',
+          style: TextStyle(color: context.accent, fontSize: 12),
         ),
       ],
     );
@@ -678,6 +670,7 @@ class _MessageItemState extends State<MessageItem> {
     final msg = widget.message;
     final isMine = msg.isMine;
     final isFailed = msg.status == MessageStatus.failed;
+    final isSending = msg.status == MessageStatus.sending;
 
     final mediaUrl = extractMediaUrl(msg.content);
     final hasMedia = mediaUrl != null;
@@ -704,53 +697,57 @@ class _MessageItemState extends State<MessageItem> {
 
     final isAlignedEnd = isMine && !widget.compactLayout;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: Semantics(
-        label: 'Message from ${msg.fromUsername}. Long press for actions.',
-        child: GestureDetector(
-          onLongPressStart: !hasReactions
-              ? (details) =>
-                    widget.onReactionTap?.call(msg, details.globalPosition)
-              : null,
-          child: Container(
-            padding: EdgeInsets.only(
-              left: 24,
-              right: 24,
-              top: widget.showHeader ? 8 : 2,
-              bottom: hasReactions ? 4 : 2,
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Column(
-                  crossAxisAlignment: isAlignedEnd
-                      ? CrossAxisAlignment.end
-                      : CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: isAlignedEnd
-                          ? MainAxisAlignment.end
-                          : MainAxisAlignment.start,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: _buildMessageRowChildren(
-                        msg: msg,
-                        isMine: isMine,
-                        bubbleWithReactions: bubbleWithReactions,
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 300),
+      opacity: isSending ? 0.5 : 1.0,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: Semantics(
+          label: 'Message from ${msg.fromUsername}. Long press for actions.',
+          child: GestureDetector(
+            onLongPressStart: !hasReactions
+                ? (details) =>
+                      widget.onReactionTap?.call(msg, details.globalPosition)
+                : null,
+            child: Container(
+              padding: EdgeInsets.only(
+                left: 24,
+                right: 24,
+                top: widget.showHeader ? 8 : 2,
+                bottom: hasReactions ? 4 : 2,
+              ),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Column(
+                    crossAxisAlignment: isAlignedEnd
+                        ? CrossAxisAlignment.end
+                        : CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: isAlignedEnd
+                            ? MainAxisAlignment.end
+                            : MainAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: _buildMessageRowChildren(
+                          msg: msg,
+                          isMine: isMine,
+                          bubbleWithReactions: bubbleWithReactions,
+                        ),
                       ),
-                    ),
-                    if (widget.isLastInGroup)
-                      _buildTimestampRow(msg: msg, isMine: isMine),
-                  ],
-                ),
-                if (!hasReactions)
-                  _buildHoverOverlay(
-                    msg: msg,
-                    isMine: isMine,
-                    mediaUrl: mediaUrl,
+                      if (widget.isLastInGroup)
+                        _buildTimestampRow(msg: msg, isMine: isMine),
+                    ],
                   ),
-              ],
+                  if (!hasReactions)
+                    _buildHoverOverlay(
+                      msg: msg,
+                      isMine: isMine,
+                      mediaUrl: mediaUrl,
+                    ),
+                ],
+              ),
             ),
           ),
         ),

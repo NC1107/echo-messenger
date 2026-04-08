@@ -163,43 +163,77 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
   }
 
   Future<void> _deleteAccount() async {
+    final username = ref.read(authProvider).username ?? '';
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        title: const Text(
-          'Delete Account',
-          style: TextStyle(
-            color: EchoTheme.danger,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
-          'This will permanently delete your account and all data. '
-          'This cannot be undone.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Delete My Account'),
-          ),
-        ],
-      ),
+      builder: (dialogContext) {
+        final controller = TextEditingController();
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final matches = controller.text == username;
+            return AlertDialog(
+              backgroundColor: context.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: context.border),
+              ),
+              title: const Text(
+                'Delete Account',
+                style: TextStyle(
+                  color: EchoTheme.danger,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'This will permanently delete your account and all data. '
+                    'This cannot be undone.',
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Type your username to confirm:',
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: controller,
+                    style: TextStyle(color: context.textPrimary, fontSize: 14),
+                    decoration: InputDecoration(hintText: username),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: matches
+                      ? () => Navigator.pop(dialogContext, true)
+                      : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: EchoTheme.danger,
+                  ),
+                  child: const Text('Delete My Account'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
 
     if (confirmed != true) return;
@@ -304,7 +338,7 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           'Echo Messenger',
           style: TextStyle(
             color: context.textPrimary,
-            fontSize: 20,
+            fontSize: 18,
             fontWeight: FontWeight.w700,
           ),
         ),

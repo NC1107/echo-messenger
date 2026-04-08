@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/echo_theme.dart';
+import '../typing_bubble.dart';
 
 /// Shows an editing indicator or typing indicator above the input field.
 ///
@@ -38,11 +39,10 @@ class InputStatusBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            isEditing ? Icons.edit_outlined : Icons.more_horiz_rounded,
-            size: 12,
-            color: isEditing ? context.accent : context.textMuted,
-          ),
+          if (isEditing)
+            Icon(Icons.edit_outlined, size: 12, color: context.accent)
+          else
+            TypingDots(color: context.textMuted, dotSize: 5),
           const SizedBox(width: 6),
           Expanded(
             child: Text(

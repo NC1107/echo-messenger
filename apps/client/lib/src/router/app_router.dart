@@ -10,6 +10,7 @@ import '../screens/group_info_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/join_group_screen.dart';
 import '../screens/login_screen.dart';
+import '../screens/onboarding_wizard.dart';
 import '../screens/register_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/splash_screen.dart';
@@ -67,11 +68,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isAuthRoute =
           state.matchedLocation == _routeLogin ||
           state.matchedLocation == '/register';
+      final isOnboarding = state.matchedLocation == '/onboarding';
 
       // Let the splash screen handle its own navigation
       if (isSplash) return null;
 
-      if (!isLoggedIn && !isAuthRoute) {
+      if (!isLoggedIn && !isAuthRoute && !isOnboarding) {
         // Save the intended path so we can navigate there after login
         final intended = state.matchedLocation;
         if (intended != _routeHome && intended != _routeLogin) {
@@ -97,6 +99,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/register',
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const RegisterScreen()),
+      ),
+      GoRoute(
+        path: '/onboarding',
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const OnboardingWizard()),
       ),
       GoRoute(
         path: _routeHome,

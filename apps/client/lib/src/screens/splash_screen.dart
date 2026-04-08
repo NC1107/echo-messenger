@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../providers/auth_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/update_provider.dart';
 import '../router/app_router.dart' show pendingDeepLink;
+import '../screens/onboarding_wizard.dart' show kOnboardingCompletedKey;
 import '../theme/echo_theme.dart';
 import '../widgets/echo_logo_icon.dart';
 
@@ -90,8 +93,18 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       final destination = pendingDeepLink!;
       pendingDeepLink = null;
       context.go(destination);
+    } else if (isLoggedIn) {
+      // Auto-login from stored token means this is a returning user.
+      // Ensure onboarding flag is set so they always skip the wizard.
+      // New registrations navigate to /onboarding from RegisterScreen.
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(kOnboardingCompletedKey) != true) {
+        await prefs.setBool(kOnboardingCompletedKey, true);
+      }
+      if (!mounted) return;
+      context.go('/home');
     } else {
-      context.go(isLoggedIn ? '/home' : '/login');
+      context.go('/login');
     }
   }
 

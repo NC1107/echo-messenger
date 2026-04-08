@@ -236,26 +236,12 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       ref.read(conversationsProvider.notifier).loadConversations();
     }
 
-    // Play notification sound and show push notification for incoming messages
-    if (fromUserId != myUserId) {
-      // Respect muted conversations
-      final conversations = ref.read(conversationsProvider).conversations;
-      final conv = conversations
-          .where((c) => c.id == conversationId)
-          .firstOrNull;
-      final isMuted = conv?.isMuted ?? false;
-
-      if (!isMuted) {
-        SoundService().playMessageReceived();
-        NotificationService().showMessageNotification(
-          senderUsername: senderUsername,
-          body: rawContent.length > 100
-              ? '${rawContent.substring(0, 100)}...'
-              : rawContent,
-          conversationId: conversationId,
-          isGroup: conv?.isGroup ?? false,
-        );
-      }
+    // When crypto is NOT initialized, notify with raw content (it's plaintext
+    // in that case).  When crypto IS initialized, the notification fires AFTER
+    // decryption inside _decryptAndDeliverWithPreview so users never see
+    // encrypted ciphertext in their notifications.
+    if (!cryptoState.isInitialized && fromUserId != myUserId) {
+      _notifyIfAllowed(conversationId, senderUsername, rawContent);
     }
   }
 
@@ -359,6 +345,33 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
           timestamp: timestamp,
           senderUsername: senderUsername,
         );
+
+    // Notify with decrypted content so users never see ciphertext.
+    if (fromUserId != myUserId) {
+      _notifyIfAllowed(conversationId, senderUsername, decryptedContent);
+    }
+  }
+
+  /// Show a notification + play sound if the conversation is not muted.
+  void _notifyIfAllowed(
+    String conversationId,
+    String senderUsername,
+    String displayContent,
+  ) {
+    final conversations = ref.read(conversationsProvider).conversations;
+    final conv = conversations.where((c) => c.id == conversationId).firstOrNull;
+    if (conv?.isMuted ?? false) return;
+
+    SoundService().playMessageReceived();
+    final body = displayContent.length > 100
+        ? '${displayContent.substring(0, 100)}...'
+        : displayContent;
+    NotificationService().showMessageNotification(
+      senderUsername: senderUsername,
+      body: body,
+      conversationId: conversationId,
+      isGroup: conv?.isGroup ?? false,
+    );
   }
 
   void _handleTyping(Map<String, dynamic> json, String myUserId) {

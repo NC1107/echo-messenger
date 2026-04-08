@@ -45,4 +45,7 @@ class MessageCache {
   static Future<void> clearAll() async {
     await _box?.clear();
   }
+
+  /// Number of cached message entries (conversations × messages).
+  static int entryCount() => _box?.length ?? 0;
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Regex for detecting URLs in message text.
@@ -295,25 +296,12 @@ class _RichTextContentState extends State<RichTextContent> {
         }
       }
 
-      final code = match.group(1) ?? '';
+      final code = (match.group(1) ?? '').trimRight();
       children.add(
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: widget.textSecondaryColor.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text(
-            code.trimRight(),
-            style: TextStyle(
-              fontSize: 13,
-              fontFamily: 'monospace',
-              color: textColor,
-              height: 1.5,
-            ),
-          ),
+        _CodeBlockWidget(
+          code: code,
+          bgColor: widget.textSecondaryColor.withValues(alpha: 0.12),
+          textColor: textColor,
         ),
       );
 
@@ -338,6 +326,94 @@ class _RichTextContentState extends State<RichTextContent> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: children,
+    );
+  }
+}
+
+/// A code block widget with a hover-reveal "Copy" button.
+class _CodeBlockWidget extends StatefulWidget {
+  final String code;
+  final Color bgColor;
+  final Color textColor;
+
+  const _CodeBlockWidget({
+    required this.code,
+    required this.bgColor,
+    required this.textColor,
+  });
+
+  @override
+  State<_CodeBlockWidget> createState() => _CodeBlockWidgetState();
+}
+
+class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
+  bool _hovered = false;
+  bool _copied = false;
+
+  void _copy() {
+    Clipboard.setData(ClipboardData(text: widget.code));
+    setState(() => _copied = true);
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _copied = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Stack(
+        children: [
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: widget.bgColor,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: SelectableText(
+              widget.code,
+              style: TextStyle(
+                fontSize: 13,
+                fontFamily: 'monospace',
+                color: widget.textColor,
+                height: 1.5,
+              ),
+            ),
+          ),
+          if (_hovered || _copied)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: GestureDetector(
+                onTap: _copy,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: widget.bgColor,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: widget.textColor.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Text(
+                    _copied ? 'Copied!' : 'Copy',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: widget.textColor.withValues(alpha: 0.7),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

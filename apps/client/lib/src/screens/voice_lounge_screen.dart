@@ -37,6 +37,55 @@ class VoiceLoungeScreen extends ConsumerWidget {
     return '$serverUrl$avatarPath';
   }
 
+  /// Check if any remote participant is sharing their screen.
+  static bool _hasActiveScreenShare(lk.Room? room) {
+    if (room == null) return false;
+    for (final p in room.remoteParticipants.values) {
+      for (final pub in p.videoTrackPublications) {
+        if (pub.track != null &&
+            pub.source == lk.TrackSource.screenShareVideo) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Spotlight layout: screen share fills most of the space, participants
+  /// shrink to a horizontal strip at the bottom.
+  static Widget _buildSpotlightLayout({
+    required lk.Room? room,
+    required LiveKitVoiceState voiceLk,
+    required ScreenShareState screenShare,
+    required WidgetRef ref,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          // Screen share takes all available space
+          Expanded(child: _RemoteScreenShares(room: room!, spotlight: true)),
+          // Local screen share viewer
+          if (screenShare.isScreenSharing) ...[
+            const SizedBox(height: 8),
+            SizedBox(height: 120, child: _ScreenShareViewer(ref: ref)),
+          ],
+          const SizedBox(height: 8),
+          // Compact participant strip
+          SizedBox(
+            height: 80,
+            child: _ParticipantGrid(
+              room: room,
+              voiceState: voiceLk,
+              localAvatarUrl: _buildAvatarUrl(ref),
+              compact: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Screen sharing is only useful on desktop and web platforms.
   static bool get _supportsScreenShare {
     if (kIsWeb) return true;
@@ -72,26 +121,31 @@ class VoiceLoungeScreen extends ConsumerWidget {
             participantCount: totalParticipants,
             onBackToChat: onBackToChat,
           ),
-          // Main content area
+          // Main content area — spotlight layout when screen share is active
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  // Screen share viewer (large, above participants)
-                  if (screenShare.isScreenSharing) _ScreenShareViewer(ref: ref),
-                  if (screenShare.isScreenSharing) const SizedBox(height: 16),
-                  // Remote screen shares
-                  if (room != null) _RemoteScreenShares(room: room),
-                  // Participant grid
-                  _ParticipantGrid(
+            child: _hasActiveScreenShare(room)
+                ? _buildSpotlightLayout(
                     room: room,
-                    voiceState: voiceLk,
-                    localAvatarUrl: _buildAvatarUrl(ref),
+                    voiceLk: voiceLk,
+                    screenShare: screenShare,
+                    ref: ref,
+                  )
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        if (screenShare.isScreenSharing)
+                          _ScreenShareViewer(ref: ref),
+                        if (screenShare.isScreenSharing)
+                          const SizedBox(height: 16),
+                        _ParticipantGrid(
+                          room: room,
+                          voiceState: voiceLk,
+                          localAvatarUrl: _buildAvatarUrl(ref),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-            ),
           ),
           // Control bar
           _ControlBar(
@@ -184,11 +238,13 @@ class _ParticipantGrid extends StatelessWidget {
   final lk.Room? room;
   final LiveKitVoiceState voiceState;
   final String? localAvatarUrl;
+  final bool compact;
 
   const _ParticipantGrid({
     required this.room,
     required this.voiceState,
     this.localAvatarUrl,
+    this.compact = false,
   });
 
   @override
@@ -216,13 +272,19 @@ class _ParticipantGrid extends StatelessWidget {
           )
           .firstOrNull;
 
+      // Check both track existence AND the isVideoEnabled flag — the SDK
+      // track publication may linger briefly after toggleVideo(false).
+      final localHasVideo =
+          localVideo?.track != null && voiceState.isVideoEnabled;
       tiles.add(
         _ParticipantTile(
           key: const ValueKey('local'),
           name: 'You',
           avatarUrl: localAvatarUrl,
-          hasVideo: localVideo?.track != null,
-          videoTrack: localVideo?.track as lk.VideoTrack?,
+          hasVideo: localHasVideo,
+          videoTrack: localHasVideo
+              ? localVideo?.track as lk.VideoTrack?
+              : null,
           mirror: true,
           audioLevel: voiceState.localAudioLevel,
           isMuted: !voiceState.isCaptureEnabled,
@@ -260,6 +322,7 @@ class _ParticipantGrid extends StatelessWidget {
           mirror: false,
           audioLevel: audioLevel,
           isMuted: participant.isMuted,
+          connectionState: voiceState.peerConnectionStates[identity],
         ),
       );
     }
@@ -286,6 +349,16 @@ class _ParticipantGrid extends StatelessWidget {
       crossAxisCount = 3;
     }
 
+    // Compact mode: horizontal strip for spotlight layout
+    if (compact) {
+      return ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: tiles.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => SizedBox(width: 100, child: tiles[i]),
+      );
+    }
+
     return GridView.count(
       crossAxisCount: crossAxisCount,
       shrinkWrap: true,
@@ -310,6 +383,7 @@ class _ParticipantTile extends StatelessWidget {
   final bool mirror;
   final double audioLevel;
   final bool isMuted;
+  final String? connectionState;
 
   const _ParticipantTile({
     super.key,
@@ -320,6 +394,7 @@ class _ParticipantTile extends StatelessWidget {
     this.mirror = false,
     this.audioLevel = 0.0,
     this.isMuted = false,
+    this.connectionState,
   });
 
   @override
@@ -335,6 +410,15 @@ class _ParticipantTile extends StatelessWidget {
           color: isSpeaking ? EchoTheme.online : context.border,
           width: isSpeaking ? 2.0 : 1.0,
         ),
+        boxShadow: isSpeaking
+            ? [
+                BoxShadow(
+                  color: EchoTheme.online.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  spreadRadius: 1,
+                ),
+              ]
+            : null,
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
@@ -392,6 +476,17 @@ class _ParticipantTile extends StatelessWidget {
                         Icons.mic_off,
                         size: 14,
                         color: EchoTheme.danger,
+                      ),
+                    ),
+                  if (connectionState != null && connectionState != 'connected')
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Icon(
+                        Icons.signal_cellular_alt,
+                        size: 14,
+                        color: connectionState == 'reconnecting'
+                            ? EchoTheme.warning
+                            : context.textMuted,
                       ),
                     ),
                 ],
@@ -571,8 +666,9 @@ class _ScreenShareViewer extends StatelessWidget {
 
 class _RemoteScreenShares extends StatelessWidget {
   final lk.Room room;
+  final bool spotlight;
 
-  const _RemoteScreenShares({required this.room});
+  const _RemoteScreenShares({required this.room, this.spotlight = false});
 
   @override
   Widget build(BuildContext context) {
@@ -587,7 +683,9 @@ class _RemoteScreenShares extends StatelessWidget {
           tiles.add(
             Container(
               width: double.infinity,
-              constraints: const BoxConstraints(maxHeight: 400),
+              constraints: spotlight
+                  ? null
+                  : const BoxConstraints(maxHeight: 400),
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
                 color: Colors.black,

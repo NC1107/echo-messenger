@@ -19,6 +19,7 @@ import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import 'skeleton_loader.dart';
 import 'channel_bar.dart';
 import 'chat_header_bar.dart';
 import 'chat_input_bar.dart';
@@ -916,6 +917,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String serverUrl,
     required String authToken,
   }) {
+    if (messages.isEmpty && isLoadingHistory) {
+      return const SingleChildScrollView(child: MessageListSkeleton());
+    }
     if (messages.isEmpty && !isLoadingHistory) {
       return _buildEmptyMessagePlaceholder(displayName);
     }

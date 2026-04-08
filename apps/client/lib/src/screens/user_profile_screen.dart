@@ -66,6 +66,10 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
   String? _bio;
   String? _avatarUrl;
   String? _createdAt;
+  String? _statusMessage;
+  String? _pronouns;
+  String? _timezone;
+  String? _website;
   bool _isContact = false;
 
   @override
@@ -100,6 +104,10 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
           _bio = data['bio'] as String?;
           _avatarUrl = data['avatar_url'] as String?;
           _createdAt = data['created_at'] as String?;
+          _statusMessage = data['status_message'] as String?;
+          _pronouns = data['pronouns'] as String?;
+          _timezone = data['timezone'] as String?;
+          _website = data['website'] as String?;
           _isLoading = false;
         });
       } else {
@@ -198,19 +206,47 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-          // Username
-          Text(
-            '@$_username',
-            style: TextStyle(
-              color: _displayName != null
-                  ? context.textMuted
-                  : context.textPrimary,
-              fontSize: _displayName != null ? 14 : 22,
-              fontWeight: _displayName != null
-                  ? FontWeight.normal
-                  : FontWeight.bold,
-            ),
+          // Username + pronouns
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '@$_username',
+                style: TextStyle(
+                  color: _displayName != null
+                      ? context.textMuted
+                      : context.textPrimary,
+                  fontSize: _displayName != null ? 14 : 22,
+                  fontWeight: _displayName != null
+                      ? FontWeight.normal
+                      : FontWeight.bold,
+                ),
+              ),
+              if (_pronouns != null && _pronouns!.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Text(
+                  _pronouns!,
+                  style: TextStyle(
+                    color: context.textMuted,
+                    fontSize: 13,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ],
           ),
+          // Status message
+          if (_statusMessage != null && _statusMessage!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              _statusMessage!,
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           // Bio
           if (_bio != null && _bio!.isNotEmpty)
@@ -227,6 +263,41 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
               ),
             ),
           if (_bio != null && _bio!.isNotEmpty) const SizedBox(height: 12),
+          // Website
+          if (_website != null && _website!.isNotEmpty) ...[
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.link, size: 14, color: context.accent),
+                const SizedBox(width: 4),
+                Text(
+                  _website!,
+                  style: TextStyle(
+                    color: context.accent,
+                    fontSize: 13,
+                    decoration: TextDecoration.underline,
+                    decorationColor: context.accent,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+          // Timezone
+          if (_timezone != null && _timezone!.isNotEmpty) ...[
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.schedule, size: 14, color: context.textMuted),
+                const SizedBox(width: 4),
+                Text(
+                  _timezone!,
+                  style: TextStyle(color: context.textMuted, fontSize: 13),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
           // Member since
           Row(
             mainAxisAlignment: MainAxisAlignment.center,

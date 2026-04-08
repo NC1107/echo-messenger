@@ -861,6 +861,24 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       return _handleCopyCutShortcut(true);
     }
 
+    // Up arrow with empty input → edit last own message (Discord behavior)
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp &&
+        _isTextEmpty &&
+        !_isEditing) {
+      final messages = ref
+          .read(chatProvider)
+          .messagesForConversation(widget.conversation.id);
+      final myUserId = ref.read(authProvider).userId ?? '';
+      final ownMessages = messages.where(
+        (m) => m.isMine && m.fromUserId == myUserId,
+      );
+      final lastOwn = ownMessages.isNotEmpty ? ownMessages.last : null;
+      if (lastOwn != null) {
+        enterEditMode(lastOwn);
+        return KeyEventResult.handled;
+      }
+    }
+
     return KeyEventResult.ignored;
   }
 
@@ -1025,11 +1043,16 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           ),
           categoryViewConfig: CategoryViewConfig(
             initCategory: Category.SMILEYS,
-            recentTabBehavior: RecentTabBehavior.NONE,
+            recentTabBehavior: RecentTabBehavior.RECENT,
             backgroundColor: context.surface,
             indicatorColor: context.accent,
             iconColorSelected: context.accent,
             iconColor: context.textMuted,
+          ),
+          skinToneConfig: SkinToneConfig(
+            enabled: true,
+            dialogBackgroundColor: context.surface,
+            indicatorColor: context.accent,
           ),
           bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
           searchViewConfig: SearchViewConfig(

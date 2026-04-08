@@ -27,7 +27,21 @@ pub struct UserProfile {
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
+    pub status_message: Option<String>,
+    pub timezone: Option<String>,
+    pub pronouns: Option<String>,
+    pub website: Option<String>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateProfileRequest {
+    pub display_name: Option<String>,
+    pub bio: Option<String>,
+    pub status_message: Option<String>,
+    pub timezone: Option<String>,
+    pub pronouns: Option<String>,
+    pub website: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -117,6 +131,83 @@ pub async fn get_profile(
         display_name: profile.display_name,
         avatar_url: profile.avatar_url,
         bio: profile.bio,
+        status_message: profile.status_message,
+        timezone: profile.timezone,
+        pronouns: profile.pronouns,
+        website: profile.website,
+        created_at: profile.created_at,
+    }))
+}
+
+/// PATCH /api/users/me/profile
+///
+/// Update the authenticated user's profile fields. All fields are optional;
+/// only provided fields are updated.
+pub async fn update_profile(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<UpdateProfileRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Validate field lengths
+    if let Some(ref name) = body.display_name
+        && name.len() > 50
+    {
+        return Err(AppError::bad_request(
+            "Display name must be 50 characters or less",
+        ));
+    }
+    if let Some(ref bio) = body.bio
+        && bio.len() > 300
+    {
+        return Err(AppError::bad_request("Bio must be 300 characters or less"));
+    }
+    if let Some(ref status) = body.status_message
+        && status.len() > 100
+    {
+        return Err(AppError::bad_request(
+            "Status message must be 100 characters or less",
+        ));
+    }
+    if let Some(ref pronouns) = body.pronouns
+        && pronouns.len() > 30
+    {
+        return Err(AppError::bad_request(
+            "Pronouns must be 30 characters or less",
+        ));
+    }
+    if let Some(ref website) = body.website
+        && website.len() > 200
+    {
+        return Err(AppError::bad_request(
+            "Website must be 200 characters or less",
+        ));
+    }
+
+    let fields = db::users::ProfileUpdate {
+        display_name: body.display_name.as_deref(),
+        bio: body.bio.as_deref(),
+        status_message: body.status_message.as_deref(),
+        timezone: body.timezone.as_deref(),
+        pronouns: body.pronouns.as_deref(),
+        website: body.website.as_deref(),
+    };
+    let profile = db::users::update_profile(&state.pool, auth.user_id, &fields)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in update_profile: {e:?}");
+            AppError::internal("Database error")
+        })?;
+
+    Ok(Json(UserProfile {
+        user_id: profile.id,
+        username: profile.username,
+        display_name: profile.display_name,
+        avatar_url: profile.avatar_url,
+        bio: profile.bio,
+        status_message: profile.status_message,
+        timezone: profile.timezone,
+        pronouns: profile.pronouns,
+        website: profile.website,
         created_at: profile.created_at,
     }))
 }
@@ -159,6 +250,57 @@ pub async fn delete_account(
     }
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// PATCH /api/users/me/password
+///
+/// Change the authenticated user's password. Requires the current password
+/// for verification and a new password that meets the minimum length.
+pub async fn change_password(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ChangePasswordRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    use crate::auth::password;
+
+    if body.new_password.len() < 8 || body.new_password.len() > 128 {
+        return Err(AppError::bad_request(
+            "New password must be 8-128 characters",
+        ));
+    }
+
+    // Verify current password
+    let user = db::users::find_by_id(&state.pool, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::bad_request("User not found"))?;
+
+    let valid = password::verify_password(&body.current_password, &user.password_hash)?;
+    if !valid {
+        return Err(AppError::unauthorized("Current password is incorrect"));
+    }
+
+    // Hash and store new password
+    let new_hash = password::hash_password(&body.new_password)?;
+    db::users::update_password(&state.pool, auth.user_id, &new_hash)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in change_password: {e:?}");
+            AppError::internal("Failed to update password")
+        })?;
+
+    // Revoke all refresh tokens so other sessions are logged out
+    db::tokens::revoke_all_user_tokens(&state.pool, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
+    Ok(Json(json!({ "status": "password_changed" })))
+}
+
+#[derive(Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
 }
 
 /// GET /api/users/online

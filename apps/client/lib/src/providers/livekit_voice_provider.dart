@@ -288,7 +288,7 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
         'LiveKitVoice',
         'toggleVideo failed: $e',
       );
-      state = state.copyWith(error: 'Failed to toggle camera');
+      state = state.copyWith(error: _friendlyMediaError(e, 'camera'));
     }
   }
 
@@ -311,8 +311,30 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
         'LiveKitVoice',
         'Screen share toggle failed: $e',
       );
+      state = state.copyWith(error: _friendlyMediaError(e, 'screen share'));
       return false;
     }
+  }
+
+  /// Map media errors to user-readable messages shown in the voice UI.
+  static String _friendlyMediaError(Object e, String feature) {
+    final msg = e.toString().toLowerCase();
+    if (msg.contains('notallowederror') || msg.contains('not allowed')) {
+      return '${feature[0].toUpperCase()}${feature.substring(1)} permission denied. '
+          'Check your browser or system settings.';
+    }
+    if (msg.contains('source not found') || msg.contains('notfounderror')) {
+      if (feature == 'screen share') {
+        return 'No screen source found. On Linux, ensure PipeWire and '
+            'xdg-desktop-portal are running.';
+      }
+      return 'No $feature device found.';
+    }
+    if (msg.contains('not supported') || msg.contains('notsupportederror')) {
+      return '${feature[0].toUpperCase()}${feature.substring(1)} is not supported '
+          'on this platform.';
+    }
+    return 'Failed to enable $feature.';
   }
 
   /// Access the LiveKit [Room] directly for advanced widget rendering

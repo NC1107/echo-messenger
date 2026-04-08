@@ -84,6 +84,10 @@ pub struct UserProfileRow {
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
+    pub status_message: Option<String>,
+    pub timezone: Option<String>,
+    pub pronouns: Option<String>,
+    pub website: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -99,11 +103,69 @@ pub async fn find_public_profile(
     user_id: Uuid,
 ) -> Result<Option<UserProfileRow>, sqlx::Error> {
     sqlx::query_as::<_, UserProfileRow>(
-        "SELECT id, username, display_name, avatar_url, bio, created_at FROM users WHERE id = $1",
+        "SELECT id, username, display_name, avatar_url, bio, status_message, \
+         timezone, pronouns, website, created_at \
+         FROM users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(pool)
     .await
+}
+
+/// Fields that can be updated on a user's profile.
+pub struct ProfileUpdate<'a> {
+    pub display_name: Option<&'a str>,
+    pub bio: Option<&'a str>,
+    pub status_message: Option<&'a str>,
+    pub timezone: Option<&'a str>,
+    pub pronouns: Option<&'a str>,
+    pub website: Option<&'a str>,
+}
+
+/// Update profile fields for a user. Only non-null fields are updated.
+pub async fn update_profile(
+    pool: &PgPool,
+    user_id: Uuid,
+    fields: &ProfileUpdate<'_>,
+) -> Result<UserProfileRow, sqlx::Error> {
+    // NULL = field not in request (keep existing value).
+    // Empty string = user cleared the field (set to NULL in DB).
+    // Non-empty string = user set a value (store it).
+    sqlx::query_as::<_, UserProfileRow>(
+        "UPDATE users SET \
+         display_name = CASE WHEN $2 IS NULL THEN display_name ELSE NULLIF($2, '') END, \
+         bio = CASE WHEN $3 IS NULL THEN bio ELSE NULLIF($3, '') END, \
+         status_message = CASE WHEN $4 IS NULL THEN status_message ELSE NULLIF($4, '') END, \
+         timezone = CASE WHEN $5 IS NULL THEN timezone ELSE NULLIF($5, '') END, \
+         pronouns = CASE WHEN $6 IS NULL THEN pronouns ELSE NULLIF($6, '') END, \
+         website = CASE WHEN $7 IS NULL THEN website ELSE NULLIF($7, '') END \
+         WHERE id = $1 \
+         RETURNING id, username, display_name, avatar_url, bio, status_message, \
+                  timezone, pronouns, website, created_at",
+    )
+    .bind(user_id)
+    .bind(fields.display_name)
+    .bind(fields.bio)
+    .bind(fields.status_message)
+    .bind(fields.timezone)
+    .bind(fields.pronouns)
+    .bind(fields.website)
+    .fetch_one(pool)
+    .await
+}
+
+/// Update a user's password hash.
+pub async fn update_password(
+    pool: &PgPool,
+    user_id: Uuid,
+    password_hash: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
+        .bind(password_hash)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub async fn get_avatar_url(pool: &PgPool, user_id: Uuid) -> Result<Option<String>, sqlx::Error> {

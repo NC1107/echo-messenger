@@ -48,6 +48,8 @@ ed25519-dalek = { version = "2", features = ["std"] }
 # Tracing
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# HTTP client (link previews)
+reqwest = { version = "0.12", features = ["json"] }
+
 [dev-dependencies]
 tokio-tungstenite = "0.26"
-reqwest = { version = "0.12", features = ["json"] }
