@@ -800,8 +800,8 @@ class _ControlBar extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Mute
-          _ControlButton(
+          // Mute (split: main toggles mute, dots open audio processing)
+          _SplitControlButton(
             icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
             label: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
             isActive: voiceSettings.selfMuted,
@@ -814,9 +814,11 @@ class _ControlBar extends ConsumerWidget {
                   .read(livekitVoiceProvider.notifier)
                   .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
             },
+            menuBuilder: (context) =>
+                _AudioProcessingMenu(voiceSettings: voiceSettings, ref: ref),
           ),
           const SizedBox(width: 8),
-          // Deafen
+          // Deafen (no split -- simple button)
           _ControlButton(
             icon: voiceSettings.selfDeafened
                 ? Icons.headset_off
@@ -834,8 +836,8 @@ class _ControlBar extends ConsumerWidget {
             },
           ),
           const SizedBox(width: 8),
-          // Video
-          _ControlButton(
+          // Camera (split: main toggles camera, dots open bitrate/fps/auto)
+          _SplitControlButton(
             icon: voiceState.isVideoEnabled
                 ? Icons.videocam
                 : Icons.videocam_off,
@@ -845,15 +847,13 @@ class _ControlBar extends ConsumerWidget {
             onPressed: () async {
               await ref.read(livekitVoiceProvider.notifier).toggleVideo();
             },
+            menuBuilder: (context) =>
+                _VideoSettingsMenu(voiceState: voiceState, ref: ref),
           ),
           const SizedBox(width: 8),
-          // Video quality selector
-          if (voiceState.isVideoEnabled)
-            _VideoQualitySelector(quality: voiceState.videoQuality),
-          if (voiceState.isVideoEnabled) const SizedBox(width: 8),
-          // Screen share (published via LiveKit SDK)
+          // Screen share (split: main toggles share, dots open bitrate/fps)
           if (VoiceLoungeScreen._supportsScreenShare) ...[
-            _ControlButton(
+            _SplitControlButton(
               icon: screenShare.isScreenSharing
                   ? Icons.stop_screen_share
                   : Icons.screen_share,
@@ -880,6 +880,8 @@ class _ControlBar extends ConsumerWidget {
                   }
                 }
               },
+              menuBuilder: (context) =>
+                  _VideoSettingsMenu(voiceState: voiceState, ref: ref),
             ),
             const SizedBox(width: 8),
           ],
@@ -912,73 +914,327 @@ class _ControlBar extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Video quality selector
+// Split control button -- main action area + 3-dot menu
 // ---------------------------------------------------------------------------
 
-class _VideoQualitySelector extends ConsumerWidget {
-  final VideoQuality quality;
+class _SplitControlButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final Color activeColor;
+  final VoidCallback onPressed;
+  final Widget Function(BuildContext context) menuBuilder;
 
-  const _VideoQualitySelector({required this.quality});
+  const _SplitControlButton({
+    required this.icon,
+    required this.label,
+    required this.isActive,
+    required this.activeColor,
+    required this.onPressed,
+    required this.menuBuilder,
+  });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return PopupMenuButton<VideoQuality>(
-      onSelected: (q) {
-        ref.read(livekitVoiceProvider.notifier).setVideoQuality(q);
-      },
-      tooltip: 'Stream quality',
-      offset: const Offset(0, -200),
+  Widget build(BuildContext context) {
+    final Color bgColor;
+    if (isActive) {
+      bgColor = activeColor.withValues(alpha: 0.15);
+    } else {
+      bgColor = context.surfaceHover;
+    }
+    final iconColor = isActive ? activeColor : context.textSecondary;
+
+    return Tooltip(
+      message: label,
+      child: Container(
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Main action area
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onPressed,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  bottomLeft: Radius.circular(24),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.only(
+                    left: 16,
+                    right: 8,
+                    top: 10,
+                    bottom: 10,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(icon, size: 20, color: iconColor),
+                      const SizedBox(width: 6),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: iconColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // Divider
+            Container(
+              width: 1,
+              height: 24,
+              color: iconColor.withValues(alpha: 0.2),
+            ),
+            // 3-dot menu
+            _SplitMenuAnchor(iconColor: iconColor, menuBuilder: menuBuilder),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The 3-dot icon that opens a popup menu via [PopupMenuButton].
+class _SplitMenuAnchor extends StatelessWidget {
+  final Color iconColor;
+  final Widget Function(BuildContext context) menuBuilder;
+
+  const _SplitMenuAnchor({required this.iconColor, required this.menuBuilder});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<void>(
+      tooltip: 'Settings',
+      offset: const Offset(0, -8),
+      position: PopupMenuPosition.over,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: context.border),
       ),
       color: context.surface,
-      itemBuilder: (_) => VideoQuality.values.map((q) {
-        final isSelected = q == quality;
-        return PopupMenuItem<VideoQuality>(
-          value: q,
-          child: Row(
-            children: [
-              Icon(
-                isSelected ? Icons.check : Icons.circle_outlined,
-                size: 16,
-                color: isSelected ? context.accent : context.textMuted,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                q.label,
-                style: TextStyle(
-                  color: isSelected ? context.accent : context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                _bitrateLabel(q),
-                style: TextStyle(color: context.textMuted, fontSize: 11),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: context.surfaceHover,
-          borderRadius: BorderRadius.circular(24),
+      itemBuilder: (ctx) => [
+        PopupMenuItem<void>(
+          enabled: false,
+          padding: EdgeInsets.zero,
+          child: menuBuilder(ctx),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.tune, size: 18, color: context.textSecondary),
-            const SizedBox(width: 6),
-            Text(
-              quality.label,
+      ],
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4, right: 10, top: 10, bottom: 10),
+        child: Icon(Icons.more_vert, size: 18, color: iconColor),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Video / screen share settings menu content
+// ---------------------------------------------------------------------------
+
+class _VideoSettingsMenu extends StatelessWidget {
+  final LiveKitVoiceState voiceState;
+  final WidgetRef ref;
+
+  const _VideoSettingsMenu({required this.voiceState, required this.ref});
+
+  static const _bitrateOptions = [
+    (250000, '250 kbps'),
+    (500000, '500 kbps'),
+    (1000000, '1000 kbps'),
+    (2000000, '2000 kbps'),
+    (4000000, '4000 kbps'),
+  ];
+
+  static const _fpsOptions = [
+    (15, '15 fps'),
+    (24, '24 fps'),
+    (30, '30 fps'),
+    (60, '60 fps'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 220,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Auto quality toggle
+          _MenuToggleRow(
+            label: 'Auto Quality',
+            value: voiceState.autoQuality,
+            onChanged: (v) {
+              ref.read(livekitVoiceProvider.notifier).setAutoQuality(v);
+              Navigator.of(context).pop();
+            },
+          ),
+          const Divider(height: 1),
+          // Bitrate section
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: Text(
+              'Bitrate',
               style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 12,
+                color: context.textMuted,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          ..._bitrateOptions.map(
+            (opt) => _MenuRadioRow(
+              label: opt.$2,
+              selected: voiceState.videoBitrate == opt.$1,
+              enabled: !voiceState.autoQuality,
+              onTap: () {
+                ref
+                    .read(livekitVoiceProvider.notifier)
+                    .setVideoParams(bitrate: opt.$1);
+                Navigator.of(context).pop();
+              },
+            ),
+          ),
+          const Divider(height: 1),
+          // FPS section
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: Text(
+              'FPS',
+              style: TextStyle(
+                color: context.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          ..._fpsOptions.map(
+            (opt) => _MenuRadioRow(
+              label: opt.$2,
+              selected: voiceState.videoFps == opt.$1,
+              enabled: !voiceState.autoQuality,
+              onTap: () {
+                ref
+                    .read(livekitVoiceProvider.notifier)
+                    .setVideoParams(fps: opt.$1);
+                Navigator.of(context).pop();
+              },
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Audio processing settings menu content
+// ---------------------------------------------------------------------------
+
+class _AudioProcessingMenu extends StatelessWidget {
+  final VoiceSettingsState voiceSettings;
+  final WidgetRef ref;
+
+  const _AudioProcessingMenu({required this.voiceSettings, required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 220,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+            child: Text(
+              'Audio Processing',
+              style: TextStyle(
+                color: context.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          _MenuToggleRow(
+            label: 'Noise Suppression',
+            value: voiceSettings.noiseSuppression,
+            onChanged: (v) {
+              ref.read(voiceSettingsProvider.notifier).setNoiseSuppression(v);
+              Navigator.of(context).pop();
+            },
+          ),
+          _MenuToggleRow(
+            label: 'Echo Cancellation',
+            value: voiceSettings.echoCancellation,
+            onChanged: (v) {
+              ref.read(voiceSettingsProvider.notifier).setEchoCancellation(v);
+              Navigator.of(context).pop();
+            },
+          ),
+          _MenuToggleRow(
+            label: 'Auto Gain Control',
+            value: voiceSettings.autoGainControl,
+            onChanged: (v) {
+              ref.read(voiceSettingsProvider.notifier).setAutoGainControl(v);
+              Navigator.of(context).pop();
+            },
+          ),
+          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Menu helper widgets
+// ---------------------------------------------------------------------------
+
+/// A row with a label and a toggle switch for popup menu content.
+class _MenuToggleRow extends StatelessWidget {
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _MenuToggleRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(color: context.textPrimary, fontSize: 13),
+              ),
+            ),
+            SizedBox(
+              height: 20,
+              width: 36,
+              child: Switch(
+                value: value,
+                onChanged: onChanged,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
           ],
@@ -986,16 +1242,63 @@ class _VideoQualitySelector extends ConsumerWidget {
       ),
     );
   }
+}
 
-  static String _bitrateLabel(VideoQuality q) {
-    final kbps = q.encoding.maxBitrate ~/ 1000;
-    final fps = q.encoding.maxFramerate;
-    return '${kbps}kbps ${fps}fps';
+/// A radio-style row for popup menu content.
+class _MenuRadioRow extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _MenuRadioRow({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = !enabled
+        ? context.textMuted
+        : selected
+        ? context.accent
+        : context.textPrimary;
+
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              size: 16,
+              color: !enabled
+                  ? context.textMuted
+                  : selected
+                  ? context.accent
+                  : context.textMuted,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
 // ---------------------------------------------------------------------------
-// Control button
+// Control button (simple, no split)
 // ---------------------------------------------------------------------------
 
 class _ControlButton extends StatelessWidget {

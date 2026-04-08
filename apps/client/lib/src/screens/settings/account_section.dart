@@ -13,6 +13,51 @@ import '../../providers/server_url_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 
+class _CountryCode {
+  final String name;
+  final String flag;
+  final String dialCode;
+  final int digitCount;
+
+  const _CountryCode(
+    this.name,
+    this.flag,
+    this.dialCode, [
+    this.digitCount = 10,
+  ]);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _CountryCode && name == other.name && dialCode == other.dialCode;
+
+  @override
+  int get hashCode => Object.hash(name, dialCode);
+}
+
+const _countries = <_CountryCode>[
+  _CountryCode('US', '\u{1F1FA}\u{1F1F8}', '+1'),
+  _CountryCode('CA', '\u{1F1E8}\u{1F1E6}', '+1'),
+  _CountryCode('UK', '\u{1F1EC}\u{1F1E7}', '+44'),
+  _CountryCode('AU', '\u{1F1E6}\u{1F1FA}', '+61', 9),
+  _CountryCode('DE', '\u{1F1E9}\u{1F1EA}', '+49', 11),
+  _CountryCode('FR', '\u{1F1EB}\u{1F1F7}', '+33', 9),
+  _CountryCode('IN', '\u{1F1EE}\u{1F1F3}', '+91'),
+  _CountryCode('BR', '\u{1F1E7}\u{1F1F7}', '+55', 11),
+  _CountryCode('MX', '\u{1F1F2}\u{1F1FD}', '+52'),
+  _CountryCode('JP', '\u{1F1EF}\u{1F1F5}', '+81'),
+  _CountryCode('KR', '\u{1F1F0}\u{1F1F7}', '+82'),
+  _CountryCode('CN', '\u{1F1E8}\u{1F1F3}', '+86', 11),
+  _CountryCode('ES', '\u{1F1EA}\u{1F1F8}', '+34', 9),
+  _CountryCode('IT', '\u{1F1EE}\u{1F1F9}', '+39'),
+  _CountryCode('NL', '\u{1F1F3}\u{1F1F1}', '+31', 9),
+  _CountryCode('SE', '\u{1F1F8}\u{1F1EA}', '+46'),
+  _CountryCode('NO', '\u{1F1F3}\u{1F1F4}', '+47', 8),
+  _CountryCode('PL', '\u{1F1F5}\u{1F1F1}', '+48', 9),
+  _CountryCode('RU', '\u{1F1F7}\u{1F1FA}', '+7'),
+  _CountryCode('ZA', '\u{1F1FF}\u{1F1E6}', '+27', 9),
+];
+
 class AccountSection extends ConsumerStatefulWidget {
   const AccountSection({super.key});
 
@@ -29,6 +74,8 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
   final _websiteController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _phoneDigitsController = TextEditingController();
+  _CountryCode _selectedCountry = _countries.first; // US +1
   bool _profileLoaded = false;
   bool _saving = false;
 
@@ -55,6 +102,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     _websiteController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+    _phoneDigitsController.dispose();
     super.dispose();
   }
 
@@ -85,6 +133,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           _websiteController.text = data['website'] as String? ?? '';
           _emailController.text = data['email'] as String? ?? '';
           _phoneController.text = data['phone'] as String? ?? '';
+          _parsePhoneIntoComponents(data['phone'] as String? ?? '');
           _profileLoaded = true;
           _profileError = false;
         });
@@ -103,6 +152,11 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     try {
       // Always send every field value — the server uses empty string as
       // "clear the field" (NULLIF in SQL) and NULL as "keep existing value".
+      final phoneDigits = _phoneDigitsController.text.trim();
+      final phoneValue = phoneDigits.isEmpty
+          ? ''
+          : '${_selectedCountry.dialCode}$phoneDigits';
+
       final body = <String, dynamic>{
         'display_name': _displayNameController.text,
         'bio': _bioController.text,
@@ -111,7 +165,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
         'timezone': _timezoneController.text,
         'website': _websiteController.text,
         'email': _emailController.text,
-        'phone': _phoneController.text,
+        'phone': phoneValue,
       };
 
       final resp = await ref
@@ -622,12 +676,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
             maxLength: 254,
           ),
           const SizedBox(height: 12),
-          _profileField(
-            controller: _phoneController,
-            label: 'Phone',
-            hint: '+1 555 123 4567',
-            maxLength: 30,
-          ),
+          _buildPhoneField(),
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
@@ -837,6 +886,121 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
       onChanged: (value) {
         setState(() => _timezoneController.text = value ?? '');
       },
+    );
+  }
+
+  /// Parse a stored E.164 phone like "+15551234567" into country + digits.
+  void _parsePhoneIntoComponents(String phone) {
+    if (phone.isEmpty) {
+      _selectedCountry = _countries.first;
+      _phoneDigitsController.text = '';
+      return;
+    }
+
+    // Try matching the longest dial code first (e.g. +44 before +4).
+    // Sort countries by dial code length descending for greedy match.
+    final sorted = List<_CountryCode>.from(_countries)
+      ..sort((a, b) => b.dialCode.length.compareTo(a.dialCode.length));
+
+    for (final country in sorted) {
+      if (phone.startsWith(country.dialCode)) {
+        _selectedCountry = country;
+        _phoneDigitsController.text = phone.substring(country.dialCode.length);
+        return;
+      }
+    }
+
+    // Fallback: keep US selected, put everything (minus leading +) as digits.
+    _selectedCountry = _countries.first;
+    _phoneDigitsController.text = phone.startsWith('+')
+        ? phone.substring(1)
+        : phone;
+  }
+
+  Widget _buildPhoneField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Phone',
+          style: TextStyle(color: context.textSecondary, fontSize: 12),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 110,
+              child: DropdownButtonFormField<_CountryCode>(
+                initialValue: _selectedCountry,
+                decoration: InputDecoration(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 10,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: context.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: context.accent),
+                  ),
+                ),
+                dropdownColor: context.surface,
+                isExpanded: true,
+                menuMaxHeight: 300,
+                style: TextStyle(color: context.textPrimary, fontSize: 13),
+                items: _countries
+                    .map(
+                      (c) => DropdownMenuItem<_CountryCode>(
+                        value: c,
+                        child: Text(
+                          '${c.flag} ${c.dialCode}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _selectedCountry = value);
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextFormField(
+                controller: _phoneDigitsController,
+                keyboardType: TextInputType.phone,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(_selectedCountry.digitCount),
+                ],
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: '5551234567',
+                  hintStyle: TextStyle(color: context.textMuted),
+                  counterText: '',
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: context.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: context.accent),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
