@@ -16,6 +16,9 @@ bool _listEquals<T>(List<T> a, List<T> b) {
 }
 
 class ChatMessage {
+  /// System event messages use this as fromUserId.
+  static const systemUserId = '__system__';
+
   final String id;
   final String fromUserId;
   final String fromUsername;
@@ -33,6 +36,9 @@ class ChatMessage {
   final String? replyToUsername;
   final String? pinnedById;
   final DateTime? pinnedAt;
+
+  /// True if this is a system event (call history, key reset, etc.)
+  bool get isSystemEvent => fromUserId == systemUserId;
 
   const ChatMessage({
     required this.id,

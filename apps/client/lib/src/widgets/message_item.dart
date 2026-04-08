@@ -670,6 +670,45 @@ class _MessageItemState extends State<MessageItem> {
     final isFailed = msg.status == MessageStatus.failed;
     final isSending = msg.status == MessageStatus.sending;
 
+    // System events render as centered, borderless pills (like date separators)
+    if (msg.isSystemEvent) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _systemEventIcon(msg.content),
+                  size: 14,
+                  color: context.textMuted,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    msg.content,
+                    style: TextStyle(
+                      color: context.textMuted,
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final mediaUrl = extractMediaUrl(msg.content);
     final hasMedia = mediaUrl != null;
 
@@ -752,6 +791,20 @@ class _MessageItemState extends State<MessageItem> {
       ),
     );
   }
+}
+
+IconData _systemEventIcon(String content) {
+  final lower = content.toLowerCase();
+  if (lower.contains('call')) {
+    return Icons.call;
+  }
+  if (lower.contains('encryption') || lower.contains('key')) {
+    return Icons.vpn_key;
+  }
+  if (lower.contains('joined') || lower.contains('left')) {
+    return Icons.group;
+  }
+  return Icons.info_outline;
 }
 
 class _HoverActionButton extends StatelessWidget {

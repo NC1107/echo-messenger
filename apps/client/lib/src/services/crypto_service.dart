@@ -617,7 +617,18 @@ class CryptoService {
         fullWire.length > 70 &&
         fullWire[0] == _initialMsgMagicV2[0] &&
         fullWire[1] == _initialMsgMagicV2[1];
-    if ((isV1 || isV2) && !_sessions.containsKey(peerUserId)) {
+    if (isV1 || isV2) {
+      // Always accept an initial X3DH message — the peer may have reset their
+      // keys.  Drop any stale session so we establish a fresh one.
+      if (_sessions.containsKey(peerUserId)) {
+        debugPrint(
+          '[Crypto] Replacing stale session for $peerUserId '
+          '(received new X3DH initial message)',
+        );
+        _sessions.remove(peerUserId);
+        final store = SecureKeyStore.instance;
+        await store.delete('$_sessionPrefix$peerUserId');
+      }
       // This is an initial message -- establish session as Bob
       final aliceIdentityBytes = fullWire.sublist(2, 34);
       final aliceIdentityPub = SimplePublicKey(
