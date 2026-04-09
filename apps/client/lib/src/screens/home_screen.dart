@@ -54,6 +54,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   late final LiveKitVoiceNotifier _voiceRtcNotifier;
   StreamSubscription<String>? _notificationTapSub;
 
+  // Edge-swipe constants for narrow chat → conversation-list navigation
+  static const double _edgeSwipeZone = 60;
+  static const double _edgeSwipeThreshold = 60;
+
   // For narrow screen navigation
   int _narrowPanelIndex = 0; // 0 = conv list, 1 = chat
 
@@ -924,8 +928,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               onHorizontalDragUpdate: (details) {
                 // Edge swipe: zone expanded to 60 px, threshold lowered to 60 px
                 if (_swipeStartX != null &&
-                    _swipeStartX! < 60 &&
-                    details.globalPosition.dx - _swipeStartX! > 60) {
+                    _swipeStartX! < _edgeSwipeZone &&
+                    details.globalPosition.dx - _swipeStartX! >
+                        _edgeSwipeThreshold) {
                   _swipeStartX = null;
                   setState(() => _narrowPanelIndex = 0);
                 }
