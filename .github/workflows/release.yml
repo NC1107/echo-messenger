@@ -325,8 +325,9 @@ jobs:
             --export-options-plist=ios/ExportOptions.plist
       - name: Rename IPA
         run: |
-          cp apps/client/build/ios/ipa/*.ipa \
-             echo-ios-${{ needs.version.outputs.version }}.ipa
+          IPA_FILE=$(find apps/client/build/ios -name "*.ipa" -type f | head -1)
+          echo "Found IPA: $IPA_FILE"
+          cp "$IPA_FILE" echo-ios-${{ needs.version.outputs.version }}.ipa
       - name: Upload to TestFlight
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
