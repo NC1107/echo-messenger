@@ -768,11 +768,7 @@ class _MessageItemState extends State<MessageItem> {
             ],
           ),
           if (!hasReactions)
-            _buildHoverOverlay(
-              msg: msg,
-              isMine: isMine,
-              mediaUrl: mediaUrl,
-            ),
+            _buildHoverOverlay(msg: msg, isMine: isMine, mediaUrl: mediaUrl),
         ],
       ),
     );

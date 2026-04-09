@@ -202,10 +202,7 @@ class _ShortcutRow extends StatelessWidget {
                   if (i < parts.length - 1)
                     Text(
                       '+',
-                      style: TextStyle(
-                        color: context.textMuted,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: context.textMuted, fontSize: 12),
                     ),
                 ],
               ],
@@ -215,10 +212,7 @@ class _ShortcutRow extends StatelessWidget {
           Expanded(
             child: Text(
               shortcut.description,
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-              ),
+              style: TextStyle(color: context.textSecondary, fontSize: 13),
             ),
           ),
         ],

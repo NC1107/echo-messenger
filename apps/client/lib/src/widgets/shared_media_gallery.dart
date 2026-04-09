@@ -290,11 +290,8 @@ class _FileList extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: items.length,
-      separatorBuilder: (_, _) => Divider(
-        height: 1,
-        color: context.border,
-        indent: 56,
-      ),
+      separatorBuilder: (_, _) =>
+          Divider(height: 1, color: context.border, indent: 56),
       itemBuilder: (context, index) {
         final item = items[index];
         final resolvedUrl = resolveMediaUrl(
@@ -303,8 +300,7 @@ class _FileList extends StatelessWidget {
           authToken: authToken,
         );
         final filename =
-            Uri.tryParse(resolvedUrl)?.pathSegments.lastOrNull ??
-            'file';
+            Uri.tryParse(resolvedUrl)?.pathSegments.lastOrNull ?? 'file';
         final timestamp = formatMessageTimestamp(item.message.timestamp);
 
         return ListTile(
@@ -315,7 +311,11 @@ class _FileList extends StatelessWidget {
               color: context.accent.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(Icons.insert_drive_file_outlined, color: context.accent, size: 20),
+            child: Icon(
+              Icons.insert_drive_file_outlined,
+              color: context.accent,
+              size: 20,
+            ),
           ),
           title: Text(
             filename,

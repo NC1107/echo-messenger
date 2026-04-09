@@ -382,7 +382,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
     final myUserId = ref.read(authProvider).userId ?? '';
     final overlay = Overlay.of(context);
-    const pickerWidth = 385.0;  // wider to accommodate the "+" button
+    const pickerWidth = 385.0; // wider to accommodate the "+" button
     const pickerHeight = 44.0;
     final screenWidth = MediaQuery.of(context).size.width;
 
@@ -483,10 +483,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                         margin: const EdgeInsets.only(left: 4, right: 2),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: context.border,
-                            width: 1,
-                          ),
+                          border: Border.all(color: context.border, width: 1),
                         ),
                         alignment: Alignment.center,
                         child: Icon(
