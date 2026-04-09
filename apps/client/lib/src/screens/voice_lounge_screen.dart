@@ -88,8 +88,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       final pub = room.localParticipant?.videoTrackPublications
           .where(
             (p) =>
-                p.track != null &&
-                p.source == lk.TrackSource.screenShareVideo,
+                p.track != null && p.source == lk.TrackSource.screenShareVideo,
           )
           .firstOrNull;
       return (pub?.track as lk.VideoTrack?, false);
@@ -103,8 +102,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       final pub = participant.videoTrackPublications
           .where(
             (p) =>
-                p.track != null &&
-                p.source == lk.TrackSource.screenShareVideo,
+                p.track != null && p.source == lk.TrackSource.screenShareVideo,
           )
           .firstOrNull;
       return (pub?.track as lk.VideoTrack?, false);
@@ -116,9 +114,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           .firstOrNull;
       if (participant == null) return (null, false);
       final pub = participant.videoTrackPublications
-          .where(
-            (p) => p.track != null && p.source == lk.TrackSource.camera,
-          )
+          .where((p) => p.track != null && p.source == lk.TrackSource.camera)
           .firstOrNull;
       return (pub?.track as lk.VideoTrack?, false);
     }
@@ -247,10 +243,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             GestureDetector(
               onTap: () =>
                   setState(() => _focusedTileKey = 'screenshare-local'),
-              child: SizedBox(
-                height: 120,
-                child: _ScreenShareViewer(ref: ref),
-              ),
+              child: SizedBox(height: 120, child: _ScreenShareViewer(ref: ref)),
             ),
           ],
           const SizedBox(height: 8),
@@ -297,11 +290,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                 )
               else
                 const Center(
-                  child: Icon(
-                    Icons.person,
-                    size: 64,
-                    color: Colors.white54,
-                  ),
+                  child: Icon(Icons.person, size: 64, color: Colors.white54),
                 ),
               // Top-left: exit focus
               Positioned(
@@ -510,6 +499,7 @@ class _ParticipantGrid extends StatelessWidget {
   final LiveKitVoiceState voiceState;
   final String? localAvatarUrl;
   final bool compact;
+
   /// Called with the tile key when the user taps a tile to focus it.
   final void Function(String key)? onTileTap;
 
@@ -1030,6 +1020,7 @@ class _ScreenShareViewer extends StatelessWidget {
 class _RemoteScreenShares extends StatelessWidget {
   final lk.Room room;
   final bool spotlight;
+
   /// Called with the participant SID when the user taps a screen share tile.
   final void Function(String participantSid)? onTileTap;
 
@@ -1072,7 +1063,8 @@ class _RemoteScreenShares extends StatelessWidget {
                         aspectRatio: 16 / 9,
                         child: lk.VideoTrackRenderer(
                           pub.track! as lk.VideoTrack,
-                          fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                          fit: RTCVideoViewObjectFit
+                              .RTCVideoViewObjectFitContain,
                         ),
                       ),
                     ),
@@ -1154,7 +1146,8 @@ class _ControlBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // On narrow screens (width < 600) or in landscape, save space with
     // icon-only buttons at 44 px touch targets (no text labels).
-    final isCompact = MediaQuery.of(context).size.width < 600 ||
+    final isCompact =
+        MediaQuery.of(context).size.width < 600 ||
         MediaQuery.of(context).orientation == Orientation.landscape;
 
     final gap = isCompact ? const SizedBox(width: 4) : const SizedBox(width: 8);

@@ -946,7 +946,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return Scaffold(
       body: SafeArea(
         child: _showSettings
-            ? SettingsScreen(onBack: () => setState(() => _showSettings = false))
+            ? SettingsScreen(
+                onBack: () => setState(() => _showSettings = false),
+              )
             : _buildConversationPanel(),
       ),
     );
@@ -960,8 +962,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final channelId = voiceRtc.channelId ?? '';
     final channels = channelsState.channelsFor(convId);
     final channelName =
-        channels.where((c) => c.id == channelId).firstOrNull?.name ??
-            'Voice';
+        channels.where((c) => c.id == channelId).firstOrNull?.name ?? 'Voice';
 
     return Material(
       color: EchoTheme.online.withValues(alpha: 0.12),
@@ -974,9 +975,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           height: 40,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: context.border, width: 1),
-            ),
+            border: Border(bottom: BorderSide(color: context.border, width: 1)),
           ),
           child: Row(
             children: [

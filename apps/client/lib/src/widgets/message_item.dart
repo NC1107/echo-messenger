@@ -181,9 +181,7 @@ class _MessageItemState extends State<MessageItem> {
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: reactionEmojis.map((emoji) {
                       final alreadyReacted = msg.reactions.any(
-                        (r) =>
-                            r.emoji == emoji &&
-                            r.userId == widget.myUserId,
+                        (r) => r.emoji == emoji && r.userId == widget.myUserId,
                       );
                       return GestureDetector(
                         onTap: () {
@@ -199,10 +197,7 @@ class _MessageItemState extends State<MessageItem> {
                                 : null,
                             borderRadius: BorderRadius.circular(8),
                             border: alreadyReacted
-                                ? Border.all(
-                                    color: context.accent,
-                                    width: 2,
-                                  )
+                                ? Border.all(color: context.accent, width: 2)
                                 : null,
                           ),
                           alignment: Alignment.center,
@@ -229,8 +224,9 @@ class _MessageItemState extends State<MessageItem> {
                   icon: Icons.copy_outlined,
                   label: mediaUrl != null ? 'Copy link' : 'Copy text',
                   onTap: () {
-                    final copyText =
-                        mediaUrl != null ? _resolveUrl(mediaUrl) : msg.content;
+                    final copyText = mediaUrl != null
+                        ? _resolveUrl(mediaUrl)
+                        : msg.content;
                     Clipboard.setData(ClipboardData(text: copyText));
                     ToastService.show(
                       context,
