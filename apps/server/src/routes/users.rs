@@ -56,6 +56,7 @@ pub struct PrivacyPreferencesResponse {
     pub phone_visible: bool,
     pub email_discoverable: bool,
     pub phone_discoverable: bool,
+    pub searchable: bool,
 }
 
 #[derive(Deserialize)]
@@ -66,6 +67,7 @@ pub struct UpdatePrivacyPreferencesRequest {
     pub phone_visible: Option<bool>,
     pub email_discoverable: Option<bool>,
     pub phone_discoverable: Option<bool>,
+    pub searchable: Option<bool>,
 }
 
 /// GET /api/users/me/privacy
@@ -88,6 +90,7 @@ pub async fn get_my_privacy(
         phone_visible: privacy.phone_visible,
         email_discoverable: privacy.email_discoverable,
         phone_discoverable: privacy.phone_discoverable,
+        searchable: privacy.searchable,
     }))
 }
 
@@ -118,6 +121,7 @@ pub async fn update_my_privacy(
         phone_discoverable: payload
             .phone_discoverable
             .unwrap_or(current.phone_discoverable),
+        searchable: payload.searchable.unwrap_or(current.searchable),
     };
     let updated = db::users::update_privacy_preferences(&state.pool, auth.user_id, &prefs)
         .await
@@ -133,6 +137,7 @@ pub async fn update_my_privacy(
         phone_visible: updated.phone_visible,
         email_discoverable: updated.email_discoverable,
         phone_discoverable: updated.phone_discoverable,
+        searchable: updated.searchable,
     }))
 }
 

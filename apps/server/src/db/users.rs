@@ -101,6 +101,7 @@ pub struct UserPrivacyRow {
     pub phone_visible: bool,
     pub email_discoverable: bool,
     pub phone_discoverable: bool,
+    pub searchable: bool,
 }
 
 /// Search users by username, email, or phone prefix (case-insensitive).
@@ -120,7 +121,7 @@ pub async fn search_users(
          CASE WHEN phone_visible THEN phone ELSE NULL END AS phone, \
          created_at \
          FROM users \
-         WHERE id != $2 AND ( \
+         WHERE id != $2 AND searchable = true AND ( \
            LOWER(username) LIKE $1 \
            OR (email_discoverable AND LOWER(email) LIKE $1) \
            OR (phone_discoverable AND phone LIKE $1) \
@@ -229,7 +230,8 @@ pub async fn get_privacy_preferences(
 ) -> Result<Option<UserPrivacyRow>, sqlx::Error> {
     sqlx::query_as::<_, UserPrivacyRow>(
         "SELECT read_receipts_enabled, allow_unencrypted_dm, \
-         email_visible, phone_visible, email_discoverable, phone_discoverable \
+         email_visible, phone_visible, email_discoverable, phone_discoverable, \
+         searchable \
          FROM users WHERE id = $1",
     )
     .bind(user_id)
@@ -245,6 +247,7 @@ pub struct PrivacyUpdate {
     pub phone_visible: bool,
     pub email_discoverable: bool,
     pub phone_discoverable: bool,
+    pub searchable: bool,
 }
 
 pub async fn update_privacy_preferences(
@@ -256,10 +259,12 @@ pub async fn update_privacy_preferences(
         "UPDATE users \
          SET read_receipts_enabled = $1, allow_unencrypted_dm = $2, \
              email_visible = $3, phone_visible = $4, \
-             email_discoverable = $5, phone_discoverable = $6 \
-         WHERE id = $7 \
+             email_discoverable = $5, phone_discoverable = $6, \
+             searchable = $7 \
+         WHERE id = $8 \
          RETURNING read_receipts_enabled, allow_unencrypted_dm, \
-                  email_visible, phone_visible, email_discoverable, phone_discoverable",
+                  email_visible, phone_visible, email_discoverable, phone_discoverable, \
+                  searchable",
     )
     .bind(prefs.read_receipts_enabled)
     .bind(prefs.allow_unencrypted_dm)
@@ -267,6 +272,7 @@ pub async fn update_privacy_preferences(
     .bind(prefs.phone_visible)
     .bind(prefs.email_discoverable)
     .bind(prefs.phone_discoverable)
+    .bind(prefs.searchable)
     .bind(user_id)
     .fetch_one(pool)
     .await

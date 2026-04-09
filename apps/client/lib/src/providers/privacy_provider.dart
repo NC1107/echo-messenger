@@ -13,6 +13,7 @@ class PrivacyState {
   final bool phoneVisible;
   final bool emailDiscoverable;
   final bool phoneDiscoverable;
+  final bool searchable;
   final bool isLoading;
   final String? error;
 
@@ -22,6 +23,7 @@ class PrivacyState {
     this.phoneVisible = false,
     this.emailDiscoverable = false,
     this.phoneDiscoverable = false,
+    this.searchable = true,
     this.isLoading = false,
     this.error,
   });
@@ -32,6 +34,7 @@ class PrivacyState {
     bool? phoneVisible,
     bool? emailDiscoverable,
     bool? phoneDiscoverable,
+    bool? searchable,
     bool? isLoading,
     String? error,
   }) {
@@ -41,6 +44,7 @@ class PrivacyState {
       phoneVisible: phoneVisible ?? this.phoneVisible,
       emailDiscoverable: emailDiscoverable ?? this.emailDiscoverable,
       phoneDiscoverable: phoneDiscoverable ?? this.phoneDiscoverable,
+      searchable: searchable ?? this.searchable,
       isLoading: isLoading ?? this.isLoading,
       error: error,
     );
@@ -88,6 +92,7 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
           phoneVisible: data['phone_visible'] as bool? ?? false,
           emailDiscoverable: data['email_discoverable'] as bool? ?? false,
           phoneDiscoverable: data['phone_discoverable'] as bool? ?? false,
+          searchable: data['searchable'] as bool? ?? true,
           isLoading: false,
           error: null,
         );
@@ -109,6 +114,7 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
     bool? phoneVisible,
     bool? emailDiscoverable,
     bool? phoneDiscoverable,
+    bool? searchable,
   }) async {
     final prev = state;
     state = state.copyWith(
@@ -117,6 +123,7 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
       phoneVisible: phoneVisible ?? state.phoneVisible,
       emailDiscoverable: emailDiscoverable ?? state.emailDiscoverable,
       phoneDiscoverable: phoneDiscoverable ?? state.phoneDiscoverable,
+      searchable: searchable ?? state.searchable,
       isLoading: true,
       error: null,
     );
@@ -140,6 +147,8 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
             // ignore: use_null_aware_elements
             if (phoneDiscoverable != null)
               'phone_discoverable': phoneDiscoverable,
+            // ignore: use_null_aware_elements
+            if (searchable != null) 'searchable': searchable,
           }),
         ),
       );
@@ -152,6 +161,7 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
           phoneVisible: data['phone_visible'] as bool? ?? false,
           emailDiscoverable: data['email_discoverable'] as bool? ?? false,
           phoneDiscoverable: data['phone_discoverable'] as bool? ?? false,
+          searchable: data['searchable'] as bool? ?? true,
           isLoading: false,
           error: null,
         );
@@ -185,6 +195,10 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
 
   Future<void> setPhoneDiscoverable(bool value) async {
     await _patch(phoneDiscoverable: value);
+  }
+
+  Future<void> setSearchable(bool value) async {
+    await _patch(searchable: value);
   }
 }
 

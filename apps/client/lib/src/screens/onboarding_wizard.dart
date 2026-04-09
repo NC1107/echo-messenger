@@ -39,6 +39,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   final _bioController = TextEditingController();
   final _statusController = TextEditingController();
   final _timezoneController = TextEditingController();
+  bool _customPronoun = false;
 
   // Page 3 -- Add contact
   final _contactUsernameController = TextEditingController();
@@ -407,6 +408,160 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   // Page 2 -- About
   // ---------------------------------------------------------------------------
 
+  // Common pronoun options
+  static const _pronounOptions = [
+    'he/him',
+    'she/her',
+    'they/them',
+    'he/they',
+    'she/they',
+    'any pronouns',
+  ];
+
+  // Common IANA timezones
+  static const _timezones = [
+    'America/New_York',
+    'America/Chicago',
+    'America/Denver',
+    'America/Los_Angeles',
+    'America/Anchorage',
+    'Pacific/Honolulu',
+    'America/Toronto',
+    'America/Vancouver',
+    'America/Mexico_City',
+    'America/Sao_Paulo',
+    'America/Argentina/Buenos_Aires',
+    'Europe/London',
+    'Europe/Paris',
+    'Europe/Berlin',
+    'Europe/Madrid',
+    'Europe/Rome',
+    'Europe/Amsterdam',
+    'Europe/Stockholm',
+    'Europe/Moscow',
+    'Europe/Istanbul',
+    'Africa/Cairo',
+    'Africa/Lagos',
+    'Africa/Johannesburg',
+    'Asia/Dubai',
+    'Asia/Kolkata',
+    'Asia/Bangkok',
+    'Asia/Shanghai',
+    'Asia/Tokyo',
+    'Asia/Seoul',
+    'Asia/Singapore',
+    'Australia/Sydney',
+    'Australia/Melbourne',
+    'Australia/Perth',
+    'Pacific/Auckland',
+  ];
+
+  Widget _buildPronounsField() {
+    final currentValue = _pronounsController.text;
+    final isOther =
+        _customPronoun ||
+        (currentValue.isNotEmpty && !_pronounOptions.contains(currentValue));
+
+    final String? dropdownInitial;
+    if (isOther) {
+      dropdownInitial = 'other';
+    } else if (currentValue.isEmpty) {
+      dropdownInitial = null;
+    } else {
+      dropdownInitial = currentValue;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<String>(
+          initialValue: dropdownInitial,
+          decoration: InputDecoration(
+            labelText: 'Pronouns',
+            labelStyle: TextStyle(color: context.textSecondary),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: context.border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: context.accent),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+          ),
+          dropdownColor: context.surface,
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+          items: [
+            ..._pronounOptions.map(
+              (p) => DropdownMenuItem(value: p, child: Text(p)),
+            ),
+            const DropdownMenuItem(value: 'other', child: Text('Other...')),
+          ],
+          onChanged: (value) {
+            setState(() {
+              if (value == 'other') {
+                _customPronoun = true;
+                _pronounsController.text = '';
+              } else {
+                _customPronoun = false;
+                _pronounsController.text = value ?? '';
+              }
+            });
+          },
+        ),
+        if (isOther) ...[
+          const SizedBox(height: 8),
+          _buildField(
+            controller: _pronounsController,
+            label: 'Custom pronouns',
+            hint: 'Enter your pronouns',
+            maxLength: 30,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildTimezoneDropdown() {
+    final current = _timezoneController.text;
+    final isInList = _timezones.contains(current);
+
+    return DropdownButtonFormField<String>(
+      initialValue: isInList ? current : null,
+      decoration: InputDecoration(
+        labelText: 'Timezone',
+        hintText: current.isNotEmpty && !isInList ? current : 'Select timezone',
+        hintStyle: TextStyle(color: context.textMuted),
+        labelStyle: TextStyle(color: context.textSecondary),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: context.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: context.accent),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 10,
+        ),
+      ),
+      dropdownColor: context.surface,
+      style: TextStyle(color: context.textPrimary, fontSize: 14),
+      isExpanded: true,
+      menuMaxHeight: 300,
+      items: _timezones
+          .map((tz) => DropdownMenuItem(value: tz, child: Text(tz)))
+          .toList(),
+      onChanged: (value) {
+        setState(() => _timezoneController.text = value ?? '');
+      },
+    );
+  }
+
   Widget _buildAboutPage(BuildContext context) {
     return SingleChildScrollView(
       child: Column(
@@ -427,12 +582,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 28),
-          _buildField(
-            controller: _pronounsController,
-            label: 'Pronouns',
-            hint: 'e.g. he/him, she/her, they/them',
-            maxLength: 30,
-          ),
+          _buildPronounsField(),
           const SizedBox(height: 14),
           _buildField(
             controller: _bioController,
@@ -449,12 +599,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             maxLength: 100,
           ),
           const SizedBox(height: 14),
-          _buildField(
-            controller: _timezoneController,
-            label: 'Timezone',
-            hint: 'e.g. EST, PST, UTC+1',
-            maxLength: 50,
-          ),
+          _buildTimezoneDropdown(),
         ],
       ),
     );

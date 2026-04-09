@@ -280,6 +280,41 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
         ),
         const SizedBox(height: 24),
         Text(
+          'Search Visibility',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Control whether other users can find your profile via search.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Allow others to find me',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'When off, your username won\'t appear in search results.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: privacy.searchable,
+          onChanged: privacy.isLoading
+              ? null
+              : (value) =>
+                    ref.read(privacyProvider.notifier).setSearchable(value),
+        ),
+        const SizedBox(height: 24),
+        Text(
           'Encryption',
           style: TextStyle(
             color: context.textPrimary,

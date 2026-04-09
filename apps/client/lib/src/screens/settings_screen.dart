@@ -256,7 +256,10 @@ class SettingsContent extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class SettingsScreen extends ConsumerStatefulWidget {
-  const SettingsScreen({super.key});
+  /// Optional callback for embedded mobile usage (back button in narrow layout).
+  final VoidCallback? onBack;
+
+  const SettingsScreen({super.key, this.onBack});
 
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
@@ -364,7 +367,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: context.textSecondary),
-          onPressed: () => context.pop(),
+          onPressed: () {
+            if (widget.onBack != null) {
+              widget.onBack!();
+            } else {
+              context.pop();
+            }
+          },
         ),
       ),
       body: SettingsNavList(

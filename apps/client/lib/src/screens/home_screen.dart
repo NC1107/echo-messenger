@@ -907,59 +907,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     return Scaffold(
       body: _showSettings
-          ? Scaffold(
-              appBar: AppBar(
-                backgroundColor: context.sidebarBg,
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => setState(() => _showSettings = false),
-                ),
-                title: Text(
-                  'Settings',
-                  style: TextStyle(color: context.textPrimary, fontSize: 18),
-                ),
-              ),
-              body: const SettingsScreen(),
-            )
+          ? SettingsScreen(onBack: () => setState(() => _showSettings = false))
           : _buildConversationPanel(),
-      bottomNavigationBar: _showSettings
-          ? null
-          : BottomNavigationBar(
-              currentIndex: 0,
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: context.sidebarBg,
-              selectedItemColor: context.accent,
-              unselectedItemColor: context.textMuted,
-              selectedFontSize: 11,
-              unselectedFontSize: 11,
-              onTap: (index) {
-                switch (index) {
-                  case 0:
-                    break; // Already on chats
-                  case 1:
-                    _openContacts();
-                  case 2:
-                    setState(() => _showSettings = true);
-                }
-              },
-              items: const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.chat_bubble_outline, size: 22),
-                  activeIcon: Icon(Icons.chat_bubble, size: 22),
-                  label: 'Chats',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.people_outline, size: 22),
-                  activeIcon: Icon(Icons.people, size: 22),
-                  label: 'Contacts',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.settings_outlined, size: 22),
-                  activeIcon: Icon(Icons.settings, size: 22),
-                  label: 'Settings',
-                ),
-              ],
-            ),
     );
   }
 
