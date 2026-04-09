@@ -187,7 +187,7 @@ class _ConversationItemState extends State<ConversationItem> {
               decoration: BoxDecoration(
                 color: widget.isPeerOnline
                     ? EchoTheme.online
-                    : context.textMuted.withValues(alpha: 0.4),
+                    : const Color(0xFF6B6B6F),
                 shape: BoxShape.circle,
                 border: Border.all(color: context.sidebarBg, width: 2),
               ),

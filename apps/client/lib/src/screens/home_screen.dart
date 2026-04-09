@@ -802,9 +802,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
           // Discord-style voice dock -- always above user status bar (60px)
           if (showVoiceDock)
-            Positioned(
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
               bottom: 60,
               left: 0,
+              width: animatedSidebarWidth,
               child: VoiceDock(
                 width: animatedSidebarWidth,
                 onNavigateToLounge: () {

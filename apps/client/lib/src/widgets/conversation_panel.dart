@@ -411,28 +411,44 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
 
     return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
       child: Row(
         children: [
           _buildLogoWithBadge(totalUnread),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Text(
             'Echo',
             style: TextStyle(
               color: context.textPrimary,
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.w700,
-              letterSpacing: -0.5,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           _buildConnectionDot(context, wsConnected),
           const Spacer(),
-          _buildHeaderActions(context, pendingCount),
+          _buildNewChatButton(context, pendingCount),
+          IconButton(
+            icon: const Icon(Icons.group_add_outlined, size: 18),
+            color: context.textSecondary,
+            tooltip: 'New Group',
+            onPressed: widget.onNewGroup,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+          if (widget.onCollapseSidebar != null)
+            IconButton(
+              icon: const Icon(Icons.chevron_left, size: 16),
+              color: context.textMuted,
+              tooltip: 'Collapse',
+              onPressed: widget.onCollapseSidebar,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            ),
         ],
       ),
     );
@@ -480,47 +496,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       decoration: BoxDecoration(
         color: wsConnected ? EchoTheme.online : context.textMuted,
         shape: BoxShape.circle,
-      ),
-    );
-  }
-
-  Widget _buildHeaderActions(BuildContext context, int pendingCount) {
-    return Flexible(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        reverse: true,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            _buildNewChatButton(context, pendingCount),
-            IconButton(
-              icon: const Icon(Icons.group_add_outlined, size: 18),
-              color: context.textSecondary,
-              tooltip: 'New Group',
-              onPressed: widget.onNewGroup,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            ),
-            IconButton(
-              icon: const Icon(Icons.explore_outlined, size: 18),
-              color: context.textSecondary,
-              tooltip: 'Discover Groups',
-              onPressed: widget.onDiscover,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            ),
-            if (widget.onCollapseSidebar != null)
-              IconButton(
-                icon: const Icon(Icons.chevron_left, size: 14),
-                color: context.textMuted,
-                tooltip: 'Collapse sidebar',
-                onPressed: widget.onCollapseSidebar,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              ),
-          ],
-        ),
       ),
     );
   }

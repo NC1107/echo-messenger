@@ -22,23 +22,21 @@ void main() {
     testWidgets('renders action icons in header', (tester) async {
       bool newChatCalled = false;
       bool newGroupCalled = false;
-      bool discoverCalled = false;
 
       await tester.pumpApp(
         ConversationPanel(
           onConversationTap: (_) {},
           onNewChat: () => newChatCalled = true,
           onNewGroup: () => newGroupCalled = true,
-          onDiscover: () => discoverCalled = true,
+          onDiscover: () {},
         ),
         overrides: standardOverrides(),
       );
       await tester.pump();
 
-      // Verify action icons exist
+      // Verify action icons exist (discover moved to Groups tab)
       expect(find.byIcon(Icons.person_add_outlined), findsOneWidget);
       expect(find.byIcon(Icons.group_add_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.explore_outlined), findsOneWidget);
 
       // Tap each and verify callback
       await tester.tap(find.byIcon(Icons.person_add_outlined));
@@ -46,9 +44,6 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.group_add_outlined));
       expect(newGroupCalled, isTrue);
-
-      await tester.tap(find.byIcon(Icons.explore_outlined));
-      expect(discoverCalled, isTrue);
     });
 
     testWidgets('renders conversation list items', (tester) async {
