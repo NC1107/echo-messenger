@@ -54,6 +54,9 @@ String settingsSectionLabel(SettingsSection section) {
   }
 }
 
+/// Shared label used in the nav list, dialog title, and dialog button.
+const _logOutLabel = 'Log Out';
+
 // ---------------------------------------------------------------------------
 // Settings nav list widget (reusable)
 // ---------------------------------------------------------------------------
@@ -132,7 +135,7 @@ class SettingsNavList extends StatelessWidget {
         _navItem(
           context: context,
           icon: Icons.logout,
-          label: 'Log Out',
+          label: _logOutLabel,
           section: null,
           isLogout: true,
         ),
@@ -168,6 +171,25 @@ class SettingsNavList extends StatelessWidget {
     bool isLogout = false,
   }) {
     final isSelected = !isLogout && selected == section;
+
+    final Color iconColor;
+    if (isLogout) {
+      iconColor = EchoTheme.danger;
+    } else if (isSelected) {
+      iconColor = context.accent;
+    } else {
+      iconColor = context.textSecondary;
+    }
+
+    final Color labelColor;
+    if (isLogout) {
+      labelColor = EchoTheme.danger;
+    } else if (isSelected) {
+      labelColor = context.accent;
+    } else {
+      labelColor = context.textPrimary;
+    }
+
     return Material(
       color: isSelected ? context.accentLight : Colors.transparent,
       child: InkWell(
@@ -177,24 +199,12 @@ class SettingsNavList extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
-              Icon(
-                icon,
-                size: 20,
-                color: isLogout
-                    ? EchoTheme.danger
-                    : isSelected
-                    ? context.accent
-                    : context.textSecondary,
-              ),
+              Icon(icon, size: 20, color: iconColor),
               const SizedBox(width: 12),
               Text(
                 label,
                 style: TextStyle(
-                  color: isLogout
-                      ? EchoTheme.danger
-                      : isSelected
-                      ? context.accent
-                      : context.textPrimary,
+                  color: labelColor,
                   fontSize: 14,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                 ),
@@ -266,7 +276,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           side: BorderSide(color: context.border),
         ),
         title: Text(
-          'Log Out',
+          _logOutLabel,
           style: TextStyle(
             color: context.textPrimary,
             fontSize: 18,
@@ -289,7 +299,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Log Out'),
+            child: const Text(_logOutLabel),
           ),
         ],
       ),

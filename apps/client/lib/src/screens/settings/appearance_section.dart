@@ -108,7 +108,7 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
   Widget build(BuildContext context) {
     final currentTheme = ref.watch(themeProvider);
 
-    final themeOptions = <_ThemeCardData>[
+    const themeOptions = <_ThemeCardData>[
       _ThemeCardData(
         selection: AppThemeSelection.system,
         label: 'System',

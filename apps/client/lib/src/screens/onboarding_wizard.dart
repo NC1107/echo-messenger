@@ -564,33 +564,41 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         const SizedBox(height: 20),
 
         // Buttons
-        Row(
-          children: [
-            // Skip button (hidden on last page -- "Skip for now" is inline)
-            if (_currentPage < 2)
-              TextButton(
-                onPressed: _saving ? null : _skip,
-                child: Text('Skip', style: TextStyle(color: context.textMuted)),
-              ),
-            const Spacer(),
-            // Next / Get Started
-            SizedBox(
-              width: 160,
-              child: FilledButton(
-                onPressed: _saving ? null : _next,
-                child: _saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Text(_currentPage == 2 ? 'Get Started' : 'Next'),
-              ),
-            ),
-          ],
+        Builder(
+          builder: (_) {
+            final buttonLabel = _currentPage == 2 ? 'Get Started' : 'Next';
+            return Row(
+              children: [
+                // Skip button (hidden on last page -- "Skip for now" is inline)
+                if (_currentPage < 2)
+                  TextButton(
+                    onPressed: _saving ? null : _skip,
+                    child: Text(
+                      'Skip',
+                      style: TextStyle(color: context.textMuted),
+                    ),
+                  ),
+                const Spacer(),
+                // Next / Get Started
+                SizedBox(
+                  width: 160,
+                  child: FilledButton(
+                    onPressed: _saving ? null : _next,
+                    child: _saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(buttonLabel),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ],
     );

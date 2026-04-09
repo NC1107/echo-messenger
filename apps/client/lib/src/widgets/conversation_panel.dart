@@ -894,6 +894,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
   Widget _buildTabChip(String label, int index, {IconData? icon}) {
     final isSelected = _selectedTab == index;
+    final chipColor = isSelected
+        ? Theme.of(context).colorScheme.onPrimary
+        : context.textSecondary;
+    final chipWeight = isSelected ? FontWeight.w600 : FontWeight.w500;
     return Expanded(
       child: GestureDetector(
         onTap: () => _onTabSelected(index),
@@ -905,23 +909,13 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           ),
           child: Center(
             child: icon != null
-                ? Icon(
-                    icon,
-                    size: 16,
-                    color: isSelected
-                        ? Theme.of(context).colorScheme.onPrimary
-                        : context.textSecondary,
-                  )
+                ? Icon(icon, size: 16, color: chipColor)
                 : Text(
                     label,
                     style: TextStyle(
-                      color: isSelected
-                          ? Theme.of(context).colorScheme.onPrimary
-                          : context.textSecondary,
+                      color: chipColor,
                       fontSize: 12,
-                      fontWeight: isSelected
-                          ? FontWeight.w600
-                          : FontWeight.w500,
+                      fontWeight: chipWeight,
                     ),
                   ),
           ),

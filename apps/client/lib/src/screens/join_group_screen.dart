@@ -89,6 +89,9 @@ class JoinGroupScreen extends ConsumerStatefulWidget {
 
 class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen>
     with SingleTickerProviderStateMixin {
+  static String _avatarInitial(String username) =>
+      username.isNotEmpty ? username[0].toUpperCase() : '?';
+
   bool _isLoading = true;
   bool _isJoining = false;
   _GroupPreview? _preview;
@@ -529,9 +532,7 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen>
                     : null,
                 child: member.avatarUrl == null
                     ? Text(
-                        member.username.isNotEmpty
-                            ? member.username[0].toUpperCase()
-                            : '?',
+                        _avatarInitial(member.username),
                         style: TextStyle(
                           color: context.textSecondary,
                           fontSize: 12,

@@ -604,12 +604,16 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           const Divider(height: 40),
           Row(
             children: [
-              Icon(Icons.error_outline, size: 18, color: EchoTheme.danger),
+              const Icon(
+                Icons.error_outline,
+                size: 18,
+                color: EchoTheme.danger,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'Failed to load profile. Check your connection.',
-                  style: TextStyle(color: EchoTheme.danger, fontSize: 13),
+                  style: const TextStyle(color: EchoTheme.danger, fontSize: 13),
                 ),
               ),
               TextButton(onPressed: _loadProfile, child: const Text('Retry')),
@@ -757,15 +761,20 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     final currentValue = _pronounsController.text;
     final isOther = _isCustomPronoun;
 
+    final String? dropdownInitial;
+    if (isOther) {
+      dropdownInitial = 'other';
+    } else if (currentValue.isEmpty) {
+      dropdownInitial = null;
+    } else {
+      dropdownInitial = currentValue;
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         DropdownButtonFormField<String>(
-          initialValue: isOther
-              ? 'other'
-              : currentValue.isEmpty
-              ? null
-              : currentValue,
+          initialValue: dropdownInitial,
           decoration: InputDecoration(
             labelText: 'Pronouns',
             labelStyle: TextStyle(color: context.textSecondary),

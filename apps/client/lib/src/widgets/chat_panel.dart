@@ -56,6 +56,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   /// preserves the user's position.
   static final Map<String, double> _scrollPositions = {};
 
+  String _newMessagesBannerText() {
+    if (_newMessagesBelowCount <= 0) return 'New messages';
+    final noun = _newMessagesBelowCount == 1 ? 'message' : 'messages';
+    return '$_newMessagesBelowCount new $noun';
+  }
+
   bool _hideEncryptionBanner = false;
   String? _selectedTextChannelId;
   String? _activeVoiceChannelId;
@@ -1256,9 +1262,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    _newMessagesBelowCount > 0
-                                        ? '$_newMessagesBelowCount new ${_newMessagesBelowCount == 1 ? 'message' : 'messages'}'
-                                        : 'New messages',
+                                    _newMessagesBannerText(),
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 13,

@@ -161,11 +161,14 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     final hour24 = local.hour;
     final minute = local.minute;
     final isPm = hour24 >= 12;
-    final hour12 = hour24 == 0
-        ? 12
-        : hour24 > 12
-        ? hour24 - 12
-        : hour24;
+    final int hour12;
+    if (hour24 == 0) {
+      hour12 = 12;
+    } else if (hour24 > 12) {
+      hour12 = hour24 - 12;
+    } else {
+      hour12 = hour24;
+    }
     final minuteStr = minute.toString().padLeft(2, '0');
     final period = isPm ? 'PM' : 'AM';
     return '$hour12:$minuteStr $period';

@@ -1322,11 +1322,23 @@ class _MenuRadioRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textColor = !enabled
-        ? context.textMuted
-        : selected
-        ? context.accent
-        : context.textPrimary;
+    final Color textColor;
+    if (!enabled) {
+      textColor = context.textMuted;
+    } else if (selected) {
+      textColor = context.accent;
+    } else {
+      textColor = context.textPrimary;
+    }
+
+    final Color iconColor;
+    if (!enabled) {
+      iconColor = context.textMuted;
+    } else if (selected) {
+      iconColor = context.accent;
+    } else {
+      iconColor = context.textMuted;
+    }
 
     return InkWell(
       onTap: enabled ? onTap : null,
@@ -1337,11 +1349,7 @@ class _MenuRadioRow extends StatelessWidget {
             Icon(
               selected ? Icons.radio_button_checked : Icons.radio_button_off,
               size: 16,
-              color: !enabled
-                  ? context.textMuted
-                  : selected
-                  ? context.accent
-                  : context.textMuted,
+              color: iconColor,
             ),
             const SizedBox(width: 8),
             Text(
