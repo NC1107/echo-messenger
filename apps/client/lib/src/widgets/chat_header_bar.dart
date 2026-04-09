@@ -94,7 +94,7 @@ class ChatHeaderBar extends ConsumerWidget {
 
   Widget _buildHeaderAvatar(Conversation conv, String displayName) {
     return Builder(
-      builder: (_) {
+      builder: (context) {
         String? headerAvatarUrl;
         if (!conv.isGroup) {
           final peer = conv.members
@@ -104,7 +104,7 @@ class ChatHeaderBar extends ConsumerWidget {
             headerAvatarUrl = '$serverUrl${peer!.avatarUrl}';
           }
         }
-        return buildAvatar(
+        final avatar = buildAvatar(
           name: displayName,
           radius: 16,
           imageUrl: headerAvatarUrl,
@@ -113,6 +113,10 @@ class ChatHeaderBar extends ConsumerWidget {
               ? const Icon(Icons.group, size: 14, color: Colors.white)
               : null,
         );
+        if (conv.isGroup && onGroupInfo != null) {
+          return GestureDetector(onTap: onGroupInfo, child: avatar);
+        }
+        return avatar;
       },
     );
   }
@@ -125,16 +129,16 @@ class ChatHeaderBar extends ConsumerWidget {
   ) {
     return Expanded(
       child: GestureDetector(
-        onTap: !conv.isGroup
-            ? () {
+        onTap: conv.isGroup
+            ? onGroupInfo
+            : () {
                 final peer = conv.members
                     .where((m) => m.userId != myUserId)
                     .firstOrNull;
                 if (peer != null) {
                   UserProfileScreen.show(context, ref, peer.userId);
                 }
-              }
-            : null,
+              },
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -261,14 +265,6 @@ class ChatHeaderBar extends ConsumerWidget {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
-        IconButton(
-          icon: const Icon(Icons.info_outline, size: 20),
-          color: context.textSecondary,
-          tooltip: 'Group Info',
-          onPressed: onGroupInfo,
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-        ),
       ],
     ];
   }
