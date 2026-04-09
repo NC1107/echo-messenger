@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../providers/accessibility_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/server_url_provider.dart';
@@ -691,6 +692,19 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           ),
 
           const SizedBox(height: 24),
+
+          // Message layout chips
+          _buildMessageLayoutChips(),
+          const SizedBox(height: 18),
+
+          // Font size slider
+          _buildFontSizeSlider(),
+          const SizedBox(height: 10),
+
+          // Accessibility toggles
+          _buildAccessibilityToggles(),
+          const SizedBox(height: 18),
+
           _buildField(
             controller: _bioController,
             label: 'Bio',
@@ -704,6 +718,117 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           _buildPronounsField(),
         ],
       ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Accessibility & layout widgets for page 2
+  // ---------------------------------------------------------------------------
+
+  Widget _buildMessageLayoutChips() {
+    final layout = ref.watch(messageLayoutProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Message Layout',
+          style: TextStyle(color: context.textSecondary, fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            ChoiceChip(
+              label: const Text('Bubbles'),
+              selected: layout == MessageLayout.bubbles,
+              onSelected: (_) => ref
+                  .read(messageLayoutProvider.notifier)
+                  .setLayout(MessageLayout.bubbles),
+              selectedColor: context.accent,
+              labelStyle: TextStyle(
+                color: layout == MessageLayout.bubbles
+                    ? Colors.white
+                    : context.textPrimary,
+                fontSize: 13,
+              ),
+              backgroundColor: context.surface,
+              side: BorderSide(color: context.border),
+            ),
+            const SizedBox(width: 10),
+            ChoiceChip(
+              label: const Text('Compact'),
+              selected: layout == MessageLayout.compact,
+              onSelected: (_) => ref
+                  .read(messageLayoutProvider.notifier)
+                  .setLayout(MessageLayout.compact),
+              selectedColor: context.accent,
+              labelStyle: TextStyle(
+                color: layout == MessageLayout.compact
+                    ? Colors.white
+                    : context.textPrimary,
+                fontSize: 13,
+              ),
+              backgroundColor: context.surface,
+              side: BorderSide(color: context.border),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFontSizeSlider() {
+    final a11y = ref.watch(accessibilityProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Font Size',
+          style: TextStyle(color: context.textSecondary, fontSize: 13),
+        ),
+        Slider(
+          value: a11y.fontScale,
+          min: 0.8,
+          max: 1.5,
+          divisions: 7,
+          label: '${(a11y.fontScale * 100).round()}%',
+          activeColor: context.accent,
+          inactiveColor: context.border,
+          onChanged: (v) =>
+              ref.read(accessibilityProvider.notifier).setFontScale(v),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccessibilityToggles() {
+    final a11y = ref.watch(accessibilityProvider);
+    return Column(
+      children: [
+        SwitchListTile(
+          title: Text(
+            'Reduced Motion',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          value: a11y.reducedMotion,
+          activeTrackColor: context.accent,
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          onChanged: (v) =>
+              ref.read(accessibilityProvider.notifier).setReducedMotion(v),
+        ),
+        SwitchListTile(
+          title: Text(
+            'High Contrast',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          value: a11y.highContrast,
+          activeTrackColor: context.accent,
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          onChanged: (v) =>
+              ref.read(accessibilityProvider.notifier).setHighContrast(v),
+        ),
+      ],
     );
   }
 

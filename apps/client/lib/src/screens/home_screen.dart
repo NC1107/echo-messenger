@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -877,12 +878,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Widget _buildNarrowLayout() {
+    final voiceRtc = ref.watch(voiceRtcProvider);
+    final voiceActive = voiceRtc.isActive && voiceRtc.channelId != null;
+
     if (_narrowPanelIndex == 1 && _selectedConversation != null) {
+      // Show voice lounge when voice is active and user hasn't dismissed it
+      if (voiceActive && _showingLounge) {
+        return Scaffold(
+          body: VoiceLoungeScreen(
+            onBackToChat: () => setState(() => _showingLounge = false),
+          ),
+        );
+      }
+
       return Scaffold(
-        body: ChatPanel(
-          conversation: _selectedConversation,
-          onGroupInfo: _showGroupInfo,
-          onBack: () => setState(() => _narrowPanelIndex = 0),
+        body: GestureDetector(
+          onHorizontalDragEnd: (details) {
+            // Handled by onHorizontalDragUpdate
+          },
+          onHorizontalDragStart: (startDetails) {
+            // Store the start position for edge detection
+            _swipeStartX = startDetails.globalPosition.dx;
+          },
+          onHorizontalDragUpdate: (details) {
+            if (_swipeStartX != null &&
+                _swipeStartX! < 30 &&
+                details.globalPosition.dx - _swipeStartX! > 80) {
+              _swipeStartX = null;
+              setState(() => _narrowPanelIndex = 0);
+            }
+          },
+          child: ChatPanel(
+            conversation: _selectedConversation,
+            onGroupInfo: _showGroupInfo,
+            onBack: () => setState(() => _narrowPanelIndex = 0),
+          ),
         ),
       );
     }
@@ -893,6 +923,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           : _buildConversationPanel(),
     );
   }
+
+  double? _swipeStartX;
 
   Widget _buildUpdateBanner() {
     final update = ref.watch(updateProvider);
@@ -983,23 +1015,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         );
         progress = null;
       default: // idle with updateAvailable
-        label = 'Echo v${update.latestVersion} is available';
-        action = TextButton(
-          onPressed: update.assetDownloadUrl != null
-              ? () => ref.read(updateProvider.notifier).downloadUpdate()
-              : () {
-                  final url = update.downloadUrl;
-                  if (url != null) launchUrl(Uri.parse(url));
-                },
-          child: Text(
-            update.assetDownloadUrl != null ? 'Update' : 'Download',
-            style: TextStyle(
-              color: context.accent,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+        if (kIsWeb) {
+          label = 'A new version is available. Ask your admin to update.';
+          action = const SizedBox.shrink();
+        } else {
+          label = 'Echo v${update.latestVersion} is available';
+          action = TextButton(
+            onPressed: update.assetDownloadUrl != null
+                ? () => ref.read(updateProvider.notifier).downloadUpdate()
+                : () {
+                    final url = update.downloadUrl;
+                    if (url != null) launchUrl(Uri.parse(url));
+                  },
+            child: Text(
+              update.assetDownloadUrl != null ? 'Update' : 'Download',
+              style: TextStyle(
+                color: context.accent,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-          ),
-        );
+          );
+        }
         trailing = IconButton(
           icon: Icon(Icons.close, size: 16, color: context.textMuted),
           onPressed: () => ref.read(updateProvider.notifier).dismiss(),

@@ -352,6 +352,7 @@ class MediaContentState extends State<MediaContent> {
                 fullUrl.startsWith('http') && urlExtension(rawUrl) == 'gif'
                     ? Image.network(
                         fullUrl,
+                        headers: _headers(),
                         width: 300,
                         fit: BoxFit.cover,
                         gaplessPlayback: true,

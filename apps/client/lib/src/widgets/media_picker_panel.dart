@@ -44,11 +44,17 @@ class _MediaPickerPanelState extends State<MediaPickerPanel>
 
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final pickerWidth = screenSize.width < 412 ? screenSize.width - 32 : 380.0;
+    final pickerHeight = screenSize.height < 700
+        ? screenSize.height * 0.45
+        : 350.0;
+
     return Align(
       alignment: Alignment.bottomRight,
       child: Container(
-        width: 380,
-        height: 350,
+        width: pickerWidth,
+        height: pickerHeight,
         margin: const EdgeInsets.only(right: 8, bottom: 4),
         decoration: BoxDecoration(
           color: context.surface,

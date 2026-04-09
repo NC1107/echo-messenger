@@ -1195,9 +1195,24 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      itemCount: sorted.length,
+      itemCount: sorted.length + 1,
       itemBuilder: (context, index) {
-        final conv = sorted[index];
+        // First item: Discover Groups button
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6, top: 2),
+            child: OutlinedButton.icon(
+              onPressed: widget.onDiscover,
+              icon: const Icon(Icons.explore_outlined, size: 16),
+              label: const Text('Discover Groups'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 34),
+                textStyle: const TextStyle(fontSize: 13),
+              ),
+            ),
+          );
+        }
+        final conv = sorted[index - 1];
         final isSelected = conv.id == widget.selectedConversationId;
         final isPinned = _pinnedIds.contains(conv.id);
         // Groups don't have a single peer, so isPeerOnline is always false

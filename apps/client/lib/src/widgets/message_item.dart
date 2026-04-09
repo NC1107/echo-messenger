@@ -416,6 +416,7 @@ class _MessageItemState extends State<MessageItem> {
                 child: imgUrl.endsWith('.gif')
                     ? Image.network(
                         imgUrl,
+                        headers: _mediaHeaders(),
                         fit: BoxFit.cover,
                         gaplessPlayback: true,
                         errorBuilder: (_, _, _) => const SizedBox.shrink(),
