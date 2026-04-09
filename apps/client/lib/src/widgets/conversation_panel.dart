@@ -360,7 +360,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           _buildSearchBar(context),
           _buildTabBar(),
           const SizedBox(height: 8),
-          _buildPendingBanner(context, pendingCount),
           _buildReplacedBanner(context, wsReplaced),
           Expanded(
             child: _buildTabContent(
@@ -686,54 +685,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           );
         },
       ),
-    );
-  }
-
-  Widget _buildPendingBanner(BuildContext context, int pendingCount) {
-    if (pendingCount <= 0 || _selectedTab > 1) {
-      return const SizedBox.shrink();
-    }
-    return Column(
-      children: [
-        GestureDetector(
-          onTap: widget.onShowContacts ?? widget.onSettings,
-          child: Container(
-            height: 48,
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: context.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: context.accent.withValues(alpha: 0.45),
-                width: 1,
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.person_add_outlined,
-                  size: 18,
-                  color: context.accent,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    '$pendingCount pending request${pendingCount == 1 ? '' : 's'}',
-                    style: TextStyle(
-                      color: context.accent,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                Icon(Icons.chevron_right, size: 18, color: context.accent),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 4),
-      ],
     );
   }
 
