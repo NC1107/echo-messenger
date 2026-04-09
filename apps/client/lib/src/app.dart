@@ -21,18 +21,26 @@ class EchoApp extends ConsumerWidget {
       AppThemeSelection.light => ThemeMode.light,
       AppThemeSelection.graphite => ThemeMode.dark,
       AppThemeSelection.ember => ThemeMode.dark,
+      AppThemeSelection.neon => ThemeMode.dark,
+      AppThemeSelection.sakura => ThemeMode.light,
     };
     final darkTheme = switch (themeSelection) {
       AppThemeSelection.graphite => EchoTheme.graphiteTheme,
       AppThemeSelection.ember => EchoTheme.emberTheme,
+      AppThemeSelection.neon => EchoTheme.neonTheme,
       _ => EchoTheme.darkTheme,
+    };
+    final lightTheme = switch (themeSelection) {
+      AppThemeSelection.sakura => EchoTheme.sakuraTheme,
+      _ =>
+        accessibility.highContrast
+            ? EchoTheme.highContrastLightTheme
+            : EchoTheme.lightTheme,
     };
 
     return MaterialApp.router(
       title: 'Echo',
-      theme: accessibility.highContrast
-          ? EchoTheme.highContrastLightTheme
-          : EchoTheme.lightTheme,
+      theme: lightTheme,
       darkTheme: accessibility.highContrast
           ? EchoTheme.highContrastDarkTheme
           : darkTheme,

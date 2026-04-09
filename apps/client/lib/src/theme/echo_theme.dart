@@ -286,6 +286,38 @@ class EchoTheme {
   static const emberRecvBubble = Color(0xFF252019);
   static const emberBorder = Color(0xFF332D24);
 
+  // Neon theme colors (gamer aesthetic -- dark with electric green/cyan accents)
+  static const neonMainBg = Color(0xFF0A0A0F);
+  static const neonSidebarBg = Color(0xFF0D0D14);
+  static const neonChatBg = Color(0xFF0E0E16);
+  static const neonSurface = Color(0xFF14141E);
+  static const neonSurfaceHover = Color(0xFF1A1A28);
+  static const neonAccent = Color(0xFF00FF88);
+  static const neonAccentHover = Color(0xFF33FFaa);
+  static const neonAccentLight = Color(0x1A00FF88);
+  static const neonTextPrimary = Color(0xFFE0E0E8);
+  static const neonTextSecondary = Color(0xFF8888A0);
+  static const neonTextMuted = Color(0xFF555570);
+  static const neonSentBubble = Color(0xFF00CC6A);
+  static const neonRecvBubble = Color(0xFF1A1A28);
+  static const neonBorder = Color(0xFF222235);
+
+  // Sakura theme colors (feminine aesthetic -- light pink with soft pastels)
+  static const sakuraMainBg = Color(0xFFFFF5F7);
+  static const sakuraSidebarBg = Color(0xFFFFF0F3);
+  static const sakuraChatBg = Color(0xFFFFF8FA);
+  static const sakuraSurface = Color(0xFFFFFAFC);
+  static const sakuraSurfaceHover = Color(0xFFFFE8EE);
+  static const sakuraAccent = Color(0xFFE91E8C);
+  static const sakuraAccentHover = Color(0xFFFF45A8);
+  static const sakuraAccentLight = Color(0x1AE91E8C);
+  static const sakuraTextPrimary = Color(0xFF2D1B2E);
+  static const sakuraTextSecondary = Color(0xFF7B5A7E);
+  static const sakuraTextMuted = Color(0xFFB898BB);
+  static const sakuraSentBubble = Color(0xFFE91E8C);
+  static const sakuraRecvBubble = Color(0xFFFFE8EE);
+  static const sakuraBorder = Color(0xFFF0D4DC);
+
   // ---------------------------------------------------------------------------
   // Light theme
   // ---------------------------------------------------------------------------
@@ -576,6 +608,201 @@ class EchoTheme {
   }
 
   // ---------------------------------------------------------------------------
+  // Neon theme
+  // ---------------------------------------------------------------------------
+
+  static ThemeData get neonTheme {
+    final textTheme = _buildTextTheme(
+      brightness: Brightness.dark,
+      primaryColor: neonTextPrimary,
+      secondaryColor: neonTextSecondary,
+      mutedColor: neonTextMuted,
+    );
+
+    return ThemeData(
+      brightness: Brightness.dark,
+      extensions: const [EchoColorExtension.neon],
+      scaffoldBackgroundColor: neonMainBg,
+      textTheme: textTheme,
+      colorScheme: const ColorScheme.dark(
+        primary: neonAccent,
+        secondary: neonAccentHover,
+        surface: neonSurface,
+        onSurfaceVariant: neonTextSecondary,
+        error: danger,
+        onPrimary: Color(0xFF0A0A0F),
+        onSecondary: Color(0xFF0A0A0F),
+        onSurface: neonTextPrimary,
+        onError: Colors.white,
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: neonSidebarBg,
+        foregroundColor: neonTextPrimary,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: GoogleFonts.inter(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: neonTextPrimary,
+        ),
+      ),
+      dividerColor: neonBorder,
+      dividerTheme: const DividerThemeData(
+        color: neonBorder,
+        thickness: 1,
+        space: 1,
+      ),
+      inputDecorationTheme: _buildInputTheme(
+        fillColor: neonSurface,
+        borderColor: neonBorder,
+        focusBorderColor: neonAccent,
+        hintColor: neonTextMuted,
+        labelColor: neonTextSecondary,
+      ),
+      filledButtonTheme: _buildFilledButtonTheme(neonAccent),
+      textButtonTheme: _buildTextButtonTheme(neonAccent),
+      outlinedButtonTheme: _buildOutlinedButtonTheme(
+        neonTextPrimary,
+        neonBorder,
+      ),
+      iconTheme: const IconThemeData(color: neonTextSecondary, size: 20),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: neonSurface,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: neonBorder, width: 1),
+        ),
+        textStyle: GoogleFonts.inter(color: neonTextPrimary, fontSize: 12),
+        waitDuration: const Duration(milliseconds: 500),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: neonSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: neonBorder),
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: neonSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: neonSurface,
+        contentTextStyle: GoogleFonts.inter(
+          color: neonTextPrimary,
+          fontSize: 13,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        behavior: SnackBarBehavior.floating,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sakura theme
+  // ---------------------------------------------------------------------------
+
+  static ThemeData get sakuraTheme {
+    final textTheme = _buildTextTheme(
+      brightness: Brightness.light,
+      primaryColor: sakuraTextPrimary,
+      secondaryColor: sakuraTextSecondary,
+      mutedColor: sakuraTextMuted,
+    );
+
+    return ThemeData(
+      brightness: Brightness.light,
+      extensions: const [EchoColorExtension.sakura],
+      scaffoldBackgroundColor: sakuraMainBg,
+      textTheme: textTheme,
+      colorScheme: const ColorScheme.light(
+        primary: sakuraAccent,
+        secondary: sakuraAccentHover,
+        surface: sakuraSurface,
+        onSurfaceVariant: sakuraTextSecondary,
+        error: danger,
+        onPrimary: Colors.white,
+        onSecondary: Colors.white,
+        onSurface: sakuraTextPrimary,
+        onError: Colors.white,
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: sakuraSidebarBg,
+        foregroundColor: sakuraTextPrimary,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: GoogleFonts.inter(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: sakuraTextPrimary,
+        ),
+      ),
+      dividerColor: sakuraBorder,
+      dividerTheme: const DividerThemeData(
+        color: sakuraBorder,
+        thickness: 1,
+        space: 1,
+      ),
+      inputDecorationTheme: _buildInputTheme(
+        fillColor: sakuraSurface,
+        borderColor: sakuraBorder,
+        focusBorderColor: sakuraAccent,
+        hintColor: sakuraTextMuted,
+        labelColor: sakuraTextSecondary,
+      ),
+      filledButtonTheme: _buildFilledButtonTheme(sakuraAccent),
+      textButtonTheme: _buildTextButtonTheme(sakuraAccent),
+      outlinedButtonTheme: _buildOutlinedButtonTheme(
+        sakuraTextPrimary,
+        sakuraBorder,
+      ),
+      iconTheme: const IconThemeData(color: sakuraTextSecondary, size: 20),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: sakuraSurface,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: sakuraBorder, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        textStyle: GoogleFonts.inter(color: sakuraTextPrimary, fontSize: 12),
+        waitDuration: const Duration(milliseconds: 500),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: sakuraSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: sakuraBorder),
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: sakuraSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: sakuraSurface,
+        contentTextStyle: GoogleFonts.inter(
+          color: sakuraTextPrimary,
+          fontSize: 13,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        behavior: SnackBarBehavior.floating,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // High-contrast themes
   // ---------------------------------------------------------------------------
 
@@ -697,6 +924,28 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     textMuted: EchoTheme.emberTextMuted,
     sentBubble: EchoTheme.emberSentBubble,
     recvBubble: EchoTheme.emberRecvBubble,
+  );
+
+  /// Neon theme colors
+  static const neon = EchoColorExtension(
+    sidebarBg: EchoTheme.neonSidebarBg,
+    chatBg: EchoTheme.neonChatBg,
+    surfaceHover: EchoTheme.neonSurfaceHover,
+    accentLight: EchoTheme.neonAccentLight,
+    textMuted: EchoTheme.neonTextMuted,
+    sentBubble: EchoTheme.neonSentBubble,
+    recvBubble: EchoTheme.neonRecvBubble,
+  );
+
+  /// Sakura theme colors
+  static const sakura = EchoColorExtension(
+    sidebarBg: EchoTheme.sakuraSidebarBg,
+    chatBg: EchoTheme.sakuraChatBg,
+    surfaceHover: EchoTheme.sakuraSurfaceHover,
+    accentLight: EchoTheme.sakuraAccentLight,
+    textMuted: EchoTheme.sakuraTextMuted,
+    sentBubble: EchoTheme.sakuraSentBubble,
+    recvBubble: EchoTheme.sakuraRecvBubble,
   );
 
   @override

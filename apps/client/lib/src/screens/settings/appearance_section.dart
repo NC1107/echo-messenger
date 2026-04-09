@@ -75,6 +75,28 @@ const _emberPreview = _ThemePreviewColors(
   textSecondary: EchoTheme.emberTextSecondary,
 );
 
+const _neonPreview = _ThemePreviewColors(
+  sidebarBg: EchoTheme.neonSidebarBg,
+  mainBg: EchoTheme.neonMainBg,
+  sentBubble: EchoTheme.neonSentBubble,
+  recvBubble: EchoTheme.neonRecvBubble,
+  accent: EchoTheme.neonAccent,
+  border: EchoTheme.neonBorder,
+  textPrimary: EchoTheme.neonTextPrimary,
+  textSecondary: EchoTheme.neonTextSecondary,
+);
+
+const _sakuraPreview = _ThemePreviewColors(
+  sidebarBg: EchoTheme.sakuraSidebarBg,
+  mainBg: EchoTheme.sakuraMainBg,
+  sentBubble: EchoTheme.sakuraSentBubble,
+  recvBubble: EchoTheme.sakuraRecvBubble,
+  accent: EchoTheme.sakuraAccent,
+  border: EchoTheme.sakuraBorder,
+  textPrimary: EchoTheme.sakuraTextPrimary,
+  textSecondary: EchoTheme.sakuraTextSecondary,
+);
+
 class AppearanceSection extends ConsumerStatefulWidget {
   const AppearanceSection({super.key});
 
@@ -138,6 +160,18 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
         label: 'Ember',
         subtitle: 'Amber accents',
         preview: _emberPreview,
+      ),
+      _ThemeCardData(
+        selection: AppThemeSelection.neon,
+        label: 'Neon',
+        subtitle: 'Electric green gamer',
+        preview: _neonPreview,
+      ),
+      _ThemeCardData(
+        selection: AppThemeSelection.sakura,
+        label: 'Sakura',
+        subtitle: 'Soft pink pastels',
+        preview: _sakuraPreview,
       ),
     ];
 

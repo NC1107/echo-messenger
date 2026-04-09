@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../providers/theme_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/echo_logo_icon.dart';
@@ -562,12 +563,58 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     );
   }
 
+  // -------------------------------------------------------------------------
+  // Theme picker data for onboarding
+  // -------------------------------------------------------------------------
+
+  static const _onboardingThemes =
+      <({AppThemeSelection selection, String label, Color accent, Color bg})>[
+        (
+          selection: AppThemeSelection.dark,
+          label: 'Dark',
+          accent: EchoTheme.accent,
+          bg: EchoTheme.mainBg,
+        ),
+        (
+          selection: AppThemeSelection.light,
+          label: 'Light',
+          accent: EchoTheme.accent,
+          bg: EchoTheme.lightMainBg,
+        ),
+        (
+          selection: AppThemeSelection.graphite,
+          label: 'Graphite',
+          accent: EchoTheme.graphiteAccent,
+          bg: EchoTheme.graphiteMainBg,
+        ),
+        (
+          selection: AppThemeSelection.ember,
+          label: 'Ember',
+          accent: EchoTheme.emberAccent,
+          bg: EchoTheme.emberMainBg,
+        ),
+        (
+          selection: AppThemeSelection.neon,
+          label: 'Neon',
+          accent: EchoTheme.neonAccent,
+          bg: EchoTheme.neonMainBg,
+        ),
+        (
+          selection: AppThemeSelection.sakura,
+          label: 'Sakura',
+          accent: EchoTheme.sakuraAccent,
+          bg: EchoTheme.sakuraMainBg,
+        ),
+      ];
+
   Widget _buildAboutPage(BuildContext context) {
+    final currentTheme = ref.watch(themeProvider);
+
     return SingleChildScrollView(
       child: Column(
         children: [
           Text(
-            'Tell us about yourself',
+            'Make it yours',
             style: TextStyle(
               color: context.textPrimary,
               fontSize: 24,
@@ -577,13 +624,73 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           ),
           const SizedBox(height: 6),
           Text(
-            'All fields are optional. You can change these later in Settings.',
+            'Pick a theme and tell us about yourself.',
             style: TextStyle(color: context.textSecondary, fontSize: 14),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 28),
-          _buildPronounsField(),
-          const SizedBox(height: 14),
+          const SizedBox(height: 24),
+
+          // Theme picker -- horizontal scrollable row
+          SizedBox(
+            height: 72,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              itemCount: _onboardingThemes.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final t = _onboardingThemes[index];
+                final isSelected = currentTheme == t.selection;
+                return GestureDetector(
+                  onTap: () =>
+                      ref.read(themeProvider.notifier).setTheme(t.selection),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: t.bg,
+                          border: Border.all(
+                            color: isSelected ? t.accent : context.border,
+                            width: isSelected ? 2.5 : 1.5,
+                          ),
+                        ),
+                        child: Center(
+                          child: Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: t.accent,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        t.label,
+                        style: TextStyle(
+                          color: isSelected
+                              ? context.accent
+                              : context.textSecondary,
+                          fontSize: 11,
+                          fontWeight: isSelected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 24),
           _buildField(
             controller: _bioController,
             label: 'Bio',
@@ -592,14 +699,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             maxLines: 3,
           ),
           const SizedBox(height: 14),
-          _buildField(
-            controller: _statusController,
-            label: 'Status',
-            hint: 'What are you up to?',
-            maxLength: 100,
-          ),
-          const SizedBox(height: 14),
           _buildTimezoneDropdown(),
+          const SizedBox(height: 14),
+          _buildPronounsField(),
         ],
       ),
     );
