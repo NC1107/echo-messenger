@@ -67,9 +67,15 @@ class _NativeNotificationService implements NotificationService {
     if (_initialized) return;
     try {
       const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const darwin = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
       const linux = LinuxInitializationSettings(defaultActionName: 'Open');
       const initSettings = InitializationSettings(
         android: android,
+        iOS: darwin,
         linux: linux,
       );
       await _plugin.initialize(
@@ -117,6 +123,16 @@ class _NativeNotificationService implements NotificationService {
           ?.requestNotificationsPermission();
     } catch (_) {
       // Not on Android or permission denied -- non-fatal.
+    }
+    // iOS permission request
+    try {
+      await _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >()
+          ?.requestPermissions(alert: true, badge: true, sound: true);
+    } catch (_) {
+      // Not on iOS or permission denied -- non-fatal.
     }
   }
 

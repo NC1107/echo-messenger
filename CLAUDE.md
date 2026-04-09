@@ -35,6 +35,8 @@ cd apps/client && flutter pub get && flutter run -d linux
 flutter build web --release --pwa-strategy=none --dart-define=APP_VERSION=X.Y.Z
 ```
 
+**run.sh** accepts optional `[username] [password]` args. Default is `dev/devpass123`, which also auto-creates demo contacts (alice, bob, charlie).
+
 **Other scripts**: `scripts/demo_two_apps.sh` (launch two client instances for testing), `scripts/seed_demo_data.sh` (populate test data).
 
 ## Tests
@@ -42,7 +44,7 @@ flutter build web --release --pwa-strategy=none --dart-define=APP_VERSION=X.Y.Z
 ```bash
 cargo test --workspace                            # Rust: 53 tests (Signal Protocol + server)
 cargo test -p echo-server -- test_name            # Run a single Rust test
-cd apps/client && flutter test                    # Flutter: 51 tests (crypto, models, state)
+cd apps/client && flutter test                    # Flutter: 55 tests (crypto, models, state)
 cd apps/client && flutter test test/path_test.dart # Run a single Flutter test file
 ./scripts/test_e2e.sh                             # E2E integration tests
 npx playwright test                               # Visual tests (Playwright, tests/e2e/)
@@ -60,6 +62,8 @@ cd apps/client && flutter analyze --fatal-infos   # Dart lint
 
 Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warnings` on .rs files, dart format + flutter analyze on .dart files, commitlint on commit messages. Conventional commits enforced.
 
+**Security CI** (runs on push): cargo audit (RUSTSEC-2023-0071 ignored -- jsonwebtoken timing sidechannel, no patch), cargo-deny (license + ban checks), trufflehog (secret detection).
+
 ## Architecture
 
 **Workspace** (Cargo workspace at root):
@@ -67,14 +71,18 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - `apps/client/` -- Flutter app, Riverpod state management, GoRouter navigation
 - `core/rust-core/` -- Shared Rust library: Signal Protocol (X3DH + Double Ratchet), crypto primitives, FFI bridge
 
-**Server startup sequence** (main.rs): load .env -> tracing -> Config::from_env() -> PG pool + auto-migrate SQL files (`apps/server/migrations/`) -> spawn WebSocket Hub (DashMap) -> build Axum router -> bind.
+**Server startup sequence** (main.rs): load .env -> tracing -> create upload dirs (`./uploads/avatars`) -> Config::from_env() -> PG pool + auto-migrate SQL files (`apps/server/migrations/`, 25+ migrations) -> spawn WebSocket Hub (DashMap) -> spawn background tasks (stale voice session cleanup every 60s, empty group cleanup) -> build Axum router -> bind with graceful shutdown.
 
 **Key server modules**:
 - `auth/` -- JWT (15-min access + 7-day refresh), Argon2id passwords, AuthUser middleware extractor
 - `ws/hub.rs` -- DashMap<user_id, mpsc::Sender> for lock-free WS routing
 - `ws/handler.rs` -- WS upgrade, message parsing, event dispatch (MessageRelayed, TypingIndicator, Reaction, Online/Offline)
 - `db/` -- 9 query modules (users, messages, contacts, groups, keys, reactions, media, tokens)
-- `routes/` -- REST: /api/auth, /api/users, /api/contacts, /api/messages, /api/groups, /api/keys, /api/reactions, /api/media, /api/channels, /api/voice, /api/group_keys
+- `routes/` -- REST: /api/auth, /api/users, /api/contacts, /api/messages, /api/groups, /api/keys, /api/reactions, /api/media, /api/channels, /api/voice, /api/group_keys, /api/link_preview
+
+**Client init** (main.dart): Hive local DB -> message cache -> load persisted server URL (web: overridable via `?server=` query param) -> load sound prefs -> request notification permission -> SplashScreen handles auto-login + crypto init.
+
+**Client local storage**: Hive for offline message cache and app state; flutter_secure_storage for private keys (platform keystore); SharedPreferences for settings.
 
 **Client state** (Riverpod StateNotifiers with immutable copyWith):
 - `auth_provider` -- login/register/logout/auto-login, persists to SharedPreferences
@@ -115,6 +123,10 @@ Conventional commits, short and human-readable. One line subject, optional brief
 Keep it concise -- no multi-paragraph explanations, no bullet lists in commit messages. No co-author tags.
 
 Allowed types: `feat fix docs style refactor perf test build ci chore revert security`. Optional scopes: `core server client infra proto crypto ci deps`. Subject must be lowercase, max 72 chars.
+
+## Docker Production
+
+Server image: multi-stage Rust build -> `debian:bookworm-slim`, non-root user (`echo:echo`, UID 1000), `tini` for signal handling. Web image: `nginx:alpine` serving Flutter web build. Both versioned via build args (`BUILD_ID`, `APP_VERSION`). Production compose uses Traefik with Cloudflare TLS, PostgreSQL backups (7-day retention), and LiveKit for voice.
 
 ## Known Limitations
 
