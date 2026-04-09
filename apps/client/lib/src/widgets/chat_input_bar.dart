@@ -757,7 +757,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       builder: (sheetContext) {
         return SafeArea(
           child: Container(
-            height: MediaQuery.of(context).size.height *
+            height: MediaQuery.of(sheetContext).size.height *
                 _mobileMediaPickerHeightRatio,
             decoration: BoxDecoration(
               color: context.surface,
