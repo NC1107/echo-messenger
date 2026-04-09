@@ -885,42 +885,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // Show voice lounge when voice is active and user hasn't dismissed it
       if (voiceActive && _showingLounge) {
         return Scaffold(
-          body: VoiceLoungeScreen(
-            onBackToChat: () => setState(() => _showingLounge = false),
+          body: SafeArea(
+            child: VoiceLoungeScreen(
+              onBackToChat: () => setState(() => _showingLounge = false),
+            ),
           ),
         );
       }
 
       return Scaffold(
-        body: GestureDetector(
-          onHorizontalDragEnd: (details) {
-            // Handled by onHorizontalDragUpdate
-          },
-          onHorizontalDragStart: (startDetails) {
-            // Store the start position for edge detection
-            _swipeStartX = startDetails.globalPosition.dx;
-          },
-          onHorizontalDragUpdate: (details) {
-            if (_swipeStartX != null &&
-                _swipeStartX! < 30 &&
-                details.globalPosition.dx - _swipeStartX! > 80) {
-              _swipeStartX = null;
-              setState(() => _narrowPanelIndex = 0);
-            }
-          },
-          child: ChatPanel(
-            conversation: _selectedConversation,
-            onGroupInfo: _showGroupInfo,
-            onBack: () => setState(() => _narrowPanelIndex = 0),
+        body: SafeArea(
+          child: GestureDetector(
+            onHorizontalDragEnd: (details) {
+              // Handled by onHorizontalDragUpdate
+            },
+            onHorizontalDragStart: (startDetails) {
+              // Store the start position for edge detection
+              _swipeStartX = startDetails.globalPosition.dx;
+            },
+            onHorizontalDragUpdate: (details) {
+              if (_swipeStartX != null &&
+                  _swipeStartX! < 30 &&
+                  details.globalPosition.dx - _swipeStartX! > 80) {
+                _swipeStartX = null;
+                setState(() => _narrowPanelIndex = 0);
+              }
+            },
+            child: ChatPanel(
+              conversation: _selectedConversation,
+              onGroupInfo: _showGroupInfo,
+              onBack: () => setState(() => _narrowPanelIndex = 0),
+            ),
           ),
         ),
       );
     }
 
     return Scaffold(
-      body: _showSettings
-          ? SettingsScreen(onBack: () => setState(() => _showSettings = false))
-          : _buildConversationPanel(),
+      body: SafeArea(
+        child: _showSettings
+            ? SettingsScreen(onBack: () => setState(() => _showSettings = false))
+            : _buildConversationPanel(),
+      ),
     );
   }
 
