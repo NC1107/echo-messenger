@@ -194,6 +194,107 @@ class ChatHeaderBar extends ConsumerWidget {
         .where((m) => m.pinnedAt != null)
         .length;
 
+    // On narrow screens (< 600 px) keep only voice call + search always
+    // visible and move the rest into a 3-dot overflow menu.
+    final isNarrow = MediaQuery.of(context).size.width < 600;
+
+    if (isNarrow) {
+      return [
+        // Voice call always visible (DM only)
+        if (!conv.isGroup)
+          IconButton(
+            icon: const Icon(Icons.call_outlined, size: 20),
+            color: context.textSecondary,
+            tooltip: 'Start call',
+            onPressed: () => _startVoiceCall(context, ref, conv),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          ),
+        // Search always visible
+        IconButton(
+          icon: Icon(showSearch ? Icons.search_off : Icons.search, size: 20),
+          color: showSearch ? context.accent : context.textSecondary,
+          tooltip: showSearch ? 'Close search' : 'Search messages',
+          onPressed: onToggleSearch,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        ),
+        // Overflow menu
+        PopupMenuButton<String>(
+          icon: Icon(Icons.more_vert, size: 20, color: context.textSecondary),
+          tooltip: 'More options',
+          color: context.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(color: context.border),
+          ),
+          onSelected: (value) {
+            switch (value) {
+              case 'safety':
+                _openSafetyNumber(context, ref, conv);
+              case 'reset_keys':
+                _resetPeerKeys(context, ref, conv, myUserId);
+              case 'pins':
+                _showPinnedMessagesDialog(context, ref, conv);
+              case 'media':
+                _openSharedMedia(context, conv);
+              case 'members':
+                onMembersToggle?.call();
+            }
+          },
+          itemBuilder: (ctx) => [
+            if (!conv.isGroup)
+              PopupMenuItem<String>(
+                value: 'safety',
+                child: _overflowItem(
+                  ctx,
+                  icon: Icons.lock_outlined,
+                  label: 'Verify safety number',
+                  color: EchoTheme.online,
+                ),
+              ),
+            if (!conv.isGroup && conv.isEncrypted)
+              PopupMenuItem<String>(
+                value: 'reset_keys',
+                child: _overflowItem(
+                  ctx,
+                  icon: Icons.vpn_key_off,
+                  label: 'Reset encryption keys',
+                ),
+              ),
+            PopupMenuItem<String>(
+              value: 'pins',
+              child: _overflowItem(
+                ctx,
+                icon: Icons.push_pin_outlined,
+                label: pinnedCount > 0
+                    ? 'Pinned ($pinnedCount)'
+                    : 'Pinned messages',
+              ),
+            ),
+            PopupMenuItem<String>(
+              value: 'media',
+              child: _overflowItem(
+                ctx,
+                icon: Icons.photo_library_outlined,
+                label: 'Shared media',
+              ),
+            ),
+            if (conv.isGroup && onMembersToggle != null)
+              PopupMenuItem<String>(
+                value: 'members',
+                child: _overflowItem(
+                  ctx,
+                  icon: Icons.people_outline,
+                  label: 'Members',
+                ),
+              ),
+          ],
+        ),
+      ];
+    }
+
+    // Wide layout: show all buttons inline (existing behaviour).
     return [
       if (!conv.isGroup)
         IconButton(
@@ -267,6 +368,23 @@ class ChatHeaderBar extends ConsumerWidget {
           ),
       ],
     ];
+  }
+
+  /// Helper to build a consistent icon + label row for overflow menu items.
+  Widget _overflowItem(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    Color? color,
+  }) {
+    final itemColor = color ?? context.textPrimary;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: itemColor),
+        const SizedBox(width: 12),
+        Text(label, style: TextStyle(color: itemColor, fontSize: 13)),
+      ],
+    );
   }
 
   Widget _buildEncryptionBanner(

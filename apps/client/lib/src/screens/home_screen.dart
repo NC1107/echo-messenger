@@ -19,6 +19,7 @@ import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/livekit_voice_provider.dart';
+import '../providers/channels_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/notification_service.dart';
 import '../theme/echo_theme.dart';
@@ -893,28 +894,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         );
       }
 
+      Widget chatContent = ChatPanel(
+        conversation: _selectedConversation,
+        onGroupInfo: _showGroupInfo,
+        onBack: () => setState(() => _narrowPanelIndex = 0),
+      );
+
+      // Persistent rejoin banner when voice is active but lounge was dismissed
+      if (voiceActive && !_showingLounge) {
+        chatContent = Column(
+          children: [
+            _buildVoiceRejoinBanner(voiceRtc),
+            Expanded(child: chatContent),
+          ],
+        );
+      }
+
       return Scaffold(
         body: SafeArea(
-          child: GestureDetector(
-            onHorizontalDragEnd: (details) {
-              // Handled by onHorizontalDragUpdate
+          child: PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop) setState(() => _narrowPanelIndex = 0);
             },
-            onHorizontalDragStart: (startDetails) {
-              // Store the start position for edge detection
-              _swipeStartX = startDetails.globalPosition.dx;
-            },
-            onHorizontalDragUpdate: (details) {
-              if (_swipeStartX != null &&
-                  _swipeStartX! < 30 &&
-                  details.globalPosition.dx - _swipeStartX! > 80) {
-                _swipeStartX = null;
-                setState(() => _narrowPanelIndex = 0);
-              }
-            },
-            child: ChatPanel(
-              conversation: _selectedConversation,
-              onGroupInfo: _showGroupInfo,
-              onBack: () => setState(() => _narrowPanelIndex = 0),
+            child: GestureDetector(
+              onHorizontalDragStart: (startDetails) {
+                _swipeStartX = startDetails.globalPosition.dx;
+              },
+              onHorizontalDragUpdate: (details) {
+                // Edge swipe: zone expanded to 60 px, threshold lowered to 60 px
+                if (_swipeStartX != null &&
+                    _swipeStartX! < 60 &&
+                    details.globalPosition.dx - _swipeStartX! > 60) {
+                  _swipeStartX = null;
+                  setState(() => _narrowPanelIndex = 0);
+                }
+              },
+              onHorizontalDragEnd: (_) {},
+              child: chatContent,
             ),
           ),
         ),
@@ -926,6 +943,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         child: _showSettings
             ? SettingsScreen(onBack: () => setState(() => _showSettings = false))
             : _buildConversationPanel(),
+      ),
+    );
+  }
+
+  /// Thin banner shown above the chat when a voice session is active but the
+  /// lounge has been dismissed. Tapping it reopens the voice lounge.
+  Widget _buildVoiceRejoinBanner(LiveKitVoiceState voiceRtc) {
+    final channelsState = ref.read(channelsProvider);
+    final convId = voiceRtc.conversationId ?? '';
+    final channelId = voiceRtc.channelId ?? '';
+    final channels = channelsState.channelsFor(convId);
+    final channelName =
+        channels.where((c) => c.id == channelId).firstOrNull?.name ??
+            'Voice';
+
+    return Material(
+      color: EchoTheme.online.withValues(alpha: 0.12),
+      child: InkWell(
+        onTap: () => setState(() {
+          _showingLounge = true;
+          _userDismissedLounge = false;
+        }),
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: context.border, width: 1),
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.graphic_eq, size: 16, color: EchoTheme.online),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '● $channelName — Tap to view voice',
+                  style: const TextStyle(
+                    color: EchoTheme.online,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 16, color: context.textMuted),
+            ],
+          ),
+        ),
       ),
     );
   }
