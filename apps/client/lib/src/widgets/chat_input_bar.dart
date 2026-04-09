@@ -67,6 +67,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   final _messageController = TextEditingController();
   final _inputFocusNode = FocusNode();
 
+  static const _mobileMediaPickerHeightRatio = 0.45;
+
   bool _isTextEmpty = true;
   bool _showMediaPicker = false;
 
@@ -755,7 +757,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       builder: (sheetContext) {
         return SafeArea(
           child: Container(
-            height: MediaQuery.of(context).size.height * 0.45,
+            height: MediaQuery.of(context).size.height *
+                _mobileMediaPickerHeightRatio,
             decoration: BoxDecoration(
               color: context.surface,
               borderRadius:
