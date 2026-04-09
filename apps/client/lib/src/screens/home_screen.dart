@@ -876,31 +876,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget _buildNarrowLayout() {
     if (_narrowPanelIndex == 1 && _selectedConversation != null) {
       return Scaffold(
-        body: Column(
-          children: [
-            Container(
-              height: 56,
-              color: context.chatBg,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_outlined, size: 20),
-                    color: context.textSecondary,
-                    onPressed: () {
-                      setState(() => _narrowPanelIndex = 0);
-                    },
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ChatPanel(
-                conversation: _selectedConversation,
-                onGroupInfo: _showGroupInfo,
-              ),
-            ),
-          ],
+        body: ChatPanel(
+          conversation: _selectedConversation,
+          onGroupInfo: _showGroupInfo,
+          onBack: () => setState(() => _narrowPanelIndex = 0),
         ),
       );
     }

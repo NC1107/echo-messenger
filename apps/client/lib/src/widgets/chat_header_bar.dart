@@ -24,6 +24,7 @@ class ChatHeaderBar extends ConsumerWidget {
   final Conversation conversation;
   final String myUserId;
   final String serverUrl;
+  final VoidCallback? onBack;
   final bool showSearch;
   final VoidCallback onToggleSearch;
   final VoidCallback? onMembersToggle;
@@ -36,6 +37,7 @@ class ChatHeaderBar extends ConsumerWidget {
     required this.conversation,
     required this.myUserId,
     required this.serverUrl,
+    this.onBack,
     required this.showSearch,
     required this.onToggleSearch,
     this.onMembersToggle,
@@ -61,6 +63,19 @@ class ChatHeaderBar extends ConsumerWidget {
           ),
           child: Row(
             children: [
+              if (onBack != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, size: 20),
+                  color: context.textSecondary,
+                  onPressed: onBack,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ],
               _buildHeaderAvatar(conv, displayName),
               const SizedBox(width: 12),
               _buildNameAndStatus(context, ref, conv, displayName),
@@ -194,18 +209,16 @@ class ChatHeaderBar extends ConsumerWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         ),
-      // Voice call button (DM and group)
-      IconButton(
-        icon: Icon(
-          conv.isGroup ? Icons.headset_mic_outlined : Icons.call_outlined,
-          size: 20,
+      // Voice call button (DM only — groups have voice channel chips)
+      if (!conv.isGroup)
+        IconButton(
+          icon: const Icon(Icons.call_outlined, size: 20),
+          color: context.textSecondary,
+          tooltip: 'Start call',
+          onPressed: () => _startVoiceCall(context, ref, conv),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         ),
-        color: context.textSecondary,
-        tooltip: conv.isGroup ? 'Voice channel' : 'Start call',
-        onPressed: () => _startVoiceCall(context, ref, conv),
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-      ),
       IconButton(
         icon: Badge(
           isLabelVisible: pinnedCount > 0,

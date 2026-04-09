@@ -33,6 +33,7 @@ class ChatPanel extends ConsumerStatefulWidget {
   final Conversation? conversation;
   final VoidCallback? onMembersToggle;
   final VoidCallback? onGroupInfo;
+  final VoidCallback? onBack;
   final bool hideVoiceDock;
 
   const ChatPanel({
@@ -40,6 +41,7 @@ class ChatPanel extends ConsumerStatefulWidget {
     this.conversation,
     this.onMembersToggle,
     this.onGroupInfo,
+    this.onBack,
     this.hideVoiceDock = false,
   });
 
@@ -1179,6 +1181,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                 conversation: conv,
                 myUserId: myUserId,
                 serverUrl: serverUrl,
+                onBack: widget.onBack,
                 showSearch: _showSearch,
                 onToggleSearch: () =>
                     setState(() => _showSearch = !_showSearch),
