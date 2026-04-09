@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
@@ -24,20 +25,36 @@ String _participantDisplayName(lk.Participant participant) {
 
 /// Discord-style voice lounge that replaces the chat content area when the
 /// user is in a voice call and chooses to view the lounge.
-class VoiceLoungeScreen extends ConsumerWidget {
+class VoiceLoungeScreen extends ConsumerStatefulWidget {
   /// Called when the user taps "Back to chat".
   final VoidCallback? onBackToChat;
 
   const VoiceLoungeScreen({super.key, this.onBackToChat});
 
-  static String? _buildAvatarUrl(WidgetRef ref) {
+  /// Screen sharing is only useful on desktop and web platforms.
+  static bool get _supportsScreenShare {
+    if (kIsWeb) return true;
+    return defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.macOS;
+  }
+
+  @override
+  ConsumerState<VoiceLoungeScreen> createState() => _VoiceLoungeScreenState();
+}
+
+class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
+  /// Key of the tile currently in focus. Null = grid / auto-spotlight view.
+  /// Format: 'local', 'remote-{sid}', 'screenshare-local', 'screenshare-{sid}'.
+  String? _focusedTileKey;
+
+  String? _buildAvatarUrl() {
     final avatarPath = ref.read(authProvider).avatarUrl;
     if (avatarPath == null || avatarPath.isEmpty) return null;
     final serverUrl = ref.read(serverUrlProvider);
     return '$serverUrl$avatarPath';
   }
 
-  /// Check if any remote participant is sharing their screen.
   static bool _hasActiveScreenShare(lk.Room? room) {
     if (room == null) return false;
     for (final p in room.remoteParticipants.values) {
@@ -51,24 +68,190 @@ class VoiceLoungeScreen extends ConsumerWidget {
     return false;
   }
 
-  /// Spotlight layout: screen share fills most of the space, participants
-  /// shrink to a horizontal strip at the bottom.
-  static Widget _buildSpotlightLayout({
+  /// Resolve a tile key to the matching [VideoTrack] and a mirror flag.
+  ///
+  /// Keys: 'local', 'remote-{sid}', 'screenshare-local', 'screenshare-{sid}'.
+  (lk.VideoTrack?, bool) _resolveTrack(
+    lk.Room? room,
+    LiveKitVoiceState voiceLk,
+    String tileKey,
+  ) {
+    if (room == null) return (null, false);
+    if (tileKey == 'local') {
+      final pub = room.localParticipant?.videoTrackPublications
+          .where((p) => p.track != null && p.source == lk.TrackSource.camera)
+          .firstOrNull;
+      if (pub == null || !voiceLk.isVideoEnabled) return (null, false);
+      return (pub.track as lk.VideoTrack?, true);
+    }
+    if (tileKey == 'screenshare-local') {
+      final pub = room.localParticipant?.videoTrackPublications
+          .where(
+            (p) =>
+                p.track != null &&
+                p.source == lk.TrackSource.screenShareVideo,
+          )
+          .firstOrNull;
+      return (pub?.track as lk.VideoTrack?, false);
+    }
+    if (tileKey.startsWith('screenshare-')) {
+      final sid = tileKey.substring('screenshare-'.length);
+      final participant = room.remoteParticipants.values
+          .where((p) => p.sid.toString() == sid)
+          .firstOrNull;
+      if (participant == null) return (null, false);
+      final pub = participant.videoTrackPublications
+          .where(
+            (p) =>
+                p.track != null &&
+                p.source == lk.TrackSource.screenShareVideo,
+          )
+          .firstOrNull;
+      return (pub?.track as lk.VideoTrack?, false);
+    }
+    if (tileKey.startsWith('remote-')) {
+      final sid = tileKey.substring('remote-'.length);
+      final participant = room.remoteParticipants.values
+          .where((p) => p.sid.toString() == sid)
+          .firstOrNull;
+      if (participant == null) return (null, false);
+      final pub = participant.videoTrackPublications
+          .where(
+            (p) => p.track != null && p.source == lk.TrackSource.camera,
+          )
+          .firstOrNull;
+      return (pub?.track as lk.VideoTrack?, false);
+    }
+    return (null, false);
+  }
+
+  void _openFullscreen(BuildContext ctx, lk.VideoTrack track, bool mirror) {
+    Navigator.of(ctx, rootNavigator: true).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => _FullscreenVideoPage(track: track, mirror: mirror),
+      ),
+    );
+  }
+
+  /// Small overlay badge used instead of a full header in landscape mode.
+  Widget _buildHeaderBadge(
+    BuildContext context,
+    String channelName,
+    int participantCount,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.graphic_eq, size: 14, color: EchoTheme.online),
+          const SizedBox(width: 6),
+          Text(
+            channelName,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '· $participantCount',
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+          if (widget.onBackToChat != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: widget.onBackToChat,
+              child: const Icon(
+                Icons.chat_outlined,
+                size: 16,
+                color: Colors.white70,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Dispatches to focused view, auto-spotlight, or the default grid.
+  Widget _buildContentArea({
     required lk.Room? room,
     required LiveKitVoiceState voiceLk,
     required ScreenShareState screenShare,
-    required WidgetRef ref,
+  }) {
+    if (_focusedTileKey != null) {
+      return _buildFocusedView(
+        room: room,
+        voiceLk: voiceLk,
+        screenShare: screenShare,
+      );
+    }
+    if (_hasActiveScreenShare(room)) {
+      return _buildSpotlightLayout(
+        room: room!,
+        voiceLk: voiceLk,
+        screenShare: screenShare,
+      );
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          if (screenShare.isScreenSharing)
+            GestureDetector(
+              onTap: () =>
+                  setState(() => _focusedTileKey = 'screenshare-local'),
+              child: _ScreenShareViewer(ref: ref),
+            ),
+          if (screenShare.isScreenSharing) const SizedBox(height: 16),
+          _ParticipantGrid(
+            room: room,
+            voiceState: voiceLk,
+            localAvatarUrl: _buildAvatarUrl(),
+            onTileTap: (key) => setState(() => _focusedTileKey = key),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Spotlight layout: auto-triggered when a remote screen share is active.
+  Widget _buildSpotlightLayout({
+    required lk.Room room,
+    required LiveKitVoiceState voiceLk,
+    required ScreenShareState screenShare,
   }) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          // Screen share takes all available space
-          Expanded(child: _RemoteScreenShares(room: room!, spotlight: true)),
-          // Local screen share viewer
+          // Screen share fills all available space
+          Expanded(
+            child: _RemoteScreenShares(
+              room: room,
+              spotlight: true,
+              onTileTap: (sid) =>
+                  setState(() => _focusedTileKey = 'screenshare-$sid'),
+            ),
+          ),
+          // Local screen share viewer (tap to focus)
           if (screenShare.isScreenSharing) ...[
             const SizedBox(height: 8),
-            SizedBox(height: 120, child: _ScreenShareViewer(ref: ref)),
+            GestureDetector(
+              onTap: () =>
+                  setState(() => _focusedTileKey = 'screenshare-local'),
+              child: SizedBox(
+                height: 120,
+                child: _ScreenShareViewer(ref: ref),
+              ),
+            ),
           ],
           const SizedBox(height: 8),
           // Compact participant strip
@@ -77,8 +260,9 @@ class VoiceLoungeScreen extends ConsumerWidget {
             child: _ParticipantGrid(
               room: room,
               voiceState: voiceLk,
-              localAvatarUrl: _buildAvatarUrl(ref),
+              localAvatarUrl: _buildAvatarUrl(),
               compact: true,
+              onTileTap: (key) => setState(() => _focusedTileKey = key),
             ),
           ),
         ],
@@ -86,16 +270,90 @@ class VoiceLoungeScreen extends ConsumerWidget {
     );
   }
 
-  /// Screen sharing is only useful on desktop and web platforms.
-  static bool get _supportsScreenShare {
-    if (kIsWeb) return true;
-    return defaultTargetPlatform == TargetPlatform.linux ||
-        defaultTargetPlatform == TargetPlatform.windows ||
-        defaultTargetPlatform == TargetPlatform.macOS;
+  /// Focused layout: the tapped stream fills the content area with a
+  /// thumbnail strip below and close / fullscreen overlay buttons.
+  Widget _buildFocusedView({
+    required lk.Room? room,
+    required LiveKitVoiceState voiceLk,
+    required ScreenShareState screenShare,
+  }) {
+    final tileKey = _focusedTileKey!;
+    final (track, mirror) = _resolveTrack(room, voiceLk, tileKey);
+
+    return Column(
+      children: [
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Container(color: Colors.black),
+              if (track != null)
+                lk.VideoTrackRenderer(
+                  track,
+                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                  mirrorMode: mirror
+                      ? lk.VideoViewMirrorMode.mirror
+                      : lk.VideoViewMirrorMode.off,
+                )
+              else
+                const Center(
+                  child: Icon(
+                    Icons.person,
+                    size: 64,
+                    color: Colors.white54,
+                  ),
+                ),
+              // Top-left: exit focus
+              Positioned(
+                top: 8,
+                left: 8,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  tooltip: 'Exit focus',
+                  onPressed: () => setState(() => _focusedTileKey = null),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black45,
+                    padding: const EdgeInsets.all(8),
+                    minimumSize: const Size(44, 44),
+                  ),
+                ),
+              ),
+              // Top-right: fullscreen (only when video is playing)
+              if (track != null)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: IconButton(
+                    icon: const Icon(Icons.fullscreen, color: Colors.white),
+                    tooltip: 'Fullscreen',
+                    onPressed: () => _openFullscreen(context, track, mirror),
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black45,
+                      padding: const EdgeInsets.all(8),
+                      minimumSize: const Size(44, 44),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        // Thumbnail strip — tap any tile to switch focus
+        SizedBox(
+          height: 90,
+          child: _ParticipantGrid(
+            room: room,
+            voiceState: voiceLk,
+            localAvatarUrl: _buildAvatarUrl(),
+            compact: true,
+            onTileTap: (key) => setState(() => _focusedTileKey = key),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final voiceLk = ref.watch(livekitVoiceProvider);
     final voiceSettings = ref.watch(voiceSettingsProvider);
     final screenShare = ref.watch(screenShareProvider);
@@ -111,52 +369,65 @@ class VoiceLoungeScreen extends ConsumerWidget {
     final room = ref.read(livekitVoiceProvider.notifier).room;
     final totalParticipants = 1 + (room?.remoteParticipants.length ?? 0);
 
-    return Container(
-      color: context.mainBg,
-      child: Column(
-        children: [
-          // Header
-          _LoungeHeader(
-            channelName: channelName,
-            participantCount: totalParticipants,
-            onBackToChat: onBackToChat,
-          ),
-          // Main content area — spotlight layout when screen share is active
-          Expanded(
-            child: _hasActiveScreenShare(room)
-                ? _buildSpotlightLayout(
-                    room: room,
-                    voiceLk: voiceLk,
-                    screenShare: screenShare,
-                    ref: ref,
-                  )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        if (screenShare.isScreenSharing)
-                          _ScreenShareViewer(ref: ref),
-                        if (screenShare.isScreenSharing)
-                          const SizedBox(height: 16),
-                        _ParticipantGrid(
-                          room: room,
-                          voiceState: voiceLk,
-                          localAvatarUrl: _buildAvatarUrl(ref),
-                        ),
-                      ],
-                    ),
+    final contentArea = _buildContentArea(
+      room: room,
+      voiceLk: voiceLk,
+      screenShare: screenShare,
+    );
+
+    final controlBar = _ControlBar(
+      voiceState: voiceLk,
+      voiceSettings: voiceSettings,
+      screenShare: screenShare,
+      conversationId: conversationId,
+      channelId: channelId,
+    );
+
+    return OrientationBuilder(
+      builder: (context, orientation) {
+        // In landscape: drop the 56-px header bar to maximise stream height,
+        // replacing it with a small floating badge in the top-left corner.
+        if (orientation == Orientation.landscape) {
+          return Container(
+            color: context.mainBg,
+            child: Stack(
+              children: [
+                Column(
+                  children: [
+                    Expanded(child: contentArea),
+                    controlBar,
+                  ],
+                ),
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: _buildHeaderBadge(
+                    context,
+                    channelName,
+                    totalParticipants,
                   ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Portrait: full header bar + content + control bar
+        return Container(
+          color: context.mainBg,
+          child: Column(
+            children: [
+              _LoungeHeader(
+                channelName: channelName,
+                participantCount: totalParticipants,
+                onBackToChat: widget.onBackToChat,
+              ),
+              Expanded(child: contentArea),
+              controlBar,
+            ],
           ),
-          // Control bar
-          _ControlBar(
-            voiceState: voiceLk,
-            voiceSettings: voiceSettings,
-            screenShare: screenShare,
-            conversationId: conversationId,
-            channelId: channelId,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -239,12 +510,15 @@ class _ParticipantGrid extends StatelessWidget {
   final LiveKitVoiceState voiceState;
   final String? localAvatarUrl;
   final bool compact;
+  /// Called with the tile key when the user taps a tile to focus it.
+  final void Function(String key)? onTileTap;
 
   const _ParticipantGrid({
     required this.room,
     required this.voiceState,
     this.localAvatarUrl,
     this.compact = false,
+    this.onTileTap,
   });
 
   @override
@@ -289,6 +563,7 @@ class _ParticipantGrid extends StatelessWidget {
           audioLevel: voiceState.localAudioLevel,
           isMuted: !voiceState.isCaptureEnabled,
           isLocal: true,
+          onTap: onTileTap != null ? () => onTileTap!('local') : null,
         ),
       );
     }
@@ -324,6 +599,9 @@ class _ParticipantGrid extends StatelessWidget {
           audioLevel: audioLevel,
           isMuted: participant.isMuted,
           connectionState: voiceState.peerConnectionStates[identity],
+          onTap: onTileTap != null
+              ? () => onTileTap!('remote-${participant.sid}')
+              : null,
           onMuteForMe: () async {
             // Toggle mute for this remote participant's audio tracks
             for (final pub in participant.audioTrackPublications) {
@@ -399,6 +677,7 @@ class _ParticipantTile extends StatelessWidget {
   final bool isMuted;
   final String? connectionState;
   final bool isLocal;
+  final VoidCallback? onTap;
   final VoidCallback? onMuteForMe;
 
   const _ParticipantTile({
@@ -412,6 +691,7 @@ class _ParticipantTile extends StatelessWidget {
     this.isMuted = false,
     this.connectionState,
     this.isLocal = false,
+    this.onTap,
     this.onMuteForMe,
   });
 
@@ -420,6 +700,7 @@ class _ParticipantTile extends StatelessWidget {
     final isSpeaking = audioLevel > 0.01;
 
     return GestureDetector(
+      onTap: onTap,
       onSecondaryTapUp: !isLocal && onMuteForMe != null
           ? (details) => _showParticipantMenu(context, details.globalPosition)
           : null,
@@ -749,8 +1030,14 @@ class _ScreenShareViewer extends StatelessWidget {
 class _RemoteScreenShares extends StatelessWidget {
   final lk.Room room;
   final bool spotlight;
+  /// Called with the participant SID when the user taps a screen share tile.
+  final void Function(String participantSid)? onTileTap;
 
-  const _RemoteScreenShares({required this.room, this.spotlight = false});
+  const _RemoteScreenShares({
+    required this.room,
+    this.spotlight = false,
+    this.onTileTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -762,64 +1049,76 @@ class _RemoteScreenShares extends StatelessWidget {
             pub.track is lk.VideoTrack &&
             pub.source == lk.TrackSource.screenShareVideo) {
           final screenShareName = _participantDisplayName(participant);
+          final sid = participant.sid.toString();
           tiles.add(
-            Container(
-              width: double.infinity,
-              constraints: spotlight
-                  ? null
-                  : const BoxConstraints(maxHeight: 400),
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: context.border),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Stack(
-                children: [
-                  Center(
-                    child: AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: lk.VideoTrackRenderer(
-                        pub.track! as lk.VideoTrack,
-                        fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+            GestureDetector(
+              onTap: onTileTap != null ? () => onTileTap!(sid) : null,
+              child: Container(
+                width: double.infinity,
+                constraints: spotlight
+                    ? null
+                    : const BoxConstraints(maxHeight: 400),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: context.border),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  children: [
+                    Center(
+                      child: AspectRatio(
+                        aspectRatio: 16 / 9,
+                        child: lk.VideoTrackRenderer(
+                          pub.track! as lk.VideoTrack,
+                          fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                        ),
                       ),
                     ),
-                  ),
-                  Positioned(
-                    top: 8,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: context.accent.withValues(alpha: 0.85),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.screen_share,
-                            size: 14,
-                            color: Colors.white,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '$screenShareName\'s screen',
-                            style: const TextStyle(
+                    Positioned(
+                      top: 8,
+                      left: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: context.accent.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.screen_share,
+                              size: 14,
                               color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            Text(
+                              '$screenShareName\'s screen',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (onTileTap != null) ...[
+                              const SizedBox(width: 6),
+                              const Icon(
+                                Icons.touch_app,
+                                size: 12,
+                                color: Colors.white54,
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
@@ -853,14 +1152,26 @@ class _ControlBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // On narrow screens (width < 600) or in landscape, save space with
+    // icon-only buttons at 44 px touch targets (no text labels).
+    final isCompact = MediaQuery.of(context).size.width < 600 ||
+        MediaQuery.of(context).orientation == Orientation.landscape;
+
+    final gap = isCompact ? const SizedBox(width: 4) : const SizedBox(width: 8);
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: EdgeInsets.symmetric(
+        horizontal: isCompact ? 8 : 16,
+        vertical: isCompact ? 10 : 12,
+      ),
       decoration: BoxDecoration(
         color: context.surface,
         border: Border(top: BorderSide(color: context.border, width: 1)),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: isCompact
+            ? MainAxisAlignment.spaceEvenly
+            : MainAxisAlignment.center,
         children: [
           // Mute (split: main toggles mute, dots open audio processing)
           _SplitControlButton(
@@ -868,6 +1179,7 @@ class _ControlBar extends ConsumerWidget {
             label: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
             isActive: voiceSettings.selfMuted,
             activeColor: EchoTheme.danger,
+            isCompact: isCompact,
             onPressed: () async {
               final notifier = ref.read(voiceSettingsProvider.notifier);
               final nextMuted = !voiceSettings.selfMuted;
@@ -879,7 +1191,7 @@ class _ControlBar extends ConsumerWidget {
             menuBuilder: (context) =>
                 _AudioProcessingMenu(voiceSettings: voiceSettings, ref: ref),
           ),
-          const SizedBox(width: 8),
+          gap,
           // Deafen (no split -- simple button)
           _ControlButton(
             icon: voiceSettings.selfDeafened
@@ -888,6 +1200,7 @@ class _ControlBar extends ConsumerWidget {
             label: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
             isActive: voiceSettings.selfDeafened,
             activeColor: EchoTheme.danger,
+            isCompact: isCompact,
             onPressed: () async {
               final notifier = ref.read(voiceSettingsProvider.notifier);
               final nextDeafened = !voiceSettings.selfDeafened;
@@ -897,7 +1210,7 @@ class _ControlBar extends ConsumerWidget {
                   .setDeafened(nextDeafened);
             },
           ),
-          const SizedBox(width: 8),
+          gap,
           // Camera (split: main toggles camera, dots open bitrate/fps/auto)
           _SplitControlButton(
             icon: voiceState.isVideoEnabled
@@ -906,15 +1219,17 @@ class _ControlBar extends ConsumerWidget {
             label: voiceState.isVideoEnabled ? 'Camera On' : 'Camera',
             isActive: voiceState.isVideoEnabled,
             activeColor: context.accent,
+            isCompact: isCompact,
             onPressed: () async {
               await ref.read(livekitVoiceProvider.notifier).toggleVideo();
             },
             menuBuilder: (context) =>
                 _VideoSettingsMenu(voiceState: voiceState, ref: ref),
           ),
-          const SizedBox(width: 8),
           // Screen share (split: main toggles share, dots open bitrate/fps)
+          // Hidden entirely on platforms that don't support screen share.
           if (VoiceLoungeScreen._supportsScreenShare) ...[
+            gap,
             _SplitControlButton(
               icon: screenShare.isScreenSharing
                   ? Icons.stop_screen_share
@@ -922,6 +1237,7 @@ class _ControlBar extends ConsumerWidget {
               label: screenShare.isScreenSharing ? 'Stop Share' : 'Share',
               isActive: screenShare.isScreenSharing,
               activeColor: EchoTheme.online,
+              isCompact: isCompact,
               onPressed: () async {
                 final lkNotifier = ref.read(livekitVoiceProvider.notifier);
                 final ssNotifier = ref.read(screenShareProvider.notifier);
@@ -945,8 +1261,8 @@ class _ControlBar extends ConsumerWidget {
               menuBuilder: (context) =>
                   _VideoSettingsMenu(voiceState: voiceState, ref: ref),
             ),
-            const SizedBox(width: 8),
           ],
+          gap,
           // Hangup
           _ControlButton(
             icon: Icons.call_end,
@@ -954,6 +1270,7 @@ class _ControlBar extends ConsumerWidget {
             isActive: true,
             activeColor: EchoTheme.danger,
             isDestructive: true,
+            isCompact: isCompact,
             onPressed: () async {
               if (screenShare.isScreenSharing) {
                 await ref
@@ -984,6 +1301,7 @@ class _SplitControlButton extends StatelessWidget {
   final String label;
   final bool isActive;
   final Color activeColor;
+  final bool isCompact;
   final VoidCallback onPressed;
   final Widget Function(BuildContext context) menuBuilder;
 
@@ -994,6 +1312,7 @@ class _SplitControlButton extends StatelessWidget {
     required this.activeColor,
     required this.onPressed,
     required this.menuBuilder,
+    this.isCompact = false,
   });
 
   @override
@@ -1027,25 +1346,34 @@ class _SplitControlButton extends StatelessWidget {
                   bottomLeft: Radius.circular(24),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.only(
-                    left: 16,
-                    right: 8,
-                    top: 10,
-                    bottom: 10,
-                  ),
+                  padding: isCompact
+                      ? const EdgeInsets.only(
+                          left: 12,
+                          right: 6,
+                          top: 12,
+                          bottom: 12,
+                        )
+                      : const EdgeInsets.only(
+                          left: 16,
+                          right: 8,
+                          top: 10,
+                          bottom: 10,
+                        ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(icon, size: 20, color: iconColor),
-                      const SizedBox(width: 6),
-                      Text(
-                        label,
-                        style: TextStyle(
-                          color: iconColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                      if (!isCompact) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            color: iconColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -1377,6 +1705,7 @@ class _ControlButton extends StatelessWidget {
   final bool isActive;
   final Color activeColor;
   final bool isDestructive;
+  final bool isCompact;
   final VoidCallback onPressed;
 
   const _ControlButton({
@@ -1386,6 +1715,7 @@ class _ControlButton extends StatelessWidget {
     required this.activeColor,
     required this.onPressed,
     this.isDestructive = false,
+    this.isCompact = false,
   });
 
   @override
@@ -1410,7 +1740,9 @@ class _ControlButton extends StatelessWidget {
           onTap: onPressed,
           borderRadius: BorderRadius.circular(24),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: isCompact
+                ? const EdgeInsets.all(12)
+                : const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               color: bgColor,
               borderRadius: BorderRadius.circular(24),
@@ -1419,18 +1751,70 @@ class _ControlButton extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(icon, size: 20, color: iconColor),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: iconColor,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                if (!isCompact) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: iconColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fullscreen video overlay
+// ---------------------------------------------------------------------------
+
+/// Full-screen page for a single video stream.
+///
+/// Hides system UI (status bar + navigation bar) while active.
+/// Tap anywhere to close and restore system UI.
+class _FullscreenVideoPage extends StatefulWidget {
+  final lk.VideoTrack track;
+  final bool mirror;
+
+  const _FullscreenVideoPage({required this.track, this.mirror = false});
+
+  @override
+  State<_FullscreenVideoPage> createState() => _FullscreenVideoPageState();
+}
+
+class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(context).pop(),
+        child: lk.VideoTrackRenderer(
+          widget.track,
+          fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+          mirrorMode: widget.mirror
+              ? lk.VideoViewMirrorMode.mirror
+              : lk.VideoViewMirrorMode.off,
         ),
       ),
     );

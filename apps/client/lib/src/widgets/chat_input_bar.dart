@@ -67,6 +67,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   final _messageController = TextEditingController();
   final _inputFocusNode = FocusNode();
 
+  static const _mobileMediaPickerHeightRatio = 0.45;
+
   bool _isTextEmpty = true;
   bool _showMediaPicker = false;
 
@@ -712,13 +714,16 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         ),
         tooltip: 'Attach file',
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         onPressed: _pickFile,
       ),
     );
   }
 
-  Widget _buildMediaPickerToggle({required bool showMediaPicker}) {
+  Widget _buildMediaPickerToggle({
+    required bool showMediaPicker,
+    required bool isMobileLayout,
+  }) {
     return IconButton(
       icon: Icon(
         showMediaPicker
@@ -731,11 +736,67 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
       onPressed: () {
-        setState(() => _showMediaPicker = !_showMediaPicker);
-        widget.onMediaPickerChanged?.call();
-        if (!_showMediaPicker) {
-          _inputFocusNode.requestFocus();
+        if (isMobileLayout) {
+          _showMobileMediaPicker();
+        } else {
+          setState(() => _showMediaPicker = !_showMediaPicker);
+          widget.onMediaPickerChanged?.call();
+          if (!_showMediaPicker) {
+            _inputFocusNode.requestFocus();
+          }
         }
+      },
+    );
+  }
+
+  void _showMobileMediaPicker() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Container(
+            height: MediaQuery.of(sheetContext).size.height *
+                _mobileMediaPickerHeightRatio,
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
+              border: Border.all(color: context.border),
+            ),
+            child: MediaPickerPanel(
+              onEmojiSelected: (category, emoji) {
+                Navigator.pop(sheetContext);
+                final text = _messageController.text;
+                final selection = _messageController.selection;
+                final cursorPos = selection.baseOffset >= 0
+                    ? selection.baseOffset
+                    : text.length;
+                final newText =
+                    text.substring(0, cursorPos) +
+                    emoji.emoji +
+                    text.substring(cursorPos);
+                _messageController.text = newText;
+                _messageController.selection = TextSelection.collapsed(
+                  offset: cursorPos + emoji.emoji.length,
+                );
+              },
+              onGifSelected: (gifUrl, slug) {
+                Navigator.pop(sheetContext);
+                setState(() {
+                  _pendingAttachmentUrl = gifUrl;
+                  _pendingAttachmentExt = 'gif';
+                  _pendingAttachmentFileName = 'gif';
+                  _pendingAttachmentMimeType = 'image/gif';
+                  _pendingAttachmentBytes = null;
+                  _isUploadingAttachment = false;
+                });
+              },
+              onClose: () => Navigator.pop(sheetContext),
+            ),
+          ),
+        );
       },
     );
   }
@@ -947,22 +1008,28 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(right: 7),
+      padding: const EdgeInsets.only(right: 4),
       child: GestureDetector(
         onTap: canSend ? _resolvedSendAction() : null,
         child: Opacity(
           opacity: canSend ? 1 : 0.45,
-          child: Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: buttonColor,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              _isEditing ? Icons.check_rounded : Icons.arrow_upward_rounded,
-              size: 18,
-              color: Colors.white,
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: buttonColor,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _isEditing ? Icons.check_rounded : Icons.arrow_upward_rounded,
+                  size: 18,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ),
         ),
@@ -991,8 +1058,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         children: [
           // Attach file + media picker toggle (hidden in edit mode)
           if (!_isEditing) _buildAttachFileButton(),
-          if (!_isEditing && !isMobileLayout)
-            _buildMediaPickerToggle(showMediaPicker: showMediaPicker),
+          if (!_isEditing)
+            _buildMediaPickerToggle(
+              showMediaPicker: showMediaPicker,
+              isMobileLayout: isMobileLayout,
+            ),
           if (_isEditing) const SizedBox(width: 12),
           // Text field
           _buildTextField(
@@ -1098,7 +1168,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
               ),
             // Input area
             Container(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                8,
+                20,
+                20 + MediaQuery.of(context).padding.bottom,
+              ),
               color: context.chatBg,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
