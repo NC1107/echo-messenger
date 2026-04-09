@@ -70,8 +70,8 @@ class ChatHeaderBar extends ConsumerWidget {
                   onPressed: onBack,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
-                    minWidth: 32,
-                    minHeight: 32,
+                    minWidth: 44,
+                    minHeight: 44,
                   ),
                 ),
                 const SizedBox(width: 4),
