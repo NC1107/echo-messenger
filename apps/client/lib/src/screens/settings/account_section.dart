@@ -281,16 +281,29 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     if (file.bytes == null) return;
 
     final serverUrl = ref.read(serverUrlProvider);
-    final token = ref.read(authProvider).token;
-    if (token == null) return;
-
-    final request = _buildAvatarRequest(serverUrl, token, file);
 
     try {
-      final streamedResponse = await request.send();
-      final body = await streamedResponse.stream.bytesToString();
-      if (!mounted) return;
-      _handleAvatarResponse(streamedResponse.statusCode, body);
+      // Retry once on 401 (token expired during upload).
+      for (var attempt = 0; attempt < 2; attempt++) {
+        final token = ref.read(authProvider).token;
+        if (token == null) return;
+
+        final request = _buildAvatarRequest(serverUrl, token, file);
+        final streamedResponse = await request.send();
+        final body = await streamedResponse.stream.bytesToString();
+        if (!mounted) return;
+
+        if (streamedResponse.statusCode == 401 && attempt == 0) {
+          final refreshed = await ref
+              .read(authProvider.notifier)
+              .refreshAccessToken();
+          if (!refreshed) return;
+          continue;
+        }
+
+        _handleAvatarResponse(streamedResponse.statusCode, body);
+        return;
+      }
     } catch (e) {
       if (mounted) {
         ToastService.show(context, 'Upload error: $e', type: ToastType.error);

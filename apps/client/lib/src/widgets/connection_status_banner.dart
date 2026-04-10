@@ -51,7 +51,8 @@ class _ConnectionStatusBannerState
       });
     }
 
-    final bool visible = !wsState.isConnected || _showConnectedFlash;
+    final bool visible =
+        !wsState.isConnected || _showConnectedFlash || wsState.wasReplaced;
     if (!visible) return const SizedBox.shrink();
 
     final bool maxAttemptsReached =
@@ -61,7 +62,10 @@ class _ConnectionStatusBannerState
     String label;
     bool showSpinner = false;
 
-    if (wsState.isConnected && _showConnectedFlash) {
+    if (wsState.wasReplaced) {
+      bannerColor = EchoTheme.danger;
+      label = 'Signed in on another device';
+    } else if (wsState.isConnected && _showConnectedFlash) {
       bannerColor = EchoTheme.online;
       label = 'Connected';
     } else if (maxAttemptsReached) {
@@ -70,7 +74,7 @@ class _ConnectionStatusBannerState
     } else {
       bannerColor = const Color(0xFFB45309); // amber-700
       label = wsState.reconnectAttempts > 0
-          ? 'Reconnecting... (${wsState.reconnectAttempts}/10)'
+          ? 'Reconnecting... (${wsState.reconnectAttempts})'
           : 'Reconnecting...';
       showSpinner = true;
     }
@@ -109,7 +113,7 @@ class _ConnectionStatusBannerState
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              if (maxAttemptsReached) ...[
+              if (maxAttemptsReached || wsState.wasReplaced) ...[
                 const SizedBox(width: 10),
                 GestureDetector(
                   onTap: () => ref.read(websocketProvider.notifier).connect(),

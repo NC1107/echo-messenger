@@ -467,21 +467,53 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     setState(() => _isUploadingAttachment = true);
 
     final serverUrl = ref.read(serverUrlProvider);
-    final token = ref.read(authProvider).token;
-    if (token == null) {
-      _clearPendingAttachment();
-      return;
-    }
 
     try {
+      final result = await _uploadWithAuthRetry(
+        serverUrl: serverUrl,
+        bytes: bytes,
+        fileName: fileName,
+        mimeType: mimeType,
+      );
+      if (!mounted) return;
+
+      if (result != null) {
+        setState(() {
+          _pendingAttachmentUrl = result;
+          _isUploadingAttachment = false;
+        });
+        _inputFocusNode.requestFocus();
+      } else {
+        ToastService.show(context, 'Upload failed', type: ToastType.error);
+        _clearPendingAttachment();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, 'Upload failed: $e', type: ToastType.error);
+      _clearPendingAttachment();
+    }
+  }
+
+  /// Upload media with automatic 401→token-refresh→retry.
+  ///
+  /// MultipartRequest streams are consumed on send, so we rebuild the request
+  /// on retry rather than replaying the same object.
+  Future<String?> _uploadWithAuthRetry({
+    required String serverUrl,
+    required List<int> bytes,
+    required String fileName,
+    required String mimeType,
+  }) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final token = ref.read(authProvider).token;
+      if (token == null) return null;
+
       final request = http.MultipartRequest(
         'POST',
         Uri.parse('$serverUrl/api/media/upload'),
       );
       request.headers['Authorization'] = 'Bearer $token';
-
-      final conversationId = widget.conversation.id;
-      request.fields['conversation_id'] = conversationId;
+      request.fields['conversation_id'] = widget.conversation.id;
 
       final parts = mimeType.split('/');
       final mediaType = parts.length == 2
@@ -499,34 +531,32 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
       final response = await request.send();
       final body = await response.stream.bytesToString();
-      if (!mounted) return;
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(body);
-        final mediaUrl = data['url'] as String?;
-        if (mediaUrl != null) {
-          setState(() {
-            _pendingAttachmentUrl = mediaUrl;
-            _isUploadingAttachment = false;
-          });
-          _inputFocusNode.requestFocus();
-        } else {
-          ToastService.show(context, 'Upload failed', type: ToastType.error);
-          _clearPendingAttachment();
-        }
-      } else {
+        return data['url'] as String?;
+      }
+
+      // On 401, refresh token and retry once
+      if (response.statusCode == 401 && attempt == 0) {
+        final refreshed = await ref
+            .read(authProvider.notifier)
+            .refreshAccessToken();
+        if (!refreshed) return null;
+        continue;
+      }
+
+      // Non-retryable failure
+      if (mounted) {
         ToastService.show(
           context,
           'Upload failed (${response.statusCode})',
           type: ToastType.error,
         );
-        _clearPendingAttachment();
       }
-    } catch (e) {
-      if (!mounted) return;
-      ToastService.show(context, 'Upload failed: $e', type: ToastType.error);
-      _clearPendingAttachment();
+      return null;
     }
+    return null;
   }
 
   Future<void> _pasteImageFromClipboard() async {

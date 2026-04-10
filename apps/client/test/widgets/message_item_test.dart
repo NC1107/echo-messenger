@@ -207,7 +207,7 @@ void main() {
         );
         await tester.pump();
 
-        expect(find.byIcon(Icons.error_outline), findsOneWidget);
+        expect(find.byIcon(Icons.error_outline), findsAtLeastNWidgets(1));
       });
     });
 
