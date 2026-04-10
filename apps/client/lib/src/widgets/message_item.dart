@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../models/chat_message.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../theme/responsive.dart';
 import '../utils/download_helper.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, avatarColor;
@@ -1013,7 +1014,7 @@ class _MessageItemState extends State<MessageItem> {
           label: 'Message from ${msg.fromUsername}. Long press for actions.',
           child: GestureDetector(
             onLongPressStart: (details) {
-              final isMobile = MediaQuery.of(context).size.width < 600;
+              final isMobile = Responsive.isMobile(context);
               if (isMobile) {
                 _showMobileActionSheet(context, msg, isMine, mediaUrl);
               } else if (!hasReactions) {

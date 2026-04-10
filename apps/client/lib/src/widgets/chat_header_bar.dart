@@ -16,6 +16,7 @@ import '../screens/user_profile_screen.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../theme/responsive.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor;
 import 'shared_media_gallery.dart';
@@ -196,7 +197,7 @@ class ChatHeaderBar extends ConsumerWidget {
 
     // On narrow screens (< 600 px) keep only voice call + search always
     // visible and move the rest into a 3-dot overflow menu.
-    final isNarrow = MediaQuery.of(context).size.width < 600;
+    final isNarrow = Responsive.isMobile(context);
 
     if (isNarrow) {
       return [

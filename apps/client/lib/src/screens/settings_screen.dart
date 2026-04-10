@@ -7,6 +7,7 @@ import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
+import '../theme/responsive.dart';
 import 'settings/about_section.dart';
 import 'settings/accessibility_section.dart';
 import 'settings/account_section.dart';
@@ -317,7 +318,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (mounted) context.go('/login');
   }
 
-  bool get _isMobile => MediaQuery.of(context).size.width < 600;
+  bool get _isMobile => Responsive.isMobile(context);
 
   @override
   Widget build(BuildContext context) {

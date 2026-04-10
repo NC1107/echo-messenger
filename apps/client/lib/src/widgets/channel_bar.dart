@@ -10,6 +10,7 @@ import '../providers/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
+import '../theme/responsive.dart';
 
 class ChannelBar extends ConsumerStatefulWidget {
   final String conversationId;
@@ -767,7 +768,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     if (activeVoiceChannel == null) return const SizedBox.shrink();
 
     final participants = channelsState.voiceSessionsFor(activeVoiceChannel.id);
-    final isCompact = MediaQuery.of(context).size.width < 720;
+    final isCompact = Responsive.width(context) < 720;
     final iAmConnected = participants.any((p) => p.userId == myUserId);
 
     return Container(

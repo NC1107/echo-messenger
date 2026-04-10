@@ -81,7 +81,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   }
 
   void _next() {
-    if (_currentPage < 2) {
+    if (_currentPage < 3) {
       _goToPage(_currentPage + 1);
     } else {
       _finish();
@@ -274,7 +274,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                       onPageChanged: (i) => setState(() => _currentPage = i),
                       children: [
                         _buildWelcomePage(context),
-                        _buildAboutPage(context),
+                        _buildAppearancePage(context),
+                        _buildAboutYouPage(context),
                         _buildContactPage(context),
                       ],
                     ),
@@ -608,7 +609,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         ),
       ];
 
-  Widget _buildAboutPage(BuildContext context) {
+  Widget _buildAppearancePage(BuildContext context) {
     final currentTheme = ref.watch(themeProvider);
 
     return SingleChildScrollView(
@@ -625,7 +626,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Pick a theme and tell us about yourself.',
+            'Pick a theme and layout.',
             style: TextStyle(color: context.textSecondary, fontSize: 14),
             textAlign: TextAlign.center,
           ),
@@ -703,8 +704,31 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
           // Accessibility toggles
           _buildAccessibilityToggles(),
-          const SizedBox(height: 18),
+        ],
+      ),
+    );
+  }
 
+  Widget _buildAboutYouPage(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          Text(
+            'About you',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Optional — you can always change these later in Settings.',
+            style: TextStyle(color: context.textSecondary, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
           _buildField(
             controller: _bioController,
             label: 'Bio',
@@ -917,7 +941,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         // Dot indicators
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(3, (i) {
+          children: List.generate(4, (i) {
             final isActive = i == _currentPage;
             return AnimatedContainer(
               duration: const Duration(milliseconds: 250),
@@ -938,11 +962,11 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         // Buttons
         Builder(
           builder: (_) {
-            final buttonLabel = _currentPage == 2 ? 'Get Started' : 'Next';
+            final buttonLabel = _currentPage == 3 ? 'Get Started' : 'Next';
             return Row(
               children: [
                 // Skip button (hidden on last page -- "Skip for now" is inline)
-                if (_currentPage < 2)
+                if (_currentPage < 3)
                   TextButton(
                     onPressed: _saving ? null : _skip,
                     child: Text(

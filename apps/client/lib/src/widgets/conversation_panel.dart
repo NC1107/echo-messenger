@@ -31,6 +31,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
   final VoidCallback? onCollapseSidebar;
   final VoidCallback? onSettings;
   final VoidCallback? onShowContacts;
+  final VoidCallback? onGlobalSearch;
 
   /// Called when the user taps "Message" on a contact in the Contacts tab.
   /// Should call getOrCreateDm and then select the conversation.
@@ -49,6 +50,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
     this.onCollapseSidebar,
     this.onSettings,
     this.onShowContacts,
+    this.onGlobalSearch,
     this.onMessageContact,
     this.externalSearchFocusNode,
   });
@@ -440,6 +442,15 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           ),
+          if (widget.onGlobalSearch != null)
+            IconButton(
+              icon: const Icon(Icons.search_outlined, size: 18),
+              color: context.textSecondary,
+              tooltip: 'Search messages (Ctrl+Shift+F)',
+              onPressed: widget.onGlobalSearch,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
           if (widget.onCollapseSidebar != null)
             IconButton(
               icon: const Icon(Icons.chevron_left, size: 16),

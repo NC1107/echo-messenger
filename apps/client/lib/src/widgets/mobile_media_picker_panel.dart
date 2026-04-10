@@ -1,13 +1,10 @@
 import 'dart:io';
 
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
-import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../theme/echo_theme.dart';
 import 'gif_picker_widget.dart';
-import 'photo_gallery_picker.dart';
 
 /// Full-width inline picker for mobile that replaces the system keyboard.
 ///
@@ -42,20 +39,13 @@ class _MobileMediaPickerPanelState extends State<MobileMediaPickerPanel>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
-  /// Photos tab only available on native mobile (not web, not desktop).
-  static bool get _hasPhotosTab {
-    if (kIsWeb) return false;
-    return defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS;
-  }
-
   @override
   void initState() {
     super.initState();
-    final tabCount = _hasPhotosTab ? 3 : 2;
-    final initial = widget.initialTab.clamp(0, tabCount - 1);
+    // Two tabs: Emoji and GIFs.  Photos moved to the "+" attachment menu.
+    final initial = widget.initialTab.clamp(0, 1);
     _tabController = TabController(
-      length: tabCount,
+      length: 2,
       vsync: this,
       initialIndex: initial,
     );
@@ -101,7 +91,6 @@ class _MobileMediaPickerPanelState extends State<MobileMediaPickerPanel>
                     tabs: [
                       const Tab(height: 34, text: 'Emoji'),
                       const Tab(height: 34, text: 'GIFs'),
-                      if (_hasPhotosTab) const Tab(height: 34, text: 'Photos'),
                     ],
                   ),
                 ),
@@ -127,11 +116,7 @@ class _MobileMediaPickerPanelState extends State<MobileMediaPickerPanel>
           Expanded(
             child: TabBarView(
               controller: _tabController,
-              children: [
-                _buildEmojiTab(context),
-                _buildGifTab(),
-                if (_hasPhotosTab) _buildPhotosTab(),
-              ],
+              children: [_buildEmojiTab(context), _buildGifTab()],
             ),
           ),
         ],
@@ -189,9 +174,5 @@ class _MobileMediaPickerPanelState extends State<MobileMediaPickerPanel>
       onClose: null,
       embedMode: true,
     );
-  }
-
-  Widget _buildPhotosTab() {
-    return PhotoGalleryPicker(onPhotoSelected: widget.onPhotoSelected);
   }
 }
