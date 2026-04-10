@@ -53,6 +53,8 @@
 	<string>Echo needs camera access for video calls</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Echo needs photo access to share images and files</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

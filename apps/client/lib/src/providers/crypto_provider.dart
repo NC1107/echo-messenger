@@ -87,28 +87,35 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
       crypto.setToken(token);
       await crypto.init();
       if (crypto.keysAreFresh) {
-        try {
-          await crypto.uploadKeys();
-          DebugLogService.instance.log(
-            LogLevel.info,
-            'Crypto',
-            'Keys uploaded to server',
-          );
-        } catch (uploadError) {
-          // Key upload failed -- mark the failure but do not block the app.
-          // The user can still chat (without encryption for new conversations)
-          // and retry from Settings > Privacy.
-          DebugLogService.instance.log(
-            LogLevel.error,
-            'Crypto',
-            'Key upload failed (app continues without upload): $uploadError',
-          );
-          state = state.copyWith(
-            isInitialized: true,
-            isUploading: false,
-            keysUploadFailed: true,
-          );
-          return;
+        // Attempt upload with one automatic retry on failure.
+        var uploaded = false;
+        for (var attempt = 1; attempt <= 2 && !uploaded; attempt++) {
+          try {
+            await crypto.uploadKeys();
+            uploaded = true;
+            DebugLogService.instance.log(
+              LogLevel.info,
+              'Crypto',
+              'Keys uploaded to server (attempt $attempt)',
+            );
+          } catch (uploadError) {
+            DebugLogService.instance.log(
+              LogLevel.error,
+              'Crypto',
+              'Key upload attempt $attempt failed: $uploadError',
+            );
+            if (attempt == 2) {
+              state = state.copyWith(
+                isInitialized: true,
+                isUploading: false,
+                keysUploadFailed: true,
+                error: 'Key upload failed: $uploadError',
+              );
+              return;
+            }
+            // Brief pause before retry
+            await Future<void>.delayed(const Duration(seconds: 1));
+          }
         }
       }
       final regenerated = crypto.keysWereRegenerated;
@@ -200,9 +207,25 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
 
   /// Reset all encryption keys (regenerate identity + session keys).
   Future<void> resetKeys() async {
-    final crypto = ref.read(cryptoServiceProvider);
-    await crypto.resetAllKeys();
-    state = state.copyWith(isInitialized: true);
+    try {
+      final crypto = ref.read(cryptoServiceProvider);
+      await crypto.resetAllKeys();
+      state = state.copyWith(
+        isInitialized: true,
+        keysUploadFailed: false,
+        error: null,
+      );
+    } catch (e) {
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Crypto',
+        'Key reset failed: $e',
+      );
+      state = state.copyWith(
+        keysUploadFailed: true,
+        error: 'Key reset failed: $e',
+      );
+    }
   }
 
   /// Clear crypto state on logout.
