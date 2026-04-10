@@ -168,16 +168,34 @@ fn verify_signed_prekey_signature(
     Ok(())
 }
 
-/// GET /api/keys/bundle/:user_id -- Fetch a user's PreKey bundle (device 0 default).
+/// GET /api/keys/bundle/:user_id -- Fetch a user's PreKey bundle.
+///
+/// Tries device 0 first (legacy), then falls back to any device that has a
+/// bundle uploaded. This handles the case where clients generate random device
+/// IDs (e.g. web clients that can't persist device ID across sessions).
 pub async fn get_bundle(
     State(state): State<Arc<AppState>>,
     _auth_user: AuthUser,
     Path(user_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Backward compatible: fetch device 0
-    let bundle = db::keys::get_prekey_bundle(&state.pool, user_id, 0)
-        .await?
-        .ok_or_else(|| AppError::bad_request("No PreKey bundle found for this user"))?;
+    // Try device 0 first (legacy single-device clients)
+    let bundle = match db::keys::get_prekey_bundle(&state.pool, user_id, 0).await? {
+        Some(b) => b,
+        None => {
+            // No device 0 — find the most recently registered device and use that
+            let devices = db::keys::get_user_devices(&state.pool, user_id).await?;
+            let mut found = None;
+            for device_id in devices {
+                if let Some(b) =
+                    db::keys::get_prekey_bundle(&state.pool, user_id, device_id).await?
+                {
+                    found = Some(b);
+                    break;
+                }
+            }
+            found.ok_or_else(|| AppError::bad_request("No PreKey bundle found for this user"))?
+        }
+    };
 
     let response = PreKeyBundleResponse {
         identity_key: BASE64.encode(&bundle.identity_key),
