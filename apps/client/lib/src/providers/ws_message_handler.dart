@@ -21,6 +21,7 @@ import 'crypto_provider.dart';
 /// State that tracks both connection status and typing indicators.
 class WebSocketState {
   final bool isConnected;
+  final int reconnectAttempts;
 
   /// Map of conversationId -> set of usernames currently typing.
   final Map<String, Map<String, DateTime>> typingUsers;
@@ -34,6 +35,7 @@ class WebSocketState {
 
   const WebSocketState({
     this.isConnected = false,
+    this.reconnectAttempts = 0,
     this.typingUsers = const {},
     this.onlineUsers = const {},
     this.wasReplaced = false,
@@ -41,12 +43,14 @@ class WebSocketState {
 
   WebSocketState copyWith({
     bool? isConnected,
+    int? reconnectAttempts,
     Map<String, Map<String, DateTime>>? typingUsers,
     Set<String>? onlineUsers,
     bool? wasReplaced,
   }) {
     return WebSocketState(
       isConnected: isConnected ?? this.isConnected,
+      reconnectAttempts: reconnectAttempts ?? this.reconnectAttempts,
       typingUsers: typingUsers ?? this.typingUsers,
       onlineUsers: onlineUsers ?? this.onlineUsers,
       wasReplaced: wasReplaced ?? this.wasReplaced,
@@ -284,7 +288,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
             keyBase64,
           );
         } else {
-          decryptedContent = '[Encrypted group message - key unavailable]';
+          decryptedContent = '[Could not decrypt - waiting for group key]';
         }
       } catch (e) {
         debugPrint('[WebSocket] Group decrypt failed for $conversationId: $e');

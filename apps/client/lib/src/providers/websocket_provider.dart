@@ -124,7 +124,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
 
     final uri = Uri.parse('$wsBase/ws?ticket=$ticket');
     _channel = WebSocketChannel.connect(uri);
-    state = state.copyWith(isConnected: true);
+    state = state.copyWith(isConnected: true, reconnectAttempts: 0);
     _reconnectAttempts = 0;
     DebugLogService.instance.log(
       LogLevel.info,
@@ -184,7 +184,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
         'WebSocket',
         'Max reconnect attempts ($_maxReconnectAttempts) reached',
       );
-      state = state.copyWith(isConnected: false);
+      state = state.copyWith(
+        isConnected: false,
+        reconnectAttempts: _reconnectAttempts,
+      );
       return;
     }
 
@@ -193,6 +196,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       60000,
     );
     _reconnectAttempts++;
+    state = state.copyWith(reconnectAttempts: _reconnectAttempts);
 
     // First reconnect is normal after a connection drop -- only log repeated
     // failures so the debug log stays clean.
@@ -286,18 +290,15 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   static String _friendlyEncryptionError(Object e) {
     final msg = e.toString();
     if (msg.contains('No PreKey bundle found')) {
-      return 'This user hasn\'t set up encryption yet. '
-          'Ask them to log in so their keys are uploaded.';
+      return 'Waiting for this person to come online to secure the chat.';
     }
     if (msg.contains('Failed to fetch keys')) {
-      return 'Could not retrieve encryption keys for this user. '
-          'They may need to log in again.';
+      return 'Message will send once the other person reconnects.';
     }
     if (msg.contains('Encryption not initialized')) {
-      return 'Your encryption is not initialized. '
-          'Try logging out and back in.';
+      return 'Setting up your secure session \u2014 please try again in a moment.';
     }
-    return 'Encryption failed: $msg';
+    return 'Secure message could not be delivered. Tap Retry to try again.';
   }
 
   /// Add a failed message to the chat so the user can see the error.

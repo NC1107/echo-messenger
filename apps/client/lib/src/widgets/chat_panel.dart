@@ -24,6 +24,7 @@ import 'skeleton_loader.dart';
 import 'channel_bar.dart';
 import 'chat_header_bar.dart';
 import 'chat_input_bar.dart';
+import 'connection_status_banner.dart';
 import 'message_item.dart';
 import 'message_search_overlay.dart';
 
@@ -75,6 +76,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   String? _highlightedMessageId;
   Timer? _highlightTimer;
   double _lastKeyboardInset = 0;
+  // Tracks near-bottom state from the user's last scroll event, before any
+  // viewport resize (keyboard open/close). Used in _handleKeyboardScroll so
+  // we don't lose context when maxScrollExtent shifts under us.
+  bool _wasNearBottom = true;
 
   /// True when a new message arrives while the user has scrolled up.
   bool _hasNewMessagesBelow = false;
@@ -153,6 +158,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   // ---------------------------------------------------------------------------
 
   void _onScroll() {
+    _wasNearBottom = _isNearBottom();
     if (_scrollController.position.pixels <=
         _scrollController.position.minScrollExtent + 50) {
       _loadOlderMessages();
@@ -596,6 +602,54 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   }
 
   // ---------------------------------------------------------------------------
+  // Retry failed message
+  // ---------------------------------------------------------------------------
+
+  Future<void> _retryMessage(ChatMessage message) async {
+    final conv = widget.conversation;
+    if (conv == null) return;
+    final chatNotifier = ref.read(chatProvider.notifier);
+    chatNotifier.updateMessageStatus(
+      conv.id,
+      message.id,
+      MessageStatus.sending,
+    );
+    try {
+      final ws = ref.read(websocketProvider.notifier);
+      if (conv.isGroup) {
+        await ws.sendGroupMessage(
+          conv.id,
+          message.content,
+          channelId: message.channelId,
+          replyToId: message.replyToId,
+        );
+      } else {
+        final myUserId = ref.read(authProvider).userId ?? '';
+        final peer = conv.members
+            .where((m) => m.userId != myUserId)
+            .firstOrNull;
+        if (peer == null) return;
+        await ws.sendMessage(
+          peer.userId,
+          message.content,
+          conversationId: conv.id,
+          replyToId: message.replyToId,
+        );
+      }
+    } catch (_) {
+      ref
+          .read(chatProvider.notifier)
+          .updateMessageStatus(conv.id, message.id, MessageStatus.failed);
+    }
+  }
+
+  void _deleteFailed(ChatMessage message) {
+    final conv = widget.conversation;
+    if (conv == null) return;
+    ref.read(chatProvider.notifier).deleteMessage(conv.id, message.id);
+  }
+
+  // ---------------------------------------------------------------------------
   // Delete confirmation
   // ---------------------------------------------------------------------------
 
@@ -991,7 +1045,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               );
               _toggleReaction(message, emoji, alreadyReacted);
             },
-            onDelete: _confirmDelete,
+            onDelete: msg.status == MessageStatus.failed
+                ? _deleteFailed
+                : _confirmDelete,
+            onRetry: msg.status == MessageStatus.failed ? _retryMessage : null,
             onEdit: (msg) {
               _chatInputBarKey.currentState?.enterEditMode(msg);
             },
@@ -1021,39 +1078,66 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String serverUrl,
     required String authToken,
   }) {
+    final Widget child;
     if (messages.isEmpty && isLoadingHistory) {
-      return const SingleChildScrollView(child: MessageListSkeleton());
+      child = const SingleChildScrollView(
+        key: ValueKey('skeleton'),
+        child: MessageListSkeleton(),
+      );
+    } else if (messages.isEmpty && !isLoadingHistory) {
+      child = KeyedSubtree(
+        key: const ValueKey('empty'),
+        child: _buildEmptyMessagePlaceholder(displayName),
+      );
+    } else {
+      child = KeyedSubtree(
+        key: const ValueKey('list'),
+        child: ListView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.only(bottom: 8),
+          itemCount: messages.length + 1,
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              if (chatState.hasMore[conv.id] ?? true) {
+                return SizedBox(
+                  height: 48,
+                  child: (chatState.loadingHistory[conv.id] ?? false)
+                      ? const Center(
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                );
+              }
+              return const SizedBox(height: 8);
+            }
+            return _buildMessageAtIndex(
+              i: index - 1,
+              messages: messages,
+              memberAvatars: memberAvatars,
+              myUserId: myUserId,
+              serverUrl: serverUrl,
+              authToken: authToken,
+            );
+          },
+        ),
+      );
     }
-    if (messages.isEmpty && !isLoadingHistory) {
-      return _buildEmptyMessagePlaceholder(displayName);
-    }
-
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.only(bottom: 8),
-      itemCount: messages.length + 1,
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          return (chatState.hasMore[conv.id] ?? true)
-              ? const SizedBox(height: 40)
-              : const SizedBox(height: 8);
-        }
-        return _buildMessageAtIndex(
-          i: index - 1,
-          messages: messages,
-          memberAvatars: memberAvatars,
-          myUserId: myUserId,
-          serverUrl: serverUrl,
-          authToken: authToken,
-        );
-      },
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 200),
+      child: child,
     );
   }
 
   void _handleKeyboardScroll() {
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
     if (keyboardInset != _lastKeyboardInset) {
-      final wasNearBottom = _isNearBottom();
+      // Use the pre-resize near-bottom state captured in _onScroll, not the
+      // current value (which is unreliable after the viewport has already shrunk).
+      final wasNearBottom = _wasNearBottom;
       _lastKeyboardInset = keyboardInset;
       if (wasNearBottom) {
         _scrollToBottom(animated: false, settleRetries: 2);
@@ -1222,6 +1306,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                   color: context.accent,
                   backgroundColor: context.surface,
                 ),
+
+              const ConnectionStatusBanner(),
 
               Expanded(
                 child: Stack(

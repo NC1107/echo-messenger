@@ -32,6 +32,7 @@ class MessageItem extends StatefulWidget {
   final void Function(String userId)? onAvatarTap;
   final void Function(ChatMessage message)? onPin;
   final void Function(ChatMessage message)? onUnpin;
+  final void Function(ChatMessage message)? onRetry;
 
   /// Server URL for resolving relative image paths.
   final String? serverUrl;
@@ -59,6 +60,7 @@ class MessageItem extends StatefulWidget {
     this.onAvatarTap,
     this.onPin,
     this.onUnpin,
+    this.onRetry,
     this.serverUrl,
     this.authToken,
     this.senderAvatarUrl,
@@ -509,11 +511,15 @@ class _MessageItemState extends State<MessageItem> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.lock_open, size: 14, color: EchoTheme.danger),
+            const Icon(
+              Icons.lock_clock_outlined,
+              size: 14,
+              color: EchoTheme.danger,
+            ),
             const SizedBox(width: 4),
             Flexible(
               child: Text(
-                'Unable to decrypt this message',
+                'Secured message',
                 style: TextStyle(
                   fontStyle: FontStyle.italic,
                   color: EchoTheme.danger.withValues(alpha: 0.8),
@@ -525,11 +531,60 @@ class _MessageItemState extends State<MessageItem> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Tap the key icon in the chat header to reset '
-          'this conversation\'s encryption session.',
-          style: TextStyle(color: context.accent, fontSize: 12),
+          'This message will be readable when your connection syncs.',
+          style: TextStyle(color: context.textMuted, fontSize: 12),
         ),
       ],
+    );
+  }
+
+  /// Build the retry/delete row shown below a failed outbound message.
+  Widget _buildRetryRow({required ChatMessage msg}) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, right: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 11,
+            color: EchoTheme.danger.withValues(alpha: 0.7),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Failed to send',
+            style: TextStyle(fontSize: 11, color: context.textMuted),
+          ),
+          if (widget.onRetry != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => widget.onRetry?.call(msg),
+              child: Text(
+                'Retry',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: context.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+          if (widget.onDelete != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => widget.onDelete?.call(msg),
+              child: Text(
+                'Delete',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: EchoTheme.danger,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -939,6 +994,7 @@ class _MessageItemState extends State<MessageItem> {
               ),
               if (widget.isLastInGroup)
                 _buildTimestampRow(msg: msg, isMine: isMine),
+              if (isFailed && isMine) _buildRetryRow(msg: msg),
             ],
           ),
           if (!hasReactions)

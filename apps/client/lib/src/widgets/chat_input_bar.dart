@@ -985,7 +985,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       child: GestureDetector(
         onTap: canSend ? _resolvedSendAction() : null,
         child: Opacity(
-          opacity: canSend ? 1 : 0.45,
+          opacity: canSend ? 1 : 0.30,
           child: SizedBox(
             width: 44,
             height: 44,
