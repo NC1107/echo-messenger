@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/background_service.dart' show BackgroundService;
 import 'server_url_provider.dart';
 
 const _kJsonHeaders = {'Content-Type': 'application/json'};
@@ -349,6 +350,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
           userId: userId,
           username: username,
         );
+
+        // Start background service to keep WebSocket alive on mobile
+        BackgroundService.instance.start();
       } else {
         String errorMsg = 'Invalid username or password';
         try {
@@ -373,6 +377,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   void logout() {
+    BackgroundService.instance.stop();
     _clearStoredTokens();
     state = const AuthState();
   }

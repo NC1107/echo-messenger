@@ -86,11 +86,20 @@ class VoiceLoungeScreen extends ConsumerWidget {
     );
   }
 
-  /// Screen sharing is only useful on desktop and web platforms.
+  /// Whether the current platform supports camera switching (front/back).
+  static bool get _supportsCameraFlip {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  /// Screen sharing is supported on desktop, web, and Android.
+  /// iOS requires a Broadcast Upload Extension which is not yet implemented.
   static bool get _supportsScreenShare {
     if (kIsWeb) return true;
     return defaultTargetPlatform == TargetPlatform.linux ||
         defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.macOS;
   }
 
@@ -912,6 +921,20 @@ class _ControlBar extends ConsumerWidget {
             menuBuilder: (context) =>
                 _VideoSettingsMenu(voiceState: voiceState, ref: ref),
           ),
+          // Camera flip (mobile only, visible when camera is on)
+          if (VoiceLoungeScreen._supportsCameraFlip &&
+              voiceState.isVideoEnabled) ...[
+            const SizedBox(width: 8),
+            _ControlButton(
+              icon: Icons.flip_camera_android,
+              label: 'Flip',
+              isActive: false,
+              activeColor: context.accent,
+              onPressed: () async {
+                await ref.read(livekitVoiceProvider.notifier).switchCamera();
+              },
+            ),
+          ],
           const SizedBox(width: 8),
           // Screen share (split: main toggles share, dots open bitrate/fps)
           if (VoiceLoungeScreen._supportsScreenShare) ...[

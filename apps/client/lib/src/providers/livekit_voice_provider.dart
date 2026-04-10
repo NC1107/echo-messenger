@@ -321,6 +321,46 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
     }
   }
 
+  /// Switch between front and back camera on mobile devices.
+  ///
+  /// Enumerates video input devices and switches to the next one.
+  /// On mobile this toggles front/back; on desktop it cycles through cameras.
+  Future<void> switchCamera() async {
+    if (_disposed || !state.isActive || !state.isVideoEnabled) return;
+    final room = _room;
+    if (room == null) return;
+
+    try {
+      final cameraPub = room.localParticipant?.videoTrackPublications
+          .where((pub) => pub.source == TrackSource.camera && pub.track != null)
+          .firstOrNull;
+
+      if (cameraPub?.track case final LocalVideoTrack videoTrack) {
+        // Get all video input devices
+        final devices = await Hardware.instance.enumerateDevices(
+          type: 'videoinput',
+        );
+        if (devices.length < 2) return; // Only one camera, nothing to switch
+
+        // Find the current device and pick the next one
+        final currentId = Hardware.instance.selectedVideoInput?.deviceId ?? '';
+        final currentIndex = devices.indexWhere((d) => d.deviceId == currentId);
+        final nextIndex = (currentIndex + 1) % devices.length;
+        final nextDevice = devices[nextIndex];
+
+        await videoTrack.switchCamera(nextDevice.deviceId);
+        Hardware.instance.selectedVideoInput = nextDevice;
+      }
+    } catch (e) {
+      debugPrint('[LiveKitVoice] switchCamera failed: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'LiveKitVoice',
+        'switchCamera failed: $e',
+      );
+    }
+  }
+
   /// Enable or disable screen sharing via LiveKit.
   ///
   /// Uses the SDK's built-in [setScreenShareEnabled] which handles both

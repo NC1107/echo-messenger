@@ -111,9 +111,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     if (state == AppLifecycleState.resumed) {
       ref.read(contactsProvider.notifier).loadPending(force: true);
-    } else if (state == AppLifecycleState.detached ||
-        state == AppLifecycleState.paused) {
-      // Leave voice call when app is closed or backgrounded
+    } else if (state == AppLifecycleState.detached) {
+      // Only leave voice on full app termination, not on background.
+      // Mobile users expect calls to continue when switching apps or
+      // locking the screen.
       _voiceRtcNotifier.leaveChannel();
     }
   }
