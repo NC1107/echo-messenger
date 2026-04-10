@@ -247,6 +247,11 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       return;
     }
 
+    // If a previous key upload failed, retry now before sending.
+    if (cryptoState.keysUploadFailed) {
+      await ref.read(cryptoProvider.notifier).retryKeyUpload();
+    }
+
     try {
       final crypto = ref.read(cryptoServiceProvider);
       final token = ref.read(authProvider).token ?? '';
