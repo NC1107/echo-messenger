@@ -7,7 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/crypto_provider.dart';
+import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
+import '../providers/websocket_provider.dart';
+import '../services/push_token_service.dart';
 import '../router/app_router.dart' show pendingDeepLink;
 import '../screens/onboarding_wizard.dart' show kOnboardingCompletedKey;
 import '../theme/echo_theme.dart';
@@ -64,9 +67,17 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       // Network error — treat as not logged in, user can retry from login.
     }
 
-    // If auto-login succeeded, init crypto keys
+    // If auto-login succeeded, init crypto keys + register push token
     if (loggedIn) {
       await ref.read(cryptoProvider.notifier).initAndUploadKeys();
+
+      // Register iOS APNs push token (no-op on other platforms)
+      final authState = ref.read(authProvider);
+      PushTokenService.instance.init(
+        serverUrl: ref.read(serverUrlProvider),
+        authToken: authState.token ?? '',
+        onWake: () => ref.read(websocketProvider.notifier).connect(),
+      );
     }
 
     // Support compile-time env vars for CI/testing
