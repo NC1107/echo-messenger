@@ -966,7 +966,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         child: TextField(
           controller: _messageController,
           focusNode: _inputFocusNode,
-          maxLines: 5,
+          maxLines: 10,
           minLines: 1,
           autofillHints: const [],
           style: TextStyle(fontSize: 14, color: context.textPrimary),

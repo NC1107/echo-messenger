@@ -4,7 +4,7 @@ A lightweight, cross-platform messaging app with end-to-end encryption. I'm not 
 
 ## Downloads
 
-Get the latest build from the [Releases page](https://github.com/NC1107/echo-messenger/releases).
+Get the latest buildw from the [Releases page](https://github.com/NC1107/echo-messenger/releases).
 
 | Platform | Download |
 |----------|----------|

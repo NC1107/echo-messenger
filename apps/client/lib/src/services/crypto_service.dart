@@ -10,6 +10,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
@@ -21,6 +22,7 @@ import 'signal_session.dart';
 import 'signal_x3dh.dart';
 
 class CryptoService {
+  static const _deviceIdPref = 'echo_device_id';
   static const _identityKeyPref = 'echo_identity_key';
   static const _identityPubKeyPref = 'echo_identity_pub_key';
   static const _signingKeyPref = 'echo_signing_key';
@@ -56,6 +58,15 @@ class CryptoService {
 
   final String serverUrl;
   String _token = '';
+
+  /// Unique device identifier for this installation. Generated once on first
+  /// launch and persisted in secure storage. Used for multi-device key
+  /// management -- each device uploads its own key bundle with this ID so the
+  /// server can distinguish devices for the same user.
+  int _deviceId = 0;
+
+  /// The device ID for this installation.
+  int get deviceId => _deviceId;
 
   SimpleKeyPair? _identityKeyPair;
   SimpleKeyPair? _signedPrekeyPair;
@@ -143,6 +154,19 @@ class CryptoService {
       await _migrateFromSharedPreferences();
 
       final store = SecureKeyStore.instance;
+
+      // Load or generate a unique device ID for this installation.
+      final storedDeviceId = await store.read(_deviceIdPref);
+      if (storedDeviceId != null) {
+        _deviceId = int.tryParse(storedDeviceId) ?? 0;
+      } else {
+        // Generate a random positive device ID (1..2^30) to avoid collision
+        // with legacy device_id=0 from single-device era.
+        _deviceId = Random.secure().nextInt(1 << 30) + 1;
+        await store.write(_deviceIdPref, _deviceId.toString());
+        debugPrint('[Crypto] Generated new device_id: $_deviceId');
+      }
+
       final storedPrivate = await store.read(_identityKeyPref);
 
       if (storedPrivate != null) {
@@ -437,6 +461,7 @@ class CryptoService {
       'signed_prekey_signature': sigB64,
       'signed_prekey_id': 1,
       'one_time_prekeys': otps,
+      'device_id': _deviceId,
     });
 
     final response = await http.post(

@@ -667,6 +667,7 @@ async fn fanout_message(
         .unwrap_or_default();
 
     let mut any_delivered = false;
+    let mut offline_user_ids = Vec::new();
     for member_id in &member_ids {
         if *member_id == sender_id {
             continue;
@@ -679,6 +680,8 @@ async fn fanout_message(
             .send_to(member_id, WsMessage::Text(json.clone().into()))
         {
             any_delivered = true;
+        } else {
+            offline_user_ids.push(*member_id);
         }
     }
 
@@ -695,6 +698,32 @@ async fn fanout_message(
                 .hub
                 .send_to(&sender_id, WsMessage::Text(delivered_json.into()));
         }
+    }
+
+    // Send push notifications to offline users
+    if !offline_user_ids.is_empty() {
+        let content = match message {
+            ServerMessage::NewMessage { content, .. } => content.as_str(),
+            _ => "New message",
+        };
+        let sender_name = match message {
+            ServerMessage::NewMessage { from_username, .. } => from_username.as_str(),
+            _ => "Someone",
+        };
+        let pool = state.pool.clone();
+        let sender_name = sender_name.to_string();
+        let content = content.to_string();
+        tokio::spawn(async move {
+            crate::push::notify_offline_users(
+                &pool,
+                &offline_user_ids,
+                &sender_name,
+                &content,
+                conv_id,
+                stored_id,
+            )
+            .await;
+        });
     }
 }
 

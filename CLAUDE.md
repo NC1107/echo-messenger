@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Echo Messenger -- encrypted cross-platform chat app (Discord alternative). Rust server + Flutter client (web, Linux, Windows). Live at https://echo-messenger.us. Self-hosted via Docker + Traefik + Watchtower.
+Echo Messenger -- encrypted cross-platform chat app (Discord alternative). Rust server + Flutter client (web, Linux, Windows, Android, iOS). Live at https://echo-messenger.us. Self-hosted via Docker + Traefik.
 
 ## Git Workflow
 
 **Always work on the `dev` branch.** Push to `dev`, then merge to `main` via PR.
 
 - `dev` branch: runs lint CI (Rust CI + Flutter CI) + dev builds (Linux AppImage + Web only)
-- `main` branch: runs the full release pipeline (Linux, Windows, Android, Web, Server, Docker, GitHub Release)
+- `main` branch: runs the full release pipeline (Linux, Windows, Android, iOS, Web, Server, Docker, GitHub Release). Auto-increments patch version from git tags.
 - **Never push directly to `main`** unless it's a hotfix. Use `git checkout dev && git merge main` to sync.
 
 ```bash
@@ -71,7 +71,7 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - `apps/client/` -- Flutter app, Riverpod state management, GoRouter navigation
 - `core/rust-core/` -- Shared Rust library: Signal Protocol (X3DH + Double Ratchet), crypto primitives, FFI bridge
 
-**Server startup sequence** (main.rs): load .env -> tracing -> create upload dirs (`./uploads/avatars`) -> Config::from_env() -> PG pool + auto-migrate SQL files (`apps/server/migrations/`, 25+ migrations) -> spawn WebSocket Hub (DashMap) -> spawn background tasks (stale voice session cleanup every 60s, empty group cleanup) -> build Axum router -> bind with graceful shutdown.
+**Server startup sequence** (main.rs): load .env -> tracing -> create upload dirs (`./uploads/avatars`) -> Config::from_env() -> PG pool + auto-migrate SQL files (`apps/server/migrations/`, 9 migrations) -> spawn WebSocket Hub (DashMap) -> spawn background tasks (stale voice session cleanup every 60s, empty group cleanup) -> build Axum router -> bind with graceful shutdown.
 
 **Key server modules**:
 - `auth/` -- JWT (15-min access + 7-day refresh), Argon2id passwords, AuthUser middleware extractor
@@ -108,7 +108,7 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - **Web renderer**: CanvasKit is the default (and only) renderer in Flutter 3.22+. The `--web-renderer` flag was removed.
 - **Rust edition 2024** used in both Cargo.toml and rustfmt.toml.
 - **rustfmt**: max_width=100, Unix newlines, field_init_shorthand + try_shorthand enabled.
-- **Server required env**: `DATABASE_URL` and `JWT_SECRET` (panics without them). `CORS_ORIGINS` for allowed origins.
+- **Server required env**: `DATABASE_URL` and `JWT_SECRET` (≥32 chars, panics without them). Optional: `HOST` (default `0.0.0.0`), `PORT` (default `8080`), `CORS_ORIGINS` for allowed origins, `RUST_LOG` for log filtering (e.g. `echo_server=debug`).
 - **Traefik routing**: API priority 100, Web priority 1 (API routes must take precedence).
 - **Message wire format**: Initial = `[0xEC, 0x01] + identity_pub(32) + ephemeral_pub(32) + session_wire`; Normal = `header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`. Both base64-wrapped over WebSocket.
 - **Soft deletes**: Messages use `is_deleted` flag, not hard deletes.
@@ -126,12 +126,16 @@ Allowed types: `feat fix docs style refactor perf test build ci chore revert sec
 
 ## Docker Production
 
-Server image: multi-stage Rust build -> `debian:bookworm-slim`, non-root user (`echo:echo`, UID 1000), `tini` for signal handling. Web image: `nginx:alpine` serving Flutter web build. Both versioned via build args (`BUILD_ID`, `APP_VERSION`). Production compose uses Traefik with Cloudflare TLS, PostgreSQL backups (7-day retention), and LiveKit for voice.
+Server image: multi-stage Rust build -> `debian:bookworm-slim`, non-root user (`echo:echo`, UID 1000), `tini` for signal handling. Web image: `nginx:alpine` serving Flutter web build. Both versioned via build args (`BUILD_ID`, `APP_VERSION`).
+
+Three compose files in `infra/docker/`:
+- `docker-compose.yml` -- local dev (PostgreSQL 17 on port 5432)
+- `docker-compose.test.yml` -- CI (PostgreSQL on port 5433, avoids conflicts)
+- `docker-compose.prod.yml` -- production: Traefik with Cloudflare TLS, PostgreSQL backups (7-day/4-week/6-month retention), LiveKit for voice
 
 ## Known Limitations
 
-1. ~~Private keys stored in SharedPreferences~~ -- RESOLVED: migrated to flutter_secure_storage (platform keystore)
-2. Session keys cached forever in memory (no TTL)
-3. Multi-device: schema exists but single-device in practice
-4. `core/rust-core/src/api.rs` has `todo!()` stubs (FFI bridge not integrated)
-5. Rate limiting is in-memory only (resets on server restart)
+1. Session keys cached forever in memory (no TTL)
+2. Multi-device: schema exists but single-device in practice
+3. `core/rust-core/src/api.rs` has `todo!()` stubs (FFI bridge not integrated)
+4. Rate limiting is in-memory only (resets on server restart)

@@ -7,6 +7,7 @@ pub mod keys;
 pub mod link_preview;
 pub mod media;
 pub mod messages;
+pub mod push;
 pub mod reactions;
 pub mod users;
 pub mod voice;
@@ -217,6 +218,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/{id}/profile", get(users::get_profile))
         .route("/{id}/avatar", get(users::get_avatar));
 
+    let push_routes = Router::new()
+        .route("/register", post(push::register_token))
+        .route("/unregister", post(push::unregister_token));
+
     Router::new()
         .nest("/api/auth", auth_routes)
         .nest("/api/contacts", contact_routes)
@@ -224,6 +229,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api/groups", group_routes)
         .nest("/api/users", user_routes)
         .nest("/api/media", media_routes)
+        .nest("/api/push", push_routes)
         .nest("/api", message_routes)
         .route("/api/voice/token", post(voice::generate_token))
         .route("/api/link-preview", post(link_preview::fetch_preview))
