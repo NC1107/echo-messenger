@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show File;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
@@ -28,6 +29,7 @@ import 'input/input_status_bar.dart';
 import 'input/mention_autocomplete.dart';
 import 'input/reply_preview_bar.dart';
 import 'media_picker_panel.dart';
+import 'mobile_media_picker_panel.dart';
 
 /// Extracted chat input bar from ChatPanel (~850 lines).
 ///
@@ -67,10 +69,15 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   final _messageController = TextEditingController();
   final _inputFocusNode = FocusNode();
 
-  static const _mobileMediaPickerHeightRatio = 0.45;
-
   bool _isTextEmpty = true;
   bool _showMediaPicker = false;
+
+  /// Inline picker visible on mobile (replaces keyboard).
+  bool _showInlinePicker = false;
+
+  /// Last known keyboard height -- used to size the inline picker so it
+  /// occupies the same space the keyboard did.
+  double _lastKeyboardHeight = 0;
 
   // File picker guard
   bool _isPickingFile = false;
@@ -124,6 +131,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _editingMessage = null;
       _isTextEmpty = true;
       _showMediaPicker = false;
+      _showInlinePicker = false;
       ref.read(chatProvider.notifier).clearReplyTo();
 
       // Load draft for the new conversation
@@ -238,6 +246,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _messageController.clear();
     _saveDraftImmediate(widget.conversation.id, '');
     if (_showMediaPicker) setState(() => _showMediaPicker = false);
+    if (_showInlinePicker) setState(() => _showInlinePicker = false);
     widget.onMessageSent();
   }
 
@@ -737,7 +746,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
       onPressed: () {
         if (isMobileLayout) {
-          _showMobileMediaPicker();
+          if (_showInlinePicker) {
+            setState(() => _showInlinePicker = false);
+            _inputFocusNode.requestFocus();
+          } else {
+            setState(() => _showInlinePicker = true);
+            _inputFocusNode.unfocus();
+          }
+          widget.onMediaPickerChanged?.call();
         } else {
           setState(() => _showMediaPicker = !_showMediaPicker);
           widget.onMediaPickerChanged?.call();
@@ -749,59 +765,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     );
   }
 
-  void _showMobileMediaPicker() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Container(
-            height:
-                MediaQuery.of(sheetContext).size.height *
-                _mobileMediaPickerHeightRatio,
-            decoration: BoxDecoration(
-              color: context.surface,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16),
-              ),
-              border: Border.all(color: context.border),
-            ),
-            child: MediaPickerPanel(
-              onEmojiSelected: (category, emoji) {
-                Navigator.pop(sheetContext);
-                final text = _messageController.text;
-                final selection = _messageController.selection;
-                final cursorPos = selection.baseOffset >= 0
-                    ? selection.baseOffset
-                    : text.length;
-                final newText =
-                    text.substring(0, cursorPos) +
-                    emoji.emoji +
-                    text.substring(cursorPos);
-                _messageController.text = newText;
-                _messageController.selection = TextSelection.collapsed(
-                  offset: cursorPos + emoji.emoji.length,
-                );
-              },
-              onGifSelected: (gifUrl, slug) {
-                Navigator.pop(sheetContext);
-                setState(() {
-                  _pendingAttachmentUrl = gifUrl;
-                  _pendingAttachmentExt = 'gif';
-                  _pendingAttachmentFileName = 'gif';
-                  _pendingAttachmentMimeType = 'image/gif';
-                  _pendingAttachmentBytes = null;
-                  _isUploadingAttachment = false;
-                });
-              },
-              onClose: () => Navigator.pop(sheetContext),
-            ),
-          ),
-        );
-      },
-    );
-  }
+  /// Expose inline picker state for ChatPanel layout adjustments.
+  bool get showInlinePicker => _showInlinePicker;
 
   /// Handles push-to-talk key events. Returns true if the event was consumed.
   bool _handlePushToTalk(
@@ -836,6 +801,9 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         _showMentionPicker = false;
         _mentionQuery = '';
       });
+    } else if (_showInlinePicker) {
+      setState(() => _showInlinePicker = false);
+      _inputFocusNode.requestFocus();
     } else if (_showMediaPicker) {
       setState(() => _showMediaPicker = false);
       _inputFocusNode.requestFocus();
@@ -980,6 +948,9 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           ),
           onChanged: _onInputChanged,
           onTap: () {
+            if (_showInlinePicker) {
+              setState(() => _showInlinePicker = false);
+            }
             if (showMediaPicker) {
               setState(() => _showMediaPicker = false);
             }
@@ -1155,6 +1126,18 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final showMediaPicker = _showMediaPicker && !isMobileLayout;
     final effectiveActiveVoiceChannelId = widget.effectiveActiveVoiceChannelId;
 
+    // Track keyboard height so the inline picker can match it.
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    if (keyboardHeight > 150) {
+      _lastKeyboardHeight = keyboardHeight;
+    }
+
+    // When inline picker is showing, don't add bottom safe area padding
+    // (the picker itself covers that space).
+    final bottomPadding = _showInlinePicker
+        ? 8.0
+        : 20.0 + MediaQuery.of(context).padding.bottom;
+
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -1170,12 +1153,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
               ),
             // Input area
             Container(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                8,
-                20,
-                20 + MediaQuery.of(context).padding.bottom,
-              ),
+              padding: EdgeInsets.fromLTRB(20, 8, 20, bottomPadding),
               color: context.chatBg,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1213,10 +1191,62 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                 ],
               ),
             ),
+            // Inline mobile picker (replaces keyboard)
+            if (_showInlinePicker && isMobileLayout)
+              SizedBox(
+                height: _lastKeyboardHeight > 0 ? _lastKeyboardHeight : 280,
+                child: MobileMediaPickerPanel(
+                  onEmojiSelected: (category, emoji) {
+                    final text = _messageController.text;
+                    final selection = _messageController.selection;
+                    final cursorPos = selection.baseOffset >= 0
+                        ? selection.baseOffset
+                        : text.length;
+                    final newText =
+                        text.substring(0, cursorPos) +
+                        emoji.emoji +
+                        text.substring(cursorPos);
+                    _messageController.text = newText;
+                    _messageController.selection = TextSelection.collapsed(
+                      offset: cursorPos + emoji.emoji.length,
+                    );
+                    _onInputChanged(newText);
+                  },
+                  onGifSelected: (gifUrl, slug) {
+                    setState(() {
+                      _showInlinePicker = false;
+                      _pendingAttachmentUrl = gifUrl;
+                      _pendingAttachmentExt = 'gif';
+                      _pendingAttachmentFileName = 'gif';
+                      _pendingAttachmentMimeType = 'image/gif';
+                      _pendingAttachmentBytes = null;
+                      _isUploadingAttachment = false;
+                    });
+                  },
+                  onPhotoSelected: _handlePhotoSelected,
+                  onClose: () {
+                    setState(() => _showInlinePicker = false);
+                    _inputFocusNode.requestFocus();
+                  },
+                ),
+              ),
           ],
         ),
         // Media picker is rendered by ChatPanel in its own Stack (above message list).
       ],
+    );
+  }
+
+  /// Handle a photo selected from the camera roll gallery.
+  void _handlePhotoSelected(File file, String fileName, String mimeType) {
+    final bytes = file.readAsBytesSync();
+    final ext = fileName.split('.').last.toLowerCase();
+    setState(() => _showInlinePicker = false);
+    _setPendingAttachment(
+      bytes: bytes,
+      fileName: fileName,
+      mimeType: mimeType,
+      ext: ext,
     );
   }
 }

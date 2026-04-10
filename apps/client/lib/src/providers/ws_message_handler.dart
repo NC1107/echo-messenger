@@ -7,6 +7,7 @@ import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
 import '../services/debug_log_service.dart';
+import '../services/message_cache.dart';
 import '../services/group_crypto_service.dart';
 import '../services/notification_service.dart';
 import '../services/sound_service.dart';
@@ -318,6 +319,13 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       msg = msg.copyWith(isEncrypted: true);
     }
     ref.read(chatProvider.notifier).addMessage(msg);
+
+    // Cache the decrypted message to Hive immediately so that historical
+    // message loads can retrieve it without re-decryption (Double Ratchet
+    // keys are consumed once and cannot be re-derived).
+    if (!msg.id.startsWith('pending_')) {
+      MessageCache.cacheMessages(conversationId, [msg]);
+    }
 
     // Update conversations list with decrypted preview
     ref
