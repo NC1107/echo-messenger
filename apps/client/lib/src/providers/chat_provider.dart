@@ -349,6 +349,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       var msg = ChatMessage.fromServerJson(e as Map<String, dynamic>, myUserId);
       msg = await _decryptIfNeeded(
         msg,
+        myUserId: myUserId,
         isGroup: isGroup,
         crypto: crypto,
         groupCrypto: groupCrypto,
@@ -361,6 +362,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   Future<ChatMessage> _decryptIfNeeded(
     ChatMessage msg, {
+    required String myUserId,
     required bool isGroup,
     CryptoService? crypto,
     GroupCryptoService? groupCrypto,
@@ -400,20 +402,37 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // Skip decryption for non-encrypted group messages
     if (isGroup || !looksEncrypted(msg.content)) return msg;
 
+    // Check Hive cache first — Double Ratchet keys are consumed once and
+    // cannot be re-derived, so previously decrypted messages must come from
+    // the cache rather than re-decryption.
+    if (conversationId != null) {
+      final cached = MessageCache.getCachedMessage(
+        conversationId,
+        msg.id,
+        myUserId,
+      );
+      if (cached != null && !looksEncrypted(cached.content)) {
+        return cached.copyWith(isEncrypted: true);
+      }
+    }
+
     if (crypto == null) {
       return msg.copyWith(content: '[Encrypted history]', isEncrypted: true);
     }
 
-    try {
-      final decrypted = await crypto.decryptMessage(
-        msg.fromUserId,
-        msg.content,
-      );
+    // Use decryptHistoryMessage which never creates new sessions and returns
+    // null on failure instead of throwing.
+    final decrypted = await crypto.decryptHistoryMessage(
+      msg.fromUserId,
+      msg.content,
+    );
+    if (decrypted != null) {
       return msg.copyWith(content: decrypted, isEncrypted: true);
-    } catch (e) {
-      debugPrint('[Chat] History decrypt failed for ${msg.id}: $e');
-      return msg.copyWith(content: '[Could not decrypt]', isEncrypted: true);
     }
+    return msg.copyWith(
+      content: '[Message encrypted - history unavailable]',
+      isEncrypted: true,
+    );
   }
 
   void _setLoadingHistory(String historyKey, bool loading) {

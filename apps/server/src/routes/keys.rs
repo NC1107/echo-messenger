@@ -233,3 +233,23 @@ pub async fn get_devices(
         device_ids,
     }))
 }
+
+/// Query parameters for the OTP count endpoint.
+#[derive(Debug, Deserialize)]
+pub struct OtpCountQuery {
+    #[serde(default)]
+    pub device_id: i32,
+}
+
+/// GET /api/keys/otp-count -- return the number of unused one-time prekeys
+/// for the authenticated user's device so the client can decide whether to
+/// replenish.
+pub async fn get_otp_count(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+    axum::extract::Query(query): axum::extract::Query<OtpCountQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let count =
+        db::keys::count_one_time_prekeys(&state.pool, auth_user.user_id, query.device_id).await?;
+    Ok(Json(serde_json::json!({ "count": count })))
+}

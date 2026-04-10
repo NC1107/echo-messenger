@@ -68,7 +68,12 @@ pub async fn store_signed_prekey(
     Ok(())
 }
 
-/// Store one-time prekeys for a user's device (appends, does not replace).
+/// Store one-time prekeys for a user's device.
+///
+/// Uses DO UPDATE to self-heal if the client re-uploads a key_id that already
+/// exists (e.g. counter reset).  The client always holds the private key for
+/// the most recently generated OTP, so the server must store the matching
+/// public key.  Also resets `used = false` so the key is consumable again.
 pub async fn store_one_time_prekeys(
     pool: &PgPool,
     user_id: Uuid,
@@ -79,7 +84,9 @@ pub async fn store_one_time_prekeys(
         sqlx::query(
             "INSERT INTO one_time_prekeys (user_id, device_id, key_id, public_key) \
              VALUES ($1, $2, $3, $4) \
-             ON CONFLICT (user_id, key_id) DO NOTHING",
+             ON CONFLICT (user_id, device_id, key_id) \
+             DO UPDATE SET public_key = EXCLUDED.public_key, \
+                           used = false",
         )
         .bind(user_id)
         .bind(device_id)
@@ -164,14 +171,20 @@ pub async fn get_user_devices(pool: &PgPool, user_id: Uuid) -> Result<Vec<i32>, 
     Ok(rows.into_iter().map(|(d,)| d).collect())
 }
 
-/// Count available (unused) one-time prekeys for a user.
-#[allow(dead_code)] // Will be used for prekey replenishment logic
-pub async fn count_one_time_prekeys(pool: &PgPool, user_id: Uuid) -> Result<i64, sqlx::Error> {
-    let row: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM one_time_prekeys WHERE user_id = $1 AND NOT used")
-            .bind(user_id)
-            .fetch_one(pool)
-            .await?;
+/// Count available (unused) one-time prekeys for a user's device.
+pub async fn count_one_time_prekeys(
+    pool: &PgPool,
+    user_id: Uuid,
+    device_id: i32,
+) -> Result<i64, sqlx::Error> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM one_time_prekeys \
+         WHERE user_id = $1 AND device_id = $2 AND NOT used",
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .fetch_one(pool)
+    .await?;
     Ok(row.0)
 }
 

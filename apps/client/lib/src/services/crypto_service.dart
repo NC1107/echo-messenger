@@ -9,6 +9,7 @@
 /// automatically moved to secure storage and removed from SharedPreferences.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -35,6 +36,7 @@ class CryptoService {
   static const _signedPrekeyCreatedAtPref = 'echo_signed_prekey_created_at';
   static const _signedPrekeyPreviousPref = 'echo_signed_prekey_previous';
   static const _signedPrekeyPreviousPubPref = 'echo_signed_prekey_previous_pub';
+  static const _otpNextIdPref = 'echo_otp_next_id';
 
   /// Duration after which the signed prekey should be rotated.
   static const _signedPrekeyMaxAge = Duration(days: 7);
@@ -76,11 +78,35 @@ class CryptoService {
   int? _lastOtpKeyId;
   bool _keysAreFresh = false;
   bool _keysWereRegenerated = false;
+  bool _needsOtpReplenishment = false;
+
+  /// Per-peer async lock to serialize encrypt/decrypt operations.
+  /// Prevents interleaved async ops from corrupting session chain state.
+  final Map<String, Completer<void>> _sessionLocks = {};
 
   final _x25519 = X25519();
   final _ed25519 = Ed25519();
 
   CryptoService({required this.serverUrl});
+
+  /// Serialize async operations on a per-peer session to prevent interleaved
+  /// encrypt/decrypt calls from corrupting the chain state.
+  Future<T> _withSessionLock<T>(
+    String peerId,
+    Future<T> Function() operation,
+  ) async {
+    while (_sessionLocks.containsKey(peerId)) {
+      await _sessionLocks[peerId]!.future;
+    }
+    final completer = Completer<void>();
+    _sessionLocks[peerId] = completer;
+    try {
+      return await operation();
+    } finally {
+      _sessionLocks.remove(peerId);
+      completer.complete();
+    }
+  }
 
   void setToken(String token) {
     _token = token;
@@ -219,12 +245,16 @@ class CryptoService {
           _keysAreFresh = true;
         }
 
-        // Always mark keys as needing upload so the server has the current
-        // bundle.  The upload endpoint is idempotent (UPSERT), so re-uploading
-        // unchanged keys is harmless.  Without this, returning users who
-        // restore keys from secure storage would never upload, leaving the
-        // server without a PreKey bundle for them (breaking DMs).
+        // Always mark identity bundle for upload so the server has the
+        // current bundle.  The upload endpoint is idempotent (UPSERT), so
+        // re-uploading unchanged keys is harmless.  Without this, returning
+        // users who restore keys from secure storage would never upload,
+        // leaving the server without a PreKey bundle (breaking DMs).
         _keysAreFresh = true;
+        // Do NOT regenerate OTP keys on restore — existing OTP private keys
+        // in SecureKeyStore still match the public keys on the server.
+        // Regenerating would overwrite them and cause key-ID collisions.
+        _needsOtpReplenishment = false;
 
         // Load persisted sessions
         await _loadSessions(store);
@@ -252,6 +282,7 @@ class CryptoService {
         );
 
         _keysAreFresh = true;
+        _needsOtpReplenishment = true; // Fresh install needs OTP keys
       }
     } catch (e) {
       rethrow;
@@ -382,22 +413,47 @@ class CryptoService {
     await store.write(_signedPrekeyPubPref, base64Encode(spkPubKey.bytes));
   }
 
+  /// Peers whose sessions were corrupted in storage.  We do not silently
+  /// create new outgoing sessions for these peers — the caller must decide
+  /// whether to force-reset.
+  final Set<String> _corruptedSessions = {};
+
   /// Load persisted Signal sessions from secure storage.
   Future<void> _loadSessions(SecureKeyStore store) async {
     _sessions.clear();
+    _corruptedSessions.clear();
     final allEntries = await store.readAll();
     for (final entry in allEntries.entries) {
-      if (entry.key.startsWith(_sessionPrefix)) {
+      if (entry.key.startsWith(_sessionPrefix) &&
+          !entry.key.contains('corrupt_')) {
         final peerId = entry.key.substring(_sessionPrefix.length);
         try {
           final json = jsonDecode(entry.value) as Map<String, dynamic>;
           _sessions[peerId] = SignalSession.fromJson(json);
         } catch (e) {
-          debugPrint('[Crypto] Failed to load session for $peerId: $e');
+          debugPrint('[Crypto] Quarantining corrupted session for $peerId: $e');
+          // Quarantine instead of deleting — preserve data for potential
+          // manual recovery and prevent getOrCreateSession from silently
+          // creating an incompatible new session.
+          await store.write('${_sessionPrefix}corrupt_$peerId', entry.value);
           await store.delete(entry.key);
+          _corruptedSessions.add(peerId);
         }
       }
     }
+  }
+
+  /// Force-reset a corrupted or broken session with a peer.
+  ///
+  /// Clears the quarantined session and creates a new outgoing session.
+  /// The first message sent will be an initial X3DH message which the peer
+  /// will accept (replacing their stale session).
+  Future<void> forceResetSession(String peerUserId) async {
+    final store = SecureKeyStore.instance;
+    await store.delete('${_sessionPrefix}corrupt_$peerUserId');
+    _corruptedSessions.remove(peerUserId);
+    _sessions.remove(peerUserId);
+    await store.delete('$_sessionPrefix$peerUserId');
   }
 
   /// Persist a Signal session to secure storage.
@@ -413,7 +469,7 @@ class CryptoService {
   /// - X25519 identity key
   /// - Ed25519 signing key (for prekey signature verification)
   /// - Signed prekey with real Ed25519 signature
-  /// - One-time prekeys
+  /// - One-time prekeys (only when replenishment is needed)
   Future<void> uploadKeys() async {
     if (_identityKeyPair == null) await init();
 
@@ -435,23 +491,15 @@ class CryptoService {
     final signingPub = await _signingKeyPair!.extractPublicKey();
     final signingPubB64 = base64Encode(signingPub.bytes);
 
-    // Generate one-time prekeys and persist private keys
-    final store = SecureKeyStore.instance;
+    // Only generate new OTP keys when replenishment is actually needed
+    // (fresh install, key regeneration, or server count is low).
+    // On normal restart, we keep existing OTP private keys intact to avoid
+    // the key-ID collision bug where the server holds old public keys but
+    // the client overwrites local private keys with new material.
     final otps = <Map<String, dynamic>>[];
-    for (var i = 0; i < 10; i++) {
-      final otpPair = await _x25519.newKeyPair();
-      final otpPub = await otpPair.extractPublicKey();
-      final otpPrivBytes = await (otpPair as SimpleKeyPairData)
-          .extractPrivateKeyBytes();
-
-      // Persist OTP key pair keyed by key_id for lookup during decryption
-      final pubB64 = base64Encode(otpPub.bytes);
-      await store.write(
-        '$_otpPrivatePrefix$i',
-        jsonEncode({'private': base64Encode(otpPrivBytes), 'public': pubB64}),
-      );
-
-      otps.add({'key_id': i, 'public_key': pubB64});
+    if (_needsOtpReplenishment) {
+      await _generateAndPersistOtpKeys(otps);
+      _needsOtpReplenishment = false;
     }
 
     final body = jsonEncode({
@@ -477,6 +525,106 @@ class CryptoService {
       throw Exception(
         'Failed to upload keys: HTTP ${response.statusCode} ${response.body}',
       );
+    }
+  }
+
+  /// Generate 10 new OTP key pairs with monotonically increasing IDs.
+  ///
+  /// Uses a persisted counter ([_otpNextIdPref]) so that IDs never collide
+  /// with previously uploaded keys. This prevents the critical bug where
+  /// re-using IDs 0-9 on every upload causes the server to keep old public
+  /// keys (via ON CONFLICT DO NOTHING) while the client overwrites local
+  /// private keys with new material.
+  Future<void> _generateAndPersistOtpKeys(
+    List<Map<String, dynamic>> otps,
+  ) async {
+    final store = SecureKeyStore.instance;
+
+    // Read persisted counter (default 0 for first-ever upload)
+    int nextId = 0;
+    final storedNextId = await store.read(_otpNextIdPref);
+    if (storedNextId != null) {
+      nextId = int.tryParse(storedNextId) ?? 0;
+    }
+
+    for (var i = 0; i < 10; i++) {
+      final keyId = nextId + i;
+      final otpPair = await _x25519.newKeyPair();
+      final otpPub = await otpPair.extractPublicKey();
+      final otpPrivBytes = await (otpPair as SimpleKeyPairData)
+          .extractPrivateKeyBytes();
+
+      final pubB64 = base64Encode(otpPub.bytes);
+      await store.write(
+        '$_otpPrivatePrefix$keyId',
+        jsonEncode({'private': base64Encode(otpPrivBytes), 'public': pubB64}),
+      );
+
+      otps.add({'key_id': keyId, 'public_key': pubB64});
+    }
+
+    // Persist the next counter value for future uploads
+    await store.write(_otpNextIdPref, '${nextId + 10}');
+    debugPrint('[Crypto] Generated OTP keys $nextId..${nextId + 9}');
+  }
+
+  /// Check the server's remaining unused OTP count and replenish if low.
+  Future<void> checkAndReplenishOtpKeys() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$serverUrl/api/keys/otp-count?device_id=$_deviceId'),
+        headers: {'Authorization': 'Bearer $_token'},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final count = data['count'] as int? ?? 0;
+        if (count < 5) {
+          debugPrint('[Crypto] OTP count low ($count), replenishing...');
+          final otps = <Map<String, dynamic>>[];
+          await _generateAndPersistOtpKeys(otps);
+          // Upload just the new OTPs (identity bundle already on server)
+          await _uploadOtpBatch(otps);
+        }
+      }
+    } catch (e) {
+      debugPrint('[Crypto] OTP replenishment check failed: $e');
+    }
+  }
+
+  /// Upload a batch of OTP public keys to the server.
+  Future<void> _uploadOtpBatch(List<Map<String, dynamic>> otps) async {
+    if (otps.isEmpty) return;
+    if (_identityKeyPair == null) return;
+
+    final publicKey = await _identityKeyPair!.extractPublicKey();
+    final spkPub = await _signedPrekeyPair!.extractPublicKey();
+    final signature = await _ed25519.sign(
+      spkPub.bytes,
+      keyPair: _signingKeyPair!,
+    );
+    final signingPub = await _signingKeyPair!.extractPublicKey();
+
+    final body = jsonEncode({
+      'identity_key': base64Encode(publicKey.bytes),
+      'signing_key': base64Encode(signingPub.bytes),
+      'signed_prekey': base64Encode(spkPub.bytes),
+      'signed_prekey_signature': base64Encode(signature.bytes),
+      'signed_prekey_id': 1,
+      'one_time_prekeys': otps,
+      'device_id': _deviceId,
+    });
+
+    final response = await http.post(
+      Uri.parse('$serverUrl/api/keys/upload'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_token',
+      },
+      body: body,
+    );
+
+    if (response.statusCode == 201) {
+      debugPrint('[Crypto] Uploaded ${otps.length} new OTP keys');
     }
   }
 
@@ -602,10 +750,26 @@ class CryptoService {
   ///
   /// For the first message (new session), includes X3DH key exchange data
   /// so the receiver can establish the session as Bob.
-  Future<String> encryptMessage(String peerUserId, String plaintext) async {
+  Future<String> encryptMessage(String peerUserId, String plaintext) =>
+      _withSessionLock(
+        peerUserId,
+        () => _encryptMessageImpl(peerUserId, plaintext),
+      );
+
+  Future<String> _encryptMessageImpl(
+    String peerUserId,
+    String plaintext,
+  ) async {
     final isNewSession = !_sessions.containsKey(peerUserId);
     final session = await getOrCreateSession(peerUserId);
     final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
+
+    // Write-ahead: save session state BEFORE mutation so that if the app
+    // crashes between encrypt and the post-save, the session reloads to the
+    // pre-mutation state.  The unsent message can safely be re-encrypted.
+    if (!isNewSession) {
+      await _saveSession(peerUserId, session);
+    }
 
     final wire = await session.encrypt(plaintextBytes);
 
@@ -648,7 +812,16 @@ class CryptoService {
   ///
   /// If this is an initial message (contains X3DH key exchange prefix),
   /// establishes the session as Bob (responder) before decrypting.
-  Future<String> decryptMessage(String peerUserId, String ciphertextB64) async {
+  Future<String> decryptMessage(String peerUserId, String ciphertextB64) =>
+      _withSessionLock(
+        peerUserId,
+        () => _decryptMessageImpl(peerUserId, ciphertextB64),
+      );
+
+  Future<String> _decryptMessageImpl(
+    String peerUserId,
+    String ciphertextB64,
+  ) async {
     final fullWire = Uint8List.fromList(base64Decode(ciphertextB64));
 
     // Check for initial message magic prefix (V1 or V2)
@@ -755,14 +928,72 @@ class CryptoService {
         await _deleteOtpPrivateKey(consumedId);
       }
 
+      // An OTP was consumed on the server — check if we need to replenish.
+      // Fire-and-forget so decryption isn't blocked by the network call.
+      unawaited(checkAndReplenishOtpKeys());
+
       return utf8.decode(plainBytes);
     }
 
-    // Normal message -- use existing session
-    final session = await getOrCreateSession(peerUserId);
+    // Normal message — use existing session only.  Do NOT call
+    // getOrCreateSession() here: creating a brand-new X3DH session for a
+    // non-initial message would produce an incompatible session that can't
+    // decrypt the message and would pollute state.
+    final session = _sessions[peerUserId];
+    if (session == null) {
+      throw Exception(
+        'No session for $peerUserId — cannot decrypt normal message. '
+        'Awaiting new X3DH initial message from peer.',
+      );
+    }
+    // Write-ahead: save before mutation so crash recovery replays correctly
+    await _saveSession(peerUserId, session);
     final plainBytes = await session.decrypt(fullWire);
     await _saveSession(peerUserId, session);
     return utf8.decode(plainBytes);
+  }
+
+  /// Attempt to decrypt a historical message using the existing session.
+  ///
+  /// Unlike [decryptMessage], this method:
+  /// - Never creates a new X3DH session (avoids polluting state)
+  /// - Returns null on failure instead of throwing
+  /// - Is safe to call for messages the session may have already advanced past
+  ///
+  /// The Double Ratchet consumes per-message keys once; re-decryption is only
+  /// possible for messages whose keys are still in the skipped-keys window.
+  /// Callers should check the Hive cache first before calling this method.
+  Future<String?> decryptHistoryMessage(
+    String peerUserId,
+    String ciphertextB64,
+  ) async {
+    try {
+      final fullWire = Uint8List.fromList(base64Decode(ciphertextB64));
+
+      // Initial messages (X3DH prefix) in history should not re-establish
+      // sessions — that would break the current session state.
+      final isV1 =
+          fullWire.length > 66 &&
+          fullWire[0] == _initialMsgMagicV1[0] &&
+          fullWire[1] == _initialMsgMagicV1[1];
+      final isV2 =
+          fullWire.length > 70 &&
+          fullWire[0] == _initialMsgMagicV2[0] &&
+          fullWire[1] == _initialMsgMagicV2[1];
+      if (isV1 || isV2) {
+        // Can't safely re-process X3DH from history
+        return null;
+      }
+
+      final session = _sessions[peerUserId];
+      if (session == null) return null;
+
+      final plainBytes = await session.decrypt(fullWire);
+      await _saveSession(peerUserId, session);
+      return utf8.decode(plainBytes);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Check whether a session can be established with [peerUserId].
@@ -802,6 +1033,8 @@ class CryptoService {
     for (final key in _allCryptoKeys) {
       await store.delete(key);
     }
+    // Reset the OTP counter so fresh keys start from 0
+    await store.delete(_otpNextIdPref);
     final allEntries = await store.readAll();
     for (final key in allEntries.keys) {
       if (key.startsWith(_sessionPrefix) || key.startsWith(_otpPrivatePrefix)) {
@@ -871,6 +1104,7 @@ class CryptoService {
     _lastOtpKeyId = null;
     _keysAreFresh = false;
     _keysWereRegenerated = false;
+    _needsOtpReplenishment = false;
   }
 
   // -----------------------------------------------------------------------

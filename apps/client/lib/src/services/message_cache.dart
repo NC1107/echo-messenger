@@ -42,6 +42,25 @@ class MessageCache {
     return messages;
   }
 
+  /// Look up a single cached message by conversation and message ID.
+  ///
+  /// Returns null if the message is not in the cache.  Used by the history
+  /// decryption path to avoid re-decrypting messages that were already
+  /// decrypted and cached (Double Ratchet keys are consumed once and cannot
+  /// be re-derived).
+  static ChatMessage? getCachedMessage(
+    String conversationId,
+    String messageId,
+    String myUserId,
+  ) {
+    final box = _box;
+    if (box == null) return null;
+    final raw = box.get('$conversationId:$messageId');
+    if (raw == null) return null;
+    final json = Map<String, dynamic>.from(raw);
+    return ChatMessage.fromServerJson(json, myUserId);
+  }
+
   static Future<void> clearAll() async {
     await _box?.clear();
   }

@@ -142,7 +142,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/bundle/{user_id}/{device_id}",
             get(keys::get_device_bundle),
         )
-        .route("/devices/{user_id}", get(keys::get_devices));
+        .route("/devices/{user_id}", get(keys::get_devices))
+        .route("/otp-count", get(keys::get_otp_count));
 
     let media_routes = Router::new()
         .route("/upload", post(media::upload))

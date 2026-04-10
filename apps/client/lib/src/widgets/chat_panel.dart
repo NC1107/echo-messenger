@@ -1298,7 +1298,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                   _scrollToBottom(settleRetries: 2);
                   _markAsRead();
                 },
-                onMediaPickerChanged: () => setState(() {}),
+                onMediaPickerChanged: () {
+                  setState(() {});
+                  // Scroll to bottom when inline picker appears/disappears
+                  // so the latest messages stay visible.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _scrollToBottom(settleRetries: 2);
+                  });
+                },
               ),
 
               ..._buildVoiceRenderers(),
