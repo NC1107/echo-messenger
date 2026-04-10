@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/conversation.dart';
@@ -19,12 +20,14 @@ class QuickSwitcherOverlay extends ConsumerStatefulWidget {
 
 class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
   final _controller = TextEditingController();
+  final _listScrollController = ScrollController();
   String _query = '';
   int _selectedIndex = 0;
 
   @override
   void dispose() {
     _controller.dispose();
+    _listScrollController.dispose();
     super.dispose();
   }
 
@@ -47,6 +50,21 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
     }
   }
 
+  static const _itemHeight = 44.0;
+
+  void _scrollToSelected() {
+    if (!_listScrollController.hasClients) return;
+    final offset = (_selectedIndex * _itemHeight).clamp(
+      0.0,
+      _listScrollController.position.maxScrollExtent,
+    );
+    _listScrollController.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 100),
+      curve: Curves.easeOut,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final results = _filteredResults();
@@ -55,7 +73,21 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
       focusNode: FocusNode(),
       autofocus: true,
       onKeyEvent: (event) {
-        // Arrow up/down to navigate, Enter to select, Escape to close
+        if (event is! KeyDownEvent) return;
+        final results = _filteredResults();
+        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          setState(() {
+            _selectedIndex = (_selectedIndex + 1).clamp(0, results.length - 1);
+          });
+          _scrollToSelected();
+        } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+          setState(() {
+            _selectedIndex = (_selectedIndex - 1).clamp(0, results.length - 1);
+          });
+          _scrollToSelected();
+        } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+          Navigator.of(context).pop();
+        }
       },
       child: GestureDetector(
         onTap: () => Navigator.of(context).pop(),
@@ -136,56 +168,70 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
                     else
                       Flexible(
                         child: ListView.builder(
+                          controller: _listScrollController,
                           shrinkWrap: true,
                           itemCount: results.length,
                           itemBuilder: (context, index) {
                             final conv = results[index];
                             final isSelected = index == _selectedIndex;
                             final title = conv.name ?? conv.id;
-                            return Material(
-                              color: isSelected
-                                  ? context.accent.withValues(alpha: 0.1)
-                                  : Colors.transparent,
-                              child: InkWell(
-                                onTap: () {
-                                  widget.onSelect(conv);
-                                  Navigator.of(context).pop();
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 10,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        conv.isGroup
-                                            ? Icons.group
-                                            : Icons.person,
-                                        size: 20,
-                                        color: context.textSecondary,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          title,
-                                          style: TextStyle(
-                                            color: context.textPrimary,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
+                            return Container(
+                              height: _itemHeight,
+                              decoration: isSelected
+                                  ? BoxDecoration(
+                                      border: Border(
+                                        left: BorderSide(
+                                          color: context.accent,
+                                          width: 2,
                                         ),
                                       ),
-                                      if (conv.isGroup)
-                                        Text(
-                                          'Group',
-                                          style: TextStyle(
-                                            color: context.textMuted,
-                                            fontSize: 11,
+                                    )
+                                  : null,
+                              child: Material(
+                                color: isSelected
+                                    ? context.accent.withValues(alpha: 0.1)
+                                    : Colors.transparent,
+                                child: InkWell(
+                                  onTap: () {
+                                    widget.onSelect(conv);
+                                    Navigator.of(context).pop();
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          conv.isGroup
+                                              ? Icons.group
+                                              : Icons.person,
+                                          size: 20,
+                                          color: context.textSecondary,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            title,
+                                            style: TextStyle(
+                                              color: context.textPrimary,
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
-                                    ],
+                                        if (conv.isGroup)
+                                          Text(
+                                            'Group',
+                                            style: TextStyle(
+                                              color: context.textMuted,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),

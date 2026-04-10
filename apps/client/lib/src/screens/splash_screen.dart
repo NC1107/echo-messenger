@@ -79,11 +79,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       ref.read(updateProvider.notifier).check();
     }
 
-    // Ensure at least 1.5s of splash for visual polish
+    // Ensure at least 500ms of splash for the logo animation to complete
     stopwatch.stop();
     final elapsed = stopwatch.elapsedMilliseconds;
-    if (elapsed < 1500) {
-      await Future<void>.delayed(Duration(milliseconds: 1500 - elapsed));
+    if (elapsed < 500) {
+      await Future<void>.delayed(Duration(milliseconds: 500 - elapsed));
     }
 
     if (!mounted) return;

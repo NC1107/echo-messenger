@@ -885,15 +885,30 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     String serverUrl,
     Set<String> wsOnlineUsers,
   ) {
+    final Widget child;
     if (conversationsState.isLoading && allConversations.isEmpty) {
-      return const ConversationListSkeleton();
+      child = const ConversationListSkeleton(key: ValueKey('skeleton'));
+    } else if (conversations.isEmpty) {
+      child = KeyedSubtree(
+        key: const ValueKey('empty'),
+        child: _buildChatsEmptyState(),
+      );
+    } else {
+      final sorted = _sortConversations(conversations);
+      child = KeyedSubtree(
+        key: const ValueKey('list'),
+        child: _buildConversationList(
+          sorted,
+          myUserId,
+          serverUrl,
+          wsOnlineUsers,
+        ),
+      );
     }
-    if (conversations.isEmpty) {
-      return _buildChatsEmptyState();
-    }
-
-    final sorted = _sortConversations(conversations);
-    return _buildConversationList(sorted, myUserId, serverUrl, wsOnlineUsers);
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 200),
+      child: child,
+    );
   }
 
   Widget _buildChatsEmptyState() {

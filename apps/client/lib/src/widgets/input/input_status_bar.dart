@@ -23,26 +23,23 @@ class InputStatusBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         color: isEditing
             ? context.accent.withValues(alpha: 0.12)
             : context.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isEditing
-              ? context.accent.withValues(alpha: 0.4)
-              : context.border,
-          width: 1,
-        ),
+        borderRadius: BorderRadius.circular(6),
+        border: isEditing
+            ? Border.all(color: context.accent.withValues(alpha: 0.4), width: 1)
+            : null,
       ),
       child: Row(
         children: [
           if (isEditing)
             Icon(Icons.edit_outlined, size: 12, color: context.accent)
           else
-            TypingDots(color: context.textMuted, dotSize: 5),
+            TypingDots(color: context.textMuted, dotSize: 4),
           const SizedBox(width: 6),
           Expanded(
             child: Text(

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation.dart';
 import '../theme/echo_theme.dart';
@@ -35,6 +36,31 @@ class ConversationItem extends StatefulWidget {
 
 class _ConversationItemState extends State<ConversationItem> {
   bool _isHovered = false;
+  String? _draft;
+
+  static const _draftKeyPrefix = 'chat_draft_';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDraft();
+  }
+
+  @override
+  void didUpdateWidget(covariant ConversationItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.conversation.id != widget.conversation.id) {
+      _loadDraft();
+    }
+  }
+
+  Future<void> _loadDraft() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('$_draftKeyPrefix${widget.conversation.id}');
+    if (!mounted) return;
+    final draft = raw?.trim().isNotEmpty == true ? raw!.trim() : null;
+    if (draft != _draft) setState(() => _draft = draft);
+  }
 
   bool get _enableLongPressMenu {
     if (kIsWeb) {
@@ -260,19 +286,44 @@ class _ConversationItemState extends State<ConversationItem> {
     bool hasUnread,
     Conversation conv,
   ) {
+    final showDraft = _draft != null && !hasUnread;
     return Row(
       children: [
         Expanded(
-          child: Text(
-            snippet,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13,
-              color: context.textMuted,
-              fontWeight: hasUnread ? FontWeight.w500 : FontWeight.normal,
-            ),
-          ),
+          child: showDraft
+              ? RichText(
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: 'Draft: ',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: EchoTheme.danger,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      TextSpan(
+                        text: _draft,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: context.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : Text(
+                  snippet,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: context.textMuted,
+                    fontWeight: hasUnread ? FontWeight.w500 : FontWeight.normal,
+                  ),
+                ),
         ),
         if (conv.isMuted)
           Padding(
