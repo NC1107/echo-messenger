@@ -137,6 +137,179 @@ class _MessageItemState extends State<MessageItem> {
     }
   }
 
+  /// Shows a bottom action sheet for mobile users (replaces hover actions).
+  void _showMobileActionSheet(
+    BuildContext context,
+    ChatMessage msg,
+    bool isMine,
+    String? mediaUrl,
+  ) {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: context.border),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(top: 10, bottom: 4),
+                  decoration: BoxDecoration(
+                    color: context.textMuted.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                // Quick reaction row
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: reactionEmojis.map((emoji) {
+                      final alreadyReacted = msg.reactions.any(
+                        (r) => r.emoji == emoji && r.userId == widget.myUserId,
+                      );
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          widget.onReactionSelect?.call(msg, emoji);
+                        },
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: alreadyReacted
+                                ? context.accent.withValues(alpha: 0.2)
+                                : null,
+                            borderRadius: BorderRadius.circular(8),
+                            border: alreadyReacted
+                                ? Border.all(color: context.accent, width: 2)
+                                : null,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 24),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                Divider(height: 1, color: context.border),
+                // Action list
+                if (widget.onReply != null)
+                  _actionTile(
+                    sheetContext: sheetContext,
+                    icon: Icons.reply_outlined,
+                    label: 'Reply',
+                    onTap: () => widget.onReply?.call(msg),
+                  ),
+                _actionTile(
+                  sheetContext: sheetContext,
+                  icon: Icons.copy_outlined,
+                  label: mediaUrl != null ? 'Copy link' : 'Copy text',
+                  onTap: () {
+                    final copyText = mediaUrl != null
+                        ? _resolveUrl(mediaUrl)
+                        : msg.content;
+                    Clipboard.setData(ClipboardData(text: copyText));
+                    ToastService.show(
+                      context,
+                      'Copied to clipboard',
+                      type: ToastType.success,
+                    );
+                  },
+                ),
+                if (mediaUrl != null)
+                  _actionTile(
+                    sheetContext: sheetContext,
+                    icon: Icons.download_outlined,
+                    label: 'Download',
+                    onTap: () => _downloadMedia(mediaUrl),
+                  ),
+                if (isMine && widget.onEdit != null)
+                  _actionTile(
+                    sheetContext: sheetContext,
+                    icon: Icons.edit_outlined,
+                    label: 'Edit',
+                    onTap: () => widget.onEdit?.call(msg),
+                  ),
+                if (msg.pinnedAt == null && widget.onPin != null)
+                  _actionTile(
+                    sheetContext: sheetContext,
+                    icon: Icons.push_pin_outlined,
+                    label: 'Pin',
+                    onTap: () => widget.onPin?.call(msg),
+                  ),
+                if (msg.pinnedAt != null && widget.onUnpin != null)
+                  _actionTile(
+                    sheetContext: sheetContext,
+                    icon: Icons.push_pin,
+                    label: 'Unpin',
+                    onTap: () => widget.onUnpin?.call(msg),
+                  ),
+                if (isMine && widget.onDelete != null)
+                  _actionTile(
+                    sheetContext: sheetContext,
+                    icon: Icons.delete_outlined,
+                    label: 'Delete',
+                    color: EchoTheme.danger,
+                    onTap: () => widget.onDelete?.call(msg),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _actionTile({
+    required BuildContext sheetContext,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color? color,
+  }) {
+    return InkWell(
+      onTap: () {
+        Navigator.pop(sheetContext);
+        onTap();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: color ?? context.textSecondary),
+            const SizedBox(width: 14),
+            Text(
+              label,
+              style: TextStyle(
+                color: color ?? context.textPrimary,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showImageViewer({required String imageUrl}) {
     final headers = _mediaHeaders();
     showDialog<void>(
@@ -783,10 +956,14 @@ class _MessageItemState extends State<MessageItem> {
         child: Semantics(
           label: 'Message from ${msg.fromUsername}. Long press for actions.',
           child: GestureDetector(
-            onLongPressStart: !hasReactions
-                ? (details) =>
-                      widget.onReactionTap?.call(msg, details.globalPosition)
-                : null,
+            onLongPressStart: (details) {
+              final isMobile = MediaQuery.of(context).size.width < 600;
+              if (isMobile) {
+                _showMobileActionSheet(context, msg, isMine, mediaUrl);
+              } else if (!hasReactions) {
+                widget.onReactionTap?.call(msg, details.globalPosition);
+              }
+            },
             onHorizontalDragUpdate: canSwipeToReply
                 ? (details) {
                     // Only allow rightward swipe (positive dx)
