@@ -23,6 +23,7 @@ import '../providers/voice_settings_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../theme/responsive.dart';
 import '../utils/clipboard_image_helper.dart';
 import 'input/attachment_preview.dart';
 import 'input/input_status_bar.dart';
@@ -743,6 +744,19 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // ---------------------------------------------------------------------------
 
   Widget _buildAttachFileButton() {
+    final isMobile = Responsive.isMobile(context);
+    if (isMobile) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 4),
+        child: IconButton(
+          icon: Icon(Icons.add, size: 22, color: context.textSecondary),
+          tooltip: 'Attach',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          onPressed: _showMobileAttachMenu,
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(left: 4),
       child: IconButton(
@@ -757,6 +771,116 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         onPressed: _pickFile,
       ),
     );
+  }
+
+  void _showMobileAttachMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _AttachOption(
+                icon: Icons.photo_library_outlined,
+                label: 'Photos & Videos',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickImageFromGallery();
+                },
+              ),
+              _AttachOption(
+                icon: Icons.camera_alt_outlined,
+                label: 'Camera',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickImageFromCamera();
+                },
+              ),
+              _AttachOption(
+                icon: Icons.insert_drive_file_outlined,
+                label: 'File',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _pickFile();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickImageFromGallery() async {
+    if (_isPickingFile) return;
+    _isPickingFile = true;
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.media,
+        allowMultiple: false,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      if (!mounted) return;
+      final file = result.files.first;
+      if (file.bytes == null) return;
+      final ext = (file.extension ?? '').toLowerCase();
+      final mimeTypes = <String, List<String>>{
+        'jpg': ['image', 'jpeg'],
+        'jpeg': ['image', 'jpeg'],
+        'png': ['image', 'png'],
+        'gif': ['image', 'gif'],
+        'webp': ['image', 'webp'],
+        'mp4': ['video', 'mp4'],
+        'mov': ['video', 'quicktime'],
+      };
+      final mime = mimeTypes[ext] ?? ['application', 'octet-stream'];
+      _setPendingAttachment(
+        bytes: file.bytes!,
+        fileName: file.name,
+        mimeType: '${mime[0]}/${mime[1]}',
+        ext: ext,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, 'Pick error: $e', type: ToastType.error);
+    } finally {
+      _isPickingFile = false;
+    }
+  }
+
+  Future<void> _pickImageFromCamera() async {
+    if (_isPickingFile) return;
+    _isPickingFile = true;
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      if (!mounted) return;
+      final file = result.files.first;
+      if (file.bytes == null) return;
+      final ext = (file.extension ?? 'jpg').toLowerCase();
+      _setPendingAttachment(
+        bytes: file.bytes!,
+        fileName: file.name,
+        mimeType: 'image/${ext == 'jpg' ? 'jpeg' : ext}',
+        ext: ext,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, 'Camera error: $e', type: ToastType.error);
+    } finally {
+      _isPickingFile = false;
+    }
   }
 
   Widget _buildMediaPickerToggle({
@@ -1151,8 +1275,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       typingText: typingText,
       hasTypingUsers: widget.typingUsers.isNotEmpty,
     );
-    final viewportWidth = MediaQuery.of(context).size.width;
-    final isMobileLayout = viewportWidth < 600;
+    final isMobileLayout = Responsive.isMobile(context);
     final showMediaPicker = _showMediaPicker && !isMobileLayout;
     final effectiveActiveVoiceChannelId = widget.effectiveActiveVoiceChannelId;
 
@@ -1277,6 +1400,28 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       fileName: fileName,
       mimeType: mimeType,
       ext: ext,
+    );
+  }
+}
+
+/// A single row in the mobile attachment bottom sheet.
+class _AttachOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _AttachOption({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: context.textSecondary),
+      title: Text(label, style: TextStyle(color: context.textPrimary)),
+      onTap: onTap,
     );
   }
 }

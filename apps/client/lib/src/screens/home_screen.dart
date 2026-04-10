@@ -23,12 +23,14 @@ import '../providers/channels_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/notification_service.dart';
 import '../theme/echo_theme.dart';
+import '../theme/responsive.dart';
 import '../widgets/chat_panel.dart';
 import '../widgets/conversation_panel.dart'
     show ConversationPanel, buildAvatar, groupAvatarColor;
 import '../widgets/members_panel.dart';
 import '../utils/web_lifecycle.dart';
 import '../widgets/keyboard_shortcuts_overlay.dart';
+import '../widgets/global_search_overlay.dart';
 import '../widgets/quick_switcher_overlay.dart';
 import '../widgets/voice_dock.dart';
 import 'contacts_screen.dart';
@@ -244,6 +246,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  void _showGlobalSearch() {
+    showDialog(
+      context: context,
+      barrierColor: Colors.transparent,
+      builder: (ctx) => GlobalSearchOverlay(
+        onResultTap: (conversationId, messageId) {
+          final conversations = ref.read(conversationsProvider).conversations;
+          final conv = conversations
+              .where((c) => c.id == conversationId)
+              .firstOrNull;
+          if (conv != null) _selectConversation(conv);
+        },
+      ),
+    );
+  }
+
   void _showKeyboardShortcuts() {
     showDialog<void>(
       context: context,
@@ -262,7 +280,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
-  bool get _isDesktop => MediaQuery.of(context).size.width >= 900;
+  bool get _isDesktop => Responsive.isDesktop(context);
 
   void _openContacts() {
     if (_isDesktop) {
@@ -386,7 +404,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _openSettings() {
-    if (_isDesktop || MediaQuery.of(context).size.width >= 600) {
+    if (_isDesktop || !Responsive.isMobile(context)) {
       setState(() {
         _showSettings = true;
         _settingsSection = SettingsSection.account;
@@ -414,6 +432,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       onCollapseSidebar: onCollapseSidebar,
       onSettings: _openSettings,
       onShowContacts: _openContacts,
+      onGlobalSearch: _showGlobalSearch,
       onMessageContact: _messageContact,
       externalSearchFocusNode: _searchFocusNode,
     );
@@ -608,6 +627,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       bindings: <ShortcutActivator, VoidCallback>{
         const SingleActivator(LogicalKeyboardKey.keyK, control: true): () {
           _showQuickSwitcher();
+        },
+        const SingleActivator(
+          LogicalKeyboardKey.keyF,
+          control: true,
+          shift: true,
+        ): () {
+          _showGlobalSearch();
         },
         const SingleActivator(LogicalKeyboardKey.slash, control: true): () {
           _showKeyboardShortcuts();

@@ -18,6 +18,7 @@ import '../services/safety_number_service.dart';
 import '../services/secure_key_store.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../theme/responsive.dart';
 
 /// Displays and manages safety number verification for a DM conversation.
 ///
@@ -182,7 +183,7 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDialog = MediaQuery.of(context).size.width >= 900;
+    final isDialog = Responsive.isDesktop(context);
 
     return Scaffold(
       backgroundColor: isDialog ? Colors.transparent : context.mainBg,

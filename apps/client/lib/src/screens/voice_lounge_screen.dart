@@ -15,6 +15,7 @@ import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
+import '../theme/responsive.dart';
 
 /// Resolve a LiveKit participant's display name, preferring name > identity > sid.
 String _participantDisplayName(lk.Participant participant) {
@@ -1156,7 +1157,7 @@ class _ControlBar extends ConsumerWidget {
     // On narrow screens (width < 600) or in landscape, save space with
     // icon-only buttons at 44 px touch targets (no text labels).
     final isCompact =
-        MediaQuery.of(context).size.width < 600 ||
+        Responsive.isMobile(context) ||
         MediaQuery.of(context).orientation == Orientation.landscape;
 
     final gap = isCompact ? const SizedBox(width: 4) : const SizedBox(width: 8);
