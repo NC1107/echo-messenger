@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -113,6 +114,10 @@ class ChatState {
 class ChatNotifier extends StateNotifier<ChatState> {
   final Ref ref;
 
+  /// Timers that transition pending messages to failed after 15 seconds
+  /// without server confirmation.
+  final Map<String, Timer> _sendTimeouts = {};
+
   ChatNotifier(this.ref) : super(const ChatState());
 
   String get _serverUrl => ref.read(serverUrlProvider);
@@ -171,8 +176,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String? replyToContent,
     String? replyToUsername,
   }) {
+    final pendingId = 'pending_${DateTime.now().millisecondsSinceEpoch}';
     final msg = ChatMessage(
-      id: 'pending_${DateTime.now().millisecondsSinceEpoch}',
+      id: pendingId,
       fromUserId: myUserId,
       fromUsername: 'You',
       conversationId: conversationId,
@@ -184,8 +190,46 @@ class ChatNotifier extends StateNotifier<ChatState> {
       replyToId: replyToId,
       replyToContent: replyToContent,
       replyToUsername: replyToUsername,
+      failedContent: content, // preserve for retry if send times out
     );
     state = state.withMessage(msg);
+
+    // Start a 15-second timeout — if no confirmSent() arrives, mark failed.
+    _sendTimeouts[pendingId] = Timer(const Duration(seconds: 15), () {
+      _sendTimeouts.remove(pendingId);
+      _transitionToFailed(conversationId, pendingId, content);
+    });
+  }
+
+  /// Transition a pending message to failed status after send timeout.
+  void _transitionToFailed(
+    String conversationId,
+    String pendingId,
+    String originalContent,
+  ) {
+    final messages = state.messagesForConversation(conversationId);
+    final idx = messages.indexWhere((m) => m.id == pendingId);
+    if (idx == -1) return;
+    final msg = messages[idx];
+    if (msg.status != MessageStatus.sending) return;
+
+    final updated = msg.copyWith(
+      status: MessageStatus.failed,
+      content: 'Message may not have been delivered. Tap to retry.',
+      failedContent: originalContent,
+    );
+    final updatedList = List<ChatMessage>.from(messages);
+    updatedList[idx] = updated;
+    final updatedConv = Map<String, List<ChatMessage>>.from(
+      state.messagesByConversation,
+    );
+    updatedConv[conversationId] = updatedList;
+    state = ChatState(
+      messagesByConversation: updatedConv,
+      loadingHistory: state.loadingHistory,
+      hasMore: state.hasMore,
+      replyToMessage: state.replyToMessage,
+    );
   }
 
   void confirmSent(
@@ -194,6 +238,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String timestamp, {
     String? channelId,
   }) {
+    // Cancel the send timeout for the pending message being confirmed.
+    for (final m in state.messagesForConversation(conversationId)) {
+      if (m.id.startsWith('pending_')) {
+        _sendTimeouts.remove(m.id)?.cancel();
+      }
+    }
+
     // Replace the most recent pending/sending message in this conversation
     // with the server-assigned ID so that delivery receipts can match it.
     final updatedConv = Map<String, List<ChatMessage>>.from(

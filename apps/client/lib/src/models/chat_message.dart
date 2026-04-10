@@ -37,6 +37,11 @@ class ChatMessage {
   final String? pinnedById;
   final DateTime? pinnedAt;
 
+  /// The original plaintext for failed messages, enabling retry.
+  /// When a message fails to send, [content] holds the user-facing error
+  /// reason while [failedContent] preserves the actual message text.
+  final String? failedContent;
+
   /// True if this is a system event (call history, key reset, etc.)
   bool get isSystemEvent => fromUserId == systemUserId;
 
@@ -58,6 +63,7 @@ class ChatMessage {
     this.replyToUsername,
     this.pinnedById,
     this.pinnedAt,
+    this.failedContent,
   });
 
   factory ChatMessage.fromServerJson(
@@ -146,6 +152,7 @@ class ChatMessage {
     String? replyToUsername,
     Object? pinnedById = _sentinel,
     Object? pinnedAt = _sentinel,
+    Object? failedContent = _sentinel,
   }) {
     return ChatMessage(
       id: id ?? this.id,
@@ -167,6 +174,9 @@ class ChatMessage {
           ? this.pinnedById
           : pinnedById as String?,
       pinnedAt: pinnedAt == _sentinel ? this.pinnedAt : pinnedAt as DateTime?,
+      failedContent: failedContent == _sentinel
+          ? this.failedContent
+          : failedContent as String?,
     );
   }
 
@@ -190,7 +200,8 @@ class ChatMessage {
             replyToContent == other.replyToContent &&
             replyToUsername == other.replyToUsername &&
             pinnedById == other.pinnedById &&
-            pinnedAt == other.pinnedAt;
+            pinnedAt == other.pinnedAt &&
+            failedContent == other.failedContent;
   }
 
   @override
@@ -212,5 +223,6 @@ class ChatMessage {
     replyToUsername,
     pinnedById,
     pinnedAt,
+    failedContent,
   );
 }

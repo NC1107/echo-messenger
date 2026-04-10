@@ -175,86 +175,94 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
       ),
     ];
 
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        Text(
-          'Theme',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            Text(
+              'Theme',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Choose a theme and message layout.',
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+            const Divider(height: 24),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: themeOptions
+                  .map(
+                    (data) => _ThemeCard(
+                      data: data,
+                      isSelected: currentTheme == data.selection,
+                      onTap: () => ref
+                          .read(themeProvider.notifier)
+                          .setTheme(data.selection),
+                    ),
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 32),
+            Text(
+              'Message Layout',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _LayoutOption(
+              label: 'Bubbles',
+              subtitle: 'Chat bubbles aligned left and right',
+              icon: Icons.chat_bubble_outline,
+              isSelected:
+                  ref.watch(messageLayoutProvider) == MessageLayout.bubbles,
+              onTap: () => ref
+                  .read(messageLayoutProvider.notifier)
+                  .setLayout(MessageLayout.bubbles),
+            ),
+            const SizedBox(height: 8),
+            _LayoutOption(
+              label: 'Compact',
+              subtitle: 'Discord-style, all messages left-aligned',
+              icon: Icons.format_align_left_outlined,
+              isSelected:
+                  ref.watch(messageLayoutProvider) == MessageLayout.compact,
+              onTap: () => ref
+                  .read(messageLayoutProvider.notifier)
+                  .setLayout(MessageLayout.compact),
+            ),
+            const SizedBox(height: 24),
+            // GIF autoplay
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'Auto-play GIFs',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'When off, GIFs show as static thumbnails with a play button.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: _gifAutoplay,
+              onChanged: _setGifAutoplay,
+            ),
+          ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          'Choose a theme and message layout.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 13,
-            height: 1.5,
-          ),
-        ),
-        const Divider(height: 24),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: themeOptions
-              .map(
-                (data) => _ThemeCard(
-                  data: data,
-                  isSelected: currentTheme == data.selection,
-                  onTap: () =>
-                      ref.read(themeProvider.notifier).setTheme(data.selection),
-                ),
-              )
-              .toList(),
-        ),
-        const SizedBox(height: 32),
-        Text(
-          'Message Layout',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 16),
-        _LayoutOption(
-          label: 'Bubbles',
-          subtitle: 'Chat bubbles aligned left and right',
-          icon: Icons.chat_bubble_outline,
-          isSelected: ref.watch(messageLayoutProvider) == MessageLayout.bubbles,
-          onTap: () => ref
-              .read(messageLayoutProvider.notifier)
-              .setLayout(MessageLayout.bubbles),
-        ),
-        const SizedBox(height: 8),
-        _LayoutOption(
-          label: 'Compact',
-          subtitle: 'Discord-style, all messages left-aligned',
-          icon: Icons.format_align_left_outlined,
-          isSelected: ref.watch(messageLayoutProvider) == MessageLayout.compact,
-          onTap: () => ref
-              .read(messageLayoutProvider.notifier)
-              .setLayout(MessageLayout.compact),
-        ),
-        const SizedBox(height: 24),
-        // GIF autoplay
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Auto-play GIFs',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'When off, GIFs show as static thumbnails with a play button.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: _gifAutoplay,
-          onChanged: _setGifAutoplay,
-        ),
-      ],
+      ),
     );
   }
 }

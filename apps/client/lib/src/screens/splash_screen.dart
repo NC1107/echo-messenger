@@ -51,9 +51,18 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _init() async {
     final stopwatch = Stopwatch()..start();
 
-    // Try auto-login from stored credentials
+    // Try auto-login from stored credentials with a timeout so the splash
+    // never hangs on a slow or unreachable network.
     final auth = ref.read(authProvider.notifier);
-    var loggedIn = await auth.tryAutoLogin();
+    var loggedIn = false;
+    try {
+      loggedIn = await auth.tryAutoLogin().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => false,
+      );
+    } catch (_) {
+      // Network error — treat as not logged in, user can retry from login.
+    }
 
     // If auto-login succeeded, init crypto keys
     if (loggedIn) {
@@ -79,11 +88,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       ref.read(updateProvider.notifier).check();
     }
 
-    // Ensure at least 500ms of splash for the logo animation to complete
+    // Brief splash to let the logo animation complete (reduced from 500ms)
     stopwatch.stop();
     final elapsed = stopwatch.elapsedMilliseconds;
-    if (elapsed < 500) {
-      await Future<void>.delayed(Duration(milliseconds: 500 - elapsed));
+    if (elapsed < 200) {
+      await Future<void>.delayed(Duration(milliseconds: 200 - elapsed));
     }
 
     if (!mounted) return;

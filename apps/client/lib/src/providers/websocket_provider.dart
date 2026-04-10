@@ -31,7 +31,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   Timer? _heartbeatTimer;
   DateTime _lastMessageTime = DateTime.now();
   int _reconnectAttempts = 0;
-  static const _maxReconnectAttempts = 10;
+  static const _maxReconnectAttempts = 1000; // effectively unlimited
+  final _random = math.Random();
   final _voiceSignalController =
       StreamController<Map<String, dynamic>>.broadcast();
 
@@ -191,10 +192,12 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       return;
     }
 
-    final delayMs = math.min(
+    final baseDelay = math.min(
       1000 * math.pow(2, _reconnectAttempts).toInt(),
       60000,
     );
+    // Add jitter (0–50% of base) to avoid thundering herd after server restart
+    final delayMs = baseDelay + _random.nextInt(math.max(baseDelay ~/ 2, 1));
     _reconnectAttempts++;
     state = state.copyWith(reconnectAttempts: _reconnectAttempts);
 
@@ -247,7 +250,12 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     final cryptoState = ref.read(cryptoProvider);
     if (!cryptoState.isInitialized) {
       final reason = cryptoState.error ?? 'Encryption not initialized';
-      _addFailedMessage(toUserId, reason, conversationId: conversationId);
+      _addFailedMessage(
+        toUserId,
+        reason,
+        conversationId: conversationId,
+        originalContent: content,
+      );
       return;
     }
 
@@ -267,6 +275,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
         toUserId,
         _friendlyEncryptionError(e),
         conversationId: conversationId,
+        originalContent: content,
       );
       return;
     }
@@ -287,6 +296,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   }
 
   /// Map raw encryption exceptions to user-readable messages.
+  /// Never surfaces raw exception text — always returns a friendly string.
   static String _friendlyEncryptionError(Object e) {
     final msg = e.toString();
     if (msg.contains('No PreKey bundle found')) {
@@ -298,14 +308,24 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     if (msg.contains('Encryption not initialized')) {
       return 'Setting up your secure session \u2014 please try again in a moment.';
     }
-    return 'Secure message could not be delivered. Tap Retry to try again.';
+    if (msg.contains('No session for')) {
+      return 'Encryption session expired. Tap to retry.';
+    }
+    if (msg.contains('cannot decrypt') || msg.contains('Could not decrypt')) {
+      return 'Message could not be decrypted.';
+    }
+    return 'Message could not be secured. Tap to retry.';
   }
 
   /// Add a failed message to the chat so the user can see the error.
+  ///
+  /// [originalContent] preserves the user's original text so it can be
+  /// retried later without re-typing.
   void _addFailedMessage(
     String peerUserId,
     String reason, {
     String? conversationId = '',
+    String? originalContent,
   }) {
     final myUserId = ref.read(authProvider).userId ?? '';
     final msg = ChatMessage(
@@ -317,6 +337,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       timestamp: DateTime.now().toIso8601String(),
       isMine: true,
       status: MessageStatus.failed,
+      failedContent: originalContent,
     );
     ref.read(chatProvider.notifier).addMessage(msg);
   }
