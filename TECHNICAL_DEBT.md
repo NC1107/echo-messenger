@@ -55,10 +55,10 @@ Last updated: 2026-04-11
 - [ ] **crypto_provider silent keyring degradation** — sends plaintext when keyring unavailable (effort: medium)
 
 ## High — Test Coverage
-- [ ] **CryptoService has zero direct unit tests** — 1,516 lines untested (effort: large)
-- [ ] **WS message handler (20+ event types) untested** — `ws_message_handler.dart` (effort: large)
-- [ ] **Safety number generation untested** — MITM detection mechanism (effort: small)
-- [ ] **No group RBAC tests** — 14 group management functions untested (effort: large)
+- [x] ~~CryptoService has zero direct unit tests~~ — FIXED (28 tests: init, key gen/restore, migration, encrypt/decrypt roundtrip with X3DH + Double Ratchet)
+- [x] ~~WS message handler (20+ event types) untested~~ — FIXED (33 tests: all event types dispatched via handleServerMessage with provider verification)
+- [x] ~~Safety number generation untested~~ — FIXED (9 tests: commutativity, determinism, formatting edge cases)
+- [x] ~~No group RBAC tests~~ — FIXED (20 tests: createGroup, leaveGroup, loadChannels, createChannel, deleteChannel, joinVoice, leaveVoice, updateVoiceState via mocktail HTTP mocking)
 
 ## Medium (38 items)
 See audit agent reports for full details. Key items:
