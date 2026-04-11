@@ -81,21 +81,33 @@ pub async fn store_one_time_prekeys(
     device_id: i32,
     prekeys: &[(i32, Vec<u8>)],
 ) -> Result<(), sqlx::Error> {
-    for (key_id, public_key) in prekeys {
-        sqlx::query(
-            "INSERT INTO one_time_prekeys (user_id, device_id, key_id, public_key) \
-             VALUES ($1, $2, $3, $4) \
-             ON CONFLICT (user_id, device_id, key_id) \
-             DO UPDATE SET public_key = EXCLUDED.public_key, \
-                           used = false",
-        )
-        .bind(user_id)
-        .bind(device_id)
-        .bind(key_id)
-        .bind(public_key)
-        .execute(&mut *conn)
-        .await?;
+    if prekeys.is_empty() {
+        return Ok(());
     }
+
+    // Build a single batch INSERT: VALUES ($1,$2,$3,$4), ($1,$2,$5,$6), ...
+    let mut query = String::from(
+        "INSERT INTO one_time_prekeys (user_id, device_id, key_id, public_key) VALUES ",
+    );
+    // $1 = user_id, $2 = device_id, then pairs of (key_id, public_key)
+    let mut param_idx = 3_u32; // first two params are user_id and device_id
+    for (i, _) in prekeys.iter().enumerate() {
+        if i > 0 {
+            query.push_str(", ");
+        }
+        query.push_str(&format!("($1, $2, ${}, ${})", param_idx, param_idx + 1));
+        param_idx += 2;
+    }
+    query.push_str(
+        " ON CONFLICT (user_id, device_id, key_id) \
+         DO UPDATE SET public_key = EXCLUDED.public_key, used = false",
+    );
+
+    let mut q = sqlx::query(&query).bind(user_id).bind(device_id);
+    for (key_id, public_key) in prekeys {
+        q = q.bind(key_id).bind(public_key);
+    }
+    q.execute(&mut *conn).await?;
     Ok(())
 }
 

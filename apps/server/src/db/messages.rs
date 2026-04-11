@@ -44,14 +44,17 @@ pub async fn find_or_create_dm_conversation(
 ) -> Result<Uuid, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    // Find existing DM conversation where both users are members and only 2 members total
+    // Find existing DM conversation where both users are members and no third member exists
     let existing: Option<(Uuid,)> = sqlx::query_as(
         "SELECT cm1.conversation_id \
          FROM conversation_members cm1 \
          JOIN conversation_members cm2 ON cm1.conversation_id = cm2.conversation_id \
          WHERE cm1.user_id = $1 AND cm2.user_id = $2 \
-           AND (SELECT COUNT(*) FROM conversation_members cm3 \
-                WHERE cm3.conversation_id = cm1.conversation_id) = 2 \
+           AND NOT EXISTS ( \
+               SELECT 1 FROM conversation_members cm3 \
+               WHERE cm3.conversation_id = cm1.conversation_id \
+                 AND cm3.user_id != $1 AND cm3.user_id != $2 \
+           ) \
          LIMIT 1",
     )
     .bind(user_a)
@@ -120,56 +123,30 @@ pub async fn get_messages(
     before: Option<DateTime<Utc>>,
     limit: i64,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
-    match before {
-        Some(cursor) => {
-            sqlx::query_as::<_, MessageWithSender>(
-                "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
-                        u.username AS sender_username, \
-                        m.content, m.created_at, m.edited_at, m.reply_to_id, \
-                        rm.content AS reply_to_content, \
-                        ru.username AS reply_to_username \
-                 FROM messages m \
-                 JOIN users u ON u.id = m.sender_id \
-                 LEFT JOIN messages rm ON rm.id = m.reply_to_id \
-                 LEFT JOIN users ru ON ru.id = rm.sender_id \
-                 WHERE m.conversation_id = $1 \
-                   AND ($2::uuid IS NULL OR m.channel_id = $2) \
-                   AND m.created_at < $3 \
-                   AND m.deleted_at IS NULL \
-                 ORDER BY m.created_at DESC \
-                 LIMIT $4",
-            )
-            .bind(conversation_id)
-            .bind(channel_id)
-            .bind(cursor)
-            .bind(limit)
-            .fetch_all(pool)
-            .await
-        }
-        None => {
-            sqlx::query_as::<_, MessageWithSender>(
-                "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
-                        u.username AS sender_username, \
-                        m.content, m.created_at, m.edited_at, m.reply_to_id, \
-                        rm.content AS reply_to_content, \
-                        ru.username AS reply_to_username \
-                 FROM messages m \
-                 JOIN users u ON u.id = m.sender_id \
-                 LEFT JOIN messages rm ON rm.id = m.reply_to_id \
-                 LEFT JOIN users ru ON ru.id = rm.sender_id \
-                 WHERE m.conversation_id = $1 \
-                   AND ($2::uuid IS NULL OR m.channel_id = $2) \
-                   AND m.deleted_at IS NULL \
-                 ORDER BY m.created_at DESC \
-                 LIMIT $3",
-            )
-            .bind(conversation_id)
-            .bind(channel_id)
-            .bind(limit)
-            .fetch_all(pool)
-            .await
-        }
-    }
+    // Single query handles both cursor and non-cursor cases via optional $3 param.
+    sqlx::query_as::<_, MessageWithSender>(
+        "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                u.username AS sender_username, \
+                m.content, m.created_at, m.edited_at, m.reply_to_id, \
+                rm.content AS reply_to_content, \
+                ru.username AS reply_to_username \
+         FROM messages m \
+         JOIN users u ON u.id = m.sender_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id \
+         LEFT JOIN users ru ON ru.id = rm.sender_id \
+         WHERE m.conversation_id = $1 \
+           AND ($2::uuid IS NULL OR m.channel_id = $2) \
+           AND ($3::timestamptz IS NULL OR m.created_at < $3) \
+           AND m.deleted_at IS NULL \
+         ORDER BY m.created_at DESC \
+         LIMIT $4",
+    )
+    .bind(conversation_id)
+    .bind(channel_id)
+    .bind(before)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn get_undelivered(
@@ -309,6 +286,21 @@ pub async fn search_messages_global(
     .bind(query)
     .bind(limit)
     .fetch_all(pool)
+    .await
+}
+
+/// Look up reply context (content and username) for a given reply_to message ID.
+pub async fn lookup_reply_context(
+    pool: &PgPool,
+    reply_to_id: Uuid,
+) -> Result<Option<(String, String)>, sqlx::Error> {
+    sqlx::query_as::<_, (String, String)>(
+        "SELECT m.content, u.username \
+         FROM messages m JOIN users u ON u.id = m.sender_id \
+         WHERE m.id = $1",
+    )
+    .bind(reply_to_id)
+    .fetch_optional(pool)
     .await
 }
 

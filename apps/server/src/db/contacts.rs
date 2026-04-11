@@ -30,8 +30,7 @@ pub async fn create_contact_request(
 
     // Check if either party has blocked the other -- return a generic error
     // (same as "user not found") to avoid leaking block status.
-    let blocked = is_blocked(pool, target_id, requester_id).await?
-        || is_blocked(pool, requester_id, target_id).await?;
+    let blocked = is_either_blocked(pool, requester_id, target_id).await?;
     if blocked {
         return Err(sqlx::Error::RowNotFound);
     }
@@ -177,6 +176,26 @@ pub async fn list_blocked_users(
     .bind(blocker_id)
     .fetch_all(pool)
     .await
+}
+
+/// Check if either user has blocked the other (bidirectional check in a single query).
+pub async fn is_either_blocked(
+    pool: &PgPool,
+    user_a: Uuid,
+    user_b: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let row: (bool,) = sqlx::query_as(
+        "SELECT EXISTS(\
+            SELECT 1 FROM blocked_users \
+            WHERE (blocker_id = $1 AND blocked_id = $2) \
+               OR (blocker_id = $2 AND blocked_id = $1)\
+        )",
+    )
+    .bind(user_a)
+    .bind(user_b)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
 }
 
 /// Check if `blocker_id` has blocked `blocked_id`.

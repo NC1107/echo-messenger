@@ -71,7 +71,7 @@ pub async fn fetch_preview(
     // Fetch the page with a short timeout
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
-        .redirect(reqwest::redirect::Policy::limited(3))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| AppError::internal("Failed to create HTTP client"))?;
 

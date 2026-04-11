@@ -148,6 +148,21 @@ pub fn ticket_limiter() -> RateLimiter {
     RateLimiter::new(10, 60)
 }
 
+/// Check whether an IP is in a private/reserved range (RFC 1918, link-local, ULA).
+fn is_private(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
+        IpAddr::V6(v6) => {
+            // ULA: fc00::/7 (first byte 0xFC or 0xFD)
+            let first_segment = v6.segments()[0];
+            let is_ula = (first_segment & 0xfe00) == 0xfc00;
+            // Link-local: fe80::/10
+            let is_link_local = (first_segment & 0xffc0) == 0xfe80;
+            is_ula || is_link_local
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,10 +242,8 @@ mod tests {
     #[test]
     fn test_xff_private_ip_rejected() {
         let mut req = Request::new(Body::empty());
-        req.headers_mut().insert(
-            "x-forwarded-for",
-            "1.2.3.4, 192.168.1.1".parse().unwrap(),
-        );
+        req.headers_mut()
+            .insert("x-forwarded-for", "1.2.3.4, 192.168.1.1".parse().unwrap());
         // Last IP is private -> should fall through to ConnectInfo/localhost
         let ip = extract_ip(&req);
         assert!(ip.is_loopback(), "private XFF IP should be rejected");
@@ -239,10 +252,8 @@ mod tests {
     #[test]
     fn test_xff_public_ip_accepted() {
         let mut req = Request::new(Body::empty());
-        req.headers_mut().insert(
-            "x-forwarded-for",
-            "spoofed, 203.0.113.50".parse().unwrap(),
-        );
+        req.headers_mut()
+            .insert("x-forwarded-for", "spoofed, 203.0.113.50".parse().unwrap());
         let ip = extract_ip(&req);
         assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(203, 0, 113, 50)));
     }
@@ -252,26 +263,9 @@ mod tests {
         let mut req = Request::new(Body::empty());
         req.headers_mut()
             .insert("x-real-ip", "1.2.3.4".parse().unwrap());
-        req.headers_mut().insert(
-            "x-forwarded-for",
-            "5.6.7.8".parse().unwrap(),
-        );
+        req.headers_mut()
+            .insert("x-forwarded-for", "5.6.7.8".parse().unwrap());
         let ip = extract_ip(&req);
         assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)));
-    }
-}
-
-/// Check whether an IP is in a private/reserved range (RFC 1918, link-local, ULA).
-fn is_private(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
-        IpAddr::V6(v6) => {
-            // ULA: fc00::/7 (first byte 0xFC or 0xFD)
-            let first_segment = v6.segments()[0];
-            let is_ula = (first_segment & 0xfe00) == 0xfc00;
-            // Link-local: fe80::/10
-            let is_link_local = (first_segment & 0xffc0) == 0xfe80;
-            is_ula || is_link_local
-        }
     }
 }

@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::auth::middleware::AuthUser;
 use crate::db;
 use crate::error::AppError;
-use crate::types::{ConversationKind, Role};
+use crate::types::{ChannelKind, ConversationKind, Role};
 
 use super::AppState;
 
@@ -64,7 +64,7 @@ pub struct VoiceSessionResponse {
 }
 
 fn is_valid_channel_kind(kind: &str) -> bool {
-    matches!(kind, "text" | "voice")
+    ChannelKind::from_str_opt(kind).is_some()
 }
 
 fn normalize_channel_name(name: &str) -> String {
@@ -368,7 +368,7 @@ pub async fn list_voice_sessions(
     ensure_group_member(&state, group_id, auth.user_id).await?;
     let channel = ensure_channel_in_group(&state, group_id, channel_id).await?;
 
-    if channel.kind != "voice" {
+    if ChannelKind::from_str_opt(&channel.kind) != Some(ChannelKind::Voice) {
         return Err(AppError::bad_request("Channel is not a voice channel"));
     }
 
@@ -406,7 +406,7 @@ pub async fn join_voice_channel(
     ensure_group_member(&state, group_id, auth.user_id).await?;
     let channel = ensure_channel_in_group(&state, group_id, channel_id).await?;
 
-    if channel.kind != "voice" {
+    if ChannelKind::from_str_opt(&channel.kind) != Some(ChannelKind::Voice) {
         return Err(AppError::bad_request("Channel is not a voice channel"));
     }
 
@@ -462,7 +462,7 @@ pub async fn leave_voice_channel(
     ensure_group_member(&state, group_id, auth.user_id).await?;
     let channel = ensure_channel_in_group(&state, group_id, channel_id).await?;
 
-    if channel.kind != "voice" {
+    if ChannelKind::from_str_opt(&channel.kind) != Some(ChannelKind::Voice) {
         return Err(AppError::bad_request("Channel is not a voice channel"));
     }
 
@@ -502,7 +502,7 @@ pub async fn update_voice_state(
     ensure_group_member(&state, group_id, auth.user_id).await?;
     let channel = ensure_channel_in_group(&state, group_id, channel_id).await?;
 
-    if channel.kind != "voice" {
+    if ChannelKind::from_str_opt(&channel.kind) != Some(ChannelKind::Voice) {
         return Err(AppError::bad_request("Channel is not a voice channel"));
     }
 

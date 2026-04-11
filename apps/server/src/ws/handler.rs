@@ -11,8 +11,6 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 use uuid::Uuid;
 
-use sqlx;
-
 use crate::db;
 use crate::routes::AppState;
 use crate::types::ConversationKind;
@@ -794,15 +792,7 @@ async fn lookup_reply_context(
     reply_to_id: Option<Uuid>,
 ) -> (Option<String>, Option<String>) {
     if let Some(rid) = reply_to_id {
-        match sqlx::query_as::<_, (String, String)>(
-            "SELECT m.content, u.username \
-             FROM messages m JOIN users u ON u.id = m.sender_id \
-             WHERE m.id = $1",
-        )
-        .bind(rid)
-        .fetch_optional(pool)
-        .await
-        {
+        match db::messages::lookup_reply_context(pool, rid).await {
             Ok(Some((c, u))) => (Some(c), Some(u)),
             _ => (None, None),
         }
@@ -876,6 +866,31 @@ async fn fanout_message(
     // Legacy fallback JSON (used when no device_contents or for non-DM group messages)
     let legacy_json = serde_json::to_string(message).ok();
 
+    // Pre-serialize per-device JSON messages once (keyed by device_id) to avoid
+    // re-serializing the same message for every member in the fanout loop.
+    let per_device_json: Option<Vec<(i32, String)>> = device_contents.as_ref().map(|dc| {
+        dc.iter()
+            .filter_map(|(device_id_str, ciphertext)| {
+                let did = device_id_str.parse::<i32>().ok()?;
+                let per_device_msg = ServerMessage::NewMessage {
+                    message_id: msg_id,
+                    from_user_id: from_uid,
+                    from_device_id: from_did,
+                    from_username: from_name.clone(),
+                    conversation_id: conv,
+                    channel_id: ch,
+                    content: ciphertext.clone(),
+                    timestamp: ts,
+                    reply_to_id: rto_id,
+                    reply_to_content: rto_content.clone(),
+                    reply_to_username: rto_user.clone(),
+                };
+                let json = serde_json::to_string(&per_device_msg).ok()?;
+                Some((did, json))
+            })
+            .collect()
+    });
+
     for member_id in &member_ids {
         if *member_id == sender_id {
             continue;
@@ -885,30 +900,14 @@ async fn fanout_message(
         }
 
         // For multi-device: try per-device delivery if device_contents is available.
-        if let Some(ref dc) = device_contents {
+        if let Some(ref device_jsons) = per_device_json {
             let mut member_delivered = false;
-            for (device_id_str, ciphertext) in dc {
-                if let Ok(did) = device_id_str.parse::<i32>() {
-                    let per_device_msg = ServerMessage::NewMessage {
-                        message_id: msg_id,
-                        from_user_id: from_uid,
-                        from_device_id: from_did,
-                        from_username: from_name.clone(),
-                        conversation_id: conv,
-                        channel_id: ch,
-                        content: ciphertext.clone(),
-                        timestamp: ts,
-                        reply_to_id: rto_id,
-                        reply_to_content: rto_content.clone(),
-                        reply_to_username: rto_user.clone(),
-                    };
-                    if let Ok(json) = serde_json::to_string(&per_device_msg)
-                        && state
-                            .hub
-                            .send_to_device(member_id, did, WsMessage::Text(json.into()))
-                    {
-                        member_delivered = true;
-                    }
+            for (did, json) in device_jsons {
+                if state
+                    .hub
+                    .send_to_device(member_id, *did, WsMessage::Text(json.clone().into()))
+                {
+                    member_delivered = true;
                 }
             }
             if member_delivered {
@@ -959,7 +958,7 @@ async fn fanout_message(
         let pool = state.pool.clone();
         let sender_name = sender_name.to_string();
         let content = content.to_string();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             crate::push::notify_offline_users(
                 &pool,
                 &offline_user_ids,
@@ -970,6 +969,14 @@ async fn fanout_message(
                 stored_id,
             )
             .await;
+        });
+        tokio::spawn(async move {
+            match handle.await {
+                Ok(()) => {}
+                Err(e) => {
+                    tracing::error!("Push notification task failed for conv {conv_id}: {e}");
+                }
+            }
         });
     }
 }
