@@ -464,7 +464,8 @@ class ChatHeaderBar extends ConsumerWidget {
         .read(livekitVoiceProvider.notifier)
         .joinChannel(conversationId: conv.id, channelId: conv.id);
 
-    // Add system event to chat timeline
+    // Notify peers and add system event to chat timeline
+    ref.read(websocketProvider.notifier).sendCallStarted(conv.id);
     ref
         .read(chatProvider.notifier)
         .addSystemEvent(conv.id, 'Voice call started');
@@ -561,6 +562,9 @@ class ChatHeaderBar extends ConsumerWidget {
       final crypto = ref.read(cryptoServiceProvider);
       crypto.setToken(ref.read(authProvider).token ?? '');
       await crypto.invalidateSessionKey(peerId);
+
+      // Notify the peer so they invalidate their session too
+      ref.read(websocketProvider.notifier).sendKeyReset(conv.id);
 
       // Add system event to chat timeline
       ref

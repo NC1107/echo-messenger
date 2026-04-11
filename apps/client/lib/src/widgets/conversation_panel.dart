@@ -247,6 +247,20 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               ],
             ),
           ),
+        if (!conv.isGroup)
+          const PopupMenuItem<String>(
+            value: 'delete_dm',
+            child: Row(
+              children: [
+                Icon(Icons.delete_outline, size: 16, color: EchoTheme.danger),
+                SizedBox(width: 8),
+                Text(
+                  'Delete Conversation',
+                  style: TextStyle(color: EchoTheme.danger, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
       ],
     ).then((value) {
       if (value == 'pin') {
@@ -255,6 +269,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ref.read(conversationsProvider.notifier).toggleMute(conv.id);
       } else if (value == 'leave_group') {
         _leaveGroup(conv);
+      } else if (value == 'delete_dm') {
+        _deleteDm(conv);
       }
     });
   }
@@ -328,6 +344,69 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           type: ToastType.error,
         );
       }
+    }
+  }
+
+  Future<void> _deleteDm(Conversation conv) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: const Text(
+          'Delete Conversation',
+          style: TextStyle(
+            color: EchoTheme.danger,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'This will remove the conversation from your list. '
+          'You can start a new conversation anytime.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final success = await ref
+        .read(conversationsProvider.notifier)
+        .leaveConversation(conv.id);
+
+    if (!mounted) return;
+
+    if (success) {
+      ToastService.show(
+        context,
+        'Conversation deleted',
+        type: ToastType.success,
+      );
+    } else {
+      ToastService.show(
+        context,
+        'Failed to delete conversation',
+        type: ToastType.error,
+      );
     }
   }
 

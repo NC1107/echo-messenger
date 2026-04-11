@@ -140,11 +140,51 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         break;
       case 'voice_signal':
         _handleVoiceSignal(json);
+      case 'key_reset':
+        _handleKeyReset(json);
+      case 'call_started':
+        _handleCallStarted(json);
     }
   }
 
   void _handleVoiceSignal(Map<String, dynamic> json) {
     voiceSignalController.add(json);
+  }
+
+  void _handleKeyReset(Map<String, dynamic> json) {
+    final fromUserId = json['from_user_id'] as String? ?? '';
+    final fromUsername = json['from_username'] as String? ?? 'Someone';
+    final conversationId = json['conversation_id'] as String? ?? '';
+
+    // Invalidate the local session so the next message re-establishes X3DH
+    ref.read(cryptoServiceProvider).invalidateSessionKey(fromUserId);
+
+    ref
+        .read(chatProvider.notifier)
+        .addSystemEvent(
+          conversationId,
+          '$fromUsername reset their encryption keys',
+        );
+  }
+
+  void _handleCallStarted(Map<String, dynamic> json) {
+    final fromUsername = json['from_username'] as String? ?? 'Someone';
+    final conversationId = json['conversation_id'] as String? ?? '';
+
+    ref
+        .read(chatProvider.notifier)
+        .addSystemEvent(conversationId, '$fromUsername started a voice call');
+
+    // Show notification
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final conversations = ref.read(conversationsProvider).conversations;
+    final conv = conversations.where((c) => c.id == conversationId).firstOrNull;
+    NotificationService().showMessageNotification(
+      senderUsername: fromUsername,
+      body: 'Started a voice call',
+      conversationId: conversationId,
+      conversationName: conv?.displayName(myUserId),
+    );
   }
 
   void _handleSessionReplaced(Map<String, dynamic> json) {

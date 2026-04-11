@@ -111,15 +111,6 @@ class _ContactItemState extends State<ContactItem> {
                 ),
               ),
             ),
-            IconButton(
-              icon: Icon(
-                Icons.info_outline,
-                size: 18,
-                color: context.textMuted,
-              ),
-              tooltip: 'Profile',
-              onPressed: widget.onProfile,
-            ),
             SizedBox(
               height: 28,
               child: Material(

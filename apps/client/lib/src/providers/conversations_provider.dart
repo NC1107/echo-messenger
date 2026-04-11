@@ -271,6 +271,29 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   }
 
   /// Toggle mute state for a conversation.
+  /// Leave/delete a conversation. Removes the user's membership so it
+  /// disappears from their conversation list. Messages are not deleted.
+  Future<bool> leaveConversation(String conversationId) async {
+    try {
+      final response = await _authenticatedRequest(
+        (token) => http.post(
+          Uri.parse('$_serverUrl/api/conversations/$conversationId/leave'),
+          headers: _headersWithToken(token),
+        ),
+      );
+      if (response.statusCode == 200) {
+        final updated = state.conversations
+            .where((c) => c.id != conversationId)
+            .toList();
+        state = state.copyWith(conversations: updated);
+        return true;
+      }
+    } catch (e) {
+      debugPrint('[Conversations] leaveConversation failed: $e');
+    }
+    return false;
+  }
+
   Future<void> toggleMute(String conversationId) async {
     final index = state.conversations.indexWhere((c) => c.id == conversationId);
     if (index < 0) return;

@@ -444,6 +444,29 @@ pub async fn search_messages_global(
 }
 
 // ---------------------------------------------------------------------------
+// POST /api/conversations/:conversation_id/leave -- leave/delete a conversation
+// ---------------------------------------------------------------------------
+
+pub async fn leave_conversation(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(conversation_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let removed = db::groups::remove_member(&state.pool, conversation_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in leave_conversation: {e:?}");
+            AppError::internal("Failed to leave conversation")
+        })?;
+
+    if !removed {
+        return Err(AppError::bad_request("Not a member of this conversation"));
+    }
+
+    Ok(StatusCode::OK)
+}
+
+// ---------------------------------------------------------------------------
 // PUT /api/conversations/:conversation_id/mute -- toggle mute
 // ---------------------------------------------------------------------------
 
