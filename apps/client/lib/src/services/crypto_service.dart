@@ -825,7 +825,9 @@ class CryptoService {
       wire = await session.encrypt(plaintextBytes);
     } catch (e) {
       // Session corrupted/stale — clear and retry once with fresh X3DH
-      debugPrint('[Crypto] Encrypt failed for $peerUserId, resetting session: $e');
+      debugPrint(
+        '[Crypto] Encrypt failed for $peerUserId, resetting session: $e',
+      );
       _sessions.remove(peerUserId);
       await SecureKeyStore.instance.delete('$_sessionPrefix$peerUserId');
       isNewSession = true;
