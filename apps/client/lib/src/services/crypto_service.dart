@@ -423,6 +423,10 @@ class CryptoService {
   /// whether to force-reset.
   final Set<String> _corruptedSessions = {};
 
+  /// Whether a peer's session is corrupted and needs manual repair.
+  bool hasCorruptedSession(String peerUserId) =>
+      _corruptedSessions.contains(peerUserId);
+
   /// Load persisted Signal sessions from secure storage.
   ///
   /// Handles both legacy format (`echo_signal_session_<userId>`) and

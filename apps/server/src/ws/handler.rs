@@ -144,7 +144,7 @@ pub async fn handle_socket(
     state: Arc<AppState>,
 ) {
     let (mut sender, mut receiver) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<WsMessage>();
+    let (tx, mut rx) = mpsc::channel::<WsMessage>(256);
 
     // Register in hub (multi-device: keyed by user_id + device_id)
     state.hub.register(user_id, device_id, tx);

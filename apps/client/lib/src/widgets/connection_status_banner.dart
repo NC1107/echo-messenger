@@ -70,7 +70,7 @@ class _ConnectionStatusBannerState
       label = 'Connected';
     } else if (maxAttemptsReached) {
       bannerColor = EchoTheme.danger;
-      label = 'Connection lost';
+      label = 'Connection lost \u2014 messages may be pending';
     } else {
       bannerColor = const Color(0xFFB45309); // amber-700
       label = wsState.reconnectAttempts > 0

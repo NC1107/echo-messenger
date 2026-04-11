@@ -321,6 +321,20 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             style: TextStyle(color: context.textSecondary, fontSize: 14),
             textAlign: TextAlign.center,
           ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lock_outline, size: 14, color: context.textMuted),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  'Your messages are end-to-end encrypted.',
+                  style: TextStyle(color: context.textMuted, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 32),
 
           // Avatar circle

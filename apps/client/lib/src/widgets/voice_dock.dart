@@ -92,7 +92,7 @@ class VoiceDock extends ConsumerWidget {
                     ),
                   ),
                   Text(
-                    '$channelName \u00b7 $peerCount peer(s)',
+                    '$channelName \u00b7 $peerCount ${peerCount == 1 ? 'peer' : 'peers'}',
                     style: TextStyle(color: context.textMuted, fontSize: 10),
                     overflow: TextOverflow.ellipsis,
                   ),

@@ -534,7 +534,7 @@ class _MessageItemState extends State<MessageItem> {
         ),
         const SizedBox(height: 4),
         Text(
-          'This message will be readable when your connection syncs.',
+          'Unable to decrypt this message.',
           style: TextStyle(color: context.textMuted, fontSize: 12),
         ),
       ],

@@ -59,9 +59,15 @@ impl From<sqlx::Error> for AppError {
         tracing::error!("Database error: {:?}", err);
         match err {
             sqlx::Error::Database(ref db_err) => {
-                // Unique violation
+                // Unique violation — use constraint name for specific messages
                 if db_err.code().as_deref() == Some("23505") {
-                    return Self::conflict("Username already taken");
+                    let msg = match db_err.constraint() {
+                        Some(c) if c.contains("username") => "Username already taken",
+                        Some(c) if c.contains("contact") => "Contact already exists",
+                        Some(c) if c.contains("reaction") => "Reaction already exists",
+                        _ => "A conflicting record already exists",
+                    };
+                    return Self::conflict(msg);
                 }
                 Self::internal("Database error")
             }

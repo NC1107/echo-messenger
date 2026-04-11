@@ -92,7 +92,8 @@ class SkeletonLine extends StatelessWidget {
 
 /// Skeleton placeholder for a conversation list item.
 class ConversationSkeleton extends StatelessWidget {
-  const ConversationSkeleton({super.key});
+  final int index;
+  const ConversationSkeleton({super.key, this.index = 0});
 
   @override
   Widget build(BuildContext context) {
@@ -116,12 +117,12 @@ class ConversationSkeleton extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SkeletonLine(
-                    width: 100 + (hashCode % 60).toDouble(),
+                    width: 100 + (index * 37 % 60).toDouble(),
                     height: 14,
                   ),
                   const SizedBox(height: 6),
                   SkeletonLine(
-                    width: 140 + (hashCode % 80).toDouble(),
+                    width: 140 + (index * 53 % 80).toDouble(),
                     height: 11,
                   ),
                 ],
@@ -203,7 +204,7 @@ class ConversationListSkeleton extends StatelessWidget {
     return Column(
       children: List.generate(
         count,
-        (i) => ConversationSkeleton(key: ValueKey('skel-$i')),
+        (i) => ConversationSkeleton(key: ValueKey('skel-$i'), index: i),
       ),
     );
   }

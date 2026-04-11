@@ -45,6 +45,29 @@ pub async fn fetch_preview(
         ));
     }
 
+    // SSRF protection: resolve hostname and reject private/loopback IPs
+    if let Ok(url) = reqwest::Url::parse(&body.url)
+        && let Some(host) = url.host_str()
+    {
+        use std::net::ToSocketAddrs;
+        let port = url.port_or_known_default().unwrap_or(80);
+        if let Ok(addrs) = format!("{host}:{port}").to_socket_addrs() {
+            for addr in addrs {
+                let ip = addr.ip();
+                if ip.is_loopback()
+                    || ip.is_unspecified()
+                    || matches!(ip, std::net::IpAddr::V4(v4) if v4.is_private()
+                            || v4.is_link_local()
+                            || v4.octets()[0] == 169 && v4.octets()[1] == 254)
+                {
+                    return Err(AppError::bad_request(
+                        "URL resolves to a private or reserved address",
+                    ));
+                }
+            }
+        }
+    }
+
     // Fetch the page with a short timeout
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
