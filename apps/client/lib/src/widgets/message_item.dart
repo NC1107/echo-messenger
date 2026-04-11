@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/chat_message.dart';
@@ -20,6 +21,15 @@ import 'message/rich_text_content.dart';
 
 /// Common emojis for the reaction picker.
 const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🎉'];
+
+/// Bounded cache manager for chat images to prevent unbounded disk usage.
+final chatImageCacheManager = CacheManager(
+  Config(
+    'chatImages',
+    maxNrOfCacheObjects: 200,
+    stalePeriod: const Duration(days: 30),
+  ),
+);
 
 class MessageItem extends StatefulWidget {
   final ChatMessage message;
@@ -346,6 +356,7 @@ class _MessageItemState extends State<MessageItem> {
                   child: CachedNetworkImage(
                     imageUrl: imageUrl,
                     httpHeaders: headers,
+                    cacheManager: chatImageCacheManager,
                     fit: BoxFit.contain,
                     placeholder: (_, _) => Center(
                       child: CircularProgressIndicator(
@@ -355,10 +366,9 @@ class _MessageItemState extends State<MessageItem> {
                     errorWidget: (_, _, _) => Center(
                       child: Icon(
                         Icons.broken_image_outlined,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onPrimary
-                            .withValues(alpha: 0.54),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onPrimary.withValues(alpha: 0.54),
                         size: 48,
                       ),
                     ),
@@ -548,44 +558,65 @@ class _MessageItemState extends State<MessageItem> {
 
   /// Build the retry/delete row shown below a failed outbound message.
   Widget _buildRetryRow({required ChatMessage msg}) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 2, right: 4),
+    return Container(
+      margin: const EdgeInsets.only(top: 4, right: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: EchoTheme.danger.withValues(alpha: 0.3)),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Icon(
-            Icons.error_outline,
-            size: 11,
-            color: EchoTheme.danger.withValues(alpha: 0.7),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            'Failed to send',
-            style: TextStyle(fontSize: 11, color: context.textMuted),
+          const Icon(Icons.error_rounded, size: 16, color: EchoTheme.danger),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              msg.content.contains('not have been delivered')
+                  ? 'Message may not have been delivered'
+                  : 'Failed to send',
+              style: const TextStyle(
+                fontSize: 12,
+                color: EchoTheme.danger,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
           if (widget.onRetry != null) ...[
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             GestureDetector(
               onTap: () => widget.onRetry?.call(msg),
-              child: Text(
-                'Retry',
-                style: TextStyle(
-                  fontSize: 11,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
                   color: context.accent,
-                  fontWeight: FontWeight.w600,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'Retry',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
           ],
           if (widget.onDelete != null) ...[
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             GestureDetector(
               onTap: () => widget.onDelete?.call(msg),
               child: Text(
                 'Delete',
                 style: TextStyle(
-                  fontSize: 11,
-                  color: EchoTheme.danger,
+                  fontSize: 12,
+                  color: EchoTheme.danger.withValues(alpha: 0.8),
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -661,6 +692,7 @@ class _MessageItemState extends State<MessageItem> {
                         imageUrl: imgUrl,
                         fit: BoxFit.cover,
                         httpHeaders: headers,
+                        cacheManager: chatImageCacheManager,
                         errorWidget: (_, _, _) => const SizedBox.shrink(),
                         placeholder: (_, _) => SizedBox(
                           height: 60,
@@ -695,10 +727,7 @@ class _MessageItemState extends State<MessageItem> {
             Icons.push_pin,
             size: 11,
             color: isMine
-                ? Theme.of(context)
-                      .colorScheme
-                      .onPrimary
-                      .withValues(alpha: 0.7)
+                ? Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7)
                 : context.accent,
           ),
           const SizedBox(width: 3),
@@ -708,10 +737,9 @@ class _MessageItemState extends State<MessageItem> {
               fontSize: 10,
               fontWeight: FontWeight.w500,
               color: isMine
-                  ? Theme.of(context)
-                        .colorScheme
-                        .onPrimary
-                        .withValues(alpha: 0.7)
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.onPrimary.withValues(alpha: 0.7)
                   : context.accent,
             ),
           ),

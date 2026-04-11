@@ -212,7 +212,6 @@ class _MessageSearchOverlayState extends ConsumerState<MessageSearchOverlay> {
               ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 200),
                 child: ListView.builder(
-                  shrinkWrap: true,
                   itemCount: _searchResults.length,
                   itemBuilder: (context, i) {
                     final r = _searchResults[i];

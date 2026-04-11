@@ -40,7 +40,6 @@ class MentionAutocomplete extends StatelessWidget {
         border: Border.all(color: context.border),
       ),
       child: ListView.builder(
-        shrinkWrap: true,
         reverse: true,
         padding: EdgeInsets.zero,
         itemCount: filtered.length,

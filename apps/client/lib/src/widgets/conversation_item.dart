@@ -59,8 +59,9 @@ class _ConversationItemState extends State<ConversationItem> {
 
   Future<void> _loadDraft() async {
     _prefsCache ??= await SharedPreferences.getInstance();
-    final raw =
-        _prefsCache!.getString('$_draftKeyPrefix${widget.conversation.id}');
+    final raw = _prefsCache!.getString(
+      '$_draftKeyPrefix${widget.conversation.id}',
+    );
     if (!mounted) return;
     final draft = raw?.trim().isNotEmpty == true ? raw!.trim() : null;
     if (draft != _draft) setState(() => _draft = draft);
@@ -145,39 +146,43 @@ class _ConversationItemState extends State<ConversationItem> {
     final hasUnread = conv.unreadCount > 0;
     final snippet = _resolveSnippet();
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        onSecondaryTapUp: (details) {
-          widget.onContextMenu?.call(details.globalPosition);
-        },
-        onLongPressStart: _enableLongPressMenu
-            ? (details) {
-                widget.onContextMenu?.call(details.globalPosition);
-              }
-            : null,
-        child: Container(
-          height: 68,
-          margin: const EdgeInsets.symmetric(vertical: 1),
-          decoration: BoxDecoration(
-            color: _resolveBackgroundColor(context),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            children: [
-              _buildAvatarStack(context, conv, displayName),
-              const SizedBox(width: 12),
-              _buildNameAndSnippet(
-                context,
-                displayName: displayName,
-                snippet: snippet,
-                hasUnread: hasUnread,
-                conv: conv,
-              ),
-            ],
+    return Semantics(
+      label: 'Conversation with $displayName',
+      button: true,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          onSecondaryTapUp: (details) {
+            widget.onContextMenu?.call(details.globalPosition);
+          },
+          onLongPressStart: _enableLongPressMenu
+              ? (details) {
+                  widget.onContextMenu?.call(details.globalPosition);
+                }
+              : null,
+          child: Container(
+            height: 68,
+            margin: const EdgeInsets.symmetric(vertical: 1),
+            decoration: BoxDecoration(
+              color: _resolveBackgroundColor(context),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                _buildAvatarStack(context, conv, displayName),
+                const SizedBox(width: 12),
+                _buildNameAndSnippet(
+                  context,
+                  displayName: displayName,
+                  snippet: snippet,
+                  hasUnread: hasUnread,
+                  conv: conv,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -259,7 +264,13 @@ class _ConversationItemState extends State<ConversationItem> {
         if (widget.isPinned)
           Padding(
             padding: const EdgeInsets.only(right: 4),
-            child: Icon(Icons.push_pin, size: 12, color: context.textMuted),
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Center(
+                child: Icon(Icons.push_pin, size: 12, color: context.textMuted),
+              ),
+            ),
           ),
         Expanded(
           child: Text(
@@ -332,10 +343,16 @@ class _ConversationItemState extends State<ConversationItem> {
         if (conv.isMuted)
           Padding(
             padding: const EdgeInsets.only(left: 6),
-            child: Icon(
-              Icons.notifications_off_outlined,
-              size: 14,
-              color: context.textMuted,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Center(
+                child: Icon(
+                  Icons.notifications_off_outlined,
+                  size: 14,
+                  color: context.textMuted,
+                ),
+              ),
             ),
           ),
         if (hasUnread)
