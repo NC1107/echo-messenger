@@ -93,6 +93,19 @@ pub async fn generate_token(
         return Err(AppError::bad_request("Room name is required"));
     }
 
+    // Validate room name: alphanumeric, hyphens, underscores, colons only.
+    // Prevents injection into LiveKit room names that could break tenant
+    // isolation or cause unexpected behavior in the LiveKit server.
+    if room.len() > 128
+        || !room
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ':')
+    {
+        return Err(AppError::bad_request(
+            "Room name must be alphanumeric with hyphens, underscores, or colons (max 128 chars)",
+        ));
+    }
+
     // Security: verify the user is a member of the conversation they are
     // requesting a voice token for.  Without this check any authenticated
     // user could generate a token for an arbitrary room and eavesdrop on
@@ -155,6 +168,29 @@ pub async fn generate_token(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_room_name_validation() {
+        // Valid names
+        for name in ["room-123", "abc_def", "room:channel", "abc123", "A-B_C:D"] {
+            assert!(
+                name.len() <= 128
+                    && name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ':'),
+                "Expected valid: {name}"
+            );
+        }
+        // Invalid names
+        for name in ["room name", "room/../../etc", "room\n", "<script>", "room;DROP"] {
+            assert!(
+                !name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ':'),
+                "Expected invalid: {name}"
+            );
+        }
+    }
 
     #[test]
     fn test_livekit_claims_serialization() {
