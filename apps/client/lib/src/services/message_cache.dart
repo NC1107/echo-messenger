@@ -10,6 +10,14 @@ class MessageCache {
     _box = await Hive.openBox<Map>(_boxName);
   }
 
+  /// Re-initialize with a user-scoped Hive box.
+  /// Call after login to isolate message cache per user.
+  static Future<void> initForUser(String userId, String serverHost) async {
+    if (_box != null && _box!.isOpen) await _box!.close();
+    final sanitized = '${userId}_$serverHost'.replaceAll(RegExp(r'[^\w]'), '_');
+    _box = await Hive.openBox<Map>('echo_messages_$sanitized');
+  }
+
   static Future<void> cacheMessages(
     String conversationId,
     List<ChatMessage> messages,

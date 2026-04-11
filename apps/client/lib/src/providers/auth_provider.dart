@@ -6,6 +6,9 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/background_service.dart' show BackgroundService;
+import '../services/message_cache.dart';
+import '../services/secure_key_store.dart';
+import '../services/user_data_dir.dart';
 import 'server_url_provider.dart';
 
 const _kJsonHeaders = {'Content-Type': 'application/json'};
@@ -89,6 +92,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           // Legacy mode: we have an access token but no refresh token.
           // Restore the session optimistically -- it may be expired, but
           // individual API calls will handle 401 gracefully.
+          await _setUserScope(storedUserId);
           state = AuthState(
             isLoggedIn: true,
             userId: storedUserId,
@@ -120,6 +124,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         final userId = data['user_id'] as String? ?? storedUserId ?? '';
         final username = data['username'] as String? ?? storedUsername ?? '';
 
+        await _setUserScope(userId);
         state = AuthState(
           isLoggedIn: true,
           userId: userId,
@@ -247,6 +252,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Scope secure storage and message cache to the logged-in user.
+  Future<void> _setUserScope(String userId) async {
+    final host = Uri.parse(_serverUrl).host;
+    SecureKeyStore.instance.setUserScope(userId, host);
+    await UserDataDir.instance.setUser(userId, _serverUrl);
+    await MessageCache.initForUser(userId, host);
+  }
+
   /// Clear all stored tokens.
   Future<void> _clearStoredTokens() async {
     try {
@@ -286,6 +299,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         final refreshToken = data['refresh_token'] as String?;
         final userId = data['user_id'] as String;
 
+        await _setUserScope(userId);
         state = AuthState(
           isLoggedIn: true,
           userId: userId,
@@ -335,6 +349,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         final userId = data['user_id'] as String;
         final avatarUrl = data['avatar_url'] as String?;
 
+        await _setUserScope(userId);
         state = AuthState(
           isLoggedIn: true,
           userId: userId,
@@ -378,6 +393,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   void logout() {
     BackgroundService.instance.stop();
+    SecureKeyStore.instance.clearUserScope();
+    UserDataDir.instance.clearUser();
     _clearStoredTokens();
     state = const AuthState();
   }

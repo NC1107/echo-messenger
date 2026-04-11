@@ -12,6 +12,7 @@ import 'src/services/debug_log_service.dart';
 import 'src/services/message_cache.dart';
 import 'src/services/notification_service.dart';
 import 'src/services/sound_service.dart';
+import 'src/services/user_data_dir.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,6 +46,7 @@ void main() async {
 
 Future<void> _initAndRun() async {
   await Hive.initFlutter();
+  await UserDataDir.instance.init();
   await MessageCache.init();
 
   final container = ProviderContainer();
