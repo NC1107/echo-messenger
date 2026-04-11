@@ -8,7 +8,7 @@ use dashmap::DashMap;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-pub type WsTx = mpsc::UnboundedSender<WsMessage>;
+pub type WsTx = mpsc::Sender<WsMessage>;
 
 #[derive(Debug, Default, Clone)]
 pub struct Hub {
@@ -58,7 +58,7 @@ impl Hub {
         if let Some(devices) = self.connections.get(user_id) {
             let mut any_sent = false;
             for entry in devices.iter() {
-                if entry.value().send(msg.clone()).is_ok() {
+                if entry.value().try_send(msg.clone()).is_ok() {
                     any_sent = true;
                 }
             }
@@ -73,7 +73,7 @@ impl Hub {
         if let Some(devices) = self.connections.get(user_id)
             && let Some(tx) = devices.get(&device_id)
         {
-            return tx.send(msg).is_ok();
+            return tx.try_send(msg).is_ok();
         }
         false
     }
@@ -102,7 +102,7 @@ mod tests {
     async fn test_register_and_send() {
         let hub = Hub::new();
         let user_id = Uuid::new_v4();
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(16);
 
         hub.register(user_id, 1, tx);
         let sent = hub.send_to(&user_id, WsMessage::Text("hello".into()));
@@ -119,7 +119,7 @@ mod tests {
     async fn test_unregister_removes() {
         let hub = Hub::new();
         let user_id = Uuid::new_v4();
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::channel(16);
 
         hub.register(user_id, 1, tx);
         hub.unregister(user_id, 1);
@@ -141,8 +141,8 @@ mod tests {
     async fn test_multi_device_delivery() {
         let hub = Hub::new();
         let user_id = Uuid::new_v4();
-        let (tx1, mut rx1) = mpsc::unbounded_channel();
-        let (tx2, mut rx2) = mpsc::unbounded_channel();
+        let (tx1, mut rx1) = mpsc::channel(16);
+        let (tx2, mut rx2) = mpsc::channel(16);
 
         hub.register(user_id, 1, tx1);
         hub.register(user_id, 2, tx2);
@@ -165,8 +165,8 @@ mod tests {
     async fn test_send_to_specific_device() {
         let hub = Hub::new();
         let user_id = Uuid::new_v4();
-        let (tx1, mut rx1) = mpsc::unbounded_channel();
-        let (tx2, mut rx2) = mpsc::unbounded_channel();
+        let (tx1, mut rx1) = mpsc::channel(16);
+        let (tx2, mut rx2) = mpsc::channel(16);
 
         hub.register(user_id, 1, tx1);
         hub.register(user_id, 2, tx2);
@@ -189,8 +189,8 @@ mod tests {
     async fn test_unregister_one_device_keeps_others() {
         let hub = Hub::new();
         let user_id = Uuid::new_v4();
-        let (tx1, _rx1) = mpsc::unbounded_channel();
-        let (tx2, mut rx2) = mpsc::unbounded_channel();
+        let (tx1, _rx1) = mpsc::channel(16);
+        let (tx2, mut rx2) = mpsc::channel(16);
 
         hub.register(user_id, 1, tx1);
         hub.register(user_id, 2, tx2);

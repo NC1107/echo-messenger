@@ -124,7 +124,10 @@ pub async fn register(
     validate_username(&body.username)?;
     validate_password(&body.password)?;
 
-    let password_hash = password::hash_password(&body.password)?;
+    let pw = body.password.clone();
+    let password_hash = tokio::task::spawn_blocking(move || password::hash_password(&pw))
+        .await
+        .map_err(|_| AppError::internal("Password hashing failed"))??;
     let user_id = db::users::create_user(&state.pool, &body.username, &password_hash).await?;
     let access_token = jwt::create_token(user_id, &state.jwt_secret)?;
     let (refresh_token, _family_id) = issue_refresh_token(&state.pool, user_id).await?;
@@ -151,7 +154,11 @@ pub async fn login(
         .await?
         .ok_or_else(|| AppError::unauthorized("Invalid username or password"))?;
 
-    let valid = password::verify_password(&body.password, &user.password_hash)?;
+    let pw = body.password.clone();
+    let hash = user.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || password::verify_password(&pw, &hash))
+        .await
+        .map_err(|_| AppError::internal("Password verification failed"))??;
     if !valid {
         return Err(AppError::unauthorized("Invalid username or password"));
     }
