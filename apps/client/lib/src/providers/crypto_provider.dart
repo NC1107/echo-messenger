@@ -7,6 +7,7 @@ import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
 import 'auth_provider.dart';
 import 'server_url_provider.dart';
+import 'websocket_provider.dart';
 
 /// Provider for the CryptoService singleton.
 ///
@@ -139,6 +140,10 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
         keysUploadFailed: false,
         keysWereRegenerated: regenerated,
       );
+
+      // Decrypt any messages that arrived before crypto was ready
+      final myUserId = ref.read(authProvider).userId ?? '';
+      ref.read(websocketProvider.notifier).drainPendingDecryptQueue(myUserId);
     } on PlatformException catch (e) {
       // Linux libsecret / keyring failures -- degrade gracefully so the
       // user can still use the app without end-to-end encryption.

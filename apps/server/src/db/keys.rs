@@ -163,11 +163,12 @@ pub async fn get_prekey_bundle(
 
 /// Return all device_ids registered for a given user.
 pub async fn get_user_devices(pool: &PgPool, user_id: Uuid) -> Result<Vec<i32>, sqlx::Error> {
-    let rows: Vec<(i32,)> =
-        sqlx::query_as("SELECT device_id FROM identity_keys WHERE user_id = $1 ORDER BY device_id")
-            .bind(user_id)
-            .fetch_all(pool)
-            .await?;
+    let rows: Vec<(i32,)> = sqlx::query_as(
+        "SELECT device_id FROM identity_keys WHERE user_id = $1 ORDER BY device_id DESC",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
     Ok(rows.into_iter().map(|(d,)| d).collect())
 }
 

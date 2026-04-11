@@ -86,6 +86,39 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   Ref get ref;
   StreamController<Map<String, dynamic>> get voiceSignalController;
 
+  /// Messages received before crypto was initialized.
+  /// Drained by [drainPendingDecryptQueue] once crypto is ready.
+  final List<Map<String, dynamic>> _pendingDecryptQueue = [];
+
+  /// Decrypt queued messages that arrived before crypto init completed.
+  void drainPendingDecryptQueue(String myUserId) {
+    if (_pendingDecryptQueue.isEmpty) return;
+    final crypto = ref.read(cryptoServiceProvider);
+    final token = ref.read(authProvider).token ?? '';
+    crypto.setToken(token);
+
+    final queue = List<Map<String, dynamic>>.from(_pendingDecryptQueue);
+    _pendingDecryptQueue.clear();
+
+    for (final json in queue) {
+      final rawContent = (json['content'] ?? '').toString();
+      final fromUserId = json['from_user_id'] as String? ?? '';
+      final conversationId = json['conversation_id'] as String? ?? '';
+      final timestamp = json['timestamp'] as String? ?? '';
+      final senderUsername = json['from_username'] as String? ?? '';
+      _decryptAndDeliverWithPreview(
+        crypto,
+        json,
+        rawContent,
+        fromUserId,
+        myUserId,
+        conversationId,
+        timestamp,
+        senderUsername,
+      );
+    }
+  }
+
   /// Dispatch an incoming server message to the appropriate handler.
   void handleServerMessage(Map<String, dynamic> json, String myUserId) {
     final type = json['type'] as String;
@@ -260,15 +293,21 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         senderUsername,
       );
     } else {
-      final msg = ChatMessage.fromServerJson(json, myUserId);
-      ref.read(chatProvider.notifier).addMessage(msg);
+      // Crypto not ready yet — show a placeholder and queue for decryption.
+      final placeholder = ChatMessage.fromServerJson({
+        ...json,
+        'content': 'Securing message...',
+      }, myUserId).copyWith(isEncrypted: true);
+      ref.read(chatProvider.notifier).addMessage(placeholder);
 
-      // Update conversations list with raw content
+      // Queue the raw JSON so it can be decrypted once crypto initializes
+      _pendingDecryptQueue.add(json);
+
       ref
           .read(conversationsProvider.notifier)
           .onNewMessage(
             conversationId: conversationId,
-            content: rawContent,
+            content: 'Encrypted message',
             timestamp: timestamp,
             senderUsername: senderUsername,
           );
