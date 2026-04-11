@@ -758,6 +758,38 @@ class CryptoService {
   static const _initialMsgMagicV1 = [0xEC, 0x01];
   static const _initialMsgMagicV2 = [0xEC, 0x02];
 
+  /// Build the initial message wire format with X3DH key exchange header.
+  /// Returns the session wire bytes unchanged if no X3DH result is pending.
+  Future<Uint8List> _buildInitialWire(Uint8List sessionWire) async {
+    if (_lastX3dhResult == null) return sessionWire;
+
+    final idPub = (await _identityKeyPair!.extractPublicKey()).bytes;
+    final ephPub = _lastX3dhResult!.ephemeralPublic.bytes;
+
+    Uint8List wire;
+    if (_lastOtpKeyId != null) {
+      wire = Uint8List(2 + 32 + 32 + 4 + sessionWire.length);
+      wire[0] = _initialMsgMagicV2[0];
+      wire[1] = _initialMsgMagicV2[1];
+      wire.setRange(2, 34, Uint8List.fromList(idPub));
+      wire.setRange(34, 66, Uint8List.fromList(ephPub));
+      final bd = ByteData.sublistView(wire);
+      bd.setInt32(66, _lastOtpKeyId!, Endian.little);
+      wire.setRange(70, wire.length, sessionWire);
+    } else {
+      wire = Uint8List(2 + 32 + 32 + sessionWire.length);
+      wire[0] = _initialMsgMagicV1[0];
+      wire[1] = _initialMsgMagicV1[1];
+      wire.setRange(2, 34, Uint8List.fromList(idPub));
+      wire.setRange(34, 66, Uint8List.fromList(ephPub));
+      wire.setRange(66, wire.length, sessionWire);
+    }
+
+    _lastX3dhResult = null;
+    _lastOtpKeyId = null;
+    return wire;
+  }
+
   /// Encrypt a plaintext message for a specific peer.
   ///
   /// For the first message (new session), includes X3DH key exchange data
@@ -784,37 +816,7 @@ class CryptoService {
     }
 
     final wire = await session.encrypt(plaintextBytes);
-
-    Uint8List finalWire;
-    if (isNewSession && _lastX3dhResult != null) {
-      final idPub = (await _identityKeyPair!.extractPublicKey()).bytes;
-      final ephPub = _lastX3dhResult!.ephemeralPublic.bytes;
-
-      if (_lastOtpKeyId != null) {
-        // V2 format: includes OTP key ID so Bob can look up the right private key
-        finalWire = Uint8List(2 + 32 + 32 + 4 + wire.length);
-        finalWire[0] = _initialMsgMagicV2[0];
-        finalWire[1] = _initialMsgMagicV2[1];
-        finalWire.setRange(2, 34, Uint8List.fromList(idPub));
-        finalWire.setRange(34, 66, Uint8List.fromList(ephPub));
-        final bd = ByteData.sublistView(finalWire);
-        bd.setInt32(66, _lastOtpKeyId!, Endian.little);
-        finalWire.setRange(70, finalWire.length, wire);
-      } else {
-        // V1 format: no OTP used (3-DH)
-        finalWire = Uint8List(2 + 32 + 32 + wire.length);
-        finalWire[0] = _initialMsgMagicV1[0];
-        finalWire[1] = _initialMsgMagicV1[1];
-        finalWire.setRange(2, 34, Uint8List.fromList(idPub));
-        finalWire.setRange(34, 66, Uint8List.fromList(ephPub));
-        finalWire.setRange(66, finalWire.length, wire);
-      }
-
-      _lastX3dhResult = null;
-      _lastOtpKeyId = null;
-    } else {
-      finalWire = wire;
-    }
+    final finalWire = await _buildInitialWire(wire);
 
     await _saveSession(peerUserId, session);
     return base64Encode(finalWire);
@@ -1341,40 +1343,12 @@ class CryptoService {
           );
           final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
 
-          final isNewSession = _lastX3dhResult != null;
-          if (!isNewSession) {
+          if (_lastX3dhResult == null) {
             await _saveSession(sessionKey, session);
           }
 
           final wire = await session.encrypt(plaintextBytes);
-
-          Uint8List finalWire;
-          if (isNewSession && _lastX3dhResult != null) {
-            final idPub = (await _identityKeyPair!.extractPublicKey()).bytes;
-            final ephPub = _lastX3dhResult!.ephemeralPublic.bytes;
-
-            if (_lastOtpKeyId != null) {
-              finalWire = Uint8List(2 + 32 + 32 + 4 + wire.length);
-              finalWire[0] = _initialMsgMagicV2[0];
-              finalWire[1] = _initialMsgMagicV2[1];
-              finalWire.setRange(2, 34, Uint8List.fromList(idPub));
-              finalWire.setRange(34, 66, Uint8List.fromList(ephPub));
-              final bd = ByteData.sublistView(finalWire);
-              bd.setInt32(66, _lastOtpKeyId!, Endian.little);
-              finalWire.setRange(70, finalWire.length, wire);
-            } else {
-              finalWire = Uint8List(2 + 32 + 32 + wire.length);
-              finalWire[0] = _initialMsgMagicV1[0];
-              finalWire[1] = _initialMsgMagicV1[1];
-              finalWire.setRange(2, 34, Uint8List.fromList(idPub));
-              finalWire.setRange(34, 66, Uint8List.fromList(ephPub));
-              finalWire.setRange(66, finalWire.length, wire);
-            }
-            _lastX3dhResult = null;
-            _lastOtpKeyId = null;
-          } else {
-            finalWire = wire;
-          }
+          final finalWire = await _buildInitialWire(wire);
 
           await _saveSession(sessionKey, session);
           return base64Encode(finalWire);
@@ -1387,33 +1361,6 @@ class CryptoService {
       }
     }
     return results;
-  }
-
-  /// Encrypt a message for the sender's OWN other devices (self-delivery).
-  ///
-  /// Returns a map of `{deviceId: base64Ciphertext}` for each of the sender's
-  /// other devices (excluding the current device).
-  Future<Map<String, String>> encryptForSelfDevices(String plaintext) async {
-    if (_identityKeyPair == null) await init();
-
-    // Fetch own user ID from the auth token claims (or use a cached value)
-    // For now, we fetch our own device list from the server
-    try {
-      final response = await http.get(
-        // We need the current user's ID — it's embedded in the token but
-        // easier to just use the fact that crypto_provider knows it.
-        // This method is called from websocket_provider which has access.
-        // For now, return empty — self-device delivery will be wired when
-        // the caller provides the userId.
-        Uri.parse('$serverUrl/api/keys/bundles/_self'),
-        headers: {'Authorization': 'Bearer $_token'},
-      );
-      // This endpoint doesn't exist yet for "_self" — handle gracefully
-      if (response.statusCode != 200) return {};
-    } catch (_) {
-      return {};
-    }
-    return {};
   }
 
   /// Encrypt for the sender's own other devices given the sender's user ID.
@@ -1440,33 +1387,7 @@ class CryptoService {
               await _saveSession(sessionKey, session);
             }
             final wire = await session.encrypt(plaintextBytes);
-
-            Uint8List finalWire;
-            if (_lastX3dhResult != null) {
-              final idPub = (await _identityKeyPair!.extractPublicKey()).bytes;
-              final ephPub = _lastX3dhResult!.ephemeralPublic.bytes;
-              if (_lastOtpKeyId != null) {
-                finalWire = Uint8List(2 + 32 + 32 + 4 + wire.length);
-                finalWire[0] = _initialMsgMagicV2[0];
-                finalWire[1] = _initialMsgMagicV2[1];
-                finalWire.setRange(2, 34, Uint8List.fromList(idPub));
-                finalWire.setRange(34, 66, Uint8List.fromList(ephPub));
-                final bd = ByteData.sublistView(finalWire);
-                bd.setInt32(66, _lastOtpKeyId!, Endian.little);
-                finalWire.setRange(70, finalWire.length, wire);
-              } else {
-                finalWire = Uint8List(2 + 32 + 32 + wire.length);
-                finalWire[0] = _initialMsgMagicV1[0];
-                finalWire[1] = _initialMsgMagicV1[1];
-                finalWire.setRange(2, 34, Uint8List.fromList(idPub));
-                finalWire.setRange(34, 66, Uint8List.fromList(ephPub));
-                finalWire.setRange(66, finalWire.length, wire);
-              }
-              _lastX3dhResult = null;
-              _lastOtpKeyId = null;
-            } else {
-              finalWire = wire;
-            }
+            final finalWire = await _buildInitialWire(wire);
 
             await _saveSession(sessionKey, session);
             return base64Encode(finalWire);

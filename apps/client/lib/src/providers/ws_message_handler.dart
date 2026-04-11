@@ -436,54 +436,41 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   }
 
   /// Handle a `self_message` event: an outgoing message sent from another
-  /// device of the current user. Decrypt and display as a sent message.
+  /// device of the current user. Repackage as a new_message from self and
+  /// reuse the standard decrypt-and-deliver pipeline.
   void _handleSelfMessage(Map<String, dynamic> json, String myUserId) {
     final rawContent = json['content'] as String? ?? '';
     final fromDeviceId = json['from_device_id'] as int?;
     final conversationId = json['conversation_id'] as String? ?? '';
     final timestamp = json['timestamp'] as String? ?? '';
-    final messageId = json['message_id'] as String? ?? '';
-    final cryptoState = ref.read(cryptoProvider);
 
-    if (!cryptoState.isInitialized || rawContent.isEmpty) return;
+    if (rawContent.isEmpty) return;
+
+    // Repackage as a new_message so _decryptAndDeliverWithPreview handles it.
+    final syntheticJson = <String, dynamic>{
+      ...json,
+      'from_user_id': myUserId,
+      'from_username': 'Me',
+    };
+
+    final cryptoState = ref.read(cryptoProvider);
+    if (!cryptoState.isInitialized) return;
 
     final crypto = ref.read(cryptoServiceProvider);
     final token = ref.read(authProvider).token ?? '';
     crypto.setToken(token);
 
-    () async {
-      try {
-        final decrypted = await crypto.decryptMessage(
-          myUserId,
-          rawContent,
-          fromDeviceId: fromDeviceId,
-        );
-        final msg = ChatMessage(
-          id: messageId,
-          conversationId: conversationId,
-          fromUserId: myUserId,
-          fromUsername: 'Me',
-          content: decrypted,
-          timestamp: timestamp,
-          isMine: true,
-          isEncrypted: true,
-        );
-        ref.read(chatProvider.notifier).addMessage(msg);
-        if (!messageId.startsWith('pending_')) {
-          MessageCache.cacheMessages(conversationId, [msg]);
-        }
-        ref
-            .read(conversationsProvider.notifier)
-            .onNewMessage(
-              conversationId: conversationId,
-              content: decrypted,
-              timestamp: timestamp,
-              senderUsername: 'Me',
-            );
-      } catch (e) {
-        debugPrint('[WebSocket] Self-message decryption failed: $e');
-      }
-    }();
+    _decryptAndDeliverWithPreview(
+      crypto,
+      syntheticJson,
+      rawContent,
+      myUserId,
+      myUserId,
+      conversationId,
+      timestamp,
+      'Me',
+      fromDeviceId: fromDeviceId,
+    );
   }
 
   /// Show a notification + play sound if the conversation is not muted.

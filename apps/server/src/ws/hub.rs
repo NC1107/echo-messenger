@@ -78,26 +78,6 @@ impl Hub {
         false
     }
 
-    /// Send a message to all devices of a user EXCEPT the specified device.
-    pub fn send_to_other_devices(
-        &self,
-        user_id: &Uuid,
-        exclude_device_id: i32,
-        msg: WsMessage,
-    ) -> bool {
-        if let Some(devices) = self.connections.get(user_id) {
-            let mut any_sent = false;
-            for entry in devices.iter() {
-                if *entry.key() != exclude_device_id && entry.value().send(msg.clone()).is_ok() {
-                    any_sent = true;
-                }
-            }
-            any_sent
-        } else {
-            false
-        }
-    }
-
     /// Backward-compatible: send to user (all devices). Alias for `send_to_user`.
     pub fn send_to(&self, user_id: &Uuid, msg: WsMessage) -> bool {
         self.send_to_user(user_id, msg)
@@ -203,34 +183,6 @@ mod tests {
 
         // Device 1 should NOT have a message
         assert!(rx1.try_recv().is_err());
-    }
-
-    #[tokio::test]
-    async fn test_send_to_other_devices() {
-        let hub = Hub::new();
-        let user_id = Uuid::new_v4();
-        let (tx1, mut rx1) = mpsc::unbounded_channel();
-        let (tx2, mut rx2) = mpsc::unbounded_channel();
-        let (tx3, mut rx3) = mpsc::unbounded_channel();
-
-        hub.register(user_id, 1, tx1);
-        hub.register(user_id, 2, tx2);
-        hub.register(user_id, 3, tx3);
-
-        let sent = hub.send_to_other_devices(&user_id, 1, WsMessage::Text("from_device_1".into()));
-        assert!(sent);
-
-        // Device 1 should NOT receive
-        assert!(rx1.try_recv().is_err());
-        // Devices 2 and 3 should receive
-        match rx2.recv().await.unwrap() {
-            WsMessage::Text(t) => assert_eq!(t.as_str(), "from_device_1"),
-            _ => panic!("Expected Text"),
-        }
-        match rx3.recv().await.unwrap() {
-            WsMessage::Text(t) => assert_eq!(t.as_str(), "from_device_1"),
-            _ => panic!("Expected Text"),
-        }
     }
 
     #[tokio::test]
