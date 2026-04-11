@@ -103,8 +103,14 @@ pub async fn upload_bundle(
         })
         .collect::<Result<Vec<_>, AppError>>()?;
 
+    // Wrap all key stores in a transaction to prevent partial uploads.
+    let mut tx = state.pool.begin().await.map_err(|e| {
+        tracing::error!("Failed to begin key upload transaction: {e:?}");
+        AppError::internal("Database error")
+    })?;
+
     db::keys::store_identity_key(
-        &state.pool,
+        &mut *tx,
         auth_user.user_id,
         device_id,
         &identity_key,
@@ -112,7 +118,7 @@ pub async fn upload_bundle(
     )
     .await?;
     db::keys::store_signed_prekey(
-        &state.pool,
+        &mut *tx,
         auth_user.user_id,
         device_id,
         body.signed_prekey_id,
@@ -123,13 +129,18 @@ pub async fn upload_bundle(
 
     if !one_time_prekeys.is_empty() {
         db::keys::store_one_time_prekeys(
-            &state.pool,
+            &mut *tx,
             auth_user.user_id,
             device_id,
             &one_time_prekeys,
         )
         .await?;
     }
+
+    tx.commit().await.map_err(|e| {
+        tracing::error!("Failed to commit key upload transaction: {e:?}");
+        AppError::internal("Database error")
+    })?;
 
     tracing::info!(
         "PreKey bundle uploaded for user {} device {} ({} OTPs)",
