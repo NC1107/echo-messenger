@@ -17,6 +17,7 @@ import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/chat_provider.dart';
+import '../providers/crypto_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../providers/voice_settings_provider.dart';
@@ -1121,9 +1122,17 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   Widget _buildSendButton() {
-    final canSend =
+    final hasContent =
         !_isTextEmpty ||
         (_pendingAttachmentUrl != null && !_isUploadingAttachment);
+
+    // For DMs, gate on crypto readiness so users can't send before encryption
+    // is initialized (which would fail with a confusing error).
+    final cryptoState = ref.watch(cryptoProvider);
+    final cryptoReady =
+        cryptoState.isInitialized && !cryptoState.keysUploadFailed;
+    final isDm = !widget.conversation.isGroup;
+    final canSend = hasContent && (cryptoReady || !isDm);
 
     final Color buttonColor;
     if (!canSend) {

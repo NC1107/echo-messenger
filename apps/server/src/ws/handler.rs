@@ -41,6 +41,10 @@ enum ClientMessage {
         to_user_id: Uuid,
         signal: serde_json::Value,
     },
+    #[serde(rename = "key_reset")]
+    KeyReset { conversation_id: Uuid },
+    #[serde(rename = "call_started")]
+    CallStarted { conversation_id: Uuid },
 }
 
 #[derive(Serialize)]
@@ -97,6 +101,18 @@ enum ServerMessage {
         channel_id: Uuid,
         from_user_id: Uuid,
         signal: serde_json::Value,
+    },
+    #[serde(rename = "key_reset")]
+    KeyReset {
+        from_user_id: Uuid,
+        from_username: String,
+        conversation_id: Uuid,
+    },
+    #[serde(rename = "call_started")]
+    CallStarted {
+        from_user_id: Uuid,
+        from_username: String,
+        conversation_id: Uuid,
     },
 }
 
@@ -370,6 +386,67 @@ async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str,
             )
             .await;
         }
+        ClientMessage::KeyReset { conversation_id } => {
+            handle_broadcast_event(
+                state,
+                sender_id,
+                sender_username,
+                conversation_id,
+                |from_user_id, from_username, conversation_id| ServerMessage::KeyReset {
+                    from_user_id,
+                    from_username,
+                    conversation_id,
+                },
+            )
+            .await;
+        }
+        ClientMessage::CallStarted { conversation_id } => {
+            handle_broadcast_event(
+                state,
+                sender_id,
+                sender_username,
+                conversation_id,
+                |from_user_id, from_username, conversation_id| ServerMessage::CallStarted {
+                    from_user_id,
+                    from_username,
+                    conversation_id,
+                },
+            )
+            .await;
+        }
+    }
+}
+
+/// Generic handler for simple broadcast events (key_reset, call_started, etc.).
+/// Verifies membership, then broadcasts to all conversation members except sender.
+async fn handle_broadcast_event<F>(
+    state: &AppState,
+    sender_id: Uuid,
+    sender_username: &str,
+    conversation_id: Uuid,
+    build_event: F,
+) where
+    F: FnOnce(Uuid, String, Uuid) -> ServerMessage,
+{
+    let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    if !is_member {
+        return;
+    }
+
+    let member_ids =
+        match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await {
+            Ok(ids) => ids,
+            Err(_) => return,
+        };
+
+    let event = build_event(sender_id, sender_username.to_string(), conversation_id);
+    if let Ok(json) = serde_json::to_string(&event) {
+        state
+            .hub
+            .broadcast_json(&member_ids, &json, Some(sender_id));
     }
 }
 

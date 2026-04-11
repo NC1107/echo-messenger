@@ -1,4 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -965,7 +967,12 @@ class _MessageItemState extends State<MessageItem> {
     );
 
     final isAlignedEnd = isMine && !widget.compactLayout;
-    final canSwipeToReply = widget.onReply != null && !msg.isSystemEvent;
+    final isMobileTouch =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS);
+    final canSwipeToReply =
+        isMobileTouch && widget.onReply != null && !msg.isSystemEvent;
 
     final messageWidget = Container(
       padding: EdgeInsets.only(

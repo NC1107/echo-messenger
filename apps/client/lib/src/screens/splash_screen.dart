@@ -123,6 +123,25 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       }
       if (!mounted) return;
       context.go('/home');
+
+      // Show one-time notice if encryption keys were regenerated (new device
+      // or secure storage cleared). This means old encrypted messages from
+      // other devices may not be decryptable.
+      final cryptoState = ref.read(cryptoProvider);
+      if (cryptoState.keysWereRegenerated && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'New encryption keys generated. Messages from before '
+                'this login may not be decryptable on this device.',
+              ),
+              duration: Duration(seconds: 6),
+            ),
+          );
+        });
+      }
     } else {
       context.go('/login');
     }

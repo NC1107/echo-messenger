@@ -111,6 +111,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             get(messages::search_messages),
         )
         .route(
+            "/conversations/{conversation_id}/leave",
+            post(messages::leave_conversation),
+        )
+        .route(
             "/conversations/{conversation_id}/mute",
             put(messages::toggle_mute),
         )

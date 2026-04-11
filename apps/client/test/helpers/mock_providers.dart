@@ -5,6 +5,7 @@ import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/providers/conversations_provider.dart';
 import 'package:echo_app/src/providers/contacts_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
+import 'package:echo_app/src/providers/crypto_provider.dart';
 import 'package:echo_app/src/providers/websocket_provider.dart'
     show WebSocketNotifier, WebSocketState, websocketProvider;
 
@@ -187,6 +188,29 @@ class _FakeWebSocketNotifier extends WebSocketNotifier {
 }
 
 // ---------------------------------------------------------------------------
+// Crypto
+// ---------------------------------------------------------------------------
+
+/// Override [cryptoProvider] with an initialized state (crypto ready).
+Override cryptoOverride({bool isInitialized = true}) {
+  return cryptoProvider.overrideWith(
+    (ref) => _FakeCryptoNotifier(ref, isInitialized: isInitialized),
+  );
+}
+
+class _FakeCryptoNotifier extends CryptoNotifier {
+  _FakeCryptoNotifier(super.ref, {bool isInitialized = true}) {
+    state = CryptoState(isInitialized: isInitialized);
+  }
+
+  @override
+  Future<void> initAndUploadKeys() async {}
+
+  @override
+  Future<void> retryKeyUpload() async {}
+}
+
+// ---------------------------------------------------------------------------
 // Convenience: all standard overrides in one list
 // ---------------------------------------------------------------------------
 
@@ -209,5 +233,6 @@ List<Override> standardOverrides({
     conversationsOverride(conversations ?? sampleConversations),
     contactsOverride(),
     webSocketOverride(),
+    cryptoOverride(),
   ];
 }

@@ -417,6 +417,20 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     _channel?.sink.add(jsonEncode(msg));
   }
 
+  /// Notify the peer that encryption keys were reset for this conversation.
+  void sendKeyReset(String conversationId) {
+    _channel?.sink.add(
+      jsonEncode({'type': 'key_reset', 'conversation_id': conversationId}),
+    );
+  }
+
+  /// Notify conversation members that a voice call was started.
+  void sendCallStarted(String conversationId) {
+    _channel?.sink.add(
+      jsonEncode({'type': 'call_started', 'conversation_id': conversationId}),
+    );
+  }
+
   /// Send a reaction via REST (server broadcasts via WebSocket to other members).
   Future<void> sendReaction(
     String conversationId,
