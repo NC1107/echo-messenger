@@ -179,6 +179,12 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleKeyReset(json);
       case 'call_started':
         _handleCallStarted(json);
+      default:
+        DebugLogService.instance.log(
+          LogLevel.warning,
+          'WebSocket',
+          'Unknown message type: $type',
+        );
     }
   }
 

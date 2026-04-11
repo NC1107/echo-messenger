@@ -16,9 +16,11 @@ pub async fn create_pool(database_url: &str) -> PgPool {
     let max_conns: u32 = std::env::var("DB_MAX_CONNECTIONS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(100);
+        .unwrap_or(30);
     PgPoolOptions::new()
         .max_connections(max_conns)
+        .acquire_timeout(std::time::Duration::from_secs(5))
+        .idle_timeout(std::time::Duration::from_secs(300))
         .connect(database_url)
         .await
         .expect("Failed to connect to database")

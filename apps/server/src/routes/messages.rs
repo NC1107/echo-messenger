@@ -297,6 +297,7 @@ pub async fn delete_message(
     // Broadcast to conversation members via WebSocket
     let member_ids = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
         .await
+        .map_err(|e| tracing::error!("Failed to get member IDs for broadcast: {e:?}"))
         .unwrap_or_default();
 
     let event = serde_json::json!({
@@ -345,6 +346,7 @@ pub async fn edit_message(
     // Broadcast to conversation members via WebSocket
     let member_ids = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
         .await
+        .map_err(|e| tracing::error!("Failed to get member IDs for broadcast: {e:?}"))
         .unwrap_or_default();
 
     let event = serde_json::json!({
@@ -571,6 +573,7 @@ pub async fn pin_message(
     // Broadcast to conversation members via WebSocket
     let member_ids = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
         .await
+        .map_err(|e| tracing::error!("Failed to get member IDs for broadcast: {e:?}"))
         .unwrap_or_default();
 
     let event = serde_json::json!({
@@ -656,6 +659,7 @@ pub async fn unpin_message(
     // Broadcast to conversation members via WebSocket
     let member_ids = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
         .await
+        .map_err(|e| tracing::error!("Failed to get member IDs for broadcast: {e:?}"))
         .unwrap_or_default();
 
     let event = serde_json::json!({
