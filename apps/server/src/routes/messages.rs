@@ -97,45 +97,75 @@ pub async fn list_conversations(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Single query with subqueries for members, last message, and unread count.
-    // This replaces the previous 3N+1 query pattern.
+    // CTE-based query: compute members, last message, and unread counts once
+    // instead of per-row correlated subqueries (was O(N^2), now O(N)).
     let rows = sqlx::query_as::<_, ConversationFullRow>(
-        "SELECT \
+        "WITH user_convs AS ( \
+            SELECT cm.conversation_id, cm.is_muted \
+            FROM conversation_members cm \
+            WHERE cm.user_id = $1 \
+        ), \
+        members_cte AS ( \
+            SELECT cm2.conversation_id, \
+                   json_agg(json_build_object( \
+                       'user_id', u.id, 'username', u.username, \
+                       'role', cm2.role, 'avatar_url', u.avatar_url \
+                   )) AS members_json \
+            FROM conversation_members cm2 \
+            JOIN users u ON cm2.user_id = u.id \
+            WHERE cm2.conversation_id IN (SELECT conversation_id FROM user_convs) \
+            GROUP BY cm2.conversation_id \
+        ), \
+        last_msg_cte AS ( \
+            SELECT DISTINCT ON (m.conversation_id) \
+                   m.conversation_id, \
+                   m.content, m.created_at, u2.username AS sender_username \
+            FROM messages m \
+            JOIN users u2 ON m.sender_id = u2.id \
+            WHERE m.conversation_id IN (SELECT conversation_id FROM user_convs) \
+              AND m.deleted_at IS NULL \
+            ORDER BY m.conversation_id, m.created_at DESC \
+        ), \
+        read_cte AS ( \
+            SELECT rr.conversation_id, rr.last_read_at \
+            FROM read_receipts rr \
+            WHERE rr.user_id = $1 \
+              AND rr.conversation_id IN (SELECT conversation_id FROM user_convs) \
+        ), \
+        unread_cte AS ( \
+            SELECT m2.conversation_id, COUNT(*) AS unread_count \
+            FROM messages m2 \
+            JOIN user_convs uc ON uc.conversation_id = m2.conversation_id \
+            LEFT JOIN read_cte rc ON rc.conversation_id = m2.conversation_id \
+            WHERE m2.sender_id != $1 \
+              AND m2.deleted_at IS NULL \
+              AND m2.created_at > COALESCE(rc.last_read_at, '1970-01-01'::timestamptz) \
+            GROUP BY m2.conversation_id \
+        ) \
+        SELECT \
             c.id AS conversation_id, \
             c.kind, \
             c.title, \
             c.icon_url, \
             c.is_encrypted, \
-            cm.is_muted, \
-            (SELECT json_agg(json_build_object( \
-                'user_id', u.id, 'username', u.username, 'role', cm2.role, 'avatar_url', u.avatar_url \
-            )) FROM conversation_members cm2 \
-            JOIN users u ON cm2.user_id = u.id \
-            WHERE cm2.conversation_id = c.id) AS members_json, \
-            (SELECT row_to_json(sub) FROM ( \
-                SELECT m.content, m.created_at, u2.username AS sender_username \
-                FROM messages m \
-                JOIN users u2 ON m.sender_id = u2.id \
-                WHERE m.conversation_id = c.id AND m.deleted_at IS NULL \
-                ORDER BY m.created_at DESC LIMIT 1 \
-            ) sub) AS last_message_json, \
-            (SELECT COUNT(*) FROM messages m2 \
-                WHERE m2.conversation_id = c.id \
-                AND m2.sender_id != $1 \
-                AND m2.deleted_at IS NULL \
-                AND m2.created_at > COALESCE( \
-                    (SELECT last_read_at FROM read_receipts \
-                     WHERE conversation_id = c.id AND user_id = $1), \
-                    '1970-01-01'::timestamptz \
-                ) \
-            ) AS unread_count \
-         FROM conversations c \
-         JOIN conversation_members cm ON cm.conversation_id = c.id \
-         WHERE cm.user_id = $1 \
-         ORDER BY ( \
-            SELECT MAX(m3.created_at) FROM messages m3 \
-            WHERE m3.conversation_id = c.id \
-         ) DESC NULLS LAST",
+            uc.is_muted, \
+            mc.members_json, \
+            CASE WHEN lm.conversation_id IS NOT NULL \
+                 THEN json_build_object( \
+                     'content', lm.content, \
+                     'created_at', lm.created_at, \
+                     'sender_username', lm.sender_username \
+                 ) \
+                 ELSE NULL \
+            END AS last_message_json, \
+            COALESCE(urc.unread_count, 0) AS unread_count \
+        FROM conversations c \
+        JOIN user_convs uc ON uc.conversation_id = c.id \
+        LEFT JOIN members_cte mc ON mc.conversation_id = c.id \
+        LEFT JOIN last_msg_cte lm ON lm.conversation_id = c.id \
+        LEFT JOIN unread_cte urc ON urc.conversation_id = c.id \
+        ORDER BY lm.created_at DESC NULLS LAST \
+        LIMIT 50",
     )
     .bind(auth.user_id)
     .fetch_all(&state.pool)

@@ -174,10 +174,10 @@ pub async fn get_prekey_bundle(
     }))
 }
 
-/// Return all device_ids registered for a given user.
+/// Return device_ids registered for a given user (capped at 10).
 pub async fn get_user_devices(pool: &PgPool, user_id: Uuid) -> Result<Vec<i32>, sqlx::Error> {
     let rows: Vec<(i32,)> = sqlx::query_as(
-        "SELECT device_id FROM identity_keys WHERE user_id = $1 ORDER BY device_id DESC",
+        "SELECT device_id FROM identity_keys WHERE user_id = $1 ORDER BY device_id DESC LIMIT 10",
     )
     .bind(user_id)
     .fetch_all(pool)
