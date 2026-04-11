@@ -3,10 +3,7 @@ all-features = true
 
 [advisories]
 version = 2
-ignore = [
-    # rsa crate timing sidechannel - transitive dep from jsonwebtoken, no patch available
-    "RUSTSEC-2023-0071",
-]
+ignore = []
 
 [licenses]
 version = 2
