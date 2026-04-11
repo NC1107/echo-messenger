@@ -843,6 +843,158 @@ async fn lookup_reply_context(
     }
 }
 
+/// Common fields extracted from a `ServerMessage::NewMessage` for per-device rewriting
+/// and push notification content.
+struct NewMessageFields {
+    message_id: Uuid,
+    from_user_id: Uuid,
+    from_device_id: Option<i32>,
+    from_username: String,
+    conversation_id: Uuid,
+    channel_id: Option<Uuid>,
+    content: String,
+    timestamp: DateTime<Utc>,
+    reply_to_id: Option<Uuid>,
+    reply_to_content: Option<String>,
+    reply_to_username: Option<String>,
+}
+
+impl NewMessageFields {
+    /// Extract fields from a `ServerMessage::NewMessage`, returning `None` for other variants.
+    fn extract(message: &ServerMessage) -> Option<Self> {
+        match message {
+            ServerMessage::NewMessage {
+                message_id,
+                from_user_id,
+                from_device_id,
+                from_username,
+                conversation_id,
+                channel_id,
+                content,
+                timestamp,
+                reply_to_id,
+                reply_to_content,
+                reply_to_username,
+            } => Some(Self {
+                message_id: *message_id,
+                from_user_id: *from_user_id,
+                from_device_id: *from_device_id,
+                from_username: from_username.clone(),
+                conversation_id: *conversation_id,
+                channel_id: *channel_id,
+                content: content.clone(),
+                timestamp: *timestamp,
+                reply_to_id: *reply_to_id,
+                reply_to_content: reply_to_content.clone(),
+                reply_to_username: reply_to_username.clone(),
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// Pre-serialize per-device JSON messages once (keyed by device_id) to avoid
+/// re-serializing the same message for every member in the fanout loop.
+fn build_per_device_json(
+    fields: &NewMessageFields,
+    device_contents: &HashMap<String, String>,
+) -> Vec<(i32, String)> {
+    device_contents
+        .iter()
+        .filter_map(|(device_id_str, ciphertext)| {
+            let did = device_id_str.parse::<i32>().ok()?;
+            let per_device_msg = ServerMessage::NewMessage {
+                message_id: fields.message_id,
+                from_user_id: fields.from_user_id,
+                from_device_id: fields.from_device_id,
+                from_username: fields.from_username.clone(),
+                conversation_id: fields.conversation_id,
+                channel_id: fields.channel_id,
+                content: ciphertext.clone(),
+                timestamp: fields.timestamp,
+                reply_to_id: fields.reply_to_id,
+                reply_to_content: fields.reply_to_content.clone(),
+                reply_to_username: fields.reply_to_username.clone(),
+            };
+            let json = serde_json::to_string(&per_device_msg).ok()?;
+            Some((did, json))
+        })
+        .collect()
+}
+
+/// Deliver a message to a single member via per-device or legacy delivery.
+/// Returns `true` if the member received the message on at least one device.
+fn deliver_to_member(
+    hub: &crate::ws::hub::Hub,
+    member_id: &Uuid,
+    per_device_json: Option<&[(i32, String)]>,
+    legacy_json: Option<&str>,
+) -> bool {
+    if let Some(device_jsons) = per_device_json {
+        device_jsons.iter().any(|(did, json)| {
+            hub.send_to_device(member_id, *did, WsMessage::Text(json.clone().into()))
+        })
+    } else if let Some(json) = legacy_json {
+        hub.send_to_user(member_id, WsMessage::Text(json.to_owned().into()))
+    } else {
+        false
+    }
+}
+
+/// Mark messages as delivered in the DB and send a delivery confirmation back to the sender.
+async fn send_delivery_confirmation(
+    state: &AppState,
+    sender_id: Uuid,
+    sender_device_id: i32,
+    stored_id: Uuid,
+    conv_id: Uuid,
+) {
+    let _ = db::messages::mark_delivered(&state.pool, &[stored_id]).await;
+
+    let delivered_event = ServerMessage::Delivered {
+        message_id: stored_id,
+        conversation_id: conv_id,
+    };
+    if let Ok(delivered_json) = serde_json::to_string(&delivered_event) {
+        state.hub.send_to_device(
+            &sender_id,
+            sender_device_id,
+            WsMessage::Text(delivered_json.into()),
+        );
+    }
+}
+
+/// Spawn a background task to send push notifications to offline users.
+fn spawn_push_notifications(
+    pool: sqlx::PgPool,
+    offline_user_ids: Vec<Uuid>,
+    sender_name: &str,
+    content: &str,
+    is_encrypted: bool,
+    conv_id: Uuid,
+    stored_id: Uuid,
+) {
+    let sender_name = sender_name.to_string();
+    let content = content.to_string();
+    let handle = tokio::spawn(async move {
+        crate::push::notify_offline_users(
+            &pool,
+            &offline_user_ids,
+            &sender_name,
+            &content,
+            is_encrypted,
+            conv_id,
+            stored_id,
+        )
+        .await;
+    });
+    tokio::spawn(async move {
+        if let Err(e) = handle.await {
+            tracing::error!("Push notification task failed for conv {conv_id}: {e}");
+        }
+    });
+}
+
 /// Fan out a message to all conversation members (except sender), with block filtering
 /// and delivery tracking. Supports per-device ciphertext delivery for multi-device.
 #[allow(clippy::too_many_arguments)]
@@ -856,6 +1008,11 @@ async fn fanout_message(
     is_encrypted: bool,
     device_contents: Option<HashMap<String, String>>,
 ) {
+    let Some(fields) = NewMessageFields::extract(message) else {
+        tracing::error!("fanout_message called with non-NewMessage variant");
+        return;
+    };
+
     let member_ids = match db::groups::get_conversation_member_ids(&state.pool, conv_id).await {
         Ok(ids) => ids,
         Err(_) => {
@@ -869,157 +1026,47 @@ async fn fanout_message(
         .await
         .unwrap_or_default();
 
+    // Pre-serialize per-device JSON messages and legacy fallback
+    let per_device_json = device_contents
+        .as_ref()
+        .map(|dc| build_per_device_json(&fields, dc));
+    let legacy_json = serde_json::to_string(message).ok();
+
     let mut any_delivered = false;
     let mut offline_user_ids = Vec::new();
 
-    // Extract common fields from the message for per-device rewriting
-    let (msg_id, from_uid, from_did, from_name, conv, ch, ts, rto_id, rto_content, rto_user) =
-        match message {
-            ServerMessage::NewMessage {
-                message_id,
-                from_user_id,
-                from_device_id,
-                from_username,
-                conversation_id,
-                channel_id,
-                timestamp,
-                reply_to_id,
-                reply_to_content,
-                reply_to_username,
-                ..
-            } => (
-                *message_id,
-                *from_user_id,
-                *from_device_id,
-                from_username.clone(),
-                *conversation_id,
-                *channel_id,
-                *timestamp,
-                *reply_to_id,
-                reply_to_content.clone(),
-                reply_to_username.clone(),
-            ),
-            _ => {
-                tracing::error!("fanout_message called with non-NewMessage variant");
-                return;
-            }
-        };
+    let eligible = member_ids
+        .iter()
+        .filter(|id| **id != sender_id && !blockers.contains(id));
 
-    // Legacy fallback JSON (used when no device_contents or for non-DM group messages)
-    let legacy_json = serde_json::to_string(message).ok();
-
-    // Pre-serialize per-device JSON messages once (keyed by device_id) to avoid
-    // re-serializing the same message for every member in the fanout loop.
-    let per_device_json: Option<Vec<(i32, String)>> = device_contents.as_ref().map(|dc| {
-        dc.iter()
-            .filter_map(|(device_id_str, ciphertext)| {
-                let did = device_id_str.parse::<i32>().ok()?;
-                let per_device_msg = ServerMessage::NewMessage {
-                    message_id: msg_id,
-                    from_user_id: from_uid,
-                    from_device_id: from_did,
-                    from_username: from_name.clone(),
-                    conversation_id: conv,
-                    channel_id: ch,
-                    content: ciphertext.clone(),
-                    timestamp: ts,
-                    reply_to_id: rto_id,
-                    reply_to_content: rto_content.clone(),
-                    reply_to_username: rto_user.clone(),
-                };
-                let json = serde_json::to_string(&per_device_msg).ok()?;
-                Some((did, json))
-            })
-            .collect()
-    });
-
-    for member_id in &member_ids {
-        if *member_id == sender_id {
-            continue;
-        }
-        if blockers.contains(member_id) {
-            continue;
-        }
-
-        // For multi-device: try per-device delivery if device_contents is available.
-        if let Some(ref device_jsons) = per_device_json {
-            let mut member_delivered = false;
-            for (did, json) in device_jsons {
-                if state
-                    .hub
-                    .send_to_device(member_id, *did, WsMessage::Text(json.clone().into()))
-                {
-                    member_delivered = true;
-                }
-            }
-            if member_delivered {
-                any_delivered = true;
-            } else {
-                offline_user_ids.push(*member_id);
-            }
-        } else if let Some(ref json) = legacy_json {
-            // Legacy single-content delivery to all user devices
-            if state
-                .hub
-                .send_to_user(member_id, WsMessage::Text(json.clone().into()))
-            {
-                any_delivered = true;
-            } else {
-                offline_user_ids.push(*member_id);
-            }
+    for member_id in eligible {
+        let delivered = deliver_to_member(
+            &state.hub,
+            member_id,
+            per_device_json.as_deref(),
+            legacy_json.as_deref(),
+        );
+        if delivered {
+            any_delivered = true;
+        } else {
+            offline_user_ids.push(*member_id);
         }
     }
 
     if any_delivered {
-        let _ = db::messages::mark_delivered(&state.pool, &[stored_id]).await;
-
-        // Send delivery confirmation back to the sender
-        let delivered_event = ServerMessage::Delivered {
-            message_id: stored_id,
-            conversation_id: conv_id,
-        };
-        if let Ok(delivered_json) = serde_json::to_string(&delivered_event) {
-            state.hub.send_to_device(
-                &sender_id,
-                sender_device_id,
-                WsMessage::Text(delivered_json.into()),
-            );
-        }
+        send_delivery_confirmation(state, sender_id, sender_device_id, stored_id, conv_id).await;
     }
 
-    // Send push notifications to offline users
     if !offline_user_ids.is_empty() {
-        let content = match message {
-            ServerMessage::NewMessage { content, .. } => content.as_str(),
-            _ => "New message",
-        };
-        let sender_name = match message {
-            ServerMessage::NewMessage { from_username, .. } => from_username.as_str(),
-            _ => "Someone",
-        };
-        let pool = state.pool.clone();
-        let sender_name = sender_name.to_string();
-        let content = content.to_string();
-        let handle = tokio::spawn(async move {
-            crate::push::notify_offline_users(
-                &pool,
-                &offline_user_ids,
-                &sender_name,
-                &content,
-                is_encrypted,
-                conv_id,
-                stored_id,
-            )
-            .await;
-        });
-        tokio::spawn(async move {
-            match handle.await {
-                Ok(()) => {}
-                Err(e) => {
-                    tracing::error!("Push notification task failed for conv {conv_id}: {e}");
-                }
-            }
-        });
+        spawn_push_notifications(
+            state.pool.clone(),
+            offline_user_ids,
+            &fields.from_username,
+            &fields.content,
+            is_encrypted,
+            conv_id,
+            stored_id,
+        );
     }
 }
 

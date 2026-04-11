@@ -189,114 +189,136 @@ class ChatHeaderBar extends ConsumerWidget {
     WidgetRef ref,
     Conversation conv,
   ) {
-    // Count pinned messages from local state.
     final chatState = ref.watch(chatProvider);
     final pinnedCount = chatState
         .messagesForConversation(conv.id)
         .where((m) => m.pinnedAt != null)
         .length;
 
-    // On narrow screens (< 600 px) keep only voice call + search always
-    // visible and move the rest into a 3-dot overflow menu.
     final isNarrow = Responsive.isMobile(context);
 
     if (isNarrow) {
-      return [
-        // Voice call always visible (DM only)
-        if (!conv.isGroup)
-          IconButton(
-            icon: const Icon(Icons.call_outlined, size: 20),
-            color: context.textSecondary,
-            tooltip: 'Start call',
-            onPressed: () => _startVoiceCall(context, ref, conv),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          ),
-        // Search always visible
+      return _buildNarrowActionButtons(context, ref, conv, pinnedCount);
+    }
+    return _buildWideActionButtons(context, ref, conv, pinnedCount);
+  }
+
+  /// Narrow layout: voice call + search visible, rest in overflow menu.
+  List<Widget> _buildNarrowActionButtons(
+    BuildContext context,
+    WidgetRef ref,
+    Conversation conv,
+    int pinnedCount,
+  ) {
+    return [
+      if (!conv.isGroup)
         IconButton(
-          icon: Icon(showSearch ? Icons.search_off : Icons.search, size: 20),
-          color: showSearch ? context.accent : context.textSecondary,
-          tooltip: showSearch ? 'Close search' : 'Search messages',
-          onPressed: onToggleSearch,
+          icon: const Icon(Icons.call_outlined, size: 20),
+          color: context.textSecondary,
+          tooltip: 'Start call',
+          onPressed: () => _startVoiceCall(context, ref, conv),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
-        // Overflow menu
-        PopupMenuButton<String>(
-          icon: Icon(Icons.more_vert, size: 20, color: context.textSecondary),
-          tooltip: 'More options',
-          color: context.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(color: context.border),
-          ),
-          onSelected: (value) {
-            switch (value) {
-              case 'safety':
-                _openSafetyNumber(context, ref, conv);
-              case 'reset_keys':
-                _resetPeerKeys(context, ref, conv, myUserId);
-              case 'pins':
-                _showPinnedMessagesDialog(context, ref, conv);
-              case 'media':
-                _openSharedMedia(context, conv);
-              case 'members':
-                onMembersToggle?.call();
-            }
-          },
-          itemBuilder: (ctx) => [
-            if (!conv.isGroup)
-              PopupMenuItem<String>(
-                value: 'safety',
-                child: _overflowItem(
-                  ctx,
-                  icon: Icons.lock_outlined,
-                  label: 'Verify safety number',
-                  color: EchoTheme.online,
-                ),
-              ),
-            if (!conv.isGroup && conv.isEncrypted)
-              PopupMenuItem<String>(
-                value: 'reset_keys',
-                child: _overflowItem(
-                  ctx,
-                  icon: Icons.healing,
-                  label: 'Fix encryption issues',
-                ),
-              ),
-            PopupMenuItem<String>(
-              value: 'pins',
-              child: _overflowItem(
-                ctx,
-                icon: Icons.push_pin_outlined,
-                label: pinnedCount > 0
-                    ? 'Pinned ($pinnedCount)'
-                    : 'Pinned messages',
-              ),
-            ),
-            PopupMenuItem<String>(
-              value: 'media',
-              child: _overflowItem(
-                ctx,
-                icon: Icons.photo_library_outlined,
-                label: 'Shared media',
-              ),
-            ),
-            if (conv.isGroup && onMembersToggle != null)
-              PopupMenuItem<String>(
-                value: 'members',
-                child: _overflowItem(
-                  ctx,
-                  icon: Icons.people_outline,
-                  label: 'Members',
-                ),
-              ),
-          ],
-        ),
-      ];
-    }
+      IconButton(
+        icon: Icon(showSearch ? Icons.search_off : Icons.search, size: 20),
+        color: showSearch ? context.accent : context.textSecondary,
+        tooltip: showSearch ? 'Close search' : 'Search messages',
+        onPressed: onToggleSearch,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+      ),
+      _buildOverflowMenu(context, ref, conv, pinnedCount),
+    ];
+  }
 
-    // Wide layout: show all buttons inline (existing behaviour).
+  /// Overflow 3-dot menu for narrow layouts.
+  Widget _buildOverflowMenu(
+    BuildContext context,
+    WidgetRef ref,
+    Conversation conv,
+    int pinnedCount,
+  ) {
+    return PopupMenuButton<String>(
+      icon: Icon(Icons.more_vert, size: 20, color: context.textSecondary),
+      tooltip: 'More options',
+      color: context.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: context.border),
+      ),
+      onSelected: (value) {
+        switch (value) {
+          case 'safety':
+            _openSafetyNumber(context, ref, conv);
+          case 'reset_keys':
+            _resetPeerKeys(context, ref, conv, myUserId);
+          case 'pins':
+            _showPinnedMessagesDialog(context, ref, conv);
+          case 'media':
+            _openSharedMedia(context, conv);
+          case 'members':
+            onMembersToggle?.call();
+        }
+      },
+      itemBuilder: (ctx) => [
+        if (!conv.isGroup)
+          PopupMenuItem<String>(
+            value: 'safety',
+            child: _overflowItem(
+              ctx,
+              icon: Icons.lock_outlined,
+              label: 'Verify safety number',
+              color: EchoTheme.online,
+            ),
+          ),
+        if (!conv.isGroup && conv.isEncrypted)
+          PopupMenuItem<String>(
+            value: 'reset_keys',
+            child: _overflowItem(
+              ctx,
+              icon: Icons.healing,
+              label: 'Fix encryption issues',
+            ),
+          ),
+        PopupMenuItem<String>(
+          value: 'pins',
+          child: _overflowItem(
+            ctx,
+            icon: Icons.push_pin_outlined,
+            label: pinnedCount > 0
+                ? 'Pinned ($pinnedCount)'
+                : 'Pinned messages',
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'media',
+          child: _overflowItem(
+            ctx,
+            icon: Icons.photo_library_outlined,
+            label: 'Shared media',
+          ),
+        ),
+        if (conv.isGroup && onMembersToggle != null)
+          PopupMenuItem<String>(
+            value: 'members',
+            child: _overflowItem(
+              ctx,
+              icon: Icons.people_outline,
+              label: 'Members',
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Wide layout: show all buttons inline.
+  List<Widget> _buildWideActionButtons(
+    BuildContext context,
+    WidgetRef ref,
+    Conversation conv,
+    int pinnedCount,
+  ) {
     return [
       if (!conv.isGroup)
         IconButton(
@@ -316,7 +338,6 @@ class ChatHeaderBar extends ConsumerWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
-      // Voice call button (DM only — groups have voice channel chips)
       if (!conv.isGroup)
         IconButton(
           icon: const Icon(Icons.call_outlined, size: 20),
@@ -358,17 +379,15 @@ class ChatHeaderBar extends ConsumerWidget {
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
-      if (conv.isGroup) ...[
-        if (onMembersToggle != null)
-          IconButton(
-            icon: const Icon(Icons.people_outline, size: 20),
-            color: context.textSecondary,
-            tooltip: 'Members',
-            onPressed: onMembersToggle,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          ),
-      ],
+      if (conv.isGroup && onMembersToggle != null)
+        IconButton(
+          icon: const Icon(Icons.people_outline, size: 20),
+          color: context.textSecondary,
+          tooltip: 'Members',
+          onPressed: onMembersToggle,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        ),
     ];
   }
 

@@ -566,110 +566,123 @@ class _RichTextContentState extends State<RichTextContent> {
     final trimmed = segment.trim();
     if (trimmed.isEmpty) return [];
 
-    final lines = trimmed.split('\n');
-    final widgets = <Widget>[];
-
     // Handle ">>> " multi-line blockquote (everything after >>> is quoted)
     if (trimmed.startsWith('>>> ')) {
-      widgets.add(_buildBlockquote([trimmed]));
-      return widgets;
+      return [
+        _buildBlockquote([trimmed]),
+      ];
     }
 
+    final lines = trimmed.split('\n');
+    final widgets = <Widget>[];
     int i = 0;
     while (i < lines.length) {
-      final line = lines[i];
-      final stripped = line.trimLeft();
+      final stripped = lines[i].trimLeft();
+      i = _parseNextBlock(lines, i, stripped, widgets);
+    }
+    return widgets;
+  }
 
-      // Header
-      if (_headerRegex.hasMatch(stripped)) {
-        widgets.add(_buildHeader(stripped));
-        i++;
-        continue;
-      }
+  /// Dispatch a single block-level element starting at [index] and append the
+  /// resulting widget(s) to [widgets]. Returns the updated line index.
+  int _parseNextBlock(
+    List<String> lines,
+    int index,
+    String stripped,
+    List<Widget> widgets,
+  ) {
+    if (_headerRegex.hasMatch(stripped)) {
+      widgets.add(_buildHeader(stripped));
+      return index + 1;
+    }
+    if (_subtextRegex.hasMatch(stripped)) {
+      widgets.add(_buildSubtext(stripped));
+      return index + 1;
+    }
+    if (stripped.startsWith('> ') || stripped.startsWith('>')) {
+      return _collectBlockquoteLines(lines, index, widgets);
+    }
+    if (_unorderedListRegex.hasMatch(stripped)) {
+      return _collectListLines(lines, index, widgets, ordered: false);
+    }
+    if (_orderedListRegex.hasMatch(stripped)) {
+      return _collectListLines(lines, index, widgets, ordered: true);
+    }
+    return _collectPlainLines(lines, index, widgets);
+  }
 
-      // Subtext (-#)
-      if (_subtextRegex.hasMatch(stripped)) {
-        widgets.add(_buildSubtext(stripped));
-        i++;
-        continue;
-      }
-
-      // Blockquote (collect consecutive > lines)
-      if (stripped.startsWith('> ') || stripped.startsWith('>')) {
-        final quoteLines = <String>[];
-        while (i < lines.length) {
-          final ql = lines[i].trimLeft();
-          if (ql.startsWith('> ') || ql.startsWith('>')) {
-            quoteLines.add(ql);
-            i++;
-          } else {
-            break;
-          }
-        }
-        widgets.add(_buildBlockquote(quoteLines));
-        continue;
-      }
-
-      // Unordered list (collect consecutive - or * lines)
-      if (_unorderedListRegex.hasMatch(stripped)) {
-        final listLines = <String>[];
-        while (i < lines.length) {
-          final ll = lines[i].trimLeft();
-          if (_unorderedListRegex.hasMatch(ll)) {
-            listLines.add(ll);
-            i++;
-          } else {
-            break;
-          }
-        }
-        widgets.add(_buildList(listLines, false));
-        continue;
-      }
-
-      // Ordered list (collect consecutive numbered lines)
-      if (_orderedListRegex.hasMatch(stripped)) {
-        final listLines = <String>[];
-        while (i < lines.length) {
-          final ll = lines[i].trimLeft();
-          if (_orderedListRegex.hasMatch(ll)) {
-            listLines.add(ll);
-            i++;
-          } else {
-            break;
-          }
-        }
-        widgets.add(_buildList(listLines, true));
-        continue;
-      }
-
-      // Plain text line -- collect consecutive plain lines into one RichText
-      final plainLines = <String>[];
-      while (i < lines.length) {
-        final pl = lines[i].trimLeft();
-        if (_headerRegex.hasMatch(pl) ||
-            _unorderedListRegex.hasMatch(pl) ||
-            _orderedListRegex.hasMatch(pl) ||
-            _blockquoteRegex.hasMatch(pl) ||
-            _subtextRegex.hasMatch(pl)) {
-          break;
-        }
-        plainLines.add(lines[i]);
-        i++;
-      }
-
-      if (plainLines.isNotEmpty) {
-        final joined = plainLines.join('\n');
-        if (joined.trim().isNotEmpty) {
-          widgets.add(
-            RichText(
-              text: TextSpan(children: _buildInlineCodeAndFormatting(joined)),
-            ),
-          );
-        }
+  /// Collect consecutive blockquote lines starting at [index].
+  int _collectBlockquoteLines(
+    List<String> lines,
+    int index,
+    List<Widget> widgets,
+  ) {
+    final quoteLines = <String>[];
+    while (index < lines.length) {
+      final ql = lines[index].trimLeft();
+      if (ql.startsWith('> ') || ql.startsWith('>')) {
+        quoteLines.add(ql);
+        index++;
+      } else {
+        break;
       }
     }
+    widgets.add(_buildBlockquote(quoteLines));
+    return index;
+  }
 
-    return widgets;
+  /// Collect consecutive list lines (ordered or unordered) starting at [index].
+  int _collectListLines(
+    List<String> lines,
+    int index,
+    List<Widget> widgets, {
+    required bool ordered,
+  }) {
+    final regex = ordered ? _orderedListRegex : _unorderedListRegex;
+    final listLines = <String>[];
+    while (index < lines.length) {
+      final ll = lines[index].trimLeft();
+      if (regex.hasMatch(ll)) {
+        listLines.add(ll);
+        index++;
+      } else {
+        break;
+      }
+    }
+    widgets.add(_buildList(listLines, ordered));
+    return index;
+  }
+
+  /// Collect consecutive plain-text lines (no block-level syntax) starting at
+  /// [index] and emit a single RichText widget.
+  int _collectPlainLines(List<String> lines, int index, List<Widget> widgets) {
+    final plainLines = <String>[];
+    while (index < lines.length) {
+      final pl = lines[index].trimLeft();
+      if (_isBlockSyntaxLine(pl)) break;
+      plainLines.add(lines[index]);
+      index++;
+    }
+    if (plainLines.isNotEmpty) {
+      final joined = plainLines.join('\n');
+      if (joined.trim().isNotEmpty) {
+        widgets.add(
+          RichText(
+            text: TextSpan(children: _buildInlineCodeAndFormatting(joined)),
+          ),
+        );
+      }
+    }
+    return index;
+  }
+
+  /// Return true if [line] starts with any block-level markdown prefix.
+  bool _isBlockSyntaxLine(String line) {
+    return _headerRegex.hasMatch(line) ||
+        _unorderedListRegex.hasMatch(line) ||
+        _orderedListRegex.hasMatch(line) ||
+        _blockquoteRegex.hasMatch(line) ||
+        _subtextRegex.hasMatch(line);
   }
 }
 

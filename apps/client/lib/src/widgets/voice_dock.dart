@@ -50,15 +50,7 @@ class VoiceDock extends ConsumerWidget {
     final activeChannel = channels.where((c) => c.id == channelId).firstOrNull;
     final channelName = activeChannel?.name ?? 'Voice';
     final peerCount = voiceLk.peerConnectionStates.length;
-
-    final Color statusColor;
-    if (voiceLk.isJoining) {
-      statusColor = context.textMuted;
-    } else if (peerCount > 0) {
-      statusColor = EchoTheme.online;
-    } else {
-      statusColor = Colors.orange;
-    }
+    final statusColor = _statusColor(context, voiceLk.isJoining, peerCount);
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -75,159 +67,237 @@ class VoiceDock extends ConsumerWidget {
         ),
         child: Row(
           children: [
-            // Status indicator + channel name
-            Icon(Icons.graphic_eq, size: 14, color: statusColor),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _voiceStatusLabel(voiceLk.isJoining, peerCount),
-                    style: TextStyle(
-                      color: statusColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  Text(
-                    '$channelName \u00b7 $peerCount ${peerCount == 1 ? 'peer' : 'peers'}',
-                    style: TextStyle(color: context.textMuted, fontSize: 10),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+            _buildStatusLabel(
+              context,
+              statusColor,
+              voiceLk.isJoining,
+              peerCount,
+              channelName,
             ),
-            // Video toggle
-            _DockIconButton(
-              icon: voiceLk.isVideoEnabled
-                  ? Icons.videocam
-                  : Icons.videocam_off,
-              color: voiceLk.isVideoEnabled
-                  ? context.accent
-                  : context.textSecondary,
-              tooltip: voiceLk.isVideoEnabled
-                  ? 'Turn off camera'
-                  : 'Turn on camera',
-              onPressed: () async {
-                await ref.read(livekitVoiceProvider.notifier).toggleVideo();
-              },
-            ),
-            // Mute
-            _DockIconButton(
-              icon: voiceSettings.selfMuted || voiceSettings.selfDeafened
-                  ? Icons.mic_off
-                  : Icons.mic,
-              color: _muteColor(context, voiceSettings),
-              tooltip: _muteTooltip(voiceSettings),
-              onPressed: () async {
-                final notifier = ref.read(voiceSettingsProvider.notifier);
-                final nextMuted = !voiceSettings.selfMuted;
-                await notifier.setSelfMuted(nextMuted);
-                ref
-                    .read(voiceRtcProvider.notifier)
-                    .setCaptureEnabled(
-                      !nextMuted && !voiceSettings.selfDeafened,
-                    );
-              },
-            ),
-            // Mic level indicator
-            if (!voiceSettings.selfMuted && !voiceSettings.selfDeafened)
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 100),
-                width:
-                    (ref.watch(
-                              livekitVoiceProvider.select(
-                                (s) => s.localAudioLevel,
-                              ),
-                            ) *
-                            40)
-                        .clamp(0.0, 40.0),
-                height: 4,
-                decoration: BoxDecoration(
-                  color: EchoTheme.online,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            // Deafen
-            _DockIconButton(
-              icon: voiceSettings.selfDeafened
-                  ? Icons.headset_off
-                  : Icons.headset,
-              color: voiceSettings.selfDeafened
-                  ? EchoTheme.danger
-                  : context.textSecondary,
-              tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
-              onPressed: () async {
-                final notifier = ref.read(voiceSettingsProvider.notifier);
-                final nextDeafened = !voiceSettings.selfDeafened;
-                await notifier.setSelfDeafened(nextDeafened);
-                // setDeafened controls remote audio playback, not mic
-                await ref
-                    .read(voiceRtcProvider.notifier)
-                    .setDeafened(nextDeafened);
-              },
-            ),
-            // Screen share (desktop / web only, published via LiveKit SDK)
-            if (_supportsScreenShare)
-              _DockIconButton(
-                icon: screenShare.isScreenSharing
-                    ? Icons.stop_screen_share
-                    : Icons.screen_share,
-                color: screenShare.isScreenSharing
-                    ? EchoTheme.online
-                    : context.textSecondary,
-                tooltip: screenShare.isScreenSharing
-                    ? 'Stop sharing'
-                    : 'Share screen',
-                onPressed: () async {
-                  final lkNotifier = ref.read(livekitVoiceProvider.notifier);
-                  final ssNotifier = ref.read(screenShareProvider.notifier);
-                  if (screenShare.isScreenSharing) {
-                    await lkNotifier.setScreenShareEnabled(false);
-                    ssNotifier.setLiveKitScreenShareActive(false);
-                  } else {
-                    final ok = await lkNotifier.setScreenShareEnabled(true);
-                    if (ok) {
-                      ssNotifier.setLiveKitScreenShareActive(true);
-                    } else if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Could not start screen sharing.'),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    }
-                  }
-                },
-              ),
-            // Hangup
-            _DockIconButton(
-              icon: Icons.call_end,
-              color: EchoTheme.danger,
-              tooltip: 'Leave',
-              onPressed: () async {
-                // Stop screen sharing when leaving the channel.
-                if (screenShare.isScreenSharing) {
-                  await ref
-                      .read(livekitVoiceProvider.notifier)
-                      .setScreenShareEnabled(false);
-                  ref
-                      .read(screenShareProvider.notifier)
-                      .setLiveKitScreenShareActive(false);
-                }
-                // Leave both server-side voice membership and local WebRTC state
-                // so channel selection state clears consistently in the UI.
-                await ref
-                    .read(channelsProvider.notifier)
-                    .leaveVoiceChannel(conversationId, channelId);
-                await ref.read(livekitVoiceProvider.notifier).leaveChannel();
-              },
+            ..._buildControlButtons(
+              context,
+              ref,
+              voiceLk,
+              voiceSettings,
+              screenShare,
+              conversationId,
+              channelId,
             ),
           ],
         ),
       ),
+    );
+  }
+
+  static Color _statusColor(
+    BuildContext context,
+    bool isJoining,
+    int peerCount,
+  ) {
+    if (isJoining) return context.textMuted;
+    if (peerCount > 0) return EchoTheme.online;
+    return Colors.orange;
+  }
+
+  /// Status indicator icon + channel name / peer count.
+  Widget _buildStatusLabel(
+    BuildContext context,
+    Color statusColor,
+    bool isJoining,
+    int peerCount,
+    String channelName,
+  ) {
+    return Expanded(
+      child: Row(
+        children: [
+          Icon(Icons.graphic_eq, size: 14, color: statusColor),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _voiceStatusLabel(isJoining, peerCount),
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  '$channelName \u00b7 $peerCount ${peerCount == 1 ? 'peer' : 'peers'}',
+                  style: TextStyle(color: context.textMuted, fontSize: 10),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// All control icon buttons: video, mute, mic level, deafen, screen share,
+  /// and hangup.
+  List<Widget> _buildControlButtons(
+    BuildContext context,
+    WidgetRef ref,
+    LiveKitVoiceState voiceLk,
+    VoiceSettingsState voiceSettings,
+    ScreenShareState screenShare,
+    String conversationId,
+    String channelId,
+  ) {
+    return [
+      _buildVideoButton(context, ref, voiceLk),
+      _buildMuteButton(context, ref, voiceSettings),
+      _buildMicLevelIndicator(ref, voiceSettings),
+      _buildDeafenButton(context, ref, voiceSettings),
+      if (_supportsScreenShare)
+        _buildScreenShareButton(context, ref, screenShare),
+      _buildHangupButton(ref, screenShare, conversationId, channelId),
+    ];
+  }
+
+  Widget _buildVideoButton(
+    BuildContext context,
+    WidgetRef ref,
+    LiveKitVoiceState voiceLk,
+  ) {
+    return _DockIconButton(
+      icon: voiceLk.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
+      color: voiceLk.isVideoEnabled ? context.accent : context.textSecondary,
+      tooltip: voiceLk.isVideoEnabled ? 'Turn off camera' : 'Turn on camera',
+      onPressed: () async {
+        await ref.read(livekitVoiceProvider.notifier).toggleVideo();
+      },
+    );
+  }
+
+  Widget _buildMuteButton(
+    BuildContext context,
+    WidgetRef ref,
+    VoiceSettingsState voiceSettings,
+  ) {
+    return _DockIconButton(
+      icon: voiceSettings.selfMuted || voiceSettings.selfDeafened
+          ? Icons.mic_off
+          : Icons.mic,
+      color: _muteColor(context, voiceSettings),
+      tooltip: _muteTooltip(voiceSettings),
+      onPressed: () async {
+        final notifier = ref.read(voiceSettingsProvider.notifier);
+        final nextMuted = !voiceSettings.selfMuted;
+        await notifier.setSelfMuted(nextMuted);
+        ref
+            .read(voiceRtcProvider.notifier)
+            .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
+      },
+    );
+  }
+
+  Widget _buildMicLevelIndicator(
+    WidgetRef ref,
+    VoiceSettingsState voiceSettings,
+  ) {
+    if (voiceSettings.selfMuted || voiceSettings.selfDeafened) {
+      return const SizedBox.shrink();
+    }
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 100),
+      width:
+          (ref.watch(livekitVoiceProvider.select((s) => s.localAudioLevel)) *
+                  40)
+              .clamp(0.0, 40.0),
+      height: 4,
+      decoration: BoxDecoration(
+        color: EchoTheme.online,
+        borderRadius: BorderRadius.circular(2),
+      ),
+    );
+  }
+
+  Widget _buildDeafenButton(
+    BuildContext context,
+    WidgetRef ref,
+    VoiceSettingsState voiceSettings,
+  ) {
+    return _DockIconButton(
+      icon: voiceSettings.selfDeafened ? Icons.headset_off : Icons.headset,
+      color: voiceSettings.selfDeafened
+          ? EchoTheme.danger
+          : context.textSecondary,
+      tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
+      onPressed: () async {
+        final notifier = ref.read(voiceSettingsProvider.notifier);
+        final nextDeafened = !voiceSettings.selfDeafened;
+        await notifier.setSelfDeafened(nextDeafened);
+        await ref.read(voiceRtcProvider.notifier).setDeafened(nextDeafened);
+      },
+    );
+  }
+
+  Widget _buildScreenShareButton(
+    BuildContext context,
+    WidgetRef ref,
+    ScreenShareState screenShare,
+  ) {
+    return _DockIconButton(
+      icon: screenShare.isScreenSharing
+          ? Icons.stop_screen_share
+          : Icons.screen_share,
+      color: screenShare.isScreenSharing
+          ? EchoTheme.online
+          : context.textSecondary,
+      tooltip: screenShare.isScreenSharing ? 'Stop sharing' : 'Share screen',
+      onPressed: () async {
+        final lkNotifier = ref.read(livekitVoiceProvider.notifier);
+        final ssNotifier = ref.read(screenShareProvider.notifier);
+        if (screenShare.isScreenSharing) {
+          await lkNotifier.setScreenShareEnabled(false);
+          ssNotifier.setLiveKitScreenShareActive(false);
+        } else {
+          final ok = await lkNotifier.setScreenShareEnabled(true);
+          if (ok) {
+            ssNotifier.setLiveKitScreenShareActive(true);
+          } else if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Could not start screen sharing.'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        }
+      },
+    );
+  }
+
+  Widget _buildHangupButton(
+    WidgetRef ref,
+    ScreenShareState screenShare,
+    String conversationId,
+    String channelId,
+  ) {
+    return _DockIconButton(
+      icon: Icons.call_end,
+      color: EchoTheme.danger,
+      tooltip: 'Leave',
+      onPressed: () async {
+        if (screenShare.isScreenSharing) {
+          await ref
+              .read(livekitVoiceProvider.notifier)
+              .setScreenShareEnabled(false);
+          ref
+              .read(screenShareProvider.notifier)
+              .setLiveKitScreenShareActive(false);
+        }
+        await ref
+            .read(channelsProvider.notifier)
+            .leaveVoiceChannel(conversationId, channelId);
+        await ref.read(livekitVoiceProvider.notifier).leaveChannel();
+      },
     );
   }
 }
