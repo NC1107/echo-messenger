@@ -84,6 +84,11 @@ class CryptoService {
   /// Prevents interleaved async ops from corrupting session chain state.
   final Map<String, Completer<void>> _sessionLocks = {};
 
+  /// Cache of per-user device bundles with TTL for multi-device encryption.
+  /// Key: userId, Value: (bundles, fetchedAt)
+  final Map<String, (List<Map<String, dynamic>>, DateTime)> _bundleCache = {};
+  static const _bundleCacheTtl = Duration(minutes: 5);
+
   final _x25519 = X25519();
   final _ed25519 = Ed25519();
 
@@ -419,6 +424,9 @@ class CryptoService {
   final Set<String> _corruptedSessions = {};
 
   /// Load persisted Signal sessions from secure storage.
+  ///
+  /// Handles both legacy format (`echo_signal_session_<userId>`) and
+  /// multi-device format (`echo_signal_session_<userId>:<deviceId>`).
   Future<void> _loadSessions(SecureKeyStore store) async {
     _sessions.clear();
     _corruptedSessions.clear();
@@ -750,6 +758,38 @@ class CryptoService {
   static const _initialMsgMagicV1 = [0xEC, 0x01];
   static const _initialMsgMagicV2 = [0xEC, 0x02];
 
+  /// Build the initial message wire format with X3DH key exchange header.
+  /// Returns the session wire bytes unchanged if no X3DH result is pending.
+  Future<Uint8List> _buildInitialWire(Uint8List sessionWire) async {
+    if (_lastX3dhResult == null) return sessionWire;
+
+    final idPub = (await _identityKeyPair!.extractPublicKey()).bytes;
+    final ephPub = _lastX3dhResult!.ephemeralPublic.bytes;
+
+    Uint8List wire;
+    if (_lastOtpKeyId != null) {
+      wire = Uint8List(2 + 32 + 32 + 4 + sessionWire.length);
+      wire[0] = _initialMsgMagicV2[0];
+      wire[1] = _initialMsgMagicV2[1];
+      wire.setRange(2, 34, Uint8List.fromList(idPub));
+      wire.setRange(34, 66, Uint8List.fromList(ephPub));
+      final bd = ByteData.sublistView(wire);
+      bd.setInt32(66, _lastOtpKeyId!, Endian.little);
+      wire.setRange(70, wire.length, sessionWire);
+    } else {
+      wire = Uint8List(2 + 32 + 32 + sessionWire.length);
+      wire[0] = _initialMsgMagicV1[0];
+      wire[1] = _initialMsgMagicV1[1];
+      wire.setRange(2, 34, Uint8List.fromList(idPub));
+      wire.setRange(34, 66, Uint8List.fromList(ephPub));
+      wire.setRange(66, wire.length, sessionWire);
+    }
+
+    _lastX3dhResult = null;
+    _lastOtpKeyId = null;
+    return wire;
+  }
+
   /// Encrypt a plaintext message for a specific peer.
   ///
   /// For the first message (new session), includes X3DH key exchange data
@@ -776,37 +816,7 @@ class CryptoService {
     }
 
     final wire = await session.encrypt(plaintextBytes);
-
-    Uint8List finalWire;
-    if (isNewSession && _lastX3dhResult != null) {
-      final idPub = (await _identityKeyPair!.extractPublicKey()).bytes;
-      final ephPub = _lastX3dhResult!.ephemeralPublic.bytes;
-
-      if (_lastOtpKeyId != null) {
-        // V2 format: includes OTP key ID so Bob can look up the right private key
-        finalWire = Uint8List(2 + 32 + 32 + 4 + wire.length);
-        finalWire[0] = _initialMsgMagicV2[0];
-        finalWire[1] = _initialMsgMagicV2[1];
-        finalWire.setRange(2, 34, Uint8List.fromList(idPub));
-        finalWire.setRange(34, 66, Uint8List.fromList(ephPub));
-        final bd = ByteData.sublistView(finalWire);
-        bd.setInt32(66, _lastOtpKeyId!, Endian.little);
-        finalWire.setRange(70, finalWire.length, wire);
-      } else {
-        // V1 format: no OTP used (3-DH)
-        finalWire = Uint8List(2 + 32 + 32 + wire.length);
-        finalWire[0] = _initialMsgMagicV1[0];
-        finalWire[1] = _initialMsgMagicV1[1];
-        finalWire.setRange(2, 34, Uint8List.fromList(idPub));
-        finalWire.setRange(34, 66, Uint8List.fromList(ephPub));
-        finalWire.setRange(66, finalWire.length, wire);
-      }
-
-      _lastX3dhResult = null;
-      _lastOtpKeyId = null;
-    } else {
-      finalWire = wire;
-    }
+    final finalWire = await _buildInitialWire(wire);
 
     await _saveSession(peerUserId, session);
     return base64Encode(finalWire);
@@ -816,16 +826,40 @@ class CryptoService {
   ///
   /// If this is an initial message (contains X3DH key exchange prefix),
   /// establishes the session as Bob (responder) before decrypting.
-  Future<String> decryptMessage(String peerUserId, String ciphertextB64) =>
-      _withSessionLock(
-        peerUserId,
-        () => _decryptMessageImpl(peerUserId, ciphertextB64),
-      );
+  ///
+  /// [fromDeviceId] is the sender's device ID (from `from_device_id` in the
+  /// server message). When provided, sessions are keyed per-device.
+  Future<String> decryptMessage(
+    String peerUserId,
+    String ciphertextB64, {
+    int? fromDeviceId,
+  }) {
+    final sessionKey = _sessionKeyFor(peerUserId, fromDeviceId);
+    return _withSessionLock(
+      sessionKey,
+      () => _decryptMessageImpl(peerUserId, ciphertextB64, fromDeviceId),
+    );
+  }
+
+  /// Resolve the session map key: prefer `userId:deviceId` when device is
+  /// known, fall back to `userId` for legacy sessions.
+  String _sessionKeyFor(String peerUserId, int? deviceId) {
+    if (deviceId != null) {
+      final key = '$peerUserId:$deviceId';
+      if (_sessions.containsKey(key)) return key;
+      // Fall back to legacy key if device-specific doesn't exist yet
+      if (_sessions.containsKey(peerUserId)) return peerUserId;
+      return key; // Will create with device-specific key
+    }
+    return peerUserId;
+  }
 
   Future<String> _decryptMessageImpl(
     String peerUserId,
     String ciphertextB64,
+    int? fromDeviceId,
   ) async {
+    final sessionKey = _sessionKeyFor(peerUserId, fromDeviceId);
     final fullWire = Uint8List.fromList(base64Decode(ciphertextB64));
 
     // Check for initial message magic prefix (V1 or V2)
@@ -840,11 +874,17 @@ class CryptoService {
     if (isV1 || isV2) {
       // Always accept an initial X3DH message — the peer may have reset their
       // keys.  Drop any stale session so we establish a fresh one.
-      if (_sessions.containsKey(peerUserId)) {
+      if (_sessions.containsKey(sessionKey)) {
         debugPrint(
-          '[Crypto] Replacing stale session for $peerUserId '
+          '[Crypto] Replacing stale session for $sessionKey '
           '(received new X3DH initial message)',
         );
+        _sessions.remove(sessionKey);
+        final store = SecureKeyStore.instance;
+        await store.delete('$_sessionPrefix$sessionKey');
+      }
+      // Also remove legacy key if we're now using device-specific
+      if (fromDeviceId != null && _sessions.containsKey(peerUserId)) {
         _sessions.remove(peerUserId);
         final store = SecureKeyStore.instance;
         await store.delete('$_sessionPrefix$peerUserId');
@@ -926,8 +966,8 @@ class CryptoService {
 
       // Decrypt the actual message
       final plainBytes = await session.decrypt(sessionWire);
-      _sessions[peerUserId] = session;
-      await _saveSession(peerUserId, session);
+      _sessions[sessionKey] = session;
+      await _saveSession(sessionKey, session);
 
       // Consume the OTP -- delete after successful use (one-time)
       if (bobOtp != null && isV2) {
@@ -947,17 +987,17 @@ class CryptoService {
     // getOrCreateSession() here: creating a brand-new X3DH session for a
     // non-initial message would produce an incompatible session that can't
     // decrypt the message and would pollute state.
-    final session = _sessions[peerUserId];
+    final session = _sessions[sessionKey];
     if (session == null) {
       throw Exception(
-        'No session for $peerUserId — cannot decrypt normal message. '
+        'No session for $sessionKey — cannot decrypt normal message. '
         'Awaiting new X3DH initial message from peer.',
       );
     }
     // Write-ahead: save before mutation so crash recovery replays correctly
-    await _saveSession(peerUserId, session);
+    await _saveSession(sessionKey, session);
     final plainBytes = await session.decrypt(fullWire);
-    await _saveSession(peerUserId, session);
+    await _saveSession(sessionKey, session);
     return utf8.decode(plainBytes);
   }
 
@@ -1150,6 +1190,225 @@ class CryptoService {
     final store = SecureKeyStore.instance;
     await store.delete('$_otpPrivatePrefix$keyId');
     debugPrint('[Crypto] Consumed and deleted OTP key_id=$keyId');
+  }
+
+  // -----------------------------------------------------------------------
+  // Multi-device encryption
+  // -----------------------------------------------------------------------
+
+  /// Fetch all device bundles for a peer, with a 5-minute cache.
+  Future<List<Map<String, dynamic>>> _fetchAllBundles(String userId) async {
+    final cached = _bundleCache[userId];
+    if (cached != null &&
+        DateTime.now().difference(cached.$2) < _bundleCacheTtl) {
+      return cached.$1;
+    }
+
+    final response = await http.get(
+      Uri.parse('$serverUrl/api/keys/bundles/$userId'),
+      headers: {'Authorization': 'Bearer $_token'},
+    );
+
+    if (response.statusCode == 401) {
+      throw Exception('Auth expired fetching bundles for $userId');
+    }
+    if (response.statusCode != 200) {
+      throw Exception('Failed to fetch bundles for $userId: ${response.body}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final bundles = (data['bundles'] as List).cast<Map<String, dynamic>>();
+    _bundleCache[userId] = (bundles, DateTime.now());
+    return bundles;
+  }
+
+  /// Get or create a Signal session for a specific device of a peer.
+  ///
+  /// Uses device-specific session key (`userId:deviceId`).
+  Future<SignalSession> _getOrCreateSessionForDevice(
+    String peerUserId,
+    int deviceId,
+    Map<String, dynamic> bundleData,
+  ) async {
+    final sessionKey = '$peerUserId:$deviceId';
+    if (_sessions.containsKey(sessionKey)) {
+      return _sessions[sessionKey]!;
+    }
+    // Fall back to legacy session if it exists (pre-multi-device)
+    if (_sessions.containsKey(peerUserId)) {
+      return _sessions[peerUserId]!;
+    }
+
+    if (_identityKeyPair == null) await init();
+
+    final bobIdentityKeyBytes = base64Decode(
+      bundleData['identity_key'] as String,
+    );
+    final bobSignedPrekeyBytes = base64Decode(
+      bundleData['signed_prekey'] as String,
+    );
+
+    // Verify signed prekey signature
+    final signingKeyB64 = bundleData['signing_key'] as String?;
+    final signatureB64 = bundleData['signed_prekey_signature'] as String?;
+    if (signingKeyB64 != null && signatureB64 != null) {
+      final signingKeyBytes = base64Decode(signingKeyB64);
+      final signatureBytes = base64Decode(signatureB64);
+      final signingPublicKey = SimplePublicKey(
+        signingKeyBytes,
+        type: KeyPairType.ed25519,
+      );
+      final isValid = await _ed25519.verify(
+        bobSignedPrekeyBytes,
+        signature: Signature(signatureBytes, publicKey: signingPublicKey),
+      );
+      if (!isValid) {
+        throw Exception(
+          'Signed prekey signature verification failed for $peerUserId '
+          'device $deviceId -- possible MITM attack',
+        );
+      }
+    }
+
+    final bobIdentityKey = SimplePublicKey(
+      bobIdentityKeyBytes,
+      type: KeyPairType.x25519,
+    );
+    final bobSignedPrekey = SimplePublicKey(
+      bobSignedPrekeyBytes,
+      type: KeyPairType.x25519,
+    );
+
+    // Extract one-time prekey if available
+    SimplePublicKey? bobOneTimePrekey;
+    int? otpKeyId;
+    final otpData = bundleData['one_time_prekey'] as Map<String, dynamic>?;
+    if (otpData != null) {
+      final otpPubB64 = otpData['public_key'] as String?;
+      otpKeyId = otpData['key_id'] as int?;
+      if (otpPubB64 != null) {
+        bobOneTimePrekey = SimplePublicKey(
+          base64Decode(otpPubB64),
+          type: KeyPairType.x25519,
+        );
+      }
+    }
+
+    final x3dhResult = await X3DH.initiate(
+      aliceIdentity: _identityKeyPair!,
+      bobIdentityKey: bobIdentityKey,
+      bobSignedPrekey: bobSignedPrekey,
+      bobOneTimePrekey: bobOneTimePrekey,
+    );
+
+    _lastOtpKeyId = otpKeyId;
+    _lastX3dhResult = x3dhResult;
+
+    final session = await SignalSession.initAlice(
+      x3dhResult.sharedSecret,
+      bobSignedPrekey,
+    );
+
+    _sessions[sessionKey] = session;
+    await _saveSession(sessionKey, session);
+    return session;
+  }
+
+  /// Encrypt a message for ALL devices of a peer.
+  ///
+  /// Returns a map of `{deviceId: base64Ciphertext}` for each device.
+  /// This enables multi-device delivery where each device gets its own
+  /// ciphertext encrypted with a device-specific session.
+  Future<Map<String, String>> encryptForAllDevices(
+    String peerUserId,
+    String plaintext,
+  ) async {
+    final bundles = await _fetchAllBundles(peerUserId);
+    if (bundles.isEmpty) {
+      // Fall back to legacy single-device encrypt
+      final ct = await encryptMessage(peerUserId, plaintext);
+      return {'0': ct};
+    }
+
+    final results = <String, String>{};
+    for (final bundle in bundles) {
+      final deviceId = bundle['device_id'] as int;
+      try {
+        final sessionKey = '$peerUserId:$deviceId';
+        final ct = await _withSessionLock(sessionKey, () async {
+          final session = await _getOrCreateSessionForDevice(
+            peerUserId,
+            deviceId,
+            bundle,
+          );
+          final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
+
+          if (_lastX3dhResult == null) {
+            await _saveSession(sessionKey, session);
+          }
+
+          final wire = await session.encrypt(plaintextBytes);
+          final finalWire = await _buildInitialWire(wire);
+
+          await _saveSession(sessionKey, session);
+          return base64Encode(finalWire);
+        });
+        results[deviceId.toString()] = ct;
+      } catch (e) {
+        debugPrint(
+          '[Crypto] Failed to encrypt for $peerUserId device $deviceId: $e',
+        );
+      }
+    }
+    return results;
+  }
+
+  /// Encrypt for the sender's own other devices given the sender's user ID.
+  Future<Map<String, String>> encryptForOwnDevices(
+    String myUserId,
+    String plaintext,
+  ) async {
+    try {
+      final bundles = await _fetchAllBundles(myUserId);
+      final results = <String, String>{};
+      for (final bundle in bundles) {
+        final deviceId = bundle['device_id'] as int;
+        if (deviceId == _deviceId) continue; // Skip current device
+        try {
+          final sessionKey = '$myUserId:$deviceId';
+          final ct = await _withSessionLock(sessionKey, () async {
+            final session = await _getOrCreateSessionForDevice(
+              myUserId,
+              deviceId,
+              bundle,
+            );
+            final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
+            if (_lastX3dhResult == null) {
+              await _saveSession(sessionKey, session);
+            }
+            final wire = await session.encrypt(plaintextBytes);
+            final finalWire = await _buildInitialWire(wire);
+
+            await _saveSession(sessionKey, session);
+            return base64Encode(finalWire);
+          });
+          results[deviceId.toString()] = ct;
+        } catch (e) {
+          debugPrint(
+            '[Crypto] Failed to encrypt for self device $deviceId: $e',
+          );
+        }
+      }
+      return results;
+    } catch (e) {
+      debugPrint('[Crypto] Self-device encryption failed: $e');
+      return {};
+    }
+  }
+
+  /// Invalidate the device bundle cache for a specific user.
+  void invalidateBundleCache(String userId) {
+    _bundleCache.remove(userId);
   }
 
   // -----------------------------------------------------------------------

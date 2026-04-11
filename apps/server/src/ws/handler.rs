@@ -4,6 +4,7 @@ use axum::extract::ws::{Message as WsMessage, WebSocket};
 use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -26,6 +27,10 @@ enum ClientMessage {
         to_user_id: Option<Uuid>,
         content: String,
         reply_to_id: Option<Uuid>,
+        /// Per-device ciphertexts: device_id (as string) -> base64 ciphertext.
+        /// When present, enables multi-device delivery.
+        #[serde(default)]
+        device_contents: Option<HashMap<String, String>>,
     },
     #[serde(rename = "typing")]
     Typing {
@@ -47,13 +52,15 @@ enum ClientMessage {
     CallStarted { conversation_id: Uuid },
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(tag = "type")]
 enum ServerMessage {
     #[serde(rename = "new_message")]
     NewMessage {
         message_id: Uuid,
         from_user_id: Uuid,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        from_device_id: Option<i32>,
         from_username: String,
         conversation_id: Uuid,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -66,6 +73,19 @@ enum ServerMessage {
         reply_to_content: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         reply_to_username: Option<String>,
+    },
+    /// Sent to the sender's OTHER devices so they see outgoing messages.
+    #[serde(rename = "self_message")]
+    SelfMessage {
+        message_id: Uuid,
+        from_device_id: i32,
+        conversation_id: Uuid,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        channel_id: Option<Uuid>,
+        content: String,
+        timestamp: DateTime<Utc>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reply_to_id: Option<Uuid>,
     },
     #[serde(rename = "message_sent")]
     MessageSent {
@@ -119,14 +139,15 @@ enum ServerMessage {
 pub async fn handle_socket(
     socket: WebSocket,
     user_id: Uuid,
+    device_id: i32,
     username: String,
     state: Arc<AppState>,
 ) {
     let (mut sender, mut receiver) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<WsMessage>();
 
-    // Register in hub
-    state.hub.register(user_id, tx);
+    // Register in hub (multi-device: keyed by user_id + device_id)
+    state.hub.register(user_id, device_id, tx);
 
     // Broadcast online presence to contacts
     broadcast_presence(&state, user_id, &username, "online").await;
@@ -151,6 +172,7 @@ pub async fn handle_socket(
     // client know the connection is still alive.
     let ping_hub = state.hub.clone();
     let ping_user_id = user_id;
+    let ping_device_id = device_id;
     let ping_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         // The first tick fires immediately; skip it.
@@ -158,10 +180,14 @@ pub async fn handle_socket(
         loop {
             interval.tick().await;
             // Protocol-level Ping (proxy keepalive; invisible to browsers).
-            ping_hub.send_to(&ping_user_id, WsMessage::Ping(vec![].into()));
+            ping_hub.send_to_device(
+                &ping_user_id,
+                ping_device_id,
+                WsMessage::Ping(vec![].into()),
+            );
             // Application-level heartbeat (visible to all clients).
             let hb = r#"{"type":"heartbeat"}"#.to_string();
-            if !ping_hub.send_to(&ping_user_id, WsMessage::Text(hb.into())) {
+            if !ping_hub.send_to_device(&ping_user_id, ping_device_id, WsMessage::Text(hb.into())) {
                 break;
             }
         }
@@ -169,10 +195,10 @@ pub async fn handle_socket(
 
     deliver_undelivered_messages(&state, user_id).await;
 
-    run_receive_loop(&mut receiver, user_id, &username, &state).await;
+    run_receive_loop(&mut receiver, user_id, device_id, &username, &state).await;
 
     // Cleanup
-    state.hub.unregister(user_id);
+    state.hub.unregister(user_id, device_id);
     send_task.abort();
     ping_task.abort();
 
@@ -198,6 +224,7 @@ async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid) {
         let server_msg = ServerMessage::NewMessage {
             message_id: msg.id,
             from_user_id: msg.sender_id,
+            from_device_id: None, // Offline delivery doesn't track sender device
             from_username: msg.sender_username.clone(),
             conversation_id: msg.conversation_id,
             channel_id: msg.channel_id,
@@ -208,7 +235,9 @@ async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid) {
             reply_to_username: msg.reply_to_username.clone(),
         };
         if let Ok(json) = serde_json::to_string(&server_msg) {
-            let _ = state.hub.send_to(&user_id, WsMessage::Text(json.into()));
+            let _ = state
+                .hub
+                .send_to_user(&user_id, WsMessage::Text(json.into()));
         }
     }
 
@@ -242,6 +271,7 @@ async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid) {
 async fn run_receive_loop(
     receiver: &mut futures_util::stream::SplitStream<WebSocket>,
     user_id: Uuid,
+    device_id: i32,
     username: &str,
     state: &AppState,
 ) {
@@ -272,7 +302,7 @@ async fn run_receive_loop(
                     continue;
                 }
                 tokens -= 1.0;
-                handle_text_message(&text, user_id, username, state).await;
+                handle_text_message(&text, user_id, device_id, username, state).await;
             }
             WsMessage::Close(_) => break,
             _ => {}
@@ -312,7 +342,13 @@ async fn cleanup_user_voice_sessions(state: &AppState, user_id: Uuid) {
 /// content is 10 KB, and the JSON envelope adds minimal overhead).
 const MAX_WS_FRAME_BYTES: usize = 65_536;
 
-async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str, state: &AppState) {
+async fn handle_text_message(
+    text: &str,
+    sender_id: Uuid,
+    sender_device_id: i32,
+    sender_username: &str,
+    state: &AppState,
+) {
     if text.len() > MAX_WS_FRAME_BYTES {
         send_error(
             state,
@@ -341,16 +377,19 @@ async fn handle_text_message(text: &str, sender_id: Uuid, sender_username: &str,
             to_user_id,
             content,
             reply_to_id,
+            device_contents,
         } => {
             handle_send_message(
                 state,
                 sender_id,
+                sender_device_id,
                 sender_username,
                 conversation_id,
                 channel_id,
                 to_user_id,
                 content,
                 reply_to_id,
+                device_contents,
             )
             .await;
         }
@@ -454,12 +493,14 @@ async fn handle_broadcast_event<F>(
 async fn handle_send_message(
     state: &AppState,
     sender_id: Uuid,
+    sender_device_id: i32,
     sender_username: &str,
     conversation_id: Option<Uuid>,
     channel_id: Option<Uuid>,
     to_user_id: Option<Uuid>,
     content: String,
     reply_to_id: Option<Uuid>,
+    device_contents: Option<HashMap<String, String>>,
 ) {
     // Validate message content length
     const MAX_MESSAGE_LENGTH: usize = 10_000;
@@ -521,7 +562,7 @@ async fn handle_send_message(
 
     let (reply_content, reply_username) = lookup_reply_context(&state.pool, reply_to_id).await;
 
-    // Store message
+    // Store message (use first device content as the canonical content for DB storage)
     let stored = match db::messages::store_message(
         &state.pool,
         conv_id,
@@ -539,7 +580,21 @@ async fn handle_send_message(
         }
     };
 
-    // Send confirmation to sender
+    // Store per-device ciphertexts if present
+    if let Some(ref dc) = device_contents {
+        let entries: Vec<(i32, &str)> = dc
+            .iter()
+            .filter_map(|(k, v)| k.parse::<i32>().ok().map(|id| (id, v.as_str())))
+            .collect();
+        if !entries.is_empty()
+            && let Err(e) =
+                db::messages::store_device_contents(&state.pool, stored.id, &entries).await
+        {
+            tracing::error!("Failed to store device contents: {e:?}");
+        }
+    }
+
+    // Send confirmation to sender's device
     let confirm = ServerMessage::MessageSent {
         message_id: stored.id,
         conversation_id: conv_id,
@@ -547,12 +602,42 @@ async fn handle_send_message(
         timestamp: stored.created_at,
     };
     if let Ok(json) = serde_json::to_string(&confirm) {
-        state.hub.send_to(&sender_id, WsMessage::Text(json.into()));
+        state
+            .hub
+            .send_to_device(&sender_id, sender_device_id, WsMessage::Text(json.into()));
+    }
+
+    // Self-device delivery: notify sender's OTHER devices about outgoing message
+    if let Some(ref dc) = device_contents {
+        for (device_id_str, ciphertext) in dc {
+            if let Ok(did) = device_id_str.parse::<i32>() {
+                if did == sender_device_id {
+                    continue; // Don't send to the originating device
+                }
+                // Attempt delivery — Hub returns false if device isn't registered
+                // for this user (i.e. it's a recipient device, not a self device).
+                let self_msg = ServerMessage::SelfMessage {
+                    message_id: stored.id,
+                    from_device_id: sender_device_id,
+                    conversation_id: conv_id,
+                    channel_id: stored.channel_id,
+                    content: ciphertext.clone(),
+                    timestamp: stored.created_at,
+                    reply_to_id,
+                };
+                if let Ok(json) = serde_json::to_string(&self_msg) {
+                    state
+                        .hub
+                        .send_to_device(&sender_id, did, WsMessage::Text(json.into()));
+                }
+            }
+        }
     }
 
     let deliver = ServerMessage::NewMessage {
         message_id: stored.id,
         from_user_id: sender_id,
+        from_device_id: Some(sender_device_id),
         from_username: sender_username.to_string(),
         conversation_id: conv_id,
         channel_id: stored.channel_id,
@@ -566,10 +651,12 @@ async fn handle_send_message(
     fanout_message(
         state,
         sender_id,
+        sender_device_id,
         conv_id,
         &deliver,
         stored.id,
         conv_security.is_encrypted,
+        device_contents,
     )
     .await;
 }
@@ -725,14 +812,17 @@ async fn lookup_reply_context(
 }
 
 /// Fan out a message to all conversation members (except sender), with block filtering
-/// and delivery tracking.
+/// and delivery tracking. Supports per-device ciphertext delivery for multi-device.
+#[allow(clippy::too_many_arguments)]
 async fn fanout_message(
     state: &AppState,
     sender_id: Uuid,
+    sender_device_id: i32,
     conv_id: Uuid,
     message: &ServerMessage,
     stored_id: Uuid,
     is_encrypted: bool,
+    device_contents: Option<HashMap<String, String>>,
 ) {
     let member_ids = match db::groups::get_conversation_member_ids(&state.pool, conv_id).await {
         Ok(ids) => ids,
@@ -742,11 +832,6 @@ async fn fanout_message(
         }
     };
 
-    let json = match serde_json::to_string(message) {
-        Ok(j) => j,
-        Err(_) => return,
-    };
-
     // Batch check which members have blocked the sender (single query instead of N+1)
     let blockers: Vec<Uuid> = db::contacts::get_blockers_of(&state.pool, &member_ids, sender_id)
         .await
@@ -754,6 +839,40 @@ async fn fanout_message(
 
     let mut any_delivered = false;
     let mut offline_user_ids = Vec::new();
+
+    // Extract common fields from the message for per-device rewriting
+    let (msg_id, from_uid, from_did, from_name, conv, ch, ts, rto_id, rto_content, rto_user) =
+        match message {
+            ServerMessage::NewMessage {
+                message_id,
+                from_user_id,
+                from_device_id,
+                from_username,
+                conversation_id,
+                channel_id,
+                timestamp,
+                reply_to_id,
+                reply_to_content,
+                reply_to_username,
+                ..
+            } => (
+                *message_id,
+                *from_user_id,
+                *from_device_id,
+                from_username.clone(),
+                *conversation_id,
+                *channel_id,
+                *timestamp,
+                *reply_to_id,
+                reply_to_content.clone(),
+                reply_to_username.clone(),
+            ),
+            _ => unreachable!("fanout_message always receives NewMessage"),
+        };
+
+    // Legacy fallback JSON (used when no device_contents or for non-DM group messages)
+    let legacy_json = serde_json::to_string(message).ok();
+
     for member_id in &member_ids {
         if *member_id == sender_id {
             continue;
@@ -761,13 +880,49 @@ async fn fanout_message(
         if blockers.contains(member_id) {
             continue;
         }
-        if state
-            .hub
-            .send_to(member_id, WsMessage::Text(json.clone().into()))
-        {
-            any_delivered = true;
-        } else {
-            offline_user_ids.push(*member_id);
+
+        // For multi-device: try per-device delivery if device_contents is available.
+        if let Some(ref dc) = device_contents {
+            let mut member_delivered = false;
+            for (device_id_str, ciphertext) in dc {
+                if let Ok(did) = device_id_str.parse::<i32>() {
+                    let per_device_msg = ServerMessage::NewMessage {
+                        message_id: msg_id,
+                        from_user_id: from_uid,
+                        from_device_id: from_did,
+                        from_username: from_name.clone(),
+                        conversation_id: conv,
+                        channel_id: ch,
+                        content: ciphertext.clone(),
+                        timestamp: ts,
+                        reply_to_id: rto_id,
+                        reply_to_content: rto_content.clone(),
+                        reply_to_username: rto_user.clone(),
+                    };
+                    if let Ok(json) = serde_json::to_string(&per_device_msg)
+                        && state
+                            .hub
+                            .send_to_device(member_id, did, WsMessage::Text(json.into()))
+                    {
+                        member_delivered = true;
+                    }
+                }
+            }
+            if member_delivered {
+                any_delivered = true;
+            } else {
+                offline_user_ids.push(*member_id);
+            }
+        } else if let Some(ref json) = legacy_json {
+            // Legacy single-content delivery to all user devices
+            if state
+                .hub
+                .send_to_user(member_id, WsMessage::Text(json.clone().into()))
+            {
+                any_delivered = true;
+            } else {
+                offline_user_ids.push(*member_id);
+            }
         }
     }
 
@@ -780,9 +935,11 @@ async fn fanout_message(
             conversation_id: conv_id,
         };
         if let Ok(delivered_json) = serde_json::to_string(&delivered_event) {
-            state
-                .hub
-                .send_to(&sender_id, WsMessage::Text(delivered_json.into()));
+            state.hub.send_to_device(
+                &sender_id,
+                sender_device_id,
+                WsMessage::Text(delivered_json.into()),
+            );
         }
     }
 

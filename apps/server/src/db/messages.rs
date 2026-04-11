@@ -433,3 +433,55 @@ pub async fn get_pinned_messages(
     .fetch_all(pool)
     .await
 }
+
+// ---------------------------------------------------------------------------
+// Multi-device per-device ciphertext storage
+// ---------------------------------------------------------------------------
+
+/// Store per-device ciphertexts for a message (multi-device encrypted delivery).
+pub async fn store_device_contents(
+    pool: &PgPool,
+    message_id: Uuid,
+    entries: &[(i32, &str)],
+) -> Result<(), sqlx::Error> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    // Build a batch insert: INSERT INTO ... VALUES ($1,$2,$3), ($1,$4,$5), ...
+    let mut query = String::from(
+        "INSERT INTO message_device_contents (message_id, device_id, content) VALUES ",
+    );
+    let mut param_idx = 2; // $1 = message_id
+    for (i, _) in entries.iter().enumerate() {
+        if i > 0 {
+            query.push_str(", ");
+        }
+        query.push_str(&format!("($1, ${}, ${})", param_idx, param_idx + 1));
+        param_idx += 2;
+    }
+    query.push_str(" ON CONFLICT (message_id, device_id) DO NOTHING");
+
+    let mut q = sqlx::query(&query).bind(message_id);
+    for (device_id, content) in entries {
+        q = q.bind(device_id).bind(*content);
+    }
+    q.execute(pool).await?;
+    Ok(())
+}
+
+/// Fetch the per-device ciphertext for a specific device.
+pub async fn get_device_content(
+    pool: &PgPool,
+    message_id: Uuid,
+    device_id: i32,
+) -> Result<Option<String>, sqlx::Error> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT content FROM message_device_contents \
+         WHERE message_id = $1 AND device_id = $2",
+    )
+    .bind(message_id)
+    .bind(device_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(c,)| c))
+}

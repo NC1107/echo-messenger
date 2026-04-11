@@ -58,9 +58,13 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   ///
   /// Returns the ticket string on success, or null on failure. If the
   /// request returns 401, attempts to refresh the access token once and
-  /// retries.
+  /// retries. Includes device_id in the request body for multi-device support.
   Future<String?> _fetchWsTicket() async {
     final serverUrl = ref.read(serverUrlProvider);
+    // Include device_id in the ticket request for multi-device routing.
+    // The crypto service may not be initialized yet on first connect.
+    final crypto = ref.read(cryptoServiceProvider);
+    final deviceId = crypto.isInitialized ? crypto.deviceId : 0;
     try {
       final response = await ref
           .read(authProvider.notifier)
@@ -71,6 +75,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer $token',
               },
+              body: jsonEncode({'device_id': deviceId}),
             ),
           );
 
@@ -246,7 +251,6 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     String? conversationId,
     String? replyToId,
   }) async {
-    String payload;
     final cryptoState = ref.read(cryptoProvider);
     if (!cryptoState.isInitialized) {
       final reason = cryptoState.error ?? 'Encryption not initialized';
@@ -264,27 +268,55 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       await ref.read(cryptoProvider.notifier).retryKeyUpload();
     }
 
+    Map<String, String>? deviceContents;
+    String fallbackPayload;
     try {
       final crypto = ref.read(cryptoServiceProvider);
       final token = ref.read(authProvider).token ?? '';
       crypto.setToken(token);
-      payload = await crypto.encryptMessage(toUserId, content);
+
+      // Multi-device: encrypt per-device for the recipient
+      deviceContents = await crypto.encryptForAllDevices(toUserId, content);
+
+      // Also encrypt for sender's own other devices (self-delivery)
+      final myUserId = ref.read(authProvider).userId;
+      if (myUserId != null && myUserId.isNotEmpty) {
+        final selfContents = await crypto.encryptForOwnDevices(
+          myUserId,
+          content,
+        );
+        deviceContents.addAll(selfContents);
+      }
+
+      // Use first ciphertext as the fallback for legacy storage
+      fallbackPayload = deviceContents.values.firstOrNull ?? '';
     } catch (e) {
-      debugPrint('[WS] Encryption failed: $e');
-      _addFailedMessage(
-        toUserId,
-        _friendlyEncryptionError(e),
-        conversationId: conversationId,
-        originalContent: content,
-      );
-      return;
+      debugPrint('[WS] Multi-device encryption failed: $e');
+      // Fall back to single-device encrypt
+      try {
+        final crypto = ref.read(cryptoServiceProvider);
+        fallbackPayload = await crypto.encryptMessage(toUserId, content);
+        deviceContents = null;
+      } catch (e2) {
+        debugPrint('[WS] Fallback encryption also failed: $e2');
+        _addFailedMessage(
+          toUserId,
+          _friendlyEncryptionError(e2),
+          conversationId: conversationId,
+          originalContent: content,
+        );
+        return;
+      }
     }
 
     final msg = <String, dynamic>{
       'type': 'send_message',
       'to_user_id': toUserId,
-      'content': payload,
+      'content': fallbackPayload,
     };
+    if (deviceContents != null && deviceContents.isNotEmpty) {
+      msg['device_contents'] = deviceContents;
+    }
     if (conversationId != null && conversationId.isNotEmpty) {
       msg['conversation_id'] = conversationId;
     }

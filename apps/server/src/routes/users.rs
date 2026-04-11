@@ -306,7 +306,7 @@ pub async fn delete_account(
         })?;
 
     // Disconnect from WebSocket hub if online
-    state.hub.unregister(auth.user_id);
+    state.hub.unregister_all(auth.user_id);
 
     // Delete user row (CASCADE handles related tables)
     let deleted = db::users::delete_user(&state.pool, auth.user_id)

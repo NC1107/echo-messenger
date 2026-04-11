@@ -165,6 +165,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleMention(json, myUserId);
       case 'group_key_rotated':
         _handleGroupKeyRotated(json);
+      case 'self_message':
+        _handleSelfMessage(json, myUserId);
       case 'session_replaced':
         _handleSessionReplaced(json);
       case 'heartbeat':
@@ -267,6 +269,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   void _handleNewMessage(Map<String, dynamic> json, String myUserId) {
     final rawContent = json['content'] as String;
     final fromUserId = json['from_user_id'] as String;
+    final fromDeviceId = json['from_device_id'] as int?;
     final conversationId = json['conversation_id'] as String;
     final timestamp = json['timestamp'] as String;
     final senderUsername = json['from_username'] as String;
@@ -291,6 +294,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         conversationId,
         timestamp,
         senderUsername,
+        fromDeviceId: fromDeviceId,
       );
     } else {
       // Crypto not ready yet — show a placeholder and queue for decryption.
@@ -336,8 +340,9 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     String myUserId,
     String conversationId,
     String timestamp,
-    String senderUsername,
-  ) async {
+    String senderUsername, {
+    int? fromDeviceId,
+  }) async {
     String decryptedContent;
     final isGroupEncrypted = rawContent.startsWith(groupEncryptedPrefix);
 
@@ -379,7 +384,11 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       decryptedContent = rawContent;
     } else {
       try {
-        decryptedContent = await crypto.decryptMessage(fromUserId, rawContent);
+        decryptedContent = await crypto.decryptMessage(
+          fromUserId,
+          rawContent,
+          fromDeviceId: fromDeviceId,
+        );
       } catch (e) {
         // Do NOT invalidate the session here. Invalidating and re-creating a
         // new X3DH outgoing session would put Alice and Bob out of sync,
@@ -424,6 +433,44 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     if (fromUserId != myUserId) {
       _notifyIfAllowed(conversationId, senderUsername, decryptedContent);
     }
+  }
+
+  /// Handle a `self_message` event: an outgoing message sent from another
+  /// device of the current user. Repackage as a new_message from self and
+  /// reuse the standard decrypt-and-deliver pipeline.
+  void _handleSelfMessage(Map<String, dynamic> json, String myUserId) {
+    final rawContent = json['content'] as String? ?? '';
+    final fromDeviceId = json['from_device_id'] as int?;
+    final conversationId = json['conversation_id'] as String? ?? '';
+    final timestamp = json['timestamp'] as String? ?? '';
+
+    if (rawContent.isEmpty) return;
+
+    // Repackage as a new_message so _decryptAndDeliverWithPreview handles it.
+    final syntheticJson = <String, dynamic>{
+      ...json,
+      'from_user_id': myUserId,
+      'from_username': 'Me',
+    };
+
+    final cryptoState = ref.read(cryptoProvider);
+    if (!cryptoState.isInitialized) return;
+
+    final crypto = ref.read(cryptoServiceProvider);
+    final token = ref.read(authProvider).token ?? '';
+    crypto.setToken(token);
+
+    _decryptAndDeliverWithPreview(
+      crypto,
+      syntheticJson,
+      rawContent,
+      myUserId,
+      myUserId,
+      conversationId,
+      timestamp,
+      'Me',
+      fromDeviceId: fromDeviceId,
+    );
   }
 
   /// Show a notification + play sound if the conversation is not muted.

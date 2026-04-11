@@ -30,9 +30,9 @@ use uuid::Uuid;
 use crate::middleware::rate_limit;
 use crate::ws::hub::Hub;
 
-/// Map from ticket string to (user_id, created_at).
+/// Map from ticket string to (user_id, device_id, created_at).
 /// Uses DashMap for lock-free concurrent access in async context.
-pub type TicketStore = DashMap<String, (Uuid, Instant)>;
+pub type TicketStore = DashMap<String, (Uuid, i32, Instant)>;
 
 /// Map from media ticket string to (user_id, created_at).
 pub type MediaTicketStore = DashMap<String, (Uuid, Instant)>;
@@ -146,6 +146,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/bundle/{user_id}/{device_id}",
             get(keys::get_device_bundle),
         )
+        .route("/bundles/{user_id}", get(keys::get_all_bundles))
         .route("/devices/{user_id}", get(keys::get_devices))
         .route("/otp-count", get(keys::get_otp_count));
 

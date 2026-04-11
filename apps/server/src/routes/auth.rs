@@ -231,14 +231,24 @@ pub async fn logout(
 // POST /api/auth/ws-ticket
 // ---------------------------------------------------------------------------
 
+/// Optional device_id in ws-ticket request body.
+#[derive(Debug, Deserialize, Default)]
+pub struct WsTicketRequest {
+    #[serde(default)]
+    pub device_id: i32,
+}
+
 pub async fn ws_ticket(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
+    body: Option<Json<WsTicketRequest>>,
 ) -> Result<impl IntoResponse, AppError> {
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use rand::RngCore;
     use std::time::{Duration, Instant};
+
+    let device_id = body.map(|b| b.device_id).unwrap_or(0);
 
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
@@ -251,7 +261,7 @@ pub async fn ws_ticket(
     let now = Instant::now();
     state
         .ticket_store
-        .retain(|_, (_, ts)| now.duration_since(*ts) < TICKET_TTL);
+        .retain(|_, (_, _, ts)| now.duration_since(*ts) < TICKET_TTL);
 
     // Cap total tickets to prevent memory exhaustion
     if state.ticket_store.len() >= MAX_TICKETS {
@@ -262,7 +272,7 @@ pub async fn ws_ticket(
 
     state
         .ticket_store
-        .insert(ticket.clone(), (auth_user.user_id, now));
+        .insert(ticket.clone(), (auth_user.user_id, device_id, now));
 
     Ok(Json(WsTicketResponse { ticket }))
 }
