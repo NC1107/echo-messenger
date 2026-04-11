@@ -148,6 +148,119 @@ pub fn ticket_limiter() -> RateLimiter {
     RateLimiter::new(10, 60)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn test_allows_within_limit() {
+        let limiter = RateLimiter::new(3, 60);
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        assert!(limiter.check(ip));
+        assert!(limiter.check(ip));
+        assert!(limiter.check(ip));
+    }
+
+    #[test]
+    fn test_blocks_over_limit() {
+        let limiter = RateLimiter::new(2, 60);
+        let ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        assert!(limiter.check(ip)); // 1
+        assert!(limiter.check(ip)); // 2
+        assert!(!limiter.check(ip)); // 3 -> blocked
+        assert!(!limiter.check(ip)); // still blocked
+    }
+
+    #[test]
+    fn test_different_ips_independent() {
+        let limiter = RateLimiter::new(1, 60);
+        let ip_a = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
+        let ip_b = IpAddr::V4(Ipv4Addr::new(2, 2, 2, 2));
+        assert!(limiter.check(ip_a));
+        assert!(!limiter.check(ip_a)); // blocked
+        assert!(limiter.check(ip_b)); // different IP, allowed
+    }
+
+    #[test]
+    fn test_login_limiter_config() {
+        let limiter = login_limiter();
+        assert_eq!(limiter.max_requests, 5);
+        assert_eq!(limiter.window_secs, 60);
+    }
+
+    #[test]
+    fn test_register_limiter_config() {
+        let limiter = register_limiter();
+        assert_eq!(limiter.max_requests, 3);
+        assert_eq!(limiter.window_secs, 60);
+    }
+
+    #[test]
+    fn test_is_private_ipv4() {
+        assert!(is_private(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
+        assert!(is_private(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+        assert!(is_private(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1))));
+        assert!(is_private(IpAddr::V4(Ipv4Addr::new(169, 254, 1, 1)))); // link-local
+        assert!(!is_private(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
+    }
+
+    #[test]
+    fn test_is_private_ipv6_ula() {
+        // ULA: fc00::/7
+        assert!(is_private(IpAddr::V6(Ipv6Addr::new(
+            0xfc00, 0, 0, 0, 0, 0, 0, 1
+        ))));
+        assert!(is_private(IpAddr::V6(Ipv6Addr::new(
+            0xfd12, 0x3456, 0, 0, 0, 0, 0, 1
+        ))));
+        // Link-local: fe80::/10
+        assert!(is_private(IpAddr::V6(Ipv6Addr::new(
+            0xfe80, 0, 0, 0, 0, 0, 0, 1
+        ))));
+        // Public IPv6
+        assert!(!is_private(IpAddr::V6(Ipv6Addr::new(
+            0x2001, 0xdb8, 0, 0, 0, 0, 0, 1
+        ))));
+    }
+
+    #[test]
+    fn test_xff_private_ip_rejected() {
+        let mut req = Request::new(Body::empty());
+        req.headers_mut().insert(
+            "x-forwarded-for",
+            "1.2.3.4, 192.168.1.1".parse().unwrap(),
+        );
+        // Last IP is private -> should fall through to ConnectInfo/localhost
+        let ip = extract_ip(&req);
+        assert!(ip.is_loopback(), "private XFF IP should be rejected");
+    }
+
+    #[test]
+    fn test_xff_public_ip_accepted() {
+        let mut req = Request::new(Body::empty());
+        req.headers_mut().insert(
+            "x-forwarded-for",
+            "spoofed, 203.0.113.50".parse().unwrap(),
+        );
+        let ip = extract_ip(&req);
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(203, 0, 113, 50)));
+    }
+
+    #[test]
+    fn test_x_real_ip_preferred() {
+        let mut req = Request::new(Body::empty());
+        req.headers_mut()
+            .insert("x-real-ip", "1.2.3.4".parse().unwrap());
+        req.headers_mut().insert(
+            "x-forwarded-for",
+            "5.6.7.8".parse().unwrap(),
+        );
+        let ip = extract_ip(&req);
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)));
+    }
+}
+
 /// Check whether an IP is in a private/reserved range (RFC 1918, link-local, ULA).
 fn is_private(ip: IpAddr) -> bool {
     match ip {

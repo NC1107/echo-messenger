@@ -69,3 +69,77 @@ pub async fn ws_upgrade(
         handler::handle_socket(socket, user_id, device_id, user.username, state)
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashmap::DashMap;
+    use uuid::Uuid;
+
+    type TestTicketStore = DashMap<String, (Uuid, i32, Instant)>;
+
+    #[test]
+    fn test_ticket_single_use() {
+        let store: TestTicketStore = DashMap::new();
+        let uid = Uuid::new_v4();
+        let ticket = "test-ticket-123".to_string();
+        store.insert(ticket.clone(), (uid, 1, Instant::now()));
+
+        // First use succeeds
+        let now = Instant::now();
+        let first = store.remove_if(&ticket, |_, (_, _, created_at)| {
+            now.duration_since(*created_at) < TICKET_TTL
+        });
+        assert!(first.is_some(), "first use should succeed");
+
+        // Second use fails (ticket consumed)
+        let second = store.remove_if(&ticket, |_, (_, _, created_at)| {
+            now.duration_since(*created_at) < TICKET_TTL
+        });
+        assert!(second.is_none(), "replay should fail");
+    }
+
+    #[test]
+    fn test_ticket_expired() {
+        let store: TestTicketStore = DashMap::new();
+        let uid = Uuid::new_v4();
+        let ticket = "expired-ticket".to_string();
+        // Insert with a timestamp 60 seconds in the past
+        let old = Instant::now() - Duration::from_secs(60);
+        store.insert(ticket.clone(), (uid, 1, old));
+
+        let now = Instant::now();
+        let result = store.remove_if(&ticket, |_, (_, _, created_at)| {
+            now.duration_since(*created_at) < TICKET_TTL
+        });
+        assert!(result.is_none(), "expired ticket should be rejected");
+        // Ticket still in store (not removed because condition was false)
+        assert!(store.contains_key(&ticket));
+    }
+
+    #[test]
+    fn test_ticket_invalid() {
+        let store: TestTicketStore = DashMap::new();
+        let result = store.remove_if("nonexistent", |_, (_, _, created_at)| {
+            Instant::now().duration_since(*created_at) < TICKET_TTL
+        });
+        assert!(result.is_none(), "invalid ticket should be rejected");
+    }
+
+    #[test]
+    fn test_ticket_returns_correct_user() {
+        let store: TestTicketStore = DashMap::new();
+        let uid = Uuid::new_v4();
+        let device_id = 42;
+        store.insert("my-ticket".to_string(), (uid, device_id, Instant::now()));
+
+        let now = Instant::now();
+        let (_, (returned_uid, returned_did, _)) = store
+            .remove_if("my-ticket", |_, (_, _, created_at)| {
+                now.duration_since(*created_at) < TICKET_TTL
+            })
+            .unwrap();
+        assert_eq!(returned_uid, uid);
+        assert_eq!(returned_did, device_id);
+    }
+}
