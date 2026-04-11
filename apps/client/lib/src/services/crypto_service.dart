@@ -282,6 +282,14 @@ class CryptoService {
 
         _keysAreFresh = true;
         _needsOtpReplenishment = true; // Fresh install needs OTP keys
+
+        // Purge any stale sessions from storage — they reference the old keys.
+        final allEntries = await store.readAll();
+        for (final key in allEntries.keys) {
+          if (key.startsWith(_sessionPrefix)) {
+            await store.delete(key);
+          }
+        }
       }
     } catch (e) {
       rethrow;
@@ -802,18 +810,29 @@ class CryptoService {
     String peerUserId,
     String plaintext,
   ) async {
-    final isNewSession = !_sessions.containsKey(peerUserId);
-    final session = await getOrCreateSession(peerUserId);
+    var isNewSession = !_sessions.containsKey(peerUserId);
+    var session = await getOrCreateSession(peerUserId);
     final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
 
-    // Write-ahead: save session state BEFORE mutation so that if the app
-    // crashes between encrypt and the post-save, the session reloads to the
-    // pre-mutation state.  The unsent message can safely be re-encrypted.
-    if (!isNewSession) {
-      await _saveSession(peerUserId, session);
+    Uint8List wire;
+    try {
+      // Write-ahead: save session state BEFORE mutation so that if the app
+      // crashes between encrypt and the post-save, the session reloads to the
+      // pre-mutation state.  The unsent message can safely be re-encrypted.
+      if (!isNewSession) {
+        await _saveSession(peerUserId, session);
+      }
+      wire = await session.encrypt(plaintextBytes);
+    } catch (e) {
+      // Session corrupted/stale — clear and retry once with fresh X3DH
+      debugPrint('[Crypto] Encrypt failed for $peerUserId, resetting session: $e');
+      _sessions.remove(peerUserId);
+      await SecureKeyStore.instance.delete('$_sessionPrefix$peerUserId');
+      isNewSession = true;
+      session = await getOrCreateSession(peerUserId);
+      wire = await session.encrypt(plaintextBytes);
     }
 
-    final wire = await session.encrypt(plaintextBytes);
     final finalWire = await _buildInitialWire(wire);
 
     await _saveSession(peerUserId, session);
@@ -1027,9 +1046,22 @@ class CryptoService {
     }
     // Write-ahead: save before mutation so crash recovery replays correctly
     await _saveSession(sessionKey, session);
-    final plainBytes = await session.decrypt(fullWire);
-    await _saveSession(sessionKey, session);
-    return utf8.decode(plainBytes);
+    try {
+      final plainBytes = await session.decrypt(fullWire);
+      await _saveSession(sessionKey, session);
+      return utf8.decode(plainBytes);
+    } catch (e) {
+      // Session is stale/corrupted — clear it. The next incoming initial
+      // message from this peer will establish a fresh session via X3DH.
+      // We do NOT create a new outgoing session here (that would break sync).
+      debugPrint(
+        '[Crypto] Normal decrypt failed for $sessionKey, '
+        'clearing stale session: $e',
+      );
+      _sessions.remove(sessionKey);
+      await SecureKeyStore.instance.delete('$_sessionPrefix$sessionKey');
+      rethrow;
+    }
   }
 
   /// Attempt to decrypt a historical message using the existing session.
