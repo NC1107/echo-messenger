@@ -16,6 +16,34 @@ class SecureKeyStore {
 
   final FlutterSecureStorage _storage;
 
+  /// User-scoped key prefix. Empty = global (pre-login).
+  String _userPrefix = '';
+
+  /// Scope all storage operations to a specific user.
+  void setUserScope(String userId, String serverHost) {
+    _userPrefix = 'u/$userId@$serverHost/';
+  }
+
+  /// Clear user scope (on logout).
+  void clearUserScope() {
+    _userPrefix = '';
+  }
+
+  /// Current prefix for testing visibility.
+  @visibleForTesting
+  String get keyPrefix => _userPrefix;
+
+  /// Delete all keys belonging to the current user scope.
+  Future<void> deleteAllForUser() async {
+    if (_userPrefix.isEmpty) return;
+    final all = await _storage.readAll();
+    for (final key in all.keys) {
+      if (key.startsWith(_userPrefix)) {
+        await _storage.delete(key: key);
+      }
+    }
+  }
+
   SecureKeyStore._()
     : _storage = const FlutterSecureStorage(
         aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -48,7 +76,7 @@ class SecureKeyStore {
   /// to the user instead of silently regenerating new identity keys.
   Future<String?> read(String key) async {
     try {
-      return await _storage.read(key: key);
+      return await _storage.read(key: '$_userPrefix$key');
     } catch (e) {
       debugPrint('[SecureKeyStore] read($key) failed: $e');
       rethrow;
@@ -62,7 +90,7 @@ class SecureKeyStore {
   /// remove the SharedPreferences entry if this write fails).
   Future<void> write(String key, String value) async {
     try {
-      await _storage.write(key: key, value: value);
+      await _storage.write(key: '$_userPrefix$key', value: value);
     } catch (e) {
       debugPrint('[SecureKeyStore] write($key) failed: $e');
       rethrow;
@@ -72,16 +100,22 @@ class SecureKeyStore {
   /// Delete a single key.
   Future<void> delete(String key) async {
     try {
-      await _storage.delete(key: key);
+      await _storage.delete(key: '$_userPrefix$key');
     } catch (e) {
       debugPrint('[SecureKeyStore] delete($key) failed: $e');
     }
   }
 
-  /// Read all key-value pairs. Used for iterating session keys.
+  /// Read all key-value pairs for the current user scope.
   Future<Map<String, String>> readAll() async {
     try {
-      return await _storage.readAll();
+      final all = await _storage.readAll();
+      if (_userPrefix.isEmpty) return all;
+      return Map.fromEntries(
+        all.entries
+            .where((e) => e.key.startsWith(_userPrefix))
+            .map((e) => MapEntry(e.key.substring(_userPrefix.length), e.value)),
+      );
     } catch (e) {
       debugPrint('[SecureKeyStore] readAll failed: $e');
       return {};
@@ -91,7 +125,7 @@ class SecureKeyStore {
   /// Check if a key exists.
   Future<bool> containsKey(String key) async {
     try {
-      return await _storage.containsKey(key: key);
+      return await _storage.containsKey(key: '$_userPrefix$key');
     } catch (e) {
       debugPrint('[SecureKeyStore] containsKey($key) failed: $e');
       return false;
