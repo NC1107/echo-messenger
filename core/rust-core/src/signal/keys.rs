@@ -4,7 +4,7 @@
 //! and prekey bundles used in X3DH key agreement.
 
 use ed25519_dalek::{Signer, SigningKey, Verifier, VerifyingKey};
-use rand::rngs::OsRng;
+use rand_core::OsRng;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::error::CoreError;
@@ -43,7 +43,7 @@ impl IdentityKeyPair {
         let public = PublicKey::from(&private);
 
         let mut signing_bytes = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut OsRng, &mut signing_bytes);
+        rand_core::RngCore::fill_bytes(&mut OsRng, &mut signing_bytes);
         let signing_key = SigningKey::from_bytes(&signing_bytes);
 
         Self {

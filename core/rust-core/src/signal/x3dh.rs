@@ -123,7 +123,7 @@ pub fn respond(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::OsRng;
+    use rand_core::OsRng;
 
     /// Helper: create Bob's prekey bundle and return all his secrets.
     fn bob_setup() -> (

@@ -3,7 +3,12 @@ all-features = true
 
 [advisories]
 version = 2
-ignore = []
+ignore = [
+    # rand 0.8.5 unsound advisory. sqlx 0.8.6 pins rand 0.8.5 transitively
+    # via sqlx-postgres and sqlx-mysql. No sqlx 0.9 available yet.
+    # Advisory conditions (custom logger + rand::rng() reseed) don't apply to sqlx usage.
+    "RUSTSEC-2026-0097",
+]
 
 [licenses]
 version = 2

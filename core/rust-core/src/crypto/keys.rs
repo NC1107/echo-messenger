@@ -1,7 +1,7 @@
 //! Key generation and PreKey bundle management.
 
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
-use rand::rngs::OsRng;
+use rand_core::OsRng;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 /// Long-term Ed25519 identity key pair used for signing.
@@ -28,7 +28,7 @@ impl IdentityKeyPair {
     /// Generate a new random Ed25519 identity key pair.
     pub fn generate() -> Self {
         let mut secret_bytes = [0u8; 32];
-        rand::RngCore::fill_bytes(&mut OsRng, &mut secret_bytes);
+        rand_core::RngCore::fill_bytes(&mut OsRng, &mut secret_bytes);
         let signing_key = SigningKey::from_bytes(&secret_bytes);
         let verifying_key = signing_key.verifying_key();
         Self {

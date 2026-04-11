@@ -1,7 +1,7 @@
 //! Simplified X3DH key agreement for session establishment.
 
 use hkdf::Hkdf;
-use rand::rngs::OsRng;
+use rand_core::OsRng;
 use sha2::Sha256;
 use x25519_dalek::{PublicKey, StaticSecret};
 
