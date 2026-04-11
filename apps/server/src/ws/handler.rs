@@ -486,7 +486,15 @@ async fn handle_send_message(
         reply_to_username: reply_username,
     };
 
-    fanout_message(state, sender_id, conv_id, &deliver, stored.id).await;
+    fanout_message(
+        state,
+        sender_id,
+        conv_id,
+        &deliver,
+        stored.id,
+        conv_security.is_encrypted,
+    )
+    .await;
 }
 
 /// Resolve the target conversation from either an explicit conversation_id or a to_user_id.
@@ -647,6 +655,7 @@ async fn fanout_message(
     conv_id: Uuid,
     message: &ServerMessage,
     stored_id: Uuid,
+    is_encrypted: bool,
 ) {
     let member_ids = match db::groups::get_conversation_member_ids(&state.pool, conv_id).await {
         Ok(ids) => ids,
@@ -719,6 +728,7 @@ async fn fanout_message(
                 &offline_user_ids,
                 &sender_name,
                 &content,
+                is_encrypted,
                 conv_id,
                 stored_id,
             )
