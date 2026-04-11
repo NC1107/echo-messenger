@@ -18,6 +18,8 @@ import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../widgets/vertex_mesh_background.dart';
 
+const _kScreenshareLocal = 'screenshare-local';
+
 /// Resolve a LiveKit participant's display name, preferring name > identity > sid.
 String _participantDisplayName(lk.Participant participant) {
   if (participant.name.isNotEmpty) return participant.name;
@@ -95,7 +97,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       if (pub == null || !voiceLk.isVideoEnabled) return (null, false);
       return (pub.track as lk.VideoTrack?, true);
     }
-    if (tileKey == 'screenshare-local') {
+    if (tileKey == _kScreenshareLocal) {
       final pub = room.localParticipant?.videoTrackPublications
           .where(
             (p) =>
@@ -213,8 +215,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         children: [
           if (screenShare.isScreenSharing)
             GestureDetector(
-              onTap: () =>
-                  setState(() => _focusedTileKey = 'screenshare-local'),
+              onTap: () => setState(() => _focusedTileKey = _kScreenshareLocal),
               child: _ScreenShareViewer(ref: ref),
             ),
           if (screenShare.isScreenSharing) const SizedBox(height: 16),
@@ -252,8 +253,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           if (screenShare.isScreenSharing) ...[
             const SizedBox(height: 8),
             GestureDetector(
-              onTap: () =>
-                  setState(() => _focusedTileKey = 'screenshare-local'),
+              onTap: () => setState(() => _focusedTileKey = _kScreenshareLocal),
               child: SizedBox(height: 120, child: _ScreenShareViewer(ref: ref)),
             ),
           ],

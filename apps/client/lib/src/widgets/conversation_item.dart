@@ -302,6 +302,7 @@ class _ConversationItemState extends State<ConversationItem> {
     Conversation conv,
   ) {
     final showDraft = _draft != null && !hasUnread;
+    final snippetWeight = hasUnread ? FontWeight.w500 : FontWeight.normal;
     return Row(
       children: [
         Expanded(
@@ -311,7 +312,7 @@ class _ConversationItemState extends State<ConversationItem> {
                   overflow: TextOverflow.ellipsis,
                   text: TextSpan(
                     children: [
-                      TextSpan(
+                      const TextSpan(
                         text: 'Draft: ',
                         style: TextStyle(
                           fontSize: 13,
@@ -336,7 +337,7 @@ class _ConversationItemState extends State<ConversationItem> {
                   style: TextStyle(
                     fontSize: 13,
                     color: context.textMuted,
-                    fontWeight: hasUnread ? FontWeight.w500 : FontWeight.normal,
+                    fontWeight: snippetWeight,
                   ),
                 ),
         ),
