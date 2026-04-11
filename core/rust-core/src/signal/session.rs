@@ -233,7 +233,7 @@ pub fn deserialize_session(data: &[u8]) -> Result<Session, CoreError> {
 mod tests {
     use super::super::keys::IdentityKeyPair;
     use super::*;
-    use rand::rngs::OsRng;
+    use rand_core::OsRng;
     use x25519_dalek::StaticSecret;
 
     /// Set up Alice and Bob identities, Bob's prekey bundle, and all secrets.
