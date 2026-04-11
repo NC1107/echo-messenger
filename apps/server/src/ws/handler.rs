@@ -1106,10 +1106,10 @@ async fn check_membership_cached(
     let cache_key = (user_id, conversation_id);
 
     // Fast path: check cache
-    if let Some(entry) = MEMBERSHIP_CACHE.get(&cache_key) {
-        if entry.value().elapsed() < MEMBERSHIP_CACHE_TTL {
-            return true;
-        }
+    if let Some(entry) = MEMBERSHIP_CACHE.get(&cache_key)
+        && entry.value().elapsed() < MEMBERSHIP_CACHE_TTL
+    {
+        return true;
     }
 
     // Slow path: hit database
