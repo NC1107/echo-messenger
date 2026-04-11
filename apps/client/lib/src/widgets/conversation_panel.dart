@@ -412,7 +412,17 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final conversationsState = ref.watch(conversationsProvider);
+    final conversationsState = ref.watch(
+      conversationsProvider.select(
+        (s) => (s.conversations, s.isLoading, s.error),
+      ),
+    );
+    final (allConversations, convIsLoading, convError) = conversationsState;
+    final convState = ConversationsState(
+      conversations: allConversations,
+      isLoading: convIsLoading,
+      error: convError,
+    );
     final (myUserId, myUsername, myAvatarUrl) = ref.watch(
       authProvider.select((s) => (s.userId, s.username, s.avatarUrl)),
     );
@@ -428,8 +438,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
     final pendingCount = contactsState.pendingRequests.length;
 
-    final allConversations = conversationsState.conversations;
-
     final conversations = _filterConversations(allConversations, userId);
     final groupConversations = conversations.where((c) => c.isGroup).toList();
 
@@ -444,7 +452,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           _buildReplacedBanner(context, wsReplaced),
           Expanded(
             child: _buildTabContent(
-              conversationsState: conversationsState,
+              conversationsState: convState,
               conversations: conversations,
               groupConversations: groupConversations,
               allConversations: allConversations,

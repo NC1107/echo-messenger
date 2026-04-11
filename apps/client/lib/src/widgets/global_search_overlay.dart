@@ -203,7 +203,6 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
                     if (_results.isNotEmpty)
                       Flexible(
                         child: ListView.builder(
-                          shrinkWrap: true,
                           itemCount: _results.length,
                           padding: const EdgeInsets.only(bottom: 8),
                           itemBuilder: (context, index) {

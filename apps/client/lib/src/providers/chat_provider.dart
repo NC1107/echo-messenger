@@ -88,9 +88,15 @@ class ChatState {
       // O(1) deduplicate by ID
       if (!ids.contains(msg.id)) {
         final existing = updatedConv[msg.conversationId] ?? [];
-        updatedConv[msg.conversationId] = [...existing, msg];
+        var updated = [...existing, msg];
+        // Trim to cap, keeping newest messages.
+        if (updated.length > _maxMessagesPerConv) {
+          updated = updated.sublist(updated.length - _maxMessagesPerConv);
+        }
+        updatedConv[msg.conversationId] = updated;
         ids.add(msg.id);
-        updatedIndex[msg.conversationId] = ids;
+        // Rebuild index from trimmed list to stay consistent.
+        updatedIndex[msg.conversationId] = updated.map((m) => m.id).toSet();
       }
     }
 
@@ -123,6 +129,9 @@ class ChatState {
     );
   }
 }
+
+/// Maximum messages retained per conversation to bound memory usage.
+const _maxMessagesPerConv = 500;
 
 class ChatNotifier extends StateNotifier<ChatState> {
   final Ref ref;
@@ -522,8 +531,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
         .where((m) => !existingIds.contains(m.id))
         .toList();
 
-    final merged = [...deduped, ...existing]
+    var merged = [...deduped, ...existing]
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    // Trim to cap, keeping newest messages.
+    if (merged.length > _maxMessagesPerConv) {
+      merged = merged.sublist(merged.length - _maxMessagesPerConv);
+    }
     updatedConv[conversationId] = merged;
 
     final updatedHasMore = Map<String, bool>.from(state.hasMore);
@@ -646,9 +659,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     // Remove the deleted ID from the index.
     final updatedIndex = Map<String, Set<String>>.from(state._messageIdIndex);
-    final ids = Set<String>.from(
-      updatedIndex[conversationId] ?? <String>{},
-    );
+    final ids = Set<String>.from(updatedIndex[conversationId] ?? <String>{});
     ids.remove(messageId);
     updatedIndex[conversationId] = ids;
 

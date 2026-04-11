@@ -157,7 +157,8 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
       state = state.copyWith(
         isInitialized: false,
         isUploading: false,
-        error: 'Encryption unavailable: secure storage failed. '
+        error:
+            'Encryption unavailable: secure storage failed. '
             'Messages cannot be sent until this is resolved.',
       );
     } catch (e) {

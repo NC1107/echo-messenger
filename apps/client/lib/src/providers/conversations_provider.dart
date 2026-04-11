@@ -146,11 +146,11 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     // by the websocket provider)
     _decryptedPreviews[conversationId] = content;
 
-    final updated = List<Conversation>.from(state.conversations);
-    final index = updated.indexWhere((c) => c.id == conversationId);
+    final conversations = state.conversations;
+    final index = conversations.indexWhere((c) => c.id == conversationId);
 
     if (index >= 0) {
-      final conv = updated[index];
+      final conv = conversations[index];
       final updatedConv = conv.copyWith(
         lastMessage: content,
         lastMessageTimestamp: timestamp,
@@ -158,9 +158,13 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         unreadCount: conv.unreadCount + 1,
       );
 
-      // Move to top: O(n) remove + O(1) insert instead of O(n log n) sort
-      updated.removeAt(index);
-      updated.insert(0, updatedConv);
+      // Build new list updating only the changed conversation and moving
+      // it to the top, avoiding a full List.from() copy when possible.
+      final updated = [
+        updatedConv,
+        for (var i = 0; i < conversations.length; i++)
+          if (i != index) conversations[i],
+      ];
 
       state = state.copyWith(conversations: updated);
       _updateTabBadge();

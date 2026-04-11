@@ -637,7 +637,6 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
       ),
       child: GridView.count(
         crossAxisCount: crossAxisCount,
-        shrinkWrap: true,
         mainAxisSpacing: 4,
         crossAxisSpacing: 4,
         childAspectRatio: 4 / 3,

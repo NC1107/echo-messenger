@@ -169,7 +169,6 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
                       Flexible(
                         child: ListView.builder(
                           controller: _listScrollController,
-                          shrinkWrap: true,
                           itemCount: results.length,
                           itemBuilder: (context, index) {
                             final conv = results[index];
