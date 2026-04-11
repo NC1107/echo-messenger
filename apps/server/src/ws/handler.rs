@@ -1199,8 +1199,8 @@ async fn handle_voice_signal(
 }
 
 async fn broadcast_presence(state: &AppState, user_id: Uuid, username: &str, status: &str) {
-    let contacts = match db::contacts::list_contacts(&state.pool, user_id).await {
-        Ok(c) => c,
+    let contact_ids = match db::contacts::list_contact_user_ids(&state.pool, user_id).await {
+        Ok(ids) => ids,
         Err(e) => {
             tracing::warn!("Failed to fetch contacts for presence broadcast: {e}");
             return;
@@ -1218,10 +1218,8 @@ async fn broadcast_presence(state: &AppState, user_id: Uuid, username: &str, sta
         Err(_) => return,
     };
 
-    for contact in &contacts {
-        state
-            .hub
-            .send_to(&contact.user_id, WsMessage::Text(json.clone().into()));
+    for cid in &contact_ids {
+        state.hub.send_to(cid, WsMessage::Text(json.clone().into()));
     }
 }
 
