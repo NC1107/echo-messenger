@@ -62,9 +62,22 @@ import UserNotifications
     didReceiveRemoteNotification userInfo: [AnyHashable: Any],
     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
   ) {
-    // Silent push received — tell Flutter to reconnect WebSocket
-    NSLog("[Echo] Silent push received")
-    pushChannel?.invokeMethod("onWake", arguments: nil)
-    completionHandler(.newData)
+    // Silent push received — tell Flutter to reconnect WebSocket.
+    // Delay the completion handler so iOS keeps the app alive while
+    // Dart reconnects and fetches messages (~25s budget).
+    NSLog("[Echo] Silent push received, waking Dart engine")
+    pushChannel?.invokeMethod("onWake", arguments: nil) { _ in
+      // Dart has acknowledged the wake — give it a few more seconds
+      // to finish the WebSocket handshake before telling iOS we're done.
+      DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+        completionHandler(.newData)
+      }
+    }
+
+    // Safety net: if Dart doesn't respond within 25 seconds, complete anyway
+    // to avoid iOS killing us for exceeding the 30-second background limit.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 25.0) {
+      completionHandler(.newData)
+    }
   }
 }

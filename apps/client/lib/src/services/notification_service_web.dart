@@ -48,6 +48,7 @@ class _WebNotificationService implements NotificationService {
     required String senderUsername,
     required String body,
     String? conversationId,
+    String? conversationName,
     bool isGroup = false,
     bool forceShow = false,
   }) {

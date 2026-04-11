@@ -155,6 +155,7 @@ class _NativeNotificationService implements NotificationService {
     required String senderUsername,
     required String body,
     String? conversationId,
+    String? conversationName,
     bool isGroup = false,
     bool forceShow = false,
   }) {
@@ -174,11 +175,24 @@ class _NativeNotificationService implements NotificationService {
       final notificationId = _idForConversation(conversationId);
       final androidDetails = isGroup ? _groupChannel : _dmChannel;
 
+      // iOS: group notifications by conversation, show conversation name
+      final iosDetails = DarwinNotificationDetails(
+        threadIdentifier: conversationId,
+        subtitle: conversationName,
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+
       _plugin.show(
         notificationId,
         senderUsername,
         body,
-        NotificationDetails(android: androidDetails, linux: _linuxDetails),
+        NotificationDetails(
+          android: androidDetails,
+          iOS: iosDetails,
+          linux: _linuxDetails,
+        ),
         payload: conversationId,
       );
     });
