@@ -3,7 +3,7 @@
 Last updated: 2026-04-11
 
 ## Summary
-**Total Issues**: 85 | Critical: 4 (1 fixed) | High: 22 (5 fixed) | Medium: 38 | Low: 21
+**Total Issues**: 85 | Critical: 4 (1 fixed) | High: 22 (15 fixed) | Medium: 38 (2 fixed) | Low: 21
 
 ## Fixed This Session
 - [x] Argon2 blocks async executor — wrapped in `spawn_blocking`
@@ -12,6 +12,16 @@ Last updated: 2026-04-11
 - [x] `get_undelivered` no LIMIT — capped at 200
 - [x] sqlx unique-constraint error maps ALL to "Username taken" — constraint-specific messages
 - [x] 13 UX quick wins (input bar, error states, accessibility, session recovery)
+- [x] Rate limit on refresh + ws-ticket endpoints
+- [x] Referrer-Policy + Permissions-Policy headers (replaced X-XSS-Protection)
+- [x] Silent DB error swallowing — logged on 8 broadcast paths
+- [x] Rate limiter Mutex → DashMap (lock-free)
+- [x] Pool connections 100 → 30 + acquire/idle timeouts
+- [x] broadcast_presence fetches IDs only
+- [x] Dead code removed (set_conversation_encrypted)
+- [x] message_device_contents device_id index
+- [x] Unknown WS event type default logging
+- [x] Multi-device encryption sync (from earlier task)
 
 ## Critical (Remaining)
 - [ ] **Untested auth refresh token theft detection** — `apps/server/src/routes/auth.rs` — no integration tests for refresh flow (effort: small)
@@ -22,10 +32,10 @@ Last updated: 2026-04-11
 - [ ] **File upload trusts client MIME** — `apps/server/src/routes/media.rs:26` — validate magic bytes with `infer` crate (effort: small)
 - [ ] **CSP allows unsafe-inline/eval** — `apps/server/src/routes/mod.rs:263` — remove for XSS protection (effort: medium)
 - [ ] **IP rate limit trusts X-Real-IP** — `apps/server/src/middleware/rate_limit.rs:76` — add trusted proxy CIDR (effort: small)
-- [ ] **No rate limit on refresh/ws-ticket** — `apps/server/src/routes/mod.rs:89` — DoS via ticket exhaustion (effort: small)
+- [x] ~~No rate limit on refresh/ws-ticket~~ — FIXED
 - [ ] **Peer identity key TOFU** — `apps/client/lib/src/services/crypto_service.dart:371` — no change detection on key swap (effort: medium)
 - [ ] **Key upload no proof-of-possession** — `apps/server/src/routes/keys.rs:77` — stolen token allows key substitution (effort: large)
-- [ ] **Missing Referrer-Policy + Permissions-Policy headers** — `apps/server/src/routes/mod.rs:246` (effort: small)
+- [x] ~~Missing Referrer-Policy + Permissions-Policy headers~~ — FIXED
 
 ## High — Performance
 - [ ] **5-6 sequential DB round-trips per WS message send** — `apps/server/src/ws/handler.rs:493` — consolidate queries (effort: medium)
@@ -39,7 +49,7 @@ Last updated: 2026-04-11
 - [ ] **SQL in WS handler** — `lookup_reply_context` bypasses db/ module (effort: small)
 
 ## High — Code Quality
-- [ ] **Silent DB error swallowing** — `unwrap_or_default()` on broadcast paths — 8+ locations (effort: small)
+- [x] ~~Silent DB error swallowing~~ — FIXED (logged on 8 broadcast paths)
 - [ ] **`fanout_message` uses `unreachable!()` on live code path** — `apps/server/src/ws/handler.rs:870` (effort: small)
 - [ ] **CryptoService is 1,516-line god class** — extract KeyStore, SessionManager, KeyUploadService (effort: large)
 - [ ] **crypto_provider silent keyring degradation** — sends plaintext when keyring unavailable (effort: medium)

@@ -354,6 +354,7 @@ pub async fn remove_member(
     // Auto-delete group if no members remain
     let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
         .await
+        .map_err(|e| tracing::error!("Failed to get member IDs for broadcast: {e:?}"))
         .unwrap_or_default();
     if remaining.is_empty() {
         let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;
@@ -510,6 +511,7 @@ pub async fn leave_group(
     // Auto-delete group if no members remain
     let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
         .await
+        .map_err(|e| tracing::error!("Failed to get member IDs for broadcast: {e:?}"))
         .unwrap_or_default();
     if remaining.is_empty() {
         // delete_group checks owner, but we just need a raw delete for empty groups
@@ -632,6 +634,7 @@ pub async fn ban_member(
     // Auto-delete group if no members remain
     let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
         .await
+        .map_err(|e| tracing::error!("Failed to get member IDs for broadcast: {e:?}"))
         .unwrap_or_default();
     if remaining.is_empty() {
         let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;

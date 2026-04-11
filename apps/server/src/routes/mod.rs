@@ -76,6 +76,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let login_limit = rate_limit::make_rate_limit_layer(rate_limit::login_limiter());
     let register_limit = rate_limit::make_rate_limit_layer(rate_limit::register_limiter());
+    let refresh_limit = rate_limit::make_rate_limit_layer(rate_limit::refresh_limiter());
+    let ticket_limit = rate_limit::make_rate_limit_layer(rate_limit::ticket_limiter());
 
     let auth_routes = Router::new()
         .route(
@@ -86,9 +88,15 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/login",
             post(auth::login).layer(middleware::from_fn(login_limit)),
         )
-        .route("/refresh", post(auth::refresh))
+        .route(
+            "/refresh",
+            post(auth::refresh).layer(middleware::from_fn(refresh_limit)),
+        )
         .route("/logout", post(auth::logout))
-        .route("/ws-ticket", post(auth::ws_ticket));
+        .route(
+            "/ws-ticket",
+            post(auth::ws_ticket).layer(middleware::from_fn(ticket_limit)),
+        );
 
     let contact_routes = Router::new()
         .route("/", get(contacts::list_contacts))
@@ -252,8 +260,12 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             header::HeaderValue::from_static("DENY"),
         ))
         .layer(SetResponseHeaderLayer::overriding(
-            header::HeaderName::from_static("x-xss-protection"),
-            header::HeaderValue::from_static("1; mode=block"),
+            header::HeaderName::from_static("referrer-policy"),
+            header::HeaderValue::from_static("no-referrer"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::HeaderName::from_static("permissions-policy"),
+            header::HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
         ))
         .layer(SetResponseHeaderLayer::overriding(
             header::STRICT_TRANSPORT_SECURITY,
