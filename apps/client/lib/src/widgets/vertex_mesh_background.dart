@@ -48,13 +48,15 @@ class _VertexMeshBackgroundState extends State<VertexMeshBackground>
   void _initVertices(Size size) {
     _vertices.clear();
     for (int i = 0; i < widget.vertexCount; i++) {
-      _vertices.add(_Vertex(
-        x: _rng.nextDouble() * size.width,
-        y: _rng.nextDouble() * size.height,
-        vx: (_rng.nextDouble() - 0.5) * 0.4,
-        vy: (_rng.nextDouble() - 0.5) * 0.4,
-        radius: 1.5 + _rng.nextDouble() * 1.5,
-      ));
+      _vertices.add(
+        _Vertex(
+          x: _rng.nextDouble() * size.width,
+          y: _rng.nextDouble() * size.height,
+          vx: (_rng.nextDouble() - 0.5) * 0.4,
+          vy: (_rng.nextDouble() - 0.5) * 0.4,
+          radius: 1.5 + _rng.nextDouble() * 1.5,
+        ),
+      );
     }
   }
 
