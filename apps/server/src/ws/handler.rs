@@ -2,10 +2,12 @@
 
 use axum::extract::ws::{Message as WsMessage, WebSocket};
 use chrono::{DateTime, Utc};
+use dashmap::DashMap;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
@@ -14,6 +16,14 @@ use uuid::Uuid;
 use crate::db;
 use crate::routes::AppState;
 use crate::types::ConversationKind;
+
+/// In-memory cache for conversation membership checks used by the typing
+/// indicator path.  Keyed by (user_id, conversation_id), stores the
+/// tokio::time::Instant when membership was last verified.  Entries older
+/// than `MEMBERSHIP_CACHE_TTL` are treated as expired and re-verified
+/// against the database.
+static MEMBERSHIP_CACHE: LazyLock<DashMap<(Uuid, Uuid), Instant>> = LazyLock::new(DashMap::new);
+const MEMBERSHIP_CACHE_TTL: Duration = Duration::from_secs(60);
 
 #[derive(Deserialize)]
 #[serde(tag = "type")]
@@ -560,77 +570,21 @@ async fn handle_send_message(
 
     let (reply_content, reply_username) = lookup_reply_context(&state.pool, reply_to_id).await;
 
-    // Store message (use first device content as the canonical content for DB storage)
-    let stored = match db::messages::store_message(
-        &state.pool,
+    // Store message, send confirmation, and deliver to sender's other devices.
+    let Some(stored) = store_and_confirm(
+        state,
+        sender_id,
+        sender_device_id,
         conv_id,
         resolved_channel_id,
-        sender_id,
         &content,
         reply_to_id,
+        &device_contents,
     )
     .await
-    {
-        Ok(row) => row,
-        Err(_) => {
-            send_error(state, sender_id, "Failed to store message");
-            return;
-        }
+    else {
+        return;
     };
-
-    // Store per-device ciphertexts if present
-    if let Some(ref dc) = device_contents {
-        let entries: Vec<(i32, &str)> = dc
-            .iter()
-            .filter_map(|(k, v)| k.parse::<i32>().ok().map(|id| (id, v.as_str())))
-            .collect();
-        if !entries.is_empty()
-            && let Err(e) =
-                db::messages::store_device_contents(&state.pool, stored.id, &entries).await
-        {
-            tracing::error!("Failed to store device contents: {e:?}");
-        }
-    }
-
-    // Send confirmation to sender's device
-    let confirm = ServerMessage::MessageSent {
-        message_id: stored.id,
-        conversation_id: conv_id,
-        channel_id: stored.channel_id,
-        timestamp: stored.created_at,
-    };
-    if let Ok(json) = serde_json::to_string(&confirm) {
-        state
-            .hub
-            .send_to_device(&sender_id, sender_device_id, WsMessage::Text(json.into()));
-    }
-
-    // Self-device delivery: notify sender's OTHER devices about outgoing message
-    if let Some(ref dc) = device_contents {
-        for (device_id_str, ciphertext) in dc {
-            if let Ok(did) = device_id_str.parse::<i32>() {
-                if did == sender_device_id {
-                    continue; // Don't send to the originating device
-                }
-                // Attempt delivery — Hub returns false if device isn't registered
-                // for this user (i.e. it's a recipient device, not a self device).
-                let self_msg = ServerMessage::SelfMessage {
-                    message_id: stored.id,
-                    from_device_id: sender_device_id,
-                    conversation_id: conv_id,
-                    channel_id: stored.channel_id,
-                    content: ciphertext.clone(),
-                    timestamp: stored.created_at,
-                    reply_to_id,
-                };
-                if let Ok(json) = serde_json::to_string(&self_msg) {
-                    state
-                        .hub
-                        .send_to_device(&sender_id, did, WsMessage::Text(json.into()));
-                }
-            }
-        }
-    }
 
     let deliver = ServerMessage::NewMessage {
         message_id: stored.id,
@@ -657,6 +611,94 @@ async fn handle_send_message(
         device_contents,
     )
     .await;
+}
+
+/// Persist the message to the database, store per-device ciphertexts, send
+/// a `message_sent` confirmation to the originating device, and relay the
+/// message to the sender's other devices.  Returns the stored message row
+/// on success, or `None` after sending an error to the client.
+#[allow(clippy::too_many_arguments)]
+async fn store_and_confirm(
+    state: &AppState,
+    sender_id: Uuid,
+    sender_device_id: i32,
+    conv_id: Uuid,
+    resolved_channel_id: Option<Uuid>,
+    content: &str,
+    reply_to_id: Option<Uuid>,
+    device_contents: &Option<HashMap<String, String>>,
+) -> Option<db::messages::MessageRow> {
+    // Store message in DB
+    let stored = match db::messages::store_message(
+        &state.pool,
+        conv_id,
+        resolved_channel_id,
+        sender_id,
+        content,
+        reply_to_id,
+    )
+    .await
+    {
+        Ok(row) => row,
+        Err(_) => {
+            send_error(state, sender_id, "Failed to store message");
+            return None;
+        }
+    };
+
+    // Store per-device ciphertexts if present
+    if let Some(dc) = device_contents {
+        let entries: Vec<(i32, &str)> = dc
+            .iter()
+            .filter_map(|(k, v)| k.parse::<i32>().ok().map(|id| (id, v.as_str())))
+            .collect();
+        if !entries.is_empty()
+            && let Err(e) =
+                db::messages::store_device_contents(&state.pool, stored.id, &entries).await
+        {
+            tracing::error!("Failed to store device contents: {e:?}");
+        }
+    }
+
+    // Send confirmation to sender's device
+    let confirm = ServerMessage::MessageSent {
+        message_id: stored.id,
+        conversation_id: conv_id,
+        channel_id: stored.channel_id,
+        timestamp: stored.created_at,
+    };
+    if let Ok(json) = serde_json::to_string(&confirm) {
+        state
+            .hub
+            .send_to_device(&sender_id, sender_device_id, WsMessage::Text(json.into()));
+    }
+
+    // Self-device delivery: notify sender's OTHER devices about outgoing message
+    if let Some(dc) = device_contents {
+        for (device_id_str, ciphertext) in dc {
+            if let Ok(did) = device_id_str.parse::<i32>() {
+                if did == sender_device_id {
+                    continue; // Don't send to the originating device
+                }
+                let self_msg = ServerMessage::SelfMessage {
+                    message_id: stored.id,
+                    from_device_id: sender_device_id,
+                    conversation_id: conv_id,
+                    channel_id: stored.channel_id,
+                    content: ciphertext.clone(),
+                    timestamp: stored.created_at,
+                    reply_to_id,
+                };
+                if let Ok(json) = serde_json::to_string(&self_msg) {
+                    state
+                        .hub
+                        .send_to_device(&sender_id, did, WsMessage::Text(json.into()));
+                }
+            }
+        }
+    }
+
+    Some(stored)
 }
 
 /// Resolve the target conversation from either an explicit conversation_id or a to_user_id.
@@ -981,6 +1023,39 @@ async fn fanout_message(
     }
 }
 
+/// Check conversation membership using the in-memory cache.
+/// Returns true if the user is a verified member. Cache entries expire
+/// after `MEMBERSHIP_CACHE_TTL` (60 seconds).
+async fn check_membership_cached(
+    pool: &sqlx::PgPool,
+    conversation_id: Uuid,
+    user_id: Uuid,
+) -> bool {
+    let cache_key = (user_id, conversation_id);
+
+    // Fast path: check cache
+    if let Some(entry) = MEMBERSHIP_CACHE.get(&cache_key) {
+        if entry.value().elapsed() < MEMBERSHIP_CACHE_TTL {
+            return true;
+        }
+    }
+
+    // Slow path: hit database
+    let is_member = match db::groups::is_member(pool, conversation_id, user_id).await {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+
+    if is_member {
+        MEMBERSHIP_CACHE.insert(cache_key, Instant::now());
+    } else {
+        // Evict stale positive entry if membership was revoked
+        MEMBERSHIP_CACHE.remove(&cache_key);
+    }
+
+    is_member
+}
+
 async fn handle_typing(
     state: &AppState,
     sender_id: Uuid,
@@ -988,12 +1063,8 @@ async fn handle_typing(
     conversation_id: Uuid,
     channel_id: Option<Uuid>,
 ) {
-    // Verify membership
-    let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
-        Ok(m) => m,
-        Err(_) => return,
-    };
-    if !is_member {
+    // Verify membership via cache (avoids DB hit on every keystroke)
+    if !check_membership_cached(&state.pool, conversation_id, sender_id).await {
         return;
     }
 
