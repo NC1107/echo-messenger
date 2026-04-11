@@ -148,10 +148,17 @@ pub fn ticket_limiter() -> RateLimiter {
     RateLimiter::new(10, 60)
 }
 
-/// Check whether an IP is in a private/reserved range (RFC 1918, link-local).
+/// Check whether an IP is in a private/reserved range (RFC 1918, link-local, ULA).
 fn is_private(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
-        IpAddr::V6(_) => false, // IPv6 ULA (fc00::/7) is not spoofable via XFF in practice
+        IpAddr::V6(v6) => {
+            // ULA: fc00::/7 (first byte 0xFC or 0xFD)
+            let first_segment = v6.segments()[0];
+            let is_ula = (first_segment & 0xfe00) == 0xfc00;
+            // Link-local: fe80::/10
+            let is_link_local = (first_segment & 0xffc0) == 0xfe80;
+            is_ula || is_link_local
+        }
     }
 }
