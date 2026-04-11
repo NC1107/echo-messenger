@@ -4,9 +4,9 @@
 //! WebSocket connection (Android uses a foreground service to stay alive).
 //!
 //! **iOS**: Apple requires APNs to wake suspended apps. This module sends
-//! minimal silent pushes ("you have a new message") -- no message content
-//! is ever sent through Apple's servers. The app wakes, reconnects the
-//! WebSocket, and fetches messages directly from the Echo server.
+//! visible notifications with sender info. For encrypted DMs, only the
+//! sender name is shown ("Alice: Encrypted message"). For plaintext groups,
+//! the actual message preview is included.
 //!
 //! ## Configuration (all optional — push is disabled if not set)
 //!
@@ -142,8 +142,9 @@ async fn get_apns_jwt(config: &ApnsConfig) -> Result<String, &'static str> {
 pub async fn notify_offline_users(
     pool: &PgPool,
     offline_user_ids: &[Uuid],
-    _sender_username: &str,
-    _content: &str,
+    sender_username: &str,
+    content: &str,
+    is_encrypted: bool,
     conversation_id: Uuid,
     message_id: Uuid,
 ) {
@@ -166,26 +167,44 @@ pub async fn notify_offline_users(
     let pool = pool.clone();
     for (user_id, token, platform) in &tokens {
         if platform.as_str() == "apns" {
-            send_apns_silent_push(&pool, *user_id, token, conversation_id, message_id).await;
+            send_apns_push(ApnsPushParams {
+                pool: &pool,
+                user_id: *user_id,
+                device_token: token,
+                sender_username,
+                content,
+                is_encrypted,
+                conversation_id,
+                message_id,
+            })
+            .await;
         }
     }
 }
 
-/// Send a silent APNs push to wake the iOS app.
-///
-/// Uses a content-available push with no alert/body -- the app wakes in
-/// the background, reconnects the WebSocket, and fetches the actual message
-/// over the encrypted channel. No message content touches Apple's servers.
-async fn send_apns_silent_push(
-    pool: &PgPool,
+struct ApnsPushParams<'a> {
+    pool: &'a PgPool,
     user_id: Uuid,
-    device_token: &str,
+    device_token: &'a str,
+    sender_username: &'a str,
+    content: &'a str,
+    is_encrypted: bool,
     conversation_id: Uuid,
     message_id: Uuid,
-) {
+}
+
+/// Send an APNs push notification to an iOS device.
+///
+/// - **Encrypted DMs**: Shows "Encrypted message" as the body (server can't
+///   read the ciphertext). The sender name is always visible.
+/// - **Plaintext messages**: Shows a truncated preview of the actual content.
+///
+/// Also includes `content-available: 1` so the app wakes in the background
+/// and reconnects the WebSocket to fetch the full message.
+async fn send_apns_push(p: ApnsPushParams<'_>) {
     let config = match get_apns_config() {
         Some(c) => c,
-        None => return, // APNs not configured — silently skip
+        None => return,
     };
 
     let jwt = match get_apns_jwt(config).await {
@@ -196,12 +215,31 @@ async fn send_apns_silent_push(
         }
     };
 
-    let url = format!("https://api.push.apple.com/3/device/{device_token}");
+    let url = format!("https://api.push.apple.com/3/device/{}", p.device_token);
+
+    // Encrypted DMs: server can't read content, show generic body.
+    // Plaintext: show a truncated preview.
+    let body = if p.is_encrypted {
+        "Encrypted message".to_string()
+    } else if p.content.len() > 140 {
+        format!("{}...", &p.content[..140])
+    } else {
+        p.content.to_string()
+    };
 
     let payload = serde_json::json!({
-        "aps": { "content-available": 1 },
-        "conversation_id": conversation_id.to_string(),
-        "message_id": message_id.to_string(),
+        "aps": {
+            "alert": {
+                "title": p.sender_username,
+                "body": body,
+            },
+            "sound": "default",
+            "badge": 1,
+            "thread-id": p.conversation_id.to_string(),
+            "content-available": 1,
+        },
+        "conversation_id": p.conversation_id.to_string(),
+        "message_id": p.message_id.to_string(),
     });
 
     let result = config
@@ -209,8 +247,8 @@ async fn send_apns_silent_push(
         .post(&url)
         .header("authorization", format!("bearer {jwt}"))
         .header("apns-topic", &config.topic)
-        .header("apns-push-type", "background")
-        .header("apns-priority", "5")
+        .header("apns-push-type", "alert")
+        .header("apns-priority", "10")
         .json(&payload)
         .send()
         .await;
@@ -220,21 +258,23 @@ async fn send_apns_silent_push(
             let status = resp.status().as_u16();
             match status {
                 200 => {
-                    tracing::debug!("APNs push sent to user {user_id}");
+                    tracing::debug!("APNs push sent to user {}", p.user_id);
                 }
                 410 => {
-                    // Token is no longer valid — remove it from DB
-                    tracing::info!("APNs token invalid (410) for user {user_id}, removing");
-                    let _ = db::push_tokens::remove_token(pool, user_id, device_token).await;
+                    tracing::info!("APNs token invalid (410) for user {}, removing", p.user_id);
+                    let _ = db::push_tokens::remove_token(p.pool, p.user_id, p.device_token).await;
                 }
                 _ => {
-                    let body = resp.text().await.unwrap_or_default();
-                    tracing::warn!("APNs push failed ({status}) for user {user_id}: {body}");
+                    let err_body = resp.text().await.unwrap_or_default();
+                    tracing::warn!(
+                        "APNs push failed ({status}) for user {}: {err_body}",
+                        p.user_id
+                    );
                 }
             }
         }
         Err(e) => {
-            tracing::warn!("APNs HTTP request failed for user {user_id}: {e}");
+            tracing::warn!("APNs HTTP request failed for user {}: {e}", p.user_id);
         }
     }
 }
