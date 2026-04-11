@@ -8,7 +8,7 @@ library;
 
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -25,10 +25,19 @@ class UserDataDir {
   /// Initialize with the platform app support directory.
   /// Call once at startup (after Hive.initFlutter, before login).
   Future<void> init() async {
-    if (kIsWeb) return;
+    if (kIsWeb) {
+      debugPrint('[UserDataDir] Web platform — skipping filesystem init');
+      return;
+    }
     final appDir = await getApplicationSupportDirectory();
     _basePath = p.join(appDir.path, 'echo-messenger');
     await Directory(_basePath!).create(recursive: true);
+
+    final exists = await Directory(_basePath!).exists();
+    debugPrint('[UserDataDir] init: base=$_basePath exists=$exists');
+    if (!exists) {
+      debugPrint('[UserDataDir] ERROR: base directory creation failed!');
+    }
   }
 
   /// Set the active user. Creates the user directory if needed.
@@ -42,12 +51,19 @@ class UserDataDir {
 
     final sanitized = '$userId@$host'.replaceAll(RegExp(r'[^\w@.\-]'), '_');
     _currentUserPath = p.join(_basePath!, 'users', sanitized);
+    debugPrint('[UserDataDir] setUser: $sanitized → $_currentUserPath');
 
-    await Directory(p.join(_currentUserPath!, 'keys')).create(recursive: true);
-    await Directory(
-      p.join(_currentUserPath!, 'sessions'),
-    ).create(recursive: true);
-    await Directory(p.join(_currentUserPath!, 'cache')).create(recursive: true);
+    final subdirs = ['keys', 'sessions', 'cache'];
+    for (final sub in subdirs) {
+      final dir = Directory(p.join(_currentUserPath!, sub));
+      final existed = await dir.exists();
+      await dir.create(recursive: true);
+      final nowExists = await dir.exists();
+      debugPrint('[UserDataDir]   $sub/ existed=$existed created=$nowExists');
+      if (!nowExists) {
+        debugPrint('[UserDataDir] ERROR: failed to create $sub/ directory!');
+      }
+    }
 
     return _currentUserPath!;
   }
@@ -64,6 +80,7 @@ class UserDataDir {
 
   /// Clear current user reference (on logout). Does NOT delete files.
   void clearUser() {
+    debugPrint('[UserDataDir] clearUser: $_currentUserId@$_currentHost');
     _currentUserPath = null;
     _currentUserId = null;
     _currentHost = null;
