@@ -188,7 +188,8 @@ pub async fn get_undelivered(
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
          WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
-         ORDER BY m.created_at ASC",
+         ORDER BY m.created_at ASC \
+         LIMIT 200",
     )
     .bind(user_id)
     .fetch_all(pool)
