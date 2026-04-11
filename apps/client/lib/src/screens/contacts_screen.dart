@@ -62,6 +62,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
   List<_SearchUser> _searchResults = [];
   bool _isSearching = false;
   bool _hasSearched = false;
+  String? _searchError;
 
   /// User IDs that have been locally dismissed from pending requests.
   final Set<String> _dismissedPending = {};
@@ -134,6 +135,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
           _searchResults = users;
           _isSearching = false;
           _hasSearched = true;
+          _searchError = null;
         });
       } else {
         setState(() {
@@ -148,6 +150,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         _searchResults = [];
         _isSearching = false;
         _hasSearched = true;
+        _searchError = 'Search failed \u2014 check your connection';
       });
     }
   }
@@ -277,9 +280,30 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(48),
-          child: Text(
-            'No users found',
-            style: TextStyle(color: context.textMuted, fontSize: 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _searchError != null ? Icons.cloud_off : Icons.search_off,
+                size: 32,
+                color: context.textMuted.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _searchError ?? 'No users found',
+                style: TextStyle(color: context.textMuted, fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+              if (_searchError != null) ...[
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () =>
+                      _performSearch(_searchController.text.trim()),
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ],
           ),
         ),
       );

@@ -978,6 +978,42 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final Widget child;
     if (conversationsState.isLoading && allConversations.isEmpty) {
       child = const ConversationListSkeleton(key: ValueKey('skeleton'));
+    } else if (conversationsState.error != null && allConversations.isEmpty) {
+      child = KeyedSubtree(
+        key: const ValueKey('error'),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.cloud_off,
+                  size: 40,
+                  color: context.textMuted.withValues(alpha: 0.5),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  "Couldn't load conversations",
+                  style: TextStyle(
+                    color: context.textSecondary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: () => ref
+                      .read(conversationsProvider.notifier)
+                      .loadConversations(),
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     } else if (conversations.isEmpty) {
       child = KeyedSubtree(
         key: const ValueKey('empty'),

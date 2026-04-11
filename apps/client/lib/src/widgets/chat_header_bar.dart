@@ -89,6 +89,7 @@ class ChatHeaderBar extends ConsumerWidget {
           conv.isGroup,
           isEncrypted: conv.isEncrypted,
         ),
+        _buildCorruptionBanner(context, ref, conv),
       ],
     );
   }
@@ -259,8 +260,8 @@ class ChatHeaderBar extends ConsumerWidget {
                 value: 'reset_keys',
                 child: _overflowItem(
                   ctx,
-                  icon: Icons.vpn_key_off,
-                  label: 'Reset encryption keys',
+                  icon: Icons.healing,
+                  label: 'Fix encryption issues',
                 ),
               ),
             PopupMenuItem<String>(
@@ -304,16 +305,16 @@ class ChatHeaderBar extends ConsumerWidget {
           tooltip: 'Verify safety number',
           onPressed: () => _openSafetyNumber(context, ref, conv),
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
       if (!conv.isGroup && conv.isEncrypted)
         IconButton(
-          icon: const Icon(Icons.vpn_key_off, size: 18),
+          icon: const Icon(Icons.healing, size: 18),
           color: context.textMuted,
-          tooltip: 'Reset encryption keys',
+          tooltip: 'Fix encryption issues',
           onPressed: () => _resetPeerKeys(context, ref, conv, myUserId),
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
       // Voice call button (DM only — groups have voice channel chips)
       if (!conv.isGroup)
@@ -323,7 +324,7 @@ class ChatHeaderBar extends ConsumerWidget {
           tooltip: 'Start call',
           onPressed: () => _startVoiceCall(context, ref, conv),
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
       IconButton(
         icon: Badge(
@@ -339,7 +340,7 @@ class ChatHeaderBar extends ConsumerWidget {
         tooltip: 'Pinned messages',
         onPressed: () => _showPinnedMessagesDialog(context, ref, conv),
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
       IconButton(
         icon: Icon(showSearch ? Icons.search_off : Icons.search, size: 20),
@@ -347,7 +348,7 @@ class ChatHeaderBar extends ConsumerWidget {
         tooltip: showSearch ? 'Close search' : 'Search messages',
         onPressed: onToggleSearch,
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
       IconButton(
         icon: const Icon(Icons.photo_library_outlined, size: 20),
@@ -355,7 +356,7 @@ class ChatHeaderBar extends ConsumerWidget {
         tooltip: 'Shared media',
         onPressed: () => _openSharedMedia(context, conv),
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
       if (conv.isGroup) ...[
         if (onMembersToggle != null)
@@ -365,7 +366,7 @@ class ChatHeaderBar extends ConsumerWidget {
             tooltip: 'Members',
             onPressed: onMembersToggle,
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           ),
       ],
     ];
@@ -426,6 +427,70 @@ class ChatHeaderBar extends ConsumerWidget {
           GestureDetector(
             onTap: onDismissEncryptionBanner,
             child: Icon(Icons.close, size: 14, color: context.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show a warning banner when the peer's session is corrupted, with a
+  /// one-tap repair action.
+  Widget _buildCorruptionBanner(
+    BuildContext context,
+    WidgetRef ref,
+    Conversation conv,
+  ) {
+    if (conv.isGroup) return const SizedBox.shrink();
+
+    final peerId = conv.members
+        .where((m) => m.userId != myUserId)
+        .firstOrNull
+        ?.userId;
+    if (peerId == null) return const SizedBox.shrink();
+
+    final crypto = ref.watch(cryptoServiceProvider);
+    if (!crypto.isInitialized || !crypto.hasCorruptedSession(peerId)) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.surface,
+        border: Border.all(color: EchoTheme.warning.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber, size: 14, color: EchoTheme.warning),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Encryption issues detected',
+              style: TextStyle(fontSize: 11, color: EchoTheme.warning),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => _resetPeerKeys(context, ref, conv, myUserId),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: EchoTheme.warning.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: EchoTheme.warning.withValues(alpha: 0.4),
+                ),
+              ),
+              child: const Text(
+                'Repair',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: EchoTheme.warning,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           ),
         ],
       ),

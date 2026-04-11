@@ -5,8 +5,28 @@ import '../theme/echo_theme.dart';
 
 /// A keyboard shortcut reference overlay.
 /// Opened with Ctrl+/ from the main home screen.
-class KeyboardShortcutsOverlay extends StatelessWidget {
+class KeyboardShortcutsOverlay extends StatefulWidget {
   const KeyboardShortcutsOverlay({super.key});
+
+  @override
+  State<KeyboardShortcutsOverlay> createState() =>
+      _KeyboardShortcutsOverlayState();
+}
+
+class _KeyboardShortcutsOverlayState extends State<KeyboardShortcutsOverlay> {
+  final _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.requestFocus();
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   static const _sections = <_ShortcutSection>[
     _ShortcutSection('Navigation', [
@@ -35,13 +55,15 @@ class KeyboardShortcutsOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return KeyboardListener(
-      focusNode: FocusNode()..requestFocus(),
-      onKeyEvent: (event) {
+    return Focus(
+      focusNode: _focusNode,
+      onKeyEvent: (node, event) {
         if (event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.escape) {
           Navigator.of(context).pop();
+          return KeyEventResult.handled;
         }
+        return KeyEventResult.ignored;
       },
       child: GestureDetector(
         onTap: () => Navigator.of(context).pop(),

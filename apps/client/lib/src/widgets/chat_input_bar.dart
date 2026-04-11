@@ -1091,6 +1091,24 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           focusNode: _inputFocusNode,
           maxLines: 10,
           minLines: 1,
+          maxLength: 4000,
+          buildCounter:
+              (
+                context, {
+                required currentLength,
+                required isFocused,
+                required maxLength,
+              }) => currentLength > 3200
+              ? Text(
+                  '$currentLength/$maxLength',
+                  style: TextStyle(
+                    color: currentLength > 3900
+                        ? EchoTheme.danger
+                        : context.textMuted,
+                    fontSize: 11,
+                  ),
+                )
+              : null,
           autofillHints: const [],
           style: TextStyle(fontSize: 14, color: context.textPrimary),
           decoration: InputDecoration(
@@ -1180,7 +1198,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     required String? effectiveActiveVoiceChannelId,
   }) {
     return Container(
-      height: 44,
+      constraints: const BoxConstraints(minHeight: 44),
       decoration: BoxDecoration(
         color: context.surface,
         borderRadius: BorderRadius.circular(12),
@@ -1190,7 +1208,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         ),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           // Attach file + media picker toggle (hidden in edit mode)
           if (!_isEditing) _buildAttachFileButton(),
