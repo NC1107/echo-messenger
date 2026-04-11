@@ -626,7 +626,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       if (conv.isGroup) {
         await ws.sendGroupMessage(
           conv.id,
-          message.content,
+          message.failedContent ?? message.content,
           channelId: message.channelId,
           replyToId: message.replyToId,
         );
@@ -638,7 +638,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         if (peer == null) return;
         await ws.sendMessage(
           peer.userId,
-          message.content,
+          message.failedContent ?? message.content,
           conversationId: conv.id,
           replyToId: message.replyToId,
         );

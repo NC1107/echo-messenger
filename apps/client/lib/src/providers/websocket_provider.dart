@@ -292,20 +292,29 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       fallbackPayload = deviceContents.values.firstOrNull ?? '';
     } catch (e) {
       debugPrint('[WS] Multi-device encryption failed: $e');
-      // Fall back to single-device encrypt
+      // Fall back to single-device encrypt with session reset retry
       try {
         final crypto = ref.read(cryptoServiceProvider);
         fallbackPayload = await crypto.encryptMessage(toUserId, content);
         deviceContents = null;
       } catch (e2) {
-        debugPrint('[WS] Fallback encryption also failed: $e2');
-        _addFailedMessage(
-          toUserId,
-          _friendlyEncryptionError(e2),
-          conversationId: conversationId,
-          originalContent: content,
-        );
-        return;
+        debugPrint('[WS] Fallback encryption failed, resetting session: $e2');
+        // Reset session and retry once before giving up
+        try {
+          final crypto = ref.read(cryptoServiceProvider);
+          await crypto.invalidateSessionKey(toUserId);
+          fallbackPayload = await crypto.encryptMessage(toUserId, content);
+          deviceContents = null;
+        } catch (e3) {
+          debugPrint('[WS] Encryption retry after reset also failed: $e3');
+          _addFailedMessage(
+            toUserId,
+            _friendlyEncryptionError(e3),
+            conversationId: conversationId,
+            originalContent: content,
+          );
+          return;
+        }
       }
     }
 
