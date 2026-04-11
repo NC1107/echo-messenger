@@ -623,10 +623,10 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
                 color: EchoTheme.danger,
               ),
               const SizedBox(width: 8),
-              Expanded(
+              const Expanded(
                 child: Text(
                   'Failed to load profile. Check your connection.',
-                  style: const TextStyle(color: EchoTheme.danger, fontSize: 13),
+                  style: TextStyle(color: EchoTheme.danger, fontSize: 13),
                 ),
               ),
               TextButton(onPressed: _loadProfile, child: const Text('Retry')),

@@ -33,6 +33,9 @@ import 'input/reply_preview_bar.dart';
 import 'media_picker_panel.dart';
 import 'mobile_media_picker_panel.dart';
 
+const _kOctetStream = 'octet-stream';
+const _kImageGif = 'image/gif';
+
 /// Extracted chat input bar from ChatPanel (~850 lines).
 ///
 /// Manages:
@@ -411,7 +414,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         return 'jpg';
       case 'image/png':
         return 'png';
-      case 'image/gif':
+      case _kImageGif:
         return 'gif';
       case 'image/webp':
         return 'webp';
@@ -520,7 +523,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       final parts = mimeType.split('/');
       final mediaType = parts.length == 2
           ? MediaType(parts[0], parts[1])
-          : MediaType('application', 'octet-stream');
+          : MediaType('application', _kOctetStream);
 
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -650,7 +653,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         'mp4': ['video', 'mp4'],
         'pdf': ['application', 'pdf'],
       };
-      final mime = mimeTypes[ext] ?? ['application', 'octet-stream'];
+      final mime = mimeTypes[ext] ?? ['application', _kOctetStream];
 
       _setPendingAttachment(
         bytes: file.bytes!,
@@ -841,7 +844,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         'mp4': ['video', 'mp4'],
         'mov': ['video', 'quicktime'],
       };
-      final mime = mimeTypes[ext] ?? ['application', 'octet-stream'];
+      final mime = mimeTypes[ext] ?? ['application', _kOctetStream];
       _setPendingAttachment(
         bytes: file.bytes!,
         fileName: file.name,
@@ -1098,17 +1101,16 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                 required currentLength,
                 required isFocused,
                 required maxLength,
-              }) => currentLength > 3200
-              ? Text(
+              }) {
+                if (currentLength <= 3200) return null;
+                final counterColor = currentLength > 3900
+                    ? EchoTheme.danger
+                    : context.textMuted;
+                return Text(
                   '$currentLength/$maxLength',
-                  style: TextStyle(
-                    color: currentLength > 3900
-                        ? EchoTheme.danger
-                        : context.textMuted,
-                    fontSize: 11,
-                  ),
-                )
-              : null,
+                  style: TextStyle(color: counterColor, fontSize: 11),
+                );
+              },
           autofillHints: const [],
           style: TextStyle(fontSize: 14, color: context.textPrimary),
           decoration: InputDecoration(
@@ -1262,7 +1264,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           _pendingAttachmentUrl = gifUrl;
           _pendingAttachmentExt = 'gif';
           _pendingAttachmentFileName = 'gif';
-          _pendingAttachmentMimeType = 'image/gif';
+          _pendingAttachmentMimeType = _kImageGif;
           _pendingAttachmentBytes = null; // no local bytes for GIFs
           _isUploadingAttachment = false;
         });
@@ -1398,7 +1400,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                       _pendingAttachmentUrl = gifUrl;
                       _pendingAttachmentExt = 'gif';
                       _pendingAttachmentFileName = 'gif';
-                      _pendingAttachmentMimeType = 'image/gif';
+                      _pendingAttachmentMimeType = _kImageGif;
                       _pendingAttachmentBytes = null;
                       _isUploadingAttachment = false;
                     });

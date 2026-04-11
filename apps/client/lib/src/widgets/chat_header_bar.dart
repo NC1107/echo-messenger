@@ -418,10 +418,10 @@ class ChatHeaderBar extends ConsumerWidget {
             color: EchoTheme.warning,
           ),
           const SizedBox(width: 8),
-          Expanded(
+          const Expanded(
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11, color: EchoTheme.warning),
+              style: TextStyle(fontSize: 11, color: EchoTheme.warning),
             ),
           ),
           GestureDetector(

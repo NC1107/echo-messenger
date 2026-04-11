@@ -88,9 +88,9 @@ class _MobileMediaPickerPanelState extends State<MobileMediaPickerPanel>
                     ),
                     dividerColor: Colors.transparent,
                     labelPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    tabs: [
-                      const Tab(height: 34, text: 'Emoji'),
-                      const Tab(height: 34, text: 'GIFs'),
+                    tabs: const [
+                      Tab(height: 34, text: 'Emoji'),
+                      Tab(height: 34, text: 'GIFs'),
                     ],
                   ),
                 ),
