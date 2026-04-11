@@ -2,6 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
+use sqlx::postgres::PgConnection;
 use uuid::Uuid;
 
 #[derive(Debug, serde::Serialize)]
@@ -22,7 +23,7 @@ pub struct OneTimePreKeyRow {
 
 /// Store or replace a user's identity key for a specific device.
 pub async fn store_identity_key(
-    pool: &PgPool,
+    db: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
     device_id: i32,
     identity_key: &[u8],
@@ -38,14 +39,14 @@ pub async fn store_identity_key(
     .bind(device_id)
     .bind(identity_key)
     .bind(signing_key)
-    .execute(pool)
+    .execute(db)
     .await?;
     Ok(())
 }
 
 /// Store or replace a user's signed prekey for a specific device.
 pub async fn store_signed_prekey(
-    pool: &PgPool,
+    db: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
     device_id: i32,
     key_id: i32,
@@ -63,7 +64,7 @@ pub async fn store_signed_prekey(
     .bind(key_id)
     .bind(public_key)
     .bind(signature)
-    .execute(pool)
+    .execute(db)
     .await?;
     Ok(())
 }
@@ -75,7 +76,7 @@ pub async fn store_signed_prekey(
 /// the most recently generated OTP, so the server must store the matching
 /// public key.  Also resets `used = false` so the key is consumable again.
 pub async fn store_one_time_prekeys(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     user_id: Uuid,
     device_id: i32,
     prekeys: &[(i32, Vec<u8>)],
@@ -92,7 +93,7 @@ pub async fn store_one_time_prekeys(
         .bind(device_id)
         .bind(key_id)
         .bind(public_key)
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
     }
     Ok(())

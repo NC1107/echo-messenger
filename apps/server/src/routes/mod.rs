@@ -284,7 +284,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
                  img-src 'self' https: data: blob:; \
                  font-src 'self' https://fonts.gstatic.com; \
                  style-src 'self' 'unsafe-inline'; \
-                 script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
+                 script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; \
                  media-src 'self' blob:; \
                  worker-src 'self' blob:",
             ),

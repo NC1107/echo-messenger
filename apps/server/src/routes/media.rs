@@ -310,9 +310,10 @@ pub async fn download(
         })?;
 
     if !allowed {
+        // Return 404 (not 403) to avoid revealing whether the file exists.
         return Err(AppError {
-            status: StatusCode::FORBIDDEN,
-            message: "You do not have access to this media".to_string(),
+            status: StatusCode::NOT_FOUND,
+            message: "Media not found".to_string(),
         });
     }
 
