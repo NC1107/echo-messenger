@@ -145,17 +145,20 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
       final myUserId = ref.read(authProvider).userId ?? '';
       ref.read(websocketProvider.notifier).drainPendingDecryptQueue(myUserId);
     } on PlatformException catch (e) {
-      // Linux libsecret / keyring failures -- degrade gracefully so the
-      // user can still use the app without end-to-end encryption.
-      debugPrint('[Crypto] PlatformException during init (degraded mode): $e');
+      // Linux libsecret / keyring failures -- crypto is NOT available.
+      // Explicitly mark as not initialized so callers never send plaintext
+      // thinking encryption is active.
+      debugPrint('[Crypto] PlatformException during init: $e');
       DebugLogService.instance.log(
-        LogLevel.warning,
+        LogLevel.error,
         'Crypto',
-        'PlatformException during init (degraded mode): $e',
+        'Secure storage unavailable — encryption disabled: $e',
       );
       state = state.copyWith(
+        isInitialized: false,
         isUploading: false,
-        error: 'Secure storage unavailable: $e',
+        error: 'Encryption unavailable: secure storage failed. '
+            'Messages cannot be sent until this is resolved.',
       );
     } catch (e) {
       DebugLogService.instance.log(LogLevel.error, 'Crypto', 'Init failed: $e');
