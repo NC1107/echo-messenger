@@ -128,13 +128,8 @@ pub async fn upload_bundle(
     .await?;
 
     if !one_time_prekeys.is_empty() {
-        db::keys::store_one_time_prekeys(
-            &mut *tx,
-            auth_user.user_id,
-            device_id,
-            &one_time_prekeys,
-        )
-        .await?;
+        db::keys::store_one_time_prekeys(&mut tx, auth_user.user_id, device_id, &one_time_prekeys)
+            .await?;
     }
 
     tx.commit().await.map_err(|e| {
