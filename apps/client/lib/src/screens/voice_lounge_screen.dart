@@ -16,6 +16,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
+import '../widgets/vertex_mesh_background.dart';
 
 /// Resolve a LiveKit participant's display name, preferring name > identity > sid.
 String _participantDisplayName(lk.Participant participant) {
@@ -391,6 +392,12 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             color: context.mainBg,
             child: Stack(
               children: [
+                Positioned.fill(
+                  child: VertexMeshBackground(
+                    accentColor: context.accent,
+                    backgroundColor: context.mainBg,
+                  ),
+                ),
                 Column(
                   children: [
                     Expanded(child: contentArea),
@@ -414,15 +421,25 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         // Portrait: full header bar + content + control bar
         return Container(
           color: context.mainBg,
-          child: Column(
+          child: Stack(
             children: [
-              _LoungeHeader(
-                channelName: channelName,
-                participantCount: totalParticipants,
-                onBackToChat: widget.onBackToChat,
+              Positioned.fill(
+                child: VertexMeshBackground(
+                  accentColor: context.accent,
+                  backgroundColor: context.mainBg,
+                ),
               ),
-              Expanded(child: contentArea),
-              controlBar,
+              Column(
+                children: [
+                  _LoungeHeader(
+                    channelName: channelName,
+                    participantCount: totalParticipants,
+                    onBackToChat: widget.onBackToChat,
+                  ),
+                  Expanded(child: contentArea),
+                  controlBar,
+                ],
+              ),
             ],
           ),
         );
