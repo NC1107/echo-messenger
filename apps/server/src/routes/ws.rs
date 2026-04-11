@@ -32,9 +32,9 @@ pub async fn ws_upgrade(
     let now = Instant::now();
     state
         .ticket_store
-        .retain(|_, (_, ts)| now.duration_since(*ts) < TICKET_TTL);
+        .retain(|_, (_, _, ts)| now.duration_since(*ts) < TICKET_TTL);
 
-    let (_, (user_id, created_at)) = state
+    let (_, (user_id, device_id, created_at)) = state
         .ticket_store
         .remove(&params.ticket)
         .ok_or_else(|| AppError::unauthorized("Invalid or expired WebSocket ticket"))?;
@@ -54,7 +54,14 @@ pub async fn ws_upgrade(
         })?
         .ok_or_else(|| AppError::unauthorized("User not found"))?;
 
-    tracing::info!("WebSocket connecting: {} ({})", user.username, user_id);
+    tracing::info!(
+        "WebSocket connecting: {} ({}) device={}",
+        user.username,
+        user_id,
+        device_id
+    );
 
-    Ok(ws.on_upgrade(move |socket| handler::handle_socket(socket, user_id, user.username, state)))
+    Ok(ws.on_upgrade(move |socket| {
+        handler::handle_socket(socket, user_id, device_id, user.username, state)
+    }))
 }

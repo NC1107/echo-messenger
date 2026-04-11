@@ -165,6 +165,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleMention(json, myUserId);
       case 'group_key_rotated':
         _handleGroupKeyRotated(json);
+      case 'self_message':
+        _handleSelfMessage(json, myUserId);
       case 'session_replaced':
         _handleSessionReplaced(json);
       case 'heartbeat':
@@ -267,6 +269,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   void _handleNewMessage(Map<String, dynamic> json, String myUserId) {
     final rawContent = json['content'] as String;
     final fromUserId = json['from_user_id'] as String;
+    final fromDeviceId = json['from_device_id'] as int?;
     final conversationId = json['conversation_id'] as String;
     final timestamp = json['timestamp'] as String;
     final senderUsername = json['from_username'] as String;
@@ -291,6 +294,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         conversationId,
         timestamp,
         senderUsername,
+        fromDeviceId: fromDeviceId,
       );
     } else {
       // Crypto not ready yet — show a placeholder and queue for decryption.
@@ -336,8 +340,9 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     String myUserId,
     String conversationId,
     String timestamp,
-    String senderUsername,
-  ) async {
+    String senderUsername, {
+    int? fromDeviceId,
+  }) async {
     String decryptedContent;
     final isGroupEncrypted = rawContent.startsWith(groupEncryptedPrefix);
 
@@ -379,7 +384,11 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       decryptedContent = rawContent;
     } else {
       try {
-        decryptedContent = await crypto.decryptMessage(fromUserId, rawContent);
+        decryptedContent = await crypto.decryptMessage(
+          fromUserId,
+          rawContent,
+          fromDeviceId: fromDeviceId,
+        );
       } catch (e) {
         // Do NOT invalidate the session here. Invalidating and re-creating a
         // new X3DH outgoing session would put Alice and Bob out of sync,
@@ -424,6 +433,57 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     if (fromUserId != myUserId) {
       _notifyIfAllowed(conversationId, senderUsername, decryptedContent);
     }
+  }
+
+  /// Handle a `self_message` event: an outgoing message sent from another
+  /// device of the current user. Decrypt and display as a sent message.
+  void _handleSelfMessage(Map<String, dynamic> json, String myUserId) {
+    final rawContent = json['content'] as String? ?? '';
+    final fromDeviceId = json['from_device_id'] as int?;
+    final conversationId = json['conversation_id'] as String? ?? '';
+    final timestamp = json['timestamp'] as String? ?? '';
+    final messageId = json['message_id'] as String? ?? '';
+    final cryptoState = ref.read(cryptoProvider);
+
+    if (!cryptoState.isInitialized || rawContent.isEmpty) return;
+
+    final crypto = ref.read(cryptoServiceProvider);
+    final token = ref.read(authProvider).token ?? '';
+    crypto.setToken(token);
+
+    () async {
+      try {
+        final decrypted = await crypto.decryptMessage(
+          myUserId,
+          rawContent,
+          fromDeviceId: fromDeviceId,
+        );
+        final msg = ChatMessage(
+          id: messageId,
+          conversationId: conversationId,
+          fromUserId: myUserId,
+          fromUsername: 'Me',
+          content: decrypted,
+          timestamp: timestamp,
+          isMine: true,
+          isEncrypted: true,
+        );
+        ref.read(chatProvider.notifier).addMessage(msg);
+        if (!messageId.startsWith('pending_')) {
+          MessageCache.cacheMessages(conversationId, [msg]);
+        }
+        ref
+            .read(conversationsProvider.notifier)
+            .onNewMessage(
+              conversationId: conversationId,
+              content: decrypted,
+              timestamp: timestamp,
+              senderUsername: 'Me',
+            );
+      } catch (e) {
+        debugPrint('[WebSocket] Self-message decryption failed: $e');
+      }
+    }();
   }
 
   /// Show a notification + play sound if the conversation is not muted.

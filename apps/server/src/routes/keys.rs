@@ -252,6 +252,51 @@ pub async fn get_devices(
     }))
 }
 
+/// Response for a single device bundle within the all-bundles response.
+#[derive(Debug, Serialize)]
+pub struct DeviceBundleResponse {
+    pub device_id: i32,
+    pub identity_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signing_key: Option<String>,
+    pub signed_prekey: String,
+    pub signed_prekey_signature: String,
+    pub signed_prekey_id: i32,
+    pub one_time_prekey: Option<OneTimePreKeyResponse>,
+}
+
+/// GET /api/keys/bundles/:user_id -- Fetch ALL device bundles for a user.
+///
+/// Returns bundles for every registered device in a single request,
+/// enabling multi-device encryption without N+1 round trips.
+pub async fn get_all_bundles(
+    State(state): State<Arc<AppState>>,
+    _auth_user: AuthUser,
+    Path(user_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let device_ids = db::keys::get_user_devices(&state.pool, user_id).await?;
+    let mut bundles = Vec::new();
+
+    for device_id in device_ids {
+        if let Some(bundle) = db::keys::get_prekey_bundle(&state.pool, user_id, device_id).await? {
+            bundles.push(DeviceBundleResponse {
+                device_id,
+                identity_key: BASE64.encode(&bundle.identity_key),
+                signing_key: bundle.signing_key.as_ref().map(|sk| BASE64.encode(sk)),
+                signed_prekey: BASE64.encode(&bundle.signed_prekey),
+                signed_prekey_signature: BASE64.encode(&bundle.signed_prekey_signature),
+                signed_prekey_id: bundle.signed_prekey_id,
+                one_time_prekey: bundle.one_time_prekey.map(|otk| OneTimePreKeyResponse {
+                    key_id: otk.key_id,
+                    public_key: BASE64.encode(&otk.public_key),
+                }),
+            });
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "bundles": bundles })))
+}
+
 /// Query parameters for the OTP count endpoint.
 #[derive(Debug, Deserialize)]
 pub struct OtpCountQuery {
