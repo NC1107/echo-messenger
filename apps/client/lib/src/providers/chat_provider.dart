@@ -19,6 +19,9 @@ class ChatState {
   /// Messages keyed by conversation ID.
   final Map<String, List<ChatMessage>> messagesByConversation;
 
+  /// O(1) dedup index: message IDs per conversation.
+  final Map<String, Set<String>> _messageIdIndex;
+
   /// Whether history is currently loading for a conversation.
   /// Key format: conversationId:channelId (channelId empty for full conversation).
   final Map<String, bool> loadingHistory;
@@ -32,10 +35,11 @@ class ChatState {
 
   const ChatState({
     this.messagesByConversation = const {},
+    Map<String, Set<String>> messageIdIndex = const {},
     this.loadingHistory = const {},
     this.hasMore = const {},
     this.replyToMessage,
-  });
+  }) : _messageIdIndex = messageIdIndex;
 
   /// Get messages for a conversation ID.
   List<ChatMessage> messagesForConversation(String conversationId) {
@@ -76,16 +80,23 @@ class ChatState {
     final updatedConv = Map<String, List<ChatMessage>>.from(
       messagesByConversation,
     );
+    final updatedIndex = Map<String, Set<String>>.from(_messageIdIndex);
     if (msg.conversationId.isNotEmpty) {
-      final existing = updatedConv[msg.conversationId] ?? [];
-      // Deduplicate by ID
-      if (!existing.any((m) => m.id == msg.id)) {
+      final ids = Set<String>.from(
+        updatedIndex[msg.conversationId] ?? <String>{},
+      );
+      // O(1) deduplicate by ID
+      if (!ids.contains(msg.id)) {
+        final existing = updatedConv[msg.conversationId] ?? [];
         updatedConv[msg.conversationId] = [...existing, msg];
+        ids.add(msg.id);
+        updatedIndex[msg.conversationId] = ids;
       }
     }
 
     return ChatState(
       messagesByConversation: updatedConv,
+      messageIdIndex: updatedIndex,
       loadingHistory: loadingHistory,
       hasMore: hasMore,
       replyToMessage: replyToMessage,
@@ -94,6 +105,7 @@ class ChatState {
 
   ChatState copyWith({
     Map<String, List<ChatMessage>>? messagesByConversation,
+    Map<String, Set<String>>? messageIdIndex,
     Map<String, bool>? loadingHistory,
     Map<String, bool>? hasMore,
     ChatMessage? replyToMessage,
@@ -102,6 +114,7 @@ class ChatState {
     return ChatState(
       messagesByConversation:
           messagesByConversation ?? this.messagesByConversation,
+      messageIdIndex: messageIdIndex ?? _messageIdIndex,
       loadingHistory: loadingHistory ?? this.loadingHistory,
       hasMore: hasMore ?? this.hasMore,
       replyToMessage: clearReply
@@ -228,12 +241,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       state.messagesByConversation,
     );
     updatedConv[conversationId] = updatedList;
-    state = ChatState(
-      messagesByConversation: updatedConv,
-      loadingHistory: state.loadingHistory,
-      hasMore: state.hasMore,
-      replyToMessage: state.replyToMessage,
-    );
+    state = state.copyWith(messagesByConversation: updatedConv);
   }
 
   void confirmSent(
@@ -266,11 +274,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
       );
     }
 
-    state = ChatState(
+    // Rebuild the index for this conversation since a pending ID was replaced.
+    final updatedIndex = Map<String, Set<String>>.from(state._messageIdIndex);
+    updatedIndex[conversationId] = (updatedConv[conversationId] ?? [])
+        .map((m) => m.id)
+        .toSet();
+    state = state.copyWith(
       messagesByConversation: updatedConv,
-      loadingHistory: state.loadingHistory,
-      hasMore: state.hasMore,
-      replyToMessage: state.replyToMessage,
+      messageIdIndex: updatedIndex,
     );
 
     // Cache the confirmed message
@@ -493,12 +504,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   void _setLoadingHistory(String historyKey, bool loading) {
     final updatedLoading = Map<String, bool>.from(state.loadingHistory);
     updatedLoading[historyKey] = loading;
-    state = ChatState(
-      messagesByConversation: state.messagesByConversation,
-      loadingHistory: updatedLoading,
-      hasMore: state.hasMore,
-      replyToMessage: state.replyToMessage,
-    );
+    state = state.copyWith(loadingHistory: updatedLoading);
   }
 
   void _mergeMessages(
@@ -516,18 +522,22 @@ class ChatNotifier extends StateNotifier<ChatState> {
         .where((m) => !existingIds.contains(m.id))
         .toList();
 
-    updatedConv[conversationId] = [...deduped, ...existing]
+    final merged = [...deduped, ...existing]
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    updatedConv[conversationId] = merged;
 
     final updatedHasMore = Map<String, bool>.from(state.hasMore);
     updatedHasMore['$conversationId:${channelId ?? ''}'] =
         newMessages.length >= 50;
 
-    state = ChatState(
+    // Rebuild index for this conversation after merge.
+    final updatedIndex = Map<String, Set<String>>.from(state._messageIdIndex);
+    updatedIndex[conversationId] = merged.map((m) => m.id).toSet();
+
+    state = state.copyWith(
       messagesByConversation: updatedConv,
-      loadingHistory: state.loadingHistory,
+      messageIdIndex: updatedIndex,
       hasMore: updatedHasMore,
-      replyToMessage: state.replyToMessage,
     );
   }
 
@@ -552,12 +562,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return msg;
     }).toList();
 
-    state = ChatState(
-      messagesByConversation: updatedConv,
-      loadingHistory: state.loadingHistory,
-      hasMore: state.hasMore,
-      replyToMessage: state.replyToMessage,
-    );
+    state = state.copyWith(messagesByConversation: updatedConv);
   }
 
   /// Remove a reaction from a message.
@@ -582,12 +587,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return msg;
     }).toList();
 
-    state = ChatState(
-      messagesByConversation: updatedConv,
-      loadingHistory: state.loadingHistory,
-      hasMore: state.hasMore,
-      replyToMessage: state.replyToMessage,
-    );
+    state = state.copyWith(messagesByConversation: updatedConv);
   }
 
   /// Update message status (sent, delivered).
@@ -609,12 +609,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return msg;
     }).toList();
 
-    state = ChatState(
-      messagesByConversation: updatedConv,
-      loadingHistory: state.loadingHistory,
-      hasMore: state.hasMore,
-      replyToMessage: state.replyToMessage,
-    );
+    state = state.copyWith(messagesByConversation: updatedConv);
   }
 
   /// Mark all of my sent/delivered messages in a conversation as read.
@@ -634,12 +629,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return msg;
     }).toList();
 
-    state = ChatState(
-      messagesByConversation: updatedConv,
-      loadingHistory: state.loadingHistory,
-      hasMore: state.hasMore,
-      replyToMessage: state.replyToMessage,
-    );
+    state = state.copyWith(messagesByConversation: updatedConv);
   }
 
   /// Delete a message from local state.
@@ -654,11 +644,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
         .where((msg) => msg.id != messageId)
         .toList();
 
-    state = ChatState(
+    // Remove the deleted ID from the index.
+    final updatedIndex = Map<String, Set<String>>.from(state._messageIdIndex);
+    final ids = Set<String>.from(
+      updatedIndex[conversationId] ?? <String>{},
+    );
+    ids.remove(messageId);
+    updatedIndex[conversationId] = ids;
+
+    state = state.copyWith(
       messagesByConversation: updatedConv,
-      loadingHistory: state.loadingHistory,
-      hasMore: state.hasMore,
-      replyToMessage: state.replyToMessage,
+      messageIdIndex: updatedIndex,
     );
   }
 
@@ -685,12 +681,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return msg;
     }).toList();
 
-    state = ChatState(
-      messagesByConversation: updatedConv,
-      loadingHistory: state.loadingHistory,
-      hasMore: state.hasMore,
-      replyToMessage: state.replyToMessage,
-    );
+    state = state.copyWith(messagesByConversation: updatedConv);
   }
 
   /// Update a message's pin state in local state.
@@ -713,15 +704,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return msg;
     }).toList();
 
-    state = ChatState(
-      messagesByConversation: updatedConv,
-      loadingHistory: state.loadingHistory,
-      hasMore: state.hasMore,
-      replyToMessage: state.replyToMessage,
-    );
+    state = state.copyWith(messagesByConversation: updatedConv);
   }
 
   void clear() {
+    // Cancel all pending send-timeout timers to prevent orphaned callbacks.
+    for (final timer in _sendTimeouts.values) {
+      timer.cancel();
+    }
+    _sendTimeouts.clear();
     state = const ChatState();
   }
 }

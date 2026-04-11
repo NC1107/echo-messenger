@@ -93,9 +93,10 @@ class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
           track.stop();
         }
         await stream.dispose();
-      } catch (_) {
+      } catch (e) {
         // Platform may throw "No active stream to cancel" if the capture
         // was already released (e.g. getDisplayMedia failed on Linux).
+        debugPrint('[ScreenShare] Error disposing stream: $e');
       }
     }
 
@@ -103,8 +104,9 @@ class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
       try {
         renderer.srcObject = null;
         await renderer.dispose();
-      } catch (_) {
+      } catch (e) {
         // Renderer may already be disposed.
+        debugPrint('[ScreenShare] Error disposing renderer: $e');
       }
     }
 

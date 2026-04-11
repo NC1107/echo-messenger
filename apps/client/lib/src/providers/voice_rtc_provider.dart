@@ -242,7 +242,9 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       }
       try {
         await pc.close();
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[VoiceRTC] Error closing peer connection: $e');
+      }
       await _disposeRemoteRenderer(userId);
       await _disposeRemoteVideoRenderer(userId);
     }
@@ -416,7 +418,9 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       if (pc != null) {
         try {
           await pc.close();
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[VoiceRTC] Error closing stale peer connection: $e');
+        }
       }
       await _disposeRemoteRenderer(userId);
       await _disposeRemoteVideoRenderer(userId);
@@ -822,7 +826,8 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       }
       try {
         await pc.addCandidate(candidate);
-      } catch (_) {
+      } catch (e) {
+        debugPrint('[VoiceRTC] Error adding ICE candidate: $e');
         remaining.add(entry);
       }
     }
@@ -942,7 +947,9 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
             }
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[VoiceRTC] Error polling peer audio levels: $e');
+      }
     }
 
     // Local audio level from outbound stats
@@ -962,7 +969,9 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
           }
         }
         if (localLevel > 0) break;
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[VoiceRTC] Error polling local audio level: $e');
+      }
     }
 
     if (!_disposed) {
@@ -988,8 +997,9 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
             }
           }
         }
-      } catch (_) {
+      } catch (e) {
         // getStats can fail if the peer connection is closing.
+        debugPrint('[VoiceRTC] Error polling peer latencies: $e');
       }
     }
     if (!_disposed && latencies.isNotEmpty) {

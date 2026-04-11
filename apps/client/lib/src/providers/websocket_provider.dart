@@ -489,7 +489,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
               body: jsonEncode({'emoji': emoji}),
             ),
           );
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[WebSocket] sendReaction error: $e');
+    }
   }
 
   /// Remove a reaction via REST.
@@ -508,7 +510,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
               headers: {'Authorization': 'Bearer $token'},
             ),
           );
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[WebSocket] removeReaction error: $e');
+    }
   }
 
   /// Send a read receipt via WebSocket.

@@ -1103,6 +1103,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        // Use fixed itemExtent when no section headers/dividers for faster layout.
+        itemExtent: extraItems == 0 ? 70 : null,
         itemCount: sorted.length + extraItems,
         itemBuilder: (context, index) {
           if (pinnedCount > 0) {
