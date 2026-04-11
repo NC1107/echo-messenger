@@ -270,6 +270,31 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     return '?';
   }
 
+  /// Send the avatar upload request, retrying once on 401.
+  Future<bool> _sendAvatarWithRetry(String serverUrl, PlatformFile file) async {
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final token = ref.read(authProvider).token;
+      if (token == null) return false;
+
+      final request = _buildAvatarRequest(serverUrl, token, file);
+      final streamedResponse = await request.send();
+      final body = await streamedResponse.stream.bytesToString();
+      if (!mounted) return false;
+
+      if (streamedResponse.statusCode == 401 && attempt == 0) {
+        final refreshed = await ref
+            .read(authProvider.notifier)
+            .refreshAccessToken();
+        if (!refreshed) return false;
+        continue;
+      }
+
+      _handleAvatarResponse(streamedResponse.statusCode, body);
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _uploadAvatar() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
@@ -283,27 +308,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     final serverUrl = ref.read(serverUrlProvider);
 
     try {
-      // Retry once on 401 (token expired during upload).
-      for (var attempt = 0; attempt < 2; attempt++) {
-        final token = ref.read(authProvider).token;
-        if (token == null) return;
-
-        final request = _buildAvatarRequest(serverUrl, token, file);
-        final streamedResponse = await request.send();
-        final body = await streamedResponse.stream.bytesToString();
-        if (!mounted) return;
-
-        if (streamedResponse.statusCode == 401 && attempt == 0) {
-          final refreshed = await ref
-              .read(authProvider.notifier)
-              .refreshAccessToken();
-          if (!refreshed) return;
-          continue;
-        }
-
-        _handleAvatarResponse(streamedResponse.statusCode, body);
-        return;
-      }
+      await _sendAvatarWithRetry(serverUrl, file);
     } catch (e) {
       if (mounted) {
         ToastService.show(context, 'Upload error: $e', type: ToastType.error);
@@ -433,6 +438,156 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     );
   }
 
+  Widget _buildProfileCard(AuthState authState, String username) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: context.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.border),
+      ),
+      child: Row(
+        children: [
+          Stack(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: context.accent, width: 2),
+                ),
+                child: CircleAvatar(
+                  radius: 34,
+                  backgroundColor: context.accent,
+                  backgroundImage: authState.avatarUrl != null
+                      ? NetworkImage(
+                          '${ref.read(serverUrlProvider)}${authState.avatarUrl}',
+                          headers: {
+                            'Authorization': 'Bearer ${authState.token}',
+                          },
+                        )
+                      : null,
+                  child: authState.avatarUrl == null
+                      ? Text(
+                          _avatarInitial(username),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: GestureDetector(
+                  onTap: _uploadAvatar,
+                  child: Container(
+                    width: 26,
+                    height: 26,
+                    decoration: BoxDecoration(
+                      color: context.surface,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: context.border, width: 2),
+                    ),
+                    child: Icon(
+                      Icons.camera_alt,
+                      size: 13,
+                      color: context.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 2,
+                right: 2,
+                child: Container(
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: EchoTheme.online,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: context.surface, width: 2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_displayNameController.text.isNotEmpty)
+                  Text(
+                    _displayNameController.text,
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                Row(
+                  children: [
+                    Text(
+                      '@$username',
+                      style: TextStyle(
+                        color: _displayNameController.text.isNotEmpty
+                            ? context.textMuted
+                            : context.textPrimary,
+                        fontSize: _displayNameController.text.isNotEmpty
+                            ? 13
+                            : 18,
+                        fontWeight: _displayNameController.text.isNotEmpty
+                            ? FontWeight.normal
+                            : FontWeight.w700,
+                      ),
+                    ),
+                    if (_pronounsController.text.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: context.surfaceHover,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          _pronounsController.text,
+                          style: TextStyle(
+                            color: context.textMuted,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (_statusController.text.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _statusController.text,
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 13,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
@@ -441,157 +596,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
-        // Profile card
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: context.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: context.border),
-          ),
-          child: Row(
-            children: [
-              // Avatar with accent ring + edit overlay
-              Stack(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: context.accent, width: 2),
-                    ),
-                    child: CircleAvatar(
-                      radius: 34,
-                      backgroundColor: context.accent,
-                      backgroundImage: authState.avatarUrl != null
-                          ? NetworkImage(
-                              '${ref.read(serverUrlProvider)}${authState.avatarUrl}',
-                              headers: {
-                                'Authorization': 'Bearer ${authState.token}',
-                              },
-                            )
-                          : null,
-                      child: authState.avatarUrl == null
-                          ? Text(
-                              _avatarInitial(username),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 28,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            )
-                          : null,
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: GestureDetector(
-                      onTap: _uploadAvatar,
-                      child: Container(
-                        width: 26,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          color: context.surface,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: context.border, width: 2),
-                        ),
-                        child: Icon(
-                          Icons.camera_alt,
-                          size: 13,
-                          color: context.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Online indicator
-                  Positioned(
-                    top: 2,
-                    right: 2,
-                    child: Container(
-                      width: 14,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: EchoTheme.online,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: context.surface, width: 2),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 16),
-              // Name + username + status
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (_displayNameController.text.isNotEmpty)
-                      Text(
-                        _displayNameController.text,
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    Row(
-                      children: [
-                        Text(
-                          '@$username',
-                          style: TextStyle(
-                            color: _displayNameController.text.isNotEmpty
-                                ? context.textMuted
-                                : context.textPrimary,
-                            fontSize: _displayNameController.text.isNotEmpty
-                                ? 13
-                                : 18,
-                            fontWeight: _displayNameController.text.isNotEmpty
-                                ? FontWeight.normal
-                                : FontWeight.w700,
-                          ),
-                        ),
-                        if (_pronounsController.text.isNotEmpty) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: context.surfaceHover,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              _pronounsController.text,
-                              style: TextStyle(
-                                color: context.textMuted,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    if (_statusController.text.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        _statusController.text,
-                        style: TextStyle(
-                          color: context.textSecondary,
-                          fontSize: 13,
-                          fontStyle: FontStyle.italic,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+        _buildProfileCard(authState, username),
         const SizedBox(height: 16),
         // Action buttons row
         Row(

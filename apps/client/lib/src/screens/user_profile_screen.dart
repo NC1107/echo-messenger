@@ -320,195 +320,225 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
       child: Column(
         children: [
-          // Large avatar
           buildAvatar(name: _username, radius: 40, imageUrl: fullAvatarUrl),
           const SizedBox(height: 16),
-          // Display name
-          if (_displayName != null && _displayName!.isNotEmpty)
-            Text(
-              _displayName!,
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          // Username + pronouns
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '@$_username',
-                style: TextStyle(
-                  color: _displayName != null
-                      ? context.textMuted
-                      : context.textPrimary,
-                  fontSize: _displayName != null ? 14 : 22,
-                  fontWeight: _displayName != null
-                      ? FontWeight.normal
-                      : FontWeight.bold,
-                ),
-              ),
-              if (_pronouns != null && _pronouns!.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                Text(
-                  _pronouns!,
-                  style: TextStyle(
-                    color: context.textMuted,
-                    fontSize: 13,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ],
-          ),
-          // Status message
-          if (_statusMessage != null && _statusMessage!.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              _statusMessage!,
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 13,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-          ],
+          _buildNameSection(),
+          _buildStatusSection(),
           const SizedBox(height: 12),
-          // Bio
-          if (_bio != null && _bio!.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                _bio!,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: context.textSecondary,
-                  fontSize: 14,
-                  height: 1.4,
-                ),
-              ),
-            ),
-          if (_bio != null && _bio!.isNotEmpty) const SizedBox(height: 12),
-          // Website
-          if (_website != null && _website!.isNotEmpty) ...[
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.link, size: 14, color: context.accent),
-                const SizedBox(width: 4),
-                Text(
-                  _website!,
-                  style: TextStyle(
-                    color: context.accent,
-                    fontSize: 13,
-                    decoration: TextDecoration.underline,
-                    decorationColor: context.accent,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-          ],
-          // Email
-          if (_email != null && _email!.isNotEmpty) ...[
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.email_outlined, size: 14, color: context.textMuted),
-                const SizedBox(width: 4),
-                Text(
-                  _email!,
-                  style: TextStyle(color: context.textMuted, fontSize: 13),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-          ],
-          // Phone
-          if (_phone != null && _phone!.isNotEmpty) ...[
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.phone_outlined, size: 14, color: context.textMuted),
-                const SizedBox(width: 4),
-                Text(
-                  _phone!,
-                  style: TextStyle(color: context.textMuted, fontSize: 13),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-          ],
-          // Timezone with local time
-          if (_timezone != null && _timezone!.isNotEmpty) ...[
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.schedule, size: 14, color: context.textMuted),
-                const SizedBox(width: 4),
-                Text(
-                  'Local time: ${_formatLocalTime(_timezone!)} ($_timezone)',
-                  style: TextStyle(color: context.textMuted, fontSize: 13),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-          ],
-          // Member since
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.calendar_today_outlined,
-                size: 14,
-                color: context.textMuted,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Member since ${_formatMemberSince(_createdAt)}',
-                style: TextStyle(color: context.textMuted, fontSize: 13),
-              ),
-            ],
-          ),
+          _buildBioSection(),
+          ..._buildContactDetailRows(),
+          _buildMemberSinceRow(),
           const SizedBox(height: 28),
-          // Action buttons
-          if (!_isContact && widget.userId != ref.read(authProvider).userId)
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _addContact,
-                icon: const Icon(Icons.person_add_outlined, size: 18),
-                label: const Text('Add Contact'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: context.accent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          if (_isContact)
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: null,
-                icon: const Icon(Icons.check, size: 18),
-                label: const Text('Contact'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: EchoTheme.online,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
+          _buildActionButton(),
         ],
       ),
     );
+  }
+
+  /// Display name + username + pronouns header section.
+  Widget _buildNameSection() {
+    return Column(
+      children: [
+        if (_displayName != null && _displayName!.isNotEmpty)
+          Text(
+            _displayName!,
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '@$_username',
+              style: TextStyle(
+                color: _displayName != null
+                    ? context.textMuted
+                    : context.textPrimary,
+                fontSize: _displayName != null ? 14 : 22,
+                fontWeight: _displayName != null
+                    ? FontWeight.normal
+                    : FontWeight.bold,
+              ),
+            ),
+            if (_pronouns != null && _pronouns!.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(
+                _pronouns!,
+                style: TextStyle(
+                  color: context.textMuted,
+                  fontSize: 13,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Status message line (if set).
+  Widget _buildStatusSection() {
+    if (_statusMessage == null || _statusMessage!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Text(
+        _statusMessage!,
+        style: TextStyle(
+          color: context.textSecondary,
+          fontSize: 13,
+          fontStyle: FontStyle.italic,
+        ),
+      ),
+    );
+  }
+
+  /// Bio paragraph (if set).
+  Widget _buildBioSection() {
+    if (_bio == null || _bio!.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Text(
+          _bio!,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build icon+label rows for website, email, phone, and timezone.
+  List<Widget> _buildContactDetailRows() {
+    return [
+      if (_website != null && _website!.isNotEmpty) ...[
+        _iconRow(
+          icon: Icons.link,
+          iconColor: context.accent,
+          text: _website!,
+          textColor: context.accent,
+          underline: true,
+        ),
+        const SizedBox(height: 8),
+      ],
+      if (_email != null && _email!.isNotEmpty) ...[
+        _iconRow(
+          icon: Icons.email_outlined,
+          iconColor: context.textMuted,
+          text: _email!,
+          textColor: context.textMuted,
+        ),
+        const SizedBox(height: 8),
+      ],
+      if (_phone != null && _phone!.isNotEmpty) ...[
+        _iconRow(
+          icon: Icons.phone_outlined,
+          iconColor: context.textMuted,
+          text: _phone!,
+          textColor: context.textMuted,
+        ),
+        const SizedBox(height: 8),
+      ],
+      if (_timezone != null && _timezone!.isNotEmpty) ...[
+        _iconRow(
+          icon: Icons.schedule,
+          iconColor: context.textMuted,
+          text: 'Local time: ${_formatLocalTime(_timezone!)} ($_timezone)',
+          textColor: context.textMuted,
+        ),
+        const SizedBox(height: 8),
+      ],
+    ];
+  }
+
+  Widget _iconRow({
+    required IconData icon,
+    required Color iconColor,
+    required String text,
+    required Color textColor,
+    bool underline = false,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: iconColor),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: TextStyle(
+            color: textColor,
+            fontSize: 13,
+            decoration: underline ? TextDecoration.underline : null,
+            decorationColor: underline ? textColor : null,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// "Member since" row.
+  Widget _buildMemberSinceRow() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.calendar_today_outlined, size: 14, color: context.textMuted),
+        const SizedBox(width: 6),
+        Text(
+          'Member since ${_formatMemberSince(_createdAt)}',
+          style: TextStyle(color: context.textMuted, fontSize: 13),
+        ),
+      ],
+    );
+  }
+
+  /// Add contact / already contact action button.
+  Widget _buildActionButton() {
+    if (!_isContact && widget.userId != ref.read(authProvider).userId) {
+      return SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          onPressed: _addContact,
+          icon: const Icon(Icons.person_add_outlined, size: 18),
+          label: const Text('Add Contact'),
+          style: FilledButton.styleFrom(
+            backgroundColor: context.accent,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      );
+    }
+    if (_isContact) {
+      return SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          onPressed: null,
+          icon: const Icon(Icons.check, size: 18),
+          label: const Text('Contact'),
+          style: FilledButton.styleFrom(
+            backgroundColor: EchoTheme.online,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 }

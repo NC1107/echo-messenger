@@ -503,6 +503,37 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   ///
   /// MultipartRequest streams are consumed on send, so we rebuild the request
   /// on retry rather than replaying the same object.
+  /// Build a multipart upload request for the given file data.
+  http.MultipartRequest _buildUploadRequest({
+    required String serverUrl,
+    required String token,
+    required List<int> bytes,
+    required String fileName,
+    required String mimeType,
+  }) {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$serverUrl/api/media/upload'),
+    );
+    request.headers['Authorization'] = 'Bearer $token';
+    request.fields['conversation_id'] = widget.conversation.id;
+
+    final parts = mimeType.split('/');
+    final mediaType = parts.length == 2
+        ? MediaType(parts[0], parts[1])
+        : MediaType('application', _kOctetStream);
+
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: fileName,
+        contentType: mediaType,
+      ),
+    );
+    return request;
+  }
+
   Future<String?> _uploadWithAuthRetry({
     required String serverUrl,
     required List<int> bytes,
@@ -513,25 +544,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       final token = ref.read(authProvider).token;
       if (token == null) return null;
 
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$serverUrl/api/media/upload'),
-      );
-      request.headers['Authorization'] = 'Bearer $token';
-      request.fields['conversation_id'] = widget.conversation.id;
-
-      final parts = mimeType.split('/');
-      final mediaType = parts.length == 2
-          ? MediaType(parts[0], parts[1])
-          : MediaType('application', _kOctetStream);
-
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: fileName,
-          contentType: mediaType,
-        ),
+      final request = _buildUploadRequest(
+        serverUrl: serverUrl,
+        token: token,
+        bytes: bytes,
+        fileName: fileName,
+        mimeType: mimeType,
       );
 
       final response = await request.send();
@@ -542,7 +560,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         return data['url'] as String?;
       }
 
-      // On 401, refresh token and retry once
       if (response.statusCode == 401 && attempt == 0) {
         final refreshed = await ref
             .read(authProvider.notifier)
@@ -551,7 +568,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         continue;
       }
 
-      // Non-retryable failure
       if (mounted) {
         ToastService.show(
           context,
@@ -1011,6 +1027,42 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     return KeyEventResult.ignored;
   }
 
+  /// Handle Ctrl/Cmd key shortcuts (paste, copy, cut).
+  KeyEventResult _handleModifierShortcut(KeyEvent event) {
+    final isCtrlOrMeta =
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed;
+    if (!isCtrlOrMeta) return KeyEventResult.ignored;
+
+    if (event.logicalKey == LogicalKeyboardKey.keyV) {
+      return _handlePasteShortcut();
+    }
+    if (event.logicalKey == LogicalKeyboardKey.keyC) {
+      return _handleCopyCutShortcut(false);
+    }
+    if (event.logicalKey == LogicalKeyboardKey.keyX) {
+      return _handleCopyCutShortcut(true);
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// Up arrow with empty input: edit last own message (Discord behavior).
+  KeyEventResult _handleArrowUpEditLast() {
+    if (!_isTextEmpty || _isEditing) return KeyEventResult.ignored;
+    final messages = ref
+        .read(chatProvider)
+        .messagesForConversation(widget.conversation.id);
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final lastOwn = messages
+        .where((m) => m.isMine && m.fromUserId == myUserId)
+        .lastOrNull;
+    if (lastOwn != null) {
+      enterEditMode(lastOwn);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   KeyEventResult _onKeyEvent(
     FocusNode _,
     KeyEvent event,
@@ -1025,52 +1077,17 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _handleEscapeKey();
     }
 
-    // Enter sends message, Shift+Enter for newline
     if (event.logicalKey == LogicalKeyboardKey.enter &&
         !HardwareKeyboard.instance.isShiftPressed) {
-      if (_isEditing) {
-        _submitEdit();
-      } else {
-        _sendMessage();
-      }
+      _isEditing ? _submitEdit() : _sendMessage();
       return KeyEventResult.handled;
     }
 
-    // Ctrl+V: manually handle paste to bypass browser
-    // context menu on Flutter web (CanvasKit).
-    final isCtrlOrMeta =
-        HardwareKeyboard.instance.isControlPressed ||
-        HardwareKeyboard.instance.isMetaPressed;
+    final modResult = _handleModifierShortcut(event);
+    if (modResult != KeyEventResult.ignored) return modResult;
 
-    if (event.logicalKey == LogicalKeyboardKey.keyV && isCtrlOrMeta) {
-      return _handlePasteShortcut();
-    }
-
-    // Ctrl+C / Ctrl+X: handle copy/cut to prevent
-    // browser context menu on selected text.
-    if (event.logicalKey == LogicalKeyboardKey.keyC && isCtrlOrMeta) {
-      return _handleCopyCutShortcut(false);
-    }
-    if (event.logicalKey == LogicalKeyboardKey.keyX && isCtrlOrMeta) {
-      return _handleCopyCutShortcut(true);
-    }
-
-    // Up arrow with empty input → edit last own message (Discord behavior)
-    if (event.logicalKey == LogicalKeyboardKey.arrowUp &&
-        _isTextEmpty &&
-        !_isEditing) {
-      final messages = ref
-          .read(chatProvider)
-          .messagesForConversation(widget.conversation.id);
-      final myUserId = ref.read(authProvider).userId ?? '';
-      final ownMessages = messages.where(
-        (m) => m.isMine && m.fromUserId == myUserId,
-      );
-      final lastOwn = ownMessages.isNotEmpty ? ownMessages.last : null;
-      if (lastOwn != null) {
-        enterEditMode(lastOwn);
-        return KeyEventResult.handled;
-      }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      return _handleArrowUpEditLast();
     }
 
     return KeyEventResult.ignored;

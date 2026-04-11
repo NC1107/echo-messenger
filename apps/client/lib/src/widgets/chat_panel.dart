@@ -1074,6 +1074,49 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     );
   }
 
+  Widget _buildMessageListView({
+    required Conversation conv,
+    required List<ChatMessage> messages,
+    required ChatState chatState,
+    required Map<String, String?> memberAvatars,
+    required String myUserId,
+    required String serverUrl,
+    required String authToken,
+  }) {
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.only(bottom: 16),
+      itemCount: messages.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          if (chatState.hasMore[conv.id] ?? true) {
+            return SizedBox(
+              height: 48,
+              child: (chatState.loadingHistory[conv.id] ?? false)
+                  ? const Center(
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            );
+          }
+          return const SizedBox(height: 8);
+        }
+        return _buildMessageAtIndex(
+          i: index - 1,
+          messages: messages,
+          memberAvatars: memberAvatars,
+          myUserId: myUserId,
+          serverUrl: serverUrl,
+          authToken: authToken,
+        );
+      },
+    );
+  }
+
   Widget _buildMessageListOrEmpty({
     required Conversation conv,
     required List<ChatMessage> messages,
@@ -1099,37 +1142,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     } else {
       child = KeyedSubtree(
         key: const ValueKey('list'),
-        child: ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.only(bottom: 16),
-          itemCount: messages.length + 1,
-          itemBuilder: (context, index) {
-            if (index == 0) {
-              if (chatState.hasMore[conv.id] ?? true) {
-                return SizedBox(
-                  height: 48,
-                  child: (chatState.loadingHistory[conv.id] ?? false)
-                      ? const Center(
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                );
-              }
-              return const SizedBox(height: 8);
-            }
-            return _buildMessageAtIndex(
-              i: index - 1,
-              messages: messages,
-              memberAvatars: memberAvatars,
-              myUserId: myUserId,
-              serverUrl: serverUrl,
-              authToken: authToken,
-            );
-          },
+        child: _buildMessageListView(
+          conv: conv,
+          messages: messages,
+          chatState: chatState,
+          memberAvatars: memberAvatars,
+          myUserId: myUserId,
+          serverUrl: serverUrl,
+          authToken: authToken,
         ),
       );
     }
@@ -1201,6 +1221,66 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   /// widgets needed (unlike the legacy P2P WebRTC approach).
   List<Widget> _buildVoiceRenderers() => const [];
 
+  /// Floating pill shown when new messages arrive below the scroll viewport.
+  Widget _buildNewMessagesPill() {
+    return Positioned(
+      bottom: 12,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: GestureDetector(
+          onTap: () => _scrollToBottom(settleRetries: 2),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: context.accent,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _newMessagesBannerText(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.arrow_downward, size: 14, color: Colors.white),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Resolve messages for the current conversation and channel.
+  List<ChatMessage> _resolveMessages(
+    Conversation conv,
+    ChatState chatState,
+    String? selectedChannelId,
+    bool includeUnchanneled,
+  ) {
+    if (conv.isGroup) {
+      return chatState.messagesForConversationChannel(
+        conv.id,
+        channelId: selectedChannelId,
+        includeUnchanneled: includeUnchanneled,
+      );
+    }
+    return chatState.messagesForConversation(conv.id);
+  }
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
@@ -1238,13 +1318,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     );
 
     final chatState = ref.watch(chatProvider);
-    final messages = conv.isGroup
-        ? chatState.messagesForConversationChannel(
-            conv.id,
-            channelId: selectedChannelId,
-            includeUnchanneled: includeUnchanneled,
-          )
-        : chatState.messagesForConversation(conv.id);
+    final messages = _resolveMessages(
+      conv,
+      chatState,
+      selectedChannelId,
+      includeUnchanneled,
+    );
 
     final isLoadingHistory = chatState.loadingHistory[conv.id] ?? false;
 
@@ -1330,53 +1409,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                       serverUrl: serverUrl,
                       authToken: authToken,
                     ),
-                    if (_hasNewMessagesBelow)
-                      Positioned(
-                        bottom: 12,
-                        left: 0,
-                        right: 0,
-                        child: Center(
-                          child: GestureDetector(
-                            onTap: () => _scrollToBottom(settleRetries: 2),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: context.accent,
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.25),
-                                    blurRadius: 8,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    _newMessagesBannerText(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  const Icon(
-                                    Icons.arrow_downward,
-                                    size: 14,
-                                    color: Colors.white,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                    if (_hasNewMessagesBelow) _buildNewMessagesPill(),
                   ],
                 ),
               ),

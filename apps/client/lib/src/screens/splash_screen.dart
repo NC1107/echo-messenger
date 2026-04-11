@@ -54,50 +54,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _init() async {
     final stopwatch = Stopwatch()..start();
 
-    // Try auto-login from stored credentials with a timeout so the splash
-    // never hangs on a slow or unreachable network.
-    final auth = ref.read(authProvider.notifier);
-    var loggedIn = false;
-    try {
-      loggedIn = await auth.tryAutoLogin().timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => false,
-      );
-    } catch (_) {
-      // Network error — treat as not logged in, user can retry from login.
-    }
-
-    // If auto-login succeeded, init crypto keys + register push token
-    if (loggedIn) {
-      await ref.read(cryptoProvider.notifier).initAndUploadKeys();
-
-      // Register iOS APNs push token (no-op on other platforms)
-      final authState = ref.read(authProvider);
-      PushTokenService.instance.init(
-        serverUrl: ref.read(serverUrlProvider),
-        authToken: authState.token ?? '',
-        onWake: () => ref.read(websocketProvider.notifier).connect(),
-      );
-    }
-
-    // Support compile-time env vars for CI/testing
-    if (!loggedIn && !kIsWeb) {
-      const envUser = String.fromEnvironment('ECHO_USERNAME');
-      const envPass = String.fromEnvironment('ECHO_PASSWORD');
-      if (envUser.isNotEmpty && envPass.isNotEmpty) {
-        await auth.login(envUser, envPass);
-        if (ref.read(authProvider).isLoggedIn) {
-          await ref.read(cryptoProvider.notifier).initAndUploadKeys();
-          loggedIn = true;
-        }
-      }
-    }
-
-    // Check for updates on non-web platforms
-    if (!kIsWeb) {
-      // Fire-and-forget -- don't block splash on network call
-      ref.read(updateProvider.notifier).check();
-    }
+    final loggedIn = await _attemptAutoLogin();
 
     // Brief splash to let the logo animation complete (reduced from 500ms)
     stopwatch.stop();
@@ -107,43 +64,109 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     }
 
     if (!mounted) return;
+    _navigateAfterInit(loggedIn);
+  }
 
+  /// Try auto-login from stored credentials (with timeout), then attempt
+  /// CI env var login as fallback. Triggers crypto init and push token
+  /// registration on success. Returns whether the user is logged in.
+  Future<bool> _attemptAutoLogin() async {
+    final auth = ref.read(authProvider.notifier);
+    var loggedIn = false;
+    try {
+      loggedIn = await auth.tryAutoLogin().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => false,
+      );
+    } catch (_) {
+      // Network error -- treat as not logged in.
+    }
+
+    if (loggedIn) {
+      await _initCryptoAndPush();
+    }
+
+    // Support compile-time env vars for CI/testing
+    if (!loggedIn && !kIsWeb) {
+      loggedIn = await _attemptEnvLogin(auth);
+    }
+
+    // Check for updates on non-web platforms
+    if (!kIsWeb) {
+      ref.read(updateProvider.notifier).check();
+    }
+
+    return loggedIn;
+  }
+
+  /// Initialize crypto keys and register push token after login.
+  Future<void> _initCryptoAndPush() async {
+    await ref.read(cryptoProvider.notifier).initAndUploadKeys();
+
+    final authState = ref.read(authProvider);
+    PushTokenService.instance.init(
+      serverUrl: ref.read(serverUrlProvider),
+      authToken: authState.token ?? '',
+      onWake: () => ref.read(websocketProvider.notifier).connect(),
+    );
+  }
+
+  /// Attempt login using compile-time environment variables (CI/testing).
+  Future<bool> _attemptEnvLogin(AuthNotifier auth) async {
+    const envUser = String.fromEnvironment('ECHO_USERNAME');
+    const envPass = String.fromEnvironment('ECHO_PASSWORD');
+    if (envUser.isEmpty || envPass.isEmpty) return false;
+
+    await auth.login(envUser, envPass);
+    if (ref.read(authProvider).isLoggedIn) {
+      await ref.read(cryptoProvider.notifier).initAndUploadKeys();
+      return true;
+    }
+    return false;
+  }
+
+  /// Navigate to the appropriate screen after init completes.
+  void _navigateAfterInit(bool loggedIn) {
     final isLoggedIn = ref.read(authProvider).isLoggedIn;
+
     if (isLoggedIn && pendingDeepLink != null) {
       final destination = pendingDeepLink!;
       pendingDeepLink = null;
       context.go(destination);
-    } else if (isLoggedIn) {
-      // Auto-login from stored token means this is a returning user.
-      // Ensure onboarding flag is set so they always skip the wizard.
-      // New registrations navigate to /onboarding from RegisterScreen.
-      final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool(kOnboardingCompletedKey) != true) {
-        await prefs.setBool(kOnboardingCompletedKey, true);
-      }
-      if (!mounted) return;
-      context.go('/home');
+      return;
+    }
 
-      // Show one-time notice if encryption keys were regenerated (new device
-      // or secure storage cleared). This means old encrypted messages from
-      // other devices may not be decryptable.
-      final cryptoState = ref.read(cryptoProvider);
-      if (cryptoState.keysWereRegenerated && mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'New encryption keys generated. Messages from before '
-                'this login may not be decryptable on this device.',
-              ),
-              duration: Duration(seconds: 6),
+    if (isLoggedIn) {
+      _navigateHome();
+      return;
+    }
+
+    context.go('/login');
+  }
+
+  /// Navigate home, setting onboarding flag and showing crypto notice.
+  Future<void> _navigateHome() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(kOnboardingCompletedKey) != true) {
+      await prefs.setBool(kOnboardingCompletedKey, true);
+    }
+    if (!mounted) return;
+    context.go('/home');
+
+    final cryptoState = ref.read(cryptoProvider);
+    if (cryptoState.keysWereRegenerated && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'New encryption keys generated. Messages from before '
+              'this login may not be decryptable on this device.',
             ),
-          );
-        });
-      }
-    } else {
-      context.go('/login');
+            duration: Duration(seconds: 6),
+          ),
+        );
+      });
     }
   }
 

@@ -76,6 +76,58 @@ fn extension_for_mime(mime: &str) -> &str {
     }
 }
 
+/// Read the file field, validate MIME type, size, and magic-byte content type.
+async fn validate_and_read_file(
+    field: axum::extract::multipart::Field<'_>,
+) -> Result<(String, String, Vec<u8>), AppError> {
+    let original_filename = field.file_name().unwrap_or("upload").to_string();
+
+    let mut mime_type = field
+        .content_type()
+        .unwrap_or("application/octet-stream")
+        .to_string();
+
+    if !ALLOWED_MIME_TYPES.contains(&mime_type.as_str()) {
+        return Err(AppError::bad_request(format!(
+            "File type '{mime_type}' is not allowed. Allowed types: {}",
+            ALLOWED_MIME_TYPES.join(", ")
+        )));
+    }
+
+    let data = field
+        .bytes()
+        .await
+        .map_err(|e| AppError::bad_request(format!("Failed to read file data: {e}")))?
+        .to_vec();
+
+    if data.len() > MAX_FILE_SIZE {
+        return Err(AppError::bad_request(format!(
+            "File too large. Maximum size is {} bytes",
+            MAX_FILE_SIZE
+        )));
+    }
+
+    // Validate actual file type via magic bytes -- don't trust client MIME header
+    match infer::get(&data) {
+        Some(inferred) => {
+            let inferred_mime = inferred.mime_type();
+            if !ALLOWED_MIME_TYPES.contains(&inferred_mime) {
+                return Err(AppError::bad_request(format!(
+                    "Detected file type '{inferred_mime}' is not allowed"
+                )));
+            }
+            mime_type = inferred_mime.to_string();
+        }
+        None => {
+            return Err(AppError::bad_request(
+                "Could not detect file type from content. Upload a supported format.",
+            ));
+        }
+    }
+
+    Ok((original_filename, mime_type, data))
+}
+
 /// POST /api/media/upload
 ///
 /// Accepts multipart form data with a `file` field and an optional
@@ -131,53 +183,7 @@ pub async fn upload(
             continue;
         }
 
-        let original_filename = field.file_name().unwrap_or("upload").to_string();
-
-        let mut mime_type = field
-            .content_type()
-            .unwrap_or("application/octet-stream")
-            .to_string();
-
-        if !ALLOWED_MIME_TYPES.contains(&mime_type.as_str()) {
-            return Err(AppError::bad_request(format!(
-                "File type '{mime_type}' is not allowed. Allowed types: {}",
-                ALLOWED_MIME_TYPES.join(", ")
-            )));
-        }
-
-        let data = field
-            .bytes()
-            .await
-            .map_err(|e| AppError::bad_request(format!("Failed to read file data: {e}")))?
-            .to_vec();
-
-        if data.len() > MAX_FILE_SIZE {
-            return Err(AppError::bad_request(format!(
-                "File too large. Maximum size is {} bytes",
-                MAX_FILE_SIZE
-            )));
-        }
-
-        // Validate actual file type via magic bytes — don't trust client MIME header
-        match infer::get(&data) {
-            Some(inferred) => {
-                let inferred_mime = inferred.mime_type();
-                if !ALLOWED_MIME_TYPES.contains(&inferred_mime) {
-                    return Err(AppError::bad_request(format!(
-                        "Detected file type '{inferred_mime}' is not allowed"
-                    )));
-                }
-                mime_type = inferred_mime.to_string();
-            }
-            None => {
-                // Unrecognized file type — reject to prevent bypass
-                return Err(AppError::bad_request(
-                    "Could not detect file type from content. Upload a supported format.",
-                ));
-            }
-        }
-
-        file_data = Some((original_filename, mime_type, data));
+        file_data = Some(validate_and_read_file(field).await?);
     }
 
     let (original_filename, mime_type, data) = file_data

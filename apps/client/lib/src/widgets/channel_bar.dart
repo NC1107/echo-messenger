@@ -248,6 +248,40 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     );
   }
 
+  /// Whether a voice channel is currently active (local state or LiveKit).
+  bool _isVoiceChannelActive(String channelId, String? activeVoiceChannelId) {
+    final voiceRtc = ref.read(livekitVoiceProvider);
+    return activeVoiceChannelId == channelId ||
+        (voiceRtc.isActive && voiceRtc.channelId == channelId);
+  }
+
+  /// Handle tap on a voice channel chip: leave or join.
+  Future<void> _handleVoiceChipTap(
+    GroupChannel channel,
+    bool isActive,
+    VoiceSettingsState voiceSettings,
+  ) async {
+    if (isActive) {
+      await _leaveVoiceChannel(channel.id);
+      return;
+    }
+    final shouldJoin = await _confirmVoiceJoin(channel.name);
+    if (!shouldJoin) return;
+    final success = await ref
+        .read(channelsProvider.notifier)
+        .joinVoiceChannel(widget.conversationId, channel.id);
+    if (success && mounted) {
+      await ref
+          .read(livekitVoiceProvider.notifier)
+          .joinChannel(
+            conversationId: widget.conversationId,
+            channelId: channel.id,
+            startMuted: voiceSettings.selfMuted || voiceSettings.selfDeafened,
+          );
+      if (mounted) widget.onVoiceChannelChanged(channel.id);
+    }
+  }
+
   Widget _buildVoiceChannelChip(
     GroupChannel channel,
     List<VoiceSessionMember> participants,
@@ -255,40 +289,12 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     String? activeVoiceChannelId,
   ) {
     final participantCount = participants.length;
-    // Check both the local activeVoiceChannelId AND the LiveKit provider
-    // state — after returning from the voice lounge the local ID may be
-    // cleared while the LiveKit room is still connected.
-    final voiceRtc = ref.read(livekitVoiceProvider);
-    final isActive =
-        activeVoiceChannelId == channel.id ||
-        (voiceRtc.isActive && voiceRtc.channelId == channel.id);
+    final isActive = _isVoiceChannelActive(channel.id, activeVoiceChannelId);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: () async {
-          final channelsNotifier = ref.read(channelsProvider.notifier);
-          final rtcNotifier = ref.read(livekitVoiceProvider.notifier);
-          if (isActive) {
-            await _leaveVoiceChannel(channel.id);
-          } else {
-            final shouldJoin = await _confirmVoiceJoin(channel.name);
-            if (!shouldJoin) return;
-            final success = await channelsNotifier.joinVoiceChannel(
-              widget.conversationId,
-              channel.id,
-            );
-            if (success && mounted) {
-              await rtcNotifier.joinChannel(
-                conversationId: widget.conversationId,
-                channelId: channel.id,
-                startMuted:
-                    voiceSettings.selfMuted || voiceSettings.selfDeafened,
-              );
-              if (mounted) widget.onVoiceChannelChanged(channel.id);
-            }
-          }
-        },
+        onTap: () => _handleVoiceChipTap(channel, isActive, voiceSettings),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
@@ -572,15 +578,10 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     );
   }
 
-  /// Build a grid of video tiles for participants with active video.
-  Widget _buildVideoGrid(LiveKitVoiceState voiceRtc) {
-    final room = ref.read(livekitVoiceProvider.notifier).room;
-    if (room == null) return const SizedBox.shrink();
-
-    // Collect video tracks: local camera + remote video tracks.
+  /// Collect local and remote video tiles from the LiveKit room.
+  List<Widget> _collectVideoTiles(lk.Room room) {
     final tiles = <Widget>[];
 
-    // Local video tile.
     final localVideo = room.localParticipant?.videoTrackPublications
         .where(
           (pub) => pub.track != null && pub.source == lk.TrackSource.camera,
@@ -597,7 +598,6 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
       );
     }
 
-    // Remote video tiles.
     for (final participant in room.remoteParticipants.values) {
       for (final pub in participant.videoTrackPublications) {
         if (pub.track != null && pub.track is lk.VideoTrack) {
@@ -615,7 +615,15 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
         }
       }
     }
+    return tiles;
+  }
 
+  /// Build a grid of video tiles for participants with active video.
+  Widget _buildVideoGrid(LiveKitVoiceState voiceRtc) {
+    final room = ref.read(livekitVoiceProvider.notifier).room;
+    if (room == null) return const SizedBox.shrink();
+
+    final tiles = _collectVideoTiles(room);
     if (tiles.isEmpty) return const SizedBox.shrink();
 
     final int crossAxisCount;

@@ -257,6 +257,32 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
     return EchoTheme.online;
   }
 
+  /// Reusable device picker dropdown.
+  Widget _buildDevicePicker({
+    required String label,
+    required List<Map<String, String>> devices,
+    required String currentId,
+    required ValueChanged<String> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      initialValue: devices.any((d) => d['id'] == currentId)
+          ? currentId
+          : 'default',
+      decoration: InputDecoration(labelText: label),
+      items: devices
+          .map(
+            (device) => DropdownMenuItem(
+              value: device['id'],
+              child: Text(device['name']!),
+            ),
+          )
+          .toList(),
+      onChanged: (value) {
+        if (value != null) onChanged(value);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final voice = ref.watch(voiceSettingsProvider);
@@ -290,60 +316,25 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
           ),
         ),
         const SizedBox(height: 18),
-        DropdownButtonFormField<String>(
-          initialValue: inputDevices.any((d) => d['id'] == voice.inputDeviceId)
-              ? voice.inputDeviceId
-              : 'default',
-          decoration: const InputDecoration(labelText: 'Input Device'),
-          items: inputDevices
-              .map(
-                (device) => DropdownMenuItem(
-                  value: device['id'],
-                  child: Text(device['name']!),
-                ),
-              )
-              .toList(),
-          onChanged: (value) {
-            if (value != null) notifier.setInputDevice(value);
-          },
+        _buildDevicePicker(
+          label: 'Input Device',
+          devices: inputDevices,
+          currentId: voice.inputDeviceId,
+          onChanged: notifier.setInputDevice,
         ),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          initialValue:
-              outputDevices.any((d) => d['id'] == voice.outputDeviceId)
-              ? voice.outputDeviceId
-              : 'default',
-          decoration: const InputDecoration(labelText: 'Output Device'),
-          items: outputDevices
-              .map(
-                (device) => DropdownMenuItem(
-                  value: device['id'],
-                  child: Text(device['name']!),
-                ),
-              )
-              .toList(),
-          onChanged: (value) {
-            if (value != null) notifier.setOutputDevice(value);
-          },
+        _buildDevicePicker(
+          label: 'Output Device',
+          devices: outputDevices,
+          currentId: voice.outputDeviceId,
+          onChanged: notifier.setOutputDevice,
         ),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          initialValue:
-              cameraDevices.any((d) => d['id'] == voice.cameraDeviceId)
-              ? voice.cameraDeviceId
-              : 'default',
-          decoration: const InputDecoration(labelText: 'Camera'),
-          items: cameraDevices
-              .map(
-                (device) => DropdownMenuItem(
-                  value: device['id'],
-                  child: Text(device['name']!),
-                ),
-              )
-              .toList(),
-          onChanged: (value) {
-            if (value != null) notifier.setCameraDevice(value);
-          },
+        _buildDevicePicker(
+          label: 'Camera',
+          devices: cameraDevices,
+          currentId: voice.cameraDeviceId,
+          onChanged: notifier.setCameraDevice,
         ),
         const SizedBox(height: 16),
         Text(

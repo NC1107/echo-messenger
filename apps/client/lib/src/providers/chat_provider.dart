@@ -435,6 +435,40 @@ class ChatNotifier extends StateNotifier<ChatState> {
     return newMessages;
   }
 
+  Future<ChatMessage> _decryptGroupMessage(
+    ChatMessage msg,
+    GroupCryptoService? groupCrypto,
+    String? conversationId,
+  ) async {
+    if (groupCrypto == null || conversationId == null) {
+      return msg.copyWith(
+        content: '[Encrypted group message]',
+        isEncrypted: true,
+      );
+    }
+    try {
+      final keyResult = await groupCrypto.getGroupKey(conversationId);
+      if (keyResult == null) {
+        return msg.copyWith(
+          content: '[Encrypted group message - key unavailable]',
+          isEncrypted: true,
+        );
+      }
+      final (_, keyBase64) = keyResult;
+      final decrypted = await GroupCryptoService.decryptGroupMessage(
+        msg.content,
+        keyBase64,
+      );
+      return msg.copyWith(content: decrypted, isEncrypted: true);
+    } catch (e) {
+      debugPrint('[Chat] Group history decrypt failed for ${msg.id}: $e');
+      return msg.copyWith(
+        content: '[Could not decrypt group message]',
+        isEncrypted: true,
+      );
+    }
+  }
+
   Future<ChatMessage> _decryptIfNeeded(
     ChatMessage msg, {
     required String myUserId,
@@ -445,33 +479,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }) async {
     // Group-encrypted messages (prefixed with GRP1:)
     if (msg.content.startsWith(groupEncryptedPrefix)) {
-      if (groupCrypto == null || conversationId == null) {
-        return msg.copyWith(
-          content: '[Encrypted group message]',
-          isEncrypted: true,
-        );
-      }
-      try {
-        final keyResult = await groupCrypto.getGroupKey(conversationId);
-        if (keyResult == null) {
-          return msg.copyWith(
-            content: '[Encrypted group message - key unavailable]',
-            isEncrypted: true,
-          );
-        }
-        final (_, keyBase64) = keyResult;
-        final decrypted = await GroupCryptoService.decryptGroupMessage(
-          msg.content,
-          keyBase64,
-        );
-        return msg.copyWith(content: decrypted, isEncrypted: true);
-      } catch (e) {
-        debugPrint('[Chat] Group history decrypt failed for ${msg.id}: $e');
-        return msg.copyWith(
-          content: '[Could not decrypt group message]',
-          isEncrypted: true,
-        );
-      }
+      return _decryptGroupMessage(msg, groupCrypto, conversationId);
     }
 
     // Skip decryption for non-encrypted group messages

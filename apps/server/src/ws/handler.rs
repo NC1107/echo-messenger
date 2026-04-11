@@ -497,6 +497,74 @@ async fn handle_broadcast_event<F>(
     }
 }
 
+/// Validate that the message content does not exceed the maximum length.
+fn validate_message_length(state: &AppState, sender_id: Uuid, content: &str) -> bool {
+    const MAX_MESSAGE_LENGTH: usize = 10_000;
+    if content.len() > MAX_MESSAGE_LENGTH {
+        send_error(
+            state,
+            sender_id,
+            &format!(
+                "Message too long: {} characters (max {})",
+                content.len(),
+                MAX_MESSAGE_LENGTH
+            ),
+        );
+        return false;
+    }
+    true
+}
+
+/// Look up conversation security, validate channel usage, and enforce
+/// encryption on direct messages.  Returns the security row, conversation
+/// kind, and resolved channel id on success.
+async fn validate_conversation_security(
+    state: &AppState,
+    sender_id: Uuid,
+    conv_id: Uuid,
+    channel_id: Option<Uuid>,
+) -> Option<(
+    db::messages::ConversationSecurityRow,
+    Option<ConversationKind>,
+    Option<Uuid>,
+)> {
+    let conv_security = match db::messages::get_conversation_security(&state.pool, conv_id).await {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            send_error(state, sender_id, "Conversation not found");
+            return None;
+        }
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return None;
+        }
+    };
+
+    let conv_kind = ConversationKind::from_str_opt(&conv_security.kind);
+    if conv_kind != Some(ConversationKind::Group) && channel_id.is_some() {
+        send_error(
+            state,
+            sender_id,
+            "channel_id is only valid for group conversations",
+        );
+        return None;
+    }
+
+    let resolved_channel_id =
+        resolve_channel(state, sender_id, conv_id, channel_id, conv_kind).await?;
+
+    if conv_kind == Some(ConversationKind::Direct) && !conv_security.is_encrypted {
+        send_error(
+            state,
+            sender_id,
+            "Direct messages must be end-to-end encrypted",
+        );
+        return None;
+    }
+
+    Some((conv_security, conv_kind, resolved_channel_id))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn handle_send_message(
     state: &AppState,
@@ -510,18 +578,7 @@ async fn handle_send_message(
     reply_to_id: Option<Uuid>,
     device_contents: Option<HashMap<String, String>>,
 ) {
-    // Validate message content length
-    const MAX_MESSAGE_LENGTH: usize = 10_000;
-    if content.len() > MAX_MESSAGE_LENGTH {
-        send_error(
-            state,
-            sender_id,
-            &format!(
-                "Message too long: {} characters (max {})",
-                content.len(),
-                MAX_MESSAGE_LENGTH
-            ),
-        );
+    if !validate_message_length(state, sender_id, &content) {
         return;
     }
 
@@ -530,43 +587,11 @@ async fn handle_send_message(
         return;
     };
 
-    // Enforce encrypted-only direct messages.
-    let conv_security = match db::messages::get_conversation_security(&state.pool, conv_id).await {
-        Ok(Some(row)) => row,
-        Ok(None) => {
-            send_error(state, sender_id, "Conversation not found");
-            return;
-        }
-        Err(_) => {
-            send_error(state, sender_id, "Database error");
-            return;
-        }
-    };
-
-    let conv_kind = ConversationKind::from_str_opt(&conv_security.kind);
-    if conv_kind != Some(ConversationKind::Group) && channel_id.is_some() {
-        send_error(
-            state,
-            sender_id,
-            "channel_id is only valid for group conversations",
-        );
-        return;
-    }
-
-    let Some(resolved_channel_id) =
-        resolve_channel(state, sender_id, conv_id, channel_id, conv_kind).await
+    let Some((conv_security, _conv_kind, resolved_channel_id)) =
+        validate_conversation_security(state, sender_id, conv_id, channel_id).await
     else {
         return;
     };
-
-    if conv_kind == Some(ConversationKind::Direct) && !conv_security.is_encrypted {
-        send_error(
-            state,
-            sender_id,
-            "Direct messages must be end-to-end encrypted",
-        );
-        return;
-    }
 
     let (reply_content, reply_username) = lookup_reply_context(&state.pool, reply_to_id).await;
 
