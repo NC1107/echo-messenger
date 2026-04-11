@@ -13,7 +13,7 @@ class EchoTheme {
   static const accentLight = Color(0x1A6366F1);
   static const textPrimary = Color(0xFFEDEDEF);
   static const textSecondary = Color(0xFF8B8B8E);
-  static const textMuted = Color(0xFF6B6B6F);
+  static const textMuted = Color(0xFF9090A0);
   static const sentBubble = Color(0xFF6366F1);
   static const recvBubble = Color(0xFF1C1C1E);
   static const border = Color(0xFF27272A);

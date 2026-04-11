@@ -40,6 +40,9 @@ class _ConversationItemState extends State<ConversationItem> {
 
   static const _draftKeyPrefix = 'chat_draft_';
 
+  /// Cached SharedPreferences instance to avoid async getInstance() per render.
+  static SharedPreferences? _prefsCache;
+
   @override
   void initState() {
     super.initState();
@@ -55,8 +58,9 @@ class _ConversationItemState extends State<ConversationItem> {
   }
 
   Future<void> _loadDraft() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('$_draftKeyPrefix${widget.conversation.id}');
+    _prefsCache ??= await SharedPreferences.getInstance();
+    final raw =
+        _prefsCache!.getString('$_draftKeyPrefix${widget.conversation.id}');
     if (!mounted) return;
     final draft = raw?.trim().isNotEmpty == true ? raw!.trim() : null;
     if (draft != _draft) setState(() => _draft = draft);

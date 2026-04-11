@@ -309,21 +309,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showDiscoverGroupsDialog() {
     showDialog(
       context: context,
-      builder: (dialogContext) => Dialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        child: SizedBox(
-          width: 480,
-          height: 640,
-          child: ClipRRect(
+      builder: (dialogContext) {
+        final size = MediaQuery.of(dialogContext).size;
+        return Dialog(
+          backgroundColor: context.surface,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            child: const DiscoverGroupsScreen(),
+            side: BorderSide(color: context.border),
           ),
-        ),
-      ),
+          child: SizedBox(
+            width: (size.width * 0.4).clamp(320, 560).toDouble(),
+            height: (size.height * 0.7).clamp(400, 720).toDouble(),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: const DiscoverGroupsScreen(),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -347,47 +350,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showContactsDialog() {
     showDialog(
       context: context,
-      builder: (dialogContext) => Dialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        child: SizedBox(
-          width: 480,
-          height: 600,
-          child: ClipRRect(
+      builder: (dialogContext) {
+        final size = MediaQuery.of(dialogContext).size;
+        return Dialog(
+          backgroundColor: context.surface,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            child: ContactsScreen(
-              onStartConversation: (conv) {
-                Navigator.pop(dialogContext);
-                _selectConversation(conv);
-              },
+            side: BorderSide(color: context.border),
+          ),
+          child: SizedBox(
+            width: (size.width * 0.4).clamp(320, 560).toDouble(),
+            height: (size.height * 0.65).clamp(400, 680).toDouble(),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: ContactsScreen(
+                onStartConversation: (conv) {
+                  Navigator.pop(dialogContext);
+                  _selectConversation(conv);
+                },
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   void _showCreateGroupDialog() {
     showDialog(
       context: context,
-      builder: (dialogContext) => Dialog(
-        backgroundColor: context.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.border),
-        ),
-        child: SizedBox(
-          width: 480,
-          height: 600,
-          child: ClipRRect(
+      builder: (dialogContext) {
+        final size = MediaQuery.of(dialogContext).size;
+        return Dialog(
+          backgroundColor: context.surface,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            child: const CreateGroupScreen(),
+            side: BorderSide(color: context.border),
           ),
-        ),
-      ),
+          child: SizedBox(
+            width: (size.width * 0.4).clamp(320, 560).toDouble(),
+            height: (size.height * 0.65).clamp(400, 680).toDouble(),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: const CreateGroupScreen(),
+            ),
+          ),
+        );
+      },
     );
   }
 

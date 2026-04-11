@@ -320,7 +320,7 @@ class _MessageItemState extends State<MessageItem> {
     showDialog<void>(
       context: context,
       barrierDismissible: true,
-      barrierColor: Colors.black.withValues(alpha: 0.9),
+      barrierColor: Theme.of(context).shadowColor.withValues(alpha: 0.9),
       builder: (dialogContext) {
         return Stack(
           children: [
@@ -347,13 +347,18 @@ class _MessageItemState extends State<MessageItem> {
                     imageUrl: imageUrl,
                     httpHeaders: headers,
                     fit: BoxFit.contain,
-                    placeholder: (_, _) => const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
+                    placeholder: (_, _) => Center(
+                      child: CircularProgressIndicator(
+                        color: Theme.of(context).colorScheme.onPrimary,
+                      ),
                     ),
-                    errorWidget: (_, _, _) => const Center(
+                    errorWidget: (_, _, _) => Center(
                       child: Icon(
                         Icons.broken_image_outlined,
-                        color: Colors.white54,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onPrimary
+                            .withValues(alpha: 0.54),
                         size: 48,
                       ),
                     ),
@@ -370,13 +375,13 @@ class _MessageItemState extends State<MessageItem> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.download_outlined),
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onPrimary,
                     tooltip: 'Download',
                     onPressed: () => _downloadMedia(imageUrl),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close),
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onPrimary,
                     tooltip: 'Close',
                     onPressed: () => Navigator.of(dialogContext).pop(),
                   ),
@@ -594,7 +599,7 @@ class _MessageItemState extends State<MessageItem> {
   /// Resolve text color for message content.
   Color _contentTextColor({required bool isMine, required bool isFailed}) {
     if (isFailed) return EchoTheme.danger;
-    if (isMine) return Colors.white;
+    if (isMine) return Theme.of(context).colorScheme.onPrimary;
     return context.textPrimary;
   }
 
@@ -690,7 +695,10 @@ class _MessageItemState extends State<MessageItem> {
             Icons.push_pin,
             size: 11,
             color: isMine
-                ? Colors.white.withValues(alpha: 0.7)
+                ? Theme.of(context)
+                      .colorScheme
+                      .onPrimary
+                      .withValues(alpha: 0.7)
                 : context.accent,
           ),
           const SizedBox(width: 3),
@@ -700,7 +708,10 @@ class _MessageItemState extends State<MessageItem> {
               fontSize: 10,
               fontWeight: FontWeight.w500,
               color: isMine
-                  ? Colors.white.withValues(alpha: 0.7)
+                  ? Theme.of(context)
+                        .colorScheme
+                        .onPrimary
+                        .withValues(alpha: 0.7)
                   : context.accent,
             ),
           ),
