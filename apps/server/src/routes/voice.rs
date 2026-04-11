@@ -114,13 +114,13 @@ pub async fn generate_token(
     if let Some(ref cid) = conversation_id_str {
         let conv_uuid = uuid::Uuid::parse_str(cid)
             .map_err(|_| AppError::bad_request("Invalid conversation_id or channel_id"))?;
-        let members = db::groups::get_conversation_member_ids(&state.pool, conv_uuid)
+        let is_member = db::groups::is_member(&state.pool, conv_uuid, auth.user_id)
             .await
             .map_err(|e| {
                 tracing::error!("DB error checking voice token membership: {e:?}");
                 AppError::internal("Database error")
             })?;
-        if !members.contains(&auth.user_id) {
+        if !is_member {
             return Err(AppError::bad_request("Not a member of this conversation"));
         }
     }
@@ -182,7 +182,13 @@ mod tests {
             );
         }
         // Invalid names
-        for name in ["room name", "room/../../etc", "room\n", "<script>", "room;DROP"] {
+        for name in [
+            "room name",
+            "room/../../etc",
+            "room\n",
+            "<script>",
+            "room;DROP",
+        ] {
             assert!(
                 !name
                     .chars()

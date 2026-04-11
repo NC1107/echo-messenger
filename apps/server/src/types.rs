@@ -60,3 +60,28 @@ impl ConversationKind {
         }
     }
 }
+
+/// Channel kinds used in group conversations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChannelKind {
+    Text,
+    Voice,
+}
+
+impl ChannelKind {
+    pub fn from_str_opt(s: &str) -> Option<Self> {
+        match s {
+            "text" => Some(Self::Text),
+            "voice" => Some(Self::Voice),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Voice => "voice",
+        }
+    }
+}
