@@ -24,6 +24,10 @@ class SecureKeyStore {
         webOptions: WebOptions(),
       );
 
+  /// Protected constructor for test subclasses.
+  @visibleForTesting
+  SecureKeyStore.forTesting() : _storage = const FlutterSecureStorage();
+
   /// Returns the shared [SecureKeyStore] instance.
   static SecureKeyStore get instance {
     _instance ??= SecureKeyStore._();
