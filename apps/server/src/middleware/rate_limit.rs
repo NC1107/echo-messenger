@@ -80,11 +80,15 @@ fn extract_ip(req: &Request<Body>) -> IpAddr {
     }
 
     // Fallback to X-Forwarded-For -- use the LAST IP (appended by our proxy),
-    // not the first (attacker-controlled).
+    // not the first (attacker-controlled).  Reject private/loopback IPs to
+    // prevent spoofing bypass.
     if let Some(xff) = req.headers().get("x-forwarded-for")
         && let Ok(value) = xff.to_str()
         && let Some(last_ip) = value.rsplit(',').next()
         && let Ok(ip) = last_ip.trim().parse::<IpAddr>()
+        && !ip.is_loopback()
+        && !ip.is_unspecified()
+        && !is_private(ip)
     {
         return ip;
     }
@@ -142,4 +146,12 @@ pub fn refresh_limiter() -> RateLimiter {
 /// WebSocket ticket rate limiter: 10 tickets per 60 seconds per IP.
 pub fn ticket_limiter() -> RateLimiter {
     RateLimiter::new(10, 60)
+}
+
+/// Check whether an IP is in a private/reserved range (RFC 1918, link-local).
+fn is_private(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
+        IpAddr::V6(_) => false, // IPv6 ULA (fc00::/7) is not spoofable via XFF in practice
+    }
 }

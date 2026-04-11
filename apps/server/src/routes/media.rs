@@ -133,7 +133,7 @@ pub async fn upload(
 
         let original_filename = field.file_name().unwrap_or("upload").to_string();
 
-        let mime_type = field
+        let mut mime_type = field
             .content_type()
             .unwrap_or("application/octet-stream")
             .to_string();
@@ -156,6 +156,18 @@ pub async fn upload(
                 "File too large. Maximum size is {} bytes",
                 MAX_FILE_SIZE
             )));
+        }
+
+        // Validate actual file type via magic bytes — don't trust client MIME header
+        if let Some(inferred) = infer::get(&data) {
+            let inferred_mime = inferred.mime_type();
+            if !ALLOWED_MIME_TYPES.contains(&inferred_mime) {
+                return Err(AppError::bad_request(format!(
+                    "Detected file type '{inferred_mime}' is not allowed"
+                )));
+            }
+            // Use the inferred MIME instead of the client-supplied one
+            mime_type = inferred_mime.to_string();
         }
 
         file_data = Some((original_filename, mime_type, data));
