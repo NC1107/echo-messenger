@@ -929,50 +929,8 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
   }
 
   Future<void> _pollAudioLevels() async {
-    final levels = <String, double>{};
-    double localLevel = 0.0;
-
-    for (final entry in _peerConnections.entries) {
-      try {
-        final stats = await entry.value.getStats();
-        for (final report in stats) {
-          if (report.type == 'inbound-rtp') {
-            final kind = report.values['kind'];
-            if (kind == 'audio') {
-              final level = report.values['audioLevel'];
-              if (level is double) {
-                levels[entry.key] = level;
-              }
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint('[VoiceRTC] Error polling peer audio levels: $e');
-      }
-    }
-
-    // Local audio level from outbound stats
-    for (final entry in _peerConnections.entries) {
-      try {
-        final stats = await entry.value.getStats();
-        for (final report in stats) {
-          if (report.type == 'media-source') {
-            final kind = report.values['kind'];
-            if (kind == 'audio') {
-              final level = report.values['audioLevel'];
-              if (level is double) {
-                localLevel = level;
-              }
-              break;
-            }
-          }
-        }
-        if (localLevel > 0) break;
-      } catch (e) {
-        debugPrint('[VoiceRTC] Error polling local audio level: $e');
-      }
-    }
+    final levels = await _pollRemoteAudioLevels();
+    final localLevel = await _pollLocalAudioLevel();
 
     if (!_disposed) {
       state = state.copyWith(
@@ -980,6 +938,57 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         localAudioLevel: localLevel,
       );
     }
+  }
+
+  /// Extract remote peer audio levels from inbound-rtp stats.
+  Future<Map<String, double>> _pollRemoteAudioLevels() async {
+    final levels = <String, double>{};
+    for (final entry in _peerConnections.entries) {
+      final level = await _extractAudioLevel(
+        entry.value,
+        reportType: 'inbound-rtp',
+        logPrefix: 'peer',
+      );
+      if (level != null) {
+        levels[entry.key] = level;
+      }
+    }
+    return levels;
+  }
+
+  /// Extract local audio level from media-source stats.
+  Future<double> _pollLocalAudioLevel() async {
+    for (final entry in _peerConnections.entries) {
+      final level = await _extractAudioLevel(
+        entry.value,
+        reportType: 'media-source',
+        logPrefix: 'local',
+      );
+      if (level != null && level > 0) return level;
+    }
+    return 0.0;
+  }
+
+  /// Extract the audio level from a peer connection's stats for the given
+  /// [reportType] ('inbound-rtp' for remote, 'media-source' for local).
+  Future<double?> _extractAudioLevel(
+    RTCPeerConnection pc, {
+    required String reportType,
+    required String logPrefix,
+  }) async {
+    try {
+      final stats = await pc.getStats();
+      for (final report in stats) {
+        if (report.type != reportType) continue;
+        if (report.values['kind'] != 'audio') continue;
+        final level = report.values['audioLevel'];
+        if (level is double) return level;
+        break;
+      }
+    } catch (e) {
+      debugPrint('[VoiceRTC] Error polling $logPrefix audio level: $e');
+    }
+    return null;
   }
 
   Future<void> _pollPeerLatencies() async {
