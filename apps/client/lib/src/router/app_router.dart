@@ -49,51 +49,95 @@ class _AuthNotifierListenable extends ChangeNotifier {
   }
 }
 
+/// Redirect logic for auth state.
+String? _authRedirect(Ref ref, GoRouterState state) {
+  final isLoggedIn = ref.read(authProvider).isLoggedIn;
+  final isSplash = state.matchedLocation == _routeSplash;
+  final isAuthRoute =
+      state.matchedLocation == _routeLogin ||
+      state.matchedLocation == '/register';
+  final isOnboarding = state.matchedLocation == '/onboarding';
+  final isJoinRoute =
+      state.matchedLocation.startsWith('/join') ||
+      state.matchedLocation.startsWith('/invite');
+
+  if (isSplash) return null;
+
+  if (!isLoggedIn && !isAuthRoute && !isOnboarding && !isJoinRoute) {
+    final intended = state.matchedLocation;
+    if (intended != _routeHome && intended != _routeLogin) {
+      pendingDeepLink = state.uri.toString();
+    }
+    return _routeLogin;
+  }
+  if (isLoggedIn && isAuthRoute) {
+    if (pendingDeepLink != null) {
+      final destination = pendingDeepLink!;
+      pendingDeepLink = null;
+      return destination;
+    }
+    return _routeHome;
+  }
+  return null;
+}
+
+Widget _buildProfilePage(String userId) {
+  return Scaffold(
+    appBar: AppBar(title: const Text('Profile')),
+    body: UserProfileScreen(userId: userId),
+  );
+}
+
+/// Profile-related routes (/profile/:userId, /u/:userId, etc.).
+List<GoRoute> _profileRoutes() {
+  return [
+    GoRoute(
+      path: '/profile/:userId',
+      pageBuilder: (context, state) => _fadePage(
+        key: state.pageKey,
+        child: _buildProfilePage(state.pathParameters['userId']!),
+      ),
+    ),
+    GoRoute(
+      path: '/u/:userId',
+      pageBuilder: (context, state) => _fadePage(
+        key: state.pageKey,
+        child: _buildProfilePage(state.pathParameters['userId']!),
+      ),
+    ),
+    GoRoute(
+      path: '/user/:userId',
+      pageBuilder: (context, state) => _fadePage(
+        key: state.pageKey,
+        child: _buildProfilePage(state.pathParameters['userId']!),
+      ),
+    ),
+    GoRoute(
+      path: '/profile',
+      redirect: (context, state) {
+        final qp = state.uri.queryParameters;
+        final userId = qp['userId'] ?? qp['uid'] ?? qp['id'] ?? '';
+        if (userId.isEmpty) return _routeHome;
+        return '/profile/$userId';
+      },
+    ),
+    GoRoute(
+      path: '/echo-user/:userId',
+      pageBuilder: (context, state) => _fadePage(
+        key: state.pageKey,
+        child: _buildProfilePage(state.pathParameters['userId']!),
+      ),
+    ),
+  ];
+}
+
 final routerProvider = Provider<GoRouter>((ref) {
   final refreshListenable = _AuthNotifierListenable(ref);
-
-  Widget buildProfilePage(String userId) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
-      body: UserProfileScreen(userId: userId),
-    );
-  }
 
   return GoRouter(
     initialLocation: _routeSplash,
     refreshListenable: refreshListenable,
-    redirect: (context, state) {
-      final isLoggedIn = ref.read(authProvider).isLoggedIn;
-      final isSplash = state.matchedLocation == _routeSplash;
-      final isAuthRoute =
-          state.matchedLocation == _routeLogin ||
-          state.matchedLocation == '/register';
-      final isOnboarding = state.matchedLocation == '/onboarding';
-      final isJoinRoute =
-          state.matchedLocation.startsWith('/join') ||
-          state.matchedLocation.startsWith('/invite');
-
-      // Let the splash screen handle its own navigation
-      if (isSplash) return null;
-
-      if (!isLoggedIn && !isAuthRoute && !isOnboarding && !isJoinRoute) {
-        // Save the intended path so we can navigate there after login
-        final intended = state.matchedLocation;
-        if (intended != _routeHome && intended != _routeLogin) {
-          pendingDeepLink = state.uri.toString();
-        }
-        return _routeLogin;
-      }
-      if (isLoggedIn && isAuthRoute) {
-        if (pendingDeepLink != null) {
-          final destination = pendingDeepLink!;
-          pendingDeepLink = null;
-          return destination;
-        }
-        return _routeHome;
-      }
-      return null;
-    },
+    redirect: (context, state) => _authRedirect(ref, state),
     routes: [
       GoRoute(
         path: _routeSplash,
@@ -178,43 +222,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           child: JoinGroupScreen(groupId: state.pathParameters['groupId']!),
         ),
       ),
-      GoRoute(
-        path: '/profile/:userId',
-        pageBuilder: (context, state) => _fadePage(
-          key: state.pageKey,
-          child: buildProfilePage(state.pathParameters['userId']!),
-        ),
-      ),
-      GoRoute(
-        path: '/u/:userId',
-        pageBuilder: (context, state) => _fadePage(
-          key: state.pageKey,
-          child: buildProfilePage(state.pathParameters['userId']!),
-        ),
-      ),
-      GoRoute(
-        path: '/user/:userId',
-        pageBuilder: (context, state) => _fadePage(
-          key: state.pageKey,
-          child: buildProfilePage(state.pathParameters['userId']!),
-        ),
-      ),
-      GoRoute(
-        path: '/profile',
-        redirect: (context, state) {
-          final qp = state.uri.queryParameters;
-          final userId = qp['userId'] ?? qp['uid'] ?? qp['id'] ?? '';
-          if (userId.isEmpty) return _routeHome;
-          return '/profile/$userId';
-        },
-      ),
-      GoRoute(
-        path: '/echo-user/:userId',
-        pageBuilder: (context, state) => _fadePage(
-          key: state.pageKey,
-          child: buildProfilePage(state.pathParameters['userId']!),
-        ),
-      ),
+      ..._profileRoutes(),
     ],
   );
 });

@@ -271,33 +271,33 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
   /// Following Discord convention, deafening also mutes the microphone.
   /// Un-deafening restores mic to whatever state it was before deafening.
   Future<void> setDeafened(bool deafened) async {
+    _syncMicStateForDeafen(deafened);
+    await _setRemoteAudioEnabled(!deafened);
+    state = state.copyWith(isDeafened: deafened);
+  }
+
+  /// Save mic state and mute/unmute for deafen toggle.
+  void _syncMicStateForDeafen(bool deafened) {
     if (deafened) {
       _wasMutedBeforeDeafen = !state.isCaptureEnabled;
       setCaptureEnabled(false);
-    } else {
-      if (!_wasMutedBeforeDeafen) {
-        setCaptureEnabled(true);
-      }
+    } else if (!_wasMutedBeforeDeafen) {
+      setCaptureEnabled(true);
     }
+  }
 
-    // Disable/enable audio on all remote participant tracks.
+  /// Enable or disable all remote participant audio tracks.
+  Future<void> _setRemoteAudioEnabled(bool enabled) async {
     final room = _room;
-    if (room != null) {
-      for (final participant in room.remoteParticipants.values) {
-        for (final pub in participant.audioTrackPublications) {
-          final track = pub.track;
-          if (track != null) {
-            if (deafened) {
-              await track.disable();
-            } else {
-              await track.enable();
-            }
-          }
+    if (room == null) return;
+    for (final participant in room.remoteParticipants.values) {
+      for (final pub in participant.audioTrackPublications) {
+        final track = pub.track;
+        if (track != null) {
+          enabled ? await track.enable() : await track.disable();
         }
       }
     }
-
-    state = state.copyWith(isDeafened: deafened);
   }
 
   /// Toggle the local camera on/off.

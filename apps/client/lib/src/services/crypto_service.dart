@@ -177,6 +177,64 @@ class CryptoService {
     }
   }
 
+  /// Restore identity, signing, and signed prekey from secure storage.
+  Future<void> _restoreKeysFromStorage(
+    SecureKeyStore store,
+    String storedPrivate,
+  ) async {
+    final privateBytes = base64Decode(storedPrivate);
+    final publicBytes = base64Decode((await store.read(_identityPubKeyPref))!);
+    _identityKeyPair = SimpleKeyPairData(
+      privateBytes,
+      publicKey: SimplePublicKey(publicBytes, type: KeyPairType.x25519),
+      type: KeyPairType.x25519,
+    );
+
+    // Restore Ed25519 signing key pair
+    final sigPriv = await store.read(_signingKeyPref);
+    final sigPub = await store.read(_signingPubKeyPref);
+    if (sigPriv != null && sigPub != null) {
+      _signingKeyPair = SimpleKeyPairData(
+        base64Decode(sigPriv),
+        publicKey: SimplePublicKey(
+          base64Decode(sigPub),
+          type: KeyPairType.ed25519,
+        ),
+        type: KeyPairType.ed25519,
+      );
+    } else {
+      _signingKeyPair = await _ed25519.newKeyPair();
+      await _saveSigningKey(store);
+      _keysAreFresh = true;
+    }
+
+    // Restore signed prekey pair
+    final spkPriv = await store.read(_signedPrekeyPref);
+    final spkPub = await store.read(_signedPrekeyPubPref);
+    if (spkPriv != null && spkPub != null) {
+      _signedPrekeyPair = SimpleKeyPairData(
+        base64Decode(spkPriv),
+        publicKey: SimplePublicKey(
+          base64Decode(spkPub),
+          type: KeyPairType.x25519,
+        ),
+        type: KeyPairType.x25519,
+      );
+    } else {
+      _signedPrekeyPair = await _x25519.newKeyPair();
+      await _saveSignedPrekey(store);
+      _keysAreFresh = true;
+    }
+
+    // Always mark identity bundle for upload so the server has the
+    // current bundle.
+    _keysAreFresh = true;
+    _needsOtpReplenishment = false;
+
+    await _loadSessions(store);
+    await _rotateSignedPrekeyIfNeeded(store);
+  }
+
   /// Initialize: load or generate identity key pair, signing key, and signed prekey.
   Future<void> init() async {
     try {
@@ -201,71 +259,7 @@ class CryptoService {
       final storedPrivate = await store.read(_identityKeyPref);
 
       if (storedPrivate != null) {
-        // Restore identity key pair
-        final privateBytes = base64Decode(storedPrivate);
-        final publicBytes = base64Decode(
-          (await store.read(_identityPubKeyPref))!,
-        );
-        _identityKeyPair = SimpleKeyPairData(
-          privateBytes,
-          publicKey: SimplePublicKey(publicBytes, type: KeyPairType.x25519),
-          type: KeyPairType.x25519,
-        );
-
-        // Restore Ed25519 signing key pair
-        final sigPriv = await store.read(_signingKeyPref);
-        final sigPub = await store.read(_signingPubKeyPref);
-        if (sigPriv != null && sigPub != null) {
-          _signingKeyPair = SimpleKeyPairData(
-            base64Decode(sigPriv),
-            publicKey: SimplePublicKey(
-              base64Decode(sigPub),
-              type: KeyPairType.ed25519,
-            ),
-            type: KeyPairType.ed25519,
-          );
-        } else {
-          // Legacy migration: generate signing key if missing
-          _signingKeyPair = await _ed25519.newKeyPair();
-          await _saveSigningKey(store);
-          _keysAreFresh = true;
-        }
-
-        // Restore signed prekey pair
-        final spkPriv = await store.read(_signedPrekeyPref);
-        final spkPub = await store.read(_signedPrekeyPubPref);
-        if (spkPriv != null && spkPub != null) {
-          _signedPrekeyPair = SimpleKeyPairData(
-            base64Decode(spkPriv),
-            publicKey: SimplePublicKey(
-              base64Decode(spkPub),
-              type: KeyPairType.x25519,
-            ),
-            type: KeyPairType.x25519,
-          );
-        } else {
-          // Legacy migration: generate signed prekey if missing
-          _signedPrekeyPair = await _x25519.newKeyPair();
-          await _saveSignedPrekey(store);
-          _keysAreFresh = true;
-        }
-
-        // Always mark identity bundle for upload so the server has the
-        // current bundle.  The upload endpoint is idempotent (UPSERT), so
-        // re-uploading unchanged keys is harmless.  Without this, returning
-        // users who restore keys from secure storage would never upload,
-        // leaving the server without a PreKey bundle (breaking DMs).
-        _keysAreFresh = true;
-        // Do NOT regenerate OTP keys on restore — existing OTP private keys
-        // in SecureKeyStore still match the public keys on the server.
-        // Regenerating would overwrite them and cause key-ID collisions.
-        _needsOtpReplenishment = false;
-
-        // Load persisted sessions
-        await _loadSessions(store);
-
-        // Check if signed prekey needs rotation
-        await _rotateSignedPrekeyIfNeeded(store);
+        await _restoreKeysFromStorage(store, storedPrivate);
       } else {
         // Generate all keys fresh — previous encryption sessions are lost.
         _keysWereRegenerated = true;
@@ -876,121 +870,154 @@ class CryptoService {
         fullWire[0] == _initialMsgMagicV2[0] &&
         fullWire[1] == _initialMsgMagicV2[1];
     if (isV1 || isV2) {
-      // Always accept an initial X3DH message — the peer may have reset their
-      // keys.  Drop any stale session so we establish a fresh one.
-      if (_sessions.containsKey(sessionKey)) {
-        debugPrint(
-          '[Crypto] Replacing stale session for $sessionKey '
-          '(received new X3DH initial message)',
-        );
-        _sessions.remove(sessionKey);
-        final store = SecureKeyStore.instance;
-        await store.delete('$_sessionPrefix$sessionKey');
-      }
-      // Also remove legacy key if we're now using device-specific
-      if (fromDeviceId != null && _sessions.containsKey(peerUserId)) {
-        _sessions.remove(peerUserId);
-        final store = SecureKeyStore.instance;
-        await store.delete('$_sessionPrefix$peerUserId');
-      }
-      // This is an initial message -- establish session as Bob
-      final aliceIdentityBytes = fullWire.sublist(2, 34);
-      final aliceIdentityPub = SimplePublicKey(
-        aliceIdentityBytes,
-        type: KeyPairType.x25519,
+      return _decryptInitialMessage(
+        fullWire: fullWire,
+        isV2: isV2,
+        sessionKey: sessionKey,
+        peerUserId: peerUserId,
+        fromDeviceId: fromDeviceId,
       );
-      final aliceEphemeralPub = SimplePublicKey(
-        fullWire.sublist(34, 66),
-        type: KeyPairType.x25519,
-      );
-
-      // V2 includes a 4-byte OTP key ID after the ephemeral key
-      SimpleKeyPair? bobOtp;
-      final Uint8List sessionWire;
-      if (isV2) {
-        final bd = ByteData.sublistView(fullWire);
-        final otpKeyId = bd.getInt32(66, Endian.little);
-        sessionWire = fullWire.sublist(70);
-        // Look up the OTP key pair by key ID
-        bobOtp = await _loadOtpPrivateKey(otpKeyId);
-        if (bobOtp != null) {
-          debugPrint('[Crypto] Using OTP key_id=$otpKeyId for 4-DH');
-        } else {
-          // V2 means Alice used 4-DH with this OTP. If Bob can't find it,
-          // the shared secrets will NOT match (Alice has DH4 entropy, Bob
-          // doesn't). Fail cleanly rather than creating a broken session.
-          throw Exception(
-            'OTP key_id=$otpKeyId not found. '
-            'Ask the sender to resend the message.',
-          );
-        }
-      } else {
-        sessionWire = fullWire.sublist(66);
-      }
-
-      // Cache peer identity key for safety number generation
-      final peerStore = SecureKeyStore.instance;
-      await peerStore.write(
-        '$_peerIdentityPrefix$peerUserId',
-        base64Encode(aliceIdentityBytes),
-      );
-
-      // Compute X3DH as Bob (responder)
-      if (_signedPrekeyPair == null) await init();
-
-      // Try current signed prekey first, then fall back to previous
-      // in case the peer fetched the old bundle before rotation.
-      Uint8List sharedSecret;
-      SimpleKeyPair prekeyToUse;
-      try {
-        sharedSecret = await X3DH.respond(
-          bobIdentity: _identityKeyPair!,
-          bobSignedPrekey: _signedPrekeyPair!,
-          bobOneTimePrekey: bobOtp,
-          aliceIdentityKey: aliceIdentityPub,
-          aliceEphemeralKey: aliceEphemeralPub,
-        );
-        prekeyToUse = _signedPrekeyPair!;
-      } catch (_) {
-        // Try previous signed prekey
-        final prevPrekey = await _loadPreviousSignedPrekey();
-        if (prevPrekey == null) rethrow;
-        sharedSecret = await X3DH.respond(
-          bobIdentity: _identityKeyPair!,
-          bobSignedPrekey: prevPrekey,
-          bobOneTimePrekey: bobOtp,
-          aliceIdentityKey: aliceIdentityPub,
-          aliceEphemeralKey: aliceEphemeralPub,
-        );
-        prekeyToUse = prevPrekey;
-      }
-
-      // Initialize Double Ratchet as Bob
-      final session = await SignalSession.initBob(sharedSecret, prekeyToUse);
-
-      // Decrypt the actual message
-      final plainBytes = await session.decrypt(sessionWire);
-      _sessions[sessionKey] = session;
-      await _saveSession(sessionKey, session);
-
-      // Consume the OTP -- delete after successful use (one-time)
-      if (bobOtp != null && isV2) {
-        final bd2 = ByteData.sublistView(fullWire);
-        final consumedId = bd2.getInt32(66, Endian.little);
-        await _deleteOtpPrivateKey(consumedId);
-      }
-
-      // An OTP was consumed on the server — check if we need to replenish.
-      // Fire-and-forget so decryption isn't blocked by the network call.
-      unawaited(checkAndReplenishOtpKeys());
-
-      return utf8.decode(plainBytes);
     }
 
-    // Normal message — use existing session only.  Do NOT call
-    // getOrCreateSession() here: creating a brand-new X3DH session for a
-    // non-initial message would produce an incompatible session that can't
-    // decrypt the message and would pollute state.
+    return _decryptNormalMessage(fullWire: fullWire, sessionKey: sessionKey);
+  }
+
+  /// Decrypt an initial X3DH message and establish a new session as Bob.
+  Future<String> _decryptInitialMessage({
+    required Uint8List fullWire,
+    required bool isV2,
+    required String sessionKey,
+    required String peerUserId,
+    required int? fromDeviceId,
+  }) async {
+    await _clearStaleSession(sessionKey, peerUserId, fromDeviceId);
+
+    final aliceIdentityBytes = fullWire.sublist(2, 34);
+    final aliceIdentityPub = SimplePublicKey(
+      aliceIdentityBytes,
+      type: KeyPairType.x25519,
+    );
+    final aliceEphemeralPub = SimplePublicKey(
+      fullWire.sublist(34, 66),
+      type: KeyPairType.x25519,
+    );
+
+    final (:bobOtp, :sessionWire) = await _parseOtpAndSessionWire(
+      fullWire,
+      isV2,
+    );
+
+    // Cache peer identity key for safety number generation
+    final peerStore = SecureKeyStore.instance;
+    await peerStore.write(
+      '$_peerIdentityPrefix$peerUserId',
+      base64Encode(aliceIdentityBytes),
+    );
+
+    if (_signedPrekeyPair == null) await init();
+
+    final (:sharedSecret, :prekeyToUse) = await _computeX3dhResponse(
+      bobOtp: bobOtp,
+      aliceIdentityPub: aliceIdentityPub,
+      aliceEphemeralPub: aliceEphemeralPub,
+    );
+
+    final session = await SignalSession.initBob(sharedSecret, prekeyToUse);
+    final plainBytes = await session.decrypt(sessionWire);
+    _sessions[sessionKey] = session;
+    await _saveSession(sessionKey, session);
+
+    // Consume the OTP -- delete after successful use (one-time)
+    if (bobOtp != null && isV2) {
+      final bd2 = ByteData.sublistView(fullWire);
+      final consumedId = bd2.getInt32(66, Endian.little);
+      await _deleteOtpPrivateKey(consumedId);
+    }
+
+    unawaited(checkAndReplenishOtpKeys());
+    return utf8.decode(plainBytes);
+  }
+
+  /// Drop stale sessions so a fresh X3DH session can be established.
+  Future<void> _clearStaleSession(
+    String sessionKey,
+    String peerUserId,
+    int? fromDeviceId,
+  ) async {
+    if (_sessions.containsKey(sessionKey)) {
+      debugPrint(
+        '[Crypto] Replacing stale session for $sessionKey '
+        '(received new X3DH initial message)',
+      );
+      _sessions.remove(sessionKey);
+      final store = SecureKeyStore.instance;
+      await store.delete('$_sessionPrefix$sessionKey');
+    }
+    if (fromDeviceId != null && _sessions.containsKey(peerUserId)) {
+      _sessions.remove(peerUserId);
+      final store = SecureKeyStore.instance;
+      await store.delete('$_sessionPrefix$peerUserId');
+    }
+  }
+
+  /// Parse the OTP key pair and session wire bytes from the initial message.
+  Future<({SimpleKeyPair? bobOtp, Uint8List sessionWire})>
+  _parseOtpAndSessionWire(Uint8List fullWire, bool isV2) async {
+    if (!isV2) {
+      return (bobOtp: null, sessionWire: fullWire.sublist(66));
+    }
+
+    final bd = ByteData.sublistView(fullWire);
+    final otpKeyId = bd.getInt32(66, Endian.little);
+    final sessionWire = fullWire.sublist(70);
+    final bobOtp = await _loadOtpPrivateKey(otpKeyId);
+    if (bobOtp != null) {
+      debugPrint('[Crypto] Using OTP key_id=$otpKeyId for 4-DH');
+    } else {
+      throw Exception(
+        'OTP key_id=$otpKeyId not found. '
+        'Ask the sender to resend the message.',
+      );
+    }
+    return (bobOtp: bobOtp, sessionWire: sessionWire);
+  }
+
+  /// Compute the X3DH shared secret as Bob, trying current prekey first,
+  /// then falling back to the previous signed prekey.
+  Future<({Uint8List sharedSecret, SimpleKeyPair prekeyToUse})>
+  _computeX3dhResponse({
+    required SimpleKeyPair? bobOtp,
+    required SimplePublicKey aliceIdentityPub,
+    required SimplePublicKey aliceEphemeralPub,
+  }) async {
+    try {
+      final sharedSecret = await X3DH.respond(
+        bobIdentity: _identityKeyPair!,
+        bobSignedPrekey: _signedPrekeyPair!,
+        bobOneTimePrekey: bobOtp,
+        aliceIdentityKey: aliceIdentityPub,
+        aliceEphemeralKey: aliceEphemeralPub,
+      );
+      return (sharedSecret: sharedSecret, prekeyToUse: _signedPrekeyPair!);
+    } catch (_) {
+      final prevPrekey = await _loadPreviousSignedPrekey();
+      if (prevPrekey == null) rethrow;
+      final sharedSecret = await X3DH.respond(
+        bobIdentity: _identityKeyPair!,
+        bobSignedPrekey: prevPrekey,
+        bobOneTimePrekey: bobOtp,
+        aliceIdentityKey: aliceIdentityPub,
+        aliceEphemeralKey: aliceEphemeralPub,
+      );
+      return (sharedSecret: sharedSecret, prekeyToUse: prevPrekey);
+    }
+  }
+
+  /// Decrypt a normal (non-initial) message using an existing session.
+  Future<String> _decryptNormalMessage({
+    required Uint8List fullWire,
+    required String sessionKey,
+  }) async {
     final session = _sessions[sessionKey];
     if (session == null) {
       throw Exception(

@@ -937,65 +937,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     );
   }
 
+  /// Build the narrow chat panel with voice banner and edge-swipe support.
+  Widget _buildNarrowChatPanel(LiveKitVoiceState voiceRtc, bool voiceActive) {
+    // Show voice lounge when voice is active and user hasn't dismissed it
+    if (voiceActive && _showingLounge) {
+      return Scaffold(
+        body: SafeArea(
+          child: VoiceLoungeScreen(
+            onBackToChat: () => setState(() => _showingLounge = false),
+          ),
+        ),
+      );
+    }
+
+    Widget chatContent = ChatPanel(
+      conversation: _selectedConversation,
+      onGroupInfo: _showGroupInfo,
+      onBack: () => setState(() => _narrowPanelIndex = 0),
+    );
+
+    if (voiceActive && !_showingLounge) {
+      chatContent = Column(
+        children: [
+          _buildVoiceRejoinBanner(voiceRtc),
+          Expanded(child: chatContent),
+        ],
+      );
+    }
+
+    return Scaffold(
+      body: SafeArea(
+        child: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) setState(() => _narrowPanelIndex = 0);
+          },
+          child: GestureDetector(
+            onHorizontalDragStart: (startDetails) {
+              _swipeStartX = startDetails.globalPosition.dx;
+            },
+            onHorizontalDragUpdate: (details) {
+              if (_swipeStartX != null &&
+                  _swipeStartX! < _edgeSwipeZone &&
+                  details.globalPosition.dx - _swipeStartX! >
+                      _edgeSwipeThreshold) {
+                _swipeStartX = null;
+                setState(() => _narrowPanelIndex = 0);
+              }
+            },
+            onHorizontalDragEnd: (_) {},
+            child: chatContent,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildNarrowLayout() {
     final voiceRtc = ref.watch(voiceRtcProvider);
     final voiceActive = voiceRtc.isActive && voiceRtc.channelId != null;
 
     if (_narrowPanelIndex == 1 && _selectedConversation != null) {
-      // Show voice lounge when voice is active and user hasn't dismissed it
-      if (voiceActive && _showingLounge) {
-        return Scaffold(
-          body: SafeArea(
-            child: VoiceLoungeScreen(
-              onBackToChat: () => setState(() => _showingLounge = false),
-            ),
-          ),
-        );
-      }
-
-      Widget chatContent = ChatPanel(
-        conversation: _selectedConversation,
-        onGroupInfo: _showGroupInfo,
-        onBack: () => setState(() => _narrowPanelIndex = 0),
-      );
-
-      // Persistent rejoin banner when voice is active but lounge was dismissed
-      if (voiceActive && !_showingLounge) {
-        chatContent = Column(
-          children: [
-            _buildVoiceRejoinBanner(voiceRtc),
-            Expanded(child: chatContent),
-          ],
-        );
-      }
-
-      return Scaffold(
-        body: SafeArea(
-          child: PopScope(
-            canPop: false,
-            onPopInvokedWithResult: (didPop, _) {
-              if (!didPop) setState(() => _narrowPanelIndex = 0);
-            },
-            child: GestureDetector(
-              onHorizontalDragStart: (startDetails) {
-                _swipeStartX = startDetails.globalPosition.dx;
-              },
-              onHorizontalDragUpdate: (details) {
-                // Edge swipe: zone expanded to 60 px, threshold lowered to 60 px
-                if (_swipeStartX != null &&
-                    _swipeStartX! < _edgeSwipeZone &&
-                    details.globalPosition.dx - _swipeStartX! >
-                        _edgeSwipeThreshold) {
-                  _swipeStartX = null;
-                  setState(() => _narrowPanelIndex = 0);
-                }
-              },
-              onHorizontalDragEnd: (_) {},
-              child: chatContent,
-            ),
-          ),
-        ),
-      );
+      return _buildNarrowChatPanel(voiceRtc, voiceActive);
     }
 
     return Scaffold(
@@ -1057,21 +1060,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   double? _swipeStartX;
 
+  /// Whether the update banner should be hidden for the given state.
+  bool _shouldHideUpdateBanner(UpdateState update) {
+    const activeStatuses = {
+      UpdateStatus.downloading,
+      UpdateStatus.readyToInstall,
+      UpdateStatus.installing,
+    };
+    if (!update.updateAvailable &&
+        !activeStatuses.contains(update.status) &&
+        update.status != UpdateStatus.error) {
+      return true;
+    }
+    if (update.dismissed && !activeStatuses.contains(update.status)) {
+      return true;
+    }
+    return false;
+  }
+
   Widget _buildUpdateBanner() {
     final update = ref.watch(updateProvider);
 
-    // Nothing to show
-    if (!update.updateAvailable &&
-        update.status != UpdateStatus.downloading &&
-        update.status != UpdateStatus.readyToInstall &&
-        update.status != UpdateStatus.installing &&
-        update.status != UpdateStatus.error) {
-      return const SizedBox.shrink();
-    }
-    if (update.dismissed &&
-        update.status != UpdateStatus.downloading &&
-        update.status != UpdateStatus.readyToInstall &&
-        update.status != UpdateStatus.installing) {
+    if (_shouldHideUpdateBanner(update)) {
       return const SizedBox.shrink();
     }
 

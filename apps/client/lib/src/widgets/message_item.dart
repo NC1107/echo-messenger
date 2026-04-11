@@ -186,112 +186,126 @@ class _MessageItemState extends State<MessageItem> {
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                // Quick reaction row
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: reactionEmojis.map((emoji) {
-                      final alreadyReacted = msg.reactions.any(
-                        (r) => r.emoji == emoji && r.userId == widget.myUserId,
-                      );
-                      return GestureDetector(
-                        onTap: () {
-                          Navigator.pop(sheetContext);
-                          widget.onReactionSelect?.call(msg, emoji);
-                        },
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: alreadyReacted
-                                ? context.accent.withValues(alpha: 0.2)
-                                : null,
-                            borderRadius: BorderRadius.circular(8),
-                            border: alreadyReacted
-                                ? Border.all(color: context.accent, width: 2)
-                                : null,
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            emoji,
-                            style: const TextStyle(fontSize: 24),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
+                _buildQuickReactionRow(sheetContext, msg),
                 Divider(height: 1, color: context.border),
-                // Action list
-                if (widget.onReply != null)
-                  _actionTile(
-                    sheetContext: sheetContext,
-                    icon: Icons.reply_outlined,
-                    label: 'Reply',
-                    onTap: () => widget.onReply?.call(msg),
-                  ),
-                _actionTile(
+                ..._buildActionTiles(
                   sheetContext: sheetContext,
-                  icon: Icons.copy_outlined,
-                  label: mediaUrl != null ? 'Copy link' : 'Copy text',
-                  onTap: () {
-                    final copyText = mediaUrl != null
-                        ? _resolveUrl(mediaUrl)
-                        : msg.content;
-                    Clipboard.setData(ClipboardData(text: copyText));
-                    ToastService.show(
-                      context,
-                      'Copied to clipboard',
-                      type: ToastType.success,
-                    );
-                  },
+                  msg: msg,
+                  isMine: isMine,
+                  mediaUrl: mediaUrl,
                 ),
-                if (mediaUrl != null)
-                  _actionTile(
-                    sheetContext: sheetContext,
-                    icon: Icons.download_outlined,
-                    label: 'Download',
-                    onTap: () => _downloadMedia(mediaUrl),
-                  ),
-                if (isMine && widget.onEdit != null)
-                  _actionTile(
-                    sheetContext: sheetContext,
-                    icon: Icons.edit_outlined,
-                    label: 'Edit',
-                    onTap: () => widget.onEdit?.call(msg),
-                  ),
-                if (msg.pinnedAt == null && widget.onPin != null)
-                  _actionTile(
-                    sheetContext: sheetContext,
-                    icon: Icons.push_pin_outlined,
-                    label: 'Pin',
-                    onTap: () => widget.onPin?.call(msg),
-                  ),
-                if (msg.pinnedAt != null && widget.onUnpin != null)
-                  _actionTile(
-                    sheetContext: sheetContext,
-                    icon: Icons.push_pin,
-                    label: 'Unpin',
-                    onTap: () => widget.onUnpin?.call(msg),
-                  ),
-                if (isMine && widget.onDelete != null)
-                  _actionTile(
-                    sheetContext: sheetContext,
-                    icon: Icons.delete_outlined,
-                    label: 'Delete',
-                    color: EchoTheme.danger,
-                    onTap: () => widget.onDelete?.call(msg),
-                  ),
               ],
             ),
           ),
         );
       },
     );
+  }
+
+  /// Quick reaction emoji row for the mobile action sheet.
+  Widget _buildQuickReactionRow(BuildContext sheetContext, ChatMessage msg) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: reactionEmojis.map((emoji) {
+          final alreadyReacted = msg.reactions.any(
+            (r) => r.emoji == emoji && r.userId == widget.myUserId,
+          );
+          return GestureDetector(
+            onTap: () {
+              Navigator.pop(sheetContext);
+              widget.onReactionSelect?.call(msg, emoji);
+            },
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: alreadyReacted
+                    ? context.accent.withValues(alpha: 0.2)
+                    : null,
+                borderRadius: BorderRadius.circular(8),
+                border: alreadyReacted
+                    ? Border.all(color: context.accent, width: 2)
+                    : null,
+              ),
+              alignment: Alignment.center,
+              child: Text(emoji, style: const TextStyle(fontSize: 24)),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  /// Contextual action tiles for the mobile action sheet.
+  List<Widget> _buildActionTiles({
+    required BuildContext sheetContext,
+    required ChatMessage msg,
+    required bool isMine,
+    required String? mediaUrl,
+  }) {
+    return [
+      if (widget.onReply != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.reply_outlined,
+          label: 'Reply',
+          onTap: () => widget.onReply?.call(msg),
+        ),
+      _actionTile(
+        sheetContext: sheetContext,
+        icon: Icons.copy_outlined,
+        label: mediaUrl != null ? 'Copy link' : 'Copy text',
+        onTap: () {
+          final copyText = mediaUrl != null
+              ? _resolveUrl(mediaUrl)
+              : msg.content;
+          Clipboard.setData(ClipboardData(text: copyText));
+          ToastService.show(
+            context,
+            'Copied to clipboard',
+            type: ToastType.success,
+          );
+        },
+      ),
+      if (mediaUrl != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.download_outlined,
+          label: 'Download',
+          onTap: () => _downloadMedia(mediaUrl),
+        ),
+      if (isMine && widget.onEdit != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.edit_outlined,
+          label: 'Edit',
+          onTap: () => widget.onEdit?.call(msg),
+        ),
+      if (msg.pinnedAt == null && widget.onPin != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.push_pin_outlined,
+          label: 'Pin',
+          onTap: () => widget.onPin?.call(msg),
+        ),
+      if (msg.pinnedAt != null && widget.onUnpin != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.push_pin,
+          label: 'Unpin',
+          onTap: () => widget.onUnpin?.call(msg),
+        ),
+      if (isMine && widget.onDelete != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.delete_outlined,
+          label: 'Delete',
+          color: EchoTheme.danger,
+          onTap: () => widget.onDelete?.call(msg),
+        ),
+    ];
   }
 
   Widget _actionTile({
@@ -936,6 +950,104 @@ class _MessageItemState extends State<MessageItem> {
     ];
   }
 
+  /// Build the system event pill (centered, borderless).
+  Widget _buildSystemEventPill(ChatMessage msg) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: context.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: context.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _systemEventIcon(msg.content),
+                size: 14,
+                color: context.textMuted,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  msg.content,
+                  style: TextStyle(
+                    color: context.textMuted,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Whether the current platform supports touch-based swipe gestures.
+  static bool get _isMobileTouch =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  /// Wrap [messageWidget] with swipe-to-reply gesture handlers on mobile.
+  Widget _buildSwipeToReplyWrapper({
+    required bool canSwipe,
+    required ChatMessage msg,
+    required Widget messageWidget,
+  }) {
+    return Stack(
+      children: [
+        if (canSwipe && _swipeDx > 0)
+          Positioned(
+            left: 8,
+            top: 0,
+            bottom: 0,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Opacity(
+                opacity: (_swipeDx / 60).clamp(0.0, 1.0),
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: context.accent.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.reply_rounded,
+                    size: 16,
+                    color: context.accent,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        Transform.translate(offset: Offset(_swipeDx, 0), child: messageWidget),
+      ],
+    );
+  }
+
+  /// Handle long-press: show mobile action sheet or reaction picker.
+  void _handleLongPress(
+    LongPressStartDetails details,
+    ChatMessage msg,
+    bool isMine,
+    String? mediaUrl,
+    bool hasReactions,
+  ) {
+    if (Responsive.isMobile(context)) {
+      _showMobileActionSheet(context, msg, isMine, mediaUrl);
+    } else if (!hasReactions) {
+      widget.onReactionTap?.call(msg, details.globalPosition);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final msg = widget.message;
@@ -943,44 +1055,7 @@ class _MessageItemState extends State<MessageItem> {
     final isFailed = msg.status == MessageStatus.failed;
     final isSending = msg.status == MessageStatus.sending;
 
-    // System events render as centered, borderless pills (like date separators)
-    if (msg.isSystemEvent) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
-        child: Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: context.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.border),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  _systemEventIcon(msg.content),
-                  size: 14,
-                  color: context.textMuted,
-                ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    msg.content,
-                    style: TextStyle(
-                      color: context.textMuted,
-                      fontSize: 12,
-                      fontStyle: FontStyle.italic,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
+    if (msg.isSystemEvent) return _buildSystemEventPill(msg);
 
     final mediaUrl = extractMediaUrl(msg.content);
     final hasMedia = mediaUrl != null;
@@ -1006,12 +1081,8 @@ class _MessageItemState extends State<MessageItem> {
     );
 
     final isAlignedEnd = isMine && !widget.compactLayout;
-    final isMobileTouch =
-        !kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.android ||
-            defaultTargetPlatform == TargetPlatform.iOS);
     final canSwipeToReply =
-        isMobileTouch && widget.onReply != null && !msg.isSystemEvent;
+        _isMobileTouch && widget.onReply != null && !msg.isSystemEvent;
 
     final messageWidget = Container(
       padding: EdgeInsets.only(
@@ -1059,17 +1130,10 @@ class _MessageItemState extends State<MessageItem> {
         child: Semantics(
           label: 'Message from ${msg.fromUsername}. Long press for actions.',
           child: GestureDetector(
-            onLongPressStart: (details) {
-              final isMobile = Responsive.isMobile(context);
-              if (isMobile) {
-                _showMobileActionSheet(context, msg, isMine, mediaUrl);
-              } else if (!hasReactions) {
-                widget.onReactionTap?.call(msg, details.globalPosition);
-              }
-            },
+            onLongPressStart: (details) =>
+                _handleLongPress(details, msg, isMine, mediaUrl, hasReactions),
             onHorizontalDragUpdate: canSwipeToReply
                 ? (details) {
-                    // Only allow rightward swipe (positive dx)
                     final newDx = (_swipeDx + details.delta.dx).clamp(
                       0.0,
                       72.0,
@@ -1083,9 +1147,7 @@ class _MessageItemState extends State<MessageItem> {
                 : null,
             onHorizontalDragEnd: canSwipeToReply
                 ? (_) {
-                    if (_swipeTriggered) {
-                      widget.onReply?.call(msg);
-                    }
+                    if (_swipeTriggered) widget.onReply?.call(msg);
                     setState(() {
                       _swipeDx = 0;
                       _swipeTriggered = false;
@@ -1098,40 +1160,10 @@ class _MessageItemState extends State<MessageItem> {
                     _swipeTriggered = false;
                   })
                 : null,
-            child: Stack(
-              children: [
-                // Reply icon revealed during swipe
-                if (canSwipeToReply && _swipeDx > 0)
-                  Positioned(
-                    left: 8,
-                    top: 0,
-                    bottom: 0,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Opacity(
-                        opacity: (_swipeDx / 60).clamp(0.0, 1.0),
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: context.accent.withValues(alpha: 0.2),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.reply_rounded,
-                            size: 16,
-                            color: context.accent,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                // Message content, shifted right during swipe
-                Transform.translate(
-                  offset: Offset(_swipeDx, 0),
-                  child: messageWidget,
-                ),
-              ],
+            child: _buildSwipeToReplyWrapper(
+              canSwipe: canSwipeToReply,
+              msg: msg,
+              messageWidget: messageWidget,
             ),
           ),
         ),

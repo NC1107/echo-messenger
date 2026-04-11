@@ -483,7 +483,16 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
     };
 
     final pc = await createPeerConnection(config);
+    await _addLocalTracksToConnection(pc, remoteUserId);
+    _registerPeerConnectionCallbacks(pc, remoteUserId);
+    return pc;
+  }
 
+  /// Add local audio and video tracks to a newly created peer connection.
+  Future<void> _addLocalTracksToConnection(
+    RTCPeerConnection pc,
+    String remoteUserId,
+  ) async {
     final stream = _localStream;
     if (stream != null) {
       final audioTracks = stream.getAudioTracks();
@@ -500,7 +509,6 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       }
     }
 
-    // If video is already enabled, add video tracks to the new peer connection.
     final videoStream = _localVideoStream;
     if (videoStream != null && state.isVideoEnabled) {
       final videoTracks = videoStream.getVideoTracks();
@@ -516,13 +524,16 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         await pc.addTrack(track, videoStream);
       }
     }
+  }
 
+  /// Register ICE, connection, and track callbacks on a peer connection.
+  void _registerPeerConnectionCallbacks(
+    RTCPeerConnection pc,
+    String remoteUserId,
+  ) {
     pc.onIceCandidate = (candidate) {
       final candidateValue = candidate.candidate;
-      if (candidateValue == null || candidateValue.isEmpty) {
-        return;
-      }
-
+      if (candidateValue == null || candidateValue.isEmpty) return;
       _sendSignal(remoteUserId, {
         'type': 'ice-candidate',
         'candidate': candidateValue,
@@ -580,8 +591,6 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
         _attachRemoteVideoStream(remoteUserId, event.streams.first);
       }
     };
-
-    return pc;
   }
 
   Future<void> _attachRemoteAudioStream(

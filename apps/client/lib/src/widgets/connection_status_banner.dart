@@ -30,11 +30,8 @@ class _ConnectionStatusBannerState
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final wsState = ref.watch(websocketProvider);
-
-    // Detect transition from disconnected -> connected.
+  /// Track connection transition and trigger the green "Connected" flash.
+  void _trackConnectionTransition(WebSocketState wsState) {
     if (!wsState.isConnected) {
       _wasDisconnected = true;
     } else if (_wasDisconnected &&
@@ -50,70 +47,114 @@ class _ConnectionStatusBannerState
         if (mounted) setState(() {});
       });
     }
+  }
+
+  /// Resolve the banner color, label, and spinner visibility from ws state.
+  ({Color color, String label, bool showSpinner}) _resolveBannerStatus(
+    WebSocketState wsState,
+  ) {
+    final maxAttemptsReached =
+        wsState.reconnectAttempts >= 10 && !wsState.isConnected;
+
+    if (wsState.wasReplaced) {
+      return (
+        color: EchoTheme.danger,
+        label: 'Signed in on another device',
+        showSpinner: false,
+      );
+    }
+    if (wsState.isConnected && _showConnectedFlash) {
+      return (color: EchoTheme.online, label: 'Connected', showSpinner: false);
+    }
+    if (maxAttemptsReached) {
+      return (
+        color: EchoTheme.danger,
+        label: 'Connection lost \u2014 messages may be pending',
+        showSpinner: false,
+      );
+    }
+    return (
+      color: const Color(0xFFB45309),
+      label: wsState.reconnectAttempts > 0
+          ? 'Reconnecting... (${wsState.reconnectAttempts})'
+          : 'Reconnecting...',
+      showSpinner: true,
+    );
+  }
+
+  /// Build the leading icon/spinner for the banner.
+  Widget _buildLeadingIcon({
+    required bool showSpinner,
+    required bool isConnected,
+    required Color bannerColor,
+  }) {
+    if (showSpinner) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 10,
+            height: 10,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: bannerColor,
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
+      );
+    }
+    final icon = isConnected
+        ? Icons.check_circle_outline
+        : Icons.wifi_off_outlined;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: bannerColor),
+        const SizedBox(width: 6),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final wsState = ref.watch(websocketProvider);
+    _trackConnectionTransition(wsState);
 
     final bool visible =
         !wsState.isConnected || _showConnectedFlash || wsState.wasReplaced;
     if (!visible) return const SizedBox.shrink();
 
-    final bool maxAttemptsReached =
-        wsState.reconnectAttempts >= 10 && !wsState.isConnected;
-
-    Color bannerColor;
-    String label;
-    bool showSpinner = false;
-
-    if (wsState.wasReplaced) {
-      bannerColor = EchoTheme.danger;
-      label = 'Signed in on another device';
-    } else if (wsState.isConnected && _showConnectedFlash) {
-      bannerColor = EchoTheme.online;
-      label = 'Connected';
-    } else if (maxAttemptsReached) {
-      bannerColor = EchoTheme.danger;
-      label = 'Connection lost \u2014 messages may be pending';
-    } else {
-      bannerColor = const Color(0xFFB45309); // amber-700
-      label = wsState.reconnectAttempts > 0
-          ? 'Reconnecting... (${wsState.reconnectAttempts})'
-          : 'Reconnecting...';
-      showSpinner = true;
-    }
+    final status = _resolveBannerStatus(wsState);
+    final showRetry =
+        (wsState.reconnectAttempts >= 10 && !wsState.isConnected) ||
+        wsState.wasReplaced;
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
       child: Container(
         width: double.infinity,
-        color: bannerColor.withValues(alpha: 0.15),
+        color: status.color.withValues(alpha: 0.15),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 5),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (showSpinner)
-                SizedBox(
-                  width: 10,
-                  height: 10,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.5,
-                    color: bannerColor,
-                  ),
-                ),
-              if (showSpinner) const SizedBox(width: 6),
-              if (!showSpinner && wsState.isConnected)
-                Icon(Icons.check_circle_outline, size: 12, color: bannerColor),
-              if (!showSpinner && !wsState.isConnected)
-                Icon(Icons.wifi_off_outlined, size: 12, color: bannerColor),
-              if (!showSpinner) const SizedBox(width: 6),
+              _buildLeadingIcon(
+                showSpinner: status.showSpinner,
+                isConnected: wsState.isConnected,
+                bannerColor: status.color,
+              ),
               Text(
-                label,
+                status.label,
                 style: TextStyle(
                   fontSize: 12,
-                  color: bannerColor,
+                  color: status.color,
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              if (maxAttemptsReached || wsState.wasReplaced) ...[
+              if (showRetry) ...[
                 const SizedBox(width: 10),
                 GestureDetector(
                   onTap: () => ref.read(websocketProvider.notifier).connect(),
@@ -123,15 +164,15 @@ class _ConnectionStatusBannerState
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: bannerColor.withValues(alpha: 0.2),
+                      color: status.color.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: bannerColor, width: 1),
+                      border: Border.all(color: status.color, width: 1),
                     ),
                     child: Text(
                       'Retry',
                       style: TextStyle(
                         fontSize: 11,
-                        color: bannerColor,
+                        color: status.color,
                         fontWeight: FontWeight.w600,
                       ),
                     ),

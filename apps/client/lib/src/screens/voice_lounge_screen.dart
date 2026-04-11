@@ -81,6 +81,23 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     return false;
   }
 
+  /// Find a remote participant by SID and return their first track matching
+  /// [source], or null.
+  static lk.VideoTrack? _findRemoteTrack(
+    lk.Room room,
+    String sid,
+    lk.TrackSource source,
+  ) {
+    final participant = room.remoteParticipants.values
+        .where((p) => p.sid.toString() == sid)
+        .firstOrNull;
+    if (participant == null) return null;
+    final pub = participant.videoTrackPublications
+        .where((p) => p.track != null && p.source == source)
+        .firstOrNull;
+    return pub?.track as lk.VideoTrack?;
+  }
+
   /// Resolve a tile key to the matching [VideoTrack] and a mirror flag.
   ///
   /// Keys: 'local', 'remote-{sid}', 'screenshare-local', 'screenshare-{sid}'.
@@ -108,28 +125,14 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     }
     if (tileKey.startsWith('screenshare-')) {
       final sid = tileKey.substring('screenshare-'.length);
-      final participant = room.remoteParticipants.values
-          .where((p) => p.sid.toString() == sid)
-          .firstOrNull;
-      if (participant == null) return (null, false);
-      final pub = participant.videoTrackPublications
-          .where(
-            (p) =>
-                p.track != null && p.source == lk.TrackSource.screenShareVideo,
-          )
-          .firstOrNull;
-      return (pub?.track as lk.VideoTrack?, false);
+      return (
+        _findRemoteTrack(room, sid, lk.TrackSource.screenShareVideo),
+        false,
+      );
     }
     if (tileKey.startsWith('remote-')) {
       final sid = tileKey.substring('remote-'.length);
-      final participant = room.remoteParticipants.values
-          .where((p) => p.sid.toString() == sid)
-          .firstOrNull;
-      if (participant == null) return (null, false);
-      final pub = participant.videoTrackPublications
-          .where((p) => p.track != null && p.source == lk.TrackSource.camera)
-          .firstOrNull;
-      return (pub?.track as lk.VideoTrack?, false);
+      return (_findRemoteTrack(room, sid, lk.TrackSource.camera), false);
     }
     return (null, false);
   }
@@ -752,64 +755,56 @@ class _ParticipantTile extends StatelessWidget {
                 avatarUrl: avatarUrl,
                 isSpeaking: isSpeaking,
               ),
-            // Name label overlay at bottom
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
+            _buildNameLabel(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNameLabel(BuildContext context) {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                name,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
                 ),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.7),
-                    ],
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        name,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (isMuted)
-                      const Padding(
-                        padding: EdgeInsets.only(left: 4),
-                        child: Icon(
-                          Icons.mic_off,
-                          size: 14,
-                          color: EchoTheme.danger,
-                        ),
-                      ),
-                    if (connectionState != null &&
-                        connectionState != 'connected')
-                      Padding(
-                        padding: const EdgeInsets.only(left: 4),
-                        child: Icon(
-                          Icons.signal_cellular_alt,
-                          size: 14,
-                          color: connectionState == 'reconnecting'
-                              ? EchoTheme.warning
-                              : context.textMuted,
-                        ),
-                      ),
-                  ],
-                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
+            if (isMuted)
+              const Padding(
+                padding: EdgeInsets.only(left: 4),
+                child: Icon(Icons.mic_off, size: 14, color: EchoTheme.danger),
+              ),
+            if (connectionState != null && connectionState != 'connected')
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Icon(
+                  Icons.signal_cellular_alt,
+                  size: 14,
+                  color: connectionState == 'reconnecting'
+                      ? EchoTheme.warning
+                      : context.textMuted,
+                ),
+              ),
           ],
         ),
       ),
@@ -1049,6 +1044,81 @@ class _RemoteScreenShares extends StatelessWidget {
     this.onTileTap,
   });
 
+  /// Build a single screen share tile for a participant.
+  Widget _buildScreenShareTile(
+    BuildContext context,
+    lk.RemoteParticipant participant,
+    lk.VideoTrack track,
+  ) {
+    final screenShareName = _participantDisplayName(participant);
+    final sid = participant.sid.toString();
+    return GestureDetector(
+      onTap: onTileTap != null ? () => onTileTap!(sid) : null,
+      child: Container(
+        width: double.infinity,
+        constraints: spotlight ? null : const BoxConstraints(maxHeight: 400),
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Center(
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: lk.VideoTrackRenderer(
+                  track,
+                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              left: 12,
+              child: _buildScreenShareBadge(
+                context,
+                screenShareName,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Badge overlay for screen share tile (name + icon).
+  Widget _buildScreenShareBadge(BuildContext context, String name) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: context.accent.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.screen_share, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            '$name\'s screen',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (onTileTap != null) ...[
+            const SizedBox(width: 6),
+            const Icon(Icons.touch_app, size: 12, color: Colors.white54),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final tiles = <Widget>[];
@@ -1058,79 +1128,11 @@ class _RemoteScreenShares extends StatelessWidget {
         if (pub.track != null &&
             pub.track is lk.VideoTrack &&
             pub.source == lk.TrackSource.screenShareVideo) {
-          final screenShareName = _participantDisplayName(participant);
-          final sid = participant.sid.toString();
           tiles.add(
-            GestureDetector(
-              onTap: onTileTap != null ? () => onTileTap!(sid) : null,
-              child: Container(
-                width: double.infinity,
-                constraints: spotlight
-                    ? null
-                    : const BoxConstraints(maxHeight: 400),
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: context.border),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
-                  children: [
-                    Center(
-                      child: AspectRatio(
-                        aspectRatio: 16 / 9,
-                        child: lk.VideoTrackRenderer(
-                          pub.track! as lk.VideoTrack,
-                          fit: RTCVideoViewObjectFit
-                              .RTCVideoViewObjectFitContain,
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 8,
-                      left: 12,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: context.accent.withValues(alpha: 0.85),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.screen_share,
-                              size: 14,
-                              color: Colors.white,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '$screenShareName\'s screen',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            if (onTileTap != null) ...[
-                              const SizedBox(width: 6),
-                              const Icon(
-                                Icons.touch_app,
-                                size: 12,
-                                color: Colors.white54,
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            _buildScreenShareTile(
+              context,
+              participant,
+              pub.track! as lk.VideoTrack,
             ),
           );
         }

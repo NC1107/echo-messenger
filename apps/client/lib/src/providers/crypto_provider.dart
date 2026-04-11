@@ -65,6 +65,31 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
 
   CryptoNotifier(this.ref) : super(const CryptoState());
 
+  /// Attempt key upload with one automatic retry.
+  /// Returns the error string on final failure, or null on success.
+  Future<String?> _uploadKeysWithRetry(CryptoService crypto) async {
+    for (var attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await crypto.uploadKeys();
+        DebugLogService.instance.log(
+          LogLevel.info,
+          'Crypto',
+          'Keys uploaded to server (attempt $attempt)',
+        );
+        return null;
+      } catch (uploadError) {
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'Crypto',
+          'Key upload attempt $attempt failed: $uploadError',
+        );
+        if (attempt == 2) return uploadError.toString();
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
+    }
+    return null; // unreachable
+  }
+
   /// Initialize crypto and upload keys to the server.
   ///
   /// On Linux, libsecret may fail to unlock the keyring (PlatformException).
@@ -88,35 +113,15 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
       crypto.setToken(token);
       await crypto.init();
       if (crypto.keysAreFresh) {
-        // Attempt upload with one automatic retry on failure.
-        var uploaded = false;
-        for (var attempt = 1; attempt <= 2 && !uploaded; attempt++) {
-          try {
-            await crypto.uploadKeys();
-            uploaded = true;
-            DebugLogService.instance.log(
-              LogLevel.info,
-              'Crypto',
-              'Keys uploaded to server (attempt $attempt)',
-            );
-          } catch (uploadError) {
-            DebugLogService.instance.log(
-              LogLevel.error,
-              'Crypto',
-              'Key upload attempt $attempt failed: $uploadError',
-            );
-            if (attempt == 2) {
-              state = state.copyWith(
-                isInitialized: true,
-                isUploading: false,
-                keysUploadFailed: true,
-                error: 'Key upload failed: $uploadError',
-              );
-              return;
-            }
-            // Brief pause before retry
-            await Future<void>.delayed(const Duration(seconds: 1));
-          }
+        final uploadError = await _uploadKeysWithRetry(crypto);
+        if (uploadError != null) {
+          state = state.copyWith(
+            isInitialized: true,
+            isUploading: false,
+            keysUploadFailed: true,
+            error: 'Key upload failed: $uploadError',
+          );
+          return;
         }
       }
       final regenerated = crypto.keysWereRegenerated;

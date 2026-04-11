@@ -29,28 +29,19 @@ pub struct LinkPreviewResponse {
     pub site_name: Option<String>,
 }
 
-/// POST /api/link-preview
-///
-/// Fetches Open Graph metadata from a URL. Requires authentication.
-/// Returns title, description, image, and site name if available.
-pub async fn fetch_preview(
-    _auth: AuthUser,
-    _state: State<Arc<AppState>>,
-    Json(body): Json<LinkPreviewRequest>,
-) -> Result<Json<LinkPreviewResponse>, AppError> {
-    // Basic URL validation
-    if !body.url.starts_with("http://") && !body.url.starts_with("https://") {
+/// Validate URL scheme and reject SSRF-vulnerable addresses.
+fn validate_url(url: &str) -> Result<(), AppError> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err(AppError::bad_request(
             "URL must start with http:// or https://",
         ));
     }
 
-    // SSRF protection: resolve hostname and reject private/loopback IPs
-    if let Ok(url) = reqwest::Url::parse(&body.url)
-        && let Some(host) = url.host_str()
+    if let Ok(parsed) = reqwest::Url::parse(url)
+        && let Some(host) = parsed.host_str()
     {
         use std::net::ToSocketAddrs;
-        let port = url.port_or_known_default().unwrap_or(80);
+        let port = parsed.port_or_known_default().unwrap_or(80);
         if let Ok(addrs) = format!("{host}:{port}").to_socket_addrs() {
             for addr in addrs {
                 let ip = addr.ip();
@@ -67,6 +58,20 @@ pub async fn fetch_preview(
             }
         }
     }
+
+    Ok(())
+}
+
+/// POST /api/link-preview
+///
+/// Fetches Open Graph metadata from a URL. Requires authentication.
+/// Returns title, description, image, and site name if available.
+pub async fn fetch_preview(
+    _auth: AuthUser,
+    _state: State<Arc<AppState>>,
+    Json(body): Json<LinkPreviewRequest>,
+) -> Result<Json<LinkPreviewResponse>, AppError> {
+    validate_url(&body.url)?;
 
     // Fetch the page with a short timeout
     let client = reqwest::Client::builder()

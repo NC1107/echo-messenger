@@ -1093,6 +1093,60 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
+  Widget _buildListItem({
+    required int index,
+    required List<Conversation> sorted,
+    required int pinnedCount,
+    required String myUserId,
+    required String serverUrl,
+    required Set<String> wsOnlineUsers,
+  }) {
+    if (pinnedCount > 0) {
+      if (index == 0) {
+        return Padding(
+          padding: const EdgeInsets.only(left: 8, top: 4, bottom: 2),
+          child: Text(
+            'PINNED',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: context.textMuted,
+              letterSpacing: 0.5,
+            ),
+          ),
+        );
+      }
+      if (index == pinnedCount + 1) {
+        return Divider(
+          height: 12,
+          thickness: 1,
+          indent: 8,
+          endIndent: 8,
+          color: context.border,
+        );
+      }
+      final convIndex = index <= pinnedCount ? index - 1 : index - 2;
+      if (convIndex >= sorted.length) return const SizedBox.shrink();
+      final conv = sorted[convIndex];
+      return _buildConversationTile(
+        conv,
+        _pinnedIds.contains(conv.id),
+        myUserId,
+        serverUrl,
+        wsOnlineUsers,
+      );
+    }
+
+    final conv = sorted[index];
+    return _buildConversationTile(
+      conv,
+      _pinnedIds.contains(conv.id),
+      myUserId,
+      serverUrl,
+      wsOnlineUsers,
+    );
+  }
+
   Widget _buildConversationList(
     List<Conversation> sorted,
     String myUserId,
@@ -1114,60 +1168,14 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         // Use fixed itemExtent when no section headers/dividers for faster layout.
         itemExtent: extraItems == 0 ? 70 : null,
         itemCount: sorted.length + extraItems,
-        itemBuilder: (context, index) {
-          if (pinnedCount > 0) {
-            // First item: "PINNED" section header
-            if (index == 0) {
-              return Padding(
-                padding: const EdgeInsets.only(left: 8, top: 4, bottom: 2),
-                child: Text(
-                  'PINNED',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: context.textMuted,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              );
-            }
-            // After pinned items: divider
-            if (index == pinnedCount + 1) {
-              return Divider(
-                height: 12,
-                thickness: 1,
-                indent: 8,
-                endIndent: 8,
-                color: context.border,
-              );
-            }
-            // Adjust index for the extra header/divider items
-            final convIndex = index <= pinnedCount ? index - 1 : index - 2;
-            if (convIndex >= sorted.length) {
-              return const SizedBox.shrink();
-            }
-            final conv = sorted[convIndex];
-            final isPinned = _pinnedIds.contains(conv.id);
-            return _buildConversationTile(
-              conv,
-              isPinned,
-              myUserId,
-              serverUrl,
-              wsOnlineUsers,
-            );
-          }
-
-          // No pinned items — render normally
-          final conv = sorted[index];
-          final isPinned = _pinnedIds.contains(conv.id);
-          return _buildConversationTile(
-            conv,
-            isPinned,
-            myUserId,
-            serverUrl,
-            wsOnlineUsers,
-          );
-        },
+        itemBuilder: (context, index) => _buildListItem(
+          index: index,
+          sorted: sorted,
+          pinnedCount: pinnedCount,
+          myUserId: myUserId,
+          serverUrl: serverUrl,
+          wsOnlineUsers: wsOnlineUsers,
+        ),
       ),
     );
   }

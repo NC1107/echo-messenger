@@ -176,90 +176,7 @@ class _RichTextContentState extends State<RichTextContent> {
         spans.addAll(_buildMentionSpans(text.substring(lastEnd, e.start)));
       }
 
-      switch (e.tag) {
-        case 'bold':
-          final inner = e.match.group(1)!;
-          spans.add(
-            TextSpan(
-              text: inner,
-              style: _baseStyle().copyWith(fontWeight: FontWeight.bold),
-            ),
-          );
-        case 'italic':
-          final inner = e.match.group(1)!;
-          spans.add(
-            TextSpan(
-              text: inner,
-              style: _baseStyle().copyWith(fontStyle: FontStyle.italic),
-            ),
-          );
-        case 'underline':
-          final inner = e.match.group(1)!;
-          spans.add(
-            TextSpan(
-              text: inner,
-              style: _baseStyle().copyWith(
-                decoration: TextDecoration.underline,
-                decorationColor: widget.textColor,
-              ),
-            ),
-          );
-        case 'strikethrough':
-          final inner = e.match.group(1)!;
-          spans.add(
-            TextSpan(
-              text: inner,
-              style: _baseStyle().copyWith(
-                decoration: TextDecoration.lineThrough,
-                decorationColor: widget.textColor,
-              ),
-            ),
-          );
-        case 'spoiler':
-          final inner = e.match.group(1)!;
-          spans.add(
-            WidgetSpan(
-              alignment: PlaceholderAlignment.baseline,
-              baseline: TextBaseline.alphabetic,
-              child: _SpoilerText(
-                text: inner,
-                style: _baseStyle(),
-                bgColor: widget.textSecondaryColor,
-              ),
-            ),
-          );
-        case 'masked_link':
-          final linkText = e.match.group(1)!;
-          final url = e.match.group(2)!;
-          spans.add(
-            TextSpan(
-              text: linkText,
-              style: TextStyle(
-                fontSize: 15,
-                color: widget.accentHoverColor,
-                decoration: TextDecoration.underline,
-                decorationColor: widget.accentHoverColor,
-                height: 1.47,
-              ),
-              recognizer: _createLinkRecognizer(url),
-            ),
-          );
-        case 'url':
-          final url = e.match.group(0)!;
-          spans.add(
-            TextSpan(
-              text: url,
-              style: TextStyle(
-                fontSize: 15,
-                color: widget.accentHoverColor,
-                decoration: TextDecoration.underline,
-                decorationColor: widget.accentHoverColor,
-                height: 1.47,
-              ),
-              recognizer: _createLinkRecognizer(url),
-            ),
-          );
-      }
+      spans.add(_buildSpanForTag(e));
 
       lastEnd = e.end;
     }
@@ -269,6 +186,72 @@ class _RichTextContentState extends State<RichTextContent> {
     }
 
     return spans;
+  }
+
+  /// Build a single [InlineSpan] for a matched formatting tag entry.
+  InlineSpan _buildSpanForTag(
+    ({int start, int end, String tag, RegExpMatch match}) e,
+  ) {
+    final linkStyle = TextStyle(
+      fontSize: 15,
+      color: widget.accentHoverColor,
+      decoration: TextDecoration.underline,
+      decorationColor: widget.accentHoverColor,
+      height: 1.47,
+    );
+    switch (e.tag) {
+      case 'bold':
+        return TextSpan(
+          text: e.match.group(1)!,
+          style: _baseStyle().copyWith(fontWeight: FontWeight.bold),
+        );
+      case 'italic':
+        return TextSpan(
+          text: e.match.group(1)!,
+          style: _baseStyle().copyWith(fontStyle: FontStyle.italic),
+        );
+      case 'underline':
+        return TextSpan(
+          text: e.match.group(1)!,
+          style: _baseStyle().copyWith(
+            decoration: TextDecoration.underline,
+            decorationColor: widget.textColor,
+          ),
+        );
+      case 'strikethrough':
+        return TextSpan(
+          text: e.match.group(1)!,
+          style: _baseStyle().copyWith(
+            decoration: TextDecoration.lineThrough,
+            decorationColor: widget.textColor,
+          ),
+        );
+      case 'spoiler':
+        return WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: _SpoilerText(
+            text: e.match.group(1)!,
+            style: _baseStyle(),
+            bgColor: widget.textSecondaryColor,
+          ),
+        );
+      case 'masked_link':
+        return TextSpan(
+          text: e.match.group(1)!,
+          style: linkStyle,
+          recognizer: _createLinkRecognizer(e.match.group(2)!),
+        );
+      case 'url':
+        final url = e.match.group(0)!;
+        return TextSpan(
+          text: url,
+          style: linkStyle,
+          recognizer: _createLinkRecognizer(url),
+        );
+      default:
+        return TextSpan(text: e.match.group(0)!, style: _baseStyle());
+    }
   }
 
   /// Build spans for a segment that may contain inline code, bold, italic,
