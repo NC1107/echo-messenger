@@ -22,10 +22,12 @@ class SecureKeyStore {
   /// Scope all storage operations to a specific user.
   void setUserScope(String userId, String serverHost) {
     _userPrefix = 'u/$userId@$serverHost/';
+    debugPrint('[SecureKeyStore] setUserScope: prefix=$_userPrefix');
   }
 
   /// Clear user scope (on logout).
   void clearUserScope() {
+    debugPrint('[SecureKeyStore] clearUserScope (was: $_userPrefix)');
     _userPrefix = '';
   }
 
