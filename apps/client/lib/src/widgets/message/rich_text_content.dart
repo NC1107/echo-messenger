@@ -568,7 +568,9 @@ class _RichTextContentState extends State<RichTextContent> {
 
     // Handle ">>> " multi-line blockquote (everything after >>> is quoted)
     if (trimmed.startsWith('>>> ')) {
-      return [_buildBlockquote([trimmed])];
+      return [
+        _buildBlockquote([trimmed]),
+      ];
     }
 
     final lines = trimmed.split('\n');
@@ -653,11 +655,7 @@ class _RichTextContentState extends State<RichTextContent> {
 
   /// Collect consecutive plain-text lines (no block-level syntax) starting at
   /// [index] and emit a single RichText widget.
-  int _collectPlainLines(
-    List<String> lines,
-    int index,
-    List<Widget> widgets,
-  ) {
+  int _collectPlainLines(List<String> lines, int index, List<Widget> widgets) {
     final plainLines = <String>[];
     while (index < lines.length) {
       final pl = lines[index].trimLeft();

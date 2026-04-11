@@ -714,107 +714,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final voiceRtc = ref.watch(voiceRtcProvider);
     final voiceActive = voiceRtc.isActive && voiceRtc.channelId != null;
 
-    // Auto-show lounge when voice becomes active (only on initial join,
-    // not after user dismissed it via "Back to chat").
-    if (voiceActive && !_showingLounge && !_userDismissedLounge) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _showingLounge = true);
-      });
-    }
-    // Reset dismiss flag when voice becomes inactive so next join auto-shows.
-    if (!voiceActive && _userDismissedLounge) {
-      _userDismissedLounge = false;
-    }
+    _autoShowLoungeOnJoin(voiceActive);
 
-    // Determine what the right panel shows
-    Widget rightPanel;
-    if (_showSettings) {
-      rightPanel = SettingsContent(
-        key: ValueKey(_settingsSection),
-        section: _settingsSection,
-      );
-    } else if (voiceActive && _showingLounge) {
-      rightPanel = VoiceLoungeScreen(
-        onBackToChat: () {
-          setState(() {
-            _showingLounge = false;
-            _userDismissedLounge = true;
-          });
-        },
-      );
-    } else if (_selectedConversation != null) {
-      rightPanel = ChatPanel(
-        conversation: _selectedConversation,
-        onGroupInfo: _showGroupInfo,
-        onMembersToggle: _selectedConversation?.isGroup == true
-            ? _toggleMembers
-            : null,
-        hideVoiceDock: true,
-      );
-    } else {
-      rightPanel = _buildEmptyState();
-    }
-
+    final rightPanel = _resolveRightPanel(voiceActive);
     final animatedSidebarWidth = _sidebarCollapsed
         ? _sidebarCollapsedWidth
         : sidebarWidth;
-    final showVoiceDock = voiceActive;
 
     return Scaffold(
       body: Stack(
         children: [
           Row(
             children: [
-              // Left sidebar with animated width
-              if (_showSettings)
-                _buildSettingsSidebar(sidebarWidth)
-              else
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeInOut,
-                  width: animatedSidebarWidth,
-                  clipBehavior: Clip.hardEdge,
-                  decoration: const BoxDecoration(),
-                  child: _sidebarCollapsed
-                      ? _buildCollapsedSidebar()
-                      : _buildConversationPanel(
-                          onCollapseSidebar: () =>
-                              setState(() => _sidebarCollapsed = true),
-                        ),
-                ),
-              // Draggable resize handle
-              MouseRegion(
-                cursor: SystemMouseCursors.resizeColumn,
-                child: GestureDetector(
-                  onHorizontalDragUpdate: (details) {
-                    if (_sidebarCollapsed) return;
-                    setState(() {
-                      _sidebarWidth = (_sidebarWidth + details.delta.dx).clamp(
-                        _sidebarMinWidth,
-                        _sidebarMaxWidth,
-                      );
-                    });
-                  },
-                  onHorizontalDragEnd: (details) {
-                    // Snap to collapsed if dragged below threshold
-                    if (_sidebarWidth < 150) {
-                      setState(() => _sidebarCollapsed = true);
-                    }
-                  },
-                  onDoubleTap: () {
-                    setState(() {
-                      if (_sidebarCollapsed) {
-                        _sidebarCollapsed = false;
-                        _sidebarWidth = _sidebarDefaultWidth;
-                      } else {
-                        _sidebarCollapsed = true;
-                      }
-                    });
-                  },
-                  child: Container(width: 4, color: context.border),
-                ),
-              ),
-              // Center: content area (flex) + optional update banner
+              _buildDesktopSidebar(sidebarWidth, animatedSidebarWidth),
+              _buildResizeHandle(),
               Expanded(
                 child: Column(
                   children: [
@@ -823,44 +736,150 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   ],
                 ),
               ),
-              // Right: members panel (optional, 280px)
-              if (!_showSettings &&
-                  _showMembers &&
-                  _selectedConversation != null &&
-                  _selectedConversation!.isGroup) ...[
-                Container(width: 1, color: context.border),
-                MembersPanel(
-                  conversation: _selectedConversation,
-                  onGroupLeft: () {
-                    setState(() {
-                      _selectedConversation = null;
-                      _showMembers = false;
-                      _narrowPanelIndex = 0;
-                    });
-                  },
-                ),
-              ],
+              ..._buildMembersPanel(),
             ],
           ),
-          // Discord-style voice dock -- always above user status bar (60px)
-          if (showVoiceDock)
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              bottom: 60,
-              left: 0,
-              width: animatedSidebarWidth,
-              child: VoiceDock(
-                width: animatedSidebarWidth,
-                onNavigateToLounge: () {
-                  setState(() {
-                    _showingLounge = true;
-                    _userDismissedLounge = false;
-                  });
-                },
-              ),
-            ),
+          if (voiceActive) _buildDesktopVoiceDock(animatedSidebarWidth),
         ],
+      ),
+    );
+  }
+
+  /// Auto-show lounge on initial voice join; reset dismiss flag when voice
+  /// becomes inactive so the next join auto-shows again.
+  void _autoShowLoungeOnJoin(bool voiceActive) {
+    if (voiceActive && !_showingLounge && !_userDismissedLounge) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _showingLounge = true);
+      });
+    }
+    if (!voiceActive && _userDismissedLounge) {
+      _userDismissedLounge = false;
+    }
+  }
+
+  /// Determine the right-panel content based on settings, voice, or chat.
+  Widget _resolveRightPanel(bool voiceActive) {
+    if (_showSettings) {
+      return SettingsContent(
+        key: ValueKey(_settingsSection),
+        section: _settingsSection,
+      );
+    }
+    if (voiceActive && _showingLounge) {
+      return VoiceLoungeScreen(
+        onBackToChat: () {
+          setState(() {
+            _showingLounge = false;
+            _userDismissedLounge = true;
+          });
+        },
+      );
+    }
+    if (_selectedConversation != null) {
+      return ChatPanel(
+        conversation: _selectedConversation,
+        onGroupInfo: _showGroupInfo,
+        onMembersToggle: _selectedConversation?.isGroup == true
+            ? _toggleMembers
+            : null,
+        hideVoiceDock: true,
+      );
+    }
+    return _buildEmptyState();
+  }
+
+  /// Desktop sidebar: either settings sidebar or conversation panel
+  /// (collapsible with animated width).
+  Widget _buildDesktopSidebar(double sidebarWidth, double animatedWidth) {
+    if (_showSettings) return _buildSettingsSidebar(sidebarWidth);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
+      width: animatedWidth,
+      clipBehavior: Clip.hardEdge,
+      decoration: const BoxDecoration(),
+      child: _sidebarCollapsed
+          ? _buildCollapsedSidebar()
+          : _buildConversationPanel(
+              onCollapseSidebar: () => setState(() => _sidebarCollapsed = true),
+            ),
+    );
+  }
+
+  /// Draggable resize handle between sidebar and content area.
+  Widget _buildResizeHandle() {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      child: GestureDetector(
+        onHorizontalDragUpdate: (details) {
+          if (_sidebarCollapsed) return;
+          setState(() {
+            _sidebarWidth = (_sidebarWidth + details.delta.dx).clamp(
+              _sidebarMinWidth,
+              _sidebarMaxWidth,
+            );
+          });
+        },
+        onHorizontalDragEnd: (details) {
+          if (_sidebarWidth < 150) {
+            setState(() => _sidebarCollapsed = true);
+          }
+        },
+        onDoubleTap: () {
+          setState(() {
+            if (_sidebarCollapsed) {
+              _sidebarCollapsed = false;
+              _sidebarWidth = _sidebarDefaultWidth;
+            } else {
+              _sidebarCollapsed = true;
+            }
+          });
+        },
+        child: Container(width: 4, color: context.border),
+      ),
+    );
+  }
+
+  /// Optional 280px members panel on the right side.
+  List<Widget> _buildMembersPanel() {
+    if (_showSettings ||
+        !_showMembers ||
+        _selectedConversation == null ||
+        !_selectedConversation!.isGroup) {
+      return const [];
+    }
+    return [
+      Container(width: 1, color: context.border),
+      MembersPanel(
+        conversation: _selectedConversation,
+        onGroupLeft: () {
+          setState(() {
+            _selectedConversation = null;
+            _showMembers = false;
+            _narrowPanelIndex = 0;
+          });
+        },
+      ),
+    ];
+  }
+
+  /// Voice dock positioned above the user status bar.
+  Widget _buildDesktopVoiceDock(double animatedSidebarWidth) {
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
+      bottom: 60,
+      left: 0,
+      width: animatedSidebarWidth,
+      child: VoiceDock(
+        width: animatedSidebarWidth,
+        onNavigateToLounge: () {
+          setState(() {
+            _showingLounge = true;
+            _userDismissedLounge = false;
+          });
+        },
       ),
     );
   }

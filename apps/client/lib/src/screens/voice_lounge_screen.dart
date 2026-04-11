@@ -541,114 +541,116 @@ class _ParticipantGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (room == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(40),
-          child: Text(
-            'Connecting to voice...',
-            style: TextStyle(color: context.textMuted, fontSize: 14),
-          ),
-        ),
-      );
+      return _buildPlaceholder(context, 'Connecting to voice...');
     }
 
-    final tiles = <Widget>[];
-
-    // Local participant tile
-    final localParticipant = room!.localParticipant;
-    if (localParticipant != null) {
-      final localVideo = localParticipant.videoTrackPublications
-          .where(
-            (pub) => pub.track != null && pub.source == lk.TrackSource.camera,
-          )
-          .firstOrNull;
-
-      // Check both track existence AND the isVideoEnabled flag — the SDK
-      // track publication may linger briefly after toggleVideo(false).
-      final localHasVideo =
-          localVideo?.track != null && voiceState.isVideoEnabled;
-      tiles.add(
-        _ParticipantTile(
-          key: const ValueKey('local'),
-          name: 'You',
-          avatarUrl: localAvatarUrl,
-          hasVideo: localHasVideo,
-          videoTrack: localHasVideo
-              ? localVideo?.track as lk.VideoTrack?
-              : null,
-          mirror: true,
-          audioLevel: voiceState.localAudioLevel,
-          isMuted: !voiceState.isCaptureEnabled,
-          isLocal: true,
-          onTap: onTileTap != null ? () => onTileTap!('local') : null,
-        ),
-      );
-    }
-
-    // Remote participant tiles
-    for (final participant in room!.remoteParticipants.values) {
-      final displayName = _participantDisplayName(participant);
-
-      final videoTrack = participant.videoTrackPublications
-          .where(
-            (pub) =>
-                pub.track != null &&
-                pub.track is lk.VideoTrack &&
-                pub.source == lk.TrackSource.camera,
-          )
-          .firstOrNull;
-
-      // Audio levels are keyed by identity (now username, not UUID).
-      final identity = participant.identity.isNotEmpty
-          ? participant.identity
-          : participant.sid.toString();
-      final audioLevel = voiceState.peerAudioLevels[identity] ?? 0.0;
-
-      tiles.add(
-        _ParticipantTile(
-          key: ValueKey('remote-${participant.sid}'),
-          name: displayName.length > 16
-              ? displayName.substring(0, 16)
-              : displayName,
-          hasVideo: videoTrack?.track != null,
-          videoTrack: videoTrack?.track as lk.VideoTrack?,
-          mirror: false,
-          audioLevel: audioLevel,
-          isMuted: participant.isMuted,
-          connectionState: voiceState.peerConnectionStates[identity],
-          onTap: onTileTap != null
-              ? () => onTileTap!('remote-${participant.sid}')
-              : null,
-          onMuteForMe: () async {
-            // Toggle mute for this remote participant's audio tracks
-            for (final pub in participant.audioTrackPublications) {
-              final track = pub.track;
-              if (track != null) {
-                if (pub.subscribed) {
-                  await track.disable();
-                } else {
-                  await track.enable();
-                }
-              }
-            }
-          },
-        ),
-      );
-    }
+    final tiles = <Widget>[
+      if (room!.localParticipant != null)
+        _buildLocalTile(room!.localParticipant!),
+      ...room!.remoteParticipants.values.map(_buildRemoteTile),
+    ];
 
     if (tiles.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(40),
-          child: Text(
-            'No participants',
-            style: TextStyle(color: context.textMuted, fontSize: 14),
-          ),
-        ),
-      );
+      return _buildPlaceholder(context, 'No participants');
     }
 
-    // Responsive grid: 1 col for 1, 2 cols for 2-4, 3 cols for 5+
+    if (compact) {
+      return _buildCompactLayout(tiles);
+    }
+    return _buildGridLayout(tiles);
+  }
+
+  Widget _buildPlaceholder(BuildContext context, String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Text(
+          message,
+          style: TextStyle(color: context.textMuted, fontSize: 14),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocalTile(lk.LocalParticipant localParticipant) {
+    final localVideo = localParticipant.videoTrackPublications
+        .where(
+          (pub) => pub.track != null && pub.source == lk.TrackSource.camera,
+        )
+        .firstOrNull;
+
+    final localHasVideo =
+        localVideo?.track != null && voiceState.isVideoEnabled;
+
+    return _ParticipantTile(
+      key: const ValueKey('local'),
+      name: 'You',
+      avatarUrl: localAvatarUrl,
+      hasVideo: localHasVideo,
+      videoTrack: localHasVideo ? localVideo?.track as lk.VideoTrack? : null,
+      mirror: true,
+      audioLevel: voiceState.localAudioLevel,
+      isMuted: !voiceState.isCaptureEnabled,
+      isLocal: true,
+      onTap: onTileTap != null ? () => onTileTap!('local') : null,
+    );
+  }
+
+  Widget _buildRemoteTile(lk.RemoteParticipant participant) {
+    final displayName = _participantDisplayName(participant);
+    final videoTrack = participant.videoTrackPublications
+        .where(
+          (pub) =>
+              pub.track != null &&
+              pub.track is lk.VideoTrack &&
+              pub.source == lk.TrackSource.camera,
+        )
+        .firstOrNull;
+
+    final identity = participant.identity.isNotEmpty
+        ? participant.identity
+        : participant.sid.toString();
+    final audioLevel = voiceState.peerAudioLevels[identity] ?? 0.0;
+
+    return _ParticipantTile(
+      key: ValueKey('remote-${participant.sid}'),
+      name: displayName.length > 16
+          ? displayName.substring(0, 16)
+          : displayName,
+      hasVideo: videoTrack?.track != null,
+      videoTrack: videoTrack?.track as lk.VideoTrack?,
+      mirror: false,
+      audioLevel: audioLevel,
+      isMuted: participant.isMuted,
+      connectionState: voiceState.peerConnectionStates[identity],
+      onTap: onTileTap != null
+          ? () => onTileTap!('remote-${participant.sid}')
+          : null,
+      onMuteForMe: () async {
+        for (final pub in participant.audioTrackPublications) {
+          final track = pub.track;
+          if (track != null) {
+            if (pub.subscribed) {
+              await track.disable();
+            } else {
+              await track.enable();
+            }
+          }
+        }
+      },
+    );
+  }
+
+  Widget _buildCompactLayout(List<Widget> tiles) {
+    return ListView.separated(
+      scrollDirection: Axis.horizontal,
+      itemCount: tiles.length,
+      separatorBuilder: (context, index) => const SizedBox(width: 8),
+      itemBuilder: (_, i) => SizedBox(width: 100, child: tiles[i]),
+    );
+  }
+
+  Widget _buildGridLayout(List<Widget> tiles) {
     final int crossAxisCount;
     if (tiles.length <= 1) {
       crossAxisCount = 1;
@@ -656,16 +658,6 @@ class _ParticipantGrid extends StatelessWidget {
       crossAxisCount = 2;
     } else {
       crossAxisCount = 3;
-    }
-
-    // Compact mode: horizontal strip for spotlight layout
-    if (compact) {
-      return ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: tiles.length,
-        separatorBuilder: (context, index) => const SizedBox(width: 8),
-        itemBuilder: (_, i) => SizedBox(width: 100, child: tiles[i]),
-      );
     }
 
     return GridView.count(
@@ -1171,8 +1163,6 @@ class _ControlBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // On narrow screens (width < 600) or in landscape, save space with
-    // icon-only buttons at 44 px touch targets (no text labels).
     final isCompact =
         Responsive.isMobile(context) ||
         MediaQuery.of(context).orientation == Orientation.landscape;
@@ -1193,135 +1183,166 @@ class _ControlBar extends ConsumerWidget {
             ? MainAxisAlignment.spaceEvenly
             : MainAxisAlignment.center,
         children: [
-          // Mute (split: main toggles mute, dots open audio processing)
-          _SplitControlButton(
-            icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
-            label: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
-            isActive: voiceSettings.selfMuted,
-            activeColor: EchoTheme.danger,
-            isCompact: isCompact,
-            onPressed: () async {
-              final notifier = ref.read(voiceSettingsProvider.notifier);
-              final nextMuted = !voiceSettings.selfMuted;
-              await notifier.setSelfMuted(nextMuted);
-              ref
-                  .read(livekitVoiceProvider.notifier)
-                  .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
-            },
-            menuBuilder: (context) =>
-                _AudioProcessingMenu(voiceSettings: voiceSettings, ref: ref),
-          ),
+          _buildMuteButton(context, ref, isCompact),
           gap,
-          // Deafen (no split -- simple button)
-          _ControlButton(
-            icon: voiceSettings.selfDeafened
-                ? Icons.headset_off
-                : Icons.headset,
-            label: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
-            isActive: voiceSettings.selfDeafened,
-            activeColor: EchoTheme.danger,
-            isCompact: isCompact,
-            onPressed: () async {
-              final notifier = ref.read(voiceSettingsProvider.notifier);
-              final nextDeafened = !voiceSettings.selfDeafened;
-              await notifier.setSelfDeafened(nextDeafened);
-              await ref
-                  .read(livekitVoiceProvider.notifier)
-                  .setDeafened(nextDeafened);
-            },
-          ),
+          _buildDeafenButton(context, ref, isCompact),
           gap,
-          // Camera (split: main toggles camera, dots open bitrate/fps/auto)
-          _SplitControlButton(
-            icon: voiceState.isVideoEnabled
-                ? Icons.videocam
-                : Icons.videocam_off,
-            label: voiceState.isVideoEnabled ? 'Camera On' : 'Camera',
-            isActive: voiceState.isVideoEnabled,
-            activeColor: context.accent,
-            isCompact: isCompact,
-            onPressed: () async {
-              await ref.read(livekitVoiceProvider.notifier).toggleVideo();
-            },
-            menuBuilder: (context) =>
-                _VideoSettingsMenu(voiceState: voiceState, ref: ref),
-          ),
-          // Camera flip (mobile only, visible when camera is on)
-          if (VoiceLoungeScreen._supportsCameraFlip &&
-              voiceState.isVideoEnabled) ...[
-            const SizedBox(width: 8),
-            _ControlButton(
-              icon: Icons.flip_camera_android,
-              label: 'Flip',
-              isActive: false,
-              activeColor: context.accent,
-              onPressed: () async {
-                await ref.read(livekitVoiceProvider.notifier).switchCamera();
-              },
-            ),
-          ],
-          // Screen share (split: main toggles share, dots open bitrate/fps)
-          // Hidden entirely on platforms that don't support screen share.
-          if (VoiceLoungeScreen._supportsScreenShare) ...[
-            gap,
-            _SplitControlButton(
-              icon: screenShare.isScreenSharing
-                  ? Icons.stop_screen_share
-                  : Icons.screen_share,
-              label: screenShare.isScreenSharing ? 'Stop Share' : 'Share',
-              isActive: screenShare.isScreenSharing,
-              activeColor: EchoTheme.online,
-              isCompact: isCompact,
-              onPressed: () async {
-                final lkNotifier = ref.read(livekitVoiceProvider.notifier);
-                final ssNotifier = ref.read(screenShareProvider.notifier);
-                if (screenShare.isScreenSharing) {
-                  await lkNotifier.setScreenShareEnabled(false);
-                  ssNotifier.setLiveKitScreenShareActive(false);
-                } else {
-                  final ok = await lkNotifier.setScreenShareEnabled(true);
-                  if (ok) {
-                    ssNotifier.setLiveKitScreenShareActive(true);
-                  } else if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Could not start screen sharing.'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  }
-                }
-              },
-              menuBuilder: (context) =>
-                  _VideoSettingsMenu(voiceState: voiceState, ref: ref),
-            ),
-          ],
+          _buildCameraButton(context, ref, isCompact),
+          ..._buildCameraFlipButton(context, ref),
+          ..._buildScreenShareButton(context, ref, isCompact, gap),
           gap,
-          // Hangup
-          _ControlButton(
-            icon: Icons.call_end,
-            label: 'Leave',
-            isActive: true,
-            activeColor: EchoTheme.danger,
-            isDestructive: true,
-            isCompact: isCompact,
-            onPressed: () async {
-              if (screenShare.isScreenSharing) {
-                await ref
-                    .read(livekitVoiceProvider.notifier)
-                    .setScreenShareEnabled(false);
-                ref
-                    .read(screenShareProvider.notifier)
-                    .setLiveKitScreenShareActive(false);
-              }
-              await ref
-                  .read(channelsProvider.notifier)
-                  .leaveVoiceChannel(conversationId, channelId);
-              await ref.read(livekitVoiceProvider.notifier).leaveChannel();
-            },
-          ),
+          _buildLeaveButton(context, ref, isCompact),
         ],
       ),
+    );
+  }
+
+  Widget _buildMuteButton(BuildContext context, WidgetRef ref, bool isCompact) {
+    return _SplitControlButton(
+      icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
+      label: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
+      isActive: voiceSettings.selfMuted,
+      activeColor: EchoTheme.danger,
+      isCompact: isCompact,
+      onPressed: () async {
+        final notifier = ref.read(voiceSettingsProvider.notifier);
+        final nextMuted = !voiceSettings.selfMuted;
+        await notifier.setSelfMuted(nextMuted);
+        ref
+            .read(livekitVoiceProvider.notifier)
+            .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
+      },
+      menuBuilder: (context) =>
+          _AudioProcessingMenu(voiceSettings: voiceSettings, ref: ref),
+    );
+  }
+
+  Widget _buildDeafenButton(
+    BuildContext context,
+    WidgetRef ref,
+    bool isCompact,
+  ) {
+    return _ControlButton(
+      icon: voiceSettings.selfDeafened ? Icons.headset_off : Icons.headset,
+      label: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
+      isActive: voiceSettings.selfDeafened,
+      activeColor: EchoTheme.danger,
+      isCompact: isCompact,
+      onPressed: () async {
+        final notifier = ref.read(voiceSettingsProvider.notifier);
+        final nextDeafened = !voiceSettings.selfDeafened;
+        await notifier.setSelfDeafened(nextDeafened);
+        await ref.read(livekitVoiceProvider.notifier).setDeafened(nextDeafened);
+      },
+    );
+  }
+
+  Widget _buildCameraButton(
+    BuildContext context,
+    WidgetRef ref,
+    bool isCompact,
+  ) {
+    return _SplitControlButton(
+      icon: voiceState.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
+      label: voiceState.isVideoEnabled ? 'Camera On' : 'Camera',
+      isActive: voiceState.isVideoEnabled,
+      activeColor: context.accent,
+      isCompact: isCompact,
+      onPressed: () async {
+        await ref.read(livekitVoiceProvider.notifier).toggleVideo();
+      },
+      menuBuilder: (context) =>
+          _VideoSettingsMenu(voiceState: voiceState, ref: ref),
+    );
+  }
+
+  List<Widget> _buildCameraFlipButton(BuildContext context, WidgetRef ref) {
+    if (!VoiceLoungeScreen._supportsCameraFlip || !voiceState.isVideoEnabled) {
+      return const [];
+    }
+    return [
+      const SizedBox(width: 8),
+      _ControlButton(
+        icon: Icons.flip_camera_android,
+        label: 'Flip',
+        isActive: false,
+        activeColor: context.accent,
+        onPressed: () async {
+          await ref.read(livekitVoiceProvider.notifier).switchCamera();
+        },
+      ),
+    ];
+  }
+
+  List<Widget> _buildScreenShareButton(
+    BuildContext context,
+    WidgetRef ref,
+    bool isCompact,
+    Widget gap,
+  ) {
+    if (!VoiceLoungeScreen._supportsScreenShare) return const [];
+    return [
+      gap,
+      _SplitControlButton(
+        icon: screenShare.isScreenSharing
+            ? Icons.stop_screen_share
+            : Icons.screen_share,
+        label: screenShare.isScreenSharing ? 'Stop Share' : 'Share',
+        isActive: screenShare.isScreenSharing,
+        activeColor: EchoTheme.online,
+        isCompact: isCompact,
+        onPressed: () async {
+          final lkNotifier = ref.read(livekitVoiceProvider.notifier);
+          final ssNotifier = ref.read(screenShareProvider.notifier);
+          if (screenShare.isScreenSharing) {
+            await lkNotifier.setScreenShareEnabled(false);
+            ssNotifier.setLiveKitScreenShareActive(false);
+          } else {
+            final ok = await lkNotifier.setScreenShareEnabled(true);
+            if (ok) {
+              ssNotifier.setLiveKitScreenShareActive(true);
+            } else if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Could not start screen sharing.'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          }
+        },
+        menuBuilder: (context) =>
+            _VideoSettingsMenu(voiceState: voiceState, ref: ref),
+      ),
+    ];
+  }
+
+  Widget _buildLeaveButton(
+    BuildContext context,
+    WidgetRef ref,
+    bool isCompact,
+  ) {
+    return _ControlButton(
+      icon: Icons.call_end,
+      label: 'Leave',
+      isActive: true,
+      activeColor: EchoTheme.danger,
+      isDestructive: true,
+      isCompact: isCompact,
+      onPressed: () async {
+        if (screenShare.isScreenSharing) {
+          await ref
+              .read(livekitVoiceProvider.notifier)
+              .setScreenShareEnabled(false);
+          ref
+              .read(screenShareProvider.notifier)
+              .setLiveKitScreenShareActive(false);
+        }
+        await ref
+            .read(channelsProvider.notifier)
+            .leaveVoiceChannel(conversationId, channelId);
+        await ref.read(livekitVoiceProvider.notifier).leaveChannel();
+      },
     );
   }
 }
