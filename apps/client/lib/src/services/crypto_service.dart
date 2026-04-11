@@ -640,12 +640,16 @@ class CryptoService {
 
     if (_identityKeyPair == null) await init();
 
-    // Fetch peer's PreKey bundle from server
-    final response = await http.get(
+    // Fetch peer's PreKey bundle from server (retry once on 401)
+    var response = await http.get(
       Uri.parse('$serverUrl/api/keys/bundle/$peerUserId'),
       headers: {'Authorization': 'Bearer $_token'},
     );
 
+    if (response.statusCode == 401) {
+      // Token may be stale — caller should refresh and retry
+      throw Exception('Auth expired fetching keys for $peerUserId');
+    }
     if (response.statusCode != 200) {
       throw Exception('Failed to fetch keys for $peerUserId: ${response.body}');
     }
@@ -868,8 +872,12 @@ class CryptoService {
         if (bobOtp != null) {
           debugPrint('[Crypto] Using OTP key_id=$otpKeyId for 4-DH');
         } else {
-          debugPrint(
-            '[Crypto] OTP key_id=$otpKeyId not found -- 3-DH fallback',
+          // V2 means Alice used 4-DH with this OTP. If Bob can't find it,
+          // the shared secrets will NOT match (Alice has DH4 entropy, Bob
+          // doesn't). Fail cleanly rather than creating a broken session.
+          throw Exception(
+            'OTP key_id=$otpKeyId not found. '
+            'Ask the sender to resend the message.',
           );
         }
       } else {
@@ -1023,8 +1031,13 @@ class CryptoService {
   /// [getOrCreateSession] will re-fetch from the server and create a new session.
   Future<void> invalidateSessionKey(String peerUserId) async {
     _sessions.remove(peerUserId);
+    _corruptedSessions.remove(peerUserId);
     final store = SecureKeyStore.instance;
     await store.delete('$_sessionPrefix$peerUserId');
+    await store.delete('${_sessionPrefix}corrupt_$peerUserId');
+    // Also clear the cached peer identity key so it's re-fetched with the new
+    // bundle on next session establishment.
+    await store.delete('$_peerIdentityPrefix$peerUserId');
   }
 
   /// Reset all keys: delete identity + session keys, regenerate, and upload.

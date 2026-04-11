@@ -314,6 +314,12 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     if (msg.contains('cannot decrypt') || msg.contains('Could not decrypt')) {
       return 'Message could not be decrypted.';
     }
+    if (msg.contains('OTP key_id') && msg.contains('not found')) {
+      return 'Encryption key mismatch. Ask the other person to resend.';
+    }
+    if (msg.contains('Auth expired')) {
+      return 'Session expired. Please try again.';
+    }
     return 'Message could not be secured. Tap to retry.';
   }
 
