@@ -867,7 +867,10 @@ async fn fanout_message(
                 reply_to_content.clone(),
                 reply_to_username.clone(),
             ),
-            _ => unreachable!("fanout_message always receives NewMessage"),
+            _ => {
+                tracing::error!("fanout_message called with non-NewMessage variant");
+                return;
+            }
         };
 
     // Legacy fallback JSON (used when no device_contents or for non-DM group messages)
