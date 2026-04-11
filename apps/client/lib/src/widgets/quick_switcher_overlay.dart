@@ -65,6 +65,78 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
     );
   }
 
+  /// Handle keyboard navigation (arrows + escape) in the switcher.
+  void _handleKeyNavigation(KeyEvent event) {
+    if (event is! KeyDownEvent) return;
+    final results = _filteredResults();
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      setState(() {
+        _selectedIndex = (_selectedIndex + 1).clamp(0, results.length - 1);
+      });
+      _scrollToSelected();
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      setState(() {
+        _selectedIndex = (_selectedIndex - 1).clamp(0, results.length - 1);
+      });
+      _scrollToSelected();
+    } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  /// Build a single result row in the conversation list.
+  Widget _buildResultItem(Conversation conv, bool isSelected) {
+    final title = conv.name ?? conv.id;
+    return Container(
+      height: _itemHeight,
+      decoration: isSelected
+          ? BoxDecoration(
+              border: Border(left: BorderSide(color: context.accent, width: 2)),
+            )
+          : null,
+      child: Material(
+        color: isSelected
+            ? context.accent.withValues(alpha: 0.1)
+            : Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            widget.onSelect(conv);
+            Navigator.of(context).pop();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  conv.isGroup ? Icons.group : Icons.person,
+                  size: 20,
+                  color: context.textSecondary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (conv.isGroup)
+                  Text(
+                    'Group',
+                    style: TextStyle(color: context.textMuted, fontSize: 11),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final results = _filteredResults();
@@ -72,23 +144,7 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
     return KeyboardListener(
       focusNode: FocusNode(),
       autofocus: true,
-      onKeyEvent: (event) {
-        if (event is! KeyDownEvent) return;
-        final results = _filteredResults();
-        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-          setState(() {
-            _selectedIndex = (_selectedIndex + 1).clamp(0, results.length - 1);
-          });
-          _scrollToSelected();
-        } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-          setState(() {
-            _selectedIndex = (_selectedIndex - 1).clamp(0, results.length - 1);
-          });
-          _scrollToSelected();
-        } else if (event.logicalKey == LogicalKeyboardKey.escape) {
-          Navigator.of(context).pop();
-        }
-      },
+      onKeyEvent: _handleKeyNavigation,
       child: GestureDetector(
         onTap: () => Navigator.of(context).pop(),
         child: Material(
@@ -114,7 +170,6 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Search input
                     Padding(
                       padding: const EdgeInsets.all(12),
                       child: TextField(
@@ -153,7 +208,6 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
                         onSubmitted: (_) => _selectCurrent(results),
                       ),
                     ),
-                    // Results list
                     if (results.isEmpty)
                       Padding(
                         padding: const EdgeInsets.all(24),
@@ -170,75 +224,12 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
                         child: ListView.builder(
                           controller: _listScrollController,
                           itemCount: results.length,
-                          itemBuilder: (context, index) {
-                            final conv = results[index];
-                            final isSelected = index == _selectedIndex;
-                            final title = conv.name ?? conv.id;
-                            return Container(
-                              height: _itemHeight,
-                              decoration: isSelected
-                                  ? BoxDecoration(
-                                      border: Border(
-                                        left: BorderSide(
-                                          color: context.accent,
-                                          width: 2,
-                                        ),
-                                      ),
-                                    )
-                                  : null,
-                              child: Material(
-                                color: isSelected
-                                    ? context.accent.withValues(alpha: 0.1)
-                                    : Colors.transparent,
-                                child: InkWell(
-                                  onTap: () {
-                                    widget.onSelect(conv);
-                                    Navigator.of(context).pop();
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 10,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          conv.isGroup
-                                              ? Icons.group
-                                              : Icons.person,
-                                          size: 20,
-                                          color: context.textSecondary,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Text(
-                                            title,
-                                            style: TextStyle(
-                                              color: context.textPrimary,
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        if (conv.isGroup)
-                                          Text(
-                                            'Group',
-                                            style: TextStyle(
-                                              color: context.textMuted,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
+                          itemBuilder: (context, index) => _buildResultItem(
+                            results[index],
+                            index == _selectedIndex,
+                          ),
                         ),
                       ),
-                    // Hint
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                       child: Text(

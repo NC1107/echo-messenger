@@ -1078,10 +1078,7 @@ class _RemoteScreenShares extends StatelessWidget {
             Positioned(
               top: 8,
               left: 12,
-              child: _buildScreenShareBadge(
-                context,
-                screenShareName,
-              ),
+              child: _buildScreenShareBadge(context, screenShareName),
             ),
           ],
         ),
