@@ -60,6 +60,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let allowed_headers = [header::CONTENT_TYPE, header::AUTHORIZATION];
 
     let cors = if cors_origins == "*" {
+        tracing::warn!(
+            "CORS_ORIGINS is set to '*' — allowing all origins. \
+             This is insecure for production. Set explicit origins."
+        );
         CorsLayer::new()
             .allow_origin(AllowOrigin::any())
             .allow_methods(allowed_methods)

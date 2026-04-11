@@ -142,43 +142,20 @@ async fn cleanup_empty_groups(pool: &PgPool) {
 
 /// Delete all dependent rows for a group conversation, then delete the conversation itself.
 async fn delete_group_dependents(pool: &PgPool, gid: uuid::Uuid) {
-    let _ = sqlx::query(
-        "DELETE FROM voice_sessions WHERE channel_id IN \
-         (SELECT id FROM channels WHERE conversation_id = $1)",
-    )
-    .bind(gid)
-    .execute(pool)
-    .await;
-    let _ = sqlx::query("DELETE FROM channels WHERE conversation_id = $1")
-        .bind(gid)
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("DELETE FROM messages WHERE conversation_id = $1")
-        .bind(gid)
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("DELETE FROM group_key_envelopes WHERE conversation_id = $1")
-        .bind(gid)
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("DELETE FROM group_keys WHERE conversation_id = $1")
-        .bind(gid)
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("DELETE FROM banned_members WHERE conversation_id = $1")
-        .bind(gid)
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("DELETE FROM read_receipts WHERE conversation_id = $1")
-        .bind(gid)
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("DELETE FROM media WHERE conversation_id = $1")
-        .bind(gid)
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("DELETE FROM conversations WHERE id = $1")
-        .bind(gid)
-        .execute(pool)
-        .await;
+    let tables = [
+        "DELETE FROM voice_sessions WHERE channel_id IN (SELECT id FROM channels WHERE conversation_id = $1)",
+        "DELETE FROM channels WHERE conversation_id = $1",
+        "DELETE FROM messages WHERE conversation_id = $1",
+        "DELETE FROM group_key_envelopes WHERE conversation_id = $1",
+        "DELETE FROM group_keys WHERE conversation_id = $1",
+        "DELETE FROM banned_members WHERE conversation_id = $1",
+        "DELETE FROM read_receipts WHERE conversation_id = $1",
+        "DELETE FROM media WHERE conversation_id = $1",
+        "DELETE FROM conversations WHERE id = $1",
+    ];
+    for sql in tables {
+        if let Err(e) = sqlx::query(sql).bind(gid).execute(pool).await {
+            tracing::error!("Failed to clean up group {gid}: {e} (query: {sql})");
+        }
+    }
 }

@@ -27,24 +27,28 @@ pub async fn ws_upgrade(
     State(state): State<Arc<AppState>>,
     Query(params): Query<WsParams>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Look up and consume the ticket (single-use).
-    // Opportunistic cleanup of expired tickets.
+    // Atomically remove and validate the ticket in a single DashMap operation.
+    // This eliminates the TOCTOU race between retain() and remove().
     let now = Instant::now();
-    state
-        .ticket_store
-        .retain(|_, (_, _, ts)| now.duration_since(*ts) < TICKET_TTL);
-
-    let (_, (user_id, device_id, created_at)) = state
-        .ticket_store
-        .remove(&params.ticket)
-        .ok_or_else(|| AppError::unauthorized("Invalid or expired WebSocket ticket"))?;
-
-    // Verify the ticket hasn't expired (belt-and-suspenders after cleanup).
-    if Instant::now().duration_since(created_at) >= TICKET_TTL {
-        return Err(AppError::unauthorized(
-            "Invalid or expired WebSocket ticket",
-        ));
-    }
+    let (user_id, device_id) = {
+        let entry = state
+            .ticket_store
+            .remove_if(&params.ticket, |_, (_, _, created_at)| {
+                now.duration_since(*created_at) < TICKET_TTL
+            });
+        match entry {
+            Some((_, (uid, did, _))) => (uid, did),
+            None => {
+                // Opportunistic cleanup of other expired tickets
+                state
+                    .ticket_store
+                    .retain(|_, (_, _, ts)| now.duration_since(*ts) < TICKET_TTL);
+                return Err(AppError::unauthorized(
+                    "Invalid or expired WebSocket ticket",
+                ));
+            }
+        }
+    };
 
     let user = db::users::find_by_id(&state.pool, user_id)
         .await

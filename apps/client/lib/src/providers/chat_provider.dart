@@ -194,9 +194,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
     state = state.withMessage(msg);
 
+    // Cancel any existing timer for this ID (defensive, prevents orphans).
+    _sendTimeouts.remove(pendingId)?.cancel();
     // Start a 15-second timeout — if no confirmSent() arrives, mark failed.
     _sendTimeouts[pendingId] = Timer(const Duration(seconds: 15), () {
-      _sendTimeouts.remove(pendingId);
+      // Atomically remove: if already cancelled by confirmSent(), skip.
+      final removed = _sendTimeouts.remove(pendingId);
+      if (removed == null) return; // timer was already cancelled
       _transitionToFailed(conversationId, pendingId, content);
     });
   }

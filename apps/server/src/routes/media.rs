@@ -159,15 +159,22 @@ pub async fn upload(
         }
 
         // Validate actual file type via magic bytes — don't trust client MIME header
-        if let Some(inferred) = infer::get(&data) {
-            let inferred_mime = inferred.mime_type();
-            if !ALLOWED_MIME_TYPES.contains(&inferred_mime) {
-                return Err(AppError::bad_request(format!(
-                    "Detected file type '{inferred_mime}' is not allowed"
-                )));
+        match infer::get(&data) {
+            Some(inferred) => {
+                let inferred_mime = inferred.mime_type();
+                if !ALLOWED_MIME_TYPES.contains(&inferred_mime) {
+                    return Err(AppError::bad_request(format!(
+                        "Detected file type '{inferred_mime}' is not allowed"
+                    )));
+                }
+                mime_type = inferred_mime.to_string();
             }
-            // Use the inferred MIME instead of the client-supplied one
-            mime_type = inferred_mime.to_string();
+            None => {
+                // Unrecognized file type — reject to prevent bypass
+                return Err(AppError::bad_request(
+                    "Could not detect file type from content. Upload a supported format.",
+                ));
+            }
         }
 
         file_data = Some((original_filename, mime_type, data));
