@@ -53,3 +53,8 @@ reqwest = { version = "0.12", features = ["json"] }
 
 [dev-dependencies]
 tokio-tungstenite = "0.26"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "hub"
+harness = false

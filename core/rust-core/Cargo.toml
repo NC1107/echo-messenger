@@ -34,3 +34,10 @@ ed25519-dalek = { version = "2", features = ["serde"] }
 aes-gcm = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "crypto"
+harness = false
