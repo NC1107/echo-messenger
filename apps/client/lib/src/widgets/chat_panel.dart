@@ -183,6 +183,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
       Future<void> settleIfNeeded() async {
         if (settleRetries <= 0 || !_scrollController.hasClients) return;
+        // Wait for layout to settle so maxScrollExtent includes new content
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        if (!_scrollController.hasClients) return;
+        final newTarget = _scrollController.position.maxScrollExtent;
+        if ((newTarget - _scrollController.position.pixels).abs() > 1) {
+          _scrollController.jumpTo(newTarget);
+        }
         await Future<void>.delayed(const Duration(milliseconds: 100));
         _scrollToBottom(animated: false, settleRetries: settleRetries - 1);
       }
@@ -1094,7 +1101,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         key: const ValueKey('list'),
         child: ListView.builder(
           controller: _scrollController,
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: 16),
           itemCount: messages.length + 1,
           itemBuilder: (context, index) {
             if (index == 0) {
