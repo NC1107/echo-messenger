@@ -133,4 +133,45 @@ class SecureKeyStore {
       return false;
     }
   }
+
+  // -- Global-scope methods (no user prefix) --
+  //
+  // Used for pre-login data such as auth tokens that must be persisted
+  // before user scope is established (e.g. after server-side token
+  // rotation but before _setUserScope completes).
+
+  /// Read a global (non-user-scoped) value by key.
+  ///
+  /// Throws on backend failure so callers can distinguish "not found" (null)
+  /// from "storage unavailable".
+  Future<String?> readGlobal(String key) async {
+    try {
+      return await _storage.read(key: key);
+    } catch (e) {
+      debugPrint('[SecureKeyStore] readGlobal($key) failed: $e');
+      rethrow;
+    }
+  }
+
+  /// Write a global (non-user-scoped) key-value pair.
+  ///
+  /// Throws on backend failure so callers can fall back to less-secure
+  /// storage rather than silently losing the value.
+  Future<void> writeGlobal(String key, String value) async {
+    try {
+      await _storage.write(key: key, value: value);
+    } catch (e) {
+      debugPrint('[SecureKeyStore] writeGlobal($key) failed: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a global (non-user-scoped) key. Swallows errors.
+  Future<void> deleteGlobal(String key) async {
+    try {
+      await _storage.delete(key: key);
+    } catch (e) {
+      debugPrint('[SecureKeyStore] deleteGlobal($key) failed: $e');
+    }
+  }
 }

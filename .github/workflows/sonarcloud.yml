@@ -5,6 +5,10 @@ on:
   push:
     branches: [main, dev]
 
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   group: sonar-${{ github.ref }}
   cancel-in-progress: true
@@ -32,15 +36,17 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
 
       # -- Rust coverage --
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: sonarcloud
       - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin --locked
       - name: Generate Rust coverage
         run: |
           cargo tarpaulin --workspace --out lcov --output-dir coverage/rust
@@ -49,7 +55,7 @@ jobs:
           JWT_SECRET: ci-test-secret-do-not-use-in-production
 
       # -- Flutter coverage --
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
@@ -61,7 +67,7 @@ jobs:
           flutter test --coverage
 
       # -- SonarCloud scan --
-      - uses: SonarSource/sonarqube-scan-action@v6
+      - uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io

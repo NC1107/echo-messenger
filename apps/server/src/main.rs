@@ -49,6 +49,8 @@ async fn main() {
             interval.tick().await;
             cleanup_stale_voice_sessions(&cleanup_pool, &cleanup_hub).await;
             cleanup_empty_groups(&cleanup_pool).await;
+            cleanup_expired_tokens(&cleanup_pool).await;
+            cleanup_used_prekeys(&cleanup_pool).await;
         }
     });
 
@@ -137,6 +139,43 @@ async fn cleanup_empty_groups(pool: &PgPool) {
 
     for (gid,) in &empty_group_ids {
         delete_group_dependents(pool, *gid).await;
+    }
+}
+
+/// Remove expired or revoked refresh tokens to prevent unbounded table growth.
+async fn cleanup_expired_tokens(pool: &PgPool) {
+    let result = sqlx::query(
+        "DELETE FROM refresh_tokens \
+         WHERE expires_at < now() - interval '7 days' \
+            OR (revoked = true AND created_at < now() - interval '1 day')",
+    )
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(r) if r.rows_affected() > 0 => {
+            tracing::info!(
+                "Cleaned {} expired/revoked refresh tokens",
+                r.rows_affected()
+            );
+        }
+        Err(e) => tracing::warn!("Refresh token cleanup error: {e}"),
+        _ => {}
+    }
+}
+
+/// Remove consumed one-time prekeys that are no longer needed.
+async fn cleanup_used_prekeys(pool: &PgPool) {
+    let result = sqlx::query("DELETE FROM one_time_prekeys WHERE used = true")
+        .execute(pool)
+        .await;
+
+    match result {
+        Ok(r) if r.rows_affected() > 0 => {
+            tracing::info!("Cleaned {} used one-time prekeys", r.rows_affected());
+        }
+        Err(e) => tracing::warn!("One-time prekey cleanup error: {e}"),
+        _ => {}
     }
 }
 

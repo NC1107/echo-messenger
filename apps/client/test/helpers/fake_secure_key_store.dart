@@ -25,6 +25,21 @@ class FakeSecureKeyStore extends SecureKeyStore {
   @override
   Future<bool> containsKey(String key) async => _store.containsKey(key);
 
+  // -- Global-scope overrides (same flat map, no prefix) --
+
+  @override
+  Future<String?> readGlobal(String key) async => _store[key];
+
+  @override
+  Future<void> writeGlobal(String key, String value) async {
+    _store[key] = value;
+  }
+
+  @override
+  Future<void> deleteGlobal(String key) async {
+    _store.remove(key);
+  }
+
   /// Dump all keys for debugging.
   Map<String, String> get dump => Map.unmodifiable(_store);
 }
