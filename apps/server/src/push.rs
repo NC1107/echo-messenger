@@ -193,6 +193,24 @@ struct ApnsPushParams<'a> {
     message_id: Uuid,
 }
 
+/// Build the notification body text.
+///
+/// - Encrypted messages get a fixed placeholder (server can't read ciphertext).
+/// - Plaintext longer than 140 bytes is truncated at a character boundary
+///   to avoid slicing through a multi-byte UTF-8 sequence.
+fn format_push_body(content: &str, is_encrypted: bool) -> String {
+    const MAX_PREVIEW_BYTES: usize = 140;
+
+    if is_encrypted {
+        "Encrypted message".to_string()
+    } else if content.len() > MAX_PREVIEW_BYTES {
+        let end = content.floor_char_boundary(MAX_PREVIEW_BYTES);
+        format!("{}...", &content[..end])
+    } else {
+        content.to_string()
+    }
+}
+
 /// Send an APNs push notification to an iOS device.
 ///
 /// - **Encrypted DMs**: Shows "Encrypted message" as the body (server can't
@@ -217,15 +235,7 @@ async fn send_apns_push(p: ApnsPushParams<'_>) {
 
     let url = format!("https://api.push.apple.com/3/device/{}", p.device_token);
 
-    // Encrypted DMs: server can't read content, show generic body.
-    // Plaintext: show a truncated preview.
-    let body = if p.is_encrypted {
-        "Encrypted message".to_string()
-    } else if p.content.len() > 140 {
-        format!("{}...", &p.content[..140])
-    } else {
-        p.content.to_string()
-    };
+    let body = format_push_body(p.content, p.is_encrypted);
 
     let payload = serde_json::json!({
         "aps": {
@@ -276,5 +286,81 @@ async fn send_apns_push(p: ApnsPushParams<'_>) {
         Err(e) => {
             tracing::warn!("APNs HTTP request failed for user {}: {e}", p.user_id);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encrypted_message_returns_placeholder() {
+        assert_eq!(format_push_body("secret stuff", true), "Encrypted message");
+    }
+
+    #[test]
+    fn short_plaintext_returned_as_is() {
+        assert_eq!(format_push_body("hello", false), "hello");
+    }
+
+    #[test]
+    fn ascii_over_140_truncated_with_ellipsis() {
+        let long = "a".repeat(200);
+        let body = format_push_body(&long, false);
+        assert!(body.ends_with("..."));
+        // 140 chars of 'a' + "..."
+        assert_eq!(body.len(), 143);
+    }
+
+    #[test]
+    fn emoji_over_140_truncated_without_panic() {
+        // Each emoji is 4 bytes; 36 emojis = 144 bytes (> 140).
+        let emojis = "\u{1F600}".repeat(36);
+        assert_eq!(emojis.len(), 144);
+        let body = format_push_body(&emojis, false);
+        assert!(body.ends_with("..."));
+        // floor_char_boundary(140) for 4-byte chars = 140 -> lands at byte 140
+        // which is the start of the 36th emoji, so we keep 35 emojis (140 bytes).
+        assert_eq!(body, format!("{}...", "\u{1F600}".repeat(35)));
+    }
+
+    #[test]
+    fn multibyte_boundary_mid_char_no_panic() {
+        // "e\u{0301}" = 'e' (1 byte) + combining acute U+0301 (2 bytes) = 3 bytes per unit.
+        // 47 units = 141 bytes (> 140). Byte 140 is 0x81, the continuation byte of the
+        // 47th combining accent. floor_char_boundary(140) = 139, the start of that accent.
+        let accent = "e\u{0301}".repeat(47); // 141 bytes
+        assert_eq!(accent.len(), 141);
+        let body = format_push_body(&accent, false);
+        assert!(body.ends_with("..."));
+        // 139 content bytes + 3 "..." = 142 bytes total.
+        assert_eq!(body.len(), 142);
+    }
+
+    #[test]
+    fn exactly_140_bytes_no_truncation() {
+        let exact = "a".repeat(140);
+        assert_eq!(format_push_body(&exact, false), exact);
+    }
+
+    #[test]
+    fn exactly_141_bytes_truncated() {
+        let over = "a".repeat(141);
+        let body = format_push_body(&over, false);
+        assert!(body.ends_with("..."));
+        assert_eq!(body, format!("{}...", "a".repeat(140)));
+    }
+
+    #[test]
+    fn empty_string_returned_as_is() {
+        assert_eq!(format_push_body("", false), "");
+    }
+
+    #[test]
+    fn encrypted_with_long_content_still_returns_placeholder() {
+        assert_eq!(
+            format_push_body(&"x".repeat(200), true),
+            "Encrypted message"
+        );
     }
 }
