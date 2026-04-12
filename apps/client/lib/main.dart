@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SemanticsBinding;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -54,8 +55,11 @@ Future<void> _initAndRun() async {
   // Load persisted server URL before any network calls
   await container.read(serverUrlProvider.notifier).load();
 
-  // For web: check URL query params to allow overriding the server URL
+  // For web: enable semantics tree so Playwright E2E tests can use
+  // ARIA locators (getByRole, getByLabel) instead of pixel coordinates.
+  // Also check URL query params for server URL override.
   if (kIsWeb) {
+    SemanticsBinding.instance.ensureSemantics();
     await BrowserContextMenu.disableContextMenu();
 
     final serverParam = Uri.base.queryParameters['server'];

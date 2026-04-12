@@ -1188,25 +1188,32 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
     return Padding(
       padding: const EdgeInsets.only(right: 4),
-      child: GestureDetector(
-        onTap: canSend ? _resolvedSendAction() : null,
-        child: Opacity(
-          opacity: canSend ? 1 : 0.30,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Center(
-              child: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: buttonColor,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _isEditing ? Icons.check_rounded : Icons.arrow_upward_rounded,
-                  size: 18,
-                  color: Colors.white,
+      child: Semantics(
+        label: _isEditing ? 'Confirm edit' : 'Send message',
+        button: true,
+        enabled: canSend,
+        child: GestureDetector(
+          onTap: canSend ? _resolvedSendAction() : null,
+          child: Opacity(
+            opacity: canSend ? 1 : 0.30,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Center(
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: buttonColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _isEditing
+                        ? Icons.check_rounded
+                        : Icons.arrow_upward_rounded,
+                    size: 18,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ),
