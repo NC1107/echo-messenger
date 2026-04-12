@@ -42,6 +42,8 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: release-lint
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Rust tests
@@ -161,6 +163,7 @@ jobs:
           path: |
             echo-linux-x64.tar.gz
             Echo-x86_64.AppImage
+          retention-days: 3
 
   build-windows:
     name: Build Windows Desktop
@@ -221,6 +224,7 @@ jobs:
           path: |
             Echo-Setup-x64.exe
             echo-windows-x64-portable.zip
+          retention-days: 3
 
   build-android:
     name: Build Android APK
@@ -257,6 +261,7 @@ jobs:
         with:
           name: release-android
           path: echo-android-*.apk
+          retention-days: 3
 
   build-ios:
     name: Build iOS IPA
@@ -343,6 +348,7 @@ jobs:
         with:
           name: release-ios
           path: echo-ios-*.ipa
+          retention-days: 3
       - name: Clean up signing
         if: always()
         run: |
@@ -357,6 +363,8 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: release-build
       - name: Set version in Cargo.toml
         run: |
           sed -i 's/^version = ".*"/version = "${{ needs.version.outputs.version }}"/' apps/server/Cargo.toml
@@ -375,6 +383,7 @@ jobs:
         with:
           name: release-server
           path: echo-server-linux-x64.tar.gz
+          retention-days: 3
 
   docker:
     name: Build Docker Image
@@ -433,6 +442,7 @@ jobs:
         with:
           name: release-web
           path: echo-web.tar.gz
+          retention-days: 3
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:

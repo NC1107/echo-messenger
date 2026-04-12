@@ -7,6 +7,9 @@ on:
     branches: [main, dev]
     paths: ["apps/client/**"]
 
+permissions:
+  contents: read
+
 concurrency:
   group: flutter-ci-${{ github.ref }}
   cancel-in-progress: true
@@ -43,4 +46,3 @@ jobs:
           files: apps/client/coverage/lcov.info
           flags: flutter
           fail_ci_if_error: false
-        continue-on-error: true
