@@ -264,11 +264,13 @@ pub async fn request_media_ticket(
 }
 
 /// Query param for media download -- accepts `?ticket=` (single-use media
-/// ticket) or legacy `?token=` (validated as media ticket, not JWT).
+/// ticket), legacy `?token=` (validated as media ticket, not JWT), or
+/// `?jwt=` (for web clients where <img> tags cannot send auth headers).
 #[derive(Debug, Deserialize)]
 pub struct MediaDownloadQuery {
     pub ticket: Option<String>,
     pub token: Option<String>,
+    pub jwt: Option<String>,
 }
 
 /// GET /api/media/:id
@@ -294,7 +296,13 @@ pub async fn download(
         Uuid::parse_str(&claims.sub)
             .map_err(|_| AppError::unauthorized("Invalid user ID in token"))?
     }
-    // 2. Try ?ticket= or legacy ?token= as media ticket
+    // 2. Try ?jwt= query param (for web clients where <img> tags cannot send headers)
+    else if let Some(jwt_str) = &query.jwt {
+        let claims = jwt::validate_token(jwt_str, &state.jwt_secret)?;
+        Uuid::parse_str(&claims.sub)
+            .map_err(|_| AppError::unauthorized("Invalid user ID in token"))?
+    }
+    // 3. Try ?ticket= or legacy ?token= as media ticket
     else if let Some(ticket_str) = query.ticket.or(query.token) {
         validate_media_ticket(&state, &ticket_str)?
     } else {

@@ -124,6 +124,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
         final userId = data['user_id'] as String? ?? storedUserId ?? '';
         final username = data['username'] as String? ?? storedUsername ?? '';
 
+        // Persist new tokens BEFORE any other async work. The server
+        // already revoked the old refresh token during rotation, so if
+        // _setUserScope throws (e.g. Hive/IndexedDB error on web) or the
+        // page is refreshed before we finish, the new token is safe in
+        // localStorage and the next auto-login attempt will succeed.
+        await _storeTokens(
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+          userId: userId,
+          username: username,
+        );
+
         await _setUserScope(userId);
         state = AuthState(
           isLoggedIn: true,
@@ -131,13 +143,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
           username: username,
           token: newAccessToken,
           refreshToken: newRefreshToken,
-        );
-
-        await _storeTokens(
-          accessToken: newAccessToken,
-          refreshToken: newRefreshToken,
-          userId: userId,
-          username: username,
         );
         return true;
       } else {
@@ -257,7 +262,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final host = Uri.parse(_serverUrl).host;
     SecureKeyStore.instance.setUserScope(userId, host);
     await UserDataDir.instance.setUser(userId, _serverUrl);
-    await MessageCache.initForUser(userId, host);
+    try {
+      await MessageCache.initForUser(userId, host);
+    } catch (e) {
+      // Non-fatal: fall back to the default shared message cache.
+      // On web, Hive/IndexedDB box close/reopen can fail during
+      // page refresh; this must not prevent login.
+      debugPrint('[Auth] MessageCache.initForUser failed (non-fatal): $e');
+    }
   }
 
   /// Clear all stored tokens.
@@ -299,6 +311,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
         final refreshToken = data['refresh_token'] as String?;
         final userId = data['user_id'] as String;
 
+        await _storeTokens(
+          accessToken: accessToken,
+          refreshToken: refreshToken ?? '',
+          userId: userId,
+          username: username,
+        );
+
         await _setUserScope(userId);
         state = AuthState(
           isLoggedIn: true,
@@ -306,13 +325,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
           username: username,
           token: accessToken,
           refreshToken: refreshToken,
-        );
-
-        await _storeTokens(
-          accessToken: accessToken,
-          refreshToken: refreshToken ?? '',
-          userId: userId,
-          username: username,
         );
       } else {
         String errorMsg = 'Registration failed';
@@ -349,6 +361,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
         final userId = data['user_id'] as String;
         final avatarUrl = data['avatar_url'] as String?;
 
+        await _storeTokens(
+          accessToken: accessToken,
+          refreshToken: refreshToken ?? '',
+          userId: userId,
+          username: username,
+        );
+
         await _setUserScope(userId);
         state = AuthState(
           isLoggedIn: true,
@@ -357,13 +376,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
           token: accessToken,
           refreshToken: refreshToken,
           avatarUrl: avatarUrl,
-        );
-
-        await _storeTokens(
-          accessToken: accessToken,
-          refreshToken: refreshToken ?? '',
-          userId: userId,
-          username: username,
         );
 
         // Start background service to keep WebSocket alive on mobile

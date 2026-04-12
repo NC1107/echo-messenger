@@ -274,8 +274,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                       onPageChanged: (i) => setState(() => _currentPage = i),
                       children: [
                         _buildWelcomePage(context),
-                        _buildAppearancePage(context),
                         _buildAboutYouPage(context),
+                        _buildAppearancePage(context),
                         _buildContactPage(context),
                       ],
                     ),
