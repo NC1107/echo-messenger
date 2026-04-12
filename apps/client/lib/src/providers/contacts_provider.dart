@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/contact.dart';
+import '../services/debug_log_service.dart';
 import 'auth_provider.dart';
 import 'conversations_provider.dart';
 import 'server_url_provider.dart';
@@ -110,6 +111,11 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
       }
     } catch (e) {
       debugPrint('[Contacts] loadPending failed: $e');
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'Contacts',
+        'loadPending failed: $e',
+      );
     } finally {
       _isPendingLoadInFlight = false;
       _lastPendingLoadedAt = DateTime.now();
@@ -155,6 +161,11 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
       ref.read(conversationsProvider.notifier).loadConversations();
     } catch (e) {
       debugPrint('[Contacts] acceptRequest failed for $contactId: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Contacts',
+        'acceptRequest failed for $contactId: $e',
+      );
     }
   }
 }

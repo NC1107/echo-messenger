@@ -172,13 +172,17 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         } else {
           context.go('/home?conversation=${conv.id}');
         }
-      } else {
-        ToastService.show(
-          context,
-          'Could not start conversation',
-          type: ToastType.error,
-        );
       }
+    } on DmException catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, e.message, type: ToastType.error);
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(
+        context,
+        'Could not start conversation',
+        type: ToastType.error,
+      );
     } finally {
       if (mounted) {
         setState(() => _isStartingDm = false);

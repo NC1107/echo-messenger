@@ -332,13 +332,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   /// Called from the Contacts tab in the sidebar when "Message" is tapped.
   Future<void> _messageContact(String userId, String username) async {
-    final conv = await ref
-        .read(conversationsProvider.notifier)
-        .getOrCreateDm(userId, username);
-    if (!mounted) return;
-    if (conv != null) {
-      _selectConversation(conv);
-    } else {
+    try {
+      final conv = await ref
+          .read(conversationsProvider.notifier)
+          .getOrCreateDm(userId, username);
+      if (!mounted) return;
+      if (conv != null) {
+        _selectConversation(conv);
+      }
+    } on DmException catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, e.message, type: ToastType.error);
+    } catch (e) {
+      if (!mounted) return;
       ToastService.show(
         context,
         'Could not start conversation',

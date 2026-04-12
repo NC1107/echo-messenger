@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/debug_log_service.dart';
 import '../theme/echo_theme.dart';
 
 enum ToastType { success, error, info, warning }
@@ -15,6 +16,14 @@ class ToastService {
     String message, {
     ToastType type = ToastType.info,
   }) {
+    // Mirror error and warning toasts into the debug log so they are always
+    // visible in Settings > Debug Logs, even if the on-screen toast was missed.
+    if (type == ToastType.error) {
+      DebugLogService.instance.log(LogLevel.error, 'UI', message);
+    } else if (type == ToastType.warning) {
+      DebugLogService.instance.log(LogLevel.warning, 'UI', message);
+    }
+
     // Remove any existing toast immediately.
     _dismiss();
 

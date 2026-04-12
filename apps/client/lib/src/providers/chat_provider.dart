@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
+import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
 import '../services/message_cache.dart';
 import '../utils/crypto_utils.dart';
@@ -374,6 +375,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
         '[Chat] loadHistoryWithUserId failed for '
         '$conversationId: $e',
       );
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Chat',
+        'loadHistory failed for $conversationId: $e',
+      );
     } finally {
       _setLoadingHistory(historyKey, false);
     }
@@ -464,6 +470,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return msg.copyWith(content: decrypted, isEncrypted: true);
     } catch (e) {
       debugPrint('[Chat] Group history decrypt failed for ${msg.id}: $e');
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'Chat',
+        'Group decrypt failed for ${msg.id}: $e',
+      );
       return msg.copyWith(
         content: '[Could not decrypt group message]',
         isEncrypted: true,
