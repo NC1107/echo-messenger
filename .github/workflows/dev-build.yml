@@ -9,6 +9,9 @@ on:
       - 'research/**'
       - 'context/**'
 
+permissions:
+  contents: read
+
 concurrency:
   group: dev-build-${{ github.ref }}
   cancel-in-progress: true
