@@ -679,6 +679,30 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
   }
 
+  /// Remove all cached messages for a conversation (e.g. after leaving it).
+  void clearConversation(String conversationId) {
+    final updatedConv = Map<String, List<ChatMessage>>.from(
+      state.messagesByConversation,
+    );
+    updatedConv.remove(conversationId);
+
+    final updatedIndex = Map<String, Set<String>>.from(state._messageIdIndex);
+    updatedIndex.remove(conversationId);
+
+    // Cancel any pending send timers for this conversation.
+    final pending = state
+        .messagesForConversation(conversationId)
+        .where((m) => m.id.startsWith('pending_'));
+    for (final m in pending) {
+      _sendTimeouts.remove(m.id)?.cancel();
+    }
+
+    state = state.copyWith(
+      messagesByConversation: updatedConv,
+      messageIdIndex: updatedIndex,
+    );
+  }
+
   /// Update a message's content and set editedAt.
   void editMessage(
     String conversationId,

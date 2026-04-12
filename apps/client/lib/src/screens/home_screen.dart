@@ -705,6 +705,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (fresh != null && fresh != _selectedConversation) {
       _selectedConversation = fresh;
     }
+    // If the conversation was permanently removed (e.g. user left it),
+    // clear selection so mobile doesn't get stuck showing a stale panel.
+    if (fresh == null && convs.isNotEmpty) {
+      // Only clear if conversations have loaded (non-empty list means the
+      // list isn't mid-refresh). Empty list during reload is ambiguous.
+      _selectedConversation = null;
+      _narrowPanelIndex = 0;
+    }
   }
 
   /// Desktop layout: sidebar + flex chat + optional 280px members panel

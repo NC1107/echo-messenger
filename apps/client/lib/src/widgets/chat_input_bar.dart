@@ -159,6 +159,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // ---------------------------------------------------------------------------
 
   void enterEditMode(ChatMessage message) {
+    // Clear any active reply — editing and replying are mutually exclusive.
+    ref.read(chatProvider.notifier).clearReplyTo();
     setState(() {
       _editingMessage = message;
       _messageController.text = message.content;

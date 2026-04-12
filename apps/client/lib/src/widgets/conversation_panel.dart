@@ -165,6 +165,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   /// Sort conversations: pinned first, then by last message timestamp.
+  /// Both groups are sorted by most recent message descending.
   List<Conversation> _sortConversations(List<Conversation> conversations) {
     final pinned = <Conversation>[];
     final unpinned = <Conversation>[];
@@ -175,6 +176,14 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         unpinned.add(conv);
       }
     }
+    int byTimestamp(Conversation a, Conversation b) {
+      final ta = a.lastMessageTimestamp ?? '';
+      final tb = b.lastMessageTimestamp ?? '';
+      return tb.compareTo(ta); // descending — newest first
+    }
+
+    pinned.sort(byTimestamp);
+    unpinned.sort(byTimestamp);
     return [...pinned, ...unpinned];
   }
 

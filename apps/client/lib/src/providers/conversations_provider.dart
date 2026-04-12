@@ -8,6 +8,7 @@ import '../models/conversation.dart';
 import '../services/notification_service.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
+import 'chat_provider.dart';
 import 'privacy_provider.dart';
 import 'server_url_provider.dart';
 
@@ -198,6 +199,9 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     final index = updated.indexWhere((c) => c.id == conversationId);
     if (index >= 0) {
       updated[index] = updated[index].copyWith(isEncrypted: isEncrypted);
+      // Clear cached plaintext preview so it doesn't leak after toggling
+      // encryption on. The next message will repopulate the preview.
+      _decryptedPreviews.remove(conversationId);
       state = state.copyWith(conversations: updated);
     }
   }
@@ -216,6 +220,14 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
 
   /// Send read receipt to server.
   Future<void> sendReadReceipt(String conversationId) async {
+    // Save old count so we can restore it if the server call fails.
+    final oldCount =
+        state.conversations
+            .where((c) => c.id == conversationId)
+            .firstOrNull
+            ?.unreadCount ??
+        0;
+
     markAsRead(conversationId);
     final privacy = ref.read(privacyProvider);
     if (!privacy.readReceiptsEnabled) {
@@ -233,6 +245,16 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         '[Conversations] sendReadReceipt failed for '
         '$conversationId: $e',
       );
+      // Rollback: restore the previous unread count so the badge reappears.
+      if (oldCount > 0) {
+        final rollback = List<Conversation>.from(state.conversations);
+        final idx = rollback.indexWhere((c) => c.id == conversationId);
+        if (idx >= 0) {
+          rollback[idx] = rollback[idx].copyWith(unreadCount: oldCount);
+          state = state.copyWith(conversations: rollback);
+          _updateTabBadge();
+        }
+      }
     }
   }
 
@@ -292,6 +314,8 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
             .where((c) => c.id != conversationId)
             .toList();
         state = state.copyWith(conversations: updated);
+        // Clear cached messages so stale data doesn't linger in memory.
+        ref.read(chatProvider.notifier).clearConversation(conversationId);
         return true;
       }
     } catch (e) {
