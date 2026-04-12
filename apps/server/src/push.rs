@@ -199,12 +199,12 @@ struct ApnsPushParams<'a> {
 /// - Plaintext longer than 140 bytes is truncated at a character boundary
 ///   to avoid slicing through a multi-byte UTF-8 sequence.
 fn format_push_body(content: &str, is_encrypted: bool) -> String {
-    const MAX_PREVIEW: usize = 140;
+    const MAX_PREVIEW_BYTES: usize = 140;
 
     if is_encrypted {
         "Encrypted message".to_string()
-    } else if content.len() > MAX_PREVIEW {
-        let end = content.floor_char_boundary(MAX_PREVIEW);
+    } else if content.len() > MAX_PREVIEW_BYTES {
+        let end = content.floor_char_boundary(MAX_PREVIEW_BYTES);
         format!("{}...", &content[..end])
     } else {
         content.to_string()
@@ -326,17 +326,15 @@ mod tests {
 
     #[test]
     fn multibyte_boundary_mid_char_no_panic() {
-        // 'e\u{0301}' ("e" + combining accent) is 3 bytes. 46 * 3 = 138, 47 * 3 = 141.
-        // At 47 chars, byte 140 is mid-character (second byte of the 47th 'e\u{0301}').
+        // "e\u{0301}" = 'e' (1 byte) + combining acute U+0301 (2 bytes) = 3 bytes per unit.
+        // 47 units = 141 bytes (> 140). Byte 140 is 0x81, the continuation byte of the
+        // 47th combining accent. floor_char_boundary(140) = 139, the start of that accent.
         let accent = "e\u{0301}".repeat(47); // 141 bytes
         assert_eq!(accent.len(), 141);
         let body = format_push_body(&accent, false);
         assert!(body.ends_with("..."));
-        // Should truncate to 46 full characters (138 bytes) + "..."
-        // because byte 139 is 'e' but byte 140 is the combining accent's
-        // first byte, and floor_char_boundary(140) = 139 (the 'e').
-        // Actually let's just verify it doesn't panic and is valid UTF-8.
-        assert!(body.len() <= 143);
+        // 139 content bytes + 3 "..." = 142 bytes total.
+        assert_eq!(body.len(), 142);
     }
 
     #[test]
@@ -351,5 +349,18 @@ mod tests {
         let body = format_push_body(&over, false);
         assert!(body.ends_with("..."));
         assert_eq!(body, format!("{}...", "a".repeat(140)));
+    }
+
+    #[test]
+    fn empty_string_returned_as_is() {
+        assert_eq!(format_push_body("", false), "");
+    }
+
+    #[test]
+    fn encrypted_with_long_content_still_returns_placeholder() {
+        assert_eq!(
+            format_push_body(&"x".repeat(200), true),
+            "Encrypted message"
+        );
     }
 }

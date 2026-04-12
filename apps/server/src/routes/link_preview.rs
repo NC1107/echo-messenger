@@ -29,6 +29,18 @@ pub struct LinkPreviewResponse {
     pub site_name: Option<String>,
 }
 
+/// Maximum HTML response bytes to process (256 KB).
+const MAX_HTML_BYTES: usize = 262_144;
+
+/// Cap HTML to [`MAX_HTML_BYTES`] at a valid UTF-8 boundary.
+fn cap_html(html: &str) -> &str {
+    if html.len() > MAX_HTML_BYTES {
+        &html[..html.floor_char_boundary(MAX_HTML_BYTES)]
+    } else {
+        html
+    }
+}
+
 /// Validate URL scheme and reject SSRF-vulnerable addresses.
 fn validate_url(url: &str) -> Result<(), AppError> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
@@ -109,11 +121,7 @@ pub async fn fetch_preview(
         .text()
         .await
         .map_err(|_| AppError::bad_request("Failed to read response"))?;
-    let html = if html.len() > 262_144 {
-        &html[..html.floor_char_boundary(262_144)]
-    } else {
-        &html
-    };
+    let html = cap_html(&html);
 
     // Extract Open Graph tags with simple regex (no HTML parser dependency)
     let title = extract_og_content(html, "og:title").or_else(|| extract_tag_content(html, "title"));
@@ -186,33 +194,42 @@ fn html_decode(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn html_truncation_at_multibyte_boundary_no_panic() {
-        // Build a string just over 256 KB using 3-byte UTF-8 chars (e.g., "あ" = 3 bytes).
-        let ch = "あ"; // 3 bytes
-        let count = 262_144 / 3 + 10; // exceeds 262_144 bytes
-        let html: String = ch.repeat(count);
-        assert!(html.len() > 262_144);
-
-        let truncated = if html.len() > 262_144 {
-            &html[..html.floor_char_boundary(262_144)]
-        } else {
-            &html
-        };
-
-        // Must not panic, must be valid UTF-8, must be <= 262_144 bytes.
-        assert!(truncated.len() <= 262_144);
-        assert!(truncated.is_char_boundary(truncated.len()));
-    }
+    use super::*;
 
     #[test]
     fn html_under_limit_not_truncated() {
         let html = "Hello, world!";
-        let result = if html.len() > 262_144 {
-            &html[..html.floor_char_boundary(262_144)]
-        } else {
-            html
-        };
-        assert_eq!(result, "Hello, world!");
+        assert_eq!(cap_html(html), "Hello, world!");
+    }
+
+    #[test]
+    fn html_exactly_at_limit_not_truncated() {
+        let html = "a".repeat(MAX_HTML_BYTES);
+        assert_eq!(cap_html(&html).len(), MAX_HTML_BYTES);
+    }
+
+    #[test]
+    fn html_one_over_limit_truncated() {
+        let html = "a".repeat(MAX_HTML_BYTES + 1);
+        assert_eq!(cap_html(&html).len(), MAX_HTML_BYTES);
+    }
+
+    #[test]
+    fn html_3byte_chars_at_boundary_no_panic() {
+        // "あ" = 3 bytes. Build a string exceeding the limit.
+        let html: String = "あ".repeat(MAX_HTML_BYTES / 3 + 10);
+        assert!(html.len() > MAX_HTML_BYTES);
+        let truncated = cap_html(&html);
+        assert!(truncated.len() <= MAX_HTML_BYTES);
+        assert!(truncated.is_char_boundary(truncated.len()));
+    }
+
+    #[test]
+    fn html_4byte_emoji_at_boundary_no_panic() {
+        let html: String = "\u{1F600}".repeat(MAX_HTML_BYTES / 4 + 10);
+        assert!(html.len() > MAX_HTML_BYTES);
+        let truncated = cap_html(&html);
+        assert!(truncated.len() <= MAX_HTML_BYTES);
+        assert!(truncated.is_char_boundary(truncated.len()));
     }
 }
