@@ -275,7 +275,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   /// Returns the conversation on success. Throws a [DmException] with a
   /// user-readable message when the server rejects the request (e.g.
   /// "Not a contact") or when a network error occurs.
-  Future<Conversation?> getOrCreateDm(
+  Future<Conversation> getOrCreateDm(
     String peerUserId,
     String peerUsername,
   ) async {
@@ -356,7 +356,8 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
       throw DmException(_friendlyError(e));
     }
 
-    return null;
+    // Unreachable: all paths either return a Conversation or throw.
+    throw const DmException('Could not start conversation');
   }
 
   /// Toggle mute state for a conversation.

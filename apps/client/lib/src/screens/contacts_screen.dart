@@ -166,12 +166,10 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
 
       if (!mounted) return;
 
-      if (conv != null) {
-        if (widget.onStartConversation != null) {
-          widget.onStartConversation!(conv);
-        } else {
-          context.go('/home?conversation=${conv.id}');
-        }
+      if (widget.onStartConversation != null) {
+        widget.onStartConversation!(conv);
+      } else {
+        context.go('/home?conversation=${conv.id}');
       }
     } on DmException catch (e) {
       if (!mounted) return;

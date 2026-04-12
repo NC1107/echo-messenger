@@ -337,9 +337,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           .read(conversationsProvider.notifier)
           .getOrCreateDm(userId, username);
       if (!mounted) return;
-      if (conv != null) {
-        _selectConversation(conv);
-      }
+      _selectConversation(conv);
     } on DmException catch (e) {
       if (!mounted) return;
       ToastService.show(context, e.message, type: ToastType.error);
