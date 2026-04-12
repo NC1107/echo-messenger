@@ -484,6 +484,24 @@ pub async fn leave_conversation(
     State(state): State<Arc<AppState>>,
     Path(conversation_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Owners must transfer ownership before leaving (unless they're the last member)
+    let role = db::groups::get_member_role(&state.pool, conversation_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in leave_conversation/get_role: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    if role.as_deref().and_then(Role::from_str_opt) == Some(Role::Owner) {
+        let members = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
+            .await
+            .unwrap_or_default();
+        if members.len() > 1 {
+            return Err(AppError::bad_request(
+                "Transfer ownership before leaving the group",
+            ));
+        }
+    }
+
     let removed = db::groups::remove_member(&state.pool, conversation_id, auth.user_id)
         .await
         .map_err(|e| {
@@ -493,6 +511,16 @@ pub async fn leave_conversation(
 
     if !removed {
         return Err(AppError::bad_request("Not a member of this conversation"));
+    }
+
+    // Auto-delete conversation if no members remain
+    let remaining = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
+        .await
+        .map_err(|e| tracing::error!("Failed to get member IDs after leave: {e:?}"))
+        .unwrap_or_default();
+    if remaining.is_empty() {
+        let _ = db::groups::force_delete_conversation(&state.pool, conversation_id).await;
+        tracing::info!("Auto-deleted empty conversation {conversation_id}");
     }
 
     Ok(StatusCode::OK)
@@ -671,20 +699,16 @@ pub async fn unpin_message(
         }
     }
 
-    // Unpin the message
-    let conv_id = db::messages::unpin_message(&state.pool, message_id)
+    // Unpin the message (atomically verified against the correct conversation)
+    let _conv_id = db::messages::unpin_message(&state.pool, message_id, conversation_id)
         .await
         .map_err(|e| {
             tracing::error!("DB error in unpin_message: {e:?}");
             AppError::internal("Database error")
         })?
-        .ok_or_else(|| AppError::bad_request("Message not found or not pinned"))?;
-
-    if conv_id != conversation_id {
-        return Err(AppError::bad_request(
-            "Message does not belong to this conversation",
-        ));
-    }
+        .ok_or_else(|| {
+            AppError::bad_request("Message not found, not pinned, or wrong conversation")
+        })?;
 
     // Broadcast to conversation members via WebSocket
     let member_ids = db::groups::get_conversation_member_ids(&state.pool, conversation_id)

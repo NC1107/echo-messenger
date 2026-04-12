@@ -361,15 +361,22 @@ pub async fn pin_message(
 }
 
 /// Unpin a message. Clears pinned_by_id and pinned_at.
-/// Returns the conversation_id if the unpin was successful, None if message not found or
-/// not pinned.
-pub async fn unpin_message(pool: &PgPool, message_id: Uuid) -> Result<Option<Uuid>, sqlx::Error> {
+/// Only unpins if the message belongs to the given conversation.
+/// Returns the conversation_id if the unpin was successful, None if message not found,
+/// not pinned, or does not belong to the specified conversation.
+pub async fn unpin_message(
+    pool: &PgPool,
+    message_id: Uuid,
+    conversation_id: Uuid,
+) -> Result<Option<Uuid>, sqlx::Error> {
     let row: Option<(Uuid,)> = sqlx::query_as(
         "UPDATE messages SET pinned_by_id = NULL, pinned_at = NULL \
-         WHERE id = $1 AND pinned_at IS NOT NULL AND deleted_at IS NULL \
+         WHERE id = $1 AND conversation_id = $2 AND pinned_at IS NOT NULL \
+         AND deleted_at IS NULL \
          RETURNING conversation_id",
     )
     .bind(message_id)
+    .bind(conversation_id)
     .fetch_optional(pool)
     .await?;
     Ok(row.map(|(conv_id,)| conv_id))

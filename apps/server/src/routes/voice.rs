@@ -123,6 +123,10 @@ pub async fn generate_token(
         if !is_member {
             return Err(AppError::bad_request("Not a member of this conversation"));
         }
+    } else {
+        return Err(AppError::bad_request(
+            "conversation_id or channel_id is required for voice token",
+        ));
     }
 
     let api_key = std::env::var("LIVEKIT_API_KEY").map_err(|_| {
