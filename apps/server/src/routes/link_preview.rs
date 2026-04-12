@@ -183,3 +183,36 @@ fn html_decode(s: &str) -> String {
         .replace("&#39;", "'")
         .replace("&#x27;", "'")
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn html_truncation_at_multibyte_boundary_no_panic() {
+        // Build a string just over 256 KB using 3-byte UTF-8 chars (e.g., "あ" = 3 bytes).
+        let ch = "あ"; // 3 bytes
+        let count = 262_144 / 3 + 10; // exceeds 262_144 bytes
+        let html: String = ch.repeat(count);
+        assert!(html.len() > 262_144);
+
+        let truncated = if html.len() > 262_144 {
+            &html[..html.floor_char_boundary(262_144)]
+        } else {
+            &html
+        };
+
+        // Must not panic, must be valid UTF-8, must be <= 262_144 bytes.
+        assert!(truncated.len() <= 262_144);
+        assert!(truncated.is_char_boundary(truncated.len()));
+    }
+
+    #[test]
+    fn html_under_limit_not_truncated() {
+        let html = "Hello, world!";
+        let result = if html.len() > 262_144 {
+            &html[..html.floor_char_boundary(262_144)]
+        } else {
+            html
+        };
+        assert_eq!(result, "Hello, world!");
+    }
+}
