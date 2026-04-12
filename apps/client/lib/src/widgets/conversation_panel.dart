@@ -941,25 +941,30 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         : context.textSecondary;
     final chipWeight = isSelected ? FontWeight.w600 : FontWeight.w500;
     return Expanded(
-      child: GestureDetector(
-        onTap: () => _onTabSelected(index),
-        child: Container(
-          height: 30,
-          decoration: BoxDecoration(
-            color: isSelected ? context.accent : context.surface,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: icon != null
-                ? Icon(icon, size: 16, color: chipColor)
-                : Text(
-                    label,
-                    style: TextStyle(
-                      color: chipColor,
-                      fontSize: 12,
-                      fontWeight: chipWeight,
+      child: Semantics(
+        label: '$label tab',
+        button: true,
+        selected: isSelected,
+        child: GestureDetector(
+          onTap: () => _onTabSelected(index),
+          child: Container(
+            height: 30,
+            decoration: BoxDecoration(
+              color: isSelected ? context.accent : context.surface,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: icon != null
+                  ? Icon(icon, size: 16, color: chipColor)
+                  : Text(
+                      label,
+                      style: TextStyle(
+                        color: chipColor,
+                        fontSize: 12,
+                        fontWeight: chipWeight,
+                      ),
                     ),
-                  ),
+            ),
           ),
         ),
       ),

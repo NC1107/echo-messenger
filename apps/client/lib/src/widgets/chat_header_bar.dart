@@ -68,6 +68,7 @@ class ChatHeaderBar extends ConsumerWidget {
                 IconButton(
                   icon: const Icon(Icons.arrow_back, size: 20),
                   color: context.textSecondary,
+                  tooltip: 'Back',
                   onPressed: onBack,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
