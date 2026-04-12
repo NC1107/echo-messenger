@@ -155,7 +155,7 @@ jobs:
           ARCH=x86_64 ./appimagetool --no-appstream Echo.AppDir Echo-x86_64.AppImage || \
           ARCH=x86_64 ./appimagetool Echo.AppDir Echo-x86_64.AppImage
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-linux
           path: |
@@ -215,7 +215,7 @@ jobs:
         run: |
           Compress-Archive -Path apps/client/build/windows/x64/runner/Release/* -DestinationPath echo-windows-x64-portable.zip
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-windows
           path: |
@@ -253,7 +253,7 @@ jobs:
           cp apps/client/build/app/outputs/flutter-apk/app-release.apk \
              echo-android-${{ needs.version.outputs.version }}.apk
       - name: Upload Android artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-android
           path: echo-android-*.apk
@@ -339,7 +339,7 @@ jobs:
             --apiKey "$ASC_KEY_ID" \
             --apiIssuer "$ASC_ISSUER_ID"
       - name: Upload iOS artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-ios
           path: echo-ios-*.ipa
@@ -371,7 +371,7 @@ jobs:
           cp .env.example echo-server-pkg/
           cd echo-server-pkg && tar czf ${{ github.workspace }}/echo-server-linux-x64.tar.gz .
       - name: Upload server artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-server
           path: echo-server-linux-x64.tar.gz
@@ -429,7 +429,7 @@ jobs:
           cd apps/client/build/web
           tar czf ${{ github.workspace }}/echo-web.tar.gz .
       - name: Upload web artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-web
           path: echo-web.tar.gz
