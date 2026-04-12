@@ -580,14 +580,23 @@ class InlineVideoPlayer extends StatefulWidget {
 class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   VideoPlayerController? _controller;
   bool _initFailed = false;
+  bool _userTappedPlay = false;
 
   @override
-  void initState() {
-    super.initState();
-    _initVideo();
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
   }
 
-  Future<void> _initVideo() async {
+  /// Initialize video only when the user taps play. This avoids creating
+  /// VideoPlayerControllers for every video message in the list, which
+  /// would leak memory as the user scrolls through history.
+  Future<void> _initAndPlay() async {
+    if (_controller != null) {
+      _togglePlayPause();
+      return;
+    }
+    setState(() => _userTappedPlay = true);
     try {
       final controller = VideoPlayerController.networkUrl(
         Uri.parse(widget.videoUrl),
@@ -599,16 +608,11 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         return;
       }
       setState(() => _controller = controller);
+      controller.play();
     } catch (e) {
       debugPrint('[InlineVideoPlayer] init failed for ${widget.rawUrl}: $e');
       if (mounted) setState(() => _initFailed = true);
     }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
   }
 
   void _togglePlayPause() {
@@ -664,7 +668,25 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   Widget _buildVideoArea() {
     final c = _controller;
 
-    // Still loading
+    // Not yet tapped — show play button thumbnail (no controller allocated).
+    if (!_userTappedPlay && c == null) {
+      return GestureDetector(
+        onTap: _initAndPlay,
+        child: Container(
+          height: 170,
+          color: widget.mainBg,
+          child: Center(
+            child: Icon(
+              Icons.play_circle_outline,
+              size: 44,
+              color: widget.textMuted,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // User tapped play, still loading
     if (c == null && !_initFailed) {
       return Container(
         height: 170,

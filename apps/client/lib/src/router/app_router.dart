@@ -63,6 +63,9 @@ String? _authRedirect(Ref ref, GoRouterState state) {
 
   if (isSplash) return null;
 
+  // Already logged in — skip onboarding
+  if (isLoggedIn && isOnboarding) return _routeHome;
+
   if (!isLoggedIn && !isAuthRoute && !isOnboarding && !isJoinRoute) {
     final intended = state.matchedLocation;
     if (intended != _routeHome && intended != _routeLogin) {

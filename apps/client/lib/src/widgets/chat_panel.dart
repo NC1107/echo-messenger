@@ -98,10 +98,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   void didUpdateWidget(covariant ChatPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.conversation?.id != oldWidget.conversation?.id) {
-      // Save scroll offset for the old conversation
+      // Save scroll offset for the old conversation+channel
       final oldId = oldWidget.conversation?.id;
       if (oldId != null && _scrollController.hasClients) {
-        _scrollPositions[oldId] = _scrollController.offset;
+        final oldKey = '$oldId:${_selectedTextChannelId ?? ""}';
+        _scrollPositions[oldKey] = _scrollController.offset;
       }
 
       _hideEncryptionBanner = false;
@@ -120,7 +121,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       // to bottom if no cached position exists.
       final newId = widget.conversation?.id;
       if (newId != null) {
-        final cached = _scrollPositions[newId];
+        final newKey = '$newId:${_selectedTextChannelId ?? ""}';
+        final cached = _scrollPositions[newKey];
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!_scrollController.hasClients) return;
           if (cached != null) {
@@ -208,9 +210,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       }
 
       // Update the scroll cache and dismiss the new-messages pill.
+      // Key includes channel ID so switching text channels within a group
+      // preserves separate scroll positions.
       final convId = widget.conversation?.id;
       if (convId != null) {
-        _scrollPositions[convId] = target;
+        final cacheKey = '$convId:${_selectedTextChannelId ?? ""}';
+        _scrollPositions[cacheKey] = target;
       }
       if (_hasNewMessagesBelow) {
         setState(() {
@@ -528,6 +533,15 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   void _toggleReaction(ChatMessage message, String emoji, bool remove) {
     final conv = widget.conversation;
     if (conv == null) return;
+
+    // Guard: the message may have been deleted via WebSocket between the
+    // time the user opened the reaction picker and tapped an emoji.
+    final stillExists = ref
+        .read(chatProvider)
+        .messagesForConversation(conv.id)
+        .any((m) => m.id == message.id);
+    if (!stillExists) return;
+
     final myUserId = ref.read(authProvider).userId ?? '';
     ref
         .read(websocketProvider.notifier)
