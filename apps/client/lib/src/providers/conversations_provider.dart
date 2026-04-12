@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
+import '../services/debug_log_service.dart';
 import '../services/notification_service.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
@@ -62,6 +63,17 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
       return 'You don\'t have permission to do that.';
     }
     return 'Something went wrong. Please try again.';
+  }
+
+  /// Extract the `error` field from a JSON response body, or return [fallback].
+  String _parseServerError(String body, String fallback) {
+    try {
+      final data = jsonDecode(body);
+      if (data is Map<String, dynamic>) {
+        return data['error'] as String? ?? fallback;
+      }
+    } catch (_) {}
+    return fallback;
   }
 
   Map<String, String> _headersWithToken(String token) => {
@@ -259,11 +271,17 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   }
 
   /// Find an existing DM with a peer, or create one by sending a greeting.
-  Future<Conversation?> getOrCreateDm(
+  ///
+  /// Returns the conversation on success. Throws a [DmException] with a
+  /// user-readable message when the server rejects the request (e.g.
+  /// "Not a contact") or when a network error occurs.
+  Future<Conversation> getOrCreateDm(
     String peerUserId,
     String peerUsername,
   ) async {
-    // Search existing conversations for a non-group with that peer
+    // Search existing conversations for a non-group with that peer.
+    // The server list is limited to 50 entries, so older/message-less DMs
+    // might not be loaded yet -- we fall through to the API in that case.
     for (final conv in state.conversations) {
       if (!conv.isGroup) {
         final hasPeer = conv.members.any((m) => m.userId == peerUserId);
@@ -271,7 +289,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
       }
     }
 
-    // Not found -- create a new DM conversation via the server endpoint.
+    // Not found -- create (or locate) the DM conversation via the server.
     try {
       final response = await _authenticatedRequest(
         (token) => http.post(
@@ -286,16 +304,60 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         final convId = data['conversation_id'] as String?;
         if (convId != null && convId.isNotEmpty) {
           await loadConversations();
-          return state.conversations
+
+          // The server sorts conversations by last-message time (LIMIT 50).
+          // A brand-new DM with no messages sorts last and may be excluded.
+          // If it is not in the refreshed list, add a minimal entry so the
+          // caller can navigate to it immediately; subsequent activity will
+          // populate the full data.
+          final found = state.conversations
               .where((c) => c.id == convId && !c.isGroup)
               .firstOrNull;
+          if (found != null) return found;
+
+          final newConv = Conversation(
+            id: convId,
+            isGroup: false,
+            members: [
+              ConversationMember(userId: peerUserId, username: peerUsername),
+            ],
+          );
+          state = state.copyWith(
+            conversations: [newConv, ...state.conversations],
+          );
+          DebugLogService.instance.log(
+            LogLevel.info,
+            'Conversations',
+            'Created DM $convId with $peerUsername (not in top-50 list, added locally)',
+          );
+          return newConv;
         }
+      } else {
+        final errMsg = _parseServerError(
+          response.body,
+          'Could not start conversation',
+        );
+        DebugLogService.instance.log(
+          LogLevel.error,
+          'Conversations',
+          'getOrCreateDm failed (HTTP ${response.statusCode}): $errMsg',
+        );
+        throw DmException(errMsg);
       }
+    } on DmException {
+      rethrow;
     } catch (e) {
       debugPrint('[Conversations] getOrCreateDm failed for $peerUserId: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Conversations',
+        'getOrCreateDm error for $peerUsername: $e',
+      );
+      throw DmException(_friendlyError(e));
     }
 
-    return null;
+    // Unreachable: all paths either return a Conversation or throw.
+    throw const DmException('Could not start conversation');
   }
 
   /// Toggle mute state for a conversation.
@@ -320,6 +382,11 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
       }
     } catch (e) {
       debugPrint('[Conversations] leaveConversation failed: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Conversations',
+        'leaveConversation error: $e',
+      );
     }
     return false;
   }
@@ -353,6 +420,11 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         state = state.copyWith(conversations: reverted);
       }
       debugPrint('[Conversations] toggleMute failed for $conversationId: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Conversations',
+        'toggleMute error for $conversationId: $e',
+      );
     }
   }
 
@@ -377,6 +449,11 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
       return false;
     } catch (e) {
       debugPrint('[Conversations] leaveGroup failed for $groupId: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Conversations',
+        'leaveGroup error for $groupId: $e',
+      );
       return false;
     }
   }
@@ -429,3 +506,14 @@ final conversationsProvider =
     StateNotifierProvider<ConversationsNotifier, ConversationsState>((ref) {
       return ConversationsNotifier(ref);
     });
+
+/// Thrown by [ConversationsNotifier.getOrCreateDm] when the server rejects
+/// the request or a network error occurs. [message] is safe to display to
+/// the user.
+class DmException implements Exception {
+  final String message;
+  const DmException(this.message);
+
+  @override
+  String toString() => message;
+}
