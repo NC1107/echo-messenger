@@ -110,7 +110,7 @@ pub async fn fetch_preview(
         .await
         .map_err(|_| AppError::bad_request("Failed to read response"))?;
     let html = if html.len() > 262_144 {
-        &html[..262_144]
+        &html[..html.floor_char_boundary(262_144)]
     } else {
         &html
     };
