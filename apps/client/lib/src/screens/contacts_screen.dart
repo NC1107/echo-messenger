@@ -170,7 +170,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         if (widget.onStartConversation != null) {
           widget.onStartConversation!(conv);
         } else {
-          context.go('/home');
+          context.go('/home?conversation=${conv.id}');
         }
       } else {
         ToastService.show(

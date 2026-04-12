@@ -393,6 +393,40 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         if (orientation == Orientation.landscape) {
           return Container(
             color: context.mainBg,
+            child: ClipRect(
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: VertexMeshBackground(
+                      accentColor: context.accent,
+                      backgroundColor: context.mainBg,
+                    ),
+                  ),
+                  Column(
+                    children: [
+                      Expanded(child: contentArea),
+                      controlBar,
+                    ],
+                  ),
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: _buildHeaderBadge(
+                      context,
+                      channelName,
+                      totalParticipants,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // Portrait: full header bar + content + control bar
+        return Container(
+          color: context.mainBg,
+          child: ClipRect(
             child: Stack(
               children: [
                 Positioned.fill(
@@ -403,47 +437,17 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                 ),
                 Column(
                   children: [
+                    _LoungeHeader(
+                      channelName: channelName,
+                      participantCount: totalParticipants,
+                      onBackToChat: widget.onBackToChat,
+                    ),
                     Expanded(child: contentArea),
                     controlBar,
                   ],
                 ),
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  child: _buildHeaderBadge(
-                    context,
-                    channelName,
-                    totalParticipants,
-                  ),
-                ),
               ],
             ),
-          );
-        }
-
-        // Portrait: full header bar + content + control bar
-        return Container(
-          color: context.mainBg,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: VertexMeshBackground(
-                  accentColor: context.accent,
-                  backgroundColor: context.mainBg,
-                ),
-              ),
-              Column(
-                children: [
-                  _LoungeHeader(
-                    channelName: channelName,
-                    participantCount: totalParticipants,
-                    onBackToChat: widget.onBackToChat,
-                  ),
-                  Expanded(child: contentArea),
-                  controlBar,
-                ],
-              ),
-            ],
           ),
         );
       },

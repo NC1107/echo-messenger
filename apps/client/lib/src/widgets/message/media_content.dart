@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -62,12 +63,24 @@ bool isFileUrl(String url) => _fileExtensions.contains(urlExtension(url));
 
 /// Resolves a potentially relative media URL to an absolute URL.
 ///
-/// Does NOT append auth tokens -- callers should use [mediaHeaders] for
-/// authenticated requests, or fetch a media ticket for browser-opened URLs.
+/// On web, appends the auth token as a query parameter because
+/// CachedNetworkImage uses HTML <img> elements which cannot send custom
+/// HTTP headers. On native platforms, callers use [mediaHeaders] instead.
 String resolveMediaUrl(String url, {String? serverUrl, String? authToken}) {
-  if (url.startsWith('http')) return url;
-  final base = serverUrl ?? '';
-  return url.startsWith('/') && base.isNotEmpty ? '$base$url' : url;
+  String resolved = url;
+  if (!url.startsWith('http')) {
+    final base = serverUrl ?? '';
+    if (url.startsWith('/') && base.isNotEmpty) {
+      resolved = '$base$url';
+    }
+  }
+  // On web, <img> tags cannot carry Authorization headers, so pass the
+  // token via query parameter (server accepts ?token= for media downloads).
+  if (kIsWeb && authToken != null && authToken.isNotEmpty) {
+    final separator = resolved.contains('?') ? '&' : '?';
+    resolved = '$resolved${separator}jwt=$authToken';
+  }
+  return resolved;
 }
 
 /// Fetches a single-use media ticket from the server for use in browser URLs.
@@ -127,7 +140,10 @@ List<String> extractEmbeddedImageUrls(String content) {
 }
 
 /// Builds auth headers for media requests.
+///
+/// Returns empty headers on web since auth is passed via URL query parameter.
 Map<String, String> mediaHeaders({String? authToken}) {
+  if (kIsWeb) return const {};
   final headers = <String, String>{};
   if (authToken != null && authToken.isNotEmpty) {
     headers['Authorization'] = 'Bearer $authToken';

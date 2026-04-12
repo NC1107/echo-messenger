@@ -1079,6 +1079,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             if (_searchQuery.isEmpty) ...[
               const SizedBox(height: 14),
               SizedBox(
+                width: double.infinity,
                 height: 34,
                 child: FilledButton.icon(
                   onPressed: widget.onNewChat,
@@ -1320,28 +1321,24 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               ),
               if (_searchQuery.isEmpty) ...[
                 const SizedBox(height: 14),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    SizedBox(
-                      height: 34,
-                      child: FilledButton.icon(
-                        onPressed: widget.onNewGroup,
-                        icon: const Icon(Icons.group_add, size: 16),
-                        label: const Text('Create Group'),
-                      ),
-                    ),
-                    SizedBox(
-                      height: 34,
-                      child: OutlinedButton.icon(
-                        onPressed: widget.onDiscover,
-                        icon: const Icon(Icons.explore_outlined, size: 16),
-                        label: const Text('Discover'),
-                      ),
-                    ),
-                  ],
+                SizedBox(
+                  width: double.infinity,
+                  height: 34,
+                  child: FilledButton.icon(
+                    onPressed: widget.onNewGroup,
+                    icon: const Icon(Icons.group_add, size: 16),
+                    label: const Text('Create Group'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  height: 34,
+                  child: OutlinedButton.icon(
+                    onPressed: widget.onDiscover,
+                    icon: const Icon(Icons.explore_outlined, size: 16),
+                    label: const Text('Discover'),
+                  ),
                 ),
               ],
             ],

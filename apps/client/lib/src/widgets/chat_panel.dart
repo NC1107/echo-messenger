@@ -1396,21 +1396,24 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               const ConnectionStatusBanner(),
 
               Expanded(
-                child: Stack(
-                  children: [
-                    _buildMessageListOrEmpty(
-                      conv: conv,
-                      messages: messages,
-                      isLoadingHistory: isLoadingHistory,
-                      displayName: displayName,
-                      chatState: chatState,
-                      memberAvatars: memberAvatars,
-                      myUserId: myUserId,
-                      serverUrl: serverUrl,
-                      authToken: authToken,
-                    ),
-                    if (_hasNewMessagesBelow) _buildNewMessagesPill(),
-                  ],
+                child: GestureDetector(
+                  onTap: () => FocusScope.of(context).unfocus(),
+                  child: Stack(
+                    children: [
+                      _buildMessageListOrEmpty(
+                        conv: conv,
+                        messages: messages,
+                        isLoadingHistory: isLoadingHistory,
+                        displayName: displayName,
+                        chatState: chatState,
+                        memberAvatars: memberAvatars,
+                        myUserId: myUserId,
+                        serverUrl: serverUrl,
+                        authToken: authToken,
+                      ),
+                      if (_hasNewMessagesBelow) _buildNewMessagesPill(),
+                    ],
+                  ),
                 ),
               ),
 

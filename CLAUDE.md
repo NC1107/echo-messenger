@@ -20,6 +20,10 @@ git push origin dev                 # Triggers lint + dev builds only
 gh pr create --base main            # When ready for release
 ```
 
+## Prerequisites
+
+Rust (edition 2024), Flutter 3.41+ (SDK `^3.11.4`), Docker (for PostgreSQL), Node.js 20+ (for commitlint + Playwright).
+
 ## Build & Run
 
 ```bash
@@ -71,13 +75,13 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - `apps/client/` -- Flutter app, Riverpod state management, GoRouter navigation
 - `core/rust-core/` -- Shared Rust library: Signal Protocol (X3DH + Double Ratchet), crypto primitives, FFI bridge
 
-**Server startup sequence** (main.rs): load .env -> tracing -> create upload dirs (`./uploads/avatars`) -> Config::from_env() -> PG pool + auto-migrate SQL files (`apps/server/migrations/`, 9 migrations) -> spawn WebSocket Hub (DashMap) -> spawn background tasks (stale voice session cleanup every 60s, empty group cleanup) -> build Axum router -> bind with graceful shutdown.
+**Server startup sequence** (main.rs): load .env -> tracing -> create upload dirs (`./uploads/avatars`) -> Config::from_env() -> PG pool + auto-migrate SQL files (`apps/server/migrations/`, 14 migrations) -> spawn WebSocket Hub (DashMap) -> spawn background tasks (stale voice session cleanup every 60s, empty group cleanup) -> build Axum router -> bind with graceful shutdown.
 
 **Key server modules**:
 - `auth/` -- JWT (15-min access + 7-day refresh), Argon2id passwords, AuthUser middleware extractor
 - `ws/hub.rs` -- DashMap<user_id, mpsc::Sender> for lock-free WS routing
 - `ws/handler.rs` -- WS upgrade, message parsing, event dispatch (MessageRelayed, TypingIndicator, Reaction, Online/Offline)
-- `db/` -- 9 query modules (users, messages, contacts, groups, keys, reactions, media, tokens)
+- `db/` -- query modules (users, messages, contacts, groups, keys, reactions, media, tokens, devices, push_tokens)
 - `routes/` -- REST: /api/auth, /api/users, /api/contacts, /api/messages, /api/groups, /api/keys, /api/reactions, /api/media, /api/channels, /api/voice, /api/group_keys, /api/link_preview
 
 **Client init** (main.dart): Hive local DB -> message cache -> load persisted server URL (web: overridable via `?server=` query param) -> load sound prefs -> request notification permission -> SplashScreen handles auto-login + crypto init.
@@ -110,7 +114,7 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - **rustfmt**: max_width=100, Unix newlines, field_init_shorthand + try_shorthand enabled.
 - **Server required env**: `DATABASE_URL` and `JWT_SECRET` (≥32 chars, panics without them). Optional: `HOST` (default `0.0.0.0`), `PORT` (default `8080`), `CORS_ORIGINS` for allowed origins, `RUST_LOG` for log filtering (e.g. `echo_server=debug`).
 - **Traefik routing**: API priority 100, Web priority 1 (API routes must take precedence).
-- **Message wire format**: Initial = `[0xEC, 0x01] + identity_pub(32) + ephemeral_pub(32) + session_wire`; Normal = `header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`. Both base64-wrapped over WebSocket.
+- **Message wire format**: Initial V2 (with OTP) = `[0xEC, 0x02] + identity_pub(32) + ephemeral_pub(32) + otp_id(4 LE) + ratchet_wire`; Initial V1 (no OTP) = `[0xEC, 0x01] + identity_pub(32) + ephemeral_pub(32) + ratchet_wire`; Normal = `header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`. All base64-wrapped over WebSocket.
 - **Soft deletes**: Messages use `is_deleted` flag, not hard deletes.
 
 ## Commit Style
