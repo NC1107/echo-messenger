@@ -264,7 +264,9 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         final convId = data['conversation_id'] as String?;
         if (convId != null && convId.isNotEmpty) {
           await loadConversations();
-          return state.conversations.where((c) => c.id == convId).firstOrNull;
+          return state.conversations
+              .where((c) => c.id == convId && !c.isGroup)
+              .firstOrNull;
         }
       }
     } catch (e) {

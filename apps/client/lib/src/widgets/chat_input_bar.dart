@@ -328,14 +328,18 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // ---------------------------------------------------------------------------
 
   void _onInputChanged(String text) {
-    final conv = widget.conversation;
-    if (text.isNotEmpty) {
-      ref
-          .read(websocketProvider.notifier)
-          .sendTyping(
-            conv.id,
-            channelId: conv.isGroup ? widget.selectedTextChannelId : null,
-          );
+    // Don't send typing indicator while editing an existing message —
+    // recipients would see "X is typing..." when X is only editing.
+    if (!_isEditing) {
+      final conv = widget.conversation;
+      if (text.isNotEmpty) {
+        ref
+            .read(websocketProvider.notifier)
+            .sendTyping(
+              conv.id,
+              channelId: conv.isGroup ? widget.selectedTextChannelId : null,
+            );
+      }
     }
     _detectMention(text);
   }

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/contact.dart';
 import 'auth_provider.dart';
+import 'conversations_provider.dart';
 import 'server_url_provider.dart';
 
 class ContactsState {
@@ -149,6 +150,9 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
       );
       await loadContacts();
       await loadPending();
+      // Accepting a contact creates a DM conversation on the server —
+      // reload conversations so the new DM appears in the chat list.
+      ref.read(conversationsProvider.notifier).loadConversations();
     } catch (e) {
       debugPrint('[Contacts] acceptRequest failed for $contactId: $e');
     }
