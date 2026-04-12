@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -59,6 +60,12 @@ class AuthState {
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final Ref ref;
+
+  /// Lock to prevent concurrent token refresh calls. When a refresh is
+  /// in-flight, subsequent callers await the same Future instead of
+  /// sending duplicate refresh requests (which would fail due to
+  /// server-side token rotation consuming the token on first use).
+  Completer<bool>? _refreshLock;
 
   AuthNotifier(this.ref) : super(const AuthState());
 
@@ -166,9 +173,29 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// a new access token. Returns false if the refresh failed (in which case
   /// the user is logged out).
   Future<bool> refreshAccessToken() async {
+    // If a refresh is already in-flight, coalesce with it instead of
+    // sending a duplicate request (server-side token rotation consumes
+    // the token on first use, so the second request would fail).
+    if (_refreshLock != null) {
+      return _refreshLock!.future;
+    }
+    _refreshLock = Completer<bool>();
+
+    try {
+      final result = await _doRefreshAccessToken();
+      _refreshLock!.complete(result);
+      return result;
+    } catch (e) {
+      _refreshLock!.complete(false);
+      rethrow;
+    } finally {
+      _refreshLock = null;
+    }
+  }
+
+  Future<bool> _doRefreshAccessToken() async {
     final currentRefreshToken = state.refreshToken;
     if (currentRefreshToken == null || currentRefreshToken.isEmpty) {
-      // No refresh token available -- cannot refresh
       return false;
     }
 
@@ -204,7 +231,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
       }
     } catch (e) {
       debugPrint('[Auth] refreshAccessToken failed: $e');
-      // Network error -- don't logout, let caller handle
       return false;
     }
   }

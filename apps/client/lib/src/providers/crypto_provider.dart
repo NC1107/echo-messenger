@@ -115,8 +115,11 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
       if (crypto.keysAreFresh) {
         final uploadError = await _uploadKeysWithRetry(crypto);
         if (uploadError != null) {
+          // Keys are initialized locally but NOT on the server. Mark as
+          // NOT initialized so callers won't send encrypted messages that
+          // the recipient can never decrypt (server doesn't have the keys).
           state = state.copyWith(
-            isInitialized: true,
+            isInitialized: false,
             isUploading: false,
             keysUploadFailed: true,
             error: 'Key upload failed: $uploadError',

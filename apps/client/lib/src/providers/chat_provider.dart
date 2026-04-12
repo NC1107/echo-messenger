@@ -259,13 +259,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String timestamp, {
     String? channelId,
   }) {
-    // Cancel the send timeout for the pending message being confirmed.
-    for (final m in state.messagesForConversation(conversationId)) {
-      if (m.id.startsWith('pending_')) {
-        _sendTimeouts.remove(m.id)?.cancel();
-      }
-    }
-
     // Replace the most recent pending/sending message in this conversation
     // with the server-assigned ID so that delivery receipts can match it.
     final updatedConv = Map<String, List<ChatMessage>>.from(
@@ -273,7 +266,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
     final messages = updatedConv[conversationId];
     if (messages != null) {
-      _replacePendingMessage(
+      final replacedPendingId = _replacePendingMessage(
         updatedConv,
         conversationId,
         messages,
@@ -281,6 +274,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
         timestamp,
         channelId,
       );
+      // Cancel only the timer for the specific pending message that was
+      // confirmed — not all pending timers in the conversation.
+      if (replacedPendingId != null) {
+        _sendTimeouts.remove(replacedPendingId)?.cancel();
+      }
     }
 
     // Rebuild the index for this conversation since a pending ID was replaced.
@@ -303,7 +301,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  void _replacePendingMessage(
+  /// Replace the most recent pending message with the confirmed server ID.
+  /// Returns the original pending ID so the caller can cancel its timer.
+  String? _replacePendingMessage(
     Map<String, List<ChatMessage>> updatedConv,
     String conversationId,
     List<ChatMessage> messages,
@@ -317,6 +317,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
           msg.isMine &&
           msg.status == MessageStatus.sending &&
           (channelId == null || msg.channelId == channelId)) {
+        final pendingId = msg.id;
         final updatedMessages = List<ChatMessage>.from(messages);
         updatedMessages[i] = msg.copyWith(
           id: messageId,
@@ -325,9 +326,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
           channelId: channelId ?? msg.channelId,
         );
         updatedConv[conversationId] = updatedMessages;
-        break;
+        return pendingId;
       }
     }
+    return null;
   }
 
   /// Load history with the user's own ID for isMine determination.

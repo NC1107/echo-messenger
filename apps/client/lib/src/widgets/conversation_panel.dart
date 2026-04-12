@@ -109,7 +109,16 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   void _onTabSelected(int index) {
-    setState(() => _selectedTab = index);
+    setState(() {
+      _selectedTab = index;
+      // Clear search when switching tabs so filtered results from one tab
+      // don't bleed into another.
+      if (_searchQuery.isNotEmpty) {
+        _searchQuery = '';
+        _searchController.clear();
+        _isSearching = false;
+      }
+    });
     if (index <= 1) {
       final authState = ref.read(authProvider);
       if (authState.isLoggedIn) {
