@@ -15,14 +15,18 @@ pub struct ContactRow {
     pub created_at: DateTime<Utc>,
 }
 
+/// Create a contact request. Uses a transaction to prevent a TOCTOU race
+/// between the user lookup, block check, and insert.
 pub async fn create_contact_request(
     pool: &PgPool,
     requester_id: Uuid,
     target_username: &str,
 ) -> Result<Uuid, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
     let target = sqlx::query_as::<_, (Uuid,)>("SELECT id FROM users WHERE username = $1")
         .bind(target_username)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or(sqlx::Error::RowNotFound)?;
 
@@ -30,8 +34,19 @@ pub async fn create_contact_request(
 
     // Check if either party has blocked the other -- return a generic error
     // (same as "user not found") to avoid leaking block status.
-    let blocked = is_either_blocked(pool, requester_id, target_id).await?;
-    if blocked {
+    let blocked: (bool,) = sqlx::query_as(
+        "SELECT EXISTS(\
+            SELECT 1 FROM blocked_users \
+            WHERE (blocker_id = $1 AND blocked_id = $2) \
+               OR (blocker_id = $2 AND blocked_id = $1)\
+        )",
+    )
+    .bind(requester_id)
+    .bind(target_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if blocked.0 {
         return Err(sqlx::Error::RowNotFound);
     }
 
@@ -40,9 +55,10 @@ pub async fn create_contact_request(
     )
     .bind(requester_id)
     .bind(target_id)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
 
+    tx.commit().await?;
     Ok(row.0)
 }
 

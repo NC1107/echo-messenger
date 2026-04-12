@@ -141,33 +141,27 @@ pub async fn list_public_groups(
 }
 
 /// Join a public group. Returns an error if the group is not public.
+///
+/// Uses a single atomic INSERT ... SELECT to avoid a TOCTOU race between
+/// checking `is_public` and inserting the membership row.
 pub async fn join_public_group(
     pool: &PgPool,
     group_id: Uuid,
     user_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    // Check that the conversation exists and is public
-    let row: Option<(bool,)> =
-        sqlx::query_as("SELECT is_public FROM conversations WHERE id = $1 AND kind = 'group'")
-            .bind(group_id)
-            .fetch_optional(pool)
-            .await?;
+    let result = sqlx::query(
+        "INSERT INTO conversation_members (conversation_id, user_id, role) \
+         SELECT $1, $2, 'member' \
+         FROM conversations \
+         WHERE id = $1 AND kind = 'group' AND is_public = true \
+         ON CONFLICT (conversation_id, user_id) DO NOTHING",
+    )
+    .bind(group_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
 
-    match row {
-        Some((true,)) => {
-            sqlx::query(
-                "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'member') \
-                 ON CONFLICT DO NOTHING",
-            )
-            .bind(group_id)
-            .bind(user_id)
-            .execute(pool)
-            .await?;
-            Ok(true)
-        }
-        Some((false,)) => Ok(false),
-        None => Ok(false),
-    }
+    Ok(result.rows_affected() > 0)
 }
 
 /// Get group info by conversation ID.
@@ -306,23 +300,26 @@ pub async fn user_has_public_group_named(
 
 /// Delete a group conversation. Only the owner can delete it.
 /// Deleting the conversation cascades to members and messages via FK constraints.
+///
+/// Uses a single atomic DELETE with an EXISTS subquery to avoid a TOCTOU race
+/// between the ownership check and the delete.
 pub async fn delete_group(
     pool: &PgPool,
     group_id: Uuid,
     owner_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    // Verify the caller is the owner
-    let role = get_member_role(pool, group_id, owner_id).await?;
-    use crate::types::Role;
-    if role.as_deref().and_then(Role::from_str_opt) != Some(Role::Owner) {
-        return Ok(false);
-    }
-    // Delete conversation (cascades to members, messages via FK)
-    sqlx::query("DELETE FROM conversations WHERE id = $1")
-        .bind(group_id)
-        .execute(pool)
-        .await?;
-    Ok(true)
+    let result = sqlx::query(
+        "DELETE FROM conversations WHERE id = $1 AND EXISTS(\
+             SELECT 1 FROM conversation_members \
+             WHERE conversation_id = $1 AND user_id = $2 AND role = 'owner'\
+         )",
+    )
+    .bind(group_id)
+    .bind(owner_id)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
 }
 
 /// Check if a group is public.
