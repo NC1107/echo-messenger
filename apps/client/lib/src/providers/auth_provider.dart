@@ -76,22 +76,44 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   String get _serverUrl => ref.read(serverUrlProvider);
 
-  /// Try to auto-login using stored refresh token from SharedPreferences.
+  /// Try to auto-login using stored refresh token.
   ///
-  /// Loads the refresh token, calls the refresh endpoint to get a new access
-  /// token, and restores the session. If the refresh fails (expired, revoked,
-  /// or server unreachable), clears stored tokens and returns false so the
-  /// user must log in manually.
+  /// Reads the refresh token from [SecureKeyStore] (global scope), falling
+  /// back to SharedPreferences for pre-migration installs. Calls the refresh
+  /// endpoint to get a new access token and restores the session. If the
+  /// refresh fails (expired, revoked, or server unreachable), clears stored
+  /// tokens and returns false so the user must log in manually.
   Future<bool> tryAutoLogin() async {
     try {
+      // Migrate tokens from SharedPreferences to secure storage if needed.
+      await migrateTokensFromSharedPreferences();
+
       final prefs = await SharedPreferences.getInstance();
-      final storedRefreshToken = prefs.getString(_keyRefreshToken);
       final storedUserId = prefs.getString(_keyUserId);
       final storedUsername = prefs.getString(_keyUsername);
 
+      // Read refresh token from secure storage first, fall back to prefs
+      // (covers the case where secure storage was unavailable during
+      // migration or during a previous _storeTokens fallback write).
+      String? storedRefreshToken;
+      try {
+        storedRefreshToken = await SecureKeyStore.instance.readGlobal(
+          _keyRefreshToken,
+        );
+      } catch (_) {
+        // Secure storage unavailable -- fall through to prefs.
+      }
+      storedRefreshToken ??= prefs.getString(_keyRefreshToken);
+
       if (storedRefreshToken == null || storedRefreshToken.isEmpty) {
         // No refresh token stored -- check for legacy access token as fallback
-        final legacyToken = prefs.getString(_keyAccessToken);
+        String? legacyToken;
+        try {
+          legacyToken = await SecureKeyStore.instance.readGlobal(
+            _keyAccessToken,
+          );
+        } catch (_) {}
+        legacyToken ??= prefs.getString(_keyAccessToken);
         if (legacyToken != null &&
             legacyToken.isNotEmpty &&
             storedUserId != null &&
@@ -262,24 +284,46 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return response;
   }
 
-  /// Persist tokens to SharedPreferences.
+  /// Persist tokens to secure storage; userId/username to SharedPreferences.
+  ///
+  /// Tokens are written to [SecureKeyStore] using global (non-user-scoped)
+  /// keys because this method is called BEFORE [_setUserScope]. If secure
+  /// storage is unavailable (e.g. locked keyring on Linux), falls back to
+  /// SharedPreferences so the session is not lost.
   Future<void> _storeTokens({
     required String accessToken,
     required String refreshToken,
     required String userId,
     required String username,
   }) async {
+    final store = SecureKeyStore.instance;
+
+    // Write tokens to secure storage (global scope -- no user prefix).
+    try {
+      await store.writeGlobal(_keyAccessToken, accessToken);
+      await store.writeGlobal(_keyRefreshToken, refreshToken);
+    } catch (e) {
+      // Secure storage unavailable -- fall back to SharedPreferences.
+      debugPrint('[Auth] SecureKeyStore unavailable, falling back: $e');
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_keyAccessToken, accessToken);
+        await prefs.setString(_keyRefreshToken, refreshToken);
+      } catch (e2) {
+        debugPrint('[Auth] _storeTokens fallback also failed: $e2');
+      }
+    }
+
+    // userId and username are not sensitive -- keep in SharedPreferences.
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_keyAccessToken, accessToken);
-      await prefs.setString(_keyRefreshToken, refreshToken);
       await prefs.setString(_keyUserId, userId);
       await prefs.setString(_keyUsername, username);
 
       // Clean up legacy password key if it exists
       await _clearLegacyCredentials(prefs);
     } catch (e) {
-      debugPrint('[Auth] _storeTokens failed: $e');
+      debugPrint('[Auth] _storeTokens (prefs) failed: $e');
     }
   }
 
@@ -298,8 +342,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  /// Clear all stored tokens.
+  /// Clear all stored tokens from both secure storage and SharedPreferences.
   Future<void> _clearStoredTokens() async {
+    // Remove tokens from secure storage (global scope).
+    final store = SecureKeyStore.instance;
+    await store.deleteGlobal(_keyAccessToken);
+    await store.deleteGlobal(_keyRefreshToken);
+
+    // Remove everything from SharedPreferences (tokens may exist there
+    // from pre-migration installs or secure-storage fallback writes).
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_keyAccessToken);
@@ -309,6 +360,38 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _clearLegacyCredentials(prefs);
     } catch (e) {
       debugPrint('[Auth] _clearStoredTokens failed: $e');
+    }
+  }
+
+  /// Migrate auth tokens from SharedPreferences to SecureKeyStore.
+  ///
+  /// Called at the start of [tryAutoLogin] before reading tokens. For each
+  /// token key: if found in SharedPreferences, copies to secure storage via
+  /// [SecureKeyStore.writeGlobal], then removes from SharedPreferences on
+  /// success. If writeGlobal fails (e.g. keyring locked), the key is left in
+  /// SharedPreferences for retry on next launch -- matching the pattern in
+  /// `crypto_service.dart:_migrateFromSharedPreferences`.
+  @visibleForTesting
+  Future<void> migrateTokensFromSharedPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final store = SecureKeyStore.instance;
+
+    for (final key in [_keyAccessToken, _keyRefreshToken]) {
+      final value = prefs.getString(key);
+      if (value != null && value.isNotEmpty) {
+        try {
+          await store.writeGlobal(key, value);
+          await prefs.remove(key);
+          debugPrint(
+            '[Auth] Migrated $key from SharedPreferences to secure storage',
+          );
+        } catch (e) {
+          debugPrint(
+            '[Auth] Migration of $key failed '
+            '(keeping in SharedPreferences for next attempt): $e',
+          );
+        }
+      }
     }
   }
 
