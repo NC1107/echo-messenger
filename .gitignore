@@ -94,6 +94,7 @@ tests/e2e/*.spec.ts
 !tests/e2e/local_full.spec.ts
 !tests/e2e/semantics_e2e.spec.ts
 !tests/e2e/hover_then_type.spec.ts
+!tests/e2e/group_create_ui.spec.ts
 test-results/
 
 # Uploaded media files
