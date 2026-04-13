@@ -20,7 +20,8 @@ import 'echo_logo_icon.dart';
 import 'skeleton_loader.dart';
 
 // Re-export avatar utilities so existing `show` imports keep working.
-export 'avatar_utils.dart' show buildAvatar, avatarColor, groupAvatarColor;
+export 'avatar_utils.dart'
+    show buildAvatar, avatarColor, groupAvatarColor, resolveAvatarUrl;
 
 class ConversationPanel extends ConsumerStatefulWidget {
   final String? selectedConversationId;
@@ -885,7 +886,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           name: myUsername,
           radius: 16,
           bgColor: context.accent,
-          imageUrl: avatarUrl != null ? '$serverUrl$avatarUrl' : null,
+          imageUrl: resolveAvatarUrl(avatarUrl, serverUrl),
         ),
         Positioned(
           bottom: 0,
@@ -1003,7 +1004,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       case 2:
         return KeyedSubtree(
           key: const ValueKey('tab-groups'),
-          child: _buildGroupsTab(groupConversations, myUserId),
+          child: _buildGroupsTab(groupConversations, myUserId, serverUrl),
         );
       default:
         return KeyedSubtree(
@@ -1237,17 +1238,14 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ? null
         : conv.members.where((m) => m.userId != myUserId).firstOrNull;
     final isPeerOnline = peer != null && wsOnlineUsers.contains(peer.userId);
-    String? peerAvatarUrl;
-    if (!conv.isGroup && peer != null && peer.avatarUrl != null) {
-      peerAvatarUrl = '$serverUrl${peer.avatarUrl}';
-    }
     return ConversationItem(
       conversation: conv,
       myUserId: myUserId,
       isSelected: conv.id == widget.selectedConversationId,
       isPinned: isPinned,
       isPeerOnline: isPeerOnline,
-      peerAvatarUrl: peerAvatarUrl,
+      peerAvatarUrl: resolveAvatarUrl(peer?.avatarUrl, serverUrl),
+      groupIconUrl: resolveAvatarUrl(conv.iconUrl, serverUrl),
       timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
       onTap: () => widget.onConversationTap(conv),
       onContextMenu: (position) =>
@@ -1330,6 +1328,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   Widget _buildGroupsTab(
     List<Conversation> groupConversations,
     String myUserId,
+    String serverUrl,
   ) {
     if (groupConversations.isEmpty) {
       return Center(
@@ -1423,6 +1422,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           isSelected: isSelected,
           isPinned: isPinned,
           isPeerOnline: false,
+          groupIconUrl: resolveAvatarUrl(conv.iconUrl, serverUrl),
           timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
           onTap: () => widget.onConversationTap(conv),
           onContextMenu: (position) =>

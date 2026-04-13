@@ -188,4 +188,41 @@ void main() {
       expect(c2.a, greaterThan(0));
     });
   });
+
+  group('resolveAvatarUrl', () {
+    test('returns null for null input', () {
+      expect(resolveAvatarUrl(null, 'http://localhost:8080'), isNull);
+    });
+
+    test('returns null for empty string', () {
+      expect(resolveAvatarUrl('', 'http://localhost:8080'), isNull);
+    });
+
+    test('prepends serverUrl to relative path', () {
+      expect(
+        resolveAvatarUrl('/api/users/abc/avatar', 'http://localhost:8080'),
+        equals('http://localhost:8080/api/users/abc/avatar'),
+      );
+    });
+
+    test('returns absolute URL unchanged', () {
+      expect(
+        resolveAvatarUrl(
+          'https://example.com/avatar.png',
+          'http://localhost:8080',
+        ),
+        equals('https://example.com/avatar.png'),
+      );
+    });
+
+    test('returns http absolute URL unchanged', () {
+      expect(
+        resolveAvatarUrl(
+          'http://example.com/avatar.png',
+          'http://localhost:8080',
+        ),
+        equals('http://example.com/avatar.png'),
+      );
+    });
+  });
 }

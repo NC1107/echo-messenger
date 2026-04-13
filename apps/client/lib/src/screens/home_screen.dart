@@ -26,7 +26,7 @@ import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../widgets/chat_panel.dart';
 import '../widgets/conversation_panel.dart'
-    show ConversationPanel, buildAvatar, groupAvatarColor;
+    show ConversationPanel, buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import '../widgets/members_panel.dart';
 import '../utils/web_lifecycle.dart';
 import '../widgets/keyboard_shortcuts_overlay.dart';
@@ -512,17 +512,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                             ),
                             child: Builder(
                               builder: (_) {
-                                final peer = conv.members
-                                    .where((m) => m.userId != myUserId)
-                                    .firstOrNull;
-                                final peerAvatarUrl =
-                                    (!conv.isGroup && peer?.avatarUrl != null)
-                                    ? '$serverUrl${peer!.avatarUrl}'
-                                    : null;
+                                final String? avatarUrl;
+                                if (conv.isGroup) {
+                                  avatarUrl = resolveAvatarUrl(
+                                    conv.iconUrl,
+                                    serverUrl,
+                                  );
+                                } else {
+                                  final peer = conv.members
+                                      .where((m) => m.userId != myUserId)
+                                      .firstOrNull;
+                                  avatarUrl = resolveAvatarUrl(
+                                    peer?.avatarUrl,
+                                    serverUrl,
+                                  );
+                                }
                                 return buildAvatar(
                                   name: displayName,
                                   radius: 18,
-                                  imageUrl: peerAvatarUrl,
+                                  imageUrl: avatarUrl,
                                   bgColor: conv.isGroup
                                       ? groupAvatarColor(displayName)
                                       : null,

@@ -14,7 +14,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
-import '../widgets/avatar_utils.dart' show buildAvatar;
+import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 import 'user_profile_screen.dart';
 
 /// A user returned from the /api/users/search endpoint.
@@ -338,9 +338,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         }
 
         final status = _contactStatus(user.userId);
-        final avatarImageUrl = user.avatarUrl != null
-            ? '$serverUrl${user.avatarUrl}'
-            : null;
+        final avatarImageUrl = resolveAvatarUrl(user.avatarUrl, serverUrl);
 
         return _SearchResultCard(
           user: user,
@@ -462,9 +460,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
             leading: buildAvatar(
               name: contact.username,
               radius: 20,
-              imageUrl: contact.avatarUrl != null
-                  ? '$serverUrl${contact.avatarUrl}'
-                  : null,
+              imageUrl: resolveAvatarUrl(contact.avatarUrl, serverUrl),
             ),
             title: GestureDetector(
               onTap: () => UserProfileScreen.show(context, ref, contact.userId),
@@ -702,9 +698,7 @@ class _PendingRequestTile extends StatelessWidget {
           buildAvatar(
             name: contact.username,
             radius: 20,
-            imageUrl: contact.avatarUrl != null
-                ? '$serverUrl${contact.avatarUrl}'
-                : null,
+            imageUrl: resolveAvatarUrl(contact.avatarUrl, serverUrl),
           ),
           const SizedBox(width: 12),
           Expanded(
