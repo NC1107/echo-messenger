@@ -909,6 +909,11 @@ class _MessageItemState extends State<MessageItem> {
   }
 
   /// Build the hover-actions overlay that appears above the bubble.
+  ///
+  /// When not hovered the overlay is wrapped in [ExcludeSemantics] so its
+  /// invisible buttons don't appear in the accessibility tree.  This prevents
+  /// Playwright (and screen-readers) from seeing phantom focusable elements
+  /// that sit on top of the text-input area after the mouse leaves.
   Widget _buildHoverOverlay({
     required ChatMessage msg,
     required bool isMine,
@@ -918,17 +923,20 @@ class _MessageItemState extends State<MessageItem> {
       top: -12,
       left: isMine ? null : 36,
       right: isMine ? 0 : null,
-      child: IgnorePointer(
-        ignoring: !_isHovered,
-        child: AnimatedOpacity(
-          opacity: _isHovered ? 1 : 0,
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOut,
-          child: AnimatedSlide(
-            offset: _isHovered ? Offset.zero : const Offset(0, -0.12),
+      child: ExcludeSemantics(
+        excluding: !_isHovered,
+        child: IgnorePointer(
+          ignoring: !_isHovered,
+          child: AnimatedOpacity(
+            opacity: _isHovered ? 1 : 0,
             duration: const Duration(milliseconds: 140),
             curve: Curves.easeOut,
-            child: _buildHoverActions(msg, isMine, mediaUrl: mediaUrl),
+            child: AnimatedSlide(
+              offset: _isHovered ? Offset.zero : const Offset(0, -0.12),
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOut,
+              child: _buildHoverActions(msg, isMine, mediaUrl: mediaUrl),
+            ),
           ),
         ),
       ),
@@ -1199,15 +1207,19 @@ class _HoverActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onPressed,
-        child: Padding(
-          padding: const EdgeInsets.all(6),
-          child: Opacity(
-            opacity: 0.75,
-            child: Icon(icon, size: 14, color: context.textSecondary),
+    return Semantics(
+      label: tooltip,
+      button: true,
+      child: Tooltip(
+        message: tooltip,
+        child: InkWell(
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Opacity(
+              opacity: 0.75,
+              child: Icon(icon, size: 14, color: context.textSecondary),
+            ),
           ),
         ),
       ),
