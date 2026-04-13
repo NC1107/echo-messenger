@@ -270,6 +270,26 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     ref
         .read(chatProvider.notifier)
         .updateMessageStatus(conversationId, messageId, MessageStatus.sent);
+
+    // Update conversation list preview so the sender sees their own message
+    // reflected immediately (e.g. attachment markers, text). Without this the
+    // conversation preview stays stale until the next server fetch.
+    final confirmed = ref
+        .read(chatProvider)
+        .messagesForConversation(conversationId)
+        .where((m) => m.id == messageId)
+        .firstOrNull;
+    if (confirmed != null) {
+      ref
+          .read(conversationsProvider.notifier)
+          .onNewMessage(
+            conversationId: conversationId,
+            content: confirmed.content,
+            timestamp: timestamp,
+            senderUsername: confirmed.fromUsername,
+            incrementUnread: false,
+          );
+    }
   }
 
   void _handleNewMessage(Map<String, dynamic> json, String myUserId) {

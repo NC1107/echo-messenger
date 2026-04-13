@@ -154,11 +154,15 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   }
 
   /// Update a conversation when a new message is received.
+  ///
+  /// Set [incrementUnread] to false for the sender's own messages so the
+  /// unread badge is not bumped for messages the user just sent.
   void onNewMessage({
     required String conversationId,
     required String content,
     required String timestamp,
     required String senderUsername,
+    bool incrementUnread = true,
   }) {
     // Cache the decrypted preview (content passed here is already decrypted
     // by the websocket provider)
@@ -173,7 +177,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         lastMessage: content,
         lastMessageTimestamp: timestamp,
         lastMessageSender: senderUsername,
-        unreadCount: conv.unreadCount + 1,
+        unreadCount: incrementUnread ? conv.unreadCount + 1 : conv.unreadCount,
       );
 
       // Build new list updating only the changed conversation and moving

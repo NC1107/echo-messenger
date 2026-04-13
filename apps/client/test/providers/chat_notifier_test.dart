@@ -204,6 +204,81 @@ void main() {
       expect(msgs.first.id, 'server-msg-123');
       expect(msgs.first.status, MessageStatus.sent);
     });
+
+    test('preserves content of confirmed message', () {
+      final notifier = _createNotifier();
+      notifier.addOptimistic(
+        'user-1',
+        '[img:/api/media/abc-123]',
+        'me',
+        conversationId: 'conv-1',
+      );
+
+      notifier.confirmSent('server-msg-1', 'conv-1', '2026-01-01T12:00:00Z');
+
+      final msgs = notifier.state.messagesForConversation('conv-1');
+      expect(msgs.first.content, '[img:/api/media/abc-123]');
+      expect(msgs.first.id, 'server-msg-1');
+    });
+
+    test(
+      'FIFO: confirms oldest pending first when multiple pending exist',
+      () async {
+        final notifier = _createNotifier();
+        // Simulate attachment + caption sent in rapid succession.
+        notifier.addOptimistic(
+          'user-1',
+          '[img:/api/media/photo.png]',
+          'me',
+          conversationId: 'conv-1',
+        );
+        // Small delay so timestamps differ.
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+        notifier.addOptimistic(
+          'user-1',
+          'Check out this photo!',
+          'me',
+          conversationId: 'conv-1',
+        );
+
+        final before = notifier.state.messagesForConversation('conv-1');
+        expect(before, hasLength(2));
+        expect(before[0].content, '[img:/api/media/photo.png]');
+        expect(before[1].content, 'Check out this photo!');
+
+        // Server confirms attachment first (FIFO order).
+        notifier.confirmSent('server-attach', 'conv-1', '2026-01-01T12:00:00Z');
+
+        final mid = notifier.state.messagesForConversation('conv-1');
+        // Attachment should be confirmed, caption still pending.
+        expect(
+          mid.where((m) => m.id == 'server-attach').first.content,
+          '[img:/api/media/photo.png]',
+        );
+        expect(
+          mid.where((m) => m.id.startsWith('pending_')).first.content,
+          'Check out this photo!',
+        );
+
+        // Server confirms caption second.
+        notifier.confirmSent(
+          'server-caption',
+          'conv-1',
+          '2026-01-01T12:00:01Z',
+        );
+
+        final after = notifier.state.messagesForConversation('conv-1');
+        expect(after, hasLength(2));
+        expect(
+          after.where((m) => m.id == 'server-attach').first.content,
+          '[img:/api/media/photo.png]',
+        );
+        expect(
+          after.where((m) => m.id == 'server-caption').first.content,
+          'Check out this photo!',
+        );
+      },
+    );
   });
 
   group('ChatNotifier.updateMessageStatus', () {
