@@ -738,32 +738,37 @@ class _MessageItemState extends State<MessageItem> {
 
   /// Build a small pinned indicator shown inside the bubble.
   Widget _buildPinnedIndicator({required bool isMine}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.push_pin,
-            size: 11,
-            color: isMine
-                ? Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7)
-                : context.accent,
-          ),
-          const SizedBox(width: 3),
-          Text(
-            'Pinned',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w500,
+    return Semantics(
+      label: 'Pinned message',
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.push_pin,
+              size: 11,
               color: isMine
                   ? Theme.of(
                       context,
                     ).colorScheme.onPrimary.withValues(alpha: 0.7)
                   : context.accent,
             ),
-          ),
-        ],
+            const SizedBox(width: 3),
+            Text(
+              'Pinned',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: isMine
+                    ? Theme.of(
+                        context,
+                      ).colorScheme.onPrimary.withValues(alpha: 0.7)
+                    : context.accent,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1143,6 +1148,7 @@ class _MessageItemState extends State<MessageItem> {
         onExit: (_) => setState(() => _isHovered = false),
         child: Semantics(
           label: 'Message from ${msg.fromUsername}. Long press for actions.',
+          button: true,
           child: GestureDetector(
             onLongPressStart: (details) =>
                 _handleLongPress(details, msg, isMine, mediaUrl, hasReactions),

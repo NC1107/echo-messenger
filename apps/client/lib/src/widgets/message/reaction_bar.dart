@@ -29,7 +29,9 @@ class ReactionBar extends StatelessWidget {
         color: context.textPrimary,
       ),
       child: Semantics(
-        label: 'reaction: ${uniqueEmojis.join(" ")} ($totalCount)',
+        label:
+            '$totalCount ${totalCount == 1 ? 'reaction' : 'reactions'}: '
+            '${uniqueEmojis.join(" ")}',
         button: true,
         child: GestureDetector(
           onTapUp: (details) => onTap?.call(details.globalPosition),

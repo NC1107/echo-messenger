@@ -149,26 +149,29 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment<bool>(
-                value: false,
-                label: Text('Private'),
-                icon: Icon(Icons.lock_outline, size: 16),
+          Semantics(
+            label: 'visibility toggle',
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment<bool>(
+                  value: false,
+                  label: Text('Private'),
+                  icon: Icon(Icons.lock_outline, size: 16),
+                ),
+                ButtonSegment<bool>(
+                  value: true,
+                  label: Text('Public'),
+                  icon: Icon(Icons.public, size: 16),
+                ),
+              ],
+              selected: {_isPublic},
+              onSelectionChanged: (selection) {
+                setState(() => _isPublic = selection.first);
+              },
+              style: SegmentedButton.styleFrom(
+                selectedBackgroundColor: context.accentLight,
+                selectedForegroundColor: context.accent,
               ),
-              ButtonSegment<bool>(
-                value: true,
-                label: Text('Public'),
-                icon: Icon(Icons.public, size: 16),
-              ),
-            ],
-            selected: {_isPublic},
-            onSelectionChanged: (selection) {
-              setState(() => _isPublic = selection.first);
-            },
-            style: SegmentedButton.styleFrom(
-              selectedBackgroundColor: context.accentLight,
-              selectedForegroundColor: context.accent,
             ),
           ),
           const SizedBox(height: 8),
@@ -229,26 +232,33 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
   }
 
   Widget _buildContactTile(Contact contact, bool isSelected) {
-    return CheckboxListTile(
-      value: isSelected,
-      onChanged: (checked) {
-        setState(() {
-          if (checked == true) {
-            _selectedUserIds.add(contact.userId);
-          } else {
-            _selectedUserIds.remove(contact.userId);
-          }
-        });
-      },
-      secondary: CircleAvatar(
-        child: Text(
-          contact.username.isNotEmpty ? contact.username[0].toUpperCase() : '?',
+    return Semantics(
+      label: 'select contact ${contact.username}',
+      selected: isSelected,
+      button: true,
+      child: CheckboxListTile(
+        value: isSelected,
+        onChanged: (checked) {
+          setState(() {
+            if (checked == true) {
+              _selectedUserIds.add(contact.userId);
+            } else {
+              _selectedUserIds.remove(contact.userId);
+            }
+          });
+        },
+        secondary: CircleAvatar(
+          child: Text(
+            contact.username.isNotEmpty
+                ? contact.username[0].toUpperCase()
+                : '?',
+          ),
         ),
+        title: Text(contact.displayName ?? contact.username),
+        subtitle: contact.displayName != null
+            ? Text('@${contact.username}')
+            : null,
       ),
-      title: Text(contact.displayName ?? contact.username),
-      subtitle: contact.displayName != null
-          ? Text('@${contact.username}')
-          : null,
     );
   }
 }

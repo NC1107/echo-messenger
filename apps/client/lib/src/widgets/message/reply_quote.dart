@@ -22,49 +22,54 @@ class ReplyQuote extends StatelessWidget {
         ? '${replyToContent.substring(0, 100)}...'
         : replyToContent;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: (isMine ? Colors.white : context.accent).withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border(
-          left: BorderSide(
-            color: isMine
-                ? Colors.white.withValues(alpha: 0.5)
-                : context.accent,
-            width: 3,
+    return Semantics(
+      label: 'In reply to ${replyToUsername ?? 'Unknown'}: $truncated',
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: (isMine ? Colors.white : context.accent).withValues(
+            alpha: 0.12,
+          ),
+          borderRadius: BorderRadius.circular(8),
+          border: Border(
+            left: BorderSide(
+              color: isMine
+                  ? Colors.white.withValues(alpha: 0.5)
+                  : context.accent,
+              width: 3,
+            ),
           ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: isMine
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
-        children: [
-          Text(
-            replyToUsername ?? 'Unknown',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: isMine
-                  ? Colors.white.withValues(alpha: 0.8)
-                  : context.accent,
+        child: Column(
+          crossAxisAlignment: isMine
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          children: [
+            Text(
+              replyToUsername ?? 'Unknown',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: isMine
+                    ? Colors.white.withValues(alpha: 0.8)
+                    : context.accent,
+              ),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            truncated,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              color: isMine
-                  ? Colors.white.withValues(alpha: 0.7)
-                  : context.textSecondary,
+            const SizedBox(height: 2),
+            Text(
+              truncated,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: isMine
+                    ? Colors.white.withValues(alpha: 0.7)
+                    : context.textSecondary,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
