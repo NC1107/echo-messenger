@@ -398,8 +398,9 @@ void main() {
       expect(find.textContaining('[img:'), findsNothing);
     });
 
-    testWidgets('sender label prepends "You" for own messages in groups',
-        (tester) async {
+    testWidgets('sender label prepends "You" for own messages in groups', (
+      tester,
+    ) async {
       final conv = _makeConversation(
         isGroup: true,
         lastMessage: 'my message',
