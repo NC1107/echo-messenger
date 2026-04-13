@@ -90,6 +90,41 @@ void main() {
       expect(notified, isTrue);
     });
 
+    test('redacts UUIDs in logged messages', () {
+      service.log(
+        LogLevel.info,
+        'WebSocket',
+        'Decryption failed for conv a1b2c3d4-e5f6-7890-abcd-ef1234567890 '
+            'from user 12345678-abcd-ef01-2345-678901234567',
+      );
+
+      final msg = service.entries.first.message;
+      // Full UUIDs should be replaced with first 8 chars + "..."
+      expect(msg, isNot(contains('a1b2c3d4-e5f6-7890-abcd-ef1234567890')));
+      expect(msg, isNot(contains('12345678-abcd-ef01-2345-678901234567')));
+      expect(msg, contains('a1b2c3d4...'));
+      expect(msg, contains('12345678...'));
+    });
+
+    test('does not redact non-UUID strings', () {
+      service.log(LogLevel.info, 'Test', 'normal message with no IDs');
+      expect(service.entries.first.message, 'normal message with no IDs');
+    });
+
+    test('redacts multiple UUIDs in a single message', () {
+      service.log(
+        LogLevel.warning,
+        'Test',
+        'users aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee '
+            'and 11111111-2222-3333-4444-555555555555 are chatting',
+      );
+
+      final msg = service.entries.first.message;
+      expect(msg, contains('aaaaaaaa...'));
+      expect(msg, contains('11111111...'));
+      expect(msg, isNot(contains('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee')));
+    });
+
     test('DebugLogEntry fields are set correctly', () {
       final before = DateTime.now();
       service.log(LogLevel.error, 'Crypto', 'key failure');

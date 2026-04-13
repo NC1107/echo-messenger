@@ -7,8 +7,13 @@
 /// Replaces direct SharedPreferences usage for sensitive crypto material.
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+
+import '../utils/debug_log.dart';
 
 class SecureKeyStore {
   /// Singleton instance.
@@ -22,12 +27,12 @@ class SecureKeyStore {
   /// Scope all storage operations to a specific user.
   void setUserScope(String userId, String serverHost) {
     _userPrefix = 'u/$userId@$serverHost/';
-    debugPrint('[SecureKeyStore] setUserScope: prefix=$_userPrefix');
+    debugLog('setUserScope: prefix=$_userPrefix', 'SecureKeyStore');
   }
 
   /// Clear user scope (on logout).
   void clearUserScope() {
-    debugPrint('[SecureKeyStore] clearUserScope (was: $_userPrefix)');
+    debugLog('clearUserScope (was: $_userPrefix)', 'SecureKeyStore');
     _userPrefix = '';
   }
 
@@ -80,7 +85,7 @@ class SecureKeyStore {
     try {
       return await _storage.read(key: '$_userPrefix$key');
     } catch (e) {
-      debugPrint('[SecureKeyStore] read($key) failed: $e');
+      debugLog('read($key) failed: $e', 'SecureKeyStore');
       rethrow;
     }
   }
@@ -94,7 +99,7 @@ class SecureKeyStore {
     try {
       await _storage.write(key: '$_userPrefix$key', value: value);
     } catch (e) {
-      debugPrint('[SecureKeyStore] write($key) failed: $e');
+      debugLog('write($key) failed: $e', 'SecureKeyStore');
       rethrow;
     }
   }
@@ -104,7 +109,7 @@ class SecureKeyStore {
     try {
       await _storage.delete(key: '$_userPrefix$key');
     } catch (e) {
-      debugPrint('[SecureKeyStore] delete($key) failed: $e');
+      debugLog('delete($key) failed: $e', 'SecureKeyStore');
     }
   }
 
@@ -119,7 +124,7 @@ class SecureKeyStore {
             .map((e) => MapEntry(e.key.substring(_userPrefix.length), e.value)),
       );
     } catch (e) {
-      debugPrint('[SecureKeyStore] readAll failed: $e');
+      debugLog('readAll failed: $e', 'SecureKeyStore');
       return {};
     }
   }
@@ -129,7 +134,7 @@ class SecureKeyStore {
     try {
       return await _storage.containsKey(key: '$_userPrefix$key');
     } catch (e) {
-      debugPrint('[SecureKeyStore] containsKey($key) failed: $e');
+      debugLog('containsKey($key) failed: $e', 'SecureKeyStore');
       return false;
     }
   }
@@ -148,7 +153,7 @@ class SecureKeyStore {
     try {
       return await _storage.read(key: key);
     } catch (e) {
-      debugPrint('[SecureKeyStore] readGlobal($key) failed: $e');
+      debugLog('readGlobal($key) failed: $e', 'SecureKeyStore');
       rethrow;
     }
   }
@@ -161,9 +166,23 @@ class SecureKeyStore {
     try {
       await _storage.write(key: key, value: value);
     } catch (e) {
-      debugPrint('[SecureKeyStore] writeGlobal($key) failed: $e');
+      debugLog('writeGlobal($key) failed: $e', 'SecureKeyStore');
       rethrow;
     }
+  }
+
+  /// Return a 32-byte AES key for Hive box encryption, creating one if it
+  /// does not already exist.  The key is persisted in platform-secure storage
+  /// (global scope) so it survives app restarts and user re-logins.
+  Future<List<int>> getOrCreateHiveCacheKey() async {
+    const keyName = 'hive_message_cache_key';
+    final existing = await readGlobal(keyName);
+    if (existing != null && existing.isNotEmpty) {
+      return base64.decode(existing);
+    }
+    final newKey = Hive.generateSecureKey();
+    await writeGlobal(keyName, base64.encode(newKey));
+    return newKey;
   }
 
   /// Delete a global (non-user-scoped) key. Swallows errors.
@@ -171,7 +190,7 @@ class SecureKeyStore {
     try {
       await _storage.delete(key: key);
     } catch (e) {
-      debugPrint('[SecureKeyStore] deleteGlobal($key) failed: $e');
+      debugLog('deleteGlobal($key) failed: $e', 'SecureKeyStore');
     }
   }
 }
