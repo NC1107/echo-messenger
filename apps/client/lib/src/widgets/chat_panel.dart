@@ -25,6 +25,7 @@ import 'channel_bar.dart';
 import 'chat_header_bar.dart';
 import 'chat_input_bar.dart';
 import 'connection_status_banner.dart';
+import 'crypto_degraded_banner.dart';
 import 'message_item.dart';
 import 'message_search_overlay.dart';
 
@@ -1416,6 +1417,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                 ),
 
               const ConnectionStatusBanner(),
+              const CryptoDegradedBanner(),
 
               Expanded(
                 child: GestureDetector(
