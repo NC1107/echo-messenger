@@ -139,7 +139,8 @@ void main() {
         //
         // This is verified by reading the actual code above.
       },
-      skip: 'documents code pattern, needs integration test with actual crypto service',
+      skip:
+          'documents code pattern, needs integration test with actual crypto service',
     );
   });
 
@@ -427,67 +428,70 @@ void main() {
   });
 
   group('ROOT CAUSE #7: Concurrent session access', () {
-    test('PROVES: Interleaved async decrypt corrupts state', () async {
-      final aliceIdentity = await x25519.newKeyPair();
-      final bobIdentity = await x25519.newKeyPair();
-      final bobSignedPrekey = await x25519.newKeyPair();
+    test(
+      'PROVES: Interleaved async decrypt corrupts state',
+      () async {
+        final aliceIdentity = await x25519.newKeyPair();
+        final bobIdentity = await x25519.newKeyPair();
+        final bobSignedPrekey = await x25519.newKeyPair();
 
-      final bobIdentityPub = await bobIdentity.extractPublicKey();
-      final bobSignedPrekeyPub = await bobSignedPrekey.extractPublicKey();
-      final aliceIdentityPub = await aliceIdentity.extractPublicKey();
+        final bobIdentityPub = await bobIdentity.extractPublicKey();
+        final bobSignedPrekeyPub = await bobSignedPrekey.extractPublicKey();
+        final aliceIdentityPub = await aliceIdentity.extractPublicKey();
 
-      final initResult = await X3DH.initiate(
-        aliceIdentity: aliceIdentity,
-        bobIdentityKey: bobIdentityPub,
-        bobSignedPrekey: bobSignedPrekeyPub,
-      );
-      final bobSecret = await X3DH.respond(
-        bobIdentity: bobIdentity,
-        bobSignedPrekey: bobSignedPrekey,
-        aliceIdentityKey: aliceIdentityPub,
-        aliceEphemeralKey: initResult.ephemeralPublic,
-      );
-
-      final alice = await SignalSession.initAlice(
-        initResult.sharedSecret,
-        bobSignedPrekeyPub,
-      );
-      final bob = await SignalSession.initBob(bobSecret, bobSignedPrekey);
-
-      // Alice sends 5 messages
-      final wires = <Uint8List>[];
-      for (var i = 0; i < 5; i++) {
-        wires.add(
-          await alice.encrypt(
-            Uint8List.fromList(utf8.encode('concurrent msg $i')),
-          ),
+        final initResult = await X3DH.initiate(
+          aliceIdentity: aliceIdentity,
+          bobIdentityKey: bobIdentityPub,
+          bobSignedPrekey: bobSignedPrekeyPub,
         );
-      }
+        final bobSecret = await X3DH.respond(
+          bobIdentity: bobIdentity,
+          bobSignedPrekey: bobSignedPrekey,
+          aliceIdentityKey: aliceIdentityPub,
+          aliceEphemeralKey: initResult.ephemeralPublic,
+        );
 
-      // Simulate concurrent decryption: launch all decrypts at once
-      // In a single-threaded Dart event loop, these will interleave at await points
-      final futures = wires.map((w) => bob.decrypt(w)).toList();
+        final alice = await SignalSession.initAlice(
+          initResult.sharedSecret,
+          bobSignedPrekeyPub,
+        );
+        final bob = await SignalSession.initBob(bobSecret, bobSignedPrekey);
 
-      // This may or may not fail depending on timing, but documents the risk.
-      // In practice, the encrypt/decrypt methods contain multiple awaits where
-      // interleaving can occur. With in-order messages this usually works,
-      // but with out-of-order messages + DH ratchet steps, corruption is possible.
-      try {
-        final results = await Future.wait(futures);
-        // If all succeed, they should contain the correct messages
+        // Alice sends 5 messages
+        final wires = <Uint8List>[];
         for (var i = 0; i < 5; i++) {
-          expect(utf8.decode(results[i]), contains('concurrent msg'));
+          wires.add(
+            await alice.encrypt(
+              Uint8List.fromList(utf8.encode('concurrent msg $i')),
+            ),
+          );
         }
-      } catch (e) {
-        // If any fail, the concurrency issue is demonstrated
-        // ignore: avoid_print
-        print('Concurrent decrypt failure (expected): $e');
-      }
-      // Note: This test demonstrates the RISK rather than guaranteeing failure.
-      // True concurrent failures are timing-dependent. The per-peer lock fix
-      // ensures serial execution regardless of timing.
-    },
-    skip: 'concurrency risk documented, needs integration test with real async interleaving',
+
+        // Simulate concurrent decryption: launch all decrypts at once
+        // In a single-threaded Dart event loop, these will interleave at await points
+        final futures = wires.map((w) => bob.decrypt(w)).toList();
+
+        // This may or may not fail depending on timing, but documents the risk.
+        // In practice, the encrypt/decrypt methods contain multiple awaits where
+        // interleaving can occur. With in-order messages this usually works,
+        // but with out-of-order messages + DH ratchet steps, corruption is possible.
+        try {
+          final results = await Future.wait(futures);
+          // If all succeed, they should contain the correct messages
+          for (var i = 0; i < 5; i++) {
+            expect(utf8.decode(results[i]), contains('concurrent msg'));
+          }
+        } catch (e) {
+          // If any fail, the concurrency issue is demonstrated
+          // ignore: avoid_print
+          print('Concurrent decrypt failure (expected): $e');
+        }
+        // Note: This test demonstrates the RISK rather than guaranteeing failure.
+        // True concurrent failures are timing-dependent. The per-peer lock fix
+        // ensures serial execution regardless of timing.
+      },
+      skip:
+          'concurrency risk documented, needs integration test with real async interleaving',
     );
   });
 

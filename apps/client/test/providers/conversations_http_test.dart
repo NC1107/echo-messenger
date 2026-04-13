@@ -317,26 +317,26 @@ void main() {
       expect(result.id, 'dm-1');
       // Verify no HTTP call was made.
       verifyNever(
-        () => mockClient.post(any(), headers: any(named: 'headers'),
-            body: any(named: 'body'), encoding: any(named: 'encoding')),
+        () => mockClient.post(
+          any(),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
       );
     });
 
     test('creates via API when not found locally', () async {
       when(
         () => mockClient.post(
-          any(
-            that: predicate<Uri>((u) => u.path == '/api/conversations/dm'),
-          ),
+          any(that: predicate<Uri>((u) => u.path == '/api/conversations/dm')),
           headers: any(named: 'headers'),
           body: any(named: 'body'),
           encoding: any(named: 'encoding'),
         ),
       ).thenAnswer(
-        (_) async => http.Response(
-          jsonEncode({'conversation_id': 'new-dm-1'}),
-          200,
-        ),
+        (_) async =>
+            http.Response(jsonEncode({'conversation_id': 'new-dm-1'}), 200),
       );
 
       // Stub loadConversations to return the newly created DM.
@@ -373,18 +373,13 @@ void main() {
     test('throws DmException when server returns 400', () async {
       when(
         () => mockClient.post(
-          any(
-            that: predicate<Uri>((u) => u.path == '/api/conversations/dm'),
-          ),
+          any(that: predicate<Uri>((u) => u.path == '/api/conversations/dm')),
           headers: any(named: 'headers'),
           body: any(named: 'body'),
           encoding: any(named: 'encoding'),
         ),
       ).thenAnswer(
-        (_) async => http.Response(
-          jsonEncode({'error': 'Not a contact'}),
-          400,
-        ),
+        (_) async => http.Response(jsonEncode({'error': 'Not a contact'}), 400),
       );
 
       final notifier = container.read(conversationsProvider.notifier);
@@ -400,9 +395,7 @@ void main() {
     test('throws DmException on network error', () async {
       when(
         () => mockClient.post(
-          any(
-            that: predicate<Uri>((u) => u.path == '/api/conversations/dm'),
-          ),
+          any(that: predicate<Uri>((u) => u.path == '/api/conversations/dm')),
           headers: any(named: 'headers'),
           body: any(named: 'body'),
           encoding: any(named: 'encoding'),

@@ -232,10 +232,8 @@ void main() {
           encoding: any(named: 'encoding'),
         ),
       ).thenAnswer(
-        (_) async => http.Response(
-          jsonEncode({'error': 'Invalid credentials'}),
-          401,
-        ),
+        (_) async =>
+            http.Response(jsonEncode({'error': 'Invalid credentials'}), 401),
       );
 
       final notifier = container.read(authProvider.notifier);
@@ -258,9 +256,7 @@ void main() {
           body: any(named: 'body'),
           encoding: any(named: 'encoding'),
         ),
-      ).thenThrow(
-        const SocketException('Connection refused'),
-      );
+      ).thenThrow(const SocketException('Connection refused'));
 
       final notifier = container.read(authProvider.notifier);
       await http.runWithClient(
@@ -312,10 +308,8 @@ void main() {
           encoding: any(named: 'encoding'),
         ),
       ).thenAnswer(
-        (_) async => http.Response(
-          jsonEncode({'error': 'Username already taken'}),
-          409,
-        ),
+        (_) async =>
+            http.Response(jsonEncode({'error': 'Username already taken'}), 409),
       );
 
       final notifier = container.read(authProvider.notifier);
@@ -338,9 +332,7 @@ void main() {
           body: any(named: 'body'),
           encoding: any(named: 'encoding'),
         ),
-      ).thenThrow(
-        const SocketException('Connection refused'),
-      );
+      ).thenThrow(const SocketException('Connection refused'));
 
       final notifier = container.read(authProvider.notifier);
       await http.runWithClient(
@@ -375,14 +367,8 @@ void main() {
 
       // Tokens should be cleared from SecureKeyStore (async -- wait a tick).
       await Future<void>.delayed(Duration.zero);
-      expect(
-        await fakeKeyStore.readGlobal('echo_auth_access_token'),
-        isNull,
-      );
-      expect(
-        await fakeKeyStore.readGlobal('echo_auth_refresh_token'),
-        isNull,
-      );
+      expect(await fakeKeyStore.readGlobal('echo_auth_access_token'), isNull);
+      expect(await fakeKeyStore.readGlobal('echo_auth_refresh_token'), isNull);
     });
 
     test('tryAutoLogin() with refresh token restores session', () async {
@@ -451,10 +437,7 @@ void main() {
       expect(st.isLoggedIn, isFalse);
 
       // Tokens should be cleared.
-      expect(
-        await fakeKeyStore.readGlobal('echo_auth_refresh_token'),
-        isNull,
-      );
+      expect(await fakeKeyStore.readGlobal('echo_auth_refresh_token'), isNull);
     });
 
     test('tryAutoLogin() no stored tokens returns false', () async {
@@ -548,9 +531,7 @@ void main() {
           any(that: predicate<Uri>((u) => u.path == '/api/users/me')),
           headers: any(named: 'headers'),
         ),
-      ).thenAnswer(
-        (_) async => http.Response('{"id":"me"}', 200),
-      );
+      ).thenAnswer((_) async => http.Response('{"id":"me"}', 200));
 
       final response = await http.runWithClient(
         () => notifier.authenticatedRequest(
@@ -598,10 +579,7 @@ void main() {
         ),
       ).thenAnswer(
         (_) async => http.Response(
-          jsonEncode({
-            'access_token': 'new-tok',
-            'refresh_token': 'new-ref',
-          }),
+          jsonEncode({'access_token': 'new-tok', 'refresh_token': 'new-ref'}),
           200,
         ),
       );
