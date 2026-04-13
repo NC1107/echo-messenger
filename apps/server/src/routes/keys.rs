@@ -335,6 +335,39 @@ pub async fn get_all_bundles(
     Ok(Json(serde_json::json!({ "bundles": bundles })))
 }
 
+/// DELETE /api/keys/device/:device_id -- Revoke a specific device for the
+/// authenticated user. Deletes all stored keys for that device and broadcasts
+/// a `device_revoked` event to all of the user's connected sessions.
+pub async fn revoke_device(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+    Path(device_id): Path<i32>,
+) -> Result<impl IntoResponse, AppError> {
+    use crate::ws::handler::ServerMessage;
+    use axum::extract::ws::Message as WsMessage;
+
+    let found = db::keys::revoke_device(&state.pool, auth_user.user_id, device_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
+    if !found {
+        return Err(AppError {
+            status: axum::http::StatusCode::NOT_FOUND,
+            message: "Device not found".to_string(),
+        });
+    }
+
+    // Notify all of this user's active sessions so they can handle the revocation.
+    let event = ServerMessage::DeviceRevoked { device_id };
+    if let Ok(json) = serde_json::to_string(&event) {
+        state
+            .hub
+            .send_to_user(&auth_user.user_id, WsMessage::Text(json.into()));
+    }
+
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
 /// Query parameters for the OTP count endpoint.
 #[derive(Debug, Deserialize)]
 pub struct OtpCountQuery {

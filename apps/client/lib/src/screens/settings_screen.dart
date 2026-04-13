@@ -15,12 +15,14 @@ import 'settings/appearance_section.dart';
 import 'settings/audio_section.dart';
 import 'settings/data_storage_section.dart';
 import 'settings/debug_section.dart';
+import 'settings/devices_section.dart';
 import 'settings/notification_section.dart';
 import 'settings/privacy_section.dart';
 
 /// Section identifiers for the settings navigation.
 enum SettingsSection {
   account,
+  devices,
   privacy,
   notifications,
   audio,
@@ -36,6 +38,8 @@ String settingsSectionLabel(SettingsSection section) {
   switch (section) {
     case SettingsSection.account:
       return 'Account';
+    case SettingsSection.devices:
+      return 'My Devices';
     case SettingsSection.privacy:
       return 'Privacy & Safety';
     case SettingsSection.notifications:
@@ -100,6 +104,12 @@ class SettingsNavList extends StatelessWidget {
           icon: Icons.person_outlined,
           label: 'Account',
           section: SettingsSection.account,
+        ),
+        _navItem(
+          context: context,
+          icon: Icons.devices_outlined,
+          label: 'My Devices',
+          section: SettingsSection.devices,
         ),
         _navItem(
           context: context,
@@ -237,6 +247,8 @@ class SettingsContent extends StatelessWidget {
     switch (section) {
       case SettingsSection.account:
         return const AccountSection();
+      case SettingsSection.devices:
+        return const DevicesSection();
       case SettingsSection.privacy:
         return const PrivacySection();
       case SettingsSection.notifications:

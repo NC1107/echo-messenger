@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::extract::ws::Message as WsMessage;
+use echo_server::ws::handler::ServerMessage;
 use echo_server::{config, db, routes, ws};
 use sqlx::PgPool;
 use tracing_subscriber::EnvFilter;
@@ -51,6 +52,7 @@ async fn main() {
             cleanup_empty_groups(&cleanup_pool).await;
             cleanup_expired_tokens(&cleanup_pool).await;
             cleanup_used_prekeys(&cleanup_pool).await;
+            cleanup_expired_messages(&cleanup_pool, &cleanup_hub).await;
         }
     });
 
@@ -176,6 +178,43 @@ async fn cleanup_used_prekeys(pool: &PgPool) {
         }
         Err(e) => tracing::warn!("One-time prekey cleanup error: {e}"),
         _ => {}
+    }
+}
+
+/// Delete messages whose `expires_at` has passed and broadcast `message_expired`
+/// events to all online members of each affected conversation.
+async fn cleanup_expired_messages(pool: &PgPool, hub: &ws::hub::Hub) {
+    let expired = match db::messages::cleanup_expired_messages(pool).await {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!("Expired message cleanup error: {e}");
+            return;
+        }
+    };
+
+    if expired.is_empty() {
+        return;
+    }
+
+    tracing::info!("Cleaned {} expired messages", expired.len());
+
+    for (message_id, conversation_id) in expired {
+        // Notify all online members of the conversation.
+        let member_ids = match db::groups::get_conversation_member_ids(pool, conversation_id).await
+        {
+            Ok(ids) => ids,
+            Err(_) => continue,
+        };
+
+        let event = ServerMessage::MessageExpired {
+            message_id,
+            conversation_id,
+        };
+        if let Ok(json) = serde_json::to_string(&event) {
+            for member_id in &member_ids {
+                hub.send_to(member_id, WsMessage::Text(json.clone().into()));
+            }
+        }
     }
 }
 

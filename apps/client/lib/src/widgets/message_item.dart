@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
@@ -88,6 +90,60 @@ class _MessageItemState extends State<MessageItem> {
   bool _isHovered = false;
   double _swipeDx = 0;
   bool _swipeTriggered = false;
+  Timer? _expireTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleExpireTimer();
+  }
+
+  @override
+  void didUpdateWidget(MessageItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message.expiresAt != widget.message.expiresAt) {
+      _expireTimer?.cancel();
+      _scheduleExpireTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _expireTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleExpireTimer() {
+    final expiresAt = widget.message.expiresAt;
+    if (expiresAt == null) return;
+    final remaining = expiresAt.difference(DateTime.now().toUtc());
+    if (remaining.isNegative) return;
+    // Tick every second while less than 2 minutes remain; else every minute.
+    final interval = remaining.inMinutes < 2
+        ? const Duration(seconds: 1)
+        : const Duration(minutes: 1);
+    _expireTimer = Timer.periodic(interval, (_) {
+      if (!mounted) return;
+      setState(() {});
+      final left = expiresAt.difference(DateTime.now().toUtc());
+      if (left.isNegative) {
+        _expireTimer?.cancel();
+      } else if (left.inMinutes >= 2 && interval.inSeconds == 1) {
+        // Slow down to per-minute once we're >= 2 minutes away.
+        _expireTimer?.cancel();
+        _scheduleExpireTimer();
+      }
+    });
+  }
+
+  String _formatTimeLeft(DateTime expiresAt) {
+    final left = expiresAt.difference(DateTime.now().toUtc());
+    if (left.isNegative) return 'expiring';
+    if (left.inSeconds < 60) return '${left.inSeconds}s';
+    if (left.inMinutes < 60) return '${left.inMinutes}m';
+    if (left.inHours < 24) return '${left.inHours}h';
+    return '${left.inDays}d';
+  }
 
   /// Consistent color for a username -- matches sidebar avatar colors.
   Color _getUserColor(String userId) {
@@ -911,6 +967,25 @@ class _MessageItemState extends State<MessageItem> {
                   fontStyle: FontStyle.italic,
                   color: context.textMuted,
                 ),
+              ),
+            ),
+          if (msg.expiresAt != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.timer_outlined,
+                    size: 10,
+                    color: context.textMuted,
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    _formatTimeLeft(msg.expiresAt!),
+                    style: TextStyle(fontSize: 10, color: context.textMuted),
+                  ),
+                ],
               ),
             ),
           if (isMine) MessageStatusIcon(status: msg.status),

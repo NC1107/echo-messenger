@@ -268,6 +268,8 @@ class ChatHeaderBar extends ConsumerWidget {
             _openSharedMedia(context, conv);
           case 'members':
             onMembersToggle?.call();
+          case 'disappearing':
+            _showDisappearingDialog(context, ref, conv);
         }
       },
       itemBuilder: (ctx) => [
@@ -315,6 +317,15 @@ class ChatHeaderBar extends ConsumerWidget {
               ctx,
               icon: Icons.people_outline,
               label: 'Members',
+            ),
+          ),
+        if (!conv.isGroup)
+          PopupMenuItem<String>(
+            value: 'disappearing',
+            child: _overflowItem(
+              ctx,
+              icon: Icons.timer_outlined,
+              label: 'Disappearing messages',
             ),
           ),
       ],
@@ -590,6 +601,77 @@ class ChatHeaderBar extends ConsumerWidget {
       peerUsername: peer.username,
       myUsername: myName,
     );
+  }
+
+  static const _kTtlOptions = [
+    (label: 'Off', seconds: null as int?),
+    (label: '30 seconds', seconds: 30 as int?),
+    (label: '5 minutes', seconds: 300 as int?),
+    (label: '1 hour', seconds: 3600 as int?),
+    (label: '1 day', seconds: 86400 as int?),
+    (label: '1 week', seconds: 604800 as int?),
+  ];
+
+  Future<void> _showDisappearingDialog(
+    BuildContext context,
+    WidgetRef ref,
+    Conversation conv,
+  ) async {
+    final selected = await showDialog<int?>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Disappearing messages'),
+        children: _kTtlOptions.map((opt) {
+          return SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop(opt.seconds ?? -1),
+            child: Text(opt.label),
+          );
+        }).toList(),
+      ),
+    );
+    if (selected == null || !context.mounted) return;
+    // -1 sentinel means "off" (null TTL)
+    final ttl = selected < 0 ? null : selected;
+
+    final serverUrl = ref.read(serverUrlProvider);
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.put(
+              Uri.parse('$serverUrl/api/conversations/${conv.id}/disappearing'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({'ttl_seconds': ttl}),
+            ),
+          );
+      if (!context.mounted) return;
+      if (response.statusCode == 200) {
+        ToastService.show(
+          context,
+          ttl == null
+              ? 'Disappearing messages turned off'
+              : 'Messages will disappear after ${_kTtlOptions.firstWhere((o) => o.seconds == ttl).label}',
+          type: ToastType.success,
+        );
+      } else {
+        ToastService.show(
+          context,
+          'Failed to update disappearing messages',
+          type: ToastType.error,
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ToastService.show(
+          context,
+          'Failed to update disappearing messages',
+          type: ToastType.error,
+        );
+      }
+    }
   }
 
   void _showPinnedMessagesDialog(

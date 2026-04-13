@@ -5,7 +5,7 @@ edition = "2024"
 license = "AGPL-3.0-or-later"
 
 [lib]
-crate-type = ["cdylib", "staticlib", "lib"]
+crate-type = ["lib"]
 
 [dependencies]
 tokio.workspace = true
