@@ -131,6 +131,9 @@ class _ConversationItemState extends State<ConversationItem> {
 
   String? _prependSenderLabel(String? snippet, Conversation conv) {
     if (snippet == null || conv.lastMessageSender == null) return snippet;
+    // DMs: the conversation header already shows the peer's name, so
+    // prefixing the message with the sender is redundant.
+    if (!conv.isGroup) return snippet;
     final myMember = conv.members
         .where((m) => m.userId == widget.myUserId)
         .firstOrNull;
