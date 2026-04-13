@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/contact.dart';
 import '../theme/echo_theme.dart';
-import 'avatar_utils.dart';
+import 'avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 
 class ContactItem extends StatefulWidget {
   final Contact contact;
@@ -30,10 +30,7 @@ class _ContactItemState extends State<ContactItem> {
     final contact = widget.contact;
     final username = contact.username;
     final displayName = contact.displayName;
-    final avatarUrl = contact.avatarUrl;
-    final fullAvatarUrl = avatarUrl != null
-        ? '${widget.serverUrl}$avatarUrl'
-        : null;
+    final fullAvatarUrl = resolveAvatarUrl(contact.avatarUrl, widget.serverUrl);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),

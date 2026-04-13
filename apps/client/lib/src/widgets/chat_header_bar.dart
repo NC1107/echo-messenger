@@ -18,7 +18,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../utils/time_utils.dart';
-import 'avatar_utils.dart' show buildAvatar, groupAvatarColor;
+import 'avatar_utils.dart' show buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import 'shared_media_gallery.dart';
 
 class ChatHeaderBar extends ConsumerWidget {
@@ -99,13 +99,13 @@ class ChatHeaderBar extends ConsumerWidget {
     return Builder(
       builder: (context) {
         String? headerAvatarUrl;
-        if (!conv.isGroup) {
+        if (conv.isGroup) {
+          headerAvatarUrl = resolveAvatarUrl(conv.iconUrl, serverUrl);
+        } else {
           final peer = conv.members
               .where((m) => m.userId != myUserId)
               .firstOrNull;
-          if (peer?.avatarUrl != null) {
-            headerAvatarUrl = '$serverUrl${peer!.avatarUrl}';
-          }
+          headerAvatarUrl = resolveAvatarUrl(peer?.avatarUrl, serverUrl);
         }
         final avatar = buildAvatar(
           name: displayName,

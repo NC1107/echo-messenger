@@ -13,6 +13,7 @@ class ConversationItem extends StatefulWidget {
   final bool isPinned;
   final bool isPeerOnline;
   final String? peerAvatarUrl;
+  final String? groupIconUrl;
   final String timestamp;
   final VoidCallback onTap;
   final void Function(Offset position)? onContextMenu;
@@ -25,6 +26,7 @@ class ConversationItem extends StatefulWidget {
     required this.isPinned,
     required this.isPeerOnline,
     this.peerAvatarUrl,
+    this.groupIconUrl,
     required this.timestamp,
     required this.onTap,
     this.onContextMenu,
@@ -208,7 +210,7 @@ class _ConversationItemState extends State<ConversationItem> {
         buildAvatar(
           name: displayName,
           radius: 20,
-          imageUrl: conv.isGroup ? null : widget.peerAvatarUrl,
+          imageUrl: conv.isGroup ? widget.groupIconUrl : widget.peerAvatarUrl,
           bgColor: conv.isGroup ? groupAvatarColor(displayName) : null,
           fallbackIcon: conv.isGroup
               ? const Icon(Icons.group, size: 18, color: Colors.white)

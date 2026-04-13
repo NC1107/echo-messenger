@@ -16,7 +16,7 @@ import '../providers/channels_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../widgets/avatar_utils.dart' show buildAvatar;
+import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 
 const _kJsonHeaders = {'Content-Type': 'application/json'};
 const _kGroupInfoTitle = 'Group Info';
@@ -126,9 +126,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
               leading: buildAvatar(
                 name: contact.username,
                 radius: 20,
-                imageUrl: contact.avatarUrl != null
-                    ? '$serverUrl${contact.avatarUrl}'
-                    : null,
+                imageUrl: resolveAvatarUrl(contact.avatarUrl, serverUrl),
               ),
               title: Text(contact.displayName ?? contact.username),
             ),
@@ -927,9 +925,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       leading: buildAvatar(
         name: member.username,
         radius: 20,
-        imageUrl: member.avatarUrl != null
-            ? '$serverUrl${member.avatarUrl}'
-            : null,
+        imageUrl: resolveAvatarUrl(member.avatarUrl, serverUrl),
       ),
       title: Row(children: [Text(member.username), ..._buildRoleBadge(role)]),
       subtitle: isMe ? const Text('You') : null,

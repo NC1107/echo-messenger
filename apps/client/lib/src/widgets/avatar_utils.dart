@@ -1,6 +1,19 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+/// Resolves a relative avatar path (e.g. `/api/users/123/avatar`) into a full
+/// URL by prepending the [serverUrl].  Returns `null` when [relativeUrl] is
+/// null or empty so callers can use it directly as the `imageUrl` parameter of
+/// [buildAvatar].
+String? resolveAvatarUrl(String? relativeUrl, String serverUrl) {
+  if (relativeUrl == null || relativeUrl.isEmpty) return null;
+  // Already absolute — return as-is (e.g. test fixtures with https://…).
+  if (relativeUrl.startsWith('http://') || relativeUrl.startsWith('https://')) {
+    return relativeUrl;
+  }
+  return '$serverUrl$relativeUrl';
+}
+
 /// Shared avatar builder used across conversation panel widgets.
 Widget buildAvatar({
   String? imageUrl,

@@ -9,7 +9,7 @@ import '../providers/server_url_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
-import 'avatar_utils.dart' show buildAvatar;
+import 'avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 
 class MembersPanel extends ConsumerWidget {
   final Conversation? conversation;
@@ -271,9 +271,10 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                 buildAvatar(
                   name: member.username,
                   radius: 10,
-                  imageUrl: member.avatarUrl != null
-                      ? '${ref.watch(serverUrlProvider)}${member.avatarUrl}'
-                      : null,
+                  imageUrl: resolveAvatarUrl(
+                    member.avatarUrl,
+                    ref.watch(serverUrlProvider),
+                  ),
                 ),
                 const SizedBox(width: 8),
                 // Online dot

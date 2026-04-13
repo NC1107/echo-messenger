@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+import '../../widgets/avatar_utils.dart' show resolveAvatarUrl;
 
 class _CountryCode {
   final String name;
@@ -461,7 +462,10 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
                   backgroundColor: context.accent,
                   backgroundImage: authState.avatarUrl != null
                       ? NetworkImage(
-                          '${ref.read(serverUrlProvider)}${authState.avatarUrl}',
+                          resolveAvatarUrl(
+                            authState.avatarUrl,
+                            ref.read(serverUrlProvider),
+                          )!,
                           headers: {
                             'Authorization': 'Bearer ${authState.token}',
                           },
