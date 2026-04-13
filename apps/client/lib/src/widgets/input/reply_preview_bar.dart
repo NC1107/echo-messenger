@@ -23,52 +23,59 @@ class ReplyPreviewBar extends StatelessWidget {
         ? '${replyToMessage.content.substring(0, 120)}...'
         : replyToMessage.content;
 
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: context.accent.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border(left: BorderSide(color: context.accent, width: 3)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.reply_outlined, size: 14, color: context.accent),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Replying to ${replyToMessage.fromUsername}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: context.accent,
+    return Semantics(
+      label: 'Replying to ${replyToMessage.fromUsername}: $truncated',
+      container: true,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: context.accent.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border(left: BorderSide(color: context.accent, width: 3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.reply_outlined, size: 14, color: context.accent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Replying to ${replyToMessage.fromUsername}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: context.accent,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  truncated,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: context.textSecondary),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    truncated,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Semantics(
-            label: 'dismiss reply preview',
-            button: true,
-            child: GestureDetector(
-              onTap: onDismiss,
-              child: Icon(Icons.close, size: 14, color: context.textMuted),
+            const SizedBox(width: 8),
+            Semantics(
+              label: 'dismiss reply preview',
+              button: true,
+              child: GestureDetector(
+                onTap: onDismiss,
+                child: Icon(Icons.close, size: 14, color: context.textMuted),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

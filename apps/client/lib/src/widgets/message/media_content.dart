@@ -490,47 +490,50 @@ class MediaContentState extends State<MediaContent> {
     if (fileUrl != null) {
       final rawUrl = fileUrl;
       final displayName = _filenameFromUrl(rawUrl);
-      return Container(
-        width: 300,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: context.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: context.mainBg,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.insert_drive_file_outlined,
-                color: context.textMuted,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+      return Semantics(
+        label: 'File attachment: $displayName',
+        child: Container(
+          width: 300,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: context.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: context.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: context.mainBg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.insert_drive_file_outlined,
+                  color: context.textMuted,
                 ),
               ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.download_outlined, size: 18),
-              onPressed: () => downloadMedia(rawUrl),
-              tooltip: 'Download',
-            ),
-          ],
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.download_outlined, size: 18),
+                onPressed: () => downloadMedia(rawUrl),
+                tooltip: 'Download',
+              ),
+            ],
+          ),
         ),
       );
     }
