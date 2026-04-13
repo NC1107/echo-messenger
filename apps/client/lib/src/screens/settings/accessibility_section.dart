@@ -55,13 +55,18 @@ class AccessibilitySection extends ConsumerWidget {
               style: TextStyle(color: context.textMuted, fontSize: 12),
             ),
             Expanded(
-              child: Slider(
-                value: state.fontScale,
-                min: 0.8,
-                max: 1.5,
-                divisions: 7,
-                label: '${(state.fontScale * 100).round()}%',
-                onChanged: notifier.setFontScale,
+              child: Semantics(
+                label: 'font size',
+                slider: true,
+                value: '${(state.fontScale * 100).round()}%',
+                child: Slider(
+                  value: state.fontScale,
+                  min: 0.8,
+                  max: 1.5,
+                  divisions: 7,
+                  label: '${(state.fontScale * 100).round()}%',
+                  onChanged: notifier.setFontScale,
+                ),
               ),
             ),
             Text(
