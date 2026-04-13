@@ -208,7 +208,8 @@ void main() {
         //
         // This is a provider interaction issue — documented for fix.
       },
-      skip: 'provider interaction bug, needs integration test with multiple providers',
+      skip:
+          'provider interaction bug, needs integration test with multiple providers',
     );
   });
 
