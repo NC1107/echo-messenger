@@ -47,8 +47,6 @@ const ALLOWED_MIME_TYPES: &[&str] = &[
     "application/x-7z-compressed",
     "application/x-tar",
     "application/gzip",
-    // Generic binary
-    "application/octet-stream",
 ];
 
 /// Derive a file extension from a MIME type.
@@ -76,23 +74,46 @@ fn extension_for_mime(mime: &str) -> &str {
     }
 }
 
-/// Read the file field, validate MIME type, size, and magic-byte content type.
+/// Validate file bytes against the allowed MIME types. The client-declared
+/// MIME is untrusted; only the magic-byte signature determines the accepted
+/// type. `text/plain` is special-cased because text files have no magic-byte
+/// signature -- we accept it only when the client declared text/plain AND
+/// the content is valid UTF-8.
+fn validate_bytes(data: &[u8], declared_mime: &str) -> Result<String, AppError> {
+    if data.len() > MAX_FILE_SIZE {
+        return Err(AppError::bad_request(format!(
+            "File too large. Maximum size is {MAX_FILE_SIZE} bytes"
+        )));
+    }
+
+    match infer::get(data) {
+        Some(inferred) => {
+            let m = inferred.mime_type();
+            if !ALLOWED_MIME_TYPES.contains(&m) {
+                return Err(AppError::bad_request(format!(
+                    "Detected file type '{m}' is not allowed"
+                )));
+            }
+            Ok(m.to_string())
+        }
+        None => {
+            if declared_mime == "text/plain" && std::str::from_utf8(data).is_ok() {
+                Ok("text/plain".to_string())
+            } else {
+                Err(AppError::bad_request(
+                    "Could not detect file type from content. Upload a supported format.",
+                ))
+            }
+        }
+    }
+}
+
+/// Read the file field, validate size and magic-byte content type.
 async fn validate_and_read_file(
     field: axum::extract::multipart::Field<'_>,
 ) -> Result<(String, String, Vec<u8>), AppError> {
     let original_filename = field.file_name().unwrap_or("upload").to_string();
-
-    let mut mime_type = field
-        .content_type()
-        .unwrap_or("application/octet-stream")
-        .to_string();
-
-    if !ALLOWED_MIME_TYPES.contains(&mime_type.as_str()) {
-        return Err(AppError::bad_request(format!(
-            "File type '{mime_type}' is not allowed. Allowed types: {}",
-            ALLOWED_MIME_TYPES.join(", ")
-        )));
-    }
+    let declared_mime = field.content_type().unwrap_or("").to_string();
 
     let data = field
         .bytes()
@@ -100,31 +121,7 @@ async fn validate_and_read_file(
         .map_err(|e| AppError::bad_request(format!("Failed to read file data: {e}")))?
         .to_vec();
 
-    if data.len() > MAX_FILE_SIZE {
-        return Err(AppError::bad_request(format!(
-            "File too large. Maximum size is {} bytes",
-            MAX_FILE_SIZE
-        )));
-    }
-
-    // Validate actual file type via magic bytes -- don't trust client MIME header
-    match infer::get(&data) {
-        Some(inferred) => {
-            let inferred_mime = inferred.mime_type();
-            if !ALLOWED_MIME_TYPES.contains(&inferred_mime) {
-                return Err(AppError::bad_request(format!(
-                    "Detected file type '{inferred_mime}' is not allowed"
-                )));
-            }
-            mime_type = inferred_mime.to_string();
-        }
-        None => {
-            return Err(AppError::bad_request(
-                "Could not detect file type from content. Upload a supported format.",
-            ));
-        }
-    }
-
+    let mime_type = validate_bytes(&data, &declared_mime)?;
     Ok((original_filename, mime_type, data))
 }
 
@@ -374,4 +371,82 @@ fn validate_media_ticket(state: &AppState, ticket: &str) -> Result<Uuid, AppErro
     }
 
     Ok(user_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Minimal valid PDF header -- enough for `infer::get` to detect.
+    const PDF_BYTES: &[u8] =
+        b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<<>>\nendobj\ntrailer<<>>\n%%EOF";
+
+    // Minimal ELF header (magic 7F 45 4C 46).
+    const ELF_BYTES: &[u8] = b"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+
+    #[test]
+    fn validate_bytes_accepts_pdf() {
+        let mime = validate_bytes(PDF_BYTES, "application/pdf").expect("PDF should validate");
+        assert_eq!(mime, "application/pdf");
+    }
+
+    #[test]
+    fn validate_bytes_ignores_declared_mime_for_known_signatures() {
+        // Client lies about the type; magic bytes win.
+        let mime = validate_bytes(PDF_BYTES, "application/octet-stream")
+            .expect("PDF should validate regardless of declared MIME");
+        assert_eq!(mime, "application/pdf");
+    }
+
+    #[test]
+    fn validate_bytes_rejects_elf_executable() {
+        // Either infer detects it as a disallowed executable type, or it
+        // returns None and falls through to the "Could not detect" branch.
+        // Both paths must reject, regardless of the declared MIME.
+        let err = validate_bytes(ELF_BYTES, "application/octet-stream")
+            .expect_err("ELF should be rejected");
+        assert!(
+            err.message.contains("is not allowed")
+                || err.message.contains("Could not detect file type"),
+            "unexpected error message: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn validate_bytes_accepts_utf8_text_with_text_plain_declared() {
+        let data = "hello world\nthis is plain text\n".as_bytes();
+        let mime = validate_bytes(data, "text/plain").expect("UTF-8 text should validate");
+        assert_eq!(mime, "text/plain");
+    }
+
+    #[test]
+    fn validate_bytes_rejects_text_without_text_plain_declaration() {
+        let data = "hello world\n".as_bytes();
+        let err = validate_bytes(data, "application/octet-stream")
+            .expect_err("text without declaration should be rejected");
+        assert!(err.message.contains("Could not detect file type"));
+    }
+
+    #[test]
+    fn validate_bytes_rejects_invalid_utf8_declared_as_text() {
+        // Invalid UTF-8 byte sequence that infer does not recognize.
+        let data: &[u8] = &[0xC3, 0x28, 0xA1, 0xB2];
+        let err = validate_bytes(data, "text/plain")
+            .expect_err("invalid UTF-8 claiming text/plain should be rejected");
+        assert!(err.message.contains("Could not detect file type"));
+    }
+
+    #[test]
+    fn validate_bytes_rejects_oversize_file() {
+        let data = vec![0u8; MAX_FILE_SIZE + 1];
+        let err =
+            validate_bytes(&data, "application/pdf").expect_err("oversize file should be rejected");
+        assert!(err.message.contains("too large"));
+    }
+
+    #[test]
+    fn octet_stream_is_not_in_allowed_list() {
+        assert!(!ALLOWED_MIME_TYPES.contains(&"application/octet-stream"));
+    }
 }
