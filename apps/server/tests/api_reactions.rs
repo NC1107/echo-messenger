@@ -62,7 +62,9 @@ async fn setup_dm_with_message(base: &str) -> (Client, String, String, String, S
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    // Drain initial events
+    // Drain initial presence/contact events so they don't interfere with the
+    // message_sent assertion below. The 100ms timeout means we stop draining
+    // once there are no more pending messages.
     while let Ok(Some(Ok(_))) = tokio::time::timeout(Duration::from_millis(100), ws.next()).await {}
 
     ws.send(Message::Text(
@@ -198,11 +200,12 @@ async fn remove_reaction_succeeds() {
         .await
         .unwrap();
 
-    // Remove it — emoji must be URL-encoded in path
-    let encoded_emoji = "🎉";
+    // reqwest uses the `url` crate which automatically percent-encodes non-ASCII
+    // characters in path segments, so the emoji is correctly encoded on the wire.
+    let emoji = "🎉";
     let resp = client
         .delete(format!(
-            "{base}/api/messages/{message_id}/reactions/{encoded_emoji}"
+            "{base}/api/messages/{message_id}/reactions/{emoji}"
         ))
         .header("Authorization", format!("Bearer {alice_token}"))
         .send()
