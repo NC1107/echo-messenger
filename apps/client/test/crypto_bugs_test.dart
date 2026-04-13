@@ -117,27 +117,30 @@ void main() {
       },
     );
 
-    test('PROVES: OTP key_id reuse across uploads - same IDs 0-9 every time', () {
-      // This test documents the code pattern, not a runtime failure.
-      // In crypto_service.dart lines 441-454:
-      //
-      //   for (var i = 0; i < 10; i++) {
-      //     final otpPair = await _x25519.newKeyPair();
-      //     ...
-      //     await store.write('$_otpPrivatePrefix$i', ...);
-      //     otps.add({'key_id': i, 'public_key': pubB64});
-      //   }
-      //
-      // The loop uses hardcoded `i` from 0-9 every time uploadKeys() is called.
-      // This means:
-      //   - Upload 1: keys with IDs [0,1,2,3,4,5,6,7,8,9]
-      //   - Upload 2: keys with IDs [0,1,2,3,4,5,6,7,8,9] (SAME IDs!)
-      //   - Local storage: batch 2 private keys overwrite batch 1
-      //   - Server: ON CONFLICT DO NOTHING -> keeps batch 1 public keys
-      //
-      // This is verified by reading the actual code above.
-      expect(true, isTrue, reason: 'Code pattern documented and verified');
-    });
+    test(
+      'PROVES: OTP key_id reuse across uploads - same IDs 0-9 every time',
+      () {
+        // This test documents the code pattern, not a runtime failure.
+        // In crypto_service.dart lines 441-454:
+        //
+        //   for (var i = 0; i < 10; i++) {
+        //     final otpPair = await _x25519.newKeyPair();
+        //     ...
+        //     await store.write('$_otpPrivatePrefix$i', ...);
+        //     otps.add({'key_id': i, 'public_key': pubB64});
+        //   }
+        //
+        // The loop uses hardcoded `i` from 0-9 every time uploadKeys() is called.
+        // This means:
+        //   - Upload 1: keys with IDs [0,1,2,3,4,5,6,7,8,9]
+        //   - Upload 2: keys with IDs [0,1,2,3,4,5,6,7,8,9] (SAME IDs!)
+        //   - Local storage: batch 2 private keys overwrite batch 1
+        //   - Server: ON CONFLICT DO NOTHING -> keeps batch 1 public keys
+        //
+        // This is verified by reading the actual code above.
+      },
+      skip: 'documents code pattern, needs integration test with actual crypto service',
+    );
   });
 
   group('ROOT CAUSE #3: Historical messages cannot be re-decrypted', () {
@@ -483,8 +486,9 @@ void main() {
       // Note: This test demonstrates the RISK rather than guaranteeing failure.
       // True concurrent failures are timing-dependent. The per-peer lock fix
       // ensures serial execution regardless of timing.
-      expect(true, isTrue, reason: 'Concurrency risk documented');
-    });
+    },
+    skip: 'concurrency risk documented, needs integration test with real async interleaving',
+    );
   });
 
   group('Session persistence verification', () {

@@ -187,8 +187,8 @@ void main() {
         // This is a widget-level issue, documented here for tracking.
         //
         // The fix: add `if (_isEditing) return;` before the typing send.
-        expect(true, isTrue, reason: 'Widget-level bug, documented for fix');
       },
+      skip: 'widget-level bug, needs integration test with actual widget',
     );
   });
 
@@ -196,17 +196,20 @@ void main() {
   // H1: Accept contact request doesn't reload conversations
   // =========================================================================
   group('H1: accepting contact request does not create conversation', () {
-    test('conversation list should update after accepting contact', () {
-      // contacts_provider.dart:141-155 — acceptRequest() calls
-      // loadContacts() and loadPending() but NOT
-      // conversationsProvider.loadConversations().
-      //
-      // After accepting, the DM conversation exists on the server but
-      // the local conversation list is stale.
-      //
-      // This is a provider interaction issue — documented for fix.
-      expect(true, isTrue, reason: 'Provider interaction bug, documented');
-    });
+    test(
+      'conversation list should update after accepting contact',
+      () {
+        // contacts_provider.dart:141-155 — acceptRequest() calls
+        // loadContacts() and loadPending() but NOT
+        // conversationsProvider.loadConversations().
+        //
+        // After accepting, the DM conversation exists on the server but
+        // the local conversation list is stale.
+        //
+        // This is a provider interaction issue — documented for fix.
+      },
+      skip: 'provider interaction bug, needs integration test with multiple providers',
+    );
   });
 
   // =========================================================================
@@ -283,16 +286,19 @@ void main() {
   // H5: Search query not cleared on tab switch
   // =========================================================================
   group('H5: search persists across tab switches', () {
-    test('search query from chats tab should not filter contacts tab', () {
-      // conversation_panel.dart:111-119 — _onTabSelected() does NOT
-      // clear _searchQuery. The state variable is widget-local.
-      //
-      // This is a widget-level issue requiring widget test.
-      // Documenting the expected behavior:
-      // When switching tabs, _searchQuery should be cleared or
-      // each tab should have its own independent search.
-      expect(true, isTrue, reason: 'Widget-level bug, documented');
-    });
+    test(
+      'search query from chats tab should not filter contacts tab',
+      () {
+        // conversation_panel.dart:111-119 — _onTabSelected() does NOT
+        // clear _searchQuery. The state variable is widget-local.
+        //
+        // This is a widget-level issue requiring widget test.
+        // Documenting the expected behavior:
+        // When switching tabs, _searchQuery should be cleared or
+        // each tab should have its own independent search.
+      },
+      skip: 'widget-level bug, needs integration test with actual widget',
+    );
   });
 
   // =========================================================================
