@@ -230,7 +230,13 @@ class _MessageItemState extends State<MessageItem> {
                     : null,
               ),
               alignment: Alignment.center,
-              child: Text(emoji, style: const TextStyle(fontSize: 24)),
+              child: Text(
+                emoji,
+                style: const TextStyle(
+                  fontSize: 24,
+                  decoration: TextDecoration.none,
+                ),
+              ),
             ),
           );
         }).toList(),

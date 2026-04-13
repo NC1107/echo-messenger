@@ -493,7 +493,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                           alignment: Alignment.center,
                           child: Text(
                             emoji,
-                            style: const TextStyle(fontSize: 22),
+                            style: const TextStyle(
+                              fontSize: 22,
+                              decoration: TextDecoration.none,
+                            ),
                           ),
                         ),
                       );
