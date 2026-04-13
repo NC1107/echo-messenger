@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'debug_log_service.dart';
 import 'secure_key_store.dart';
 import 'signal_session.dart';
 import 'signal_x3dh.dart';
@@ -455,6 +456,11 @@ class CryptoService {
         }
       }
     }
+    DebugLogService.instance.log(
+      LogLevel.info,
+      'Crypto',
+      'Loaded ${_sessions.length} session(s) from storage on init',
+    );
   }
 
   /// Force-reset a corrupted or broken session with a peer.
