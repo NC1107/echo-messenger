@@ -66,7 +66,7 @@ async fn blocked_user_appears_in_blocked_list() {
     assert!(
         blocked
             .iter()
-            .any(|u| u["user_id"].as_str() == Some(&bob_id) || u["id"].as_str() == Some(&bob_id)),
+            .any(|u| u["blocked_id"].as_str() == Some(bob_id.as_str())),
         "Bob should appear in Alice's blocked list"
     );
 }
@@ -157,7 +157,7 @@ async fn unblocked_user_no_longer_in_blocked_list() {
     assert!(
         !blocked
             .iter()
-            .any(|u| u["user_id"].as_str() == Some(&bob_id) || u["id"].as_str() == Some(&bob_id)),
+            .any(|u| u["blocked_id"].as_str() == Some(bob_id.as_str())),
         "Bob should no longer be in Alice's blocked list after unblock"
     );
 }

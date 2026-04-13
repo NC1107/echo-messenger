@@ -56,8 +56,16 @@ void main() {
     });
 
     test('different role means not equal', () {
-      const m1 = ConversationMember(userId: 'u1', username: 'alice', role: 'owner');
-      const m2 = ConversationMember(userId: 'u1', username: 'alice', role: 'member');
+      const m1 = ConversationMember(
+        userId: 'u1',
+        username: 'alice',
+        role: 'owner',
+      );
+      const m2 = ConversationMember(
+        userId: 'u1',
+        username: 'alice',
+        role: 'member',
+      );
       expect(m1, isNot(equals(m2)));
     });
 
@@ -69,8 +77,16 @@ void main() {
 
   group('ConversationMember hashCode', () {
     test('equal objects have same hashCode', () {
-      const m1 = ConversationMember(userId: 'u1', username: 'alice', role: 'owner');
-      const m2 = ConversationMember(userId: 'u1', username: 'alice', role: 'owner');
+      const m1 = ConversationMember(
+        userId: 'u1',
+        username: 'alice',
+        role: 'owner',
+      );
+      const m2 = ConversationMember(
+        userId: 'u1',
+        username: 'alice',
+        role: 'owner',
+      );
       expect(m1.hashCode, equals(m2.hashCode));
     });
   });
@@ -106,19 +122,13 @@ void main() {
         id: 'conv-3',
         isGroup: false,
         name: 'Legacy Name',
-        members: [
-          ConversationMember(userId: 'me', username: 'myself'),
-        ],
+        members: [ConversationMember(userId: 'me', username: 'myself')],
       );
       expect(conv.displayName('me'), 'Legacy Name');
     });
 
     test('falls back to Unknown when no name and no peer', () {
-      const conv = Conversation(
-        id: 'conv-4',
-        isGroup: false,
-        members: [],
-      );
+      const conv = Conversation(id: 'conv-4', isGroup: false, members: []);
       expect(conv.displayName('me'), 'Unknown');
     });
   });
@@ -152,9 +162,7 @@ void main() {
     });
 
     test('can update members list', () {
-      const newMembers = [
-        ConversationMember(userId: 'u1', username: 'alice'),
-      ];
+      const newMembers = [ConversationMember(userId: 'u1', username: 'alice')];
       final updated = base.copyWith(members: newMembers);
       expect(updated.members, hasLength(1));
     });
