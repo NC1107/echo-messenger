@@ -33,6 +33,7 @@ class CryptoService {
   static const _signedPrekeyPubPref = 'echo_signed_prekey_pub';
   static const _sessionPrefix = 'echo_signal_session_';
   static const _peerIdentityPrefix = 'echo_peer_identity_';
+  static const _peerIdentityChangedPrefix = 'echo_peer_identity_changed_';
   static const _otpPrivatePrefix = 'echo_otp_private_';
   static const _signedPrekeyCreatedAtPref = 'echo_signed_prekey_created_at';
   static const _signedPrekeyPreviousPref = 'echo_signed_prekey_previous';
@@ -371,6 +372,9 @@ class CryptoService {
   /// Fetch and cache a peer's identity public key from the server.
   ///
   /// Returns the key bytes, or null if unavailable.
+  /// Uses Trust-On-First-Use (TOFU): the first-seen key is trusted and
+  /// persisted. If a later fetch returns a different key, a warning is logged
+  /// and a `_peerIdentityChangedPrefix` flag is persisted for the peer.
   Future<Uint8List?> fetchPeerIdentityKey(String peerUserId) async {
     // Check cache first
     final store = SecureKeyStore.instance;
@@ -389,13 +393,62 @@ class CryptoService {
       final identityKeyB64 = data['identity_key'] as String?;
       if (identityKeyB64 == null) return null;
 
-      // Cache for future use
-      await store.write('$_peerIdentityPrefix$peerUserId', identityKeyB64);
+      await _storePeerIdentityKeyTofu(peerUserId, identityKeyB64);
       return Uint8List.fromList(base64Decode(identityKeyB64));
     } catch (e) {
       debugPrint('[Crypto] Failed to fetch peer identity key: $e');
       return null;
     }
+  }
+
+  /// Store a peer's identity key with Trust-On-First-Use (TOFU) semantics.
+  ///
+  /// - First encounter: stores the key.
+  /// - Same key: no-op.
+  /// - Different key: logs a warning via [DebugLogService] and persists a
+  ///   flag (`_peerIdentityChangedPrefix + peerId`) for UI to surface later.
+  ///   The new key is stored so future sessions use the latest key.
+  Future<void> _storePeerIdentityKeyTofu(
+    String peerUserId,
+    String newKeyB64,
+  ) async {
+    final store = SecureKeyStore.instance;
+    final storeKey = '$_peerIdentityPrefix$peerUserId';
+    final existing = await store.read(storeKey);
+
+    if (existing != null && existing != newKeyB64) {
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'Crypto',
+        'TOFU: identity key changed for peer $peerUserId -- '
+            'possible key reset or MITM. Old prefix: '
+            '${existing.substring(0, min(8, existing.length))}..., '
+            'new prefix: '
+            '${newKeyB64.substring(0, min(8, newKeyB64.length))}...',
+      );
+      debugPrint('[Crypto] WARNING: peer $peerUserId identity key changed!');
+      // Persist a flag so the UI can surface a warning banner later.
+      await store.write(
+        '$_peerIdentityChangedPrefix$peerUserId',
+        DateTime.now().toIso8601String(),
+      );
+    }
+
+    // Store the (possibly new) key so future sessions use the latest.
+    await store.write(storeKey, newKeyB64);
+  }
+
+  /// Check whether a peer's identity key has changed since first contact.
+  Future<bool> hasPeerIdentityKeyChanged(String peerUserId) async {
+    final store = SecureKeyStore.instance;
+    final flag = await store.read('$_peerIdentityChangedPrefix$peerUserId');
+    return flag != null;
+  }
+
+  /// Acknowledge a peer identity key change (clears the flag).
+  Future<void> acknowledgePeerIdentityKeyChange(String peerUserId) async {
+    final store = SecureKeyStore.instance;
+    await store.delete('$_peerIdentityChangedPrefix$peerUserId');
   }
 
   /// Get the local identity public key bytes.
@@ -717,12 +770,8 @@ class CryptoService {
       type: KeyPairType.x25519,
     );
 
-    // Cache peer identity key for safety number generation
-    final peerStore = SecureKeyStore.instance;
-    await peerStore.write(
-      '$_peerIdentityPrefix$peerUserId',
-      data['identity_key'] as String,
-    );
+    // Cache peer identity key with TOFU change detection
+    await _storePeerIdentityKeyTofu(peerUserId, data['identity_key'] as String);
 
     // Extract one-time prekey if the server provided one (4-DH)
     SimplePublicKey? bobOneTimePrekey;
@@ -934,10 +983,9 @@ class CryptoService {
       isV2,
     );
 
-    // Cache peer identity key for safety number generation
-    final peerStore = SecureKeyStore.instance;
-    await peerStore.write(
-      '$_peerIdentityPrefix$peerUserId',
+    // Cache peer identity key with TOFU change detection
+    await _storePeerIdentityKeyTofu(
+      peerUserId,
       base64Encode(aliceIdentityBytes),
     );
 
@@ -1146,9 +1194,10 @@ class CryptoService {
     final store = SecureKeyStore.instance;
     await store.delete('$_sessionPrefix$peerUserId');
     await store.delete('${_sessionPrefix}corrupt_$peerUserId');
-    // Also clear the cached peer identity key so it's re-fetched with the new
-    // bundle on next session establishment.
+    // Also clear the cached peer identity key and any TOFU change flag so
+    // it's re-fetched with the new bundle on next session establishment.
     await store.delete('$_peerIdentityPrefix$peerUserId');
+    await store.delete('$_peerIdentityChangedPrefix$peerUserId');
   }
 
   /// Reset all keys: delete identity + session keys, regenerate, and upload.
@@ -1161,7 +1210,10 @@ class CryptoService {
     await store.delete(_otpNextIdPref);
     final allEntries = await store.readAll();
     for (final key in allEntries.keys) {
-      if (key.startsWith(_sessionPrefix) || key.startsWith(_otpPrivatePrefix)) {
+      if (key.startsWith(_sessionPrefix) ||
+          key.startsWith(_otpPrivatePrefix) ||
+          key.startsWith(_peerIdentityPrefix) ||
+          key.startsWith(_peerIdentityChangedPrefix)) {
         await store.delete(key);
       }
     }
@@ -1206,6 +1258,7 @@ class CryptoService {
     for (final key in allEntries.keys) {
       if (key.startsWith(_sessionPrefix) ||
           key.startsWith(_peerIdentityPrefix) ||
+          key.startsWith(_peerIdentityChangedPrefix) ||
           key.startsWith(_otpPrivatePrefix)) {
         await store.delete(key);
       }
