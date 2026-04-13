@@ -44,12 +44,17 @@ pub async fn find_or_create_dm_conversation(
 ) -> Result<Uuid, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    // Find existing DM conversation where both users are members and no third member exists
+    // Find existing DM conversation where both users are members, the
+    // conversation is a direct message (not a group), and no third member
+    // exists.  Without the kind check a 2-person group whose other members
+    // left would be returned as a DM.
     let existing: Option<(Uuid,)> = sqlx::query_as(
         "SELECT cm1.conversation_id \
          FROM conversation_members cm1 \
          JOIN conversation_members cm2 ON cm1.conversation_id = cm2.conversation_id \
+         JOIN conversations c ON c.id = cm1.conversation_id \
          WHERE cm1.user_id = $1 AND cm2.user_id = $2 \
+           AND c.kind = 'direct' \
            AND NOT EXISTS ( \
                SELECT 1 FROM conversation_members cm3 \
                WHERE cm3.conversation_id = cm1.conversation_id \

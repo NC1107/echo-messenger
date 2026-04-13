@@ -88,6 +88,14 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       oldWidget.externalSearchFocusNode?.removeListener(_onExternalSearchFocus);
       widget.externalSearchFocusNode?.addListener(_onExternalSearchFocus);
     }
+    // When a conversation is selected while the user is on a non-Chats tab
+    // (e.g. "Message" button in Contacts), switch to the Chats tab so the
+    // selected conversation is visible and highlighted.
+    if (widget.selectedConversationId != null &&
+        widget.selectedConversationId != oldWidget.selectedConversationId &&
+        _selectedTab != 0) {
+      setState(() => _selectedTab = 0);
+    }
   }
 
   @override
@@ -981,19 +989,33 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     required String serverUrl,
     required Set<String> wsOnlineUsers,
   }) {
+    // Each tab MUST have a distinct key so Flutter fully rebuilds the subtree
+    // on tab switch instead of recycling the previous tab's ListView state.
+    // Without this, gesture and scroll state from one tab bleeds into the
+    // next, causing taps at position N in the Contacts tab to trigger the
+    // conversation at position N in the Chats tab.
     switch (_selectedTab) {
       case 1:
-        return _buildContactsTab(contactsState, myUserId, serverUrl);
+        return KeyedSubtree(
+          key: const ValueKey('tab-contacts'),
+          child: _buildContactsTab(contactsState, myUserId, serverUrl),
+        );
       case 2:
-        return _buildGroupsTab(groupConversations, myUserId);
+        return KeyedSubtree(
+          key: const ValueKey('tab-groups'),
+          child: _buildGroupsTab(groupConversations, myUserId),
+        );
       default:
-        return _buildChatsTab(
-          conversationsState,
-          conversations,
-          allConversations,
-          myUserId,
-          serverUrl,
-          wsOnlineUsers,
+        return KeyedSubtree(
+          key: const ValueKey('tab-chats'),
+          child: _buildChatsTab(
+            conversationsState,
+            conversations,
+            allConversations,
+            myUserId,
+            serverUrl,
+            wsOnlineUsers,
+          ),
         );
     }
   }
