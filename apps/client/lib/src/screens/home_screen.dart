@@ -497,41 +497,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   child: Tooltip(
                     message: displayName,
                     preferBelow: false,
-                    child: GestureDetector(
-                      onTap: () => _selectConversation(conv),
-                      child: Center(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: isSelected
-                                ? Border.all(color: context.accent, width: 2)
-                                : null,
-                          ),
-                          child: Builder(
-                            builder: (_) {
-                              final peer = conv.members
-                                  .where((m) => m.userId != myUserId)
-                                  .firstOrNull;
-                              final peerAvatarUrl =
-                                  (!conv.isGroup && peer?.avatarUrl != null)
-                                  ? '$serverUrl${peer!.avatarUrl}'
-                                  : null;
-                              return buildAvatar(
-                                name: displayName,
-                                radius: 18,
-                                imageUrl: peerAvatarUrl,
-                                bgColor: conv.isGroup
-                                    ? groupAvatarColor(displayName)
-                                    : null,
-                                fallbackIcon: conv.isGroup
-                                    ? const Icon(
-                                        Icons.group,
-                                        size: 16,
-                                        color: Colors.white,
-                                      )
-                                    : null,
-                              );
-                            },
+                    child: Semantics(
+                      label: 'conversation: $displayName',
+                      button: true,
+                      child: GestureDetector(
+                        onTap: () => _selectConversation(conv),
+                        child: Center(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: isSelected
+                                  ? Border.all(color: context.accent, width: 2)
+                                  : null,
+                            ),
+                            child: Builder(
+                              builder: (_) {
+                                final peer = conv.members
+                                    .where((m) => m.userId != myUserId)
+                                    .firstOrNull;
+                                final peerAvatarUrl =
+                                    (!conv.isGroup && peer?.avatarUrl != null)
+                                    ? '$serverUrl${peer!.avatarUrl}'
+                                    : null;
+                                return buildAvatar(
+                                  name: displayName,
+                                  radius: 18,
+                                  imageUrl: peerAvatarUrl,
+                                  bgColor: conv.isGroup
+                                      ? groupAvatarColor(displayName)
+                                      : null,
+                                  fallbackIcon: conv.isGroup
+                                      ? const Icon(
+                                          Icons.group,
+                                          size: 16,
+                                          color: Colors.white,
+                                        )
+                                      : null,
+                                );
+                              },
+                            ),
                           ),
                         ),
                       ),
@@ -1034,36 +1038,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final channelName =
         channels.where((c) => c.id == channelId).firstOrNull?.name ?? 'Voice';
 
-    return Material(
-      color: EchoTheme.online.withValues(alpha: 0.12),
-      child: InkWell(
-        onTap: () => setState(() {
-          _showingLounge = true;
-          _userDismissedLounge = false;
-        }),
-        child: Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: context.border, width: 1)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.graphic_eq, size: 16, color: EchoTheme.online),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '● $channelName — Tap to view voice',
-                  style: const TextStyle(
-                    color: EchoTheme.online,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
+    return Semantics(
+      label: 'rejoin voice channel',
+      button: true,
+      child: Material(
+        color: EchoTheme.online.withValues(alpha: 0.12),
+        child: InkWell(
+          onTap: () => setState(() {
+            _showingLounge = true;
+            _userDismissedLounge = false;
+          }),
+          child: Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: context.border, width: 1),
               ),
-              Icon(Icons.chevron_right, size: 16, color: context.textMuted),
-            ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.graphic_eq, size: 16, color: EchoTheme.online),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '● $channelName — Tap to view voice',
+                    style: const TextStyle(
+                      color: EchoTheme.online,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Icon(Icons.chevron_right, size: 16, color: context.textMuted),
+              ],
+            ),
           ),
         ),
       ),

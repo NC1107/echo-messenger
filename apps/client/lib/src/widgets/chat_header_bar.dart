@@ -117,7 +117,11 @@ class ChatHeaderBar extends ConsumerWidget {
               : null,
         );
         if (conv.isGroup && onGroupInfo != null) {
-          return GestureDetector(onTap: onGroupInfo, child: avatar);
+          return Semantics(
+            label: 'group info',
+            button: true,
+            child: GestureDetector(onTap: onGroupInfo, child: avatar),
+          );
         }
         return avatar;
       },
@@ -131,31 +135,35 @@ class ChatHeaderBar extends ConsumerWidget {
     String displayName,
   ) {
     return Expanded(
-      child: GestureDetector(
-        onTap: conv.isGroup
-            ? onGroupInfo
-            : () {
-                final peer = conv.members
-                    .where((m) => m.userId != myUserId)
-                    .firstOrNull;
-                if (peer != null) {
-                  UserProfileScreen.show(context, ref, peer.userId);
-                }
-              },
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              displayName,
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
+      child: Semantics(
+        label: 'view $displayName details',
+        button: true,
+        child: GestureDetector(
+          onTap: conv.isGroup
+              ? onGroupInfo
+              : () {
+                  final peer = conv.members
+                      .where((m) => m.userId != myUserId)
+                      .firstOrNull;
+                  if (peer != null) {
+                    UserProfileScreen.show(context, ref, peer.userId);
+                  }
+                },
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                displayName,
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-            ),
-            _buildStatusLine(context, ref, conv),
-          ],
+              _buildStatusLine(context, ref, conv),
+            ],
+          ),
         ),
       ),
     );
@@ -444,9 +452,13 @@ class ChatHeaderBar extends ConsumerWidget {
               style: TextStyle(fontSize: 11, color: EchoTheme.warning),
             ),
           ),
-          GestureDetector(
-            onTap: onDismissEncryptionBanner,
-            child: Icon(Icons.close, size: 14, color: context.textMuted),
+          Semantics(
+            label: 'dismiss encryption banner',
+            button: true,
+            child: GestureDetector(
+              onTap: onDismissEncryptionBanner,
+              child: Icon(Icons.close, size: 14, color: context.textMuted),
+            ),
           ),
         ],
       ),
@@ -491,23 +503,27 @@ class ChatHeaderBar extends ConsumerWidget {
               style: TextStyle(fontSize: 11, color: EchoTheme.warning),
             ),
           ),
-          GestureDetector(
-            onTap: () => _resetPeerKeys(context, ref, conv, myUserId),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: EchoTheme.warning.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: EchoTheme.warning.withValues(alpha: 0.4),
+          Semantics(
+            label: 'reset encryption keys',
+            button: true,
+            child: GestureDetector(
+              onTap: () => _resetPeerKeys(context, ref, conv, myUserId),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: EchoTheme.warning.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: EchoTheme.warning.withValues(alpha: 0.4),
+                  ),
                 ),
-              ),
-              child: const Text(
-                'Repair',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: EchoTheme.warning,
-                  fontWeight: FontWeight.w600,
+                child: const Text(
+                  'Repair',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: EchoTheme.warning,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),

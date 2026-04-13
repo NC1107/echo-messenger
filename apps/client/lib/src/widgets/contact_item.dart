@@ -49,85 +49,93 @@ class _ContactItemState extends State<ContactItem> {
         child: Row(
           children: [
             Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: widget.onProfile,
-                child: Row(
-                  children: [
-                    // Avatar with online dot
-                    Stack(
-                      children: [
-                        buildAvatar(
-                          name: username,
-                          radius: 18,
-                          imageUrl: fullAvatarUrl,
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: EchoTheme.online,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: context.sidebarBg,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 12),
-                    // Name
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+              child: Semantics(
+                label: 'contact: $username',
+                button: true,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: widget.onProfile,
+                  child: Row(
+                    children: [
+                      // Avatar with online dot
+                      Stack(
                         children: [
-                          Text(
-                            displayName ?? username,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: context.textPrimary,
-                            ),
+                          buildAvatar(
+                            name: username,
+                            radius: 18,
+                            imageUrl: fullAvatarUrl,
                           ),
-                          if (displayName != null)
-                            Text(
-                              '@$username',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: context.textMuted,
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: EchoTheme.online,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: context.sidebarBg,
+                                  width: 2,
+                                ),
                               ),
                             ),
+                          ),
                         ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      // Name
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              displayName ?? username,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: context.textPrimary,
+                              ),
+                            ),
+                            if (displayName != null)
+                              Text(
+                                '@$username',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: context.textMuted,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-            SizedBox(
-              height: 28,
-              child: Material(
-                color: context.accentLight,
-                borderRadius: BorderRadius.circular(6),
-                child: InkWell(
+            Semantics(
+              label: 'message $username',
+              button: true,
+              child: SizedBox(
+                height: 28,
+                child: Material(
+                  color: context.accentLight,
                   borderRadius: BorderRadius.circular(6),
-                  onTap: widget.onMessage,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Center(
-                      child: Text(
-                        'Message',
-                        style: TextStyle(
-                          color: context.accent,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: widget.onMessage,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Center(
+                        child: Text(
+                          'Message',
+                          style: TextStyle(
+                            color: context.accent,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                     ),

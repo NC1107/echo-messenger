@@ -156,24 +156,28 @@ class _ConnectionStatusBannerState
               ),
               if (showRetry) ...[
                 const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: () => ref.read(websocketProvider.notifier).connect(),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: status.color.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: status.color, width: 1),
-                    ),
-                    child: Text(
-                      'Retry',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: status.color,
-                        fontWeight: FontWeight.w600,
+                Semantics(
+                  label: 'retry connection',
+                  button: true,
+                  child: GestureDetector(
+                    onTap: () => ref.read(websocketProvider.notifier).connect(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: status.color.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: status.color, width: 1),
+                      ),
+                      child: Text(
+                        'Retry',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: status.color,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
