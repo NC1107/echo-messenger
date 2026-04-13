@@ -1,6 +1,8 @@
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../models/chat_message.dart';
+import '../utils/debug_log.dart';
+import 'secure_key_store.dart';
 
 class MessageCache {
   static const _boxName = 'echo_messages';
@@ -20,7 +22,14 @@ class MessageCache {
   ];
 
   static Future<void> init() async {
-    _box = await Hive.openBox<Map>(_boxName);
+    final keyBytes = await _getEncryptionKey();
+    if (keyBytes != null) {
+      _box = await _openEncryptedBox(_boxName, keyBytes);
+    } else {
+      // Encryption key unavailable (e.g. secure storage not ready pre-login).
+      // Fall back to unencrypted so the app can still start.
+      _box = await Hive.openBox<Map>(_boxName);
+    }
     _currentBoxName = _boxName;
   }
 
@@ -48,10 +57,16 @@ class MessageCache {
       }
     }
 
+    final keyBytes = await _getEncryptionKey();
+
     Object? lastError;
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        _box = await Hive.openBox<Map>(targetName);
+        if (keyBytes != null) {
+          _box = await _openEncryptedBox(targetName, keyBytes);
+        } else {
+          _box = await Hive.openBox<Map>(targetName);
+        }
         _currentBoxName = targetName;
         return;
       } catch (e) {
@@ -64,7 +79,11 @@ class MessageCache {
     // still cache newly-decrypted messages. Historical cache may be
     // unavailable.
     try {
-      _box = await Hive.openBox<Map>(_boxName);
+      if (keyBytes != null) {
+        _box = await _openEncryptedBox(_boxName, keyBytes);
+      } else {
+        _box = await Hive.openBox<Map>(_boxName);
+      }
       _currentBoxName = _boxName;
     } catch (_) {
       _box = null;
@@ -158,6 +177,43 @@ class MessageCache {
 
   /// Number of cached message entries (conversations x messages).
   static int entryCount() => _box?.length ?? 0;
+
+  /// Retrieve the Hive encryption key from secure storage, or null if
+  /// secure storage is not available yet (e.g. before first login).
+  static Future<List<int>?> _getEncryptionKey() async {
+    try {
+      return await SecureKeyStore.instance.getOrCreateHiveCacheKey();
+    } catch (e) {
+      debugLog('Failed to get Hive encryption key: $e', 'MessageCache');
+      return null;
+    }
+  }
+
+  /// Open a Hive box with AES encryption. If the box was previously stored
+  /// unencrypted (or with a different key), the open will fail with a cipher
+  /// mismatch. In that case, delete the old box and recreate it -- the cache
+  /// is a performance optimisation, not a source of truth.
+  static Future<Box<Map>> _openEncryptedBox(
+    String name,
+    List<int> keyBytes,
+  ) async {
+    final cipher = HiveAesCipher(keyBytes);
+    try {
+      return await Hive.openBox<Map>(name, encryptionCipher: cipher);
+    } catch (e) {
+      // Cipher mismatch with an existing unencrypted box -- delete and retry.
+      debugLog(
+        'Encrypted open failed for $name, deleting stale box: $e',
+        'MessageCache',
+      );
+      try {
+        await Hive.deleteBoxFromDisk(name);
+      } catch (_) {
+        // Best-effort deletion; openBox below will overwrite anyway.
+      }
+      return await Hive.openBox<Map>(name, encryptionCipher: cipher);
+    }
+  }
 }
 
 /// Exception thrown when [MessageCache.initForUser] fails to open the
