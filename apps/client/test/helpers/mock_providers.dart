@@ -192,19 +192,29 @@ class _FakeWebSocketNotifier extends WebSocketNotifier {
 // ---------------------------------------------------------------------------
 
 /// Override [cryptoProvider] with an initialized state (crypto ready).
-Override cryptoOverride({bool isInitialized = true}) {
+///
+/// Pass a full [CryptoState] via [cryptoState] for fine-grained control, or
+/// use the simpler [isInitialized] flag for the common case.
+Override cryptoOverride({bool isInitialized = true, CryptoState? cryptoState}) {
   return cryptoProvider.overrideWith(
-    (ref) => _FakeCryptoNotifier(ref, isInitialized: isInitialized),
+    (ref) => FakeCryptoNotifier(
+      ref,
+      initial: cryptoState ?? CryptoState(isInitialized: isInitialized),
+    ),
   );
 }
 
-class _FakeCryptoNotifier extends CryptoNotifier {
-  _FakeCryptoNotifier(super.ref, {bool isInitialized = true}) {
-    state = CryptoState(isInitialized: isInitialized);
+class FakeCryptoNotifier extends CryptoNotifier {
+  FakeCryptoNotifier(super.ref, {CryptoState initial = const CryptoState()}) {
+    state = initial;
   }
 
+  int initCallCount = 0;
+
   @override
-  Future<void> initAndUploadKeys() async {}
+  Future<void> initAndUploadKeys() async {
+    initCallCount++;
+  }
 
   @override
   Future<void> retryKeyUpload() async {}

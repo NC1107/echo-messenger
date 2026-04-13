@@ -1186,7 +1186,9 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       buttonColor = context.accent;
     }
 
-    return Padding(
+    final cryptoBlocked = isDm && !cryptoReady;
+
+    Widget button = Padding(
       padding: const EdgeInsets.only(right: 4),
       child: Semantics(
         label: _isEditing ? 'Confirm edit' : 'Send message',
@@ -1221,6 +1223,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         ),
       ),
     );
+
+    if (cryptoBlocked) {
+      button = Tooltip(message: 'Encryption unavailable', child: button);
+    }
+
+    return button;
   }
 
   Widget _buildInputRow({

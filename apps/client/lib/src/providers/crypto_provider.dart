@@ -93,8 +93,8 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
   /// Initialize crypto and upload keys to the server.
   ///
   /// On Linux, libsecret may fail to unlock the keyring (PlatformException).
-  /// In that case crypto degrades gracefully -- the user can still chat
-  /// without encryption rather than seeing a red error toast.
+  /// When this happens DM sending is blocked (the send button is disabled)
+  /// and a degradation banner is shown so the user can retry.
   Future<void> initAndUploadKeys() async {
     if (state.isInitialized) return;
 
@@ -172,6 +172,7 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
     } catch (e) {
       DebugLogService.instance.log(LogLevel.error, 'Crypto', 'Init failed: $e');
       state = state.copyWith(
+        isInitialized: false,
         isUploading: false,
         error: 'Crypto init failed: $e',
       );
