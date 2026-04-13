@@ -206,42 +206,47 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
 
   Widget _buildTextChannelChip(GroupChannel channel) {
     final isSelected = widget.selectedTextChannelId == channel.id;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () => widget.onTextChannelChanged(channel.id),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? context.accent.withValues(alpha: 0.15)
-                : context.surface.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
+    return Semantics(
+      label: 'text channel: ${channel.name}',
+      button: true,
+      selected: isSelected,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => widget.onTextChannelChanged(channel.id),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
               color: isSelected
-                  ? context.accent.withValues(alpha: 0.4)
-                  : context.border,
+                  ? context.accent.withValues(alpha: 0.15)
+                  : context.surface.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isSelected
+                    ? context.accent.withValues(alpha: 0.4)
+                    : context.border,
+              ),
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.tag,
-                size: 14,
-                color: isSelected ? context.accent : context.textSecondary,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                channel.name,
-                style: TextStyle(
-                  color: isSelected ? context.accent : context.textPrimary,
-                  fontSize: 12,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.tag,
+                  size: 14,
+                  color: isSelected ? context.accent : context.textSecondary,
                 ),
-              ),
-            ],
+                const SizedBox(width: 4),
+                Text(
+                  channel.name,
+                  style: TextStyle(
+                    color: isSelected ? context.accent : context.textPrimary,
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -290,53 +295,57 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
   ) {
     final participantCount = participants.length;
     final isActive = _isVoiceChannelActive(channel.id, activeVoiceChannelId);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () => _handleVoiceChipTap(channel, isActive, voiceSettings),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: isActive
-                ? context.accent.withValues(alpha: 0.15)
-                : context.surface.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
+    return Semantics(
+      label: 'voice channel: ${channel.name}',
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => _handleVoiceChipTap(channel, isActive, voiceSettings),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
               color: isActive
-                  ? context.accent.withValues(alpha: 0.4)
-                  : context.border,
+                  ? context.accent.withValues(alpha: 0.15)
+                  : context.surface.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isActive
+                    ? context.accent.withValues(alpha: 0.4)
+                    : context.border,
+              ),
             ),
-          ),
-          child: Tooltip(
-            message: participants.isEmpty
-                ? 'No one in voice'
-                : participants.map((p) => p.username).join('\n'),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.volume_up_outlined,
-                  size: 14,
-                  color: isActive ? context.accent : context.textSecondary,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  channel.name,
-                  style: TextStyle(
-                    color: isActive ? context.accent : context.textPrimary,
-                    fontSize: 12,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+            child: Tooltip(
+              message: participants.isEmpty
+                  ? 'No one in voice'
+                  : participants.map((p) => p.username).join('\n'),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.volume_up_outlined,
+                    size: 14,
+                    color: isActive ? context.accent : context.textSecondary,
                   ),
-                ),
-                if (participantCount > 0) ...[
                   const SizedBox(width: 4),
                   Text(
-                    '($participantCount)',
-                    style: TextStyle(color: context.textMuted, fontSize: 11),
+                    channel.name,
+                    style: TextStyle(
+                      color: isActive ? context.accent : context.textPrimary,
+                      fontSize: 12,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                    ),
                   ),
+                  if (participantCount > 0) ...[
+                    const SizedBox(width: 4),
+                    Text(
+                      '($participantCount)',
+                      style: TextStyle(color: context.textMuted, fontSize: 11),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
