@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
@@ -658,23 +660,15 @@ class _ParticipantGrid extends StatelessWidget {
   }
 
   Widget _buildGridLayout(List<Widget> tiles) {
-    final int crossAxisCount;
-    if (tiles.length <= 1) {
-      crossAxisCount = 1;
-    } else if (tiles.length <= 4) {
-      crossAxisCount = 2;
-    } else {
-      crossAxisCount = 3;
-    }
-
-    return GridView.count(
-      crossAxisCount: crossAxisCount,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 12,
-      crossAxisSpacing: 12,
-      childAspectRatio: 4 / 3,
-      children: tiles,
+    return Center(
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        alignment: WrapAlignment.center,
+        children: tiles
+            .map((t) => SizedBox(width: 96, height: 128, child: t))
+            .toList(),
+      ),
     );
   }
 }
@@ -724,8 +718,7 @@ class _ParticipantTile extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
-          color: context.surface,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSpeaking ? EchoTheme.online : context.border,
             width: isSpeaking ? 2.0 : 1.0,
@@ -741,26 +734,32 @@ class _ParticipantTile extends StatelessWidget {
               : null,
         ),
         clipBehavior: Clip.antiAlias,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Video or avatar
-            if (hasVideo && videoTrack != null)
-              lk.VideoTrackRenderer(
-                videoTrack!,
-                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                mirrorMode: mirror
-                    ? lk.VideoViewMirrorMode.mirror
-                    : lk.VideoViewMirrorMode.off,
-              )
-            else
-              _AvatarCircle(
-                name: name,
-                avatarUrl: avatarUrl,
-                isSpeaking: isSpeaking,
-              ),
-            _buildNameLabel(context),
-          ],
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            color: context.surface.withValues(alpha: 0.45),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Video or avatar
+                if (hasVideo && videoTrack != null)
+                  lk.VideoTrackRenderer(
+                    videoTrack!,
+                    fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                    mirrorMode: mirror
+                        ? lk.VideoViewMirrorMode.mirror
+                        : lk.VideoViewMirrorMode.off,
+                  )
+                else
+                  _AvatarCircle(
+                    name: name,
+                    avatarUrl: avatarUrl,
+                    isSpeaking: isSpeaking,
+                  ),
+                _buildNameLabel(context),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -876,14 +875,14 @@ class _AvatarCircle extends StatelessWidget {
     return Center(
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: 72,
-        height: 72,
+        width: 48,
+        height: 48,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: avatarColor,
           border: Border.all(
             color: isSpeaking ? EchoTheme.online : Colors.transparent,
-            width: 3,
+            width: 2,
           ),
         ),
         clipBehavior: Clip.antiAlias,
@@ -891,14 +890,14 @@ class _AvatarCircle extends StatelessWidget {
             ? CachedNetworkImage(
                 imageUrl: avatarUrl!,
                 fit: BoxFit.cover,
-                width: 72,
-                height: 72,
+                width: 48,
+                height: 48,
                 placeholder: (_, _) => Center(
                   child: Text(
                     initial,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 28,
+                      fontSize: 18,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -908,7 +907,7 @@ class _AvatarCircle extends StatelessWidget {
                     initial,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 28,
+                      fontSize: 18,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -919,7 +918,7 @@ class _AvatarCircle extends StatelessWidget {
                   initial,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 28,
+                    fontSize: 18,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
