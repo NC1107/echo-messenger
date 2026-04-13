@@ -67,6 +67,12 @@ pub struct DeviceListResponse {
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use sha2::{Digest, Sha256};
+
+/// Compute a SHA-256 fingerprint of a raw identity key.
+fn identity_fingerprint(identity_key: &[u8]) -> Vec<u8> {
+    Sha256::digest(identity_key).to_vec()
+}
 
 /// POST /api/keys/upload -- Upload a PreKey bundle for the authenticated user.
 pub async fn upload_bundle(
@@ -92,6 +98,26 @@ pub async fn upload_bundle(
         .map_err(|_| AppError::bad_request("Invalid base64 for signing_key"))?;
     verify_signed_prekey_signature(&signing_key_bytes, &signed_prekey, &signed_prekey_signature)?;
 
+    // --- Identity binding check ---
+    // On first upload the identity key fingerprint is stored on the user row.
+    // On subsequent uploads the identity key MUST match or the request is
+    // rejected with 409. Rotation requires a separate key-reset flow.
+    let new_fingerprint = identity_fingerprint(&identity_key);
+    let stored_fingerprint =
+        db::keys::get_identity_key_fingerprint(&state.pool, auth_user.user_id).await?;
+    match stored_fingerprint {
+        Some(ref existing) if *existing != new_fingerprint => {
+            tracing::warn!(
+                "Identity key mismatch for user {} -- rejecting upload",
+                auth_user.user_id,
+            );
+            return Err(AppError::conflict(
+                "Identity key changed; use key reset flow to rotate",
+            ));
+        }
+        _ => {} // First upload or same key -- OK
+    }
+
     let one_time_prekeys: Vec<(i32, Vec<u8>)> = body
         .one_time_prekeys
         .iter()
@@ -108,6 +134,12 @@ pub async fn upload_bundle(
         tracing::error!("Failed to begin key upload transaction: {e:?}");
         AppError::internal("Database error")
     })?;
+
+    // Bind the identity key fingerprint on first upload.
+    if stored_fingerprint.is_none() {
+        db::keys::set_identity_key_fingerprint(&mut *tx, auth_user.user_id, &new_fingerprint)
+            .await?;
+    }
 
     db::keys::store_identity_key(
         &mut *tx,
