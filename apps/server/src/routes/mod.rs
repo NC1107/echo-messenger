@@ -83,6 +83,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let register_limit = rate_limit::make_rate_limit_layer(rate_limit::register_limiter());
     let refresh_limit = rate_limit::make_rate_limit_layer(rate_limit::refresh_limiter());
     let ticket_limit = rate_limit::make_rate_limit_layer(rate_limit::ticket_limiter());
+    let media_upload_limit = rate_limit::make_rate_limit_layer(rate_limit::media_upload_limiter());
+    let link_preview_limit = rate_limit::make_rate_limit_layer(rate_limit::link_preview_limiter());
 
     let auth_routes = Router::new()
         .route(
@@ -164,7 +166,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/otp-count", get(keys::get_otp_count));
 
     let media_routes = Router::new()
-        .route("/upload", post(media::upload))
+        .route(
+            "/upload",
+            post(media::upload).layer(middleware::from_fn(media_upload_limit)),
+        )
         .route("/ticket", post(media::request_media_ticket))
         .route("/{id}", get(media::download));
 
@@ -251,7 +256,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .nest("/api/push", push_routes)
         .nest("/api", message_routes)
         .route("/api/voice/token", post(voice::generate_token))
-        .route("/api/link-preview", post(link_preview::fetch_preview))
+        .route(
+            "/api/link-preview",
+            post(link_preview::fetch_preview).layer(middleware::from_fn(link_preview_limit)),
+        )
         .route("/api/health", get(health))
         .route("/api/config/ice", get(ice_config))
         .route("/ws", get(ws::ws_upgrade))

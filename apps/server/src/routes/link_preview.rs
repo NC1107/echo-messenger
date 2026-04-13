@@ -41,37 +41,72 @@ fn cap_html(html: &str) -> &str {
     }
 }
 
-/// Validate URL scheme and reject SSRF-vulnerable addresses.
-fn validate_url(url: &str) -> Result<(), AppError> {
+/// Resolved URL metadata returned by [`validate_url`].
+struct ValidatedUrl {
+    /// The original URL string.
+    url: reqwest::Url,
+    /// The hostname from the URL (needed for `resolve()` pinning).
+    host: String,
+    /// A validated, non-private socket address that the hostname resolved to.
+    /// Used with `reqwest::ClientBuilder::resolve` to pin DNS and prevent
+    /// TOCTOU rebinding attacks.
+    resolved: std::net::SocketAddr,
+}
+
+/// Validate URL scheme, resolve DNS, and reject SSRF-vulnerable addresses.
+///
+/// Returns a [`ValidatedUrl`] containing the resolved address so the caller
+/// can pin it via `reqwest::ClientBuilder::resolve`, closing the TOCTOU
+/// window between DNS validation and HTTP request.
+fn validate_url(url: &str) -> Result<ValidatedUrl, AppError> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err(AppError::bad_request(
             "URL must start with http:// or https://",
         ));
     }
 
-    if let Ok(parsed) = reqwest::Url::parse(url)
-        && let Some(host) = parsed.host_str()
-    {
-        use std::net::ToSocketAddrs;
-        let port = parsed.port_or_known_default().unwrap_or(80);
-        if let Ok(addrs) = format!("{host}:{port}").to_socket_addrs() {
-            for addr in addrs {
-                let ip = addr.ip();
-                if ip.is_loopback()
-                    || ip.is_unspecified()
-                    || matches!(ip, std::net::IpAddr::V4(v4) if v4.is_private()
-                            || v4.is_link_local()
-                            || v4.octets()[0] == 169 && v4.octets()[1] == 254)
-                {
-                    return Err(AppError::bad_request(
-                        "URL resolves to a private or reserved address",
-                    ));
-                }
-            }
+    let parsed = reqwest::Url::parse(url).map_err(|_| AppError::bad_request("Invalid URL"))?;
+
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| AppError::bad_request("URL has no host"))?
+        .to_string();
+
+    let port = parsed.port_or_known_default().unwrap_or(80);
+
+    use std::net::ToSocketAddrs;
+    let addrs: Vec<std::net::SocketAddr> = format!("{host}:{port}")
+        .to_socket_addrs()
+        .map_err(|_| AppError::bad_request("Could not resolve hostname"))?
+        .collect();
+
+    if addrs.is_empty() {
+        return Err(AppError::bad_request(
+            "Hostname did not resolve to any address",
+        ));
+    }
+
+    // Validate ALL resolved addresses are safe (reject if any is private)
+    for addr in &addrs {
+        let ip = addr.ip();
+        if ip.is_loopback()
+            || ip.is_unspecified()
+            || matches!(ip, std::net::IpAddr::V4(v4) if v4.is_private()
+                    || v4.is_link_local()
+                    || v4.octets()[0] == 169 && v4.octets()[1] == 254)
+        {
+            return Err(AppError::bad_request(
+                "URL resolves to a private or reserved address",
+            ));
         }
     }
 
-    Ok(())
+    // Use the first safe address for pinning
+    Ok(ValidatedUrl {
+        url: parsed,
+        host,
+        resolved: addrs[0],
+    })
 }
 
 /// POST /api/link-preview
@@ -83,17 +118,20 @@ pub async fn fetch_preview(
     _state: State<Arc<AppState>>,
     Json(body): Json<LinkPreviewRequest>,
 ) -> Result<Json<LinkPreviewResponse>, AppError> {
-    validate_url(&body.url)?;
+    let validated = validate_url(&body.url)?;
 
-    // Fetch the page with a short timeout
+    // Pin the resolved IP so reqwest cannot re-resolve to a different
+    // (potentially private) address after our validation -- closes the
+    // TOCTOU DNS rebinding window.
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .redirect(reqwest::redirect::Policy::none())
+        .resolve(&validated.host, validated.resolved)
         .build()
         .map_err(|_| AppError::internal("Failed to create HTTP client"))?;
 
     let resp = client
-        .get(&body.url)
+        .get(validated.url)
         .header("User-Agent", "EchoMessenger/1.0 LinkPreview")
         .send()
         .await
