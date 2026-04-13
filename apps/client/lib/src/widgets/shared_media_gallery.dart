@@ -163,7 +163,6 @@ class _MediaGrid extends StatelessWidget {
 
         return Semantics(
           label: 'view media',
-          image: true,
           button: true,
           child: GestureDetector(
             onTap: () => _showFullImage(context, resolvedUrl, headers),
