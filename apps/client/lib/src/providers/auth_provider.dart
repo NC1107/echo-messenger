@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/background_service.dart' show BackgroundService;
+import '../services/debug_log_service.dart';
 import '../services/message_cache.dart';
 import '../services/secure_key_store.dart';
 import '../services/user_data_dir.dart';
@@ -339,6 +340,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // On web, Hive/IndexedDB box close/reopen can fail during
       // page refresh; this must not prevent login.
       debugPrint('[Auth] MessageCache.initForUser failed (non-fatal): $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Auth',
+        'MessageCache.initForUser failed: $e. '
+            'History may be unavailable this session.',
+      );
     }
   }
 
