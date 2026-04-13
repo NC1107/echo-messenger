@@ -11,6 +11,7 @@ void main() {
   group('settingsSectionLabel', () {
     test('returns correct label for each section', () {
       expect(settingsSectionLabel(SettingsSection.account), 'Account');
+      expect(settingsSectionLabel(SettingsSection.devices), 'My Devices');
       expect(settingsSectionLabel(SettingsSection.privacy), 'Privacy & Safety');
       expect(
         settingsSectionLabel(SettingsSection.notifications),
@@ -33,11 +34,12 @@ void main() {
 
   group('SettingsSection enum', () {
     test('contains all expected sections', () {
-      expect(SettingsSection.values, hasLength(9));
+      expect(SettingsSection.values, hasLength(10));
       expect(
         SettingsSection.values,
         containsAll([
           SettingsSection.account,
+          SettingsSection.devices,
           SettingsSection.privacy,
           SettingsSection.notifications,
           SettingsSection.audio,
@@ -77,6 +79,7 @@ void main() {
 
       // Check all sections are rendered
       expect(find.text('Account'), findsOneWidget);
+      expect(find.text('My Devices'), findsOneWidget);
       expect(find.text('Privacy & Safety'), findsOneWidget);
       expect(find.text('Notifications'), findsOneWidget);
       expect(find.text('Voice & Video'), findsOneWidget);
