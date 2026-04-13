@@ -28,11 +28,10 @@ void main() {
 
     test('returns Yesterday for a timestamp from yesterday', () {
       // Use 30h ago to ensure diff.inDays == 1 regardless of time of day.
-      final iso =
-          DateTime.now()
-              .subtract(const Duration(hours: 30))
-              .toUtc()
-              .toIso8601String();
+      final iso = DateTime.now()
+          .subtract(const Duration(hours: 30))
+          .toUtc()
+          .toIso8601String();
 
       expect(formatConversationTimestamp(iso), 'Yesterday');
     });
@@ -40,14 +39,13 @@ void main() {
     test('returns abbreviated weekday for timestamps 2-6 days ago', () {
       const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       final threeDaysAgo = DateTime.now().subtract(const Duration(days: 3));
-      final iso =
-          DateTime(
-            threeDaysAgo.year,
-            threeDaysAgo.month,
-            threeDaysAgo.day,
-            8,
-            0,
-          ).toUtc().toIso8601String();
+      final iso = DateTime(
+        threeDaysAgo.year,
+        threeDaysAgo.month,
+        threeDaysAgo.day,
+        8,
+        0,
+      ).toUtc().toIso8601String();
 
       final result = formatConversationTimestamp(iso);
       expect(weekdays, contains(result));
@@ -55,14 +53,13 @@ void main() {
 
     test('returns d/m/yyyy for timestamps older than 7 days', () {
       final old = DateTime.now().subtract(const Duration(days: 10));
-      final iso =
-          DateTime(
-            old.year,
-            old.month,
-            old.day,
-            8,
-            0,
-          ).toUtc().toIso8601String();
+      final iso = DateTime(
+        old.year,
+        old.month,
+        old.day,
+        8,
+        0,
+      ).toUtc().toIso8601String();
 
       final result = formatConversationTimestamp(iso);
       // Should match pattern like 3/4/2026 or 12/1/2026
