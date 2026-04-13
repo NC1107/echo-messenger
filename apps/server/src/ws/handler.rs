@@ -39,6 +39,10 @@ enum ClientMessage {
         /// When present, enables multi-device delivery.
         #[serde(default)]
         device_contents: Option<HashMap<String, String>>,
+        /// Optional TTL in seconds. When Some, overrides the conversation-level
+        /// disappearing-messages setting for this specific message.
+        #[serde(default)]
+        ttl_seconds: Option<i64>,
     },
     #[serde(rename = "typing")]
     Typing {
@@ -62,7 +66,7 @@ enum ClientMessage {
 
 #[derive(Serialize, Clone)]
 #[serde(tag = "type")]
-enum ServerMessage {
+pub enum ServerMessage {
     #[serde(rename = "new_message")]
     NewMessage {
         message_id: Uuid,
@@ -81,6 +85,8 @@ enum ServerMessage {
         reply_to_content: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         reply_to_username: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        expires_at: Option<DateTime<Utc>>,
     },
     /// Sent to the sender's OTHER devices so they see outgoing messages.
     #[serde(rename = "self_message")]
@@ -102,6 +108,8 @@ enum ServerMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         channel_id: Option<Uuid>,
         timestamp: DateTime<Utc>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        expires_at: Option<DateTime<Utc>>,
     },
     #[serde(rename = "delivered")]
     Delivered {
@@ -142,6 +150,16 @@ enum ServerMessage {
         from_username: String,
         conversation_id: Uuid,
     },
+    /// Sent to all conversation members when a disappearing message is deleted.
+    #[serde(rename = "message_expired")]
+    MessageExpired {
+        message_id: Uuid,
+        conversation_id: Uuid,
+    },
+    /// Sent to all sessions of a user when one of their devices is revoked.
+    /// The receiving client should log out if `device_id` matches its own.
+    #[serde(rename = "device_revoked")]
+    DeviceRevoked { device_id: i32 },
 }
 
 pub async fn handle_socket(
@@ -241,6 +259,7 @@ async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid) {
             reply_to_id: msg.reply_to_id,
             reply_to_content: msg.reply_to_content.clone(),
             reply_to_username: msg.reply_to_username.clone(),
+            expires_at: None, // Offline delivery: expiry already passed if expired
         };
         if let Ok(json) = serde_json::to_string(&server_msg) {
             let _ = state
@@ -386,6 +405,7 @@ async fn handle_text_message(
             content,
             reply_to_id,
             device_contents,
+            ttl_seconds,
         } => {
             handle_send_message(
                 state,
@@ -398,6 +418,7 @@ async fn handle_text_message(
                 content,
                 reply_to_id,
                 device_contents,
+                ttl_seconds,
             )
             .await;
         }
@@ -577,6 +598,7 @@ async fn handle_send_message(
     content: String,
     reply_to_id: Option<Uuid>,
     device_contents: Option<HashMap<String, String>>,
+    ttl_seconds: Option<i64>,
 ) {
     if !validate_message_length(state, sender_id, &content) {
         return;
@@ -605,6 +627,7 @@ async fn handle_send_message(
         &content,
         reply_to_id,
         &device_contents,
+        ttl_seconds,
     )
     .await
     else {
@@ -623,6 +646,7 @@ async fn handle_send_message(
         reply_to_id,
         reply_to_content: reply_content,
         reply_to_username: reply_username,
+        expires_at: stored.expires_at,
     };
 
     fanout_message(
@@ -652,7 +676,17 @@ async fn store_and_confirm(
     content: &str,
     reply_to_id: Option<Uuid>,
     device_contents: &Option<HashMap<String, String>>,
+    ttl_seconds: Option<i64>,
 ) -> Option<db::messages::MessageRow> {
+    // Resolve TTL: use per-message override first, then fall back to conversation setting.
+    let effective_ttl = if ttl_seconds.is_some() {
+        ttl_seconds
+    } else {
+        db::messages::get_conversation_ttl(&state.pool, conv_id)
+            .await
+            .unwrap_or(None)
+    };
+
     // Store message in DB
     let stored = match db::messages::store_message(
         &state.pool,
@@ -661,6 +695,7 @@ async fn store_and_confirm(
         sender_id,
         content,
         reply_to_id,
+        effective_ttl,
     )
     .await
     {
@@ -691,6 +726,7 @@ async fn store_and_confirm(
         conversation_id: conv_id,
         channel_id: stored.channel_id,
         timestamp: stored.created_at,
+        expires_at: stored.expires_at,
     };
     if let Ok(json) = serde_json::to_string(&confirm) {
         state
@@ -882,6 +918,7 @@ struct NewMessageFields {
     reply_to_id: Option<Uuid>,
     reply_to_content: Option<String>,
     reply_to_username: Option<String>,
+    expires_at: Option<DateTime<Utc>>,
 }
 
 impl NewMessageFields {
@@ -900,6 +937,7 @@ impl NewMessageFields {
                 reply_to_id,
                 reply_to_content,
                 reply_to_username,
+                expires_at,
             } => Some(Self {
                 message_id: *message_id,
                 from_user_id: *from_user_id,
@@ -912,6 +950,7 @@ impl NewMessageFields {
                 reply_to_id: *reply_to_id,
                 reply_to_content: reply_to_content.clone(),
                 reply_to_username: reply_to_username.clone(),
+                expires_at: *expires_at,
             }),
             _ => None,
         }
@@ -940,6 +979,7 @@ fn build_per_device_json(
                 reply_to_id: fields.reply_to_id,
                 reply_to_content: fields.reply_to_content.clone(),
                 reply_to_username: fields.reply_to_username.clone(),
+                expires_at: fields.expires_at,
             };
             let json = serde_json::to_string(&per_device_msg).ok()?;
             Some((did, json))

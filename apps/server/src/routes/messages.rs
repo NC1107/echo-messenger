@@ -560,6 +560,65 @@ pub async fn toggle_mute(
 }
 
 // ---------------------------------------------------------------------------
+// PUT /api/conversations/:conversation_id/disappearing
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct SetDisappearingRequest {
+    /// TTL in seconds, or `null` to disable disappearing messages.
+    pub ttl_seconds: Option<i32>,
+}
+
+/// Set or clear the disappearing-messages TTL for a conversation.
+/// Only members of the conversation may do this; for groups, only admins/owners.
+pub async fn set_disappearing_ttl(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(conversation_id): Path<Uuid>,
+    Json(body): Json<SetDisappearingRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Verify membership
+    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+    if !is_member {
+        return Err(AppError::unauthorized("Not a member of this conversation"));
+    }
+
+    // For groups, require admin/owner role
+    let kind = db::groups::get_conversation_kind(&state.pool, conversation_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
+
+    if ConversationKind::from_str_opt(&kind) == Some(ConversationKind::Group) {
+        let role_str = db::groups::get_member_role(&state.pool, conversation_id, auth.user_id)
+            .await
+            .map_err(|_| AppError::internal("Database error"))?;
+        let role = role_str
+            .and_then(|r| Role::from_str_opt(&r))
+            .unwrap_or(Role::Member);
+        if !role.is_admin_or_above() {
+            return Err(AppError::unauthorized(
+                "Only admins can change disappearing messages settings",
+            ));
+        }
+    }
+
+    sqlx::query("UPDATE conversations SET disappearing_ttl_seconds = $1 WHERE id = $2")
+        .bind(body.ttl_seconds)
+        .bind(conversation_id)
+        .execute(&state.pool)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
+    Ok(Json(serde_json::json!({
+        "conversation_id": conversation_id,
+        "disappearing_ttl_seconds": body.ttl_seconds,
+    })))
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/conversations/:conversation_id/messages/:message_id/pin
 // ---------------------------------------------------------------------------
 

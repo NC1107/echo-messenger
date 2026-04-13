@@ -36,6 +36,7 @@ class ChatMessage {
   final String? replyToUsername;
   final String? pinnedById;
   final DateTime? pinnedAt;
+  final DateTime? expiresAt;
 
   /// The original plaintext for failed messages, enabling retry.
   /// When a message fails to send, [content] holds the user-facing error
@@ -63,6 +64,7 @@ class ChatMessage {
     this.replyToUsername,
     this.pinnedById,
     this.pinnedAt,
+    this.expiresAt,
     this.failedContent,
   });
 
@@ -111,6 +113,9 @@ class ChatMessage {
       replyToUsername: json['reply_to_username'] as String?,
       pinnedById: pinnedByIdRaw,
       pinnedAt: pinnedAtRaw != null ? DateTime.tryParse(pinnedAtRaw) : null,
+      expiresAt: json['expires_at'] != null
+          ? DateTime.tryParse(json['expires_at'] as String)
+          : null,
     );
   }
 
@@ -130,6 +135,7 @@ class ChatMessage {
       'reply_to_username': replyToUsername,
       'pinned_by_id': pinnedById,
       'pinned_at': pinnedAt?.toIso8601String(),
+      'expires_at': expiresAt?.toIso8601String(),
       'reactions': reactions.map((r) => r.toJson()).toList(),
     };
   }
@@ -152,6 +158,7 @@ class ChatMessage {
     String? replyToUsername,
     Object? pinnedById = _sentinel,
     Object? pinnedAt = _sentinel,
+    Object? expiresAt = _sentinel,
     Object? failedContent = _sentinel,
   }) {
     return ChatMessage(
@@ -174,6 +181,9 @@ class ChatMessage {
           ? this.pinnedById
           : pinnedById as String?,
       pinnedAt: pinnedAt == _sentinel ? this.pinnedAt : pinnedAt as DateTime?,
+      expiresAt: expiresAt == _sentinel
+          ? this.expiresAt
+          : expiresAt as DateTime?,
       failedContent: failedContent == _sentinel
           ? this.failedContent
           : failedContent as String?,
@@ -201,6 +211,7 @@ class ChatMessage {
             replyToUsername == other.replyToUsername &&
             pinnedById == other.pinnedById &&
             pinnedAt == other.pinnedAt &&
+            expiresAt == other.expiresAt &&
             failedContent == other.failedContent;
   }
 
@@ -223,6 +234,7 @@ class ChatMessage {
     replyToUsername,
     pinnedById,
     pinnedAt,
+    expiresAt,
     failedContent,
   );
 }

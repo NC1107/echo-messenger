@@ -14,6 +14,7 @@ pub struct MessageRow {
     pub created_at: DateTime<Utc>,
     pub delivered: bool,
     pub reply_to_id: Option<Uuid>,
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
@@ -105,18 +106,22 @@ pub async fn store_message(
     sender_id: Uuid,
     content: &str,
     reply_to_id: Option<Uuid>,
+    ttl_seconds: Option<i64>,
 ) -> Result<MessageRow, sqlx::Error> {
+    let expires_at: Option<DateTime<Utc>> =
+        ttl_seconds.map(|s| Utc::now() + chrono::Duration::seconds(s));
     sqlx::query_as::<_, MessageRow>(
-        "INSERT INTO messages (conversation_id, channel_id, sender_id, content, reply_to_id) \
-         VALUES ($1, $2, $3, $4, $5) \
+        "INSERT INTO messages (conversation_id, channel_id, sender_id, content, reply_to_id, expires_at) \
+         VALUES ($1, $2, $3, $4, $5, $6) \
          RETURNING id, conversation_id, channel_id, sender_id, content, created_at, delivered, \
-                   reply_to_id",
+                   reply_to_id, expires_at",
     )
     .bind(conversation_id)
     .bind(channel_id)
     .bind(sender_id)
     .bind(content)
     .bind(reply_to_id)
+    .bind(expires_at)
     .fetch_one(pool)
     .await
 }
@@ -176,6 +181,35 @@ pub async fn get_undelivered(
     .bind(user_id)
     .fetch_all(pool)
     .await
+}
+
+/// Delete all messages whose `expires_at` is in the past.
+///
+/// Returns the (id, conversation_id) pairs that were deleted so the caller
+/// can broadcast `message_expired` events to online users.
+pub async fn cleanup_expired_messages(pool: &PgPool) -> Result<Vec<(Uuid, Uuid)>, sqlx::Error> {
+    let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
+        "DELETE FROM messages \
+         WHERE expires_at IS NOT NULL AND expires_at <= NOW() \
+         RETURNING id, conversation_id",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Fetch the disappearing TTL (in seconds) configured for a conversation,
+/// if any. Returns None when disappearing messages are disabled.
+pub async fn get_conversation_ttl(
+    pool: &PgPool,
+    conversation_id: Uuid,
+) -> Result<Option<i64>, sqlx::Error> {
+    let row: Option<(Option<i32>,)> =
+        sqlx::query_as("SELECT disappearing_ttl_seconds FROM conversations WHERE id = $1")
+            .bind(conversation_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.and_then(|(v,)| v).map(|v| v as i64))
 }
 
 pub async fn mark_delivered(pool: &PgPool, message_ids: &[Uuid]) -> Result<(), sqlx::Error> {

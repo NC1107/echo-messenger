@@ -213,6 +213,38 @@ pub async fn get_user_devices(pool: &PgPool, user_id: Uuid) -> Result<Vec<i32>, 
     Ok(rows.into_iter().map(|(d,)| d).collect())
 }
 
+/// Revoke all keys for a specific (user_id, device_id) pair.
+/// Returns true if any rows were deleted, false if the device was not found.
+pub async fn revoke_device(
+    pool: &PgPool,
+    user_id: Uuid,
+    device_id: i32,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    // Delete identity key binding first (FK constraint from prekeys)
+    let r1 = sqlx::query("DELETE FROM identity_keys WHERE user_id = $1 AND device_id = $2")
+        .bind(user_id)
+        .bind(device_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("DELETE FROM signed_prekeys WHERE user_id = $1 AND device_id = $2")
+        .bind(user_id)
+        .bind(device_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("DELETE FROM one_time_prekeys WHERE user_id = $1 AND device_id = $2")
+        .bind(user_id)
+        .bind(device_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(r1.rows_affected() > 0)
+}
+
 /// Count available (unused) one-time prekeys for a user's device.
 pub async fn count_one_time_prekeys(
     pool: &PgPool,

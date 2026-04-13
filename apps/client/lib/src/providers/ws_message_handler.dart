@@ -145,6 +145,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleMessageDeleted(json);
       case 'message_edited':
         _handleMessageEdited(json);
+      case 'message_expired':
+        _handleMessageExpired(json);
       case 'message_pinned':
         _handleMessagePinned(json);
       case 'message_unpinned':
@@ -169,6 +171,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleSelfMessage(json, myUserId);
       case 'session_replaced':
         _handleSessionReplaced(json);
+      case 'device_revoked':
+        _handleDeviceRevoked(json);
       case 'heartbeat':
         break; // Server keepalive; _onMessage already updated _lastMessageTime.
       case 'error':
@@ -236,6 +240,26 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       'Session replaced by another connection: $reason',
     );
     state = state.copyWith(wasReplaced: true, isConnected: false);
+  }
+
+  void _handleDeviceRevoked(Map<String, dynamic> json) {
+    final revokedDeviceId = json['device_id'] as int?;
+    final myDeviceId = ref.read(cryptoServiceProvider).isInitialized
+        ? ref.read(cryptoServiceProvider).deviceId
+        : null;
+
+    if (revokedDeviceId != null &&
+        myDeviceId != null &&
+        revokedDeviceId == myDeviceId) {
+      // This device was revoked -- force logout.
+      DebugLogService.instance.log(
+        LogLevel.warning,
+        'WebSocket',
+        'Current device ($revokedDeviceId) was revoked; logging out.',
+      );
+      state = state.copyWith(isConnected: false);
+      ref.read(authProvider.notifier).logout();
+    }
   }
 
   void _refreshChannelsFromEvent(Map<String, dynamic> json) {
@@ -581,6 +605,12 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   }
 
   void _handleMessageDeleted(Map<String, dynamic> json) {
+    final conversationId = json['conversation_id'] as String;
+    final messageId = json['message_id'] as String;
+    ref.read(chatProvider.notifier).deleteMessage(conversationId, messageId);
+  }
+
+  void _handleMessageExpired(Map<String, dynamic> json) {
     final conversationId = json['conversation_id'] as String;
     final messageId = json['message_id'] as String;
     ref.read(chatProvider.notifier).deleteMessage(conversationId, messageId);
