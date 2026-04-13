@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -289,6 +290,271 @@ void main() {
 
       expect(notifier.state.error, isNotNull);
       expect(notifier.state.isLoading, isFalse);
+    });
+  });
+
+  group('ConversationsNotifier.getOrCreateDm', () {
+    test('finds existing DM locally without HTTP call', () async {
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(
+            id: 'dm-1',
+            isGroup: false,
+            members: [
+              ConversationMember(userId: 'peer-1', username: 'alice'),
+              ConversationMember(userId: 'me', username: 'testuser'),
+            ],
+          ),
+        ],
+      );
+
+      final result = await http.runWithClient(
+        () => notifier.getOrCreateDm('peer-1', 'alice'),
+        () => mockClient,
+      );
+
+      expect(result.id, 'dm-1');
+      // Verify no HTTP call was made.
+      verifyNever(
+        () => mockClient.post(any(), headers: any(named: 'headers'),
+            body: any(named: 'body'), encoding: any(named: 'encoding')),
+      );
+    });
+
+    test('creates via API when not found locally', () async {
+      when(
+        () => mockClient.post(
+          any(
+            that: predicate<Uri>((u) => u.path == '/api/conversations/dm'),
+          ),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenAnswer(
+        (_) async => http.Response(
+          jsonEncode({'conversation_id': 'new-dm-1'}),
+          200,
+        ),
+      );
+
+      // Stub loadConversations to return the newly created DM.
+      when(
+        () => mockClient.get(
+          any(that: predicate<Uri>((u) => u.path == '/api/conversations')),
+          headers: any(named: 'headers'),
+        ),
+      ).thenAnswer(
+        (_) async => http.Response(
+          jsonEncode([
+            {
+              'conversation_id': 'new-dm-1',
+              'kind': 'direct',
+              'members': [
+                {'user_id': 'peer-1', 'username': 'alice'},
+                {'user_id': 'me', 'username': 'testuser'},
+              ],
+            },
+          ]),
+          200,
+        ),
+      );
+
+      final notifier = container.read(conversationsProvider.notifier);
+      final result = await http.runWithClient(
+        () => notifier.getOrCreateDm('peer-1', 'alice'),
+        () => mockClient,
+      );
+
+      expect(result.id, 'new-dm-1');
+    });
+
+    test('throws DmException when server returns 400', () async {
+      when(
+        () => mockClient.post(
+          any(
+            that: predicate<Uri>((u) => u.path == '/api/conversations/dm'),
+          ),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenAnswer(
+        (_) async => http.Response(
+          jsonEncode({'error': 'Not a contact'}),
+          400,
+        ),
+      );
+
+      final notifier = container.read(conversationsProvider.notifier);
+      expect(
+        () => http.runWithClient(
+          () => notifier.getOrCreateDm('stranger-1', 'stranger'),
+          () => mockClient,
+        ),
+        throwsA(isA<DmException>()),
+      );
+    });
+
+    test('throws DmException on network error', () async {
+      when(
+        () => mockClient.post(
+          any(
+            that: predicate<Uri>((u) => u.path == '/api/conversations/dm'),
+          ),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenThrow(const SocketException('Connection refused'));
+
+      final notifier = container.read(conversationsProvider.notifier);
+      expect(
+        () => http.runWithClient(
+          () => notifier.getOrCreateDm('peer-1', 'alice'),
+          () => mockClient,
+        ),
+        throwsA(
+          isA<DmException>().having(
+            (e) => e.message,
+            'message',
+            contains('connect'),
+          ),
+        ),
+      );
+    });
+  });
+
+  group('ConversationsNotifier.sendReadReceipt', () {
+    test('success clears unread count', () async {
+      when(
+        () => mockClient.post(
+          any(
+            that: predicate<Uri>(
+              (u) => u.path == '/api/conversations/conv-1/read',
+            ),
+          ),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenAnswer((_) async => http.Response('{}', 200));
+
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(id: 'conv-1', isGroup: false, unreadCount: 5),
+        ],
+      );
+
+      await http.runWithClient(
+        () => notifier.sendReadReceipt('conv-1'),
+        () => mockClient,
+      );
+
+      expect(notifier.state.conversations.first.unreadCount, 0);
+    });
+
+    test('failure reverts unread count', () async {
+      when(
+        () => mockClient.post(
+          any(
+            that: predicate<Uri>(
+              (u) => u.path == '/api/conversations/conv-1/read',
+            ),
+          ),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenThrow(const SocketException('Connection refused'));
+
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(id: 'conv-1', isGroup: false, unreadCount: 5),
+        ],
+      );
+
+      await http.runWithClient(
+        () => notifier.sendReadReceipt('conv-1'),
+        () => mockClient,
+      );
+
+      expect(
+        notifier.state.conversations.first.unreadCount,
+        5,
+        reason: 'unread count should be restored after server failure',
+      );
+    });
+  });
+
+  group('ConversationsNotifier.toggleMute', () {
+    test('success toggles muted state', () async {
+      when(
+        () => mockClient.put(
+          any(
+            that: predicate<Uri>(
+              (u) => u.path == '/api/conversations/conv-1/mute',
+            ),
+          ),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenAnswer((_) async => http.Response('{}', 200));
+
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(id: 'conv-1', isGroup: false, isMuted: false),
+        ],
+      );
+
+      await http.runWithClient(
+        () => notifier.toggleMute('conv-1'),
+        () => mockClient,
+      );
+
+      expect(
+        notifier.state.conversations.first.isMuted,
+        isTrue,
+        reason: 'conversation should be muted after toggle',
+      );
+    });
+
+    test('failure reverts muted state', () async {
+      when(
+        () => mockClient.put(
+          any(
+            that: predicate<Uri>(
+              (u) => u.path == '/api/conversations/conv-1/mute',
+            ),
+          ),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenThrow(const SocketException('Connection refused'));
+
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(id: 'conv-1', isGroup: false, isMuted: false),
+        ],
+      );
+
+      await http.runWithClient(
+        () => notifier.toggleMute('conv-1'),
+        () => mockClient,
+      );
+
+      expect(
+        notifier.state.conversations.first.isMuted,
+        isFalse,
+        reason: 'muted state should be reverted after server failure',
+      );
     });
   });
 }
