@@ -278,15 +278,11 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         ))
         .layer(SetResponseHeaderLayer::overriding(
             header::CONTENT_SECURITY_POLICY,
+            // API responses are JSON only -- no HTML, scripts, or styles are
+            // ever rendered from these endpoints. Lock everything down; the
+            // Flutter web client is served by nginx with its own CSP.
             header::HeaderValue::from_static(
-                "default-src 'self'; \
-                 connect-src 'self' wss: https:; \
-                 img-src 'self' https: data: blob:; \
-                 font-src 'self' https://fonts.gstatic.com; \
-                 style-src 'self' 'unsafe-inline'; \
-                 script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; \
-                 media-src 'self' blob:; \
-                 worker-src 'self' blob:",
+                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
             ),
         ))
         .with_state(state)
