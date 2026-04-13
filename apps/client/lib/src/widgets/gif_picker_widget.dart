@@ -230,21 +230,26 @@ class _GifPickerWidgetState extends State<GifPickerWidget> {
       itemCount: _results.length,
       itemBuilder: (ctx, i) {
         final gif = _results[i];
-        return GestureDetector(
-          onTap: () {
-            widget.onGifSelected(gif.sendUrl, gif.slug);
-            _trackShare(gif.slug);
-          },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Image.network(
-              gif.previewUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, e, st) => Container(
-                color: context.mainBg,
-                child: Icon(
-                  Icons.broken_image_outlined,
-                  color: context.textMuted,
+        return Semantics(
+          label: 'send gif',
+          image: true,
+          button: true,
+          child: GestureDetector(
+            onTap: () {
+              widget.onGifSelected(gif.sendUrl, gif.slug);
+              _trackShare(gif.slug);
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.network(
+                gif.previewUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, e, st) => Container(
+                  color: context.mainBg,
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    color: context.textMuted,
+                  ),
                 ),
               ),
             ),

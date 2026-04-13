@@ -690,21 +690,25 @@ class _SpoilerTextState extends State<_SpoilerText> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => setState(() => _revealed = !_revealed),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(
-          color: _revealed
-              ? widget.bgColor.withValues(alpha: 0.15)
-              : widget.bgColor.withValues(alpha: 0.8),
-          borderRadius: BorderRadius.circular(3),
-        ),
-        child: Text(
-          widget.text,
-          style: widget.style.copyWith(
-            color: _revealed ? widget.style.color : Colors.transparent,
+    return Semantics(
+      label: 'reveal spoiler',
+      button: true,
+      child: GestureDetector(
+        onTap: () => setState(() => _revealed = !_revealed),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          decoration: BoxDecoration(
+            color: _revealed
+                ? widget.bgColor.withValues(alpha: 0.15)
+                : widget.bgColor.withValues(alpha: 0.8),
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Text(
+            widget.text,
+            style: widget.style.copyWith(
+              color: _revealed ? widget.style.color : Colors.transparent,
+            ),
           ),
         ),
       ),
@@ -769,26 +773,30 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
             Positioned(
               top: 8,
               right: 8,
-              child: GestureDetector(
-                onTap: _copy,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: widget.bgColor,
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: widget.textColor.withValues(alpha: 0.2),
+              child: Semantics(
+                label: 'copy code block',
+                button: true,
+                child: GestureDetector(
+                  onTap: _copy,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
                     ),
-                  ),
-                  child: Text(
-                    _copied ? 'Copied!' : 'Copy',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: widget.textColor.withValues(alpha: 0.7),
-                      fontWeight: FontWeight.w600,
+                    decoration: BoxDecoration(
+                      color: widget.bgColor,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: widget.textColor.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Text(
+                      _copied ? 'Copied!' : 'Copy',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: widget.textColor.withValues(alpha: 0.7),
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),

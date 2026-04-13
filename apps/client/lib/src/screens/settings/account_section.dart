@@ -482,20 +482,24 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
               Positioned(
                 bottom: 0,
                 right: 0,
-                child: GestureDetector(
-                  onTap: _uploadAvatar,
-                  child: Container(
-                    width: 26,
-                    height: 26,
-                    decoration: BoxDecoration(
-                      color: context.surface,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: context.border, width: 2),
-                    ),
-                    child: Icon(
-                      Icons.camera_alt,
-                      size: 13,
-                      color: context.textSecondary,
+                child: Semantics(
+                  label: 'pick avatar',
+                  button: true,
+                  child: GestureDetector(
+                    onTap: _uploadAvatar,
+                    child: Container(
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        color: context.surface,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: context.border, width: 2),
+                      ),
+                      child: Icon(
+                        Icons.camera_alt,
+                        size: 13,
+                        color: context.textSecondary,
+                      ),
                     ),
                   ),
                 ),

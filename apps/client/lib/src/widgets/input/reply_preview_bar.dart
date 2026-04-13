@@ -60,9 +60,13 @@ class ReplyPreviewBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          GestureDetector(
-            onTap: onDismiss,
-            child: Icon(Icons.close, size: 14, color: context.textMuted),
+          Semantics(
+            label: 'dismiss reply preview',
+            button: true,
+            child: GestureDetector(
+              onTap: onDismiss,
+              child: Icon(Icons.close, size: 14, color: context.textMuted),
+            ),
           ),
         ],
       ),

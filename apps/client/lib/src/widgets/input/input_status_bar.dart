@@ -53,9 +53,13 @@ class InputStatusBar extends StatelessWidget {
             ),
           ),
           if (isEditing && onCancelEdit != null)
-            GestureDetector(
-              onTap: onCancelEdit,
-              child: Icon(Icons.close, size: 14, color: context.textMuted),
+            Semantics(
+              label: 'cancel edit',
+              button: true,
+              child: GestureDetector(
+                onTap: onCancelEdit,
+                child: Icon(Icons.close, size: 14, color: context.textMuted),
+              ),
             ),
         ],
       ),

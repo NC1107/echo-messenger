@@ -161,24 +161,29 @@ class _MediaGrid extends StatelessWidget {
         );
         final headers = mediaHeaders(authToken: authToken);
 
-        return GestureDetector(
-          onTap: () => _showFullImage(context, resolvedUrl, headers),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(2),
-            child: resolvedUrl.endsWith('.gif')
-                ? Image.network(
-                    resolvedUrl,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, _, _) => _placeholder(context),
-                  )
-                : CachedNetworkImage(
-                    imageUrl: resolvedUrl,
-                    httpHeaders: headers,
-                    fit: BoxFit.cover,
-                    placeholder: (_, _) => _placeholder(context),
-                    errorWidget: (_, _, _) => _placeholder(context),
-                  ),
+        return Semantics(
+          label: 'view media',
+          image: true,
+          button: true,
+          child: GestureDetector(
+            onTap: () => _showFullImage(context, resolvedUrl, headers),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: resolvedUrl.endsWith('.gif')
+                  ? Image.network(
+                      resolvedUrl,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, _, _) => _placeholder(context),
+                    )
+                  : CachedNetworkImage(
+                      imageUrl: resolvedUrl,
+                      httpHeaders: headers,
+                      fit: BoxFit.cover,
+                      placeholder: (_, _) => _placeholder(context),
+                      errorWidget: (_, _, _) => _placeholder(context),
+                    ),
+            ),
           ),
         );
       },

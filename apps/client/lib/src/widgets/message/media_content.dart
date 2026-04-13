@@ -670,16 +670,20 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
 
     // Not yet tapped — show play button thumbnail (no controller allocated).
     if (!_userTappedPlay && c == null) {
-      return GestureDetector(
-        onTap: _initAndPlay,
-        child: Container(
-          height: 170,
-          color: widget.mainBg,
-          child: Center(
-            child: Icon(
-              Icons.play_circle_outline,
-              size: 44,
-              color: widget.textMuted,
+      return Semantics(
+        label: 'play video',
+        button: true,
+        child: GestureDetector(
+          onTap: _initAndPlay,
+          child: Container(
+            height: 170,
+            color: widget.mainBg,
+            child: Center(
+              child: Icon(
+                Icons.play_circle_outline,
+                size: 44,
+                color: widget.textMuted,
+              ),
             ),
           ),
         ),
@@ -706,16 +710,20 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
 
     // Init failed -- show static placeholder
     if (_initFailed || c == null) {
-      return GestureDetector(
-        onTap: widget.onOpen,
-        child: Container(
-          height: 170,
-          color: widget.mainBg,
-          child: Center(
-            child: Icon(
-              Icons.play_circle_outline,
-              size: 44,
-              color: widget.textMuted,
+      return Semantics(
+        label: 'open video externally',
+        button: true,
+        child: GestureDetector(
+          onTap: widget.onOpen,
+          child: Container(
+            height: 170,
+            color: widget.mainBg,
+            child: Center(
+              child: Icon(
+                Icons.play_circle_outline,
+                size: 44,
+                color: widget.textMuted,
+              ),
             ),
           ),
         ),
@@ -723,29 +731,33 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     }
 
     // Initialised -- show player with controls
-    return GestureDetector(
-      onTap: _togglePlayPause,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          AspectRatio(
-            aspectRatio: c.value.aspectRatio.clamp(0.5, 3.0),
-            child: VideoPlayer(c),
-          ),
-          if (!c.value.isPlaying)
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.play_arrow,
-                size: 32,
-                color: Colors.white,
-              ),
+    return Semantics(
+      label: 'toggle video playback',
+      button: true,
+      child: GestureDetector(
+        onTap: _togglePlayPause,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            AspectRatio(
+              aspectRatio: c.value.aspectRatio.clamp(0.5, 3.0),
+              child: VideoPlayer(c),
             ),
-        ],
+            if (!c.value.isPlaying)
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.play_arrow,
+                  size: 32,
+                  color: Colors.white,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
