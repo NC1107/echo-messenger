@@ -28,38 +28,42 @@ class ReactionBar extends StatelessWidget {
         decoration: TextDecoration.none,
         color: context.textPrimary,
       ),
-      child: GestureDetector(
-        onTapUp: (details) => onTap?.call(details.globalPosition),
-        child: Container(
-          height: 24,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          decoration: BoxDecoration(
-            color: context.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: context.border, width: 1),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final emoji in uniqueEmojis)
-                Padding(
-                  padding: const EdgeInsets.only(right: 2),
-                  child: Text(
-                    emoji,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      decoration: TextDecoration.none,
+      child: Semantics(
+        label: 'reaction: ${uniqueEmojis.join(" ")} ($totalCount)',
+        button: true,
+        child: GestureDetector(
+          onTapUp: (details) => onTap?.call(details.globalPosition),
+          child: Container(
+            height: 24,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.border, width: 1),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final emoji in uniqueEmojis)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 2),
+                    child: Text(
+                      emoji,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        decoration: TextDecoration.none,
+                      ),
                     ),
                   ),
-                ),
-              if (totalCount > 1) ...[
-                const SizedBox(width: 2),
-                Text(
-                  '$totalCount',
-                  style: TextStyle(fontSize: 12, color: context.textMuted),
-                ),
+                if (totalCount > 1) ...[
+                  const SizedBox(width: 2),
+                  Text(
+                    '$totalCount',
+                    style: TextStyle(fontSize: 12, color: context.textMuted),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

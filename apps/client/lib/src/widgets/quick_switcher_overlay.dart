@@ -94,42 +94,46 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
               border: Border(left: BorderSide(color: context.accent, width: 2)),
             )
           : null,
-      child: Material(
-        color: isSelected
-            ? context.accent.withValues(alpha: 0.1)
-            : Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            widget.onSelect(conv);
-            Navigator.of(context).pop();
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              children: [
-                Icon(
-                  conv.isGroup ? Icons.group : Icons.person,
-                  size: 20,
-                  color: context.textSecondary,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      color: context.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
+      child: Semantics(
+        label: 'switch to: $title',
+        button: true,
+        child: Material(
+          color: isSelected
+              ? context.accent.withValues(alpha: 0.1)
+              : Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              widget.onSelect(conv);
+              Navigator.of(context).pop();
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(
+                    conv.isGroup ? Icons.group : Icons.person,
+                    size: 20,
+                    color: context.textSecondary,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                if (conv.isGroup)
-                  Text(
-                    'Group',
-                    style: TextStyle(color: context.textMuted, fontSize: 11),
-                  ),
-              ],
+                  if (conv.isGroup)
+                    Text(
+                      'Group',
+                      style: TextStyle(color: context.textMuted, fontSize: 11),
+                    ),
+                ],
+              ),
             ),
           ),
         ),

@@ -296,53 +296,57 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
           const SizedBox(height: 24),
 
           // Safety number digits
-          GestureDetector(
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: _safetyNumber!));
-              ToastService.show(
-                context,
-                'Safety number copied',
-                type: ToastType.success,
-              );
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: context.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: context.border),
-              ),
-              child: Column(
-                children: [
-                  Text(
-                    formatted,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: context.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w500,
-                      fontFamily: 'monospace',
-                      letterSpacing: 2,
-                      height: 1.6,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.copy, size: 12, color: context.textMuted),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Tap to copy',
-                        style: TextStyle(
-                          color: context.textMuted,
-                          fontSize: 11,
-                        ),
+          Semantics(
+            label: 'copy safety number',
+            button: true,
+            child: GestureDetector(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: _safetyNumber!));
+                ToastService.show(
+                  context,
+                  'Safety number copied',
+                  type: ToastType.success,
+                );
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: context.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: context.border),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      formatted,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                        fontFamily: 'monospace',
+                        letterSpacing: 2,
+                        height: 1.6,
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.copy, size: 12, color: context.textMuted),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Tap to copy',
+                          style: TextStyle(
+                            color: context.textMuted,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

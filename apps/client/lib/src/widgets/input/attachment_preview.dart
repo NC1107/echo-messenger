@@ -138,9 +138,13 @@ class AttachmentPreview extends StatelessWidget {
           ),
         const SizedBox(width: 6),
         // Remove button
-        GestureDetector(
-          onTap: onClear,
-          child: Icon(Icons.close, size: 16, color: context.textMuted),
+        Semantics(
+          label: 'remove attachment',
+          button: true,
+          child: GestureDetector(
+            onTap: onClear,
+            child: Icon(Icons.close, size: 16, color: context.textMuted),
+          ),
         ),
       ],
     );

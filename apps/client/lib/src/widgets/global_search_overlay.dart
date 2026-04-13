@@ -256,46 +256,50 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
       }
     }
 
-    return InkWell(
-      onTap: () {
-        Navigator.of(context).pop();
-        widget.onResultTap(r.conversationId, r.messageId);
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  r.senderUsername,
-                  style: TextStyle(
-                    color: context.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+    return Semantics(
+      label: 'search result by ${r.senderUsername}',
+      button: true,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).pop();
+          widget.onResultTap(r.conversationId, r.messageId);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    r.senderUsername,
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'in ${r.conversationName}',
-                  style: TextStyle(color: context.textMuted, fontSize: 12),
-                ),
-                const Spacer(),
-                Text(
-                  timeLabel,
-                  style: TextStyle(color: context.textMuted, fontSize: 11),
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              preview,
-              style: TextStyle(color: context.textSecondary, fontSize: 13),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+                  const SizedBox(width: 6),
+                  Text(
+                    'in ${r.conversationName}',
+                    style: TextStyle(color: context.textMuted, fontSize: 12),
+                  ),
+                  const Spacer(),
+                  Text(
+                    timeLabel,
+                    style: TextStyle(color: context.textMuted, fontSize: 11),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                preview,
+                style: TextStyle(color: context.textSecondary, fontSize: 13),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ),
     );

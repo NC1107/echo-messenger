@@ -338,50 +338,54 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           const SizedBox(height: 32),
 
           // Avatar circle
-          GestureDetector(
-            onTap: _uploadingAvatar ? null : _pickAvatar,
-            child: Stack(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: context.accent, width: 2),
-                  ),
-                  child: CircleAvatar(
-                    radius: 48,
-                    backgroundColor: context.surface,
-                    backgroundImage: _avatarImage(auth, serverUrl),
-                    child: _avatarChild(auth, username),
-                  ),
-                ),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Container(
-                    width: 30,
-                    height: 30,
+          Semantics(
+            label: 'pick avatar',
+            button: true,
+            child: GestureDetector(
+              onTap: _uploadingAvatar ? null : _pickAvatar,
+              child: Stack(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(3),
                     decoration: BoxDecoration(
-                      color: context.accent,
                       shape: BoxShape.circle,
-                      border: Border.all(color: context.mainBg, width: 2),
+                      border: Border.all(color: context.accent, width: 2),
                     ),
-                    child: _uploadingAvatar
-                        ? const Padding(
-                            padding: EdgeInsets.all(6),
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
+                    child: CircleAvatar(
+                      radius: 48,
+                      backgroundColor: context.surface,
+                      backgroundImage: _avatarImage(auth, serverUrl),
+                      child: _avatarChild(auth, username),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: context.accent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: context.mainBg, width: 2),
+                      ),
+                      child: _uploadingAvatar
+                          ? const Padding(
+                              padding: EdgeInsets.all(6),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.camera_alt,
+                              size: 14,
                               color: Colors.white,
                             ),
-                          )
-                        : const Icon(
-                            Icons.camera_alt,
-                            size: 14,
-                            color: Colors.white,
-                          ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -657,49 +661,54 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
               itemBuilder: (context, index) {
                 final t = _onboardingThemes[index];
                 final isSelected = currentTheme == t.selection;
-                return GestureDetector(
-                  onTap: () =>
-                      ref.read(themeProvider.notifier).setTheme(t.selection),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: t.bg,
-                          border: Border.all(
-                            color: isSelected ? t.accent : context.border,
-                            width: isSelected ? 2.5 : 1.5,
+                return Semantics(
+                  label: '${t.label} theme',
+                  button: true,
+                  selected: isSelected,
+                  child: GestureDetector(
+                    onTap: () =>
+                        ref.read(themeProvider.notifier).setTheme(t.selection),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: t.bg,
+                            border: Border.all(
+                              color: isSelected ? t.accent : context.border,
+                              width: isSelected ? 2.5 : 1.5,
+                            ),
                           ),
-                        ),
-                        child: Center(
-                          child: Container(
-                            width: 18,
-                            height: 18,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: t.accent,
+                          child: Center(
+                            child: Container(
+                              width: 18,
+                              height: 18,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: t.accent,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        t.label,
-                        style: TextStyle(
-                          color: isSelected
-                              ? context.accent
-                              : context.textSecondary,
-                          fontSize: 11,
-                          fontWeight: isSelected
-                              ? FontWeight.w600
-                              : FontWeight.w400,
+                        const SizedBox(height: 6),
+                        Text(
+                          t.label,
+                          style: TextStyle(
+                            color: isSelected
+                                ? context.accent
+                                : context.textSecondary,
+                            fontSize: 11,
+                            fontWeight: isSelected
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               },

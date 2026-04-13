@@ -63,30 +63,34 @@ class _MentionItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          children: [
-            Icon(Icons.alternate_email, size: 14, color: context.accent),
-            const SizedBox(width: 8),
-            Text(
-              member.username,
-              style: TextStyle(
-                fontSize: 13,
-                color: context.textPrimary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            if (member.role != null) ...[
-              const SizedBox(width: 6),
+    return Semantics(
+      label: 'mention ${member.username}',
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Icon(Icons.alternate_email, size: 14, color: context.accent),
+              const SizedBox(width: 8),
               Text(
-                member.role!,
-                style: TextStyle(fontSize: 11, color: context.textMuted),
+                member.username,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: context.textPrimary,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
+              if (member.role != null) ...[
+                const SizedBox(width: 6),
+                Text(
+                  member.role!,
+                  style: TextStyle(fontSize: 11, color: context.textMuted),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

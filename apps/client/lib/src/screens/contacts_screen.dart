@@ -487,24 +487,30 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
   }
 
   Widget _buildMessageButton(String userId, String username) {
-    return SizedBox(
-      height: 32,
-      width: 90,
-      child: Material(
-        color: context.accentLight,
-        borderRadius: BorderRadius.circular(6),
-        child: InkWell(
+    return Semantics(
+      label: 'message $username',
+      button: true,
+      child: SizedBox(
+        height: 32,
+        width: 90,
+        child: Material(
+          color: context.accentLight,
           borderRadius: BorderRadius.circular(6),
-          onTap: _isStartingDm ? null : () => _messageContact(userId, username),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Center(
-              child: Text(
-                'Message',
-                style: TextStyle(
-                  color: context.accent,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: _isStartingDm
+                ? null
+                : () => _messageContact(userId, username),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Center(
+                child: Text(
+                  'Message',
+                  style: TextStyle(
+                    color: context.accent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
             ),
@@ -571,43 +577,47 @@ class _SearchResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          children: [
-            buildAvatar(
-              name: user.username,
-              radius: 20,
-              imageUrl: avatarImageUrl,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    user.displayName ?? user.username,
-                    style: TextStyle(
-                      color: context.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    '@${user.username}',
-                    style: TextStyle(
-                      color: context.textSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+    return Semantics(
+      label: 'search result: ${user.username}',
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              buildAvatar(
+                name: user.username,
+                radius: 20,
+                imageUrl: avatarImageUrl,
               ),
-            ),
-            _buildTrailing(context),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user.displayName ?? user.username,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      '@${user.username}',
+                      style: TextStyle(
+                        color: context.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _buildTrailing(context),
+            ],
+          ),
         ),
       ),
     );

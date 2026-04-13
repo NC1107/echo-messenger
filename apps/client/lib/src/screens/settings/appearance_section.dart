@@ -304,81 +304,86 @@ class _ThemeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 160,
-      child: Material(
-        color: isSelected ? context.accentLight : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: onTap,
+    return Semantics(
+      label: '${data.label} theme',
+      button: true,
+      selected: isSelected,
+      child: SizedBox(
+        width: 160,
+        child: Material(
+          color: isSelected ? context.accentLight : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
-          hoverColor: context.surfaceHover,
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: isSelected ? context.accent : context.border,
-                width: isSelected ? 2 : 1,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Thumbnail
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: SizedBox(
-                    height: 90,
-                    width: double.infinity,
-                    child: data.preview != null
-                        ? _ThemeThumbnail(colors: data.preview!)
-                        : _SystemThemeThumbnail(),
-                  ),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(10),
+            hoverColor: context.surfaceHover,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSelected ? context.accent : context.border,
+                  width: isSelected ? 2 : 1,
                 ),
-                const SizedBox(height: 8),
-                // Label row
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            data.label,
-                            style: TextStyle(
-                              color: isSelected
-                                  ? context.accent
-                                  : context.textPrimary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 1),
-                          Text(
-                            data.subtitle,
-                            style: TextStyle(
-                              color: context.textMuted,
-                              fontSize: 11,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Thumbnail
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: SizedBox(
+                      height: 90,
+                      width: double.infinity,
+                      child: data.preview != null
+                          ? _ThemeThumbnail(colors: data.preview!)
+                          : _SystemThemeThumbnail(),
                     ),
-                    if (isSelected)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 4),
-                        child: Icon(
-                          Icons.check_circle,
-                          size: 18,
-                          color: context.accent,
+                  ),
+                  const SizedBox(height: 8),
+                  // Label row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              data.label,
+                              style: TextStyle(
+                                color: isSelected
+                                    ? context.accent
+                                    : context.textPrimary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              data.subtitle,
+                              style: TextStyle(
+                                color: context.textMuted,
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
                       ),
-                  ],
-                ),
-              ],
+                      if (isSelected)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: Icon(
+                            Icons.check_circle,
+                            size: 18,
+                            color: context.accent,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -683,55 +688,63 @@ class _LayoutOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: isSelected ? context.accentLight : Colors.transparent,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
+    return Semantics(
+      label: '$label layout',
+      button: true,
+      selected: isSelected,
+      child: Material(
+        color: isSelected ? context.accentLight : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
-        hoverColor: context.surfaceHover,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isSelected ? context.accent : context.border,
-              width: 1,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          hoverColor: context.surfaceHover,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isSelected ? context.accent : context.border,
+                width: 1,
+              ),
             ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                size: 22,
-                color: isSelected ? context.accent : context.textSecondary,
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        color: isSelected
-                            ? context.accent
-                            : context.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(color: context.textMuted, fontSize: 12),
-                    ),
-                  ],
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 22,
+                  color: isSelected ? context.accent : context.textSecondary,
                 ),
-              ),
-              if (isSelected)
-                Icon(Icons.check_circle, size: 20, color: context.accent),
-            ],
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: isSelected
+                              ? context.accent
+                              : context.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          color: context.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isSelected)
+                  Icon(Icons.check_circle, size: 20, color: context.accent),
+              ],
+            ),
           ),
         ),
       ),

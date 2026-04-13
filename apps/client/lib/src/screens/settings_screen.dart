@@ -191,26 +191,31 @@ class SettingsNavList extends StatelessWidget {
       labelColor = context.textPrimary;
     }
 
-    return Material(
-      color: isSelected ? context.accentLight : Colors.transparent,
-      child: InkWell(
-        onTap: isLogout ? onLogout : () => onTap(section!),
-        hoverColor: context.surfaceHover,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              Icon(icon, size: 20, color: iconColor),
-              const SizedBox(width: 12),
-              Text(
-                label,
-                style: TextStyle(
-                  color: labelColor,
-                  fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+    return Semantics(
+      label: isLogout ? 'log out' : '$label settings',
+      button: true,
+      selected: isSelected,
+      child: Material(
+        color: isSelected ? context.accentLight : Colors.transparent,
+        child: InkWell(
+          onTap: isLogout ? onLogout : () => onTap(section!),
+          hoverColor: context.surfaceHover,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Icon(icon, size: 20, color: iconColor),
+                const SizedBox(width: 12),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: labelColor,
+                    fontSize: 14,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
