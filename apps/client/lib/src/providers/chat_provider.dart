@@ -14,6 +14,7 @@ import '../services/group_crypto_service.dart';
 import '../services/message_cache.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
+import 'conversations_provider.dart';
 import 'server_url_provider.dart';
 
 class ChatState {
@@ -440,6 +441,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
       );
       newMessages.add(msg);
     }
+
+    // Update conversation preview with the latest decrypted message so the
+    // conversation list shows plaintext instead of "Encrypted message".
+    if (newMessages.isNotEmpty && conversationId != null) {
+      final latest = newMessages.last;
+      if (!looksEncrypted(latest.content)) {
+        ref
+            .read(conversationsProvider.notifier)
+            .updateDecryptedPreview(conversationId, latest.content);
+      }
+    }
+
     return newMessages;
   }
 

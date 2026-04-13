@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/conversation.dart';
 import '../services/debug_log_service.dart';
+import '../services/message_cache.dart';
 import '../services/notification_service.dart';
 import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
@@ -121,7 +122,11 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         for (var i = 0; i < conversations.length; i++) {
           final conv = conversations[i];
           if (conv.lastMessage != null && looksEncrypted(conv.lastMessage!)) {
-            final cached = _decryptedPreviews[conv.id];
+            var cached = _decryptedPreviews[conv.id];
+            if (cached == null) {
+              cached = MessageCache.getLatestCachedPreview(conv.id);
+              if (cached != null) _decryptedPreviews[conv.id] = cached;
+            }
             conversations[i] = conv.copyWith(
               lastMessage: cached ?? 'Encrypted message',
             );
@@ -203,6 +208,12 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
       _decryptedPreviews[conversationId] = newContent;
       state = state.copyWith(conversations: updated);
     }
+  }
+
+  /// Store a decrypted preview for a conversation so the conversation list
+  /// shows the decrypted text instead of "Encrypted message".
+  void updateDecryptedPreview(String conversationId, String content) {
+    _decryptedPreviews[conversationId] = content;
   }
 
   /// Update the encryption flag for a conversation locally.

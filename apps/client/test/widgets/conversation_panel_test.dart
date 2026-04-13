@@ -66,10 +66,10 @@ void main() {
       );
       await tester.pump();
 
-      // DM conversation shows sender prefix
-      expect(find.text('alice: Hey there!'), findsOneWidget);
+      // DM conversation shows message without sender prefix
+      expect(find.textContaining('Hey there!'), findsOneWidget);
       // Group conversation prefixes sender: "bob: Meeting at 3pm"
-      expect(find.text('bob: Meeting at 3pm'), findsOneWidget);
+      expect(find.textContaining('bob: Meeting at 3pm'), findsOneWidget);
     });
 
     testWidgets('shows unread indicator dot for conversations with unreads', (

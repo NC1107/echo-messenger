@@ -69,6 +69,29 @@ class MessageCache {
     return ChatMessage.fromServerJson(json, myUserId);
   }
 
+  /// Return the content of the most recent cached message for a conversation.
+  /// Used by loadConversations() to show decrypted previews for messages that
+  /// were decrypted in a previous session and stored in the Hive cache.
+  static String? getLatestCachedPreview(String conversationId) {
+    final box = _box;
+    if (box == null) return null;
+    String? latest;
+    String? latestTimestamp;
+    for (final key in box.keys) {
+      if (!(key as String).startsWith('$conversationId:')) continue;
+      final raw = box.get(key);
+      if (raw == null) continue;
+      final json = Map<String, dynamic>.from(raw);
+      final ts =
+          json['created_at'] as String? ?? json['timestamp'] as String? ?? '';
+      if (latestTimestamp == null || ts.compareTo(latestTimestamp) > 0) {
+        latestTimestamp = ts;
+        latest = json['content'] as String?;
+      }
+    }
+    return latest;
+  }
+
   static Future<void> clearAll() async {
     await _box?.clear();
   }
