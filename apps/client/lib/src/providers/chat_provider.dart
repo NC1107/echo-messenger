@@ -303,7 +303,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  /// Replace the most recent pending message with the confirmed server ID.
+  /// Replace the oldest pending message with the confirmed server ID.
+  ///
+  /// Uses FIFO order (oldest first) so that when multiple messages are sent
+  /// in rapid succession (e.g. attachment + caption), server confirmations
+  /// match the correct pending message regardless of arrival timing.
   /// Returns the original pending ID so the caller can cancel its timer.
   String? _replacePendingMessage(
     Map<String, List<ChatMessage>> updatedConv,
@@ -313,7 +317,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String timestamp,
     String? channelId,
   ) {
-    for (var i = messages.length - 1; i >= 0; i--) {
+    for (var i = 0; i < messages.length; i++) {
       final msg = messages[i];
       if (msg.id.startsWith('pending_') &&
           msg.isMine &&
