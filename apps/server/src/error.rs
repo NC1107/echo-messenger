@@ -89,3 +89,66 @@ impl From<argon2::password_hash::Error> for AppError {
         Self::internal("Authentication error")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bad_request_has_400_status() {
+        let err = AppError::bad_request("bad input");
+        assert_eq!(err.status, StatusCode::BAD_REQUEST);
+        assert_eq!(err.message, "bad input");
+    }
+
+    #[test]
+    fn unauthorized_has_401_status() {
+        let err = AppError::unauthorized("not allowed");
+        assert_eq!(err.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(err.message, "not allowed");
+    }
+
+    #[test]
+    fn internal_has_500_status() {
+        let err = AppError::internal("oops");
+        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(err.message, "oops");
+    }
+
+    #[test]
+    fn not_found_has_404_status() {
+        let err = AppError::not_found("missing");
+        assert_eq!(err.status, StatusCode::NOT_FOUND);
+        assert_eq!(err.message, "missing");
+    }
+
+    #[test]
+    fn conflict_has_409_status() {
+        let err = AppError::conflict("already exists");
+        assert_eq!(err.status, StatusCode::CONFLICT);
+        assert_eq!(err.message, "already exists");
+    }
+
+    #[test]
+    fn bad_request_accepts_string_literal() {
+        let err = AppError::bad_request("literal");
+        assert_eq!(err.message, "literal");
+    }
+
+    #[test]
+    fn bad_request_accepts_owned_string() {
+        let msg = "owned".to_string();
+        let err = AppError::bad_request(msg);
+        assert_eq!(err.message, "owned");
+    }
+
+    #[test]
+    fn debug_impl_contains_message() {
+        let err = AppError::bad_request("debug me");
+        let debug_str = format!("{err:?}");
+        assert!(
+            debug_str.contains("debug me"),
+            "Debug output should contain message"
+        );
+    }
+}
