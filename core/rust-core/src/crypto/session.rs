@@ -16,7 +16,11 @@ pub struct X3dhResult {
 }
 
 /// Application-specific info string for HKDF.
-const HKDF_INFO: &[u8] = b"EchoX3DH";
+///
+/// MUST match `X3DH_HKDF_INFO` in `signal::x3dh` and the Dart client's
+/// `SignalX3DH._hkdfInfo` so that initiator and responder derive identical
+/// shared secrets regardless of which implementation is used.
+const HKDF_INFO: &[u8] = b"EchoSignalX3DH";
 
 /// Derive a 32-byte key from concatenated DH outputs using HKDF-SHA256.
 fn kdf(dh_outputs: &[u8]) -> Result<[u8; 32], CoreError> {

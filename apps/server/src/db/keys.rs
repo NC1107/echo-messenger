@@ -21,6 +21,34 @@ pub struct OneTimePreKeyRow {
     pub public_key: Vec<u8>,
 }
 
+/// Fetch the canonical identity key fingerprint for a user, if one has been
+/// bound. Returns `None` for users who have never uploaded a key bundle.
+pub async fn get_identity_key_fingerprint(
+    db: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+) -> Result<Option<Vec<u8>>, sqlx::Error> {
+    let row: Option<(Option<Vec<u8>>,)> =
+        sqlx::query_as("SELECT identity_key_fingerprint FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(db)
+            .await?;
+    Ok(row.and_then(|(fp,)| fp))
+}
+
+/// Bind a canonical identity key fingerprint to a user on first key upload.
+pub async fn set_identity_key_fingerprint(
+    db: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+    fingerprint: &[u8],
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET identity_key_fingerprint = $2 WHERE id = $1")
+        .bind(user_id)
+        .bind(fingerprint)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
 /// Store or replace a user's identity key for a specific device.
 pub async fn store_identity_key(
     db: impl sqlx::PgExecutor<'_>,

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/chat_message.dart';
@@ -12,6 +11,7 @@ import '../services/group_crypto_service.dart';
 import '../services/notification_service.dart';
 import '../services/sound_service.dart';
 import '../utils/crypto_utils.dart';
+import '../utils/debug_log.dart';
 import 'auth_provider.dart';
 import 'channels_provider.dart';
 import 'chat_provider.dart';
@@ -381,7 +381,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
           decryptedContent = '[Could not decrypt - waiting for group key]';
         }
       } catch (e) {
-        debugPrint('[WebSocket] Group decrypt failed for $conversationId: $e');
+        debugLog('Group decrypt failed for $conversationId: $e', 'WebSocket');
         decryptedContent = '[Could not decrypt group message]';
       }
     } else if (!wasEncrypted) {
@@ -401,9 +401,10 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         // permanently breaking all future messages in the conversation.
         // decryptMessage() already handles the legitimate peer-key-reset case
         // internally by detecting the X3DH magic prefix.
-        debugPrint(
-          '[WebSocket] Decryption failed for message in $conversationId '
-          'from $fromUserId: $e',
+        debugLog(
+          'Decryption failed for message in $conversationId '
+              'from $fromUserId: $e',
+          'WebSocket',
         );
         decryptedContent =
             '[Could not decrypt - encryption keys may be out of sync]';

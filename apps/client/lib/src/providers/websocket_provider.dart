@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -10,6 +9,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/chat_message.dart';
 import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
+import '../utils/debug_log.dart';
 import 'auth_provider.dart';
 import 'chat_provider.dart';
 import 'conversations_provider.dart';
@@ -84,7 +84,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
         return data['ticket'] as String?;
       }
     } catch (e) {
-      debugPrint('[WebSocket] Failed to fetch ws ticket: $e');
+      debugLog('Failed to fetch ws ticket: $e', 'WebSocket');
       DebugLogService.instance.log(
         LogLevel.error,
         'WebSocket',
@@ -117,7 +117,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
 
     if (ticket == null || ticket.isEmpty) {
       // Ticket fetch failed -- don't connect, schedule retry with backoff
-      debugPrint('[WebSocket] Failed to obtain ticket, will retry...');
+      debugLog('Failed to obtain ticket, will retry...', 'WebSocket');
       DebugLogService.instance.log(
         LogLevel.warning,
         'WebSocket',
@@ -181,9 +181,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     if (!ref.read(authProvider).isLoggedIn) return;
 
     if (_reconnectAttempts >= _maxReconnectAttempts) {
-      debugPrint(
-        '[WebSocket] Max reconnect attempts ($_maxReconnectAttempts) '
-        'reached -- server unreachable',
+      debugLog(
+        'Max reconnect attempts ($_maxReconnectAttempts) '
+            'reached -- server unreachable',
+        'WebSocket',
       );
       DebugLogService.instance.log(
         LogLevel.error,
@@ -209,9 +210,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     // First reconnect is normal after a connection drop -- only log repeated
     // failures so the debug log stays clean.
     if (_reconnectAttempts > 1) {
-      debugPrint(
-        '[WebSocket] Reconnecting in ${delayMs}ms '
-        '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
+      debugLog(
+        'Reconnecting in ${delayMs}ms '
+            '(attempt $_reconnectAttempts/$_maxReconnectAttempts)',
+        'WebSocket',
       );
       DebugLogService.instance.log(
         LogLevel.info,
@@ -291,14 +293,14 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       // Use first ciphertext as the fallback for legacy storage
       fallbackPayload = deviceContents.values.firstOrNull ?? '';
     } catch (e) {
-      debugPrint('[WS] Multi-device encryption failed: $e');
+      debugLog('Multi-device encryption failed: $e', 'WS');
       // Fall back to single-device encrypt with session reset retry
       try {
         final crypto = ref.read(cryptoServiceProvider);
         fallbackPayload = await crypto.encryptMessage(toUserId, content);
         deviceContents = null;
       } catch (e2) {
-        debugPrint('[WS] Fallback encryption failed, resetting session: $e2');
+        debugLog('Fallback encryption failed, resetting session: $e2', 'WS');
         // Reset session and retry once before giving up
         try {
           final crypto = ref.read(cryptoServiceProvider);
@@ -306,7 +308,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
           fallbackPayload = await crypto.encryptMessage(toUserId, content);
           deviceContents = null;
         } catch (e3) {
-          debugPrint('[WS] Encryption retry after reset also failed: $e3');
+          debugLog('Encryption retry after reset also failed: $e3', 'WS');
           _addFailedMessage(
             toUserId,
             _friendlyEncryptionError(e3),
@@ -424,9 +426,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
           );
         }
       } catch (e) {
-        debugPrint(
-          '[WebSocket] Group encryption failed, sending plaintext: $e',
-        );
+        debugLog('Group encryption failed, sending plaintext: $e', 'WebSocket');
       }
     }
 
@@ -499,7 +499,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
             ),
           );
     } catch (e) {
-      debugPrint('[WebSocket] sendReaction error: $e');
+      debugLog('sendReaction error: $e', 'WebSocket');
     }
   }
 
@@ -520,7 +520,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
             ),
           );
     } catch (e) {
-      debugPrint('[WebSocket] removeReaction error: $e');
+      debugLog('removeReaction error: $e', 'WebSocket');
     }
   }
 
