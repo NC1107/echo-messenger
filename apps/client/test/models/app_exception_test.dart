@@ -11,9 +11,9 @@ void main() {
 
     test('cause is stored when provided', () {
       final cause = Exception('root cause');
-      const ex = AuthException('auth failed', 'root cause');
+      final ex = AuthException('auth failed', cause);
       expect(ex.message, 'auth failed');
-      expect(ex.cause, 'root cause');
+      expect(ex.cause, same(cause));
     });
 
     test('cause is null when not provided', () {

@@ -284,7 +284,7 @@ async fn get_messages_returns_sent_message() {
     let (client, alice_token, _, _, _, conv_id, message_id) = setup_dm_with_message(&base).await;
 
     let resp = client
-        .get(format!("{base}/api/conversations/{conv_id}/messages"))
+        .get(format!("{base}/api/messages/{conv_id}"))
         .header("Authorization", format!("Bearer {alice_token}"))
         .send()
         .await
@@ -310,7 +310,7 @@ async fn get_messages_non_member_returns_401() {
     let (stranger_token, _) = common::login(&client, &base, &stranger_name, "password123").await;
 
     let resp = client
-        .get(format!("{base}/api/conversations/{conv_id}/messages"))
+        .get(format!("{base}/api/messages/{conv_id}"))
         .header("Authorization", format!("Bearer {stranger_token}"))
         .send()
         .await
@@ -329,7 +329,7 @@ async fn toggle_mute_conversation_succeeds() {
     let (client, alice_token, _, _, _, conv_id, _) = setup_dm_with_message(&base).await;
 
     let resp = client
-        .patch(format!("{base}/api/conversations/{conv_id}/mute"))
+        .put(format!("{base}/api/conversations/{conv_id}/mute"))
         .header("Authorization", format!("Bearer {alice_token}"))
         .json(&serde_json::json!({ "is_muted": true }))
         .send()
@@ -348,7 +348,7 @@ async fn toggle_mute_unmute_succeeds() {
 
     // Mute
     client
-        .patch(format!("{base}/api/conversations/{conv_id}/mute"))
+        .put(format!("{base}/api/conversations/{conv_id}/mute"))
         .header("Authorization", format!("Bearer {alice_token}"))
         .json(&serde_json::json!({ "is_muted": true }))
         .send()
@@ -357,7 +357,7 @@ async fn toggle_mute_unmute_succeeds() {
 
     // Unmute
     let resp = client
-        .patch(format!("{base}/api/conversations/{conv_id}/mute"))
+        .put(format!("{base}/api/conversations/{conv_id}/mute"))
         .header("Authorization", format!("Bearer {alice_token}"))
         .json(&serde_json::json!({ "is_muted": false }))
         .send()

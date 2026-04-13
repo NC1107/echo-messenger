@@ -392,7 +392,7 @@ async fn owner_can_update_group_title() {
     let group_id = create_group(&client, &base, &token, "OriginalName").await;
 
     let resp = client
-        .patch(format!("{base}/api/groups/{group_id}"))
+        .put(format!("{base}/api/groups/{group_id}"))
         .header("Authorization", format!("Bearer {token}"))
         .json(&serde_json::json!({ "title": "UpdatedName" }))
         .send()
@@ -400,7 +400,18 @@ async fn owner_can_update_group_title() {
         .unwrap();
     assert_eq!(resp.status().as_u16(), 200);
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["title"], "UpdatedName");
+    assert_eq!(body["status"], "updated");
+
+    // Verify the title was actually stored by fetching the group
+    let get_resp = client
+        .get(format!("{base}/api/groups/{group_id}"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(get_resp.status().as_u16(), 200);
+    let get_body: Value = get_resp.json().await.unwrap();
+    assert_eq!(get_body["title"], "UpdatedName");
 }
 
 // ---------------------------------------------------------------------------
