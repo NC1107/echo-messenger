@@ -52,17 +52,27 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
           );
 
       if (response.statusCode == 200) {
-        final list = jsonDecode(response.body) as List<dynamic>;
+        final body = jsonDecode(response.body);
+        final List<dynamic> deviceIds;
+        if (body is List) {
+          deviceIds = body;
+        } else if (body is Map<String, dynamic>) {
+          deviceIds = body['device_ids'] as List<dynamic>? ?? [];
+        } else {
+          deviceIds = [];
+        }
         setState(() {
-          _devices = list
-              .map(
-                (d) => _Device(
-                  deviceId: (d['device_id'] as num).toInt(),
-                  label: d['label'] as String? ?? 'Device',
-                  lastSeen: d['last_seen'] as String?,
-                ),
-              )
-              .toList();
+          _devices = deviceIds.map((d) {
+            if (d is Map<String, dynamic>) {
+              return _Device(
+                deviceId: (d['device_id'] as num).toInt(),
+                label: d['label'] as String? ?? 'Device',
+                lastSeen: d['last_seen'] as String?,
+              );
+            }
+            // Server returns plain device_id integers
+            return _Device(deviceId: (d as num).toInt(), label: 'Device $d');
+          }).toList();
           _loading = false;
         });
       } else {
