@@ -148,7 +148,7 @@ class _LoadingAuthNotifier extends AuthNotifier {
   @override
   Future<bool> tryAutoLogin() async => false;
   @override
-  void logout() => state = const AuthState();
+  Future<void> logout() async => state = const AuthState();
 }
 
 class _ErrorAuthNotifier extends AuthNotifier {
@@ -163,7 +163,7 @@ class _ErrorAuthNotifier extends AuthNotifier {
   @override
   Future<bool> tryAutoLogin() async => false;
   @override
-  void logout() => state = const AuthState();
+  Future<void> logout() async => state = const AuthState();
 }
 
 class _LoginShell extends ConsumerStatefulWidget {
