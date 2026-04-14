@@ -19,7 +19,6 @@ import '../utils/canvas_utils.dart';
 
 const double _kAvatarSize = 72.0;
 const double _kAvatarHalfSize = _kAvatarSize / 2;
-const double _kToolbarHeight = 56.0;
 
 // ---------------------------------------------------------------------------
 // VoiceCanvas
@@ -172,17 +171,6 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
                   ],
                 ),
               ),
-            ),
-
-            // Toolbar
-            _CanvasToolbar(
-              canvas: canvas,
-              onSetTool: (t) => ref.read(canvasProvider.notifier).setTool(t),
-              onSetColor: (c) => ref.read(canvasProvider.notifier).setColor(c),
-              onSetWidth: (w) =>
-                  ref.read(canvasProvider.notifier).setStrokeWidth(w),
-              onClear: () => ref.read(canvasProvider.notifier).clearDrawing(),
-              onPasteImage: _handlePasteImage,
             ),
           ],
         ),
@@ -730,172 +718,6 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
                 ),
               ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Toolbar
-// ---------------------------------------------------------------------------
-
-class _CanvasToolbar extends StatelessWidget {
-  final CanvasState canvas;
-  final void Function(CanvasTool) onSetTool;
-  final void Function(Color) onSetColor;
-  final void Function(double) onSetWidth;
-  final VoidCallback onClear;
-  final VoidCallback onPasteImage;
-
-  const _CanvasToolbar({
-    required this.canvas,
-    required this.onSetTool,
-    required this.onSetColor,
-    required this.onSetWidth,
-    required this.onClear,
-    required this.onPasteImage,
-  });
-
-  static const _colors = [
-    Color(0xFFFFFFFF),
-    Color(0xFFFF453A),
-    Color(0xFFFF9F0A),
-    Color(0xFFFFD60A),
-    Color(0xFF32D74B),
-    Color(0xFF0A84FF),
-    Color(0xFFBF5AF2),
-    Color(0xFFFF375F),
-    Color(0xFF000000),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final isPen = canvas.selectedTool == CanvasTool.pen;
-    final isEraser = canvas.selectedTool == CanvasTool.eraser;
-
-    return Container(
-      height: _kToolbarHeight,
-      color: context.surface,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: [
-          // Pen
-          _ToolButton(
-            icon: Icons.edit,
-            active: isPen,
-            tooltip: 'Pen',
-            onTap: () => onSetTool(CanvasTool.pen),
-          ),
-          const SizedBox(width: 4),
-          // Eraser
-          _ToolButton(
-            icon: Icons.cleaning_services,
-            active: isEraser,
-            tooltip: 'Eraser',
-            onTap: () => onSetTool(CanvasTool.eraser),
-          ),
-          const SizedBox(width: 8),
-          // Color swatches (only shown when pen is active)
-          if (isPen)
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: _colors.map((c) {
-                    final selected =
-                        canvas.currentColor.toARGB32() == c.toARGB32();
-                    return GestureDetector(
-                      onTap: () => onSetColor(c),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        width: selected ? 26 : 22,
-                        height: selected ? 26 : 22,
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: c,
-                          border: Border.all(
-                            color: selected ? EchoTheme.accent : Colors.white24,
-                            width: selected ? 2.5 : 1.5,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            )
-          else
-            const Spacer(),
-          const SizedBox(width: 8),
-          // Stroke width slider (pen mode only)
-          if (isPen)
-            SizedBox(
-              width: 90,
-              child: Slider(
-                value: canvas.strokeWidth,
-                min: 1.0,
-                max: 20.0,
-                onChanged: onSetWidth,
-                activeColor: EchoTheme.accent,
-              ),
-            ),
-          // Paste image
-          _ToolButton(
-            icon: Icons.image_outlined,
-            active: false,
-            tooltip: 'Paste image URL',
-            onTap: onPasteImage,
-          ),
-          const SizedBox(width: 4),
-          // Clear
-          _ToolButton(
-            icon: Icons.delete_sweep_outlined,
-            active: false,
-            tooltip: 'Clear drawing',
-            onTap: onClear,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ToolButton extends StatelessWidget {
-  final IconData icon;
-  final bool active;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  const _ToolButton({
-    required this.icon,
-    required this.active,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: active
-                ? EchoTheme.accent.withValues(alpha: 0.2)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(
-            icon,
-            size: 20,
-            color: active ? EchoTheme.accent : context.textSecondary,
-          ),
         ),
       ),
     );
