@@ -5,7 +5,7 @@ mod common;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use ed25519_dalek::{Signer, SigningKey};
-use rand::RngCore as _;
+use rand::RngCore;
 use reqwest::Client;
 use serde_json::Value;
 
@@ -28,8 +28,8 @@ async fn upload_bundle_without_auth_returns_401() {
     let client = Client::new();
 
     let body = serde_json::json!({
-        "identity_key": BASE64.encode(b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        "signed_prekey": BASE64.encode(b"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        "identity_key": BASE64.encode([0u8; 32]),
+        "signed_prekey": BASE64.encode([0u8; 32]),
         "signed_prekey_signature": BASE64.encode([0u8; 64]),
         "signed_prekey_id": 1,
         "one_time_prekeys": [],
@@ -55,22 +55,24 @@ async fn upload_bundle_bad_signature_returns_400() {
     // Generate two different signing keys: one to produce the signature,
     // another for the `signing_key` field. The server should reject the
     // mismatch.
+    let mut rng = rand::rng();
+
     let mut secret_a = [0u8; 32];
-    rand::rng().fill_bytes(&mut secret_a);
+    rng.fill_bytes(&mut secret_a);
     let signing_key_a = SigningKey::from_bytes(&secret_a);
 
     let mut secret_b = [0u8; 32];
-    rand::rng().fill_bytes(&mut secret_b);
+    rng.fill_bytes(&mut secret_b);
     let signing_key_b = SigningKey::from_bytes(&secret_b);
 
     let mut signed_prekey = vec![0u8; 32];
-    rand::rng().fill_bytes(&mut signed_prekey);
+    rng.fill_bytes(&mut signed_prekey);
 
     // Sign with key A but upload key B's public key
     let signature = signing_key_a.sign(&signed_prekey);
 
     let mut identity_key = vec![0u8; 32];
-    rand::rng().fill_bytes(&mut identity_key);
+    rng.fill_bytes(&mut identity_key);
 
     let body = serde_json::json!({
         "identity_key": BASE64.encode(&identity_key),
@@ -278,16 +280,18 @@ async fn identity_key_mismatch_returns_409() {
     common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
 
     // Second upload with DIFFERENT identity key
+    let mut rng = rand::rng();
+
     let mut secret = [0u8; 32];
-    rand::rng().fill_bytes(&mut secret);
+    rng.fill_bytes(&mut secret);
     let signing_key = SigningKey::from_bytes(&secret);
     let signing_key_pub = signing_key.verifying_key().to_bytes();
 
     let mut new_identity_key = vec![0u8; 32];
-    rand::rng().fill_bytes(&mut new_identity_key);
+    rng.fill_bytes(&mut new_identity_key);
 
     let mut signed_prekey = vec![0u8; 32];
-    rand::rng().fill_bytes(&mut signed_prekey);
+    rng.fill_bytes(&mut signed_prekey);
     let signature = signing_key.sign(&signed_prekey);
 
     let body = serde_json::json!({

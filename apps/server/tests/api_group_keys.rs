@@ -253,13 +253,14 @@ async fn get_version_returns_correct_envelope() {
             { "user_id": owner_id, "encrypted_key": "v1-key" }
         ]
     });
-    client
+    let resp = client
         .post(format!("{base}/api/groups/{group_id}/keys"))
         .header("Authorization", format!("Bearer {owner_token}"))
         .json(&body)
         .send()
         .await
         .unwrap();
+    assert_eq!(resp.status().as_u16(), 201, "upload v1 failed");
 
     // Upload v2
     let body = serde_json::json!({
@@ -268,13 +269,14 @@ async fn get_version_returns_correct_envelope() {
             { "user_id": owner_id, "encrypted_key": "v2-key" }
         ]
     });
-    client
+    let resp = client
         .post(format!("{base}/api/groups/{group_id}/keys"))
         .header("Authorization", format!("Bearer {owner_token}"))
         .json(&body)
         .send()
         .await
         .unwrap();
+    assert_eq!(resp.status().as_u16(), 201, "upload v2 failed");
 
     // Fetch v1 specifically
     let resp = client

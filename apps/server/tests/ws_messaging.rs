@@ -15,64 +15,22 @@ async fn alice_sends_bob_receives() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
-    // -- Register Alice and Bob -----------------------------------------------
-    let alice_name = common::unique_username("alice");
-    let bob_name = common::unique_username("bob");
+    let (alice_token, _alice_id, alice_name) =
+        common::register_and_login(&client, &base, "alice").await;
+    let (bob_token, bob_id, bob_name) = common::register_and_login(&client, &base, "bob").await;
 
-    common::register(&client, &base, &alice_name, "password123").await;
-    common::register(&client, &base, &bob_name, "password123").await;
+    common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
 
-    let (alice_token, _alice_id) = common::login(&client, &base, &alice_name, "password123").await;
-    let (bob_token, bob_id) = common::login(&client, &base, &bob_name, "password123").await;
-
-    // -- Make them contacts ---------------------------------------------------
-    let resp = client
-        .post(format!("{base}/api/contacts/request"))
-        .header("Authorization", format!("Bearer {alice_token}"))
-        .json(&serde_json::json!({ "username": bob_name }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status().as_u16(), 201);
-    let body: Value = resp.json().await.unwrap();
-    let contact_id = body["contact_id"].as_str().unwrap();
-
-    let resp = client
-        .post(format!("{base}/api/contacts/accept"))
-        .header("Authorization", format!("Bearer {bob_token}"))
-        .json(&serde_json::json!({ "contact_id": contact_id }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status().as_u16(), 200);
-
-    // -- Get WS tickets -------------------------------------------------------
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
 
-    // -- Connect WebSockets ---------------------------------------------------
-    let ws_base = base.replace("http://", "ws://");
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+    let mut bob_ws = connect_ws(&base, &bob_ticket).await;
 
-    let (mut alice_ws, _) =
-        tokio_tungstenite::connect_async(format!("{ws_base}/ws?ticket={alice_ticket}"))
-            .await
-            .expect("Alice WS connect failed");
-
-    let (mut bob_ws, _) =
-        tokio_tungstenite::connect_async(format!("{ws_base}/ws?ticket={bob_ticket}"))
-            .await
-            .expect("Bob WS connect failed");
-
-    // Give the server a moment to register both connections and deliver any
-    // presence events before we send a message.
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-    // Drain any presence/backlog messages from both sockets before the test
-    // message so they don't interfere with assertions.
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
-    // -- Alice sends a message to Bob -----------------------------------------
     let send_msg = serde_json::json!({
         "type": "send_message",
         "to_user_id": bob_id,
@@ -105,7 +63,6 @@ async fn alice_sends_bob_receives() {
         "from_username should be Alice"
     );
 
-    // Clean up
     let _ = alice_ws.close(None).await;
     let _ = bob_ws.close(None).await;
 }
@@ -326,12 +283,14 @@ async fn group_message_fanout() {
     assert_eq!(bob_msg["type"], "new_message");
     assert_eq!(bob_msg["content"], "hello group");
     assert_eq!(bob_msg["from_username"], alice_name.as_str());
+    assert_eq!(bob_msg["conversation_id"], group_id.as_str());
 
     // Charlie should get new_message
     let charlie_event = read_text_with_timeout(&mut charlie_ws).await;
     let charlie_msg: Value = serde_json::from_str(&charlie_event).unwrap();
     assert_eq!(charlie_msg["type"], "new_message");
     assert_eq!(charlie_msg["content"], "hello group");
+    assert_eq!(charlie_msg["conversation_id"], group_id.as_str());
 
     let _ = alice_ws.close(None).await;
     let _ = bob_ws.close(None).await;
@@ -432,6 +391,9 @@ async fn read_text_with_timeout(ws: &mut WsStream) -> String {
             Ok(Some(Ok(Message::Text(text)))) => return text.to_string(),
             Ok(Some(Ok(Message::Ping(_)))) => continue,
             Ok(Some(Ok(Message::Pong(_)))) => continue,
+            Ok(Some(Ok(Message::Close(_)))) => {
+                panic!("WS connection closed before expected message")
+            }
             Ok(Some(Ok(other))) => panic!("Unexpected WS message: {other:?}"),
             Ok(Some(Err(e))) => panic!("WS error: {e}"),
             Ok(None) => panic!("WS stream ended unexpectedly"),
