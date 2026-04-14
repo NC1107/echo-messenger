@@ -1,0 +1,506 @@
+//! Integration tests for PreKey bundle upload, fetch, and device management.
+
+mod common;
+
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use ed25519_dalek::{Signer, SigningKey};
+use rand::RngCore as _;
+use reqwest::Client;
+use serde_json::Value;
+
+// ---------------------------------------------------------------------------
+// Upload
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn upload_bundle_returns_201() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keyup").await;
+
+    common::upload_prekey_bundle(&client, &base, &token, 0, 3).await;
+    // upload_prekey_bundle already asserts 201
+}
+
+#[tokio::test]
+async fn upload_bundle_without_auth_returns_401() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        "signed_prekey": BASE64.encode(b"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        "signed_prekey_signature": BASE64.encode([0u8; 64]),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [],
+        "device_id": 0,
+        "signing_key": BASE64.encode([0u8; 32]),
+    });
+
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 401);
+}
+
+#[tokio::test]
+async fn upload_bundle_bad_signature_returns_400() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keybadsig").await;
+
+    // Generate two different signing keys: one to produce the signature,
+    // another for the `signing_key` field. The server should reject the
+    // mismatch.
+    let mut secret_a = [0u8; 32];
+    rand::rng().fill_bytes(&mut secret_a);
+    let signing_key_a = SigningKey::from_bytes(&secret_a);
+
+    let mut secret_b = [0u8; 32];
+    rand::rng().fill_bytes(&mut secret_b);
+    let signing_key_b = SigningKey::from_bytes(&secret_b);
+
+    let mut signed_prekey = vec![0u8; 32];
+    rand::rng().fill_bytes(&mut signed_prekey);
+
+    // Sign with key A but upload key B's public key
+    let signature = signing_key_a.sign(&signed_prekey);
+
+    let mut identity_key = vec![0u8; 32];
+    rand::rng().fill_bytes(&mut identity_key);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(&identity_key),
+        "signed_prekey": BASE64.encode(&signed_prekey),
+        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [],
+        "device_id": 0,
+        "signing_key": BASE64.encode(signing_key_b.verifying_key().to_bytes()),
+    });
+
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn upload_bundle_invalid_base64_returns_400() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keyb64").await;
+
+    let body = serde_json::json!({
+        "identity_key": "not!valid!base64!!!",
+        "signed_prekey": BASE64.encode([0u8; 32]),
+        "signed_prekey_signature": BASE64.encode([0u8; 64]),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [],
+        "device_id": 0,
+        "signing_key": BASE64.encode([0u8; 32]),
+    });
+
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+// ---------------------------------------------------------------------------
+// Fetch
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn get_bundle_returns_uploaded_data() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (token_a, uid_a, _) = common::register_and_login(&client, &base, "keyfetcha").await;
+    let (token_b, _uid_b, _) = common::register_and_login(&client, &base, "keyfetchb").await;
+
+    let bundle = common::upload_prekey_bundle(&client, &base, &token_a, 0, 1).await;
+
+    let resp = client
+        .get(format!("{base}/api/keys/bundle/{uid_a}"))
+        .header("Authorization", format!("Bearer {token_b}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+
+    assert_eq!(body["identity_key"], BASE64.encode(&bundle.identity_key));
+    assert_eq!(body["signed_prekey"], BASE64.encode(&bundle.signed_prekey));
+    assert_eq!(body["signed_prekey_id"], bundle.signed_prekey_id);
+
+    // Verify signing_key is present
+    assert_eq!(
+        body["signing_key"].as_str().unwrap(),
+        BASE64.encode(&bundle.signing_key_bytes)
+    );
+}
+
+#[tokio::test]
+async fn get_bundle_no_keys_returns_400() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (token_a, uid_a, _) = common::register_and_login(&client, &base, "keynobnd").await;
+    let (token_b, _uid_b, _) = common::register_and_login(&client, &base, "keynobnd2").await;
+
+    // Don't upload any keys for user A
+    let _ = token_a; // silence unused warning
+
+    let resp = client
+        .get(format!("{base}/api/keys/bundle/{uid_a}"))
+        .header("Authorization", format!("Bearer {token_b}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn get_bundle_consumes_one_time_prekey() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (token_a, uid_a, _) = common::register_and_login(&client, &base, "keyotpa").await;
+    let (token_b, _uid_b, _) = common::register_and_login(&client, &base, "keyotpb").await;
+
+    common::upload_prekey_bundle(&client, &base, &token_a, 0, 3).await;
+
+    // Fetch 3 times -- each should return a unique OTP
+    let mut seen_key_ids = Vec::new();
+    for _ in 0..3 {
+        let resp = client
+            .get(format!("{base}/api/keys/bundle/{uid_a}"))
+            .header("Authorization", format!("Bearer {token_b}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status().as_u16(), 200);
+        let body: Value = resp.json().await.unwrap();
+
+        let otp = &body["one_time_prekey"];
+        assert!(
+            otp.is_object(),
+            "fetch {}: should return an OTP",
+            seen_key_ids.len() + 1
+        );
+        let kid = otp["key_id"].as_i64().unwrap();
+        assert!(
+            !seen_key_ids.contains(&kid),
+            "OTP key_id {kid} already consumed"
+        );
+        seen_key_ids.push(kid);
+    }
+
+    // 4th fetch: OTPs exhausted
+    let resp = client
+        .get(format!("{base}/api/keys/bundle/{uid_a}"))
+        .header("Authorization", format!("Bearer {token_b}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert!(
+        body["one_time_prekey"].is_null(),
+        "4th fetch should have no OTP left"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// OTP count
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn otp_count_reflects_remaining() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (token_a, uid_a, _) = common::register_and_login(&client, &base, "keyotp5a").await;
+    let (token_b, _uid_b, _) = common::register_and_login(&client, &base, "keyotp5b").await;
+
+    common::upload_prekey_bundle(&client, &base, &token_a, 0, 5).await;
+
+    // Should be 5 initially
+    let resp = client
+        .get(format!("{base}/api/keys/otp-count?device_id=0"))
+        .header("Authorization", format!("Bearer {token_a}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["count"], 5);
+
+    // Consume 1 by fetching
+    client
+        .get(format!("{base}/api/keys/bundle/{uid_a}"))
+        .header("Authorization", format!("Bearer {token_b}"))
+        .send()
+        .await
+        .unwrap();
+
+    // Should be 4
+    let resp = client
+        .get(format!("{base}/api/keys/otp-count?device_id=0"))
+        .header("Authorization", format!("Bearer {token_a}"))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["count"], 4);
+}
+
+// ---------------------------------------------------------------------------
+// Identity key binding
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn identity_key_mismatch_returns_409() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keyid409").await;
+
+    // First upload -- binds identity key
+    common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
+
+    // Second upload with DIFFERENT identity key
+    let mut secret = [0u8; 32];
+    rand::rng().fill_bytes(&mut secret);
+    let signing_key = SigningKey::from_bytes(&secret);
+    let signing_key_pub = signing_key.verifying_key().to_bytes();
+
+    let mut new_identity_key = vec![0u8; 32];
+    rand::rng().fill_bytes(&mut new_identity_key);
+
+    let mut signed_prekey = vec![0u8; 32];
+    rand::rng().fill_bytes(&mut signed_prekey);
+    let signature = signing_key.sign(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(&new_identity_key),
+        "signed_prekey": BASE64.encode(&signed_prekey),
+        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [],
+        "device_id": 0,
+        "signing_key": BASE64.encode(signing_key_pub),
+    });
+
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 409);
+}
+
+#[tokio::test]
+async fn identity_key_same_allows_reupload() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keyreup").await;
+
+    let bundle = common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
+
+    // Re-upload with SAME identity key but fresh signed prekey
+    let mut signed_prekey = vec![0u8; 32];
+    rand::rng().fill_bytes(&mut signed_prekey);
+    let signature = bundle.signing_key.sign(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(&bundle.identity_key),
+        "signed_prekey": BASE64.encode(&signed_prekey),
+        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
+        "signed_prekey_id": 2,
+        "one_time_prekeys": [],
+        "device_id": 0,
+        "signing_key": BASE64.encode(&bundle.signing_key_bytes),
+    });
+
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 201);
+}
+
+// ---------------------------------------------------------------------------
+// Multi-device
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn get_devices_returns_device_ids() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, uid, _) = common::register_and_login(&client, &base, "keydev").await;
+
+    // Upload for device 0 and device 1 (need same identity key)
+    let bundle0 = common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
+
+    // Device 1: re-use the same identity_key bytes to pass the binding check
+    let mut signed_prekey = vec![0u8; 32];
+    rand::rng().fill_bytes(&mut signed_prekey);
+    let signature = bundle0.signing_key.sign(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(&bundle0.identity_key),
+        "signed_prekey": BASE64.encode(&signed_prekey),
+        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
+        "signed_prekey_id": 2,
+        "one_time_prekeys": [],
+        "device_id": 1,
+        "signing_key": BASE64.encode(&bundle0.signing_key_bytes),
+    });
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 201);
+
+    // Fetch device list
+    let (token_other, _, _) = common::register_and_login(&client, &base, "keydevother").await;
+    let resp = client
+        .get(format!("{base}/api/keys/devices/{uid}"))
+        .header("Authorization", format!("Bearer {token_other}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let device_ids: Vec<i64> = body["device_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    assert!(device_ids.contains(&0), "should list device 0");
+    assert!(device_ids.contains(&1), "should list device 1");
+}
+
+#[tokio::test]
+async fn get_all_bundles_returns_all_devices() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, uid, _) = common::register_and_login(&client, &base, "keyallbnd").await;
+
+    let bundle0 = common::upload_prekey_bundle(&client, &base, &token, 0, 1).await;
+
+    // Device 1 with same identity
+    let mut signed_prekey = vec![0u8; 32];
+    rand::rng().fill_bytes(&mut signed_prekey);
+    let signature = bundle0.signing_key.sign(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(&bundle0.identity_key),
+        "signed_prekey": BASE64.encode(&signed_prekey),
+        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
+        "signed_prekey_id": 2,
+        "one_time_prekeys": [],
+        "device_id": 1,
+        "signing_key": BASE64.encode(&bundle0.signing_key_bytes),
+    });
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 201);
+
+    let (token_other, _, _) = common::register_and_login(&client, &base, "keyallbndoth").await;
+    let resp = client
+        .get(format!("{base}/api/keys/bundles/{uid}"))
+        .header("Authorization", format!("Bearer {token_other}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let bundles = body["bundles"].as_array().unwrap();
+    assert_eq!(bundles.len(), 2, "should have bundles for 2 devices");
+
+    let dev_ids: Vec<i64> = bundles
+        .iter()
+        .map(|b| b["device_id"].as_i64().unwrap())
+        .collect();
+    assert!(dev_ids.contains(&0));
+    assert!(dev_ids.contains(&1));
+}
+
+#[tokio::test]
+async fn revoke_device_removes_keys() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, uid, _) = common::register_and_login(&client, &base, "keyrevoke").await;
+
+    let bundle0 = common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
+
+    // Upload device 1
+    let mut signed_prekey = vec![0u8; 32];
+    rand::rng().fill_bytes(&mut signed_prekey);
+    let signature = bundle0.signing_key.sign(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(&bundle0.identity_key),
+        "signed_prekey": BASE64.encode(&signed_prekey),
+        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
+        "signed_prekey_id": 2,
+        "one_time_prekeys": [],
+        "device_id": 1,
+        "signing_key": BASE64.encode(&bundle0.signing_key_bytes),
+    });
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 201);
+
+    // Revoke device 1
+    let resp = client
+        .delete(format!("{base}/api/keys/device/1"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 204);
+
+    // Fetch device 1 bundle should fail
+    let (token_other, _, _) = common::register_and_login(&client, &base, "keyrevoth").await;
+    let resp = client
+        .get(format!("{base}/api/keys/bundle/{uid}/1"))
+        .header("Authorization", format!("Bearer {token_other}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
