@@ -46,7 +46,7 @@ flutter build web --release --pwa-strategy=none --dart-define=APP_VERSION=X.Y.Z
 ## Tests
 
 ```bash
-cargo test --workspace                            # Rust: 53 tests (Signal Protocol + server)
+cargo test --workspace                            # Rust: 241 tests (Signal Protocol + server integration)
 cargo test -p echo-server -- test_name            # Run a single Rust test
 cd apps/client && flutter test                    # Flutter: 55 tests (crypto, models, state)
 cd apps/client && flutter test test/path_test.dart # Run a single Flutter test file
