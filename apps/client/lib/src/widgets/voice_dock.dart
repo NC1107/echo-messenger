@@ -261,13 +261,6 @@ class VoiceDock extends ConsumerWidget {
           final ok = await lkNotifier.setScreenShareEnabled(true);
           if (ok) {
             ssNotifier.setLiveKitScreenShareActive(true);
-          } else if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Could not start screen sharing.'),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
           }
         }
       },
