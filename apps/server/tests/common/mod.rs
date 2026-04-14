@@ -12,7 +12,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use echo_server::{db, routes, ws};
 use ed25519_dalek::{Signer, SigningKey};
-use rand::RngCore as _;
+use rand::RngCore;
 use reqwest::Client;
 use serde_json::Value;
 use tokio::sync::OnceCell;
@@ -258,6 +258,24 @@ pub async fn add_member_to_group(
     );
 }
 
+/// Create a group and return its id.
+pub async fn create_group(client: &Client, base: &str, token: &str, name: &str) -> String {
+    let resp = client
+        .post(format!("{base}/api/groups"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "name": name }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status().as_u16(),
+        201,
+        "create_group should return 201"
+    );
+    let body: Value = resp.json().await.unwrap();
+    body["id"].as_str().unwrap().to_string()
+}
+
 // ---------------------------------------------------------------------------
 // PreKey bundle helpers
 // ---------------------------------------------------------------------------
@@ -280,16 +298,18 @@ pub async fn upload_prekey_bundle(
     device_id: i32,
     num_otps: usize,
 ) -> PreKeyBundleData {
+    let mut rng = rand::rng();
+
     let mut secret = [0u8; 32];
-    rand::rng().fill_bytes(&mut secret);
+    rng.fill_bytes(&mut secret);
     let signing_key = SigningKey::from_bytes(&secret);
     let signing_key_pub = signing_key.verifying_key().to_bytes();
 
     let mut identity_key = vec![0u8; 32];
-    rand::rng().fill_bytes(&mut identity_key);
+    rng.fill_bytes(&mut identity_key);
 
     let mut signed_prekey = vec![0u8; 32];
-    rand::rng().fill_bytes(&mut signed_prekey);
+    rng.fill_bytes(&mut signed_prekey);
 
     let signature = signing_key.sign(&signed_prekey);
 
@@ -298,7 +318,7 @@ pub async fn upload_prekey_bundle(
     let mut otp_key_ids = Vec::new();
     for i in 0..num_otps {
         let mut otp_key = vec![0u8; 32];
-        rand::rng().fill_bytes(&mut otp_key);
+        rng.fill_bytes(&mut otp_key);
         let key_id = (i + 1) as i32;
         otp_key_ids.push(key_id);
         otps.push(serde_json::json!({
@@ -338,4 +358,36 @@ pub async fn upload_prekey_bundle(
         signed_prekey_id,
         otp_key_ids,
     }
+}
+
+/// Upload an additional device bundle reusing the identity key from a previous upload.
+pub async fn upload_additional_device(
+    client: &Client,
+    base: &str,
+    token: &str,
+    bundle0: &PreKeyBundleData,
+    device_id: i32,
+) {
+    let mut rng = rand::rng();
+    let mut signed_prekey = vec![0u8; 32];
+    rng.fill_bytes(&mut signed_prekey);
+    let signature = bundle0.signing_key.sign(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(&bundle0.identity_key),
+        "signed_prekey": BASE64.encode(&signed_prekey),
+        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
+        "signed_prekey_id": 2,
+        "one_time_prekeys": [],
+        "device_id": device_id,
+        "signing_key": BASE64.encode(&bundle0.signing_key_bytes),
+    });
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 201);
 }

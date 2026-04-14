@@ -5,24 +5,6 @@ mod common;
 use reqwest::Client;
 use serde_json::Value;
 
-/// Helper: create a group and return its id.
-async fn create_group(client: &Client, base: &str, token: &str, name: &str) -> String {
-    let resp = client
-        .post(format!("{base}/api/groups"))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&serde_json::json!({ "name": name }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        resp.status().as_u16(),
-        201,
-        "create_group should return 201"
-    );
-    let body: Value = resp.json().await.unwrap();
-    body["id"].as_str().unwrap().to_string()
-}
-
 // ---------------------------------------------------------------------------
 // Upload
 // ---------------------------------------------------------------------------
@@ -33,7 +15,7 @@ async fn upload_group_key_as_owner_returns_201() {
     let client = Client::new();
     let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "gkown").await;
 
-    let group_id = create_group(&client, &base, &owner_token, "GKGroup").await;
+    let group_id = common::create_group(&client, &base, &owner_token, "GKGroup").await;
 
     let body = serde_json::json!({
         "key_version": 1,
@@ -61,7 +43,7 @@ async fn upload_group_key_as_member_rejected() {
     let (owner_token, _owner_id, _) = common::register_and_login(&client, &base, "gkmemown").await;
     let (member_token, member_id, _) = common::register_and_login(&client, &base, "gkmem").await;
 
-    let group_id = create_group(&client, &base, &owner_token, "GKMemGroup").await;
+    let group_id = common::create_group(&client, &base, &owner_token, "GKMemGroup").await;
     common::add_member_to_group(&client, &base, &owner_token, &group_id, &member_id).await;
 
     let body = serde_json::json!({
@@ -88,7 +70,7 @@ async fn upload_group_key_as_nonmember_rejected() {
     let (owner_token, _owner_id, _) = common::register_and_login(&client, &base, "gknmown").await;
     let (stranger_token, stranger_id, _) = common::register_and_login(&client, &base, "gknm").await;
 
-    let group_id = create_group(&client, &base, &owner_token, "GKNonMemGroup").await;
+    let group_id = common::create_group(&client, &base, &owner_token, "GKNonMemGroup").await;
 
     let body = serde_json::json!({
         "key_version": 1,
@@ -117,7 +99,7 @@ async fn upload_group_key_empty_envelopes_returns_400() {
     let client = Client::new();
     let (owner_token, _owner_id, _) = common::register_and_login(&client, &base, "gkempty").await;
 
-    let group_id = create_group(&client, &base, &owner_token, "GKEmptyEnv").await;
+    let group_id = common::create_group(&client, &base, &owner_token, "GKEmptyEnv").await;
 
     let body = serde_json::json!({
         "key_version": 1,
@@ -140,7 +122,7 @@ async fn upload_group_key_zero_version_returns_400() {
     let client = Client::new();
     let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "gkv0").await;
 
-    let group_id = create_group(&client, &base, &owner_token, "GKZeroVer").await;
+    let group_id = common::create_group(&client, &base, &owner_token, "GKZeroVer").await;
 
     let body = serde_json::json!({
         "key_version": 0,
@@ -165,7 +147,7 @@ async fn upload_group_key_duplicate_version_returns_409() {
     let client = Client::new();
     let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "gkdup").await;
 
-    let group_id = create_group(&client, &base, &owner_token, "GKDupVer").await;
+    let group_id = common::create_group(&client, &base, &owner_token, "GKDupVer").await;
 
     let body = serde_json::json!({
         "key_version": 1,
@@ -212,7 +194,7 @@ async fn get_latest_returns_my_envelope() {
     let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "gklown").await;
     let (member_token, member_id, _) = common::register_and_login(&client, &base, "gklmem").await;
 
-    let group_id = create_group(&client, &base, &owner_token, "GKLatest").await;
+    let group_id = common::create_group(&client, &base, &owner_token, "GKLatest").await;
     common::add_member_to_group(&client, &base, &owner_token, &group_id, &member_id).await;
 
     // Upload envelopes for both users
@@ -262,7 +244,7 @@ async fn get_version_returns_correct_envelope() {
     let client = Client::new();
     let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "gkvown").await;
 
-    let group_id = create_group(&client, &base, &owner_token, "GKVersion").await;
+    let group_id = common::create_group(&client, &base, &owner_token, "GKVersion").await;
 
     // Upload v1
     let body = serde_json::json!({

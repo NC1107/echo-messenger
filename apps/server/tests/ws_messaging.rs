@@ -287,7 +287,7 @@ async fn group_message_fanout() {
     let (charlie_token, charlie_id, _charlie_name) =
         common::register_and_login(&client, &base, "gfcharlie").await;
 
-    let group_id = create_group(&client, &base, &alice_token, "FanoutGroup").await;
+    let group_id = common::create_group(&client, &base, &alice_token, "FanoutGroup").await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
     common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
 
@@ -423,31 +423,9 @@ async fn connect_ws(base: &str, ticket: &str) -> WsStream {
     ws
 }
 
-/// Helper: create a group and return its id.
-async fn create_group(client: &Client, base: &str, token: &str, name: &str) -> String {
-    let resp = client
-        .post(format!("{base}/api/groups"))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&serde_json::json!({ "name": name }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        resp.status().as_u16(),
-        201,
-        "create_group should return 201"
-    );
-    let body: Value = resp.json().await.unwrap();
-    body["id"].as_str().unwrap().to_string()
-}
-
 /// Read a text message from the WebSocket with a 5-second timeout.
 /// Panics if no text message arrives in time.
-async fn read_text_with_timeout(
-    ws: &mut tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
-) -> String {
+async fn read_text_with_timeout(ws: &mut WsStream) -> String {
     let timeout = std::time::Duration::from_secs(5);
     loop {
         match tokio::time::timeout(timeout, ws.next()).await {
@@ -463,11 +441,7 @@ async fn read_text_with_timeout(
 }
 
 /// Drain any pending messages from the socket (non-blocking).
-async fn drain_pending(
-    ws: &mut tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
-) {
+async fn drain_pending(ws: &mut WsStream) {
     while let Ok(Some(Ok(_))) =
         tokio::time::timeout(std::time::Duration::from_millis(100), ws.next()).await
     {}

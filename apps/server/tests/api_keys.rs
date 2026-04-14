@@ -20,7 +20,6 @@ async fn upload_bundle_returns_201() {
     let (token, _uid, _) = common::register_and_login(&client, &base, "keyup").await;
 
     common::upload_prekey_bundle(&client, &base, &token, 0, 3).await;
-    // upload_prekey_bundle already asserts 201
 }
 
 #[tokio::test]
@@ -158,11 +157,8 @@ async fn get_bundle_no_keys_returns_400() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
-    let (token_a, uid_a, _) = common::register_and_login(&client, &base, "keynobnd").await;
+    let (_token_a, uid_a, _) = common::register_and_login(&client, &base, "keynobnd").await;
     let (token_b, _uid_b, _) = common::register_and_login(&client, &base, "keynobnd2").await;
-
-    // Don't upload any keys for user A
-    let _ = token_a; // silence unused warning
 
     let resp = client
         .get(format!("{base}/api/keys/bundle/{uid_a}"))
@@ -357,31 +353,8 @@ async fn get_devices_returns_device_ids() {
     let client = Client::new();
     let (token, uid, _) = common::register_and_login(&client, &base, "keydev").await;
 
-    // Upload for device 0 and device 1 (need same identity key)
     let bundle0 = common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
-
-    // Device 1: re-use the same identity_key bytes to pass the binding check
-    let mut signed_prekey = vec![0u8; 32];
-    rand::rng().fill_bytes(&mut signed_prekey);
-    let signature = bundle0.signing_key.sign(&signed_prekey);
-
-    let body = serde_json::json!({
-        "identity_key": BASE64.encode(&bundle0.identity_key),
-        "signed_prekey": BASE64.encode(&signed_prekey),
-        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
-        "signed_prekey_id": 2,
-        "one_time_prekeys": [],
-        "device_id": 1,
-        "signing_key": BASE64.encode(&bundle0.signing_key_bytes),
-    });
-    let resp = client
-        .post(format!("{base}/api/keys/upload"))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&body)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status().as_u16(), 201);
+    common::upload_additional_device(&client, &base, &token, &bundle0, 1).await;
 
     // Fetch device list
     let (token_other, _, _) = common::register_and_login(&client, &base, "keydevother").await;
@@ -410,29 +383,7 @@ async fn get_all_bundles_returns_all_devices() {
     let (token, uid, _) = common::register_and_login(&client, &base, "keyallbnd").await;
 
     let bundle0 = common::upload_prekey_bundle(&client, &base, &token, 0, 1).await;
-
-    // Device 1 with same identity
-    let mut signed_prekey = vec![0u8; 32];
-    rand::rng().fill_bytes(&mut signed_prekey);
-    let signature = bundle0.signing_key.sign(&signed_prekey);
-
-    let body = serde_json::json!({
-        "identity_key": BASE64.encode(&bundle0.identity_key),
-        "signed_prekey": BASE64.encode(&signed_prekey),
-        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
-        "signed_prekey_id": 2,
-        "one_time_prekeys": [],
-        "device_id": 1,
-        "signing_key": BASE64.encode(&bundle0.signing_key_bytes),
-    });
-    let resp = client
-        .post(format!("{base}/api/keys/upload"))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&body)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status().as_u16(), 201);
+    common::upload_additional_device(&client, &base, &token, &bundle0, 1).await;
 
     let (token_other, _, _) = common::register_and_login(&client, &base, "keyallbndoth").await;
     let resp = client
@@ -461,29 +412,7 @@ async fn revoke_device_removes_keys() {
     let (token, uid, _) = common::register_and_login(&client, &base, "keyrevoke").await;
 
     let bundle0 = common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
-
-    // Upload device 1
-    let mut signed_prekey = vec![0u8; 32];
-    rand::rng().fill_bytes(&mut signed_prekey);
-    let signature = bundle0.signing_key.sign(&signed_prekey);
-
-    let body = serde_json::json!({
-        "identity_key": BASE64.encode(&bundle0.identity_key),
-        "signed_prekey": BASE64.encode(&signed_prekey),
-        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
-        "signed_prekey_id": 2,
-        "one_time_prekeys": [],
-        "device_id": 1,
-        "signing_key": BASE64.encode(&bundle0.signing_key_bytes),
-    });
-    let resp = client
-        .post(format!("{base}/api/keys/upload"))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&body)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status().as_u16(), 201);
+    common::upload_additional_device(&client, &base, &token, &bundle0, 1).await;
 
     // Revoke device 1
     let resp = client
