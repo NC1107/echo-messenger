@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
@@ -9,16 +7,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
-import 'package:cached_network_image/cached_network_image.dart';
-
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
+import '../providers/conversations_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
-import '../theme/responsive.dart';
+import '../widgets/lounge_drawing_canvas.dart';
 import '../widgets/vertex_mesh_background.dart';
 import '../utils/canvas_utils.dart';
 import '../widgets/voice_canvas.dart';
@@ -58,6 +55,12 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// Key of the tile currently in focus. Null = grid / auto-spotlight view.
   /// Format: 'local', 'remote-{sid}', 'screenshare-local', 'screenshare-{sid}'.
   String? _focusedTileKey;
+
+  /// Whether the drawing canvas overlay is active.
+  bool _isDrawing = false;
+
+  /// Global key for the drawing canvas to access its state.
+  final _drawingCanvasKey = GlobalKey<LoungeDrawingCanvasState>();
 
   /// When true and any screen share is active, the immersive 3-layer AR view
   /// is shown instead of the classic spotlight layout.
@@ -200,12 +203,14 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     required lk.Room? room,
     required LiveKitVoiceState voiceLk,
     required ScreenShareState screenShare,
+    required Map<String, String?> memberAvatars,
   }) {
     if (_focusedTileKey != null) {
       return _buildFocusedView(
         room: room,
         voiceLk: voiceLk,
         screenShare: screenShare,
+        memberAvatars: memberAvatars,
       );
     }
 
@@ -225,6 +230,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           room: room!,
           voiceLk: voiceLk,
           screenShare: screenShare,
+          memberAvatars: memberAvatars,
         );
       }
     }
@@ -275,6 +281,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             room: room,
             voiceState: voiceLk,
             localAvatarUrl: _buildAvatarUrl(),
+            memberAvatars: memberAvatars,
             onTileTap: (key) => setState(() => _focusedTileKey = key),
           ),
         ],
@@ -287,6 +294,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     required lk.Room room,
     required LiveKitVoiceState voiceLk,
     required ScreenShareState screenShare,
+    required Map<String, String?> memberAvatars,
   }) {
     return Stack(
       children: [
@@ -425,6 +433,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     required lk.Room? room,
     required LiveKitVoiceState voiceLk,
     required ScreenShareState screenShare,
+    required Map<String, String?> memberAvatars,
   }) {
     final tileKey = _focusedTileKey!;
     final (track, mirror) = _resolveTrack(room, voiceLk, tileKey);
@@ -489,6 +498,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             room: room,
             voiceState: voiceLk,
             localAvatarUrl: _buildAvatarUrl(),
+            memberAvatars: memberAvatars,
             compact: true,
             onTileTap: (key) => setState(() => _focusedTileKey = key),
           ),
@@ -511,6 +521,25 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     final activeChannel = channels.where((c) => c.id == channelId).firstOrNull;
     final channelName = activeChannel?.name ?? 'Voice';
 
+    // Build a username -> avatarUrl map from conversation members so remote
+    // participant tiles can display profile pictures.
+    final serverUrl = ref.read(serverUrlProvider);
+    final conversations = ref.watch(conversationsProvider).conversations;
+    final conversation = conversations
+        .where((c) => c.id == conversationId)
+        .firstOrNull;
+    final memberAvatars = <String, String?>{};
+    if (conversation != null) {
+      for (final m in conversation.members) {
+        final resolved = m.avatarUrl != null && m.avatarUrl!.isNotEmpty
+            ? (m.avatarUrl!.startsWith('http')
+                  ? m.avatarUrl
+                  : '$serverUrl${m.avatarUrl}')
+            : null;
+        memberAvatars[m.username] = resolved;
+      }
+    }
+
     final room = ref.read(livekitVoiceProvider.notifier).room;
     final totalParticipants = 1 + (room?.remoteParticipants.length ?? 0);
 
@@ -518,14 +547,23 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       room: room,
       voiceLk: voiceLk,
       screenShare: screenShare,
+      memberAvatars: memberAvatars,
     );
 
-    final controlBar = _ControlBar(
+    final dock = _FloatingDock(
       voiceState: voiceLk,
       voiceSettings: voiceSettings,
       screenShare: screenShare,
       conversationId: conversationId,
       channelId: channelId,
+      isDrawing: _isDrawing,
+      onToggleDrawing: () => setState(() => _isDrawing = !_isDrawing),
+      drawingCanvasKey: _drawingCanvasKey,
+    );
+
+    final drawingOverlay = LoungeDrawingCanvas(
+      key: _drawingCanvasKey,
+      isActive: _isDrawing,
     );
 
     return OrientationBuilder(
@@ -544,12 +582,9 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                       backgroundColor: context.mainBg,
                     ),
                   ),
-                  Column(
-                    children: [
-                      Expanded(child: contentArea),
-                      controlBar,
-                    ],
-                  ),
+                  Column(children: [Expanded(child: contentArea)]),
+                  Positioned.fill(child: drawingOverlay),
+                  Positioned(bottom: 16, left: 0, right: 0, child: dock),
                   Positioned(
                     top: 12,
                     left: 12,
@@ -565,7 +600,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           );
         }
 
-        // Portrait: full header bar + content + control bar
+        // Portrait: full header bar + content + floating dock
         return Container(
           color: context.mainBg,
           child: ClipRect(
@@ -585,9 +620,12 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                       onBackToChat: widget.onBackToChat,
                     ),
                     Expanded(child: contentArea),
-                    controlBar,
+                    // Space for the floating dock
+                    const SizedBox(height: 80),
                   ],
                 ),
+                Positioned.fill(child: drawingOverlay),
+                Positioned(bottom: 16, left: 0, right: 0, child: dock),
               ],
             ),
           ),
@@ -674,6 +712,7 @@ class _ParticipantGrid extends StatelessWidget {
   final lk.Room? room;
   final LiveKitVoiceState voiceState;
   final String? localAvatarUrl;
+  final Map<String, String?> memberAvatars;
   final bool compact;
 
   /// Called with the tile key when the user taps a tile to focus it.
@@ -683,6 +722,7 @@ class _ParticipantGrid extends StatelessWidget {
     required this.room,
     required this.voiceState,
     this.localAvatarUrl,
+    this.memberAvatars = const {},
     this.compact = false,
     this.onTileTap,
   });
@@ -766,6 +806,7 @@ class _ParticipantGrid extends StatelessWidget {
       name: displayName.length > 16
           ? displayName.substring(0, 16)
           : displayName,
+      avatarUrl: memberAvatars[displayName],
       hasVideo: videoTrack?.track != null,
       videoTrack: videoTrack?.track as lk.VideoTrack?,
       mirror: false,
@@ -874,31 +915,28 @@ class _ParticipantTile extends StatelessWidget {
               : null,
         ),
         clipBehavior: Clip.antiAlias,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            color: context.surface.withValues(alpha: 0.45),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Video or avatar
-                if (hasVideo && videoTrack != null)
-                  lk.VideoTrackRenderer(
-                    videoTrack!,
-                    fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                    mirrorMode: mirror
-                        ? lk.VideoViewMirrorMode.mirror
-                        : lk.VideoViewMirrorMode.off,
-                  )
-                else
-                  _AvatarCircle(
-                    name: name,
-                    avatarUrl: avatarUrl,
-                    isSpeaking: isSpeaking,
-                  ),
-                _buildNameLabel(context),
-              ],
-            ),
+        child: Container(
+          color: context.surface.withValues(alpha: kIsWeb ? 0.65 : 0.45),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Video or avatar
+              if (hasVideo && videoTrack != null)
+                lk.VideoTrackRenderer(
+                  videoTrack!,
+                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                  mirrorMode: mirror
+                      ? lk.VideoViewMirrorMode.mirror
+                      : lk.VideoViewMirrorMode.off,
+                )
+              else
+                _AvatarCircle(
+                  name: name,
+                  avatarUrl: avatarUrl,
+                  isSpeaking: isSpeaking,
+                ),
+              _buildNameLabel(context),
+            ],
           ),
         ),
       ),
@@ -1027,22 +1065,12 @@ class _AvatarCircle extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: avatarUrl != null
-            ? CachedNetworkImage(
-                imageUrl: avatarUrl!,
+            ? Image.network(
+                avatarUrl!,
                 fit: BoxFit.cover,
                 width: 48,
                 height: 48,
-                placeholder: (_, _) => Center(
-                  child: Text(
-                    initial,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                errorWidget: (_, _, _) => Center(
+                errorBuilder: (_, _, _) => Center(
                   child: Text(
                     initial,
                     style: const TextStyle(
@@ -1285,682 +1313,618 @@ class _RemoteScreenShares extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Control bar
+// Floating mac-style dock
 // ---------------------------------------------------------------------------
 
-class _ControlBar extends ConsumerWidget {
+class _FloatingDock extends ConsumerWidget {
   final LiveKitVoiceState voiceState;
   final VoiceSettingsState voiceSettings;
   final ScreenShareState screenShare;
   final String conversationId;
   final String channelId;
+  final bool isDrawing;
+  final VoidCallback onToggleDrawing;
+  final GlobalKey<LoungeDrawingCanvasState> drawingCanvasKey;
 
-  const _ControlBar({
+  const _FloatingDock({
     required this.voiceState,
     required this.voiceSettings,
     required this.screenShare,
     required this.conversationId,
     required this.channelId,
+    required this.isDrawing,
+    required this.onToggleDrawing,
+    required this.drawingCanvasKey,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isCompact =
-        Responsive.isMobile(context) ||
-        MediaQuery.of(context).orientation == Orientation.landscape;
-
-    final gap = isCompact ? const SizedBox(width: 4) : const SizedBox(width: 8);
-
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: isCompact ? 8 : 16,
-        vertical: isCompact ? 10 : 12,
-      ),
-      decoration: BoxDecoration(
-        color: context.surface,
-        border: Border(top: BorderSide(color: context.border, width: 1)),
-      ),
-      child: Row(
-        mainAxisAlignment: isCompact
-            ? MainAxisAlignment.spaceEvenly
-            : MainAxisAlignment.center,
-        children: [
-          _buildMuteButton(context, ref, isCompact),
-          gap,
-          _buildDeafenButton(context, ref, isCompact),
-          gap,
-          _buildCameraButton(context, ref, isCompact),
-          ..._buildCameraFlipButton(context, ref),
-          ..._buildScreenShareButton(context, ref, isCompact, gap),
-          gap,
-          _buildLeaveButton(context, ref, isCompact),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMuteButton(BuildContext context, WidgetRef ref, bool isCompact) {
-    return _SplitControlButton(
-      icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
-      label: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
-      isActive: voiceSettings.selfMuted,
-      activeColor: EchoTheme.danger,
-      isCompact: isCompact,
-      onPressed: () async {
-        final notifier = ref.read(voiceSettingsProvider.notifier);
-        final nextMuted = !voiceSettings.selfMuted;
-        await notifier.setSelfMuted(nextMuted);
-        ref
-            .read(livekitVoiceProvider.notifier)
-            .setCaptureEnabled(!nextMuted && !voiceSettings.selfDeafened);
-      },
-      menuBuilder: (context) =>
-          _AudioProcessingMenu(voiceSettings: voiceSettings, ref: ref),
-    );
-  }
-
-  Widget _buildDeafenButton(
-    BuildContext context,
-    WidgetRef ref,
-    bool isCompact,
-  ) {
-    return _ControlButton(
-      icon: voiceSettings.selfDeafened ? Icons.headset_off : Icons.headset,
-      label: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
-      isActive: voiceSettings.selfDeafened,
-      activeColor: EchoTheme.danger,
-      isCompact: isCompact,
-      onPressed: () async {
-        final notifier = ref.read(voiceSettingsProvider.notifier);
-        final nextDeafened = !voiceSettings.selfDeafened;
-        await notifier.setSelfDeafened(nextDeafened);
-        await ref.read(livekitVoiceProvider.notifier).setDeafened(nextDeafened);
-      },
-    );
-  }
-
-  Widget _buildCameraButton(
-    BuildContext context,
-    WidgetRef ref,
-    bool isCompact,
-  ) {
-    return _SplitControlButton(
-      icon: voiceState.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
-      label: voiceState.isVideoEnabled ? 'Camera On' : 'Camera',
-      isActive: voiceState.isVideoEnabled,
-      activeColor: context.accent,
-      isCompact: isCompact,
-      onPressed: () async {
-        await ref.read(livekitVoiceProvider.notifier).toggleVideo();
-      },
-      menuBuilder: (context) =>
-          _VideoSettingsMenu(voiceState: voiceState, ref: ref),
-    );
-  }
-
-  List<Widget> _buildCameraFlipButton(BuildContext context, WidgetRef ref) {
-    if (!VoiceLoungeScreen._supportsCameraFlip || !voiceState.isVideoEnabled) {
-      return const [];
-    }
-    return [
-      const SizedBox(width: 8),
-      _ControlButton(
-        icon: Icons.flip_camera_android,
-        label: 'Flip',
-        isActive: false,
-        activeColor: context.accent,
-        onPressed: () async {
-          await ref.read(livekitVoiceProvider.notifier).switchCamera();
-        },
-      ),
-    ];
-  }
-
-  List<Widget> _buildScreenShareButton(
-    BuildContext context,
-    WidgetRef ref,
-    bool isCompact,
-    Widget gap,
-  ) {
-    if (!VoiceLoungeScreen._supportsScreenShare) return const [];
-    return [
-      gap,
-      _SplitControlButton(
-        icon: screenShare.isScreenSharing
-            ? Icons.stop_screen_share
-            : Icons.screen_share,
-        label: screenShare.isScreenSharing ? 'Stop Share' : 'Share',
-        isActive: screenShare.isScreenSharing,
-        activeColor: EchoTheme.online,
-        isCompact: isCompact,
-        onPressed: () async {
-          final lkNotifier = ref.read(livekitVoiceProvider.notifier);
-          final ssNotifier = ref.read(screenShareProvider.notifier);
-          if (screenShare.isScreenSharing) {
-            await lkNotifier.setScreenShareEnabled(false);
-            ssNotifier.setLiveKitScreenShareActive(false);
-          } else {
-            final ok = await lkNotifier.setScreenShareEnabled(true);
-            if (ok) {
-              ssNotifier.setLiveKitScreenShareActive(true);
-            } else if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Could not start screen sharing.'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            }
-          }
-        },
-        menuBuilder: (context) =>
-            _VideoSettingsMenu(voiceState: voiceState, ref: ref),
-      ),
-    ];
-  }
-
-  Widget _buildLeaveButton(
-    BuildContext context,
-    WidgetRef ref,
-    bool isCompact,
-  ) {
-    return _ControlButton(
-      icon: Icons.call_end,
-      label: 'Leave',
-      isActive: true,
-      activeColor: EchoTheme.danger,
-      isDestructive: true,
-      isCompact: isCompact,
-      onPressed: () async {
-        if (screenShare.isScreenSharing) {
-          await ref
-              .read(livekitVoiceProvider.notifier)
-              .setScreenShareEnabled(false);
-          ref
-              .read(screenShareProvider.notifier)
-              .setLiveKitScreenShareActive(false);
-        }
-        await ref
-            .read(channelsProvider.notifier)
-            .leaveVoiceChannel(conversationId, channelId);
-        await ref.read(livekitVoiceProvider.notifier).leaveChannel();
-      },
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Split control button -- main action area + 3-dot menu
-// ---------------------------------------------------------------------------
-
-class _SplitControlButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isActive;
-  final Color activeColor;
-  final bool isCompact;
-  final VoidCallback onPressed;
-  final Widget Function(BuildContext context) menuBuilder;
-
-  const _SplitControlButton({
-    required this.icon,
-    required this.label,
-    required this.isActive,
-    required this.activeColor,
-    required this.onPressed,
-    required this.menuBuilder,
-    this.isCompact = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final Color bgColor;
-    if (isActive) {
-      bgColor = activeColor.withValues(alpha: 0.15);
-    } else {
-      bgColor = context.surfaceHover;
-    }
-    final iconColor = isActive ? activeColor : context.textSecondary;
-
-    return Tooltip(
-      message: label,
+    return Center(
       child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
         decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(24),
+          color: context.surface.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(32),
+          border: Border.all(color: context.border.withValues(alpha: 0.5)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 20,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
-        clipBehavior: Clip.antiAlias,
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Main action area
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: onPressed,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(24),
-                  bottomLeft: Radius.circular(24),
-                ),
-                child: Padding(
-                  padding: isCompact
-                      ? const EdgeInsets.only(
-                          left: 12,
-                          right: 6,
-                          top: 12,
-                          bottom: 12,
-                        )
-                      : const EdgeInsets.only(
-                          left: 16,
-                          right: 8,
-                          top: 10,
-                          bottom: 10,
-                        ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(icon, size: 20, color: iconColor),
-                      if (!isCompact) ...[
-                        const SizedBox(width: 6),
-                        Text(
-                          label,
-                          style: TextStyle(
-                            color: iconColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // Divider
-            Container(
-              width: 1,
-              height: 24,
-              color: iconColor.withValues(alpha: 0.2),
-            ),
-            // 3-dot menu
-            _SplitMenuAnchor(iconColor: iconColor, menuBuilder: menuBuilder),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The 3-dot icon that opens a popup menu via [PopupMenuButton].
-class _SplitMenuAnchor extends StatelessWidget {
-  final Color iconColor;
-  final Widget Function(BuildContext context) menuBuilder;
-
-  const _SplitMenuAnchor({required this.iconColor, required this.menuBuilder});
-
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<void>(
-      tooltip: 'Settings',
-      offset: const Offset(0, -8),
-      position: PopupMenuPosition.over,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: context.border),
-      ),
-      color: context.surface,
-      itemBuilder: (ctx) => [
-        PopupMenuItem<void>(
-          enabled: false,
-          padding: EdgeInsets.zero,
-          child: menuBuilder(ctx),
-        ),
-      ],
-      child: Padding(
-        padding: const EdgeInsets.only(left: 4, right: 10, top: 10, bottom: 10),
-        child: Icon(Icons.more_vert, size: 18, color: iconColor),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Video / screen share settings menu content
-// ---------------------------------------------------------------------------
-
-class _VideoSettingsMenu extends StatelessWidget {
-  final LiveKitVoiceState voiceState;
-  final WidgetRef ref;
-
-  const _VideoSettingsMenu({required this.voiceState, required this.ref});
-
-  static const _bitrateOptions = [
-    (250000, '250 kbps'),
-    (500000, '500 kbps'),
-    (1000000, '1000 kbps'),
-    (2000000, '2000 kbps'),
-    (4000000, '4000 kbps'),
-  ];
-
-  static const _fpsOptions = [
-    (15, '15 fps'),
-    (24, '24 fps'),
-    (30, '30 fps'),
-    (60, '60 fps'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 220,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Auto quality toggle
-          _MenuToggleRow(
-            label: 'Auto Quality',
-            value: voiceState.autoQuality,
-            onChanged: (v) {
-              ref.read(livekitVoiceProvider.notifier).setAutoQuality(v);
-              Navigator.of(context).pop();
-            },
-          ),
-          const Divider(height: 1),
-          // Bitrate section
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-            child: Text(
-              'Bitrate',
-              style: TextStyle(
-                color: context.textMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          ..._bitrateOptions.map(
-            (opt) => _MenuRadioRow(
-              label: opt.$2,
-              selected: voiceState.videoBitrate == opt.$1,
-              enabled: !voiceState.autoQuality,
-              onTap: () {
+            _buildDockItem(
+              context,
+              icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
+              tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
+              isActive: voiceSettings.selfMuted,
+              activeColor: EchoTheme.danger,
+              onPressed: () async {
+                final notifier = ref.read(voiceSettingsProvider.notifier);
+                final nextMuted = !voiceSettings.selfMuted;
+                await notifier.setSelfMuted(nextMuted);
                 ref
                     .read(livekitVoiceProvider.notifier)
-                    .setVideoParams(bitrate: opt.$1);
-                Navigator.of(context).pop();
+                    .setCaptureEnabled(
+                      !nextMuted && !voiceSettings.selfDeafened,
+                    );
               },
             ),
-          ),
-          const Divider(height: 1),
-          // FPS section
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-            child: Text(
-              'FPS',
-              style: TextStyle(
-                color: context.textMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          ..._fpsOptions.map(
-            (opt) => _MenuRadioRow(
-              label: opt.$2,
-              selected: voiceState.videoFps == opt.$1,
-              enabled: !voiceState.autoQuality,
-              onTap: () {
-                ref
+            _buildDockItem(
+              context,
+              icon: voiceSettings.selfDeafened
+                  ? Icons.headset_off
+                  : Icons.headset,
+              tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
+              isActive: voiceSettings.selfDeafened,
+              activeColor: EchoTheme.danger,
+              onPressed: () async {
+                final notifier = ref.read(voiceSettingsProvider.notifier);
+                final nextDeafened = !voiceSettings.selfDeafened;
+                await notifier.setSelfDeafened(nextDeafened);
+                await ref
                     .read(livekitVoiceProvider.notifier)
-                    .setVideoParams(fps: opt.$1);
-                Navigator.of(context).pop();
+                    .setDeafened(nextDeafened);
               },
             ),
-          ),
-          const SizedBox(height: 4),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Audio processing settings menu content
-// ---------------------------------------------------------------------------
-
-class _AudioProcessingMenu extends StatelessWidget {
-  final VoiceSettingsState voiceSettings;
-  final WidgetRef ref;
-
-  const _AudioProcessingMenu({required this.voiceSettings, required this.ref});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 220,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-            child: Text(
-              'Audio Processing',
-              style: TextStyle(
-                color: context.textMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
+            _buildDockItem(
+              context,
+              icon: voiceState.isVideoEnabled
+                  ? Icons.videocam
+                  : Icons.videocam_off,
+              tooltip: voiceState.isVideoEnabled
+                  ? 'Turn off camera'
+                  : 'Turn on camera',
+              isActive: voiceState.isVideoEnabled,
+              activeColor: context.accent,
+              onPressed: () async {
+                await ref.read(livekitVoiceProvider.notifier).toggleVideo();
+              },
             ),
-          ),
-          _MenuToggleRow(
-            label: 'Noise Suppression',
-            value: voiceSettings.noiseSuppression,
-            onChanged: (v) {
-              ref.read(voiceSettingsProvider.notifier).setNoiseSuppression(v);
-              Navigator.of(context).pop();
-            },
-          ),
-          _MenuToggleRow(
-            label: 'Echo Cancellation',
-            value: voiceSettings.echoCancellation,
-            onChanged: (v) {
-              ref.read(voiceSettingsProvider.notifier).setEchoCancellation(v);
-              Navigator.of(context).pop();
-            },
-          ),
-          _MenuToggleRow(
-            label: 'Auto Gain Control',
-            value: voiceSettings.autoGainControl,
-            onChanged: (v) {
-              ref.read(voiceSettingsProvider.notifier).setAutoGainControl(v);
-              Navigator.of(context).pop();
-            },
-          ),
-          const SizedBox(height: 4),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Menu helper widgets
-// ---------------------------------------------------------------------------
-
-/// A row with a label and a toggle switch for popup menu content.
-class _MenuToggleRow extends StatelessWidget {
-  final String label;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  const _MenuToggleRow({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => onChanged(!value),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(color: context.textPrimary, fontSize: 13),
+            if (VoiceLoungeScreen._supportsCameraFlip &&
+                voiceState.isVideoEnabled)
+              _buildDockItem(
+                context,
+                icon: Icons.flip_camera_android,
+                tooltip: 'Flip camera',
+                onPressed: () async {
+                  await ref.read(livekitVoiceProvider.notifier).switchCamera();
+                },
               ),
-            ),
-            SizedBox(
-              height: 20,
-              width: 36,
-              child: Switch(
-                value: value,
-                onChanged: onChanged,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            if (VoiceLoungeScreen._supportsScreenShare)
+              _buildDockItem(
+                context,
+                icon: screenShare.isScreenSharing
+                    ? Icons.stop_screen_share
+                    : Icons.screen_share,
+                tooltip: screenShare.isScreenSharing
+                    ? 'Stop sharing'
+                    : 'Share screen',
+                isActive: screenShare.isScreenSharing,
+                activeColor: EchoTheme.online,
+                onPressed: () async {
+                  final lkNotifier = ref.read(livekitVoiceProvider.notifier);
+                  final ssNotifier = ref.read(screenShareProvider.notifier);
+                  if (screenShare.isScreenSharing) {
+                    await lkNotifier.setScreenShareEnabled(false);
+                    ssNotifier.setLiveKitScreenShareActive(false);
+                  } else {
+                    final ok = await lkNotifier.setScreenShareEnabled(true);
+                    if (ok) {
+                      ssNotifier.setLiveKitScreenShareActive(true);
+                    }
+                  }
+                },
               ),
+            _buildDrawToolItem(context, ref),
+            _dockDivider(context),
+            _buildDockItem(
+              context,
+              icon: Icons.call_end,
+              tooltip: 'Leave',
+              isActive: true,
+              activeColor: EchoTheme.danger,
+              isDestructive: true,
+              onPressed: () async {
+                if (screenShare.isScreenSharing) {
+                  await ref
+                      .read(livekitVoiceProvider.notifier)
+                      .setScreenShareEnabled(false);
+                  ref
+                      .read(screenShareProvider.notifier)
+                      .setLiveKitScreenShareActive(false);
+                }
+                await ref
+                    .read(channelsProvider.notifier)
+                    .leaveVoiceChannel(conversationId, channelId);
+                await ref.read(livekitVoiceProvider.notifier).leaveChannel();
+              },
             ),
           ],
         ),
       ),
     );
   }
-}
 
-/// A radio-style row for popup menu content.
-class _MenuRadioRow extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback onTap;
+  Widget _dockDivider(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 24,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      color: context.border.withValues(alpha: 0.4),
+    );
+  }
 
-  const _MenuRadioRow({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.enabled = true,
-  });
+  Widget _buildDrawToolItem(BuildContext context, WidgetRef ref) {
+    return _DrawingDockItem(
+      isDrawing: isDrawing,
+      onToggleDrawing: onToggleDrawing,
+      drawingCanvasKey: drawingCanvasKey,
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    final Color textColor;
-    if (!enabled) {
-      textColor = context.textMuted;
-    } else if (selected) {
-      textColor = context.accent;
-    } else {
-      textColor = context.textPrimary;
-    }
-
+  Widget _buildDockItem(
+    BuildContext context, {
+    required IconData icon,
+    required String tooltip,
+    bool isActive = false,
+    Color? activeColor,
+    bool isDestructive = false,
+    required VoidCallback onPressed,
+  }) {
     final Color iconColor;
-    if (!enabled) {
-      iconColor = context.textMuted;
-    } else if (selected) {
-      iconColor = context.accent;
+    if (isDestructive) {
+      iconColor = activeColor ?? EchoTheme.danger;
+    } else if (isActive) {
+      iconColor = activeColor ?? context.accent;
     } else {
-      iconColor = context.textMuted;
+      iconColor = context.textSecondary;
     }
 
-    return InkWell(
-      onTap: enabled ? onTap : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        child: Row(
-          children: [
-            Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-              size: 16,
-              color: iconColor,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: textColor,
-                fontSize: 13,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Control button (simple, no split)
-// ---------------------------------------------------------------------------
-
-class _ControlButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isActive;
-  final Color activeColor;
-  final bool isDestructive;
-  final bool isCompact;
-  final VoidCallback onPressed;
-
-  const _ControlButton({
-    required this.icon,
-    required this.label,
-    required this.isActive,
-    required this.activeColor,
-    required this.onPressed,
-    this.isDestructive = false,
-    this.isCompact = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
     final Color bgColor;
     if (isDestructive) {
-      bgColor = activeColor.withValues(alpha: 0.2);
+      bgColor = (activeColor ?? EchoTheme.danger).withValues(alpha: 0.15);
     } else if (isActive) {
-      bgColor = activeColor.withValues(alpha: 0.15);
+      bgColor = (activeColor ?? context.accent).withValues(alpha: 0.12);
     } else {
-      bgColor = context.surfaceHover;
+      bgColor = Colors.transparent;
     }
-    final iconColor = (isDestructive || isActive)
-        ? activeColor
-        : context.textSecondary;
 
     return Tooltip(
-      message: label,
+      message: tooltip,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onPressed,
           borderRadius: BorderRadius.circular(24),
-          child: Container(
-            padding: isCompact
-                ? const EdgeInsets.all(12)
-                : const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(24),
-            ),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+            child: Icon(icon, size: 20, color: iconColor),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Drawing dock item with popover tools menu
+// ---------------------------------------------------------------------------
+
+class _DrawingDockItem extends StatelessWidget {
+  final bool isDrawing;
+  final VoidCallback onToggleDrawing;
+  final GlobalKey<LoungeDrawingCanvasState> drawingCanvasKey;
+
+  const _DrawingDockItem({
+    required this.isDrawing,
+    required this.onToggleDrawing,
+    required this.drawingCanvasKey,
+  });
+
+  static const _penColors = [
+    Colors.white,
+    Colors.red,
+    Colors.orange,
+    Colors.yellow,
+    Colors.green,
+    Colors.cyan,
+    Colors.blue,
+    Colors.purple,
+    Colors.pink,
+  ];
+
+  static const _penSizes = [2.0, 4.0, 6.0, 10.0, 16.0];
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<void>(
+      tooltip: isDrawing ? 'Drawing tools' : 'Draw',
+      offset: const Offset(0, -220),
+      position: PopupMenuPosition.over,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: context.border),
+      ),
+      color: context.surface.withValues(alpha: 0.95),
+      onOpened: () {
+        if (!isDrawing) onToggleDrawing();
+      },
+      itemBuilder: (ctx) => [
+        PopupMenuItem<void>(
+          enabled: false,
+          padding: EdgeInsets.zero,
+          child: _DrawingToolsMenu(
+            drawingCanvasKey: drawingCanvasKey,
+            onToggleDrawing: onToggleDrawing,
+            isDrawing: isDrawing,
+          ),
+        ),
+      ],
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: isDrawing
+              ? context.accent.withValues(alpha: 0.12)
+              : Colors.transparent,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          Icons.edit,
+          size: 20,
+          color: isDrawing ? context.accent : context.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+/// Popup content for the drawing tools menu.
+class _DrawingToolsMenu extends StatefulWidget {
+  final GlobalKey<LoungeDrawingCanvasState> drawingCanvasKey;
+  final VoidCallback onToggleDrawing;
+  final bool isDrawing;
+
+  const _DrawingToolsMenu({
+    required this.drawingCanvasKey,
+    required this.onToggleDrawing,
+    required this.isDrawing,
+  });
+
+  @override
+  State<_DrawingToolsMenu> createState() => _DrawingToolsMenuState();
+}
+
+class _DrawingToolsMenuState extends State<_DrawingToolsMenu> {
+  DrawingTool _selectedTool = DrawingTool.pen;
+  Color _selectedColor = Colors.white;
+  double _selectedSize = 4.0;
+
+  LoungeDrawingCanvasState? get _canvas => widget.drawingCanvasKey.currentState;
+
+  @override
+  void initState() {
+    super.initState();
+    final canvas = _canvas;
+    if (canvas != null) {
+      _selectedTool = canvas.tool;
+      _selectedColor = canvas.penColor;
+      _selectedSize = canvas.penSize;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 200,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Tool selection
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 20, color: iconColor),
-                if (!isCompact) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: iconColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+                _toolChip(context, Icons.edit, 'Draw', DrawingTool.pen),
+                const SizedBox(width: 8),
+                _toolChip(
+                  context,
+                  Icons.auto_fix_high,
+                  'Erase',
+                  DrawingTool.eraser,
+                ),
               ],
             ),
+          ),
+          if (_selectedTool == DrawingTool.pen) ...[
+            const Divider(height: 1),
+            // Color picker
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: Text(
+                'Color',
+                style: TextStyle(
+                  color: context.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: _DrawingDockItem._penColors.map((c) {
+                  final isSelected = _selectedColor == c;
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() => _selectedColor = c);
+                      _canvas?.setPenColor(c);
+                    },
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: c,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isSelected ? context.accent : context.border,
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Divider(height: 1),
+            // Size picker
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: Text(
+                'Size',
+                style: TextStyle(
+                  color: context.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: _DrawingDockItem._penSizes.map((s) {
+                  final isSelected = _selectedSize == s;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() => _selectedSize = s);
+                        _canvas?.setPenSize(s);
+                      },
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isSelected ? context.accent : context.border,
+                            width: isSelected ? 2 : 1,
+                          ),
+                        ),
+                        child: Center(
+                          child: Container(
+                            width: s.clamp(4.0, 16.0),
+                            height: s.clamp(4.0, 16.0),
+                            decoration: BoxDecoration(
+                              color: context.textPrimary,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+          const Divider(height: 12),
+          // Image + Paste + Clear + Stop
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _showImageUrlDialog(context);
+                    },
+                    icon: const Icon(Icons.image, size: 16),
+                    label: const Text('URL'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: context.accent,
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _canvas?.addImageFromClipboard();
+                    },
+                    icon: const Icon(Icons.content_paste, size: 16),
+                    label: const Text('Paste'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: context.accent,
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Clear + toggle drawing
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: () {
+                      _canvas?.clearMyDrawings();
+                      Navigator.of(context).pop();
+                    },
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: const Text('Clear'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: EchoTheme.danger,
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: () {
+                      widget.onToggleDrawing();
+                      Navigator.of(context).pop();
+                    },
+                    icon: Icon(
+                      widget.isDrawing ? Icons.edit_off : Icons.edit,
+                      size: 16,
+                    ),
+                    label: Text(widget.isDrawing ? 'Stop' : 'Draw'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: context.textSecondary,
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showImageUrlDialog(BuildContext ctx) {
+    final controller = TextEditingController();
+    showDialog(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Paste Image URL'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'https://example.com/image.png',
+          ),
+          onSubmitted: (url) {
+            if (url.trim().isNotEmpty) {
+              _canvas?.addImageFromUrl(url.trim());
+            }
+            Navigator.of(dialogCtx).pop();
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final url = controller.text.trim();
+              if (url.isNotEmpty) {
+                _canvas?.addImageFromUrl(url);
+              }
+              Navigator.of(dialogCtx).pop();
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _toolChip(
+    BuildContext context,
+    IconData icon,
+    String label,
+    DrawingTool tool,
+  ) {
+    final isSelected = _selectedTool == tool;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() => _selectedTool = tool);
+          _canvas?.setTool(tool);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? context.accent.withValues(alpha: 0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected ? context.accent : context.border,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? context.accent : context.textSecondary,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? context.accent : context.textPrimary,
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
           ),
         ),
       ),

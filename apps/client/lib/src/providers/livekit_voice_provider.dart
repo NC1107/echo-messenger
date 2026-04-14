@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart';
 
@@ -363,15 +364,42 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
 
   /// Enable or disable screen sharing via LiveKit.
   ///
-  /// Uses the SDK's built-in [setScreenShareEnabled] which handles both
-  /// capture (getDisplayMedia) and publishing the track to the room.
-  Future<bool> setScreenShareEnabled(bool enabled) async {
+  /// On Linux desktop, enumerates available screen/window sources and passes
+  /// the first source's ID to the SDK to avoid PipeWire portal failures.
+  /// On other platforms, uses the SDK's built-in capture flow.
+  Future<bool> setScreenShareEnabled(bool enabled, {String? sourceId}) async {
     if (_disposed || !state.isActive) return false;
     final room = _room;
     if (room == null) return false;
 
     try {
-      await room.localParticipant?.setScreenShareEnabled(enabled);
+      ScreenShareCaptureOptions? options;
+
+      // On Linux desktop, enumerate sources if no sourceId was provided.
+      if (enabled &&
+          !kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.linux &&
+          sourceId == null) {
+        try {
+          final sources = await rtc.desktopCapturer.getSources(
+            types: [rtc.SourceType.Screen, rtc.SourceType.Window],
+          );
+          if (sources.isNotEmpty) {
+            sourceId = sources.first.id;
+          }
+        } catch (e) {
+          debugPrint('[LiveKitVoice] Linux source enumeration failed: $e');
+        }
+      }
+
+      if (sourceId != null) {
+        options = ScreenShareCaptureOptions(sourceId: sourceId);
+      }
+
+      await room.localParticipant?.setScreenShareEnabled(
+        enabled,
+        screenShareCaptureOptions: options,
+      );
       return true;
     } catch (e) {
       debugPrint('[LiveKitVoice] setScreenShareEnabled($enabled) failed: $e');

@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 /// Animated vertex mesh network background for the voice lounge.
 ///
 /// Renders floating dots connected by lines when near each other.
+/// Uses toroidal wrapping so the mesh feels infinite.
 /// Colors are theme-matched using the provided [accentColor].
 class VertexMeshBackground extends StatefulWidget {
   final Color accentColor;
@@ -33,6 +34,9 @@ class _VertexMeshBackgroundState extends State<VertexMeshBackground>
   final Random _rng = Random();
   Offset _pointerOffset = Offset.zero;
 
+  // Repaint signal without rebuilding the widget tree.
+  final _repaint = ValueNotifier<int>(0);
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +46,7 @@ class _VertexMeshBackgroundState extends State<VertexMeshBackground>
   @override
   void dispose() {
     _ticker.dispose();
+    _repaint.dispose();
     super.dispose();
   }
 
@@ -70,25 +75,21 @@ class _VertexMeshBackgroundState extends State<VertexMeshBackground>
       v.x += v.vx;
       v.y += v.vy;
 
-      // Bounce off edges
+      // Wrap around edges (toroidal) so the mesh feels infinite
       if (v.x < 0) {
-        v.x = 0;
-        v.vx = v.vx.abs();
+        v.x += w;
       } else if (v.x > w) {
-        v.x = w;
-        v.vx = -v.vx.abs();
+        v.x -= w;
       }
       if (v.y < 0) {
-        v.y = 0;
-        v.vy = v.vy.abs();
+        v.y += h;
       } else if (v.y > h) {
-        v.y = h;
-        v.vy = -v.vy.abs();
+        v.y -= h;
       }
     }
 
-    // Trigger repaint via setState — CustomPainter uses the vertex list directly
-    setState(() {});
+    // Signal repaint without rebuilding the widget tree
+    _repaint.value++;
   }
 
   void _onPointerMove(PointerEvent event) {
@@ -120,6 +121,7 @@ class _VertexMeshBackgroundState extends State<VertexMeshBackground>
                 connectionDistance: widget.connectionDistance,
                 pointerOffset: _pointerOffset,
                 canvasSize: size,
+                repaint: _repaint,
               ),
             ),
           ),
@@ -158,7 +160,8 @@ class _VertexMeshPainter extends CustomPainter {
     required this.connectionDistance,
     required this.pointerOffset,
     required this.canvasSize,
-  });
+    required ValueNotifier<int> repaint,
+  }) : super(repaint: repaint);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -171,14 +174,16 @@ class _VertexMeshPainter extends CustomPainter {
     final dotPaint = Paint()..style = PaintingStyle.fill;
 
     final distSq = connectionDistance * connectionDistance;
+    final w = canvasSize.width;
+    final h = canvasSize.height;
 
     // Parallax shift: subtle offset based on pointer position relative to center
-    final cx = canvasSize.width / 2;
-    final cy = canvasSize.height / 2;
-    final parallaxX = (pointerOffset.dx - cx) / cx * 6; // max ±6px shift
+    final cx = w / 2;
+    final cy = h / 2;
+    final parallaxX = (pointerOffset.dx - cx) / cx * 6; // max +/-6px shift
     final parallaxY = (pointerOffset.dy - cy) / cy * 6;
 
-    // Draw connections
+    // Draw connections (toroidal: check wrap-around distances)
     for (int i = 0; i < vertices.length; i++) {
       final a = vertices[i];
       final ax = a.x + parallaxX * (a.radius / 3);
@@ -189,8 +194,11 @@ class _VertexMeshPainter extends CustomPainter {
         final bx = b.x + parallaxX * (b.radius / 3);
         final by = b.y + parallaxY * (b.radius / 3);
 
-        final dx = ax - bx;
-        final dy = ay - by;
+        // Toroidal shortest distance
+        var dx = (ax - bx).abs();
+        var dy = (ay - by).abs();
+        if (dx > w / 2) dx = w - dx;
+        if (dy > h / 2) dy = h - dy;
         final d2 = dx * dx + dy * dy;
 
         if (d2 < distSq) {
@@ -223,5 +231,5 @@ class _VertexMeshPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _VertexMeshPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _VertexMeshPainter oldDelegate) => false;
 }

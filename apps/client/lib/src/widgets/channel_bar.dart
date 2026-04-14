@@ -7,7 +7,6 @@ import '../models/channel.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/livekit_voice_provider.dart';
-import '../providers/screen_share_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
@@ -159,7 +158,6 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     final voiceRtc = ref.watch(livekitVoiceProvider);
     final voiceSettings = ref.watch(voiceSettingsProvider);
     final authState = ref.watch(authProvider);
-    final screenShare = ref.watch(screenShareProvider);
     final myUserId = authState.userId ?? '';
 
     ref.listen<ChannelsState>(channelsProvider, (previous, next) {
@@ -182,7 +180,6 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
           voiceSettings,
           activeVoice,
         ),
-        if (screenShare.isScreenSharing) _buildScreenSharePreview(),
         if (activeVoice != null && voiceRtc.isActive) _buildVideoGrid(voiceRtc),
         if (activeVoice != null && !widget.hideVoiceDock)
           _buildVoiceControlDock(
@@ -396,82 +393,6 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                 ],
               ),
             ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Screen share preview
-  // ---------------------------------------------------------------------------
-
-  Widget _buildScreenSharePreview() {
-    final renderer = ref.read(screenShareProvider.notifier).screenRenderer;
-    if (renderer == null) return const SizedBox.shrink();
-
-    return Container(
-      width: double.infinity,
-      constraints: const BoxConstraints(maxHeight: 240),
-      decoration: BoxDecoration(
-        color: context.surface,
-        border: Border(bottom: BorderSide(color: context.border, width: 1)),
-      ),
-      child: Stack(
-        children: [
-          Center(
-            child: AspectRatio(
-              aspectRatio: 16 / 9,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: RTCVideoView(
-                  renderer,
-                  objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 6,
-            left: 10,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: EchoTheme.danger.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.screen_share, size: 12, color: Colors.white),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Screen sharing',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.95),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            top: 4,
-            right: 6,
-            child: IconButton(
-              icon: const Icon(Icons.close, size: 16, color: Colors.white),
-              tooltip: 'Stop sharing',
-              onPressed: () async {
-                await ref.read(screenShareProvider.notifier).stopScreenShare();
-              },
-              style: IconButton.styleFrom(
-                backgroundColor: EchoTheme.danger.withValues(alpha: 0.7),
-                padding: const EdgeInsets.all(4),
-                minimumSize: const Size(24, 24),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
