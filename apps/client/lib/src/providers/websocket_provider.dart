@@ -553,6 +553,22 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     );
   }
 
+  /// Broadcast a voice-lounge canvas event to all conversation members.
+  void sendCanvasEvent({
+    required String channelId,
+    required String kind,
+    required Map<String, dynamic> payload,
+  }) {
+    _channel?.sink.add(
+      jsonEncode({
+        'type': 'canvas_event',
+        'channel_id': channelId,
+        'kind': kind,
+        'payload': payload,
+      }),
+    );
+  }
+
   /// Start a periodic timer that checks whether the server has gone silent.
   ///
   /// If no message (including Pong frames surfaced as data) arrives within
