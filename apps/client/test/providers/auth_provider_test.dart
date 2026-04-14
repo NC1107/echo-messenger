@@ -358,15 +358,14 @@ void main() {
       await fakeKeyStore.writeGlobal('echo_auth_access_token', 'tok-123');
       await fakeKeyStore.writeGlobal('echo_auth_refresh_token', 'ref-456');
 
-      notifier.logout();
+      await notifier.logout();
 
       final st = container.read(authProvider);
       expect(st.isLoggedIn, isFalse);
       expect(st.token, isNull);
       expect(st.userId, isNull);
 
-      // Tokens should be cleared from SecureKeyStore (async -- wait a tick).
-      await Future<void>.delayed(Duration.zero);
+      // Tokens should be cleared from SecureKeyStore.
       expect(await fakeKeyStore.readGlobal('echo_auth_access_token'), isNull);
       expect(await fakeKeyStore.readGlobal('echo_auth_refresh_token'), isNull);
     });

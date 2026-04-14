@@ -249,7 +249,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return true;
       } else {
         // Refresh failed -- force logout
-        logout();
+        await logout();
         return false;
       }
     } catch (e) {
@@ -304,20 +304,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await store.writeGlobal(_keyAccessToken, accessToken);
       await store.writeGlobal(_keyRefreshToken, refreshToken);
     } catch (e) {
-      // Secure storage unavailable -- fall back to SharedPreferences.
-      debugPrint('[Auth] SecureKeyStore unavailable, falling back: $e');
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_keyAccessToken, accessToken);
-        await prefs.setString(_keyRefreshToken, refreshToken);
-      } catch (e2) {
-        debugPrint('[Auth] _storeTokens fallback also failed: $e2');
-      }
+      debugPrint('[Auth] SecureKeyStore unavailable: $e');
     }
 
-    // userId and username are not sensitive -- keep in SharedPreferences.
+    // Always write to SharedPreferences as well. On web, SecureKeyStore
+    // uses Web Crypto + encrypted localStorage which can fail to read
+    // back after a page refresh, causing unexpected logouts. Keeping a
+    // copy in SharedPreferences guarantees tryAutoLogin can recover.
+    // On native platforms the duplication is harmless (belt & suspenders).
     try {
       final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyAccessToken, accessToken);
+      await prefs.setString(_keyRefreshToken, refreshToken);
       await prefs.setString(_keyUserId, userId);
       await prefs.setString(_keyUsername, username);
 
@@ -519,11 +517,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(avatarUrl: url);
   }
 
-  void logout() {
+  Future<void> logout() async {
     BackgroundService.instance.stop();
     SecureKeyStore.instance.clearUserScope();
     UserDataDir.instance.clearUser();
-    _clearStoredTokens();
+    await _clearStoredTokens();
     state = const AuthState();
   }
 }
