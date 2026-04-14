@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -19,15 +20,10 @@ import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../widgets/vertex_mesh_background.dart';
+import '../utils/canvas_utils.dart';
+import '../widgets/voice_canvas.dart';
 
 const _kScreenshareLocal = 'screenshare-local';
-
-/// Resolve a LiveKit participant's display name, preferring name > identity > sid.
-String _participantDisplayName(lk.Participant participant) {
-  if (participant.name.isNotEmpty) return participant.name;
-  if (participant.identity.isNotEmpty) return participant.identity;
-  return participant.sid.toString();
-}
 
 /// Discord-style voice lounge that replaces the chat content area when the
 /// user is in a voice call and chooses to view the lounge.
@@ -62,6 +58,11 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// Key of the tile currently in focus. Null = grid / auto-spotlight view.
   /// Format: 'local', 'remote-{sid}', 'screenshare-local', 'screenshare-{sid}'.
   String? _focusedTileKey;
+
+  /// When true and any screen share is active, the immersive 3-layer AR view
+  /// is shown instead of the classic spotlight layout.
+  /// The user can toggle back with the focus button in either view.
+  bool _immersiveMode = true;
 
   String? _buildAvatarUrl() {
     final avatarPath = ref.read(authProvider).avatarUrl;
@@ -194,7 +195,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     );
   }
 
-  /// Dispatches to focused view, auto-spotlight, or the default grid.
+  /// Dispatches to focused view, auto-spotlight, or the interactive canvas.
   Widget _buildContentArea({
     required lk.Room? room,
     required LiveKitVoiceState voiceLk,
@@ -207,13 +208,59 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         screenShare: screenShare,
       );
     }
-    if (_hasActiveScreenShare(room)) {
-      return _buildSpotlightLayout(
-        room: room!,
-        voiceLk: voiceLk,
-        screenShare: screenShare,
+
+    final hasRemoteShare = _hasActiveScreenShare(room);
+    final hasAnyShare = hasRemoteShare || screenShare.isScreenSharing;
+
+    if (hasAnyShare) {
+      if (_immersiveMode) {
+        return _buildImmersiveLayout(
+          room: room,
+          voiceLk: voiceLk,
+          screenShare: screenShare,
+        );
+      }
+      if (hasRemoteShare) {
+        return _buildSpotlightLayout(
+          room: room!,
+          voiceLk: voiceLk,
+          screenShare: screenShare,
+        );
+      }
+    }
+
+    // Default: voice-lounge canvas (movable avatars + drawing + images).
+    final conversationId = voiceLk.conversationId ?? '';
+    final channelId = voiceLk.channelId ?? '';
+
+    if (conversationId.isNotEmpty && channelId.isNotEmpty) {
+      return Stack(
+        children: [
+          VoiceCanvas(
+            channelId: channelId,
+            conversationId: conversationId,
+            room: room,
+            voiceState: voiceLk,
+            localAvatarUrl: _buildAvatarUrl(),
+          ),
+          // Local screen-share preview (floating, tap to focus)
+          if (screenShare.isScreenSharing)
+            Positioned(
+              top: 16,
+              right: 16,
+              width: 180,
+              height: 100,
+              child: GestureDetector(
+                onTap: () =>
+                    setState(() => _focusedTileKey = _kScreenshareLocal),
+                child: _ScreenShareViewer(ref: ref),
+              ),
+            ),
+        ],
       );
     }
+
+    // Fallback grid (no channelId, e.g. direct-call without a channel)
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -241,41 +288,134 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     required LiveKitVoiceState voiceLk,
     required ScreenShareState screenShare,
   }) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          // Screen share fills all available space
-          Expanded(
-            child: _RemoteScreenShares(
-              room: room,
-              spotlight: true,
-              onTileTap: (sid) =>
-                  setState(() => _focusedTileKey = 'screenshare-$sid'),
-            ),
+    return Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              // Screen share fills all available space
+              Expanded(
+                child: _RemoteScreenShares(
+                  room: room,
+                  spotlight: true,
+                  onTileTap: (sid) =>
+                      setState(() => _focusedTileKey = 'screenshare-$sid'),
+                ),
+              ),
+              // Local screen share viewer (tap to focus)
+              if (screenShare.isScreenSharing) ...[
+                const SizedBox(height: 8),
+                GestureDetector(
+                  onTap: () =>
+                      setState(() => _focusedTileKey = _kScreenshareLocal),
+                  child: SizedBox(
+                    height: 120,
+                    child: _ScreenShareViewer(ref: ref),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              // Compact participant strip
+              SizedBox(
+                height: 80,
+                child: _ParticipantGrid(
+                  room: room,
+                  voiceState: voiceLk,
+                  localAvatarUrl: _buildAvatarUrl(),
+                  compact: true,
+                  onTileTap: (key) => setState(() => _focusedTileKey = key),
+                ),
+              ),
+            ],
           ),
-          // Local screen share viewer (tap to focus)
-          if (screenShare.isScreenSharing) ...[
-            const SizedBox(height: 8),
-            GestureDetector(
-              onTap: () => setState(() => _focusedTileKey = _kScreenshareLocal),
-              child: SizedBox(height: 120, child: _ScreenShareViewer(ref: ref)),
+        ),
+        // Switch to immersive AR view
+        Positioned(
+          top: 8,
+          right: 8,
+          child: _ImmersiveModeButton(
+            immersive: false,
+            onTap: () => setState(() => _immersiveMode = true),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Immersive 3-layer AR-style screen-share view.
+  ///
+  /// Layer 0 (back)  — Parallax vertex-mesh background that shifts subtly
+  ///                    as the cursor / finger moves around the screen.
+  /// Layer 1 (mid)   — Frosted-glass participant drawer anchored at the
+  ///                    bottom; tap the handle to expand / collapse.
+  /// Layer 2 (front) — Zoomable screen-share tiles + profile icon bubbles.
+  ///
+  /// A "Classic layout" toggle in the top-right corner reverts to the
+  /// traditional spotlight view.
+  Widget _buildImmersiveLayout({
+    required lk.Room? room,
+    required LiveKitVoiceState voiceLk,
+    required ScreenShareState screenShare,
+  }) {
+    final avatarUrl = _buildAvatarUrl();
+    return _ParallaxContainer(
+      builder: (context, parallaxOffset) {
+        return Stack(
+          children: [
+            // ── Layer 0: parallax background ────────────────────────────────
+            Positioned.fill(
+              child: Transform.translate(
+                offset: parallaxOffset,
+                child: VertexMeshBackground(
+                  accentColor: context.accent,
+                  backgroundColor: context.mainBg,
+                  vertexCount: 28,
+                ),
+              ),
+            ),
+
+            // ── Layer 2: zoomable screen-share tiles + profile icons ─────────
+            // (rendered before the glass drawer so the drawer sits on top)
+            Positioned(
+              left: 12,
+              right: 12,
+              top: 8,
+              bottom: _GlassParticipantDrawer.collapsedHeight + 8,
+              child: _ZoomableScreenShareGrid(
+                room: room,
+                screenShare: screenShare,
+                voiceLk: voiceLk,
+                localAvatarUrl: avatarUrl,
+                onFocus: (key) => setState(() => _focusedTileKey = key),
+              ),
+            ),
+
+            // ── Layer 1: glass participant drawer ────────────────────────────
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _GlassParticipantDrawer(
+                room: room,
+                voiceLk: voiceLk,
+                localAvatarUrl: avatarUrl,
+                onTileTap: (key) => setState(() => _focusedTileKey = key),
+              ),
+            ),
+
+            // ── Focus toggle: switch back to classic layout ──────────────────
+            Positioned(
+              top: 8,
+              right: 8,
+              child: _ImmersiveModeButton(
+                immersive: true,
+                onTap: () => setState(() => _immersiveMode = false),
+              ),
             ),
           ],
-          const SizedBox(height: 8),
-          // Compact participant strip
-          SizedBox(
-            height: 80,
-            child: _ParticipantGrid(
-              room: room,
-              voiceState: voiceLk,
-              localAvatarUrl: _buildAvatarUrl(),
-              compact: true,
-              onTileTap: (key) => setState(() => _focusedTileKey = key),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -606,7 +746,7 @@ class _ParticipantGrid extends StatelessWidget {
   }
 
   Widget _buildRemoteTile(lk.RemoteParticipant participant) {
-    final displayName = _participantDisplayName(participant);
+    final displayName = participantDisplayName(participant);
     final videoTrack = participant.videoTrackPublications
         .where(
           (pub) =>
@@ -1053,7 +1193,7 @@ class _RemoteScreenShares extends StatelessWidget {
     lk.RemoteParticipant participant,
     lk.VideoTrack track,
   ) {
-    final screenShareName = _participantDisplayName(participant);
+    final screenShareName = participantDisplayName(participant);
     final sid = participant.sid.toString();
     return GestureDetector(
       onTap: onTileTap != null ? () => onTileTap!(sid) : null,
@@ -1872,6 +2012,524 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
           mirrorMode: widget.mirror
               ? lk.VideoViewMirrorMode.mirror
               : lk.VideoViewMirrorMode.off,
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Immersive mode toggle button
+// ---------------------------------------------------------------------------
+
+/// Small chip that toggles between the immersive AR view and the classic
+/// spotlight layout.  [immersive] reflects the *current* state so the label
+/// indicates what the button will *switch to*.
+class _ImmersiveModeButton extends StatelessWidget {
+  final bool immersive;
+  final VoidCallback onTap;
+
+  const _ImmersiveModeButton({required this.immersive, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: immersive
+          ? 'Switch to classic layout'
+          : 'Switch to immersive view',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.15),
+              width: 0.5,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                immersive ? Icons.grid_view : Icons.view_in_ar_outlined,
+                size: 14,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                immersive ? 'Classic' : 'Immersive',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Parallax container — smooth cursor / touch-driven background offset
+// ---------------------------------------------------------------------------
+
+/// Wraps its [builder] in a pointer-tracking listener.  The [builder]
+/// receives a smoothly-animated [Offset] that represents how far the
+/// background should be shifted (max ±[_maxShift] pixels) in response to
+/// cursor position or touch movement.
+class _ParallaxContainer extends StatefulWidget {
+  final Widget Function(BuildContext context, Offset parallaxOffset) builder;
+
+  const _ParallaxContainer({required this.builder});
+
+  @override
+  State<_ParallaxContainer> createState() => _ParallaxContainerState();
+}
+
+class _ParallaxContainerState extends State<_ParallaxContainer>
+    with SingleTickerProviderStateMixin {
+  static const double _maxShift = 20.0;
+  static const double _lerp = 0.07; // per tick, ~60 fps → ~4 fps effective lag
+
+  Offset _target = Offset.zero;
+  Offset _current = Offset.zero;
+  late Ticker _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = createTicker(_onTick)..start();
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
+
+  void _onTick(Duration _) {
+    final next = Offset.lerp(_current, _target, _lerp)!;
+    if ((next - _current).distance > 0.05) {
+      setState(() => _current = next);
+    }
+  }
+
+  void _onPointerEvent(PointerEvent e, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+    final nx = (e.localPosition.dx / size.width) - 0.5; // [-0.5, 0.5]
+    final ny = (e.localPosition.dy / size.height) - 0.5;
+    _target = Offset(nx * _maxShift, ny * _maxShift);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerHover: (e) => _onPointerEvent(e, size),
+          onPointerMove: (e) => _onPointerEvent(e, size),
+          child: widget.builder(context, _current),
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Glass participant drawer — Layer 1
+// ---------------------------------------------------------------------------
+
+/// Frosted-glass bottom drawer showing the participant strip.
+/// Tap the drag-handle chip to toggle between collapsed and expanded.
+class _GlassParticipantDrawer extends StatefulWidget {
+  static const double collapsedHeight = 90.0;
+  static const double expandedHeight = 190.0;
+
+  final lk.Room? room;
+  final LiveKitVoiceState voiceLk;
+  final String? localAvatarUrl;
+  final void Function(String key) onTileTap;
+
+  const _GlassParticipantDrawer({
+    required this.room,
+    required this.voiceLk,
+    required this.localAvatarUrl,
+    required this.onTileTap,
+  });
+
+  @override
+  State<_GlassParticipantDrawer> createState() =>
+      _GlassParticipantDrawerState();
+}
+
+class _GlassParticipantDrawerState extends State<_GlassParticipantDrawer> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = _expanded
+        ? _GlassParticipantDrawer.expandedHeight
+        : _GlassParticipantDrawer.collapsedHeight;
+
+    return GestureDetector(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+        height: h,
+        child: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.07),
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    width: 0.5,
+                  ),
+                ),
+              ),
+              child: Column(
+                children: [
+                  // ── drag handle ──────────────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    child: Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.35),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // ── compact participant strip (always visible) ────────────
+                  SizedBox(
+                    height: 62,
+                    child: _ParticipantGrid(
+                      room: widget.room,
+                      voiceState: widget.voiceLk,
+                      localAvatarUrl: widget.localAvatarUrl,
+                      compact: true,
+                      onTileTap: widget.onTileTap,
+                    ),
+                  ),
+                  // ── expanded: second row shows full tiles ─────────────────
+                  if (_expanded)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          left: 8,
+                          right: 8,
+                          top: 8,
+                          bottom: 4,
+                        ),
+                        child: _ParticipantGrid(
+                          room: widget.room,
+                          voiceState: widget.voiceLk,
+                          localAvatarUrl: widget.localAvatarUrl,
+                          compact: false,
+                          onTileTap: widget.onTileTap,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Zoomable screen-share grid — Layer 2
+// ---------------------------------------------------------------------------
+
+/// Arranges all active screen-share tiles (remote + local) into a grid or
+/// single-tile layout.  Each tile supports pinch-to-zoom and double-tap zoom.
+class _ZoomableScreenShareGrid extends StatelessWidget {
+  final lk.Room? room;
+  final ScreenShareState screenShare;
+  final LiveKitVoiceState voiceLk;
+  final String? localAvatarUrl;
+  final void Function(String key) onFocus;
+
+  const _ZoomableScreenShareGrid({
+    required this.room,
+    required this.screenShare,
+    required this.voiceLk,
+    required this.localAvatarUrl,
+    required this.onFocus,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tiles = <Widget>[];
+
+    // Remote screen shares
+    if (room != null) {
+      for (final p in room!.remoteParticipants.values) {
+        for (final pub in p.videoTrackPublications) {
+          if (pub.track != null &&
+              pub.track is lk.VideoTrack &&
+              pub.source == lk.TrackSource.screenShareVideo) {
+            final track = pub.track! as lk.VideoTrack;
+            final sid = p.sid.toString();
+            tiles.add(
+              _ZoomableScreenShareTile(
+                key: ValueKey('ztile-$sid'),
+                track: track,
+                label: "${participantDisplayName(p)}'s screen",
+                isLocal: false,
+                onFocus: () => onFocus('screenshare-$sid'),
+              ),
+            );
+          }
+        }
+      }
+    }
+
+    // Local screen share
+    if (screenShare.isScreenSharing && room != null) {
+      final pub = room!.localParticipant?.videoTrackPublications
+          .where(
+            (p) =>
+                p.track != null && p.source == lk.TrackSource.screenShareVideo,
+          )
+          .firstOrNull;
+      final localTrack = pub?.track as lk.VideoTrack?;
+      if (localTrack != null) {
+        tiles.add(
+          _ZoomableScreenShareTile(
+            key: const ValueKey('ztile-local'),
+            track: localTrack,
+            label: 'Your screen',
+            isLocal: true,
+            onFocus: () => onFocus(_kScreenshareLocal),
+          ),
+        );
+      }
+    }
+
+    if (tiles.isEmpty) {
+      return const Center(
+        child: Icon(
+          Icons.screen_share_outlined,
+          size: 48,
+          color: Colors.white24,
+        ),
+      );
+    }
+
+    if (tiles.length == 1) return tiles.first;
+
+    return GridView.count(
+      crossAxisCount: 2,
+      crossAxisSpacing: 10,
+      mainAxisSpacing: 10,
+      physics: const NeverScrollableScrollPhysics(),
+      children: tiles,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Zoomable screen-share tile
+// ---------------------------------------------------------------------------
+
+/// A single screen-share tile that supports:
+///  • Pinch-to-zoom via [InteractiveViewer]
+///  • Double-tap to zoom 2× at the tapped position (double-tap again to reset)
+///  • A "Focus" button to enter the full-screen focused view
+///  • A zoom-reset button when zoomed in
+class _ZoomableScreenShareTile extends StatefulWidget {
+  final lk.VideoTrack track;
+  final String label;
+  final bool isLocal;
+  final VoidCallback onFocus;
+
+  const _ZoomableScreenShareTile({
+    super.key,
+    required this.track,
+    required this.label,
+    required this.isLocal,
+    required this.onFocus,
+  });
+
+  @override
+  State<_ZoomableScreenShareTile> createState() =>
+      _ZoomableScreenShareTileState();
+}
+
+class _ZoomableScreenShareTileState extends State<_ZoomableScreenShareTile> {
+  final TransformationController _transformCtrl = TransformationController();
+  bool _zoomed = false;
+
+  @override
+  void dispose() {
+    _transformCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onDoubleTapDown(TapDownDetails details) {
+    if (_zoomed) {
+      _transformCtrl.value = Matrix4.identity();
+      setState(() => _zoomed = false);
+      return;
+    }
+    const scale = 2.5;
+    final pos = details.localPosition;
+    final m = Matrix4.identity()
+      ..translateByDouble(
+        -pos.dx * (scale - 1),
+        -pos.dy * (scale - 1),
+        0.0,
+        1.0,
+      )
+      ..scaleByDouble(scale, scale, 1.0, 1.0);
+    _transformCtrl.value = m;
+    setState(() => _zoomed = true);
+  }
+
+  void _resetZoom() {
+    _transformCtrl.value = Matrix4.identity();
+    setState(() => _zoomed = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 28,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // ── Video + interactive zoom ─────────────────────────────────────
+          GestureDetector(
+            onDoubleTapDown: _onDoubleTapDown,
+            child: InteractiveViewer(
+              transformationController: _transformCtrl,
+              boundaryMargin: const EdgeInsets.all(double.infinity),
+              minScale: 0.8,
+              maxScale: 5.0,
+              child: lk.VideoTrackRenderer(
+                widget.track,
+                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+              ),
+            ),
+          ),
+
+          // ── Name badge ───────────────────────────────────────────────────
+          Positioned(
+            top: 10,
+            left: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: (widget.isLocal ? EchoTheme.danger : EchoTheme.accent)
+                    .withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.screen_share, size: 13, color: Colors.white),
+                  const SizedBox(width: 5),
+                  Text(
+                    widget.label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Overlay action buttons ───────────────────────────────────────
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_zoomed)
+                  _overlayIconBtn(
+                    icon: Icons.zoom_out,
+                    tooltip: 'Reset zoom',
+                    onTap: _resetZoom,
+                  ),
+                if (_zoomed) const SizedBox(width: 4),
+                _overlayIconBtn(
+                  icon: Icons.open_in_full,
+                  tooltip: 'Focus',
+                  onTap: widget.onFocus,
+                ),
+              ],
+            ),
+          ),
+
+          // ── Zoom hint (shown when not zoomed) ────────────────────────────
+          if (!_zoomed)
+            Positioned(
+              bottom: 10,
+              right: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'Double-tap to zoom',
+                  style: TextStyle(color: Colors.white54, fontSize: 10),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _overlayIconBtn({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.15),
+              width: 0.5,
+            ),
+          ),
+          child: Icon(icon, size: 16, color: Colors.white),
         ),
       ),
     );

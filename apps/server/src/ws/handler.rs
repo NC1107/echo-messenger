@@ -62,6 +62,17 @@ enum ClientMessage {
     KeyReset { conversation_id: Uuid },
     #[serde(rename = "call_started")]
     CallStarted { conversation_id: Uuid },
+    /// Voice-lounge canvas event.  Relayed to all conversation members and
+    /// persisted for strokes/images (avatar moves are ephemeral).
+    ///
+    /// `kind` is one of: "stroke", "clear", "image_add", "image_move",
+    ///                    "image_remove", "avatar_move"
+    #[serde(rename = "canvas_event")]
+    CanvasEvent {
+        channel_id: Uuid,
+        kind: String,
+        payload: serde_json::Value,
+    },
 }
 
 #[derive(Serialize, Clone)]
@@ -160,6 +171,14 @@ pub enum ServerMessage {
     /// The receiving client should log out if `device_id` matches its own.
     #[serde(rename = "device_revoked")]
     DeviceRevoked { device_id: i32 },
+    /// Voice-lounge canvas event relayed to all conversation members.
+    #[serde(rename = "canvas_event")]
+    CanvasEvent {
+        channel_id: Uuid,
+        from_user_id: Uuid,
+        kind: String,
+        payload: serde_json::Value,
+    },
 }
 
 pub async fn handle_socket(
@@ -481,6 +500,13 @@ async fn handle_text_message(
                 },
             )
             .await;
+        }
+        ClientMessage::CanvasEvent {
+            channel_id,
+            kind,
+            payload,
+        } => {
+            handle_canvas_event(state, sender_id, channel_id, kind, payload).await;
         }
     }
 }
@@ -1422,5 +1448,121 @@ fn send_error(state: &AppState, user_id: Uuid, message: &str) {
     };
     if let Ok(json) = serde_json::to_string(&err) {
         state.hub.send_to(&user_id, WsMessage::Text(json.into()));
+    }
+}
+
+/// Handle a canvas event from a client.
+///
+/// - Looks up the channel, verifies sender is a group member, then broadcasts
+///   the event to all other conversation members.
+/// - For persistent event kinds ("stroke", "clear", "image_add",
+///   "image_move", "image_remove") the canvas DB record is updated so new
+///   joiners load the current board state.
+/// - "avatar_move" is ephemeral (not persisted).
+async fn handle_canvas_event(
+    state: &AppState,
+    sender_id: Uuid,
+    channel_id: Uuid,
+    kind: String,
+    payload: serde_json::Value,
+) {
+    // Validate kind to prevent arbitrary strings reaching the DB.
+    const VALID_KINDS: &[&str] = &[
+        "stroke",
+        "clear",
+        "image_add",
+        "image_move",
+        "image_remove",
+        "avatar_move",
+    ];
+    if !VALID_KINDS.contains(&kind.as_str()) {
+        send_error(state, sender_id, "Invalid canvas event kind");
+        return;
+    }
+
+    // Look up the channel to obtain the conversation_id.
+    let channel = match db::channels::get_channel(&state.pool, channel_id).await {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            send_error(state, sender_id, "Channel not found");
+            return;
+        }
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return;
+        }
+    };
+
+    let conversation_id = channel.conversation_id;
+
+    // Verify sender is a member.
+    let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
+        Ok(m) => m,
+        Err(_) => {
+            send_error(state, sender_id, "Database error");
+            return;
+        }
+    };
+    if !is_member {
+        send_error(state, sender_id, "Not a member of this conversation");
+        return;
+    }
+
+    // Persist state for non-ephemeral kinds.
+    match kind.as_str() {
+        "stroke" => {
+            if let Err(e) =
+                db::canvas::append_stroke(&state.pool, channel_id, payload.clone()).await
+            {
+                tracing::error!("canvas: failed to persist stroke for channel {channel_id}: {e:?}");
+            }
+        }
+        "clear" => {
+            if let Err(e) = db::canvas::clear_drawing(&state.pool, channel_id).await {
+                tracing::error!("canvas: failed to clear drawing for channel {channel_id}: {e:?}");
+            }
+        }
+        "image_add" => {
+            if let Err(e) = db::canvas::add_image(&state.pool, channel_id, payload.clone()).await {
+                tracing::error!("canvas: failed to persist image for channel {channel_id}: {e:?}");
+            }
+        }
+        "image_move" => {
+            if let Err(e) = db::canvas::update_image(&state.pool, channel_id, payload.clone()).await
+            {
+                tracing::error!("canvas: failed to update image for channel {channel_id}: {e:?}");
+            }
+        }
+        "image_remove" => {
+            let Some(id) = payload.get("id").and_then(|v| v.as_str()) else {
+                send_error(state, sender_id, "image_remove requires an 'id' field");
+                return;
+            };
+            if let Err(e) = db::canvas::remove_image(&state.pool, channel_id, id).await {
+                tracing::error!(
+                    "canvas: failed to remove image {id} for channel {channel_id}: {e:?}"
+                );
+            }
+        }
+        _ => {} // "avatar_move" — ephemeral, no DB write
+    }
+
+    // Broadcast to all other conversation members.
+    let member_ids =
+        match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await {
+            Ok(ids) => ids,
+            Err(_) => return,
+        };
+
+    let event = ServerMessage::CanvasEvent {
+        channel_id,
+        from_user_id: sender_id,
+        kind,
+        payload,
+    };
+    if let Ok(json) = serde_json::to_string(&event) {
+        state
+            .hub
+            .broadcast_json(&member_ids, &json, Some(sender_id));
     }
 }
