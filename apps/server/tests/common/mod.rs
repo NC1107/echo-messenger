@@ -218,16 +218,21 @@ pub async fn make_contacts(
 
     // Create the DM conversation explicitly so we have a conversation_id
     let resp = client
-        .post(format!("{base}/api/messages/conversations/dm"))
+        .post(format!("{base}/api/conversations/dm"))
         .header("Authorization", format!("Bearer {token_a}"))
         .json(&serde_json::json!({ "peer_user_id": user_b_id }))
         .send()
         .await
         .unwrap();
-    let body: Value = resp.json().await.unwrap();
+    let status = resp.status().as_u16();
+    let body: Value = resp.json().await.unwrap_or_else(|e| {
+        panic!("make_contacts: create_dm returned status {status}, JSON parse error: {e}");
+    });
     body["conversation_id"]
         .as_str()
-        .expect("make_contacts: missing conversation_id")
+        .unwrap_or_else(|| {
+            panic!("make_contacts: missing conversation_id in response: {body}");
+        })
         .to_string()
 }
 
