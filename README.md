@@ -254,7 +254,7 @@ See [docs/setup.md](docs/setup.md) for full setup instructions.
 
 ### Running Tests
 ```bash
-cargo test --workspace                        # 53 Rust tests
+cargo test --workspace                        # 241 Rust tests
 cd apps/client && flutter test                # 55 Flutter tests
 ./scripts/test_e2e.sh                         # E2E integration tests
 npx playwright test                           # Visual tests

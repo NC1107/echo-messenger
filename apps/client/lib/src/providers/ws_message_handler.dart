@@ -13,6 +13,7 @@ import '../services/sound_service.dart';
 import '../utils/crypto_utils.dart';
 import '../utils/debug_log.dart';
 import 'auth_provider.dart';
+import 'canvas_provider.dart';
 import 'channels_provider.dart';
 import 'chat_provider.dart';
 import 'conversations_provider.dart';
@@ -183,6 +184,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleKeyReset(json);
       case 'call_started':
         _handleCallStarted(json);
+      case 'canvas_event':
+        _handleCanvasEvent(json);
       default:
         DebugLogService.instance.log(
           LogLevel.warning,
@@ -719,5 +722,9 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   void _handlePresenceList(Map<String, dynamic> json) {
     final users = (json['users'] as List?)?.cast<String>() ?? [];
     state = state.copyWith(onlineUsers: users.toSet());
+  }
+
+  void _handleCanvasEvent(Map<String, dynamic> json) {
+    ref.read(canvasProvider.notifier).handleCanvasEvent(json);
   }
 }

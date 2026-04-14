@@ -1,3 +1,4 @@
+pub mod canvas;
 pub mod channels;
 pub mod contacts;
 pub mod groups;

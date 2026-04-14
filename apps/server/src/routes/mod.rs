@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod canvas;
 pub mod channels;
 pub mod contacts;
 pub mod group_keys;
@@ -194,6 +195,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route(
             "/{id}/channels/{channel_id}",
             put(channels::update_channel).delete(channels::delete_channel),
+        )
+        .route(
+            "/{id}/channels/{channel_id}/canvas",
+            get(canvas::get_canvas).delete(canvas::clear_canvas),
         )
         .route(
             "/{id}/channels/{channel_id}/voice",
