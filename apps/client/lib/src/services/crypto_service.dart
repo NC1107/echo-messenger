@@ -130,16 +130,25 @@ class CryptoService {
   ///
   /// Checks SharedPreferences for each crypto key; if found, copies it to
   /// secure storage and deletes from SharedPreferences. Session keys (prefixed
-  /// with [_sessionPrefix]) are also migrated.
+  /// with [_sessionPrefix]), OTP private keys, and peer identity keys are also
+  /// migrated.
   ///
+  /// A completion flag is written to secure storage after all keys are
+  /// successfully moved. If the flag already exists, migration is skipped.
   /// Each write is guarded: if [SecureKeyStore.write] throws (e.g. keyring
   /// unavailable), the key is left in SharedPreferences so the next launch can
   /// retry the migration instead of losing the data.
   Future<void> _migrateFromSharedPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
     final store = SecureKeyStore.instance;
 
-    // Migrate identity + signing + signed prekey
+    // Skip if migration was already completed.
+    final migrated = await store.read('_crypto_migration_complete');
+    if (migrated == 'true') return;
+
+    final prefs = await SharedPreferences.getInstance();
+    var allSucceeded = true;
+
+    // Migrate identity + signing + signed prekey (named keys)
     for (final key in _allCryptoKeys) {
       final value = prefs.getString(key);
       if (value != null) {
@@ -151,6 +160,7 @@ class CryptoService {
             'secure storage',
           );
         } catch (e) {
+          allSucceeded = false;
           debugPrint(
             '[Crypto] Migration of $key failed (keeping in SharedPreferences '
             'for next attempt): $e',
@@ -159,23 +169,49 @@ class CryptoService {
       }
     }
 
-    // Migrate session keys
+    // Migrate prefixed keys: sessions, OTP privates, peer identities
     for (final key in prefs.getKeys()) {
-      if (key.startsWith(_sessionPrefix)) {
+      final isPrefixed =
+          key.startsWith(_sessionPrefix) ||
+          key.startsWith(_otpPrivatePrefix) ||
+          key.startsWith(_peerIdentityPrefix) ||
+          key.startsWith(_peerIdentityChangedPrefix);
+      if (isPrefixed) {
         final value = prefs.getString(key);
         if (value != null) {
           try {
             await store.write(key, value);
             await prefs.remove(key);
-            debugPrint('[Crypto] Migrated session $key to secure storage');
+            debugPrint('[Crypto] Migrated $key to secure storage');
           } catch (e) {
+            allSucceeded = false;
             debugPrint(
-              '[Crypto] Migration of session $key failed '
+              '[Crypto] Migration of $key failed '
               '(keeping in SharedPreferences): $e',
             );
           }
         }
       }
+    }
+
+    // Also migrate device ID and OTP next ID
+    for (final key in [_deviceIdPref, _otpNextIdPref]) {
+      final value = prefs.getString(key);
+      if (value != null) {
+        try {
+          await store.write(key, value);
+          await prefs.remove(key);
+        } catch (e) {
+          allSucceeded = false;
+        }
+      }
+    }
+
+    if (allSucceeded) {
+      await store.write('_crypto_migration_complete', 'true');
+      debugPrint('[Crypto] Migration complete -- all keys in secure storage');
+    } else {
+      debugPrint('[Crypto] Migration incomplete -- will retry on next launch');
     }
   }
 

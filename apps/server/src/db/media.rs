@@ -65,7 +65,7 @@ pub async fn can_user_access_media(
             UNION ALL
             SELECT 1 FROM media m
               JOIN conversation_members cm ON cm.conversation_id = m.conversation_id
-              WHERE m.id = $1 AND cm.user_id = $2
+              WHERE m.id = $1 AND cm.user_id = $2 AND cm.is_removed = false
         )",
     )
     .bind(media_id)

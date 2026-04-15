@@ -480,6 +480,8 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       'sdpSemantics': 'unified-plan',
       'iceTransportPolicy': 'all',
       'bundlePolicy': 'max-bundle',
+      'dtlsSrtpKeyAgreement': true,
+      'iceCandidatePoolSize': 50,
     };
 
     final pc = await createPeerConnection(config);

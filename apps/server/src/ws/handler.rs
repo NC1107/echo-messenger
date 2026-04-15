@@ -310,10 +310,9 @@ async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid) {
 /// Rate-limited WebSocket receive loop.
 ///
 /// Uses a token bucket algorithm: 30 messages per 10-second window
-/// (refill rate = 3 tokens/sec, burst cap = 30). When the bucket is
-/// empty the message is dropped and an error is sent to the client;
-/// the connection stays open so legitimate traffic can resume once
-/// tokens regenerate.
+/// (refill rate = 3 tokens/sec, burst cap = 30). A byte-rate bucket
+/// caps throughput at 100 KB/s to prevent bandwidth abuse. After 3
+/// consecutive rate-limit violations the connection is closed.
 async fn run_receive_loop(
     receiver: &mut futures_util::stream::SplitStream<WebSocket>,
     user_id: Uuid,
@@ -325,19 +324,55 @@ async fn run_receive_loop(
     const REFILL_RATE: f64 = 3.0;
     /// Maximum tokens the bucket can hold (== window size).
     const BUCKET_CAPACITY: f64 = 30.0;
+    /// Maximum payload size for a single message (64 KB).
+    const MAX_MESSAGE_BYTES: usize = 64 * 1024;
+    /// Byte-rate bucket capacity (100 KB).
+    const BYTE_BUCKET_CAPACITY: f64 = 100.0 * 1024.0;
+    /// Byte-rate refill (100 KB/s).
+    const BYTE_REFILL_RATE: f64 = 100.0 * 1024.0;
+    /// Consecutive violations before forced disconnect.
+    const MAX_CONSECUTIVE_VIOLATIONS: u32 = 3;
 
     let mut tokens: f64 = BUCKET_CAPACITY;
+    let mut byte_tokens: f64 = BYTE_BUCKET_CAPACITY;
     let mut last_refill = Instant::now();
+    let mut consecutive_violations: u32 = 0;
 
     while let Some(Ok(msg)) = receiver.next().await {
         // Refill tokens based on elapsed time.
         let now = Instant::now();
         let elapsed = now.duration_since(last_refill).as_secs_f64();
         tokens = (tokens + elapsed * REFILL_RATE).min(BUCKET_CAPACITY);
+        byte_tokens = (byte_tokens + elapsed * BYTE_REFILL_RATE).min(BYTE_BUCKET_CAPACITY);
         last_refill = now;
 
         match msg {
             WsMessage::Text(text) => {
+                let msg_len = text.len();
+
+                // Reject oversized messages immediately.
+                if msg_len > MAX_MESSAGE_BYTES {
+                    tracing::warn!(
+                        user_id = %user_id,
+                        username = %username,
+                        bytes = msg_len,
+                        "WebSocket message exceeds size limit, dropping"
+                    );
+                    send_error(state, user_id, "Message too large (max 64 KB)");
+                    consecutive_violations += 1;
+                    if consecutive_violations >= MAX_CONSECUTIVE_VIOLATIONS {
+                        tracing::warn!(
+                            user_id = %user_id,
+                            "Disconnecting after {} consecutive violations",
+                            consecutive_violations
+                        );
+                        send_error(state, user_id, "Too many violations, disconnecting");
+                        break;
+                    }
+                    continue;
+                }
+
+                // Check message-rate bucket.
                 if tokens < 1.0 {
                     tracing::warn!(
                         user_id = %user_id,
@@ -345,9 +380,44 @@ async fn run_receive_loop(
                         "WebSocket rate limit exceeded, dropping message"
                     );
                     send_error(state, user_id, "Rate limit exceeded, please slow down");
+                    consecutive_violations += 1;
+                    if consecutive_violations >= MAX_CONSECUTIVE_VIOLATIONS {
+                        tracing::warn!(
+                            user_id = %user_id,
+                            "Disconnecting after {} consecutive violations",
+                            consecutive_violations
+                        );
+                        send_error(state, user_id, "Too many violations, disconnecting");
+                        break;
+                    }
                     continue;
                 }
+
+                // Check byte-rate bucket.
+                let cost = msg_len as f64;
+                if byte_tokens < cost {
+                    tracing::warn!(
+                        user_id = %user_id,
+                        username = %username,
+                        "WebSocket byte-rate limit exceeded, dropping message"
+                    );
+                    send_error(state, user_id, "Byte-rate limit exceeded, please slow down");
+                    consecutive_violations += 1;
+                    if consecutive_violations >= MAX_CONSECUTIVE_VIOLATIONS {
+                        tracing::warn!(
+                            user_id = %user_id,
+                            "Disconnecting after {} consecutive violations",
+                            consecutive_violations
+                        );
+                        send_error(state, user_id, "Too many violations, disconnecting");
+                        break;
+                    }
+                    continue;
+                }
+
                 tokens -= 1.0;
+                byte_tokens -= cost;
+                consecutive_violations = 0;
                 handle_text_message(&text, user_id, device_id, username, state).await;
             }
             WsMessage::Close(_) => break,

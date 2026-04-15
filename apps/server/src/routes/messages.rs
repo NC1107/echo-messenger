@@ -103,7 +103,7 @@ pub async fn list_conversations(
         "WITH user_convs AS ( \
             SELECT cm.conversation_id, cm.is_muted \
             FROM conversation_members cm \
-            WHERE cm.user_id = $1 \
+            WHERE cm.user_id = $1 AND cm.is_removed = false \
         ), \
         members_cte AS ( \
             SELECT cm2.conversation_id, \
@@ -114,6 +114,7 @@ pub async fn list_conversations(
             FROM conversation_members cm2 \
             JOIN users u ON cm2.user_id = u.id \
             WHERE cm2.conversation_id IN (SELECT conversation_id FROM user_convs) \
+              AND cm2.is_removed = false \
             GROUP BY cm2.conversation_id \
         ), \
         last_msg_cte AS ( \

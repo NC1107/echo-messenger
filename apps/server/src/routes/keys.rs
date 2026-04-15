@@ -44,8 +44,7 @@ pub struct OneTimePreKeyUpload {
 #[derive(Debug, Serialize)]
 pub struct PreKeyBundleResponse {
     pub identity_key: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signing_key: Option<String>,
+    pub signing_key: String,
     pub signed_prekey: String,
     pub signed_prekey_signature: String,
     pub signed_prekey_id: i32,
@@ -72,6 +71,25 @@ use sha2::{Digest, Sha256};
 /// Compute a SHA-256 fingerprint of a raw identity key.
 fn identity_fingerprint(identity_key: &[u8]) -> Vec<u8> {
     Sha256::digest(identity_key).to_vec()
+}
+
+/// Extract and base64-encode the signing key from a bundle, rejecting bundles
+/// without one (legacy bundles missing a signing key are a MITM risk).
+fn require_signing_key(
+    bundle: &db::keys::PreKeyBundleRow,
+    user_id: Uuid,
+) -> Result<String, AppError> {
+    bundle
+        .signing_key
+        .as_ref()
+        .map(|sk| BASE64.encode(sk))
+        .ok_or_else(|| {
+            tracing::warn!(
+                "Bundle for user {} has no signing_key -- rejecting (MITM risk)",
+                user_id,
+            );
+            AppError::bad_request("No signing key in bundle; owner must re-upload keys")
+        })
 }
 
 /// POST /api/keys/upload -- Upload a PreKey bundle for the authenticated user.
@@ -235,9 +253,11 @@ pub async fn get_bundle(
         }
     };
 
+    let signing_key = require_signing_key(&bundle, user_id)?;
+
     let response = PreKeyBundleResponse {
         identity_key: BASE64.encode(&bundle.identity_key),
-        signing_key: bundle.signing_key.as_ref().map(|sk| BASE64.encode(sk)),
+        signing_key,
         signed_prekey: BASE64.encode(&bundle.signed_prekey),
         signed_prekey_signature: BASE64.encode(&bundle.signed_prekey_signature),
         signed_prekey_id: bundle.signed_prekey_id,
@@ -262,9 +282,11 @@ pub async fn get_device_bundle(
             AppError::bad_request("No PreKey bundle found for this user/device combination")
         })?;
 
+    let signing_key = require_signing_key(&bundle, user_id)?;
+
     let response = PreKeyBundleResponse {
         identity_key: BASE64.encode(&bundle.identity_key),
-        signing_key: bundle.signing_key.as_ref().map(|sk| BASE64.encode(sk)),
+        signing_key,
         signed_prekey: BASE64.encode(&bundle.signed_prekey),
         signed_prekey_signature: BASE64.encode(&bundle.signed_prekey_signature),
         signed_prekey_id: bundle.signed_prekey_id,
@@ -295,8 +317,7 @@ pub async fn get_devices(
 pub struct DeviceBundleResponse {
     pub device_id: i32,
     pub identity_key: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signing_key: Option<String>,
+    pub signing_key: String,
     pub signed_prekey: String,
     pub signed_prekey_signature: String,
     pub signed_prekey_id: i32,
@@ -317,10 +338,14 @@ pub async fn get_all_bundles(
 
     for device_id in device_ids {
         if let Some(bundle) = db::keys::get_prekey_bundle(&state.pool, user_id, device_id).await? {
+            let signing_key = match require_signing_key(&bundle, user_id) {
+                Ok(sk) => sk,
+                Err(_) => continue, // skip devices with legacy bundles missing signing key
+            };
             bundles.push(DeviceBundleResponse {
                 device_id,
                 identity_key: BASE64.encode(&bundle.identity_key),
-                signing_key: bundle.signing_key.as_ref().map(|sk| BASE64.encode(sk)),
+                signing_key,
                 signed_prekey: BASE64.encode(&bundle.signed_prekey),
                 signed_prekey_signature: BASE64.encode(&bundle.signed_prekey_signature),
                 signed_prekey_id: bundle.signed_prekey_id,
