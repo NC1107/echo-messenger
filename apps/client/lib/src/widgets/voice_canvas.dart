@@ -1,9 +1,11 @@
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
 import '../models/canvas_models.dart';
@@ -38,6 +40,7 @@ class VoiceCanvas extends ConsumerStatefulWidget {
   final lk.Room? room;
   final LiveKitVoiceState voiceState;
   final String? localAvatarUrl;
+  final void Function(lk.VideoTrack track, bool mirror)? onVideoDoubleTap;
 
   const VoiceCanvas({
     super.key,
@@ -46,6 +49,7 @@ class VoiceCanvas extends ConsumerStatefulWidget {
     required this.voiceState,
     this.room,
     this.localAvatarUrl,
+    this.onVideoDoubleTap,
   });
 
   @override
@@ -195,8 +199,15 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     // Collect all participants
     final participants = <_ParticipantInfo>[];
 
-    // Local user
+    // Local user -- resolve camera video track
     final localName = ref.read(authProvider).username ?? 'You';
+    lk.VideoTrack? localVideoTrack;
+    if (room != null && voiceState.isVideoEnabled) {
+      final pub = room.localParticipant?.videoTrackPublications
+          .where((p) => p.track != null && p.source == lk.TrackSource.camera)
+          .firstOrNull;
+      localVideoTrack = pub?.track as lk.VideoTrack?;
+    }
     participants.add(
       _ParticipantInfo(
         userId: myUserId,
@@ -204,6 +215,8 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
         avatarUrl: widget.localAvatarUrl,
         isSpeaking: voiceState.localAudioLevel > 0.05,
         isLocal: true,
+        videoTrack: localVideoTrack,
+        mirror: true,
       ),
     );
 
@@ -212,6 +225,15 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
       for (final p in room.remoteParticipants.values) {
         final uid = p.identity;
         final level = voiceState.peerAudioLevels[uid] ?? 0.0;
+        final remotePub = p.videoTrackPublications
+            .where(
+              (pub) =>
+                  pub.track != null &&
+                  pub.track is lk.VideoTrack &&
+                  pub.source == lk.TrackSource.camera,
+            )
+            .firstOrNull;
+        final remoteVideo = remotePub?.track as lk.VideoTrack?;
         participants.add(
           _ParticipantInfo(
             userId: uid,
@@ -219,6 +241,7 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
             avatarUrl: null,
             isSpeaking: level > 0.05,
             isLocal: false,
+            videoTrack: remoteVideo,
           ),
         );
       }
@@ -265,7 +288,13 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
                   .read(canvasProvider.notifier)
                   .commitLocalAvatarMove(participant.userId, norm);
             },
-            draggable: participant.isLocal,
+            draggable: true,
+            onDoubleTap: participant.videoTrack != null
+                ? () => widget.onVideoDoubleTap?.call(
+                    participant.videoTrack!,
+                    participant.mirror,
+                  )
+                : null,
           ),
         ),
       );
@@ -393,9 +422,15 @@ class _DrawingLayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Listener(
-      behavior: HitTestBehavior.opaque,
-      onPointerDown: (e) => onPointerDown(e.localPosition),
-      onPointerMove: (e) => onPointerMove(e.localPosition),
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (e) {
+        if (e.buttons != kPrimaryButton) return;
+        onPointerDown(e.localPosition);
+      },
+      onPointerMove: (e) {
+        if (e.buttons != kPrimaryButton) return;
+        onPointerMove(e.localPosition);
+      },
       onPointerUp: (_) => onPointerUp(),
       onPointerCancel: (_) => onPointerUp(),
       child: RepaintBoundary(
@@ -511,6 +546,8 @@ class _ParticipantInfo {
   final String? avatarUrl;
   final bool isSpeaking;
   final bool isLocal;
+  final lk.VideoTrack? videoTrack;
+  final bool mirror;
 
   const _ParticipantInfo({
     required this.userId,
@@ -518,6 +555,8 @@ class _ParticipantInfo {
     required this.avatarUrl,
     required this.isSpeaking,
     required this.isLocal,
+    this.videoTrack,
+    this.mirror = false,
   });
 }
 
@@ -530,6 +569,7 @@ class _DraggableAvatar extends StatefulWidget {
   final void Function(CanvasPoint norm) onDrag;
   final void Function(CanvasPoint norm) onDragEnd;
   final bool draggable;
+  final VoidCallback? onDoubleTap;
 
   const _DraggableAvatar({
     super.key,
@@ -539,6 +579,7 @@ class _DraggableAvatar extends StatefulWidget {
     required this.onDrag,
     required this.onDragEnd,
     this.draggable = false,
+    this.onDoubleTap,
   });
 
   @override
@@ -559,6 +600,8 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
     final ringWidth = info.isSpeaking ? 3.5 : 2.0;
     final scale = info.isSpeaking ? 1.12 : 1.0;
 
+    final hasVideo = info.videoTrack != null;
+
     Widget avatar = AnimatedScale(
       scale: scale,
       duration: const Duration(milliseconds: 150),
@@ -567,7 +610,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
         height: _kAvatarSize,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: avatarColor,
+          color: hasVideo ? Colors.black : avatarColor,
           border: Border.all(color: speakRingColor, width: ringWidth),
           boxShadow: [
             BoxShadow(
@@ -578,7 +621,15 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
           ],
         ),
         clipBehavior: Clip.antiAlias,
-        child: info.avatarUrl != null
+        child: hasVideo
+            ? lk.VideoTrackRenderer(
+                info.videoTrack!,
+                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                mirrorMode: info.mirror
+                    ? lk.VideoViewMirrorMode.mirror
+                    : lk.VideoViewMirrorMode.off,
+              )
+            : info.avatarUrl != null
             ? CachedNetworkImage(
                 imageUrl: info.avatarUrl!,
                 fit: BoxFit.cover,
@@ -619,6 +670,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
     return MouseRegion(
       cursor: SystemMouseCursors.grab,
       child: GestureDetector(
+        onDoubleTap: widget.onDoubleTap,
         onPanUpdate: (details) {
           final s = widget.canvasSize;
           if (s.width <= 0 || s.height <= 0) return;

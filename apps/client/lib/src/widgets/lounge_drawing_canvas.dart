@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -155,6 +156,7 @@ class LoungeDrawingCanvasState extends State<LoungeDrawingCanvas> {
 
   void _onPointerDown(PointerDownEvent event) {
     if (!widget.isActive) return;
+    if (event.buttons != kPrimaryButton) return;
 
     // Check if tapping on an image (drag to reposition)
     final imgIdx = _hitTestImage(event.localPosition);
