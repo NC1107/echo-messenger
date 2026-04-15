@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/conversations_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
@@ -56,11 +57,23 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
     final loggedIn = await _attemptAutoLogin();
 
-    // Brief splash to let the logo animation complete (reduced from 500ms)
+    // Pre-load conversations so home screen doesn't flash empty state
+    if (loggedIn) {
+      try {
+        await ref
+            .read(conversationsProvider.notifier)
+            .loadConversations()
+            .timeout(const Duration(seconds: 3), onTimeout: () {});
+      } catch (_) {
+        // Non-fatal; home screen will retry.
+      }
+    }
+
+    // Brief splash to let the logo animation complete
     stopwatch.stop();
     final elapsed = stopwatch.elapsedMilliseconds;
-    if (elapsed < 200) {
-      await Future<void>.delayed(Duration(milliseconds: 200 - elapsed));
+    if (elapsed < 800) {
+      await Future<void>.delayed(Duration(milliseconds: 800 - elapsed));
     }
 
     if (!mounted) return;

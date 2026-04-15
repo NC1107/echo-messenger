@@ -69,6 +69,9 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// The user can toggle back with the focus button in either view.
   bool _immersiveMode = true;
 
+  /// When true, force the spotlight/participant grid instead of the canvas.
+  bool _spotlightMode = false;
+
   String? _buildAvatarUrl() {
     final avatarPath = ref.read(authProvider).avatarUrl;
     if (avatarPath == null || avatarPath.isEmpty) return null;
@@ -240,6 +243,32 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     // Default: voice-lounge canvas (movable avatars + drawing + images).
     final conversationId = voiceLk.conversationId ?? '';
     final channelId = voiceLk.channelId ?? '';
+
+    // Spotlight mode: show participant grid with camera tiles
+    if (_spotlightMode) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            if (screenShare.isScreenSharing) ...[
+              GestureDetector(
+                onTap: () =>
+                    setState(() => _focusedTileKey = _kScreenshareLocal),
+                child: _ScreenShareViewer(ref: ref),
+              ),
+              const SizedBox(height: 16),
+            ],
+            _ParticipantGrid(
+              room: room,
+              voiceState: voiceLk,
+              localAvatarUrl: _buildAvatarUrl(),
+              memberAvatars: memberAvatars,
+              onTileTap: (key) => setState(() => _focusedTileKey = key),
+            ),
+          ],
+        ),
+      );
+    }
 
     if (conversationId.isNotEmpty && channelId.isNotEmpty) {
       return Stack(
@@ -561,6 +590,8 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       isDrawing: _isDrawing,
       onToggleDrawing: () => setState(() => _isDrawing = !_isDrawing),
       drawingCanvasKey: _drawingCanvasKey,
+      spotlightMode: _spotlightMode,
+      onToggleSpotlight: () => setState(() => _spotlightMode = !_spotlightMode),
     );
 
     final drawingOverlay = LoungeDrawingCanvas(
@@ -1327,6 +1358,8 @@ class _FloatingDock extends ConsumerWidget {
   final bool isDrawing;
   final VoidCallback onToggleDrawing;
   final GlobalKey<LoungeDrawingCanvasState> drawingCanvasKey;
+  final bool spotlightMode;
+  final VoidCallback onToggleSpotlight;
 
   const _FloatingDock({
     required this.voiceState,
@@ -1337,6 +1370,8 @@ class _FloatingDock extends ConsumerWidget {
     required this.isDrawing,
     required this.onToggleDrawing,
     required this.drawingCanvasKey,
+    required this.spotlightMode,
+    required this.onToggleSpotlight,
   });
 
   @override
@@ -1443,6 +1478,15 @@ class _FloatingDock extends ConsumerWidget {
                 },
               ),
             _buildDrawToolItem(context, ref),
+            _dockDivider(context),
+            _buildDockItem(
+              context,
+              icon: spotlightMode ? Icons.grid_view : Icons.people,
+              tooltip: spotlightMode ? 'Canvas view' : 'Spotlight view',
+              isActive: spotlightMode,
+              activeColor: context.accent,
+              onPressed: onToggleSpotlight,
+            ),
             _dockDivider(context),
             _buildDockItem(
               context,
@@ -1569,7 +1613,7 @@ class _DrawingDockItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return PopupMenuButton<void>(
       tooltip: isDrawing ? 'Drawing tools' : 'Draw',
-      offset: const Offset(0, -220),
+      offset: const Offset(0, -260),
       position: PopupMenuPosition.over,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),

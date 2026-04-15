@@ -968,7 +968,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return Scaffold(
         body: SafeArea(
           child: VoiceLoungeScreen(
-            onBackToChat: () => setState(() => _showingLounge = false),
+            onBackToChat: () => setState(() {
+              _showingLounge = false;
+              _userDismissedLounge = true;
+            }),
           ),
         ),
       );

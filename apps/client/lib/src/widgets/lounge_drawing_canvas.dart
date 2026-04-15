@@ -232,6 +232,9 @@ class _DrawingPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // saveLayer so BlendMode.clear (eraser) works on the stroke layer
+    canvas.saveLayer(Offset.zero & size, Paint());
+
     // Draw pinned images first (below strokes)
     for (final img in images) {
       final dst = Rect.fromLTWH(
@@ -255,6 +258,8 @@ class _DrawingPainter extends CustomPainter {
     if (currentStroke != null) {
       _drawStroke(canvas, currentStroke!);
     }
+
+    canvas.restore();
   }
 
   void _drawStroke(Canvas canvas, DrawingStroke stroke) {

@@ -371,15 +371,6 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
     final room = _room;
     if (room == null) return false;
 
-    // Screen share crashes on Linux desktop (SEGV in libwebrtc.so).
-    // Disable until flutter_webrtc ships a fix for native desktop capture.
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
-      state = state.copyWith(
-        error: 'Screen sharing is not yet supported on Linux desktop.',
-      );
-      return false;
-    }
-
     try {
       await room.localParticipant?.setScreenShareEnabled(enabled);
       return true;
