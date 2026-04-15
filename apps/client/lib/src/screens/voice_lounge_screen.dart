@@ -25,7 +25,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
-import '../widgets/lounge_drawing_canvas.dart';
+import '../widgets/lounge_drawing_canvas.dart' hide CanvasImage;
 import '../widgets/vertex_mesh_background.dart';
 import '../widgets/voice_canvas.dart';
 
@@ -1854,8 +1854,9 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
                   child: TextButton.icon(
                     onPressed: () async {
                       HapticFeedback.lightImpact();
+                      final nav = Navigator.of(context);
                       await _pickAndAddImage(context);
-                      if (mounted) Navigator.of(context).pop();
+                      if (mounted) nav.pop();
                     },
                     icon: const Icon(
                       Icons.add_photo_alternate_outlined,
@@ -1873,8 +1874,9 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
                   child: TextButton.icon(
                     onPressed: () async {
                       HapticFeedback.lightImpact();
+                      final nav = Navigator.of(context);
                       await _pasteImageFromClipboard(context);
-                      if (mounted) Navigator.of(context).pop();
+                      if (mounted) nav.pop();
                     },
                     icon: const Icon(Icons.content_paste, size: 16),
                     label: const Text('Paste'),
