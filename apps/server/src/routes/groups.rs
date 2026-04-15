@@ -292,6 +292,17 @@ pub async fn add_member(
         return Err(AppError::bad_request("User is banned from this group"));
     }
 
+    // Check if already an active member
+    let already_member = db::groups::is_member(&state.pool, group_id, body.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in add_member/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    if already_member {
+        return Err(AppError::conflict("User is already a member"));
+    }
+
     db::groups::add_member(&state.pool, group_id, body.user_id)
         .await
         .map_err(|e| match e {
@@ -457,6 +468,17 @@ pub async fn join_group(
         })?;
     if banned {
         return Err(AppError::bad_request("You are banned from this group"));
+    }
+
+    // Check if already a member
+    let already_member = db::groups::is_member(&state.pool, group_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in join_group/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    if already_member {
+        return Err(AppError::conflict("Already a member of this group"));
     }
 
     let joined = db::groups::join_public_group(&state.pool, group_id, auth.user_id)
