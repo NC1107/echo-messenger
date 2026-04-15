@@ -1852,10 +1852,10 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
               children: [
                 Expanded(
                   child: TextButton.icon(
-                    onPressed: () {
+                    onPressed: () async {
                       HapticFeedback.lightImpact();
-                      Navigator.of(context).pop();
-                      _pickAndAddImage(context);
+                      await _pickAndAddImage(context);
+                      if (mounted) Navigator.of(context).pop();
                     },
                     icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
                     label: const Text('Image'),
@@ -1868,10 +1868,10 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
                 const SizedBox(width: 4),
                 Expanded(
                   child: TextButton.icon(
-                    onPressed: () {
+                    onPressed: () async {
                       HapticFeedback.lightImpact();
-                      Navigator.of(context).pop();
-                      _pasteImageFromClipboard(context);
+                      await _pasteImageFromClipboard(context);
+                      if (mounted) Navigator.of(context).pop();
                     },
                     icon: const Icon(Icons.content_paste, size: 16),
                     label: const Text('Paste'),
@@ -1934,6 +1934,11 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
 
   /// Open the system file picker to select an image and add it to the canvas.
   Future<void> _pickAndAddImage(BuildContext ctx) async {
+    // Capture widget/ref values before any await so they remain valid if the
+    // state is disposed while the file picker or upload is in progress.
+    final conversationId = widget.conversationId;
+    final serverUrl = ref.read(serverUrlProvider);
+    final token = ref.read(authProvider).token;
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
@@ -1945,15 +1950,12 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
       final bytes = file.bytes;
       if (bytes == null) return;
 
-      final conversationId = widget.conversationId;
       if (conversationId.isEmpty) {
         // No conversation — display locally only.
         _canvas?.addImageFromBytes(bytes);
         return;
       }
 
-      final serverUrl = ref.read(serverUrlProvider);
-      final token = ref.read(authProvider).token;
       if (token == null) {
         if (ctx.mounted) {
           ScaffoldMessenger.of(ctx).showSnackBar(
@@ -1981,7 +1983,9 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
       );
 
       final response = await request.send();
+      if (!mounted) return;
       final body = await response.stream.bytesToString();
+      if (!mounted) return;
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(body) as Map<String, dynamic>;
@@ -2011,6 +2015,7 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
   Future<void> _pasteImageFromClipboard(BuildContext ctx) async {
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
+      if (!mounted) return;
       final text = data?.text?.trim() ?? '';
       if (text.startsWith('http://') || text.startsWith('https://')) {
         _addImageByUrl(text);
@@ -2032,6 +2037,7 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
   }
 
   void _addImageByUrl(String url) {
+    if (!mounted) return;
     _canvas?.addImageFromUrl(url);
     final img = CanvasImage(
       id: newCanvasId(),
