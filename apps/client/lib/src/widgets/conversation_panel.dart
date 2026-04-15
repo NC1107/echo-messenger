@@ -1241,19 +1241,22 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       onRefresh: () =>
           ref.read(conversationsProvider.notifier).loadConversations(),
       color: context.accent,
-      child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        // Use fixed itemExtent when no section headers/dividers for faster layout.
-        itemExtent: extraItems == 0 ? 70 : null,
-        itemCount: sorted.length + extraItems,
-        itemBuilder: (context, index) => _buildListItem(
-          index: index,
-          sorted: sorted,
-          pinnedCount: pinnedCount,
-          myUserId: myUserId,
-          serverUrl: serverUrl,
-          wsOnlineUsers: wsOnlineUsers,
+      child: Scrollbar(
+        thumbVisibility: true,
+        child: ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+          // Use fixed itemExtent when no section headers/dividers for faster layout.
+          itemExtent: extraItems == 0 ? 70 : null,
+          itemCount: sorted.length + extraItems,
+          itemBuilder: (context, index) => _buildListItem(
+            index: index,
+            sorted: sorted,
+            pinnedCount: pinnedCount,
+            myUserId: myUserId,
+            serverUrl: serverUrl,
+            wsOnlineUsers: wsOnlineUsers,
+          ),
         ),
       ),
     );
@@ -1338,22 +1341,25 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      itemCount: contacts.length,
-      itemBuilder: (context, index) {
-        final contact = contacts[index];
-        return ContactItem(
-          contact: contact,
-          serverUrl: serverUrl,
-          onMessage: () {
-            widget.onMessageContact?.call(contact.userId, contact.username);
-          },
-          onProfile: () {
-            UserProfileScreen.show(context, ref, contact.userId);
-          },
-        );
-      },
+    return Scrollbar(
+      thumbVisibility: true,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        itemCount: contacts.length,
+        itemBuilder: (context, index) {
+          final contact = contacts[index];
+          return ContactItem(
+            contact: contact,
+            serverUrl: serverUrl,
+            onMessage: () {
+              widget.onMessageContact?.call(contact.userId, contact.username);
+            },
+            onProfile: () {
+              UserProfileScreen.show(context, ref, contact.userId);
+            },
+          );
+        },
+      ),
     );
   }
 
@@ -1425,42 +1431,45 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
     final sorted = _sortConversations(groupConversations);
 
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      itemCount: sorted.length + 1,
-      itemBuilder: (context, index) {
-        // First item: Discover Groups button
-        if (index == 0) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 6, top: 2),
-            child: OutlinedButton.icon(
-              onPressed: widget.onDiscover,
-              icon: const Icon(Icons.explore_outlined, size: 16),
-              label: const Text('Discover Groups'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 34),
-                textStyle: const TextStyle(fontSize: 13),
+    return Scrollbar(
+      thumbVisibility: true,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        itemCount: sorted.length + 1,
+        itemBuilder: (context, index) {
+          // First item: Discover Groups button
+          if (index == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6, top: 2),
+              child: OutlinedButton.icon(
+                onPressed: widget.onDiscover,
+                icon: const Icon(Icons.explore_outlined, size: 16),
+                label: const Text('Discover Groups'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 34),
+                  textStyle: const TextStyle(fontSize: 13),
+                ),
               ),
-            ),
+            );
+          }
+          final conv = sorted[index - 1];
+          final isSelected = conv.id == widget.selectedConversationId;
+          final isPinned = _pinnedIds.contains(conv.id);
+          // Groups don't have a single peer, so isPeerOnline is always false
+          return ConversationItem(
+            conversation: conv,
+            myUserId: myUserId,
+            isSelected: isSelected,
+            isPinned: isPinned,
+            isPeerOnline: false,
+            groupIconUrl: resolveAvatarUrl(conv.iconUrl, serverUrl),
+            timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
+            onTap: () => widget.onConversationTap(conv),
+            onContextMenu: (position) =>
+                _showConversationContextMenu(context, conv, position),
           );
-        }
-        final conv = sorted[index - 1];
-        final isSelected = conv.id == widget.selectedConversationId;
-        final isPinned = _pinnedIds.contains(conv.id);
-        // Groups don't have a single peer, so isPeerOnline is always false
-        return ConversationItem(
-          conversation: conv,
-          myUserId: myUserId,
-          isSelected: isSelected,
-          isPinned: isPinned,
-          isPeerOnline: false,
-          groupIconUrl: resolveAvatarUrl(conv.iconUrl, serverUrl),
-          timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
-          onTap: () => widget.onConversationTap(conv),
-          onContextMenu: (position) =>
-              _showConversationContextMenu(context, conv, position),
-        );
-      },
+        },
+      ),
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
@@ -66,7 +67,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     return '$_newMessagesBelowCount new $noun';
   }
 
-  bool _hideEncryptionBanner = false;
+  static const _dismissedBannersKey = 'dismissed_encryption_banners';
+  static Set<String> _dismissedBannerIds = {};
+  static bool _bannersLoaded = false;
   String? _selectedTextChannelId;
   String? _activeVoiceChannelId;
   String? _loadedHistoryKey;
@@ -88,11 +91,36 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
   OverlayEntry? _reactionOverlay;
 
+  bool get _hideEncryptionBanner {
+    final convId = widget.conversation?.id;
+    return convId != null && _dismissedBannerIds.contains(convId);
+  }
+
+  Future<void> _dismissEncryptionBanner() async {
+    final convId = widget.conversation?.id;
+    if (convId == null) return;
+    setState(() => _dismissedBannerIds.add(convId));
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _dismissedBannersKey,
+      _dismissedBannerIds.toList(),
+    );
+  }
+
+  static Future<void> _loadDismissedBanners() async {
+    if (_bannersLoaded) return;
+    _bannersLoaded = true;
+    final prefs = await SharedPreferences.getInstance();
+    _dismissedBannerIds = (prefs.getStringList(_dismissedBannersKey) ?? [])
+        .toSet();
+  }
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addObserver(this);
+    _loadDismissedBanners();
   }
 
   @override
@@ -106,7 +134,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         _scrollPositions[oldKey] = _scrollController.offset;
       }
 
-      _hideEncryptionBanner = false;
       _selectedTextChannelId = null;
       _activeVoiceChannelId = null;
       _loadedHistoryKey = null;
@@ -1108,37 +1135,41 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String serverUrl,
     required String authToken,
   }) {
-    return ListView.builder(
+    return Scrollbar(
       controller: _scrollController,
-      padding: const EdgeInsets.only(bottom: 16),
-      itemCount: messages.length + 1,
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          if (chatState.hasMore[conv.id] ?? true) {
-            return SizedBox(
-              height: 48,
-              child: (chatState.loadingHistory[conv.id] ?? false)
-                  ? const Center(
-                      child: SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            );
+      thumbVisibility: true,
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.only(bottom: 16),
+        itemCount: messages.length + 1,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            if (chatState.hasMore[conv.id] ?? true) {
+              return SizedBox(
+                height: 48,
+                child: (chatState.loadingHistory[conv.id] ?? false)
+                    ? const Center(
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              );
+            }
+            return const SizedBox(height: 8);
           }
-          return const SizedBox(height: 8);
-        }
-        return _buildMessageAtIndex(
-          i: index - 1,
-          messages: messages,
-          memberAvatars: memberAvatars,
-          myUserId: myUserId,
-          serverUrl: serverUrl,
-          authToken: authToken,
-        );
-      },
+          return _buildMessageAtIndex(
+            i: index - 1,
+            messages: messages,
+            memberAvatars: memberAvatars,
+            myUserId: myUserId,
+            serverUrl: serverUrl,
+            authToken: authToken,
+          );
+        },
+      ),
     );
   }
 
@@ -1390,8 +1421,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                     setState(() => _showSearch = !_showSearch),
                 onMembersToggle: widget.onMembersToggle,
                 onGroupInfo: widget.onGroupInfo,
-                onDismissEncryptionBanner: () =>
-                    setState(() => _hideEncryptionBanner = true),
+                onDismissEncryptionBanner: _dismissEncryptionBanner,
                 hideEncryptionBanner: _hideEncryptionBanner,
               ),
 
