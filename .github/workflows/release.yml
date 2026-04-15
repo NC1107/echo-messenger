@@ -416,7 +416,7 @@ jobs:
           tags: |
             type=raw,value=${{ needs.version.outputs.version }}
             type=raw,value=latest,enable={{is_default_branch}}
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
           file: apps/server/Dockerfile
@@ -464,7 +464,7 @@ jobs:
           tags: |
             type=raw,value=${{ needs.version.outputs.version }}
             type=raw,value=latest,enable={{is_default_branch}}
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: apps/client
           file: apps/client/Dockerfile.web
