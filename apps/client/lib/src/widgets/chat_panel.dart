@@ -905,22 +905,29 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         label = '${_fullMonthName(dt.month)} ${dt.day}, ${dt.year}';
       }
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Center(
-          child: Container(
-            height: 24,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: context.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.border),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 48),
+        child: Row(
+          children: [
+            Expanded(
+              child: Container(
+                height: 1,
+                color: context.border.withValues(alpha: 0.5),
+              ),
             ),
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 11, color: context.textMuted),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 11, color: context.textMuted),
+              ),
             ),
-          ),
+            Expanded(
+              child: Container(
+                height: 1,
+                color: context.border.withValues(alpha: 0.5),
+              ),
+            ),
+          ],
         ),
       );
     } catch (_) {

@@ -82,7 +82,11 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
 
   @override
   void dispose() {
-    ref.read(canvasProvider.notifier).detach();
+    try {
+      ref.read(canvasProvider.notifier).detach();
+    } catch (_) {
+      // Widget may already be unmounted; ignore.
+    }
     _focusNode.dispose();
     super.dispose();
   }
