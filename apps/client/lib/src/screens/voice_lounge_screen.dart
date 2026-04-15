@@ -1857,7 +1857,10 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
                       await _pickAndAddImage(context);
                       if (mounted) Navigator.of(context).pop();
                     },
-                    icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
+                    icon: const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 16,
+                    ),
                     label: const Text('Image'),
                     style: TextButton.styleFrom(
                       foregroundColor: context.accent,
@@ -1997,16 +2000,18 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
         _canvas?.addImageFromBytes(bytes);
         if (ctx.mounted) {
           ScaffoldMessenger.of(ctx).showSnackBar(
-            const SnackBar(content: Text('Image upload failed; shown locally only')),
+            const SnackBar(
+              content: Text('Image upload failed; shown locally only'),
+            ),
           );
         }
       }
     } catch (e) {
       debugPrint('[DrawingMenu] pickImage error: $e');
       if (ctx.mounted) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(content: Text('Failed to add image')),
-        );
+        ScaffoldMessenger.of(
+          ctx,
+        ).showSnackBar(const SnackBar(content: Text('Failed to add image')));
       }
     }
   }
@@ -2023,7 +2028,9 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
       }
       if (ctx.mounted) {
         ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(content: Text('Clipboard does not contain an image URL')),
+          const SnackBar(
+            content: Text('Clipboard does not contain an image URL'),
+          ),
         );
       }
     } catch (e) {
@@ -2077,9 +2084,11 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
           HapticFeedback.selectionClick();
           setState(() => _selectedTool = tool);
           _canvas?.setTool(tool);
-          ref.read(canvasProvider.notifier).setTool(
-            tool == DrawingTool.eraser ? CanvasTool.eraser : CanvasTool.pen,
-          );
+          ref
+              .read(canvasProvider.notifier)
+              .setTool(
+                tool == DrawingTool.eraser ? CanvasTool.eraser : CanvasTool.pen,
+              );
         },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
