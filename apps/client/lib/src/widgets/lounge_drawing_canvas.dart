@@ -277,9 +277,13 @@ class _DrawingPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     if (stroke.isEraser) {
-      paint.blendMode = ui.BlendMode.clear;
-      // Eraser needs explicit color to clear properly
-      paint.color = const Color(0x00000000);
+      // BlendMode.clear punches out alpha; the color value doesn't affect the
+      // result, but an explicit fully-transparent color avoids a warning on
+      // some Flutter build configurations where a missing color may fall back
+      // to opaque black and render unexpectedly on non-isolated layers.
+      paint
+        ..blendMode = ui.BlendMode.clear
+        ..color = const Color(0x00000000);
     } else {
       paint.color = stroke.color;
     }

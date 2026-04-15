@@ -1691,6 +1691,8 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
   Color _selectedColor = Colors.white;
   double _selectedSize = 4.0;
 
+  static final _rng = math.Random();
+
   LoungeDrawingCanvasState? get _canvas => widget.drawingCanvasKey.currentState;
 
   @override
@@ -1952,7 +1954,14 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
 
       final serverUrl = ref.read(serverUrlProvider);
       final token = ref.read(authProvider).token;
-      if (token == null) return;
+      if (token == null) {
+        if (ctx.mounted) {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            const SnackBar(content: Text('Sign in required to upload image')),
+          );
+        }
+        return;
+      }
 
       final ext = file.extension?.toLowerCase() ?? 'png';
       final mimeType = _mimeForExtension(ext);
@@ -1990,6 +1999,11 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
       }
     } catch (e) {
       debugPrint('[DrawingMenu] pickImage error: $e');
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          const SnackBar(content: Text('Failed to add image')),
+        );
+      }
     }
   }
 
@@ -2009,17 +2023,21 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
       }
     } catch (e) {
       debugPrint('[DrawingMenu] pasteClipboard error: $e');
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          const SnackBar(content: Text('Failed to paste from clipboard')),
+        );
+      }
     }
   }
 
   void _addImageByUrl(String url) {
-    final rng = math.Random();
     _canvas?.addImageFromUrl(url);
     final img = CanvasImage(
       id: newCanvasId(),
       url: url,
-      x: 0.2 + rng.nextDouble() * 0.3,
-      y: 0.2 + rng.nextDouble() * 0.3,
+      x: 0.2 + _rng.nextDouble() * 0.3,
+      y: 0.2 + _rng.nextDouble() * 0.3,
       width: 0.25,
       height: 0.25,
     );
