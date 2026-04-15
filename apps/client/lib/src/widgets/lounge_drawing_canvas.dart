@@ -78,6 +78,11 @@ class LoungeDrawingCanvasState extends State<LoungeDrawingCanvas> {
     });
   }
 
+  /// Load image from raw bytes and pin it to the canvas center.
+  Future<void> addImageFromBytes(Uint8List bytes) async {
+    await _addImageFromBytes(bytes);
+  }
+
   /// Load an image from a URL and pin it to the canvas center.
   Future<void> addImageFromUrl(String url) async {
     try {
@@ -263,7 +268,7 @@ class _DrawingPainter extends CustomPainter {
   }
 
   void _drawStroke(Canvas canvas, DrawingStroke stroke) {
-    if (stroke.points.length < 2) return;
+    if (stroke.points.isEmpty) return;
 
     final paint = Paint()
       ..strokeCap = StrokeCap.round
@@ -273,13 +278,26 @@ class _DrawingPainter extends CustomPainter {
 
     if (stroke.isEraser) {
       paint.blendMode = ui.BlendMode.clear;
+      // Eraser needs explicit color to clear properly
+      paint.color = const Color(0x00000000);
     } else {
       paint.color = stroke.color;
     }
 
+    final pts = stroke.points;
+
+    // Single-point tap: draw a dot.
+    if (pts.length == 1) {
+      canvas.drawCircle(
+        pts[0],
+        stroke.width / 2,
+        paint..style = PaintingStyle.fill,
+      );
+      return;
+    }
+
     // Build a smoothed path using quadratic Bezier curves
     final path = ui.Path();
-    final pts = stroke.points;
 
     path.moveTo(pts[0].dx, pts[0].dy);
 
@@ -299,7 +317,7 @@ class _DrawingPainter extends CustomPainter {
       path.lineTo(last.dx, last.dy);
     }
 
-    canvas.drawPath(path, paint);
+    canvas.drawPath(path, paint..style = PaintingStyle.stroke);
   }
 
   @override

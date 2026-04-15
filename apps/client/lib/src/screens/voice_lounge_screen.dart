@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
@@ -7,9 +10,13 @@ import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
+import '../models/canvas_models.dart';
 import '../providers/auth_provider.dart';
+import '../providers/canvas_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/livekit_voice_provider.dart';
@@ -17,9 +24,9 @@ import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
+import '../utils/canvas_utils.dart';
 import '../widgets/lounge_drawing_canvas.dart';
 import '../widgets/vertex_mesh_background.dart';
-import '../utils/canvas_utils.dart';
 import '../widgets/voice_canvas.dart';
 
 const _kScreenshareLocal = 'screenshare-local';
@@ -1530,6 +1537,7 @@ class _FloatingDock extends ConsumerWidget {
       isDrawing: isDrawing,
       onToggleDrawing: onToggleDrawing,
       drawingCanvasKey: drawingCanvasKey,
+      conversationId: conversationId,
     );
   }
 
@@ -1565,7 +1573,10 @@ class _FloatingDock extends ConsumerWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: onPressed,
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onPressed();
+          },
           borderRadius: BorderRadius.circular(24),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
@@ -1588,11 +1599,13 @@ class _DrawingDockItem extends StatelessWidget {
   final bool isDrawing;
   final VoidCallback onToggleDrawing;
   final GlobalKey<LoungeDrawingCanvasState> drawingCanvasKey;
+  final String conversationId;
 
   const _DrawingDockItem({
     required this.isDrawing,
     required this.onToggleDrawing,
     required this.drawingCanvasKey,
+    required this.conversationId,
   });
 
   static const _penColors = [
@@ -1631,6 +1644,7 @@ class _DrawingDockItem extends StatelessWidget {
             drawingCanvasKey: drawingCanvasKey,
             onToggleDrawing: onToggleDrawing,
             isDrawing: isDrawing,
+            conversationId: conversationId,
           ),
         ),
       ],
@@ -1655,22 +1669,24 @@ class _DrawingDockItem extends StatelessWidget {
 }
 
 /// Popup content for the drawing tools menu.
-class _DrawingToolsMenu extends StatefulWidget {
+class _DrawingToolsMenu extends ConsumerStatefulWidget {
   final GlobalKey<LoungeDrawingCanvasState> drawingCanvasKey;
   final VoidCallback onToggleDrawing;
   final bool isDrawing;
+  final String conversationId;
 
   const _DrawingToolsMenu({
     required this.drawingCanvasKey,
     required this.onToggleDrawing,
     required this.isDrawing,
+    required this.conversationId,
   });
 
   @override
-  State<_DrawingToolsMenu> createState() => _DrawingToolsMenuState();
+  ConsumerState<_DrawingToolsMenu> createState() => _DrawingToolsMenuState();
 }
 
-class _DrawingToolsMenuState extends State<_DrawingToolsMenu> {
+class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
   DrawingTool _selectedTool = DrawingTool.pen;
   Color _selectedColor = Colors.white;
   double _selectedSize = 4.0;
@@ -1735,19 +1751,30 @@ class _DrawingToolsMenuState extends State<_DrawingToolsMenu> {
                   final isSelected = _selectedColor == c;
                   return GestureDetector(
                     onTap: () {
+                      HapticFeedback.selectionClick();
                       setState(() => _selectedColor = c);
                       _canvas?.setPenColor(c);
+                      ref.read(canvasProvider.notifier).setColor(c);
                     },
-                    child: Container(
-                      width: 20,
-                      height: 20,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      width: isSelected ? 24 : 20,
+                      height: isSelected ? 24 : 20,
                       decoration: BoxDecoration(
                         color: c,
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: isSelected ? context.accent : context.border,
-                          width: isSelected ? 2 : 1,
+                          width: isSelected ? 2.5 : 1,
                         ),
+                        boxShadow: isSelected
+                            ? [
+                                BoxShadow(
+                                  color: c.withValues(alpha: 0.5),
+                                  blurRadius: 6,
+                                ),
+                              ]
+                            : null,
                       ),
                     ),
                   );
@@ -1777,14 +1804,20 @@ class _DrawingToolsMenuState extends State<_DrawingToolsMenu> {
                     padding: const EdgeInsets.only(right: 8),
                     child: GestureDetector(
                       onTap: () {
+                        HapticFeedback.selectionClick();
                         setState(() => _selectedSize = s);
                         _canvas?.setPenSize(s);
+                        ref.read(canvasProvider.notifier).setStrokeWidth(s);
                       },
-                      child: Container(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
+                          color: isSelected
+                              ? context.accent.withValues(alpha: 0.12)
+                              : Colors.transparent,
                           border: Border.all(
                             color: isSelected ? context.accent : context.border,
                             width: isSelected ? 2 : 1,
@@ -1795,7 +1828,9 @@ class _DrawingToolsMenuState extends State<_DrawingToolsMenu> {
                             width: s.clamp(4.0, 16.0),
                             height: s.clamp(4.0, 16.0),
                             decoration: BoxDecoration(
-                              color: context.textPrimary,
+                              color: isSelected
+                                  ? context.accent
+                                  : context.textPrimary,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -1816,11 +1851,12 @@ class _DrawingToolsMenuState extends State<_DrawingToolsMenu> {
                 Expanded(
                   child: TextButton.icon(
                     onPressed: () {
+                      HapticFeedback.lightImpact();
                       Navigator.of(context).pop();
-                      _showImageUrlDialog(context);
+                      _pickAndAddImage(context);
                     },
-                    icon: const Icon(Icons.image, size: 16),
-                    label: const Text('URL'),
+                    icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
+                    label: const Text('Image'),
                     style: TextButton.styleFrom(
                       foregroundColor: context.accent,
                       textStyle: const TextStyle(fontSize: 12),
@@ -1831,8 +1867,9 @@ class _DrawingToolsMenuState extends State<_DrawingToolsMenu> {
                 Expanded(
                   child: TextButton.icon(
                     onPressed: () {
+                      HapticFeedback.lightImpact();
                       Navigator.of(context).pop();
-                      _canvas?.addImageFromClipboard();
+                      _pasteImageFromClipboard(context);
                     },
                     icon: const Icon(Icons.content_paste, size: 16),
                     label: const Text('Paste'),
@@ -1853,7 +1890,9 @@ class _DrawingToolsMenuState extends State<_DrawingToolsMenu> {
                 Expanded(
                   child: TextButton.icon(
                     onPressed: () {
+                      HapticFeedback.mediumImpact();
                       _canvas?.clearMyDrawings();
+                      ref.read(canvasProvider.notifier).clearDrawing();
                       Navigator.of(context).pop();
                     },
                     icon: const Icon(Icons.delete_outline, size: 16),
@@ -1868,6 +1907,7 @@ class _DrawingToolsMenuState extends State<_DrawingToolsMenu> {
                 Expanded(
                   child: TextButton.icon(
                     onPressed: () {
+                      HapticFeedback.lightImpact();
                       widget.onToggleDrawing();
                       Navigator.of(context).pop();
                     },
@@ -1890,43 +1930,114 @@ class _DrawingToolsMenuState extends State<_DrawingToolsMenu> {
     );
   }
 
-  void _showImageUrlDialog(BuildContext ctx) {
-    final controller = TextEditingController();
-    showDialog(
-      context: ctx,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Paste Image URL'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'https://example.com/image.png',
-          ),
-          onSubmitted: (url) {
-            if (url.trim().isNotEmpty) {
-              _canvas?.addImageFromUrl(url.trim());
-            }
-            Navigator.of(dialogCtx).pop();
-          },
+  /// Open the system file picker to select an image and add it to the canvas.
+  Future<void> _pickAndAddImage(BuildContext ctx) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final file = result.files.first;
+      final bytes = file.bytes;
+      if (bytes == null) return;
+
+      final conversationId = widget.conversationId;
+      if (conversationId.isEmpty) {
+        // No conversation — display locally only.
+        _canvas?.addImageFromBytes(bytes);
+        return;
+      }
+
+      final serverUrl = ref.read(serverUrlProvider);
+      final token = ref.read(authProvider).token;
+      if (token == null) return;
+
+      final ext = file.extension?.toLowerCase() ?? 'png';
+      final mimeType = _mimeForExtension(ext);
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$serverUrl/api/media/upload'),
+      );
+      request.headers['Authorization'] = 'Bearer $token';
+      request.fields['conversation_id'] = conversationId;
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: file.name,
+          contentType: MediaType.parse(mimeType),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              final url = controller.text.trim();
-              if (url.isNotEmpty) {
-                _canvas?.addImageFromUrl(url);
-              }
-              Navigator.of(dialogCtx).pop();
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
+      );
+
+      final response = await request.send();
+      final body = await response.stream.bytesToString();
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(body) as Map<String, dynamic>;
+        final relUrl = data['url'] as String? ?? '';
+        final absUrl = relUrl.startsWith('http') ? relUrl : '$serverUrl$relUrl';
+        _addImageByUrl(absUrl);
+      } else {
+        // Upload failed — display locally via bytes only.
+        _canvas?.addImageFromBytes(bytes);
+        if (ctx.mounted) {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            const SnackBar(content: Text('Image upload failed; shown locally only')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[DrawingMenu] pickImage error: $e');
+    }
+  }
+
+  /// Read a URL from the clipboard and add it as a canvas image.
+  Future<void> _pasteImageFromClipboard(BuildContext ctx) async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim() ?? '';
+      if (text.startsWith('http://') || text.startsWith('https://')) {
+        _addImageByUrl(text);
+        return;
+      }
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          const SnackBar(content: Text('Clipboard does not contain an image URL')),
+        );
+      }
+    } catch (e) {
+      debugPrint('[DrawingMenu] pasteClipboard error: $e');
+    }
+  }
+
+  void _addImageByUrl(String url) {
+    final rng = math.Random();
+    _canvas?.addImageFromUrl(url);
+    final img = CanvasImage(
+      id: newCanvasId(),
+      url: url,
+      x: 0.2 + rng.nextDouble() * 0.3,
+      y: 0.2 + rng.nextDouble() * 0.3,
+      width: 0.25,
+      height: 0.25,
     );
+    ref.read(canvasProvider.notifier).addImage(img);
+  }
+
+  static String _mimeForExtension(String ext) {
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      default:
+        return 'image/png';
+    }
   }
 
   Widget _toolChip(
@@ -1939,8 +2050,12 @@ class _DrawingToolsMenuState extends State<_DrawingToolsMenu> {
     return Expanded(
       child: GestureDetector(
         onTap: () {
+          HapticFeedback.selectionClick();
           setState(() => _selectedTool = tool);
           _canvas?.setTool(tool);
+          ref.read(canvasProvider.notifier).setTool(
+            tool == DrawingTool.eraser ? CanvasTool.eraser : CanvasTool.pen,
+          );
         },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -2048,7 +2163,10 @@ class _ImmersiveModeButton extends StatelessWidget {
           ? 'Switch to classic layout'
           : 'Switch to immersive view',
       child: GestureDetector(
-        onTap: onTap,
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap();
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
@@ -2185,7 +2303,10 @@ class _GlassParticipantDrawerState extends State<_GlassParticipantDrawer> {
         : _GlassParticipantDrawer.collapsedHeight;
 
     return GestureDetector(
-      onTap: () => setState(() => _expanded = !_expanded),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _expanded = !_expanded);
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 240),
         curve: Curves.easeOutCubic,
