@@ -274,8 +274,13 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-      - name: Select Xcode 26
-        run: sudo xcode-select -s /Applications/Xcode_26.app/Contents/Developer
+      - name: Select latest Xcode
+        run: |
+          # Find the highest-versioned Xcode on the runner
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          echo "Selected Xcode: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
       - name: Install CocoaPods
         run: gem install cocoapods
       - name: Set up code signing
