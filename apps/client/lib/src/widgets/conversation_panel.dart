@@ -547,15 +547,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           const SizedBox(width: 6),
           _buildConnectionDot(context, wsConnected),
           const Spacer(),
-          _buildNewChatButton(context, pendingCount),
-          IconButton(
-            icon: const Icon(Icons.group_add_outlined, size: 18),
-            color: context.textSecondary,
-            tooltip: 'New Group',
-            onPressed: widget.onNewGroup,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
+          _buildNewActionMenu(context, pendingCount),
           if (widget.onGlobalSearch != null)
             IconButton(
               icon: const Icon(Icons.search_outlined, size: 18),
@@ -625,36 +617,76 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
-  Widget _buildNewChatButton(BuildContext context, int pendingCount) {
+  Widget _buildNewActionMenu(BuildContext context, int pendingCount) {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        IconButton(
-          icon: const Icon(Icons.person_add_outlined, size: 18),
-          color: context.textSecondary,
-          tooltip: 'New Chat',
-          onPressed: widget.onNewChat,
+        PopupMenuButton<String>(
+          icon: Icon(Icons.add, size: 20, color: context.textSecondary),
+          tooltip: 'New',
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          offset: const Offset(0, 40),
+          onSelected: (value) {
+            switch (value) {
+              case 'chat':
+                widget.onNewChat?.call();
+              case 'group':
+                widget.onNewGroup?.call();
+              case 'discover':
+                widget.onDiscover?.call();
+            }
+          },
+          itemBuilder: (context) => [
+            const PopupMenuItem(
+              value: 'chat',
+              child: ListTile(
+                leading: Icon(Icons.person_add_outlined, size: 18),
+                title: Text('New Chat'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'group',
+              child: ListTile(
+                leading: Icon(Icons.group_add_outlined, size: 18),
+                title: Text('New Group'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'discover',
+              child: ListTile(
+                leading: Icon(Icons.explore_outlined, size: 18),
+                title: Text('Discover Groups'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
         ),
         if (pendingCount > 0)
           Positioned(
             top: -2,
             right: -2,
-            child: Container(
-              width: 16,
-              height: 16,
-              decoration: const BoxDecoration(
-                color: EchoTheme.danger,
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(
-                  pendingCount > 9 ? '9+' : '$pendingCount',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
+            child: IgnorePointer(
+              child: Container(
+                width: 16,
+                height: 16,
+                decoration: const BoxDecoration(
+                  color: EchoTheme.danger,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    pendingCount > 9 ? '9+' : '$pendingCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),

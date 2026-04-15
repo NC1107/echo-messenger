@@ -966,13 +966,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.chat_bubble_outline_rounded,
+              Icons.forum_rounded,
               size: 56,
               color: context.textMuted.withValues(alpha: 0.4),
             ),
             const SizedBox(height: 20),
             Text(
-              'Select a conversation',
+              'No conversation selected',
               style: TextStyle(
                 color: context.textPrimary,
                 fontSize: 18,
@@ -981,7 +981,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             ),
             const SizedBox(height: 8),
             Text(
-              'Pick someone from the left to start chatting',
+              'Choose a conversation from the sidebar or start a new one',
               style: TextStyle(color: context.textMuted, fontSize: 14),
             ),
           ],

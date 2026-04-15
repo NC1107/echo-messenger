@@ -19,31 +19,54 @@ void main() {
       expect(find.text('Echo'), findsOneWidget);
     });
 
-    testWidgets('renders action icons in header', (tester) async {
+    testWidgets('renders action menu in header', (tester) async {
       bool newChatCalled = false;
       bool newGroupCalled = false;
+      bool discoverCalled = false;
 
       await tester.pumpApp(
         ConversationPanel(
           onConversationTap: (_) {},
           onNewChat: () => newChatCalled = true,
           onNewGroup: () => newGroupCalled = true,
-          onDiscover: () {},
+          onDiscover: () => discoverCalled = true,
         ),
         overrides: standardOverrides(),
       );
       await tester.pump();
 
-      // Verify action icons exist (discover moved to Groups tab)
-      expect(find.byIcon(Icons.person_add_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.group_add_outlined), findsOneWidget);
+      // Verify the "+" action menu exists
+      expect(find.byIcon(Icons.add), findsOneWidget);
 
-      // Tap each and verify callback
-      await tester.tap(find.byIcon(Icons.person_add_outlined));
+      // Open the popup menu
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pumpAndSettle();
+
+      // Verify menu items are shown with labels
+      expect(find.text('New Chat'), findsOneWidget);
+      expect(find.text('New Group'), findsOneWidget);
+      expect(find.text('Discover Groups'), findsOneWidget);
+
+      // Tap New Chat and verify callback
+      await tester.tap(find.text('New Chat'));
+      await tester.pumpAndSettle();
       expect(newChatCalled, isTrue);
 
-      await tester.tap(find.byIcon(Icons.group_add_outlined));
+      // Re-open menu for next test
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('New Group'));
+      await tester.pumpAndSettle();
       expect(newGroupCalled, isTrue);
+
+      // Re-open menu for discover
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Discover Groups'));
+      await tester.pumpAndSettle();
+      expect(discoverCalled, isTrue);
     });
 
     testWidgets('renders conversation list items', (tester) async {
