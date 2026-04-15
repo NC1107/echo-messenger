@@ -1301,21 +1301,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               style: TextStyle(color: context.textMuted, fontSize: 14),
             ),
             const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: _openContacts,
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('New Conversation'),
-              style: FilledButton.styleFrom(
-                backgroundColor: context.accent,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FilledButton.icon(
+                  onPressed: _openContacts,
+                  icon: const Icon(Icons.person_add_outlined, size: 18),
+                  label: const Text('Add Contact'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: context.accent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                 ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: _openDiscoverGroups,
+                  icon: const Icon(Icons.explore_outlined, size: 18),
+                  label: const Text('Browse Groups'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ],
         ),

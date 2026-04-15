@@ -217,12 +217,12 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
             decoration: BoxDecoration(
               color: isSelected
                   ? context.accent.withValues(alpha: 0.15)
-                  : context.surface.withValues(alpha: 0.6),
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: isSelected
                     ? context.accent.withValues(alpha: 0.4)
-                    : context.border,
+                    : context.border.withValues(alpha: 0.5),
               ),
             ),
             child: Row(
@@ -231,15 +231,15 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                 Icon(
                   Icons.tag,
                   size: 14,
-                  color: isSelected ? context.accent : context.textSecondary,
+                  color: isSelected ? context.accent : context.textMuted,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   channel.name,
                   style: TextStyle(
-                    color: isSelected ? context.accent : context.textPrimary,
+                    color: isSelected ? context.accent : context.textSecondary,
                     fontSize: 12,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
               ],
@@ -305,12 +305,12 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
             decoration: BoxDecoration(
               color: isActive
                   ? context.accent.withValues(alpha: 0.15)
-                  : context.surface.withValues(alpha: 0.6),
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: isActive
                     ? context.accent.withValues(alpha: 0.4)
-                    : context.border,
+                    : context.border.withValues(alpha: 0.5),
               ),
             ),
             child: Tooltip(
@@ -323,15 +323,15 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                   Icon(
                     Icons.volume_up_outlined,
                     size: 14,
-                    color: isActive ? context.accent : context.textSecondary,
+                    color: isActive ? context.accent : context.textMuted,
                   ),
                   const SizedBox(width: 4),
                   Text(
                     channel.name,
                     style: TextStyle(
-                      color: isActive ? context.accent : context.textPrimary,
+                      color: isActive ? context.accent : context.textSecondary,
                       fontSize: 12,
-                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                     ),
                   ),
                   if (participantCount > 0) ...[

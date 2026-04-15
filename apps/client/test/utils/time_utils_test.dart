@@ -94,14 +94,20 @@ void main() {
     });
 
     test('formats afternoon hour correctly', () {
-      // 15:05 UTC — result depends on local offset, check format only
-      final ts = DateTime.utc(2026, 6, 15, 15, 5).toIso8601String();
+      // Use a timestamp from yesterday to guarantee absolute format
+      final ts = DateTime.now()
+          .subtract(const Duration(hours: 20))
+          .toUtc()
+          .toIso8601String();
       final result = formatMessageTimestamp(ts);
       expect(result, matches(RegExp(r'^\d{1,2}:\d{2} (AM|PM)$')));
     });
 
     test('formats morning hour correctly', () {
-      final ts = DateTime.utc(2026, 6, 15, 8, 30).toIso8601String();
+      final ts = DateTime.now()
+          .subtract(const Duration(hours: 14))
+          .toUtc()
+          .toIso8601String();
       final result = formatMessageTimestamp(ts);
       expect(result, matches(RegExp(r'^\d{1,2}:\d{2} (AM|PM)$')));
     });
@@ -115,6 +121,34 @@ void main() {
       expect(parts.length, 2);
       final minutePart = parts[1].split(' ')[0];
       expect(minutePart.length, 2);
+    });
+
+    test('returns "just now" for timestamps less than 60 seconds ago', () {
+      final ts = DateTime.now()
+          .subtract(const Duration(seconds: 30))
+          .toUtc()
+          .toIso8601String();
+      expect(formatMessageTimestamp(ts), 'just now');
+    });
+
+    test(
+      'returns relative minutes for timestamps less than 60 minutes ago',
+      () {
+        final ts = DateTime.now()
+            .subtract(const Duration(minutes: 5))
+            .toUtc()
+            .toIso8601String();
+        expect(formatMessageTimestamp(ts), '5m ago');
+      },
+    );
+
+    test('returns absolute format for timestamps more than 60 minutes ago', () {
+      final ts = DateTime.now()
+          .subtract(const Duration(hours: 2))
+          .toUtc()
+          .toIso8601String();
+      final result = formatMessageTimestamp(ts);
+      expect(result, matches(RegExp(r'^\d{1,2}:\d{2} (AM|PM)$')));
     });
   });
 }

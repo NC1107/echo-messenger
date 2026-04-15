@@ -28,10 +28,19 @@ String formatConversationTimestamp(String? timestamp) {
 
 /// Format a timestamp string for display on individual messages.
 ///
-/// Shows time in 12-hour format with AM/PM (e.g. "2:05 PM").
+/// Shows relative time for recent messages ("just now", "5m ago") and
+/// falls back to 12-hour format with AM/PM for older messages.
 String formatMessageTimestamp(String timestamp) {
   try {
     final dt = DateTime.parse(timestamp).toLocal();
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+
+    if (!diff.isNegative && diff.inSeconds < 60) return 'just now';
+    if (!diff.isNegative && diff.inMinutes < 60) {
+      return '${diff.inMinutes}m ago';
+    }
+
     final hour = dt.hour;
     final minute = dt.minute.toString().padLeft(2, '0');
     final ampm = hour >= 12 ? 'PM' : 'AM';

@@ -286,6 +286,8 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             room: room,
             voiceState: voiceLk,
             localAvatarUrl: _buildAvatarUrl(),
+            onVideoDoubleTap: (track, mirror) =>
+                _openFullscreen(context, track, mirror),
           ),
           // Local screen-share preview (floating, tap to focus)
           if (screenShare.isScreenSharing)
@@ -1477,15 +1479,42 @@ class _FloatingDock extends ConsumerWidget {
                     await lkNotifier.setScreenShareEnabled(false);
                     ssNotifier.setLiveKitScreenShareActive(false);
                   } else {
-                    final ok = await lkNotifier.setScreenShareEnabled(true);
-                    if (ok) {
-                      ssNotifier.setLiveKitScreenShareActive(true);
+                    if (lk.lkPlatformIsDesktop()) {
+                      try {
+                        final source = await showDialog<DesktopCapturerSource>(
+                          context: context,
+                          builder: (_) => lk.ScreenSelectDialog(),
+                        );
+                        if (source == null) return;
+                        final track =
+                            await lk.LocalVideoTrack.createScreenShareTrack(
+                              lk.ScreenShareCaptureOptions(
+                                sourceId: source.id,
+                                maxFrameRate: 15.0,
+                              ),
+                            );
+                        final room = lkNotifier.room;
+                        if (room != null) {
+                          await room.localParticipant?.publishVideoTrack(track);
+                          ssNotifier.setLiveKitScreenShareActive(true);
+                        }
+                      } catch (e) {
+                        debugPrint(
+                          '[VoiceLounge] Desktop screen share failed: $e',
+                        );
+                      }
+                    } else {
+                      final ok = await lkNotifier.setScreenShareEnabled(true);
+                      if (ok) {
+                        ssNotifier.setLiveKitScreenShareActive(true);
+                      }
                     }
                   }
                 },
               ),
             _buildDrawToolItem(context, ref),
             _dockDivider(context),
+            _buildSettingsMenu(context, ref),
             _buildDockItem(
               context,
               icon: spotlightMode ? Icons.grid_view : Icons.people,
@@ -1519,6 +1548,136 @@ class _FloatingDock extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsMenu(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<String>(
+      tooltip: 'Settings',
+      offset: const Offset(0, -200),
+      position: PopupMenuPosition.over,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: context.border),
+      ),
+      color: context.surface.withValues(alpha: 0.95),
+      onSelected: (value) async {
+        if (value.startsWith('cam:')) {
+          final deviceId = value.substring(4);
+          final currentId = ref.read(voiceSettingsProvider).cameraDeviceId;
+          if (deviceId != currentId) {
+            await ref
+                .read(voiceSettingsProvider.notifier)
+                .setCameraDevice(deviceId);
+            await ref.read(livekitVoiceProvider.notifier).switchCamera();
+          }
+        }
+      },
+      itemBuilder: (ctx) {
+        return [
+          PopupMenuItem<String>(
+            enabled: false,
+            padding: EdgeInsets.zero,
+            child: FutureBuilder<List<MediaDeviceInfo>>(
+              future: navigator.mediaDevices.enumerateDevices(),
+              builder: (context, snapshot) {
+                final currentCamId = ref
+                    .read(voiceSettingsProvider)
+                    .cameraDeviceId;
+                final devices = snapshot.data ?? [];
+                final cameras = devices
+                    .where((d) => d.kind == 'videoinput')
+                    .toList();
+
+                if (cameras.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      'No cameras found',
+                      style: TextStyle(color: context.textMuted, fontSize: 13),
+                    ),
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: Text(
+                        'Camera',
+                        style: TextStyle(
+                          color: context.textMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                    ...cameras.map((cam) {
+                      final label = cam.label.isNotEmpty
+                          ? cam.label
+                          : cam.deviceId;
+                      final isCurrent = cam.deviceId == currentCamId;
+                      return InkWell(
+                        onTap: () {
+                          Navigator.pop(ctx, 'cam:${cam.deviceId}');
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isCurrent
+                                    ? Icons.radio_button_checked
+                                    : Icons.radio_button_unchecked,
+                                size: 16,
+                                color: isCurrent
+                                    ? context.accent
+                                    : context.textMuted,
+                              ),
+                              const SizedBox(width: 10),
+                              Flexible(
+                                child: Text(
+                                  label,
+                                  style: TextStyle(
+                                    color: context.textPrimary,
+                                    fontSize: 13,
+                                    fontWeight: isCurrent
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 4),
+                  ],
+                );
+              },
+            ),
+          ),
+        ];
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: 44,
+        height: 44,
+        decoration: const BoxDecoration(
+          color: Colors.transparent,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(Icons.more_vert, size: 20, color: context.textSecondary),
       ),
     );
   }
@@ -1626,7 +1785,7 @@ class _DrawingDockItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return PopupMenuButton<void>(
       tooltip: isDrawing ? 'Drawing tools' : 'Draw',
-      offset: const Offset(0, -260),
+      offset: const Offset(0, -340),
       position: PopupMenuPosition.over,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),

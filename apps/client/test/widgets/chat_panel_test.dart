@@ -128,12 +128,12 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Select a conversation'), findsOneWidget);
+      expect(find.text('No conversation selected'), findsOneWidget);
       expect(
-        find.text('Pick someone from the left to start chatting'),
+        find.text('Choose a conversation from the sidebar or start a new one'),
         findsOneWidget,
       );
-      expect(find.byIcon(Icons.chat_bubble_outline_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.forum_rounded), findsOneWidget);
     });
 
     testWidgets('shows peer name in DM conversation header area', (
@@ -258,8 +258,8 @@ void main() {
       );
       await tester.pump();
 
-      // The "Select a conversation" placeholder should NOT be shown
-      expect(find.text('Select a conversation'), findsNothing);
+      // The "No conversation selected" placeholder should NOT be shown
+      expect(find.text('No conversation selected'), findsNothing);
     });
   });
 }

@@ -53,7 +53,7 @@ class MembersPanel extends ConsumerWidget {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Members (${members.length})',
+                '${members.length} ${members.length == 1 ? 'member' : 'members'}',
                 style: TextStyle(
                   color: context.textPrimary,
                   fontSize: 14,

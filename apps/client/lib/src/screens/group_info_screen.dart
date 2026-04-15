@@ -951,7 +951,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         child: Row(
           children: [
             Text(
-              'Members',
+              '${conv.members.length} ${conv.members.length == 1 ? 'member' : 'members'}',
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                 color: Theme.of(context).colorScheme.primary,
               ),

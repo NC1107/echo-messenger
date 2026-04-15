@@ -55,11 +55,13 @@ pub async fn find_or_create_dm_conversation(
          JOIN conversation_members cm2 ON cm1.conversation_id = cm2.conversation_id \
          JOIN conversations c ON c.id = cm1.conversation_id \
          WHERE cm1.user_id = $1 AND cm2.user_id = $2 \
+           AND cm1.is_removed = false AND cm2.is_removed = false \
            AND c.kind = 'direct' \
            AND NOT EXISTS ( \
                SELECT 1 FROM conversation_members cm3 \
                WHERE cm3.conversation_id = cm1.conversation_id \
                  AND cm3.user_id != $1 AND cm3.user_id != $2 \
+                 AND cm3.is_removed = false \
            ) \
          LIMIT 1",
     )
@@ -174,6 +176,7 @@ pub async fn get_undelivered(
          LEFT JOIN messages rm ON rm.id = m.reply_to_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
+                  AND cm.is_removed = false \
          WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
          ORDER BY m.created_at ASC \
          LIMIT 200",
@@ -315,7 +318,7 @@ pub async fn search_messages_global(
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id \
-              AND cm.user_id = $1 \
+              AND cm.user_id = $1 AND cm.is_removed = false \
          WHERE m.deleted_at IS NULL \
            AND to_tsvector('english', m.content) @@ plainto_tsquery('english', $2) \
          ORDER BY m.created_at DESC \
@@ -363,7 +366,7 @@ pub async fn set_mute_status(
 ) -> Result<bool, sqlx::Error> {
     let result = sqlx::query(
         "UPDATE conversation_members SET is_muted = $1 \
-         WHERE conversation_id = $2 AND user_id = $3",
+         WHERE conversation_id = $2 AND user_id = $3 AND is_removed = false",
     )
     .bind(is_muted)
     .bind(conversation_id)

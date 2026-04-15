@@ -150,18 +150,28 @@ pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(body): Json<AuthRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user = db::users::find_by_username(&state.pool, &body.username)
-        .await?
-        .ok_or_else(|| AppError::unauthorized("Invalid username or password"))?;
+    // Pre-computed Argon2id hash of a random string. Used when the requested
+    // user does not exist so that the response latency is indistinguishable
+    // from a wrong-password attempt (prevents username enumeration via timing).
+    const DUMMY_HASH: &str =
+        "$argon2id$v=19$m=19456,t=2,p=1$bm9uZXhpc3RlbnQ$K8rV0jCqyunHbLbpGt5TtA";
+
+    let maybe_user = db::users::find_by_username(&state.pool, &body.username).await?;
+
+    let hash = match &maybe_user {
+        Some(u) => u.password_hash.clone(),
+        None => DUMMY_HASH.to_string(),
+    };
 
     let pw = body.password.clone();
-    let hash = user.password_hash.clone();
     let valid = tokio::task::spawn_blocking(move || password::verify_password(&pw, &hash))
         .await
         .map_err(|_| AppError::internal("Password verification failed"))??;
-    if !valid {
-        return Err(AppError::unauthorized("Invalid username or password"));
-    }
+
+    let user = match maybe_user {
+        Some(u) if valid => u,
+        _ => return Err(AppError::unauthorized("Invalid username or password")),
+    };
 
     let access_token = jwt::create_token(user.id, &state.jwt_secret)?;
     let (refresh_token, _family_id) = issue_refresh_token(&state.pool, user.id).await?;
