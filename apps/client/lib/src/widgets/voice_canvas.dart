@@ -427,7 +427,7 @@ class _CanvasPainter extends CustomPainter {
       _paintStroke(c, size, stroke);
     }
 
-    if (canvas.activePoints.length >= 2) {
+    if (canvas.activePoints.isNotEmpty) {
       final tool = canvas.selectedTool;
       final isEraser = tool == CanvasTool.eraser;
       final activeStroke = CanvasStroke(
@@ -444,7 +444,7 @@ class _CanvasPainter extends CustomPainter {
   }
 
   void _paintStroke(Canvas c, Size size, CanvasStroke stroke) {
-    if (stroke.points.length < 2) return;
+    if (stroke.points.isEmpty) return;
 
     final paint = Paint()
       ..strokeCap = StrokeCap.round
@@ -462,15 +462,26 @@ class _CanvasPainter extends CustomPainter {
         ..color = _parseColor(stroke.color);
     }
 
-    final path = Path();
     final first = stroke.points.first;
+
+    // Single-point tap: draw a dot.
+    if (stroke.points.length == 1) {
+      c.drawCircle(
+        Offset(first.x * size.width, first.y * size.height),
+        stroke.width / 2,
+        paint..style = PaintingStyle.fill,
+      );
+      return;
+    }
+
+    final path = Path();
     path.moveTo(first.x * size.width, first.y * size.height);
     for (int i = 1; i < stroke.points.length; i++) {
       final p = stroke.points[i];
       path.lineTo(p.x * size.width, p.y * size.height);
     }
 
-    c.drawPath(path, paint);
+    c.drawPath(path, paint..style = PaintingStyle.stroke);
   }
 
   static Color _parseColor(String hex) {
