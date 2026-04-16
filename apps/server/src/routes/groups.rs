@@ -303,14 +303,13 @@ pub async fn add_member(
         return Err(AppError::conflict("User is already a member"));
     }
 
-    db::groups::add_member(&state.pool, group_id, body.user_id)
+    let added = db::groups::add_member(&state.pool, group_id, body.user_id)
         .await
-        .map_err(|e| match e {
-            sqlx::Error::Database(ref db_err) if db_err.code().as_deref() == Some("23505") => {
-                AppError::conflict("User is already a member")
-            }
-            _ => AppError::internal("Failed to add member"),
-        })?;
+        .map_err(|_| AppError::internal("Failed to add member"))?;
+
+    if !added {
+        return Err(AppError::conflict("User is already a member"));
+    }
 
     Ok(Json(serde_json::json!({ "status": "added" })))
 }

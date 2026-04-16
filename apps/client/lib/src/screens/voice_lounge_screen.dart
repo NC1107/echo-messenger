@@ -1,12 +1,10 @@
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -49,13 +47,6 @@ class VoiceLoungeScreen extends ConsumerStatefulWidget {
         defaultTargetPlatform == TargetPlatform.macOS;
   }
 
-  /// Whether the current platform supports camera switching (front/back).
-  static bool get _supportsCameraFlip {
-    if (kIsWeb) return false;
-    return defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS;
-  }
-
   @override
   ConsumerState<VoiceLoungeScreen> createState() => _VoiceLoungeScreenState();
 }
@@ -71,10 +62,11 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// Global key for the drawing canvas to access its state.
   final _drawingCanvasKey = GlobalKey<LoungeDrawingCanvasState>();
 
-  /// When true and any screen share is active, the immersive 3-layer AR view
-  /// is shown instead of the classic spotlight layout.
-  /// The user can toggle back with the focus button in either view.
-  bool _immersiveMode = true;
+  /// Anchor for the non-modal drawing tools panel.
+  final LayerLink _drawingToolsLayerLink = LayerLink();
+
+  /// Whether the drawing tools panel is visible.
+  bool _showDrawingTools = false;
 
   /// When true, force the spotlight/participant grid instead of the canvas.
   bool _spotlightMode = false;
@@ -164,6 +156,41 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     );
   }
 
+  List<Widget> _buildRemoteShareWindows(lk.Room room) {
+    final windows = <Widget>[];
+    var idx = 0;
+    for (final p in room.remoteParticipants.values) {
+      for (final pub in p.videoTrackPublications) {
+        if (pub.track != null &&
+            pub.track is lk.VideoTrack &&
+            pub.source == lk.TrackSource.screenShareVideo) {
+          final track = pub.track! as lk.VideoTrack;
+          final sid = p.sid.toString();
+          final name = participantDisplayName(p);
+          windows.add(
+            _DraggableScreenShareWindow(
+              key: ValueKey('remote-share-$sid'),
+              initialRight: 16.0 + idx * 30,
+              initialTop: 16.0 + idx * 30,
+              label: "$name's screen",
+              isLocal: false,
+              child: GestureDetector(
+                onDoubleTap: () =>
+                    setState(() => _focusedTileKey = 'screenshare-$sid'),
+                child: lk.VideoTrackRenderer(
+                  track,
+                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                ),
+              ),
+            ),
+          );
+          idx++;
+        }
+      }
+    }
+    return windows;
+  }
+
   /// Small overlay badge used instead of a full header in landscape mode.
   Widget _buildHeaderBadge(
     BuildContext context,
@@ -227,25 +254,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     }
 
     final hasRemoteShare = _hasActiveScreenShare(room);
-    final hasAnyShare = hasRemoteShare || screenShare.isScreenSharing;
-
-    if (hasAnyShare) {
-      if (_immersiveMode) {
-        return _buildImmersiveLayout(
-          room: room,
-          voiceLk: voiceLk,
-          screenShare: screenShare,
-        );
-      }
-      if (hasRemoteShare) {
-        return _buildSpotlightLayout(
-          room: room!,
-          voiceLk: voiceLk,
-          screenShare: screenShare,
-          memberAvatars: memberAvatars,
-        );
-      }
-    }
 
     // Default: voice-lounge canvas (movable avatars + drawing + images).
     final conversationId = voiceLk.conversationId ?? '';
@@ -289,15 +297,18 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             onVideoDoubleTap: (track, mirror) =>
                 _openFullscreen(context, track, mirror),
           ),
+          // Remote screen shares (floating, draggable, resizable)
+          if (hasRemoteShare && room != null) ..._buildRemoteShareWindows(room),
           // Local screen-share preview (floating, tap to focus)
           if (screenShare.isScreenSharing)
-            Positioned(
-              top: 16,
-              right: 16,
-              width: 180,
-              height: 100,
+            _DraggableScreenShareWindow(
+              key: const ValueKey('local-share'),
+              initialRight: 16,
+              initialTop: 16,
+              label: 'Your screen',
+              isLocal: true,
               child: GestureDetector(
-                onTap: () =>
+                onDoubleTap: () =>
                     setState(() => _focusedTileKey = _kScreenshareLocal),
                 child: _ScreenShareViewer(ref: ref),
               ),
@@ -326,144 +337,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  /// Spotlight layout: auto-triggered when a remote screen share is active.
-  Widget _buildSpotlightLayout({
-    required lk.Room room,
-    required LiveKitVoiceState voiceLk,
-    required ScreenShareState screenShare,
-    required Map<String, String?> memberAvatars,
-  }) {
-    return Stack(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              // Screen share fills all available space
-              Expanded(
-                child: _RemoteScreenShares(
-                  room: room,
-                  spotlight: true,
-                  onTileTap: (sid) =>
-                      setState(() => _focusedTileKey = 'screenshare-$sid'),
-                ),
-              ),
-              // Local screen share viewer (tap to focus)
-              if (screenShare.isScreenSharing) ...[
-                const SizedBox(height: 8),
-                GestureDetector(
-                  onTap: () =>
-                      setState(() => _focusedTileKey = _kScreenshareLocal),
-                  child: SizedBox(
-                    height: 120,
-                    child: _ScreenShareViewer(ref: ref),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 8),
-              // Compact participant strip
-              SizedBox(
-                height: 80,
-                child: _ParticipantGrid(
-                  room: room,
-                  voiceState: voiceLk,
-                  localAvatarUrl: _buildAvatarUrl(),
-                  compact: true,
-                  onTileTap: (key) => setState(() => _focusedTileKey = key),
-                ),
-              ),
-            ],
-          ),
-        ),
-        // Switch to immersive AR view
-        Positioned(
-          top: 8,
-          right: 8,
-          child: _ImmersiveModeButton(
-            immersive: false,
-            onTap: () => setState(() => _immersiveMode = true),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Immersive 3-layer AR-style screen-share view.
-  ///
-  /// Layer 0 (back)  — Parallax vertex-mesh background that shifts subtly
-  ///                    as the cursor / finger moves around the screen.
-  /// Layer 1 (mid)   — Frosted-glass participant drawer anchored at the
-  ///                    bottom; tap the handle to expand / collapse.
-  /// Layer 2 (front) — Zoomable screen-share tiles + profile icon bubbles.
-  ///
-  /// A "Classic layout" toggle in the top-right corner reverts to the
-  /// traditional spotlight view.
-  Widget _buildImmersiveLayout({
-    required lk.Room? room,
-    required LiveKitVoiceState voiceLk,
-    required ScreenShareState screenShare,
-  }) {
-    final avatarUrl = _buildAvatarUrl();
-    return _ParallaxContainer(
-      builder: (context, parallaxOffset) {
-        return Stack(
-          children: [
-            // ── Layer 0: parallax background ────────────────────────────────
-            Positioned.fill(
-              child: Transform.translate(
-                offset: parallaxOffset,
-                child: VertexMeshBackground(
-                  accentColor: context.accent,
-                  backgroundColor: context.mainBg,
-                  vertexCount: 28,
-                ),
-              ),
-            ),
-
-            // ── Layer 2: zoomable screen-share tiles + profile icons ─────────
-            // (rendered before the glass drawer so the drawer sits on top)
-            Positioned(
-              left: 12,
-              right: 12,
-              top: 8,
-              bottom: _GlassParticipantDrawer.collapsedHeight + 8,
-              child: _ZoomableScreenShareGrid(
-                room: room,
-                screenShare: screenShare,
-                voiceLk: voiceLk,
-                localAvatarUrl: avatarUrl,
-                onFocus: (key) => setState(() => _focusedTileKey = key),
-              ),
-            ),
-
-            // ── Layer 1: glass participant drawer ────────────────────────────
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: _GlassParticipantDrawer(
-                room: room,
-                voiceLk: voiceLk,
-                localAvatarUrl: avatarUrl,
-                onTileTap: (key) => setState(() => _focusedTileKey = key),
-              ),
-            ),
-
-            // ── Focus toggle: switch back to classic layout ──────────────────
-            Positioned(
-              top: 8,
-              right: 8,
-              child: _ImmersiveModeButton(
-                immersive: true,
-                onTap: () => setState(() => _immersiveMode = false),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 
@@ -598,7 +471,10 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       channelId: channelId,
       isDrawing: _isDrawing,
       onToggleDrawing: () => setState(() => _isDrawing = !_isDrawing),
-      drawingCanvasKey: _drawingCanvasKey,
+      showDrawingTools: _showDrawingTools,
+      onToggleDrawingTools: () =>
+          setState(() => _showDrawingTools = !_showDrawingTools),
+      drawingToolsLayerLink: _drawingToolsLayerLink,
       spotlightMode: _spotlightMode,
       onToggleSpotlight: () => setState(() => _spotlightMode = !_spotlightMode),
     );
@@ -626,10 +502,35 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                   ),
                   Column(children: [Expanded(child: contentArea)]),
                   Positioned.fill(child: drawingOverlay),
+                  if (_showDrawingTools)
+                    Positioned.fill(
+                      child: CompositedTransformFollower(
+                        link: _drawingToolsLayerLink,
+                        showWhenUnlinked: false,
+                        targetAnchor: Alignment.topCenter,
+                        followerAnchor: Alignment.bottomCenter,
+                        offset: const Offset(0, -10),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: _DrawingToolsPanel(
+                            child: _DrawingToolsMenu(
+                              drawingCanvasKey: _drawingCanvasKey,
+                              onToggleDrawing: () {
+                                setState(() => _isDrawing = !_isDrawing);
+                              },
+                              isDrawing: _isDrawing,
+                              conversationId: conversationId,
+                              onRequestClose: () =>
+                                  setState(() => _showDrawingTools = false),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   Positioned(bottom: 16, left: 0, right: 0, child: dock),
                   Positioned(
                     top: 12,
-                    left: 12,
+                    left: 60,
                     child: _buildHeaderBadge(
                       context,
                       channelName,
@@ -667,6 +568,31 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                   ],
                 ),
                 Positioned.fill(child: drawingOverlay),
+                if (_showDrawingTools)
+                  Positioned.fill(
+                    child: CompositedTransformFollower(
+                      link: _drawingToolsLayerLink,
+                      showWhenUnlinked: false,
+                      targetAnchor: Alignment.topCenter,
+                      followerAnchor: Alignment.bottomCenter,
+                      offset: const Offset(0, -10),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: _DrawingToolsPanel(
+                          child: _DrawingToolsMenu(
+                            drawingCanvasKey: _drawingCanvasKey,
+                            onToggleDrawing: () {
+                              setState(() => _isDrawing = !_isDrawing);
+                            },
+                            isDrawing: _isDrawing,
+                            conversationId: conversationId,
+                            onRequestClose: () =>
+                                setState(() => _showDrawingTools = false),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned(bottom: 16, left: 0, right: 0, child: dock),
               ],
             ),
@@ -1241,120 +1167,6 @@ class _ScreenShareViewer extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Remote screen shares
-// ---------------------------------------------------------------------------
-
-class _RemoteScreenShares extends StatelessWidget {
-  final lk.Room room;
-  final bool spotlight;
-
-  /// Called with the participant SID when the user taps a screen share tile.
-  final void Function(String participantSid)? onTileTap;
-
-  const _RemoteScreenShares({
-    required this.room,
-    this.spotlight = false,
-    this.onTileTap,
-  });
-
-  /// Build a single screen share tile for a participant.
-  Widget _buildScreenShareTile(
-    BuildContext context,
-    lk.RemoteParticipant participant,
-    lk.VideoTrack track,
-  ) {
-    final screenShareName = participantDisplayName(participant);
-    final sid = participant.sid.toString();
-    return GestureDetector(
-      onTap: onTileTap != null ? () => onTileTap!(sid) : null,
-      child: Container(
-        width: double.infinity,
-        constraints: spotlight ? null : const BoxConstraints(maxHeight: 400),
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.border),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          children: [
-            Center(
-              child: AspectRatio(
-                aspectRatio: 16 / 9,
-                child: lk.VideoTrackRenderer(
-                  track,
-                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
-                ),
-              ),
-            ),
-            Positioned(
-              top: 8,
-              left: 12,
-              child: _buildScreenShareBadge(context, screenShareName),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Badge overlay for screen share tile (name + icon).
-  Widget _buildScreenShareBadge(BuildContext context, String name) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: context.accent.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.screen_share, size: 14, color: Colors.white),
-          const SizedBox(width: 6),
-          Text(
-            '$name\'s screen',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (onTileTap != null) ...[
-            const SizedBox(width: 6),
-            const Icon(Icons.touch_app, size: 12, color: Colors.white54),
-          ],
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final tiles = <Widget>[];
-
-    for (final participant in room.remoteParticipants.values) {
-      for (final pub in participant.videoTrackPublications) {
-        if (pub.track != null &&
-            pub.track is lk.VideoTrack &&
-            pub.source == lk.TrackSource.screenShareVideo) {
-          tiles.add(
-            _buildScreenShareTile(
-              context,
-              participant,
-              pub.track! as lk.VideoTrack,
-            ),
-          );
-        }
-      }
-    }
-
-    if (tiles.isEmpty) return const SizedBox.shrink();
-    return Column(children: tiles);
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Floating mac-style dock
 // ---------------------------------------------------------------------------
 
@@ -1366,7 +1178,9 @@ class _FloatingDock extends ConsumerWidget {
   final String channelId;
   final bool isDrawing;
   final VoidCallback onToggleDrawing;
-  final GlobalKey<LoungeDrawingCanvasState> drawingCanvasKey;
+  final bool showDrawingTools;
+  final VoidCallback onToggleDrawingTools;
+  final LayerLink drawingToolsLayerLink;
   final bool spotlightMode;
   final VoidCallback onToggleSpotlight;
 
@@ -1378,7 +1192,9 @@ class _FloatingDock extends ConsumerWidget {
     required this.channelId,
     required this.isDrawing,
     required this.onToggleDrawing,
-    required this.drawingCanvasKey,
+    required this.showDrawingTools,
+    required this.onToggleDrawingTools,
+    required this.drawingToolsLayerLink,
     required this.spotlightMode,
     required this.onToggleSpotlight,
   });
@@ -1403,8 +1219,8 @@ class _FloatingDock extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildDockItem(
-              context,
+            // ── Mic + 3-dot (noise suppression) ──
+            _DockButtonWithSubmenu(
               icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
               tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
               isActive: voiceSettings.selfMuted,
@@ -1419,26 +1235,16 @@ class _FloatingDock extends ConsumerWidget {
                       !nextMuted && !voiceSettings.selfDeafened,
                     );
               },
+              menuBuilder: (ctx) => [
+                PopupMenuItem<void>(
+                  enabled: false,
+                  padding: EdgeInsets.zero,
+                  child: _MicSubmenu(voiceSettings: voiceSettings, ref: ref),
+                ),
+              ],
             ),
-            _buildDockItem(
-              context,
-              icon: voiceSettings.selfDeafened
-                  ? Icons.headset_off
-                  : Icons.headset,
-              tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
-              isActive: voiceSettings.selfDeafened,
-              activeColor: EchoTheme.danger,
-              onPressed: () async {
-                final notifier = ref.read(voiceSettingsProvider.notifier);
-                final nextDeafened = !voiceSettings.selfDeafened;
-                await notifier.setSelfDeafened(nextDeafened);
-                await ref
-                    .read(livekitVoiceProvider.notifier)
-                    .setDeafened(nextDeafened);
-              },
-            ),
-            _buildDockItem(
-              context,
+            // ── Camera + 3-dot (device picker) ──
+            _DockButtonWithSubmenu(
               icon: voiceState.isVideoEnabled
                   ? Icons.videocam
                   : Icons.videocam_off,
@@ -1450,20 +1256,17 @@ class _FloatingDock extends ConsumerWidget {
               onPressed: () async {
                 await ref.read(livekitVoiceProvider.notifier).toggleVideo();
               },
+              menuBuilder: (ctx) => [
+                PopupMenuItem<void>(
+                  enabled: false,
+                  padding: EdgeInsets.zero,
+                  child: _CameraSubmenu(ref: ref),
+                ),
+              ],
             ),
-            if (VoiceLoungeScreen._supportsCameraFlip &&
-                voiceState.isVideoEnabled)
-              _buildDockItem(
-                context,
-                icon: Icons.flip_camera_android,
-                tooltip: 'Flip camera',
-                onPressed: () async {
-                  await ref.read(livekitVoiceProvider.notifier).switchCamera();
-                },
-              ),
+            // ── Screen Share + 3-dot (quality settings) ──
             if (VoiceLoungeScreen._supportsScreenShare)
-              _buildDockItem(
-                context,
+              _DockButtonWithSubmenu(
                 icon: screenShare.isScreenSharing
                     ? Icons.stop_screen_share
                     : Icons.screen_share,
@@ -1511,10 +1314,45 @@ class _FloatingDock extends ConsumerWidget {
                     }
                   }
                 },
+                menuBuilder: (ctx) => [
+                  PopupMenuItem<void>(
+                    enabled: false,
+                    padding: EdgeInsets.zero,
+                    child: const _ScreenShareSubmenu(),
+                  ),
+                ],
               ),
-            _buildDrawToolItem(context, ref),
+            // ── Draw toggle + 3-dot (tools) ──
+            _DockButtonWithSubmenu(
+              icon: Icons.edit,
+              tooltip: isDrawing ? 'Stop drawing' : 'Draw',
+              isActive: isDrawing,
+              activeColor: context.accent,
+              onPressed: onToggleDrawing,
+              onSubmenuTap: onToggleDrawingTools,
+              submenuActive: showDrawingTools,
+              submenuLayerLink: drawingToolsLayerLink,
+            ),
             _dockDivider(context),
-            _buildSettingsMenu(context, ref),
+            // ── Deafen (tap only) ──
+            _buildDockItem(
+              context,
+              icon: voiceSettings.selfDeafened
+                  ? Icons.headset_off
+                  : Icons.headset,
+              tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
+              isActive: voiceSettings.selfDeafened,
+              activeColor: EchoTheme.danger,
+              onPressed: () async {
+                final notifier = ref.read(voiceSettingsProvider.notifier);
+                final nextDeafened = !voiceSettings.selfDeafened;
+                await notifier.setSelfDeafened(nextDeafened);
+                await ref
+                    .read(livekitVoiceProvider.notifier)
+                    .setDeafened(nextDeafened);
+              },
+            ),
+            // ── Canvas/Spotlight toggle ──
             _buildDockItem(
               context,
               icon: spotlightMode ? Icons.grid_view : Icons.people,
@@ -1524,6 +1362,7 @@ class _FloatingDock extends ConsumerWidget {
               onPressed: onToggleSpotlight,
             ),
             _dockDivider(context),
+            // ── Leave ──
             _buildDockItem(
               context,
               icon: Icons.call_end,
@@ -1552,137 +1391,7 @@ class _FloatingDock extends ConsumerWidget {
     );
   }
 
-  Widget _buildSettingsMenu(BuildContext context, WidgetRef ref) {
-    return PopupMenuButton<String>(
-      tooltip: 'Settings',
-      offset: const Offset(0, -200),
-      position: PopupMenuPosition.over,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: context.border),
-      ),
-      color: context.surface.withValues(alpha: 0.95),
-      onSelected: (value) async {
-        if (value.startsWith('cam:')) {
-          final deviceId = value.substring(4);
-          final currentId = ref.read(voiceSettingsProvider).cameraDeviceId;
-          if (deviceId != currentId) {
-            await ref
-                .read(voiceSettingsProvider.notifier)
-                .setCameraDevice(deviceId);
-            await ref.read(livekitVoiceProvider.notifier).switchCamera();
-          }
-        }
-      },
-      itemBuilder: (ctx) {
-        return [
-          PopupMenuItem<String>(
-            enabled: false,
-            padding: EdgeInsets.zero,
-            child: FutureBuilder<List<MediaDeviceInfo>>(
-              future: navigator.mediaDevices.enumerateDevices(),
-              builder: (context, snapshot) {
-                final currentCamId = ref
-                    .read(voiceSettingsProvider)
-                    .cameraDeviceId;
-                final devices = snapshot.data ?? [];
-                final cameras = devices
-                    .where((d) => d.kind == 'videoinput')
-                    .toList();
-
-                if (cameras.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      'No cameras found',
-                      style: TextStyle(color: context.textMuted, fontSize: 13),
-                    ),
-                  );
-                }
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Text(
-                        'Camera',
-                        style: TextStyle(
-                          color: context.textMuted,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ),
-                    ...cameras.map((cam) {
-                      final label = cam.label.isNotEmpty
-                          ? cam.label
-                          : cam.deviceId;
-                      final isCurrent = cam.deviceId == currentCamId;
-                      return InkWell(
-                        onTap: () {
-                          Navigator.pop(ctx, 'cam:${cam.deviceId}');
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                isCurrent
-                                    ? Icons.radio_button_checked
-                                    : Icons.radio_button_unchecked,
-                                size: 16,
-                                color: isCurrent
-                                    ? context.accent
-                                    : context.textMuted,
-                              ),
-                              const SizedBox(width: 10),
-                              Flexible(
-                                child: Text(
-                                  label,
-                                  style: TextStyle(
-                                    color: context.textPrimary,
-                                    fontSize: 13,
-                                    fontWeight: isCurrent
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
-                    const SizedBox(height: 4),
-                  ],
-                );
-              },
-            ),
-          ),
-        ];
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: 44,
-        height: 44,
-        decoration: const BoxDecoration(
-          color: Colors.transparent,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(Icons.more_vert, size: 20, color: context.textSecondary),
-      ),
-    );
-  }
-
-  Widget _dockDivider(BuildContext context) {
+  static Widget _dockDivider(BuildContext context) {
     return Container(
       width: 1,
       height: 24,
@@ -1691,16 +1400,7 @@ class _FloatingDock extends ConsumerWidget {
     );
   }
 
-  Widget _buildDrawToolItem(BuildContext context, WidgetRef ref) {
-    return _DrawingDockItem(
-      isDrawing: isDrawing,
-      onToggleDrawing: onToggleDrawing,
-      drawingCanvasKey: drawingCanvasKey,
-      conversationId: conversationId,
-    );
-  }
-
-  Widget _buildDockItem(
+  static Widget _buildDockItem(
     BuildContext context, {
     required IconData icon,
     required String tooltip,
@@ -1751,21 +1451,526 @@ class _FloatingDock extends ConsumerWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Drawing dock item with popover tools menu
+// Dock button with paired 3-dot submenu
 // ---------------------------------------------------------------------------
 
-class _DrawingDockItem extends StatelessWidget {
-  final bool isDrawing;
-  final VoidCallback onToggleDrawing;
-  final GlobalKey<LoungeDrawingCanvasState> drawingCanvasKey;
-  final String conversationId;
+class _DockButtonWithSubmenu extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final bool isActive;
+  final Color? activeColor;
+  final VoidCallback onPressed;
+  final List<PopupMenuEntry<void>> Function(BuildContext)? menuBuilder;
+  final VoidCallback? onSubmenuTap;
+  final bool submenuActive;
+  final LayerLink? submenuLayerLink;
 
-  const _DrawingDockItem({
-    required this.isDrawing,
-    required this.onToggleDrawing,
-    required this.drawingCanvasKey,
-    required this.conversationId,
+  const _DockButtonWithSubmenu({
+    required this.icon,
+    required this.tooltip,
+    this.isActive = false,
+    this.activeColor,
+    required this.onPressed,
+    this.menuBuilder,
+    this.onSubmenuTap,
+    this.submenuActive = false,
+    this.submenuLayerLink,
   });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color iconColor = isActive
+        ? (activeColor ?? context.accent)
+        : context.textSecondary;
+    final Color bgColor = isActive
+        ? (activeColor ?? context.accent).withValues(alpha: 0.12)
+        : Colors.transparent;
+
+    Widget buildSubmenuTrigger() {
+      final iconColor = submenuActive
+          ? (activeColor ?? context.accent)
+          : context.textMuted;
+      final child = SizedBox(
+        width: 20,
+        height: 44,
+        child: Icon(Icons.more_vert, size: 14, color: iconColor),
+      );
+
+      final trigger = Tooltip(
+        message: '$tooltip options',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              onSubmenuTap?.call();
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: child,
+          ),
+        ),
+      );
+
+      if (submenuLayerLink != null) {
+        return CompositedTransformTarget(
+          link: submenuLayerLink!,
+          child: trigger,
+        );
+      }
+      return trigger;
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Main toggle button
+        Tooltip(
+          message: tooltip,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                onPressed();
+              },
+              borderRadius: BorderRadius.circular(24),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 20, color: iconColor),
+              ),
+            ),
+          ),
+        ),
+        // 3-dot submenu
+        if (onSubmenuTap != null)
+          buildSubmenuTrigger()
+        else
+          PopupMenuButton<void>(
+            tooltip: '$tooltip options',
+            offset: const Offset(0, -8),
+            position: PopupMenuPosition.over,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: context.border),
+            ),
+            color: context.surface.withValues(alpha: 0.95),
+            itemBuilder: menuBuilder!,
+            child: const SizedBox(
+              width: 20,
+              height: 44,
+              child: Icon(Icons.more_vert, size: 14),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Drawing tools non-modal panel
+// ---------------------------------------------------------------------------
+
+class _DrawingToolsPanel extends StatelessWidget {
+  final Widget child;
+
+  const _DrawingToolsPanel({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 220,
+      decoration: BoxDecoration(
+        color: context.surface.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: context.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: child,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mic submenu -- noise suppression, echo cancellation, auto gain
+// ---------------------------------------------------------------------------
+
+class _MicSubmenu extends StatelessWidget {
+  final VoiceSettingsState voiceSettings;
+  final WidgetRef ref;
+
+  const _MicSubmenu({required this.voiceSettings, required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 220,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Text(
+              'Microphone',
+              style: TextStyle(
+                color: context.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          _toggleRow(
+            context,
+            label: 'Noise suppression',
+            value: voiceSettings.noiseSuppression,
+            onChanged: (v) async {
+              await ref
+                  .read(voiceSettingsProvider.notifier)
+                  .setNoiseSuppression(v);
+            },
+          ),
+          _toggleRow(
+            context,
+            label: 'Echo cancellation',
+            value: voiceSettings.echoCancellation,
+            onChanged: (v) async {
+              await ref
+                  .read(voiceSettingsProvider.notifier)
+                  .setEchoCancellation(v);
+            },
+          ),
+          _toggleRow(
+            context,
+            label: 'Auto gain control',
+            value: voiceSettings.autoGainControl,
+            onChanged: (v) async {
+              await ref
+                  .read(voiceSettingsProvider.notifier)
+                  .setAutoGainControl(v);
+            },
+          ),
+          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
+
+  Widget _toggleRow(
+    BuildContext context, {
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(color: context.textPrimary, fontSize: 13),
+              ),
+            ),
+            SizedBox(
+              width: 36,
+              height: 20,
+              child: Switch(
+                value: value,
+                onChanged: onChanged,
+                activeThumbColor: context.accent,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Camera submenu -- device picker
+// ---------------------------------------------------------------------------
+
+class _CameraSubmenu extends StatelessWidget {
+  final WidgetRef ref;
+
+  const _CameraSubmenu({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 240,
+      child: FutureBuilder<List<MediaDeviceInfo>>(
+        future: navigator.mediaDevices.enumerateDevices(),
+        builder: (context, snapshot) {
+          final currentCamId = ref.read(voiceSettingsProvider).cameraDeviceId;
+          final devices = snapshot.data ?? [];
+          final cameras = devices.where((d) => d.kind == 'videoinput').toList();
+
+          if (cameras.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'No cameras found',
+                style: TextStyle(color: context.textMuted, fontSize: 13),
+              ),
+            );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Text(
+                  'Camera',
+                  style: TextStyle(
+                    color: context.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              ...cameras.map((cam) {
+                final label = cam.label.isNotEmpty ? cam.label : cam.deviceId;
+                final isCurrent = cam.deviceId == currentCamId;
+                return InkWell(
+                  onTap: () async {
+                    Navigator.pop(context);
+                    if (cam.deviceId != currentCamId) {
+                      await ref
+                          .read(voiceSettingsProvider.notifier)
+                          .setCameraDevice(cam.deviceId);
+                      await ref
+                          .read(livekitVoiceProvider.notifier)
+                          .switchCamera();
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isCurrent
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_unchecked,
+                          size: 16,
+                          color: isCurrent ? context.accent : context.textMuted,
+                        ),
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              color: context.textPrimary,
+                              fontSize: 13,
+                              fontWeight: isCurrent
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 4),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Screen share submenu -- quality / frame rate
+// ---------------------------------------------------------------------------
+
+class _ScreenShareSubmenu extends ConsumerWidget {
+  const _ScreenShareSubmenu();
+
+  @override
+  Widget build(BuildContext context, WidgetRef localRef) {
+    final ss = localRef.watch(screenShareProvider);
+    final voice = localRef.watch(livekitVoiceProvider);
+    final notifier = localRef.read(livekitVoiceProvider.notifier);
+
+    Future<void> applyPreset({required int bitrate, required int fps}) async {
+      await notifier.setAutoQuality(false);
+      await notifier.setVideoParams(bitrate: bitrate, fps: fps);
+    }
+
+    return SizedBox(
+      width: 260,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Text(
+              'Screen Share',
+              style: TextStyle(
+                color: context.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              ss.isScreenSharing ? 'Currently sharing' : 'Not sharing',
+              style: TextStyle(
+                color: ss.isScreenSharing
+                    ? EchoTheme.online
+                    : context.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          SwitchListTile.adaptive(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            title: Text(
+              'Auto quality',
+              style: TextStyle(color: context.textPrimary, fontSize: 13),
+            ),
+            value: voice.autoQuality,
+            onChanged: (v) async {
+              await notifier.setAutoQuality(v);
+            },
+          ),
+          const Divider(height: 1),
+          _qualityRow(
+            context,
+            label: 'Low (600 kbps, 15 fps)',
+            selected:
+                !voice.autoQuality &&
+                voice.videoBitrate == 600000 &&
+                voice.videoFps == 15,
+            enabled: !voice.autoQuality,
+            onTap: () => applyPreset(bitrate: 600000, fps: 15),
+          ),
+          _qualityRow(
+            context,
+            label: 'Balanced (1200 kbps, 24 fps)',
+            selected:
+                !voice.autoQuality &&
+                voice.videoBitrate == 1200000 &&
+                voice.videoFps == 24,
+            enabled: !voice.autoQuality,
+            onTap: () => applyPreset(bitrate: 1200000, fps: 24),
+          ),
+          _qualityRow(
+            context,
+            label: 'High (2000 kbps, 30 fps)',
+            selected:
+                !voice.autoQuality &&
+                voice.videoBitrate == 2000000 &&
+                voice.videoFps == 30,
+            enabled: !voice.autoQuality,
+            onTap: () => applyPreset(bitrate: 2000000, fps: 30),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _qualityRow(
+    BuildContext context, {
+    required String label,
+    required bool selected,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        child: Row(
+          children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              size: 16,
+              color: enabled
+                  ? (selected ? context.accent : context.textMuted)
+                  : context.textMuted.withValues(alpha: 0.5),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: enabled
+                      ? context.textPrimary
+                      : context.textMuted.withValues(alpha: 0.7),
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Popup content for the drawing tools menu.
+class _DrawingToolsMenu extends ConsumerStatefulWidget {
+  final GlobalKey<LoungeDrawingCanvasState> drawingCanvasKey;
+  final VoidCallback onToggleDrawing;
+  final bool isDrawing;
+  final String conversationId;
+  final VoidCallback? onRequestClose;
+
+  const _DrawingToolsMenu({
+    required this.drawingCanvasKey,
+    required this.onToggleDrawing,
+    required this.isDrawing,
+    required this.conversationId,
+    this.onRequestClose,
+  });
+
+  @override
+  ConsumerState<_DrawingToolsMenu> createState() => _DrawingToolsMenuState();
+}
+
+class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
+  DrawingTool _selectedTool = DrawingTool.pen;
+  Color _selectedColor = Colors.white;
+  double _selectedSize = 4.0;
+
+  static final _rng = math.Random();
 
   static const _penColors = [
     Colors.white,
@@ -1780,77 +1985,6 @@ class _DrawingDockItem extends StatelessWidget {
   ];
 
   static const _penSizes = [2.0, 4.0, 6.0, 10.0, 16.0];
-
-  @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<void>(
-      tooltip: isDrawing ? 'Drawing tools' : 'Draw',
-      offset: const Offset(0, -340),
-      position: PopupMenuPosition.over,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: context.border),
-      ),
-      color: context.surface.withValues(alpha: 0.95),
-      onOpened: () {
-        if (!isDrawing) onToggleDrawing();
-      },
-      itemBuilder: (ctx) => [
-        PopupMenuItem<void>(
-          enabled: false,
-          padding: EdgeInsets.zero,
-          child: _DrawingToolsMenu(
-            drawingCanvasKey: drawingCanvasKey,
-            onToggleDrawing: onToggleDrawing,
-            isDrawing: isDrawing,
-            conversationId: conversationId,
-          ),
-        ),
-      ],
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: isDrawing
-              ? context.accent.withValues(alpha: 0.12)
-              : Colors.transparent,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          Icons.edit,
-          size: 20,
-          color: isDrawing ? context.accent : context.textSecondary,
-        ),
-      ),
-    );
-  }
-}
-
-/// Popup content for the drawing tools menu.
-class _DrawingToolsMenu extends ConsumerStatefulWidget {
-  final GlobalKey<LoungeDrawingCanvasState> drawingCanvasKey;
-  final VoidCallback onToggleDrawing;
-  final bool isDrawing;
-  final String conversationId;
-
-  const _DrawingToolsMenu({
-    required this.drawingCanvasKey,
-    required this.onToggleDrawing,
-    required this.isDrawing,
-    required this.conversationId,
-  });
-
-  @override
-  ConsumerState<_DrawingToolsMenu> createState() => _DrawingToolsMenuState();
-}
-
-class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
-  DrawingTool _selectedTool = DrawingTool.pen;
-  Color _selectedColor = Colors.white;
-  double _selectedSize = 4.0;
-
-  static final _rng = math.Random();
 
   LoungeDrawingCanvasState? get _canvas => widget.drawingCanvasKey.currentState;
 
@@ -1908,7 +2042,7 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
               child: Wrap(
                 spacing: 6,
                 runSpacing: 6,
-                children: _DrawingDockItem._penColors.map((c) {
+                children: _penColors.map((c) {
                   final isSelected = _selectedColor == c;
                   return GestureDetector(
                     onTap: () {
@@ -1959,7 +2093,7 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Row(
-                children: _DrawingDockItem._penSizes.map((s) {
+                children: _penSizes.map((s) {
                   final isSelected = _selectedSize == s;
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
@@ -2013,9 +2147,8 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
                   child: TextButton.icon(
                     onPressed: () async {
                       HapticFeedback.lightImpact();
-                      final nav = Navigator.of(context);
                       await _pickAndAddImage(context);
-                      if (mounted) nav.pop();
+                      if (mounted) widget.onRequestClose?.call();
                     },
                     icon: const Icon(
                       Icons.add_photo_alternate_outlined,
@@ -2033,9 +2166,8 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
                   child: TextButton.icon(
                     onPressed: () async {
                       HapticFeedback.lightImpact();
-                      final nav = Navigator.of(context);
                       await _pasteImageFromClipboard(context);
-                      if (mounted) nav.pop();
+                      if (mounted) widget.onRequestClose?.call();
                     },
                     icon: const Icon(Icons.content_paste, size: 16),
                     label: const Text('Paste'),
@@ -2059,7 +2191,7 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
                       HapticFeedback.mediumImpact();
                       _canvas?.clearMyDrawings();
                       ref.read(canvasProvider.notifier).clearDrawing();
-                      Navigator.of(context).pop();
+                      widget.onRequestClose?.call();
                     },
                     icon: const Icon(Icons.delete_outline, size: 16),
                     label: const Text('Clear'),
@@ -2075,7 +2207,7 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
                     onPressed: () {
                       HapticFeedback.lightImpact();
                       widget.onToggleDrawing();
-                      Navigator.of(context).pop();
+                      widget.onRequestClose?.call();
                     },
                     icon: Icon(
                       widget.isDrawing ? Icons.edit_off : Icons.edit,
@@ -2288,6 +2420,167 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
 }
 
 // ---------------------------------------------------------------------------
+// Draggable + resizable screen share window on the canvas
+// ---------------------------------------------------------------------------
+
+class _DraggableScreenShareWindow extends StatefulWidget {
+  final double initialTop;
+  final double initialRight;
+  final String label;
+  final bool isLocal;
+  final Widget child;
+
+  const _DraggableScreenShareWindow({
+    super.key,
+    this.initialTop = 16,
+    this.initialRight = 16,
+    required this.label,
+    this.isLocal = false,
+    required this.child,
+  });
+
+  @override
+  State<_DraggableScreenShareWindow> createState() =>
+      _DraggableScreenShareWindowState();
+}
+
+class _DraggableScreenShareWindowState
+    extends State<_DraggableScreenShareWindow> {
+  late double _top;
+  late double _left;
+  double _width = 320;
+  double _height = 180;
+  bool _positioned = false;
+
+  static const double _minWidth = 160;
+  static const double _minHeight = 90;
+
+  @override
+  void initState() {
+    super.initState();
+    _top = widget.initialTop;
+    _left = 0; // Will be calculated in build
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (ctx, constraints) {
+        if (!_positioned) {
+          _left = constraints.maxWidth - widget.initialRight - _width;
+          _positioned = true;
+        }
+        // Clamp position within bounds
+        _left = _left.clamp(0, constraints.maxWidth - 60);
+        _top = _top.clamp(0, constraints.maxHeight - 40);
+
+        return Positioned(
+          left: _left,
+          top: _top,
+          child: GestureDetector(
+            onPanUpdate: (d) {
+              setState(() {
+                _left += d.delta.dx;
+                _top += d.delta.dy;
+              });
+            },
+            child: Container(
+              width: _width,
+              height: _height,
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: (widget.isLocal ? EchoTheme.danger : EchoTheme.accent)
+                      .withValues(alpha: 0.6),
+                  width: 1.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                children: [
+                  Positioned.fill(child: widget.child),
+                  // Label badge
+                  Positioned(
+                    top: 6,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.screen_share,
+                            size: 11,
+                            color: Colors.white70,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            widget.label,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Resize handle (bottom-right corner)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: GestureDetector(
+                      onPanUpdate: (d) {
+                        setState(() {
+                          _width = (_width + d.delta.dx).clamp(
+                            _minWidth,
+                            constraints.maxWidth - _left,
+                          );
+                          _height = (_height + d.delta.dy).clamp(
+                            _minHeight,
+                            constraints.maxHeight - _top,
+                          );
+                        });
+                      },
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        alignment: Alignment.bottomRight,
+                        child: Icon(
+                          Icons.open_in_full,
+                          size: 12,
+                          color: Colors.white.withValues(alpha: 0.4),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Fullscreen video overlay
 // ---------------------------------------------------------------------------
 
@@ -2331,530 +2624,6 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
           mirrorMode: widget.mirror
               ? lk.VideoViewMirrorMode.mirror
               : lk.VideoViewMirrorMode.off,
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Immersive mode toggle button
-// ---------------------------------------------------------------------------
-
-/// Small chip that toggles between the immersive AR view and the classic
-/// spotlight layout.  [immersive] reflects the *current* state so the label
-/// indicates what the button will *switch to*.
-class _ImmersiveModeButton extends StatelessWidget {
-  final bool immersive;
-  final VoidCallback onTap;
-
-  const _ImmersiveModeButton({required this.immersive, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: immersive
-          ? 'Switch to classic layout'
-          : 'Switch to immersive view',
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          onTap();
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.15),
-              width: 0.5,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                immersive ? Icons.grid_view : Icons.view_in_ar_outlined,
-                size: 14,
-                color: Colors.white,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                immersive ? 'Classic' : 'Immersive',
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Parallax container — smooth cursor / touch-driven background offset
-// ---------------------------------------------------------------------------
-
-/// Wraps its [builder] in a pointer-tracking listener.  The [builder]
-/// receives a smoothly-animated [Offset] that represents how far the
-/// background should be shifted (max ±[_maxShift] pixels) in response to
-/// cursor position or touch movement.
-class _ParallaxContainer extends StatefulWidget {
-  final Widget Function(BuildContext context, Offset parallaxOffset) builder;
-
-  const _ParallaxContainer({required this.builder});
-
-  @override
-  State<_ParallaxContainer> createState() => _ParallaxContainerState();
-}
-
-class _ParallaxContainerState extends State<_ParallaxContainer>
-    with SingleTickerProviderStateMixin {
-  static const double _maxShift = 20.0;
-  static const double _lerp = 0.07; // per tick, ~60 fps → ~4 fps effective lag
-
-  Offset _target = Offset.zero;
-  Offset _current = Offset.zero;
-  late Ticker _ticker;
-
-  @override
-  void initState() {
-    super.initState();
-    _ticker = createTicker(_onTick)..start();
-  }
-
-  @override
-  void dispose() {
-    _ticker.dispose();
-    super.dispose();
-  }
-
-  void _onTick(Duration _) {
-    final next = Offset.lerp(_current, _target, _lerp)!;
-    if ((next - _current).distance > 0.05) {
-      setState(() => _current = next);
-    }
-  }
-
-  void _onPointerEvent(PointerEvent e, Size size) {
-    if (size.width <= 0 || size.height <= 0) return;
-    final nx = (e.localPosition.dx / size.width) - 0.5; // [-0.5, 0.5]
-    final ny = (e.localPosition.dy / size.height) - 0.5;
-    _target = Offset(nx * _maxShift, ny * _maxShift);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final size = Size(constraints.maxWidth, constraints.maxHeight);
-        return Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerHover: (e) => _onPointerEvent(e, size),
-          onPointerMove: (e) => _onPointerEvent(e, size),
-          child: widget.builder(context, _current),
-        );
-      },
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Glass participant drawer — Layer 1
-// ---------------------------------------------------------------------------
-
-/// Frosted-glass bottom drawer showing the participant strip.
-/// Tap the drag-handle chip to toggle between collapsed and expanded.
-class _GlassParticipantDrawer extends StatefulWidget {
-  static const double collapsedHeight = 90.0;
-  static const double expandedHeight = 190.0;
-
-  final lk.Room? room;
-  final LiveKitVoiceState voiceLk;
-  final String? localAvatarUrl;
-  final void Function(String key) onTileTap;
-
-  const _GlassParticipantDrawer({
-    required this.room,
-    required this.voiceLk,
-    required this.localAvatarUrl,
-    required this.onTileTap,
-  });
-
-  @override
-  State<_GlassParticipantDrawer> createState() =>
-      _GlassParticipantDrawerState();
-}
-
-class _GlassParticipantDrawerState extends State<_GlassParticipantDrawer> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final h = _expanded
-        ? _GlassParticipantDrawer.expandedHeight
-        : _GlassParticipantDrawer.collapsedHeight;
-
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        setState(() => _expanded = !_expanded);
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 240),
-        curve: Curves.easeOutCubic,
-        height: h,
-        child: ClipRect(
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.07),
-                border: Border(
-                  top: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.18),
-                    width: 0.5,
-                  ),
-                ),
-              ),
-              child: Column(
-                children: [
-                  // ── drag handle ──────────────────────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 7),
-                    child: Center(
-                      child: Container(
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                  ),
-                  // ── compact participant strip (always visible) ────────────
-                  SizedBox(
-                    height: 62,
-                    child: _ParticipantGrid(
-                      room: widget.room,
-                      voiceState: widget.voiceLk,
-                      localAvatarUrl: widget.localAvatarUrl,
-                      compact: true,
-                      onTileTap: widget.onTileTap,
-                    ),
-                  ),
-                  // ── expanded: second row shows full tiles ─────────────────
-                  if (_expanded)
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(
-                          left: 8,
-                          right: 8,
-                          top: 8,
-                          bottom: 4,
-                        ),
-                        child: _ParticipantGrid(
-                          room: widget.room,
-                          voiceState: widget.voiceLk,
-                          localAvatarUrl: widget.localAvatarUrl,
-                          compact: false,
-                          onTileTap: widget.onTileTap,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Zoomable screen-share grid — Layer 2
-// ---------------------------------------------------------------------------
-
-/// Arranges all active screen-share tiles (remote + local) into a grid or
-/// single-tile layout.  Each tile supports pinch-to-zoom and double-tap zoom.
-class _ZoomableScreenShareGrid extends StatelessWidget {
-  final lk.Room? room;
-  final ScreenShareState screenShare;
-  final LiveKitVoiceState voiceLk;
-  final String? localAvatarUrl;
-  final void Function(String key) onFocus;
-
-  const _ZoomableScreenShareGrid({
-    required this.room,
-    required this.screenShare,
-    required this.voiceLk,
-    required this.localAvatarUrl,
-    required this.onFocus,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final tiles = <Widget>[];
-
-    // Remote screen shares
-    if (room != null) {
-      for (final p in room!.remoteParticipants.values) {
-        for (final pub in p.videoTrackPublications) {
-          if (pub.track != null &&
-              pub.track is lk.VideoTrack &&
-              pub.source == lk.TrackSource.screenShareVideo) {
-            final track = pub.track! as lk.VideoTrack;
-            final sid = p.sid.toString();
-            tiles.add(
-              _ZoomableScreenShareTile(
-                key: ValueKey('ztile-$sid'),
-                track: track,
-                label: "${participantDisplayName(p)}'s screen",
-                isLocal: false,
-                onFocus: () => onFocus('screenshare-$sid'),
-              ),
-            );
-          }
-        }
-      }
-    }
-
-    // Local screen share
-    if (screenShare.isScreenSharing && room != null) {
-      final pub = room!.localParticipant?.videoTrackPublications
-          .where(
-            (p) =>
-                p.track != null && p.source == lk.TrackSource.screenShareVideo,
-          )
-          .firstOrNull;
-      final localTrack = pub?.track as lk.VideoTrack?;
-      if (localTrack != null) {
-        tiles.add(
-          _ZoomableScreenShareTile(
-            key: const ValueKey('ztile-local'),
-            track: localTrack,
-            label: 'Your screen',
-            isLocal: true,
-            onFocus: () => onFocus(_kScreenshareLocal),
-          ),
-        );
-      }
-    }
-
-    if (tiles.isEmpty) {
-      return const Center(
-        child: Icon(
-          Icons.screen_share_outlined,
-          size: 48,
-          color: Colors.white24,
-        ),
-      );
-    }
-
-    if (tiles.length == 1) return tiles.first;
-
-    return GridView.count(
-      crossAxisCount: 2,
-      crossAxisSpacing: 10,
-      mainAxisSpacing: 10,
-      physics: const NeverScrollableScrollPhysics(),
-      children: tiles,
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Zoomable screen-share tile
-// ---------------------------------------------------------------------------
-
-/// A single screen-share tile that supports:
-///  • Pinch-to-zoom via [InteractiveViewer]
-///  • Double-tap to zoom 2× at the tapped position (double-tap again to reset)
-///  • A "Focus" button to enter the full-screen focused view
-///  • A zoom-reset button when zoomed in
-class _ZoomableScreenShareTile extends StatefulWidget {
-  final lk.VideoTrack track;
-  final String label;
-  final bool isLocal;
-  final VoidCallback onFocus;
-
-  const _ZoomableScreenShareTile({
-    super.key,
-    required this.track,
-    required this.label,
-    required this.isLocal,
-    required this.onFocus,
-  });
-
-  @override
-  State<_ZoomableScreenShareTile> createState() =>
-      _ZoomableScreenShareTileState();
-}
-
-class _ZoomableScreenShareTileState extends State<_ZoomableScreenShareTile> {
-  final TransformationController _transformCtrl = TransformationController();
-  bool _zoomed = false;
-
-  @override
-  void dispose() {
-    _transformCtrl.dispose();
-    super.dispose();
-  }
-
-  void _onDoubleTapDown(TapDownDetails details) {
-    if (_zoomed) {
-      _transformCtrl.value = Matrix4.identity();
-      setState(() => _zoomed = false);
-      return;
-    }
-    const scale = 2.5;
-    final pos = details.localPosition;
-    final m = Matrix4.identity()
-      ..translateByDouble(
-        -pos.dx * (scale - 1),
-        -pos.dy * (scale - 1),
-        0.0,
-        1.0,
-      )
-      ..scaleByDouble(scale, scale, 1.0, 1.0);
-    _transformCtrl.value = m;
-    setState(() => _zoomed = true);
-  }
-
-  void _resetZoom() {
-    _transformCtrl.value = Matrix4.identity();
-    setState(() => _zoomed = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.55),
-            blurRadius: 28,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // ── Video + interactive zoom ─────────────────────────────────────
-          GestureDetector(
-            onDoubleTapDown: _onDoubleTapDown,
-            child: InteractiveViewer(
-              transformationController: _transformCtrl,
-              boundaryMargin: const EdgeInsets.all(double.infinity),
-              minScale: 0.8,
-              maxScale: 5.0,
-              child: lk.VideoTrackRenderer(
-                widget.track,
-                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
-              ),
-            ),
-          ),
-
-          // ── Name badge ───────────────────────────────────────────────────
-          Positioned(
-            top: 10,
-            left: 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: (widget.isLocal ? EchoTheme.danger : EchoTheme.accent)
-                    .withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.screen_share, size: 13, color: Colors.white),
-                  const SizedBox(width: 5),
-                  Text(
-                    widget.label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // ── Overlay action buttons ───────────────────────────────────────
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_zoomed)
-                  _overlayIconBtn(
-                    icon: Icons.zoom_out,
-                    tooltip: 'Reset zoom',
-                    onTap: _resetZoom,
-                  ),
-                if (_zoomed) const SizedBox(width: 4),
-                _overlayIconBtn(
-                  icon: Icons.open_in_full,
-                  tooltip: 'Focus',
-                  onTap: widget.onFocus,
-                ),
-              ],
-            ),
-          ),
-
-          // ── Zoom hint (shown when not zoomed) ────────────────────────────
-          if (!_zoomed)
-            Positioned(
-              bottom: 10,
-              right: 10,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'Double-tap to zoom',
-                  style: TextStyle(color: Colors.white54, fontSize: 10),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _overlayIconBtn({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback onTap,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.15),
-              width: 0.5,
-            ),
-          ),
-          child: Icon(icon, size: 16, color: Colors.white),
         ),
       ),
     );

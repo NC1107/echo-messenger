@@ -228,17 +228,22 @@ pub async fn get_member_role(
 }
 
 /// Add a member to a group.
-pub async fn add_member(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'member') \
-         ON CONFLICT (conversation_id, user_id) DO UPDATE \
-           SET is_removed = false, removed_at = NULL, role = 'member'",
-    )
-    .bind(group_id)
-    .bind(user_id)
-    .execute(pool)
-    .await?;
-    Ok(())
+///
+/// Returns `true` when a row was inserted or a soft-removed membership was
+/// reactivated, and `false` when the user is already an active member.
+pub async fn add_member(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+                "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'member') \
+                 ON CONFLICT (conversation_id, user_id) DO UPDATE \
+                     SET is_removed = false, removed_at = NULL, role = 'member' \
+                 WHERE conversation_members.is_removed = true",
+        )
+        .bind(group_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+
+    Ok(result.rows_affected() > 0)
 }
 
 /// Remove a member from a group.
