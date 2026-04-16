@@ -15,3 +15,7 @@ class ClipboardImageData {
 Future<ClipboardImageData?> readImageFromClipboard() async {
   return null;
 }
+
+Future<bool> writeImageToClipboard(Uint8List bytes, String mimeType) async {
+  return false;
+}

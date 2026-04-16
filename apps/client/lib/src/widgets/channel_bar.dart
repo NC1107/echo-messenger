@@ -18,6 +18,7 @@ class ChannelBar extends ConsumerStatefulWidget {
   final bool hideVoiceDock;
   final ValueChanged<String?> onTextChannelChanged;
   final ValueChanged<String?> onVoiceChannelChanged;
+  final VoidCallback? onShowLounge;
 
   const ChannelBar({
     super.key,
@@ -27,6 +28,7 @@ class ChannelBar extends ConsumerStatefulWidget {
     this.hideVoiceDock = false,
     required this.onTextChannelChanged,
     required this.onVoiceChannelChanged,
+    this.onShowLounge,
   });
 
   @override
@@ -264,7 +266,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     VoiceSettingsState voiceSettings,
   ) async {
     if (isActive) {
-      await _leaveVoiceChannel(channel.id);
+      widget.onShowLounge?.call();
       return;
     }
     final shouldJoin = await _confirmVoiceJoin(channel.name);

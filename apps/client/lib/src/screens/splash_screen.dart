@@ -12,10 +12,12 @@ import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/push_token_service.dart';
+import '../services/update_service.dart' as update_svc;
 import '../router/app_router.dart' show pendingDeepLink;
 import '../screens/onboarding_wizard.dart' show kOnboardingCompletedKey;
 import '../theme/echo_theme.dart';
 import '../widgets/echo_logo_icon.dart';
+import '../version.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -28,6 +30,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _fadeController;
   late final Animation<double> _fadeAnimation;
+  bool _showUpdatePrompt = false;
+  bool _loggedIn = false;
 
   @override
   void initState() {
@@ -77,6 +81,18 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     }
 
     if (!mounted) return;
+
+    // On desktop, if an update is available, show the update prompt
+    // instead of navigating immediately.
+    final updateState = ref.read(updateProvider);
+    if (!kIsWeb && update_svc.canAutoUpdate && updateState.updateAvailable) {
+      setState(() {
+        _showUpdatePrompt = true;
+        _loggedIn = loggedIn;
+      });
+      return;
+    }
+
     _navigateAfterInit(loggedIn);
   }
 
@@ -106,7 +122,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
     // Check for updates on non-web platforms
     if (!kIsWeb) {
-      ref.read(updateProvider.notifier).check();
+      await ref.read(updateProvider.notifier).check();
     }
 
     return loggedIn;
@@ -183,8 +199,135 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     }
   }
 
+  Widget _buildUpdatePrompt(BuildContext context) {
+    final update = ref.watch(updateProvider);
+    final isDownloading = update.status == UpdateStatus.downloading;
+    final isInstalling = update.status == UpdateStatus.installing;
+    final isReady = update.status == UpdateStatus.readyToInstall;
+    final isError = update.status == UpdateStatus.error;
+    final isBusy = isDownloading || isInstalling;
+
+    return Scaffold(
+      backgroundColor: context.mainBg,
+      body: Center(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Container(
+            width: 360,
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: context.border),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const EchoLogoIcon(size: 48),
+                const SizedBox(height: 16),
+                Text(
+                  'Update Available',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: context.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'v$appVersion  ->  v${update.latestVersion}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: context.textMuted,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                const SizedBox(height: 24),
+                if (isDownloading) ...[
+                  LinearProgressIndicator(
+                    value: update.downloadProgress,
+                    color: context.accent,
+                    backgroundColor: context.border,
+                    minHeight: 4,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Downloading... ${(update.downloadProgress * 100).toInt()}%',
+                    style: TextStyle(fontSize: 12, color: context.textMuted),
+                  ),
+                ],
+                if (isInstalling)
+                  Text(
+                    'Installing...',
+                    style: TextStyle(fontSize: 12, color: context.textMuted),
+                  ),
+                if (isError) ...[
+                  Text(
+                    update.errorMessage ?? 'Download failed',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.redAccent,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (isReady) ...[
+                  FilledButton.icon(
+                    onPressed: () =>
+                        ref.read(updateProvider.notifier).applyUpdate(),
+                    icon: const Icon(Icons.restart_alt, size: 16),
+                    label: const Text('Restart to Update'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: context.accent,
+                      minimumSize: const Size(double.infinity, 40),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                if (!isReady && !isInstalling) ...[
+                  if (!isDownloading)
+                    FilledButton(
+                      onPressed: () =>
+                          ref.read(updateProvider.notifier).downloadUpdate(),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: context.accent,
+                        minimumSize: const Size(double.infinity, 40),
+                      ),
+                      child: const Text('Download Update'),
+                    ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: isBusy
+                        ? null
+                        : () => _navigateAfterInit(_loggedIn),
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 40),
+                    ),
+                    child: Text(
+                      'Skip',
+                      style: TextStyle(
+                        color: isBusy
+                            ? context.textMuted.withValues(alpha: 0.4)
+                            : context.textMuted,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_showUpdatePrompt) {
+      return _buildUpdatePrompt(context);
+    }
+
     return Scaffold(
       backgroundColor: context.mainBg,
       body: Center(

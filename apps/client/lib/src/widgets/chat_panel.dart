@@ -37,6 +37,7 @@ class ChatPanel extends ConsumerStatefulWidget {
   final VoidCallback? onMembersToggle;
   final VoidCallback? onGroupInfo;
   final VoidCallback? onBack;
+  final VoidCallback? onShowLounge;
   final bool hideVoiceDock;
 
   const ChatPanel({
@@ -45,6 +46,7 @@ class ChatPanel extends ConsumerStatefulWidget {
     this.onMembersToggle,
     this.onGroupInfo,
     this.onBack,
+    this.onShowLounge,
     this.hideVoiceDock = false,
   });
 
@@ -1437,6 +1439,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                       setState(() => _activeVoiceChannelId = channelId);
                     }
                   },
+                  onShowLounge: widget.onShowLounge,
                 ),
 
               if (_showSearch)

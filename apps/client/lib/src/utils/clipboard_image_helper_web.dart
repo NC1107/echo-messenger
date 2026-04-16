@@ -52,3 +52,19 @@ Future<ClipboardImageData?> readImageFromClipboard() async {
   }
   return null;
 }
+
+Future<bool> writeImageToClipboard(Uint8List bytes, String mimeType) async {
+  try {
+    final clipboard = web.window.navigator.clipboard;
+    final blob = web.Blob(
+      [bytes.toJS].toJS,
+      web.BlobPropertyBag(type: mimeType),
+    );
+    final item = web.ClipboardItem({mimeType: blob}.jsify() as JSObject);
+    await clipboard.write([item].toJS).toDart;
+    return true;
+  } catch (_) {
+    // Clipboard API not available or permission denied
+  }
+  return false;
+}
