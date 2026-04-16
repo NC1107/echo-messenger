@@ -445,6 +445,58 @@ pub struct UserSearchQuery {
     pub q: String,
 }
 
+#[derive(Serialize)]
+pub struct UsernameInviteResolutionResponse {
+    pub user_id: Uuid,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub bio: Option<String>,
+    pub status_message: Option<String>,
+    pub relationship: String,
+}
+
+/// GET /api/users/resolve/:username
+///
+/// Resolve a username for DM invite links, enforcing searchable privacy for
+/// users with no existing relationship.
+pub async fn resolve_username_invite(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(username): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let candidate = username.trim();
+    if candidate.is_empty() {
+        return Err(AppError::not_found("User not found"));
+    }
+
+    let resolved = db::users::resolve_username_invite(&state.pool, auth.user_id, candidate)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in resolve_username_invite: {e:?}");
+            AppError::internal("Database error")
+        })?
+        .ok_or_else(|| AppError::not_found("User not found"))?;
+
+    let discoverable = resolved.searchable
+        || resolved.relationship == "contact"
+        || resolved.relationship == "pending"
+        || resolved.relationship == "blocked";
+    if !discoverable {
+        return Err(AppError::not_found("User not found"));
+    }
+
+    Ok(Json(UsernameInviteResolutionResponse {
+        user_id: resolved.id,
+        username: resolved.username,
+        display_name: resolved.display_name,
+        avatar_url: resolved.avatar_url,
+        bio: resolved.bio,
+        status_message: resolved.status_message,
+        relationship: resolved.relationship,
+    }))
+}
+
 /// Maximum avatar size: 2 MB.
 const MAX_AVATAR_SIZE: usize = 2 * 1024 * 1024;
 

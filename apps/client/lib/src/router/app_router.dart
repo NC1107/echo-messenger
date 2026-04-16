@@ -14,6 +14,7 @@ import '../screens/onboarding_wizard.dart';
 import '../screens/register_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/splash_screen.dart';
+import '../screens/username_invite_screen.dart';
 import '../screens/user_profile_screen.dart';
 
 const _routeHome = '/home';
@@ -59,7 +60,8 @@ String? _authRedirect(Ref ref, GoRouterState state) {
   final isOnboarding = state.matchedLocation == '/onboarding';
   final isJoinRoute =
       state.matchedLocation.startsWith('/join') ||
-      state.matchedLocation.startsWith('/invite');
+      state.matchedLocation.startsWith('/invite') ||
+      state.matchedLocation.startsWith('/u/');
 
   if (isSplash) return null;
 
@@ -91,7 +93,7 @@ Widget _buildProfilePage(String userId) {
   );
 }
 
-/// Profile-related routes (/profile/:userId, /u/:userId, etc.).
+/// Profile-related routes plus username invite deep links.
 List<GoRoute> _profileRoutes() {
   return [
     GoRoute(
@@ -102,10 +104,17 @@ List<GoRoute> _profileRoutes() {
       ),
     ),
     GoRoute(
-      path: '/u/:userId',
+      path: '/u-id/:userId',
       pageBuilder: (context, state) => _fadePage(
         key: state.pageKey,
         child: _buildProfilePage(state.pathParameters['userId']!),
+      ),
+    ),
+    GoRoute(
+      path: '/u/:username',
+      pageBuilder: (context, state) => _fadePage(
+        key: state.pageKey,
+        child: UsernameInviteScreen(username: state.pathParameters['username']!),
       ),
     ),
     GoRoute(
