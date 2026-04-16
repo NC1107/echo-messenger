@@ -379,7 +379,7 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
                         child: OutlinedButton.icon(
                           onPressed: _copyInviteMessage,
                           icon: const Icon(Icons.share, size: 16),
-                          label: const Text('Copy Share Text'),
+                          label: const Text('Copy Invite Message'),
                         ),
                       ),
                     ],
