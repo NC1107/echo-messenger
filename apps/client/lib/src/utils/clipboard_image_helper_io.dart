@@ -1,6 +1,6 @@
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 const _mimeImagePng = 'image/png';
@@ -154,4 +154,74 @@ Future<ClipboardImageData?> _readMacOSClipboard() async {
     mimeType: _mimeImagePng,
     fileName: 'clipboard_image.png',
   );
+}
+
+/// Write image bytes to the system clipboard.
+Future<bool> writeImageToClipboard(Uint8List bytes, String mimeType) async {
+  try {
+    if (Platform.isLinux) {
+      return _writeLinuxClipboard(bytes, mimeType);
+    } else if (Platform.isWindows) {
+      return _writeWindowsClipboard(bytes);
+    } else if (Platform.isMacOS) {
+      return _writeMacOSClipboard(bytes);
+    }
+  } catch (e) {
+    debugPrint('[Clipboard] writeImageToClipboard failed: $e');
+  }
+  return false;
+}
+
+Future<bool> _writeLinuxClipboard(Uint8List bytes, String mimeType) async {
+  final process = await Process.start('xclip', [
+    '-selection',
+    'clipboard',
+    '-t',
+    mimeType,
+  ]);
+  process.stdin.add(bytes);
+  await process.stdin.close();
+  final exitCode = await process.exitCode;
+  return exitCode == 0;
+}
+
+Future<bool> _writeWindowsClipboard(Uint8List bytes) async {
+  final tempDir = await getTemporaryDirectory();
+  final tempPath = '${tempDir.path}\\clipboard_write.png';
+  await File(tempPath).writeAsBytes(bytes);
+
+  final result = await Process.run('powershell', [
+    '-NoProfile',
+    '-Command',
+    '''
+    Add-Type -AssemblyName System.Windows.Forms
+    \$img = [System.Drawing.Image]::FromFile("$tempPath")
+    [System.Windows.Forms.Clipboard]::SetImage(\$img)
+    \$img.Dispose()
+    Write-Output "ok"
+    ''',
+  ]);
+
+  try {
+    await File(tempPath).delete();
+  } catch (_) {}
+
+  return result.exitCode == 0 && (result.stdout as String).contains('ok');
+}
+
+Future<bool> _writeMacOSClipboard(Uint8List bytes) async {
+  final tempDir = await getTemporaryDirectory();
+  final tempPath = '${tempDir.path}/clipboard_write.png';
+  await File(tempPath).writeAsBytes(bytes);
+
+  final result = await Process.run('osascript', [
+    '-e',
+    'set the clipboard to (read (POSIX file "$tempPath") as «class PNGf»)',
+  ]);
+
+  try {
+    await File(tempPath).delete();
+  } catch (_) {}
+
+  return result.exitCode == 0;
 }

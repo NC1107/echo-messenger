@@ -476,7 +476,16 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           setState(() => _showDrawingTools = !_showDrawingTools),
       drawingToolsLayerLink: _drawingToolsLayerLink,
       spotlightMode: _spotlightMode,
-      onToggleSpotlight: () => setState(() => _spotlightMode = !_spotlightMode),
+      onToggleSpotlight: () {
+        setState(() {
+          _spotlightMode = !_spotlightMode;
+          // Disable drawing when entering spotlight mode
+          if (_spotlightMode) {
+            _isDrawing = false;
+            _showDrawingTools = false;
+          }
+        });
+      },
     );
 
     final drawingOverlay = LoungeDrawingCanvas(
@@ -501,35 +510,33 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                     ),
                   ),
                   Column(children: [Expanded(child: contentArea)]),
-                  Positioned.fill(child: drawingOverlay),
+                  if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
                   if (_showDrawingTools)
-                    Positioned.fill(
-                      child: CompositedTransformFollower(
-                        link: _drawingToolsLayerLink,
-                        showWhenUnlinked: false,
-                        targetAnchor: Alignment.topCenter,
-                        followerAnchor: Alignment.bottomCenter,
-                        offset: const Offset(0, -10),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: _DrawingToolsPanel(
-                            child: _DrawingToolsMenu(
-                              drawingCanvasKey: _drawingCanvasKey,
-                              onToggleDrawing: () {
-                                setState(() => _isDrawing = !_isDrawing);
-                              },
-                              isDrawing: _isDrawing,
-                              conversationId: conversationId,
-                              onRequestClose: () =>
-                                  setState(() => _showDrawingTools = false),
-                            ),
+                    CompositedTransformFollower(
+                      link: _drawingToolsLayerLink,
+                      showWhenUnlinked: false,
+                      targetAnchor: Alignment.topCenter,
+                      followerAnchor: Alignment.bottomCenter,
+                      offset: const Offset(0, -10),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: _DrawingToolsPanel(
+                          child: _DrawingToolsMenu(
+                            drawingCanvasKey: _drawingCanvasKey,
+                            onToggleDrawing: () {
+                              setState(() => _isDrawing = !_isDrawing);
+                            },
+                            isDrawing: _isDrawing,
+                            conversationId: conversationId,
+                            onRequestClose: () =>
+                                setState(() => _showDrawingTools = false),
                           ),
                         ),
                       ),
                     ),
                   Positioned(bottom: 16, left: 0, right: 0, child: dock),
                   Positioned(
-                    top: 12,
+                    top: 16,
                     left: 60,
                     child: _buildHeaderBadge(
                       context,
@@ -567,28 +574,26 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                     const SizedBox(height: 80),
                   ],
                 ),
-                Positioned.fill(child: drawingOverlay),
+                if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
                 if (_showDrawingTools)
-                  Positioned.fill(
-                    child: CompositedTransformFollower(
-                      link: _drawingToolsLayerLink,
-                      showWhenUnlinked: false,
-                      targetAnchor: Alignment.topCenter,
-                      followerAnchor: Alignment.bottomCenter,
-                      offset: const Offset(0, -10),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: _DrawingToolsPanel(
-                          child: _DrawingToolsMenu(
-                            drawingCanvasKey: _drawingCanvasKey,
-                            onToggleDrawing: () {
-                              setState(() => _isDrawing = !_isDrawing);
-                            },
-                            isDrawing: _isDrawing,
-                            conversationId: conversationId,
-                            onRequestClose: () =>
-                                setState(() => _showDrawingTools = false),
-                          ),
+                  CompositedTransformFollower(
+                    link: _drawingToolsLayerLink,
+                    showWhenUnlinked: false,
+                    targetAnchor: Alignment.topCenter,
+                    followerAnchor: Alignment.bottomCenter,
+                    offset: const Offset(0, -10),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: _DrawingToolsPanel(
+                        child: _DrawingToolsMenu(
+                          drawingCanvasKey: _drawingCanvasKey,
+                          onToggleDrawing: () {
+                            setState(() => _isDrawing = !_isDrawing);
+                          },
+                          isDrawing: _isDrawing,
+                          conversationId: conversationId,
+                          onRequestClose: () =>
+                              setState(() => _showDrawingTools = false),
                         ),
                       ),
                     ),
@@ -1322,17 +1327,18 @@ class _FloatingDock extends ConsumerWidget {
                   ),
                 ],
               ),
-            // ── Draw toggle + 3-dot (tools) ──
-            _DockButtonWithSubmenu(
-              icon: Icons.edit,
-              tooltip: isDrawing ? 'Stop drawing' : 'Draw',
-              isActive: isDrawing,
-              activeColor: context.accent,
-              onPressed: onToggleDrawing,
-              onSubmenuTap: onToggleDrawingTools,
-              submenuActive: showDrawingTools,
-              submenuLayerLink: drawingToolsLayerLink,
-            ),
+            // ── Draw toggle + 3-dot (tools) ── (hidden in spotlight mode)
+            if (!spotlightMode)
+              _DockButtonWithSubmenu(
+                icon: Icons.edit,
+                tooltip: isDrawing ? 'Stop drawing' : 'Draw',
+                isActive: isDrawing,
+                activeColor: context.accent,
+                onPressed: onToggleDrawing,
+                onSubmenuTap: onToggleDrawingTools,
+                submenuActive: showDrawingTools,
+                submenuLayerLink: drawingToolsLayerLink,
+              ),
             _dockDivider(context),
             // ── Deafen (tap only) ──
             _buildDockItem(
@@ -2488,7 +2494,7 @@ class _DraggableScreenShareWindowState
               width: _width,
               height: _height,
               decoration: BoxDecoration(
-                color: Colors.black,
+                color: Colors.black.withValues(alpha: 0.85),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: (widget.isLocal ? EchoTheme.danger : EchoTheme.accent)

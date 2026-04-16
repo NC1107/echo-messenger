@@ -13,6 +13,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../utils/download_helper.dart';
+import '../utils/clipboard_image_helper.dart' show writeImageToClipboard;
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, avatarColor;
 import 'message/media_content.dart';
@@ -208,6 +209,59 @@ class _MessageItemState extends State<MessageItem> {
     }
   }
 
+  /// Fetch image bytes from the server and copy them to the system clipboard.
+  Future<void> _copyImageToClipboard(String rawUrl) async {
+    final url = _resolveUrl(rawUrl);
+    try {
+      final response = await http.get(Uri.parse(url), headers: _mediaHeaders());
+      if (!mounted) return;
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        ToastService.show(
+          context,
+          'Failed to copy image',
+          type: ToastType.error,
+        );
+        return;
+      }
+
+      final contentType = response.headers['content-type'] ?? 'image/png';
+      final success = await writeImageToClipboard(
+        response.bodyBytes,
+        contentType,
+      );
+      if (!mounted) return;
+
+      if (success) {
+        ToastService.show(context, 'Image copied', type: ToastType.success);
+      } else {
+        // Fallback: copy the URL if image clipboard write not supported
+        Clipboard.setData(ClipboardData(text: url));
+        ToastService.show(
+          context,
+          'Image copy not supported, link copied',
+          type: ToastType.info,
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ToastService.show(context, 'Failed to copy image', type: ToastType.error);
+    }
+  }
+
+  /// Returns true if the media message contains an image (not video/file).
+  bool _isImageMedia(String content, String mediaUrl) {
+    if (content.trimLeft().startsWith('[img:')) return true;
+    if (isImageUrl(mediaUrl)) return true;
+    // API media URLs without extension -- check content-type prefix
+    final lower = mediaUrl.toLowerCase();
+    if (lower.contains('/api/media/') &&
+        !content.startsWith('[video:') &&
+        !content.startsWith('[file:')) {
+      return true;
+    }
+    return false;
+  }
+
   /// Shows a bottom action sheet for mobile users (replaces hover actions).
   void _showMobileActionSheet(
     BuildContext context,
@@ -307,6 +361,7 @@ class _MessageItemState extends State<MessageItem> {
     required bool isMine,
     required String? mediaUrl,
   }) {
+    final isImage = mediaUrl != null && _isImageMedia(msg.content, mediaUrl);
     return [
       if (widget.onReply != null)
         _actionTile(
@@ -314,6 +369,13 @@ class _MessageItemState extends State<MessageItem> {
           icon: Icons.reply_outlined,
           label: 'Reply',
           onTap: () => widget.onReply?.call(msg),
+        ),
+      if (isImage)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.image_outlined,
+          label: 'Copy image',
+          onTap: () => _copyImageToClipboard(mediaUrl),
         ),
       _actionTile(
         sheetContext: sheetContext,
@@ -481,6 +543,7 @@ class _MessageItemState extends State<MessageItem> {
   }
 
   Widget _buildHoverActions(ChatMessage msg, bool isMine, {String? mediaUrl}) {
+    final isImage = mediaUrl != null && _isImageMedia(msg.content, mediaUrl);
     return Container(
       decoration: BoxDecoration(
         color: context.surface.withValues(alpha: 0.95),
@@ -490,9 +553,15 @@ class _MessageItemState extends State<MessageItem> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (isImage)
+            _HoverActionButton(
+              icon: Icons.image_outlined,
+              tooltip: 'Copy image',
+              onPressed: () => _copyImageToClipboard(mediaUrl),
+            ),
           _HoverActionButton(
             icon: Icons.copy_outlined,
-            tooltip: 'Copy',
+            tooltip: mediaUrl != null ? 'Copy link' : 'Copy',
             onPressed: () {
               final copyText = mediaUrl != null
                   ? _resolveUrl(mediaUrl)
@@ -500,7 +569,7 @@ class _MessageItemState extends State<MessageItem> {
               Clipboard.setData(ClipboardData(text: copyText));
               ToastService.show(
                 context,
-                mediaUrl != null ? 'Media URL copied' : 'Copied to clipboard',
+                mediaUrl != null ? 'Link copied' : 'Copied to clipboard',
                 type: ToastType.success,
               );
             },

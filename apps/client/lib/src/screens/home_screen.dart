@@ -763,7 +763,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ..._buildMembersPanel(),
             ],
           ),
-          if (voiceActive) _buildDesktopVoiceDock(animatedSidebarWidth),
+          if (voiceActive && !_showSettings)
+            _buildDesktopVoiceDock(animatedSidebarWidth),
         ],
       ),
     );
@@ -808,6 +809,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ? _toggleMembers
             : null,
         hideVoiceDock: true,
+        onShowLounge: () => setState(() {
+          _showingLounge = true;
+          _userDismissedLounge = false;
+        }),
       );
     }
     return _buildEmptyState();
@@ -932,6 +937,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       rightPanel = ChatPanel(
         conversation: _selectedConversation,
         onGroupInfo: _showGroupInfo,
+        onShowLounge: () => setState(() {
+          _showingLounge = true;
+          _userDismissedLounge = false;
+        }),
       );
     } else {
       rightPanel = _buildEmptyState();
@@ -981,6 +990,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       conversation: _selectedConversation,
       onGroupInfo: _showGroupInfo,
       onBack: () => setState(() => _narrowPanelIndex = 0),
+      onShowLounge: () => setState(() {
+        _showingLounge = true;
+        _userDismissedLounge = false;
+      }),
     );
 
     if (voiceActive && !_showingLounge) {
