@@ -320,6 +320,10 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
 
   List<Widget> _buildImages(CanvasState canvas) {
     final size = _canvasSize();
+    final token = ref.read(authProvider).token;
+    final httpHeaders = token != null
+        ? <String, String>{'Authorization': 'Bearer $token'}
+        : null;
     return canvas.images.map((img) {
       final x = img.x * size.width;
       final y = img.y * size.height;
@@ -333,6 +337,7 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
         height: h,
         child: _CanvasImageWidget(
           image: img,
+          httpHeaders: httpHeaders,
           onMove: (dx, dy) {
             final newX = ((x + dx) / size.width).clamp(0.0, 1.0);
             final newY = ((y + dy) / size.height).clamp(0.0, 1.0);
@@ -708,12 +713,14 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
 
 class _CanvasImageWidget extends StatefulWidget {
   final CanvasImage image;
+  final Map<String, String>? httpHeaders;
   final void Function(double dx, double dy) onMove;
   final VoidCallback onMoveEnd;
   final VoidCallback onRemove;
 
   const _CanvasImageWidget({
     required this.image,
+    this.httpHeaders,
     required this.onMove,
     required this.onMoveEnd,
     required this.onRemove,
@@ -753,6 +760,7 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
                 borderRadius: BorderRadius.circular(4),
                 child: CachedNetworkImage(
                   imageUrl: widget.image.url,
+                  httpHeaders: widget.httpHeaders ?? const {},
                   fit: BoxFit.cover,
                   errorWidget: (_, _, _) => Container(
                     color: Colors.grey[800],
