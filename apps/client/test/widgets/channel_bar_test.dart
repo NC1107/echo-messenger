@@ -186,12 +186,11 @@ void main() {
       expect(activeVoice, 'voice-1');
     });
 
-    testWidgets('tapping active voice channel leaves and clears selection', (
-      tester,
-    ) async {
+    testWidgets('tapping active voice channel shows lounge', (tester) async {
       late _FakeChannelsNotifier fakeChannels;
       late _FakeVoiceRtcNotifier fakeVoiceRtc;
       String? activeVoice;
+      var showLoungeCalls = 0;
 
       await tester.pumpApp(
         StatefulBuilder(
@@ -202,6 +201,7 @@ void main() {
             onVoiceChannelChanged: (channelId) {
               setState(() => activeVoice = channelId);
             },
+            onShowLounge: () => showLoungeCalls++,
           ),
         ),
         overrides: [
@@ -232,13 +232,14 @@ void main() {
       expect(fakeVoiceRtc.joinCalls, 1);
       expect(activeVoice, 'voice-1');
 
-      // Tap active channel again to leave.
+      // Tap active channel again -- should show lounge, not leave.
       await tester.tap(find.text('lounge'));
       await tester.pumpAndSettle();
 
-      expect(fakeChannels.leaveCalls, 1);
-      expect(fakeVoiceRtc.leaveCalls, 1);
-      expect(activeVoice, isNull);
+      expect(showLoungeCalls, 1);
+      expect(fakeChannels.leaveCalls, 0);
+      expect(fakeVoiceRtc.leaveCalls, 0);
+      expect(activeVoice, 'voice-1');
     });
   });
 }
