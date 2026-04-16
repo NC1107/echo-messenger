@@ -205,23 +205,33 @@ class LoungeDrawingCanvasState extends State<LoungeDrawingCanvas> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.isActive) return const SizedBox.shrink();
+    final hasContent =
+        _strokes.isNotEmpty || _currentStroke != null || _images.isNotEmpty;
+
+    // Always render strokes/images; only capture pointer events when active.
+    if (!widget.isActive && !hasContent) return const SizedBox.shrink();
+
+    final painter = RepaintBoundary(
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: _DrawingPainter(
+          strokes: _strokes,
+          currentStroke: _currentStroke,
+          images: _images,
+        ),
+      ),
+    );
+
+    if (!widget.isActive) {
+      return IgnorePointer(child: painter);
+    }
 
     return Listener(
       onPointerDown: _onPointerDown,
       onPointerMove: _onPointerMove,
       onPointerUp: _onPointerUp,
       behavior: HitTestBehavior.translucent,
-      child: RepaintBoundary(
-        child: CustomPaint(
-          size: Size.infinite,
-          painter: _DrawingPainter(
-            strokes: _strokes,
-            currentStroke: _currentStroke,
-            images: _images,
-          ),
-        ),
-      ),
+      child: painter,
     );
   }
 }
