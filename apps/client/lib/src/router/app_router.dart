@@ -114,7 +114,9 @@ List<GoRoute> _profileRoutes() {
       path: '/u/:username',
       pageBuilder: (context, state) => _fadePage(
         key: state.pageKey,
-        child: UsernameInviteScreen(username: state.pathParameters['username']!),
+        child: UsernameInviteScreen(
+          username: state.pathParameters['username']!,
+        ),
       ),
     ),
     GoRoute(

@@ -55,7 +55,8 @@ class UsernameInviteScreen extends ConsumerStatefulWidget {
   const UsernameInviteScreen({super.key, required this.username});
 
   @override
-  ConsumerState<UsernameInviteScreen> createState() => _UsernameInviteScreenState();
+  ConsumerState<UsernameInviteScreen> createState() =>
+      _UsernameInviteScreenState();
 }
 
 class _UsernameInviteScreenState extends ConsumerState<UsernameInviteScreen> {
@@ -85,7 +86,9 @@ class _UsernameInviteScreenState extends ConsumerState<UsernameInviteScreen> {
           .read(authProvider.notifier)
           .authenticatedRequest(
             (token) => http.get(
-              Uri.parse('$serverUrl/api/users/resolve/${Uri.encodeComponent(widget.username)}'),
+              Uri.parse(
+                '$serverUrl/api/users/resolve/${Uri.encodeComponent(widget.username)}',
+              ),
               headers: {
                 'Authorization': 'Bearer $token',
                 'Content-Type': 'application/json',
@@ -148,7 +151,11 @@ class _UsernameInviteScreenState extends ConsumerState<UsernameInviteScreen> {
       ToastService.show(context, e.message, type: ToastType.error);
     } catch (_) {
       if (!mounted) return;
-      ToastService.show(context, 'Could not start conversation', type: ToastType.error);
+      ToastService.show(
+        context,
+        'Could not start conversation',
+        type: ToastType.error,
+      );
     } finally {
       if (mounted) {
         setState(() => _isActionLoading = false);
@@ -221,16 +228,27 @@ class _UsernameInviteScreenState extends ConsumerState<UsernameInviteScreen> {
           const SizedBox(height: 16),
           Text(
             user.displayName ?? user.username,
-            style: TextStyle(color: context.textPrimary, fontSize: 20, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 4),
-          Text('@${user.username}', style: TextStyle(color: context.textSecondary, fontSize: 14)),
+          Text(
+            '@${user.username}',
+            style: TextStyle(color: context.textSecondary, fontSize: 14),
+          ),
           if (user.statusMessage != null && user.statusMessage!.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
               user.statusMessage!,
-              style: TextStyle(color: context.textSecondary, fontSize: 13, fontStyle: FontStyle.italic),
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -249,7 +267,10 @@ class _UsernameInviteScreenState extends ConsumerState<UsernameInviteScreen> {
           const SizedBox(height: 10),
           TextButton(
             onPressed: () => context.go(_routeHome),
-            child: Text('Back to chats', style: TextStyle(color: context.textSecondary)),
+            child: Text(
+              'Back to chats',
+              style: TextStyle(color: context.textSecondary),
+            ),
           ),
         ],
       ),
@@ -305,7 +326,11 @@ class _UsernameInviteScreenState extends ConsumerState<UsernameInviteScreen> {
           const SizedBox(height: 14),
           Text(
             title,
-            style: TextStyle(color: context.textPrimary, fontSize: 20, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -331,7 +356,10 @@ class _UsernameInviteScreenState extends ConsumerState<UsernameInviteScreen> {
               ? const SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
               : const Text('Message'),
         ),
@@ -360,7 +388,11 @@ class _UsernameInviteScreenState extends ConsumerState<UsernameInviteScreen> {
         child: const Text(
           'You cannot contact this user.',
           textAlign: TextAlign.center,
-          style: TextStyle(color: EchoTheme.danger, fontSize: 13, fontWeight: FontWeight.w500),
+          style: TextStyle(
+            color: EchoTheme.danger,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       );
     }
@@ -374,7 +406,10 @@ class _UsernameInviteScreenState extends ConsumerState<UsernameInviteScreen> {
             ? const SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
               )
             : const Text('Add Contact'),
       ),
