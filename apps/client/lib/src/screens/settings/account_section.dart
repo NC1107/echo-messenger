@@ -365,7 +365,8 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
   void _showQrCodeDialog() {
     final authState = ref.read(authProvider);
     final username = authState.username ?? 'unknown';
-    final inviteLink = 'https://echo-messenger.us/#/u/${Uri.encodeComponent(username)}';
+    final inviteLink =
+        'https://echo-messenger.us/#/u/${Uri.encodeComponent(username)}';
 
     showDialog(
       context: context,

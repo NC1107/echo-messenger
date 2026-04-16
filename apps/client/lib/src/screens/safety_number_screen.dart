@@ -186,8 +186,7 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
       'https://echo-messenger.us/#/u/${Uri.encodeComponent(widget.myUsername)}';
 
   Future<void> _copyInviteMessage() async {
-    final text =
-        'Add me on Echo Messenger: $_inviteUrl';
+    final text = 'Add me on Echo Messenger: $_inviteUrl';
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
     ToastService.show(
@@ -323,18 +322,18 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
           // QR code
           Container(
             padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: QrImageView(
-                data: qrData,
-                version: QrVersions.auto,
-                size: 160,
-                backgroundColor: Colors.white,
-              ),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(height: 24),
+            child: QrImageView(
+              data: qrData,
+              version: QrVersions.auto,
+              size: 160,
+              backgroundColor: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 24),
 
           if (isAddContactMode) ...[
             Container(
@@ -362,8 +361,10 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () async {
-                            await Clipboard.setData(ClipboardData(text: _inviteUrl));
-                            if (!mounted) return;
+                            await Clipboard.setData(
+                              ClipboardData(text: _inviteUrl),
+                            );
+                            if (!context.mounted) return;
                             ToastService.show(
                               context,
                               'Invite link copied',
