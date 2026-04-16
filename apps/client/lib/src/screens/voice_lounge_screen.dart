@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -316,7 +317,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               child: GestureDetector(
                 onDoubleTap: () =>
                     setState(() => _focusedTileKey = _kScreenshareLocal),
-                child: _ScreenShareViewer(ref: ref),
+                child: _LocalScreenShareTrack(ref: ref),
               ),
             ),
         ],
@@ -554,7 +555,51 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
         // In landscape: drop the 56-px header bar to maximise stream height,
         // replacing it with a small floating badge in the top-left corner.
         if (orientation == Orientation.landscape) {
-          return Container(
+          return Listener(
+            onPointerDown: (e) {
+              if (e.buttons == kSecondaryButton && _isDrawing) {
+                setState(() => _isDrawing = false);
+              }
+            },
+            child: Container(
+              color: context.mainBg,
+              child: ClipRect(
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: VertexMeshBackground(
+                        accentColor: context.accent,
+                        backgroundColor: context.mainBg,
+                      ),
+                    ),
+                    Column(children: [Expanded(child: contentArea)]),
+                    if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
+                    ..._buildSubmenuFollowers(conversationId),
+                    Positioned(bottom: 16, left: 0, right: 0, child: dock),
+                    Positioned(
+                      top: 16,
+                      left: 60,
+                      child: _buildHeaderBadge(
+                        context,
+                        channelName,
+                        totalParticipants,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        // Portrait: full header bar + content + floating dock
+        return Listener(
+          onPointerDown: (e) {
+            if (e.buttons == kSecondaryButton && _isDrawing) {
+              setState(() => _isDrawing = false);
+            }
+          },
+          child: Container(
             color: context.mainBg,
             child: ClipRect(
               child: Stack(
@@ -565,53 +610,23 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                       backgroundColor: context.mainBg,
                     ),
                   ),
-                  Column(children: [Expanded(child: contentArea)]),
+                  Column(
+                    children: [
+                      _LoungeHeader(
+                        channelName: channelName,
+                        participantCount: totalParticipants,
+                        onBackToChat: widget.onBackToChat,
+                      ),
+                      Expanded(child: contentArea),
+                      // Space for the floating dock
+                      const SizedBox(height: 80),
+                    ],
+                  ),
                   if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
                   ..._buildSubmenuFollowers(conversationId),
                   Positioned(bottom: 16, left: 0, right: 0, child: dock),
-                  Positioned(
-                    top: 16,
-                    left: 60,
-                    child: _buildHeaderBadge(
-                      context,
-                      channelName,
-                      totalParticipants,
-                    ),
-                  ),
                 ],
               ),
-            ),
-          );
-        }
-
-        // Portrait: full header bar + content + floating dock
-        return Container(
-          color: context.mainBg,
-          child: ClipRect(
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: VertexMeshBackground(
-                    accentColor: context.accent,
-                    backgroundColor: context.mainBg,
-                  ),
-                ),
-                Column(
-                  children: [
-                    _LoungeHeader(
-                      channelName: channelName,
-                      participantCount: totalParticipants,
-                      onBackToChat: widget.onBackToChat,
-                    ),
-                    Expanded(child: contentArea),
-                    // Space for the floating dock
-                    const SizedBox(height: 80),
-                  ],
-                ),
-                if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
-                ..._buildSubmenuFollowers(conversationId),
-                Positioned(bottom: 16, left: 0, right: 0, child: dock),
-              ],
             ),
           ),
         );
@@ -1082,6 +1097,39 @@ class _AvatarCircle extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
+// Lightweight screen share track renderer for inline windows
+// ---------------------------------------------------------------------------
+
+/// Renders just the local screen share video track without extra decoration.
+/// Used inside [_DraggableScreenShareWindow] which already provides container styling.
+class _LocalScreenShareTrack extends StatelessWidget {
+  final WidgetRef ref;
+  const _LocalScreenShareTrack({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final room = ref.read(livekitVoiceProvider.notifier).room;
+    final localParticipant = room?.localParticipant;
+    if (localParticipant == null) return const SizedBox.shrink();
+
+    final screenPub = localParticipant.videoTrackPublications
+        .where(
+          (pub) =>
+              pub.track != null &&
+              pub.source == lk.TrackSource.screenShareVideo,
+        )
+        .firstOrNull;
+    final screenTrack = screenPub?.track as lk.VideoTrack?;
+    if (screenTrack == null) return const SizedBox.shrink();
+
+    return lk.VideoTrackRenderer(
+      screenTrack,
+      fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Screen share viewer (local)
 // ---------------------------------------------------------------------------
 
@@ -1262,6 +1310,24 @@ class _FloatingDock extends ConsumerWidget {
               submenuActive: activeSubmenu == _DockSubmenu.mic,
               submenuLayerLink: micLayerLink,
             ),
+            // -- Deafen (tap only) --
+            _buildDockItem(
+              context,
+              icon: voiceSettings.selfDeafened
+                  ? Icons.headset_off
+                  : Icons.headset,
+              tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
+              isActive: voiceSettings.selfDeafened,
+              activeColor: EchoTheme.danger,
+              onPressed: () async {
+                final notifier = ref.read(voiceSettingsProvider.notifier);
+                final nextDeafened = !voiceSettings.selfDeafened;
+                await notifier.setSelfDeafened(nextDeafened);
+                await ref
+                    .read(livekitVoiceProvider.notifier)
+                    .setDeafened(nextDeafened);
+              },
+            ),
             // -- Camera + submenu (device picker) --
             _DockButtonWithSubmenu(
               icon: voiceState.isVideoEnabled
@@ -1346,25 +1412,7 @@ class _FloatingDock extends ConsumerWidget {
                 submenuLayerLink: drawingToolsLayerLink,
               ),
             _dockDivider(context),
-            // ── Deafen (tap only) ──
-            _buildDockItem(
-              context,
-              icon: voiceSettings.selfDeafened
-                  ? Icons.headset_off
-                  : Icons.headset,
-              tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
-              isActive: voiceSettings.selfDeafened,
-              activeColor: EchoTheme.danger,
-              onPressed: () async {
-                final notifier = ref.read(voiceSettingsProvider.notifier);
-                final nextDeafened = !voiceSettings.selfDeafened;
-                await notifier.setSelfDeafened(nextDeafened);
-                await ref
-                    .read(livekitVoiceProvider.notifier)
-                    .setDeafened(nextDeafened);
-              },
-            ),
-            // ── Canvas/Spotlight toggle ──
+            // -- Canvas/Spotlight toggle --
             _buildDockItem(
               context,
               icon: spotlightMode ? Icons.grid_view : Icons.people,
@@ -1513,9 +1561,9 @@ class _DockButtonWithSubmenu extends StatelessWidget {
             },
             borderRadius: BorderRadius.circular(12),
             child: SizedBox(
-              width: 20,
+              width: 14,
               height: 44,
-              child: Icon(arrowIcon, size: 14, color: arrowColor),
+              child: Icon(arrowIcon, size: 12, color: arrowColor),
             ),
           ),
         ),
@@ -2122,9 +2170,9 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
             ),
           ],
           const Divider(height: 12),
-          // Image + Paste + Clear + Stop
+          // Image + Clear
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
             child: Row(
               children: [
                 Expanded(
@@ -2148,29 +2196,6 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
                 const SizedBox(width: 4),
                 Expanded(
                   child: TextButton.icon(
-                    onPressed: () async {
-                      HapticFeedback.lightImpact();
-                      await _pasteImageFromClipboard(context);
-                      if (mounted) widget.onRequestClose?.call();
-                    },
-                    icon: const Icon(Icons.content_paste, size: 16),
-                    label: const Text('Paste'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: context.accent,
-                      textStyle: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Clear + toggle drawing
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextButton.icon(
                     onPressed: () {
                       HapticFeedback.mediumImpact();
                       _canvas?.clearMyDrawings();
@@ -2181,25 +2206,6 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
                     label: const Text('Clear'),
                     style: TextButton.styleFrom(
                       foregroundColor: EchoTheme.danger,
-                      textStyle: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: TextButton.icon(
-                    onPressed: () {
-                      HapticFeedback.lightImpact();
-                      widget.onToggleDrawing();
-                      widget.onRequestClose?.call();
-                    },
-                    icon: Icon(
-                      widget.isDrawing ? Icons.edit_off : Icons.edit,
-                      size: 16,
-                    ),
-                    label: Text(widget.isDrawing ? 'Stop' : 'Draw'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: context.textSecondary,
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                   ),
@@ -2293,36 +2299,14 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
     }
   }
 
-  /// Read a URL from the clipboard and add it as a canvas image.
-  Future<void> _pasteImageFromClipboard(BuildContext ctx) async {
-    try {
-      final data = await Clipboard.getData(Clipboard.kTextPlain);
-      if (!mounted) return;
-      final text = data?.text?.trim() ?? '';
-      if (text.startsWith('http://') || text.startsWith('https://')) {
-        _addImageByUrl(text);
-        return;
-      }
-      if (ctx.mounted) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(
-            content: Text('Clipboard does not contain an image URL'),
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('[DrawingMenu] pasteClipboard error: $e');
-      if (ctx.mounted) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(content: Text('Failed to paste from clipboard')),
-        );
-      }
-    }
-  }
-
   void _addImageByUrl(String url) {
     if (!mounted) return;
-    _canvas?.addImageFromUrl(url);
+    final token = ref.read(authProvider).token;
+    final headers = <String, String>{};
+    if (token != null) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    _canvas?.addImageFromUrl(url, headers: headers);
     final img = CanvasImage(
       id: newCanvasId(),
       url: url,
