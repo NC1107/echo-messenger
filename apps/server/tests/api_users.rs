@@ -423,6 +423,123 @@ async fn search_users_does_not_return_self() {
 }
 
 // ---------------------------------------------------------------------------
+// Username invite resolution: GET /api/users/resolve/:username
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn resolve_username_invite_returns_contact_relationship() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "resdm_a").await;
+    let (bob_token, _bob_id, bob_name) =
+        common::register_and_login(&client, &base, "resdm_b").await;
+
+    // Alice -> Bob request
+    let resp = client
+        .post(format!("{base}/api/contacts/request"))
+        .header("Authorization", format!("Bearer {alice_token}"))
+        .json(&serde_json::json!({ "username": bob_name }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 201);
+    let body: Value = resp.json().await.unwrap();
+    let contact_id = body["contact_id"].as_str().unwrap().to_string();
+
+    // Bob accepts
+    let resp = client
+        .post(format!("{base}/api/contacts/accept"))
+        .header("Authorization", format!("Bearer {bob_token}"))
+        .json(&serde_json::json!({ "contact_id": contact_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+
+    let resp = client
+        .get(format!("{base}/api/users/resolve/{bob_name}"))
+        .header("Authorization", format!("Bearer {alice_token}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["username"].as_str(), Some(bob_name.as_str()));
+    assert_eq!(body["relationship"].as_str(), Some("contact"));
+}
+
+#[tokio::test]
+async fn resolve_username_invite_not_found_returns_404() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _) = setup_user(&client, &base, "resnf").await;
+
+    let resp = client
+        .get(format!("{base}/api/users/resolve/does_not_exist_999"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status().as_u16(), 404);
+}
+
+#[tokio::test]
+async fn resolve_username_invite_is_case_insensitive() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (token, _) = setup_user(&client, &base, "rescase").await;
+    let target_name = format!(
+        "CaseUser{}",
+        &uuid::Uuid::new_v4().simple().to_string()[..6]
+    );
+    common::register(&client, &base, &target_name, "password123").await;
+    let lower = target_name.to_lowercase();
+
+    let resp = client
+        .get(format!("{base}/api/users/resolve/{lower}"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["username"].as_str(), Some(target_name.as_str()));
+}
+
+#[tokio::test]
+async fn resolve_username_invite_respects_searchable_privacy_for_strangers() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (viewer_token, _) = setup_user(&client, &base, "respriv_viewer").await;
+    let (target_token, _target_id, target_name) =
+        common::register_and_login(&client, &base, "respriv_target").await;
+
+    let resp = client
+        .patch(format!("{base}/api/users/me/privacy"))
+        .header("Authorization", format!("Bearer {target_token}"))
+        .json(&serde_json::json!({ "searchable": false }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+
+    let resp = client
+        .get(format!("{base}/api/users/resolve/{target_name}"))
+        .header("Authorization", format!("Bearer {viewer_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 404);
+}
+
+// ---------------------------------------------------------------------------
 // Account deletion: DELETE /api/users/me
 // ---------------------------------------------------------------------------
 

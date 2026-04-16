@@ -445,6 +445,47 @@ pub struct UserSearchQuery {
     pub q: String,
 }
 
+#[derive(Serialize)]
+pub struct UsernameInviteResolutionResponse {
+    pub user_id: Uuid,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub relationship: String,
+    pub is_self: bool,
+}
+
+/// GET /api/users/resolve/:username
+///
+/// Resolve username for DM invite flow.
+pub async fn resolve_username_invite(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(username): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let username = username.trim();
+    if username.is_empty() {
+        return Err(AppError::bad_request("Username is required"));
+    }
+
+    let row = db::users::resolve_username_for_invite(&state.pool, auth.user_id, username)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in resolve_username_invite: {e:?}");
+            AppError::internal("Database error")
+        })?
+        .ok_or_else(|| AppError::not_found("User not found"))?;
+
+    Ok(Json(UsernameInviteResolutionResponse {
+        user_id: row.id,
+        username: row.username,
+        display_name: row.display_name,
+        avatar_url: row.avatar_url,
+        relationship: row.relationship,
+        is_self: row.is_self,
+    }))
+}
+
 /// Maximum avatar size: 2 MB.
 const MAX_AVATAR_SIZE: usize = 2 * 1024 * 1024;
 

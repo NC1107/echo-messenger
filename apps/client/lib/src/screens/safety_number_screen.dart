@@ -20,6 +20,8 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 
+enum _SafetyMode { verify, addContact }
+
 /// Displays and manages safety number verification for a DM conversation.
 ///
 /// On desktop (>=900px) opens as a dialog; on smaller screens pushes a
@@ -88,6 +90,7 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
   bool _isLoading = true;
   String? _error;
   bool _isVerified = false;
+  _SafetyMode _mode = _SafetyMode.verify;
 
   static const _verifiedPrefix = 'echo_safety_verified_';
 
@@ -181,6 +184,29 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
     );
   }
 
+  String get _inviteLink =>
+      'https://echo-messenger.us/#/u/${Uri.encodeComponent(widget.myUsername)}';
+
+  Future<void> _copyInviteLink() async {
+    await Clipboard.setData(ClipboardData(text: _inviteLink));
+    if (!mounted) return;
+    ToastService.show(
+      context,
+      'Invite link copied',
+      type: ToastType.success,
+    );
+  }
+
+  Future<void> _shareInviteLink() async {
+    await Clipboard.setData(ClipboardData(text: _inviteLink));
+    if (!mounted) return;
+    ToastService.show(
+      context,
+      'Invite link copied. Share it in any app.',
+      type: ToastType.info,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDialog = Responsive.isDesktop(context);
@@ -199,6 +225,76 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
   }
 
   Widget _buildBody(BuildContext context, bool isDialog) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          if (isDialog) _buildHeader(context),
+          const SizedBox(height: 8),
+          _buildModeSwitch(context),
+          const SizedBox(height: 16),
+          if (_mode == _SafetyMode.verify)
+            _buildVerifyMode(context, isDialog)
+          else
+            _buildAddContactMode(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Row(
+      children: [
+        Icon(
+          _mode == _SafetyMode.verify
+              ? Icons.verified_user_outlined
+              : Icons.person_add_alt_1_outlined,
+          size: 20,
+          color: context.accent,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          _mode == _SafetyMode.verify ? 'Safety Number' : 'Add Contact',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const Spacer(),
+        IconButton(
+          icon: Icon(Icons.close, size: 18, color: context.textMuted),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModeSwitch(BuildContext context) {
+    return SegmentedButton<_SafetyMode>(
+      segments: const [
+        ButtonSegment<_SafetyMode>(
+          value: _SafetyMode.verify,
+          icon: Icon(Icons.verified_user_outlined, size: 16),
+          label: Text('Verify'),
+        ),
+        ButtonSegment<_SafetyMode>(
+          value: _SafetyMode.addContact,
+          icon: Icon(Icons.person_add_alt_1_outlined, size: 16),
+          label: Text('Add Contact'),
+        ),
+      ],
+      selected: {_mode},
+      onSelectionChanged: (selection) {
+        setState(() => _mode = selection.first);
+      },
+      style: ButtonStyle(
+        foregroundColor: WidgetStatePropertyAll(context.textPrimary),
+      ),
+    );
+  }
+
+  Widget _buildVerifyMode(BuildContext context, bool isDialog) {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -206,7 +302,7 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
     if (_error != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.only(top: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -241,156 +337,189 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
     }
 
     final formatted = SafetyNumberService.formatForDisplay(_safetyNumber!);
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          if (isDialog)
-            Row(
-              children: [
-                Icon(
-                  Icons.verified_user_outlined,
-                  size: 20,
-                  color: context.accent,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Safety Number',
-                  style: TextStyle(
-                    color: context.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+    return Column(
+      children: [
+        Text(
+          'Verify that the safety number below matches on both '
+          '${widget.myUsername}\'s and ${widget.peerUsername}\'s devices.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: context.textSecondary, fontSize: 13),
+        ),
+        const SizedBox(height: 24),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: QrImageView(
+            data: _safetyNumber!,
+            version: QrVersions.auto,
+            size: 160,
+            backgroundColor: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 24),
+        Semantics(
+          label: 'copy safety number',
+          button: true,
+          child: GestureDetector(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: _safetyNumber!));
+              ToastService.show(
+                context,
+                'Safety number copied',
+                type: ToastType.success,
+              );
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: context.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.border),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    formatted,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'monospace',
+                      letterSpacing: 2,
+                      height: 1.6,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: Icon(Icons.close, size: 18, color: context.textMuted),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-          const SizedBox(height: 8),
-          Text(
-            'Verify that the safety number below matches on both '
-            '${widget.myUsername}\'s and ${widget.peerUsername}\'s devices.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: context.textSecondary, fontSize: 13),
-          ),
-          const SizedBox(height: 24),
-
-          // QR code
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: QrImageView(
-              data: _safetyNumber!,
-              version: QrVersions.auto,
-              size: 160,
-              backgroundColor: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Safety number digits
-          Semantics(
-            label: 'copy safety number',
-            button: true,
-            child: GestureDetector(
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: _safetyNumber!));
-                ToastService.show(
-                  context,
-                  'Safety number copied',
-                  type: ToastType.success,
-                );
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: context.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: context.border),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      formatted,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: context.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                        fontFamily: 'monospace',
-                        letterSpacing: 2,
-                        height: 1.6,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.copy, size: 12, color: context.textMuted),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Tap to copy',
-                          style: TextStyle(
-                            color: context.textMuted,
-                            fontSize: 11,
-                          ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.copy, size: 12, color: context.textMuted),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Tap to copy',
+                        style: TextStyle(
+                          color: context.textMuted,
+                          fontSize: 11,
                         ),
-                      ],
-                    ),
-                  ],
-                ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(height: 24),
-
-          // Verification button
-          SizedBox(
-            width: double.infinity,
-            child: _isVerified
-                ? OutlinedButton.icon(
-                    onPressed: _toggleVerified,
-                    icon: const Icon(Icons.check_circle, size: 18),
-                    label: const Text('Verified'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: EchoTheme.online,
-                      side: const BorderSide(color: EchoTheme.online),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  )
-                : FilledButton.icon(
-                    onPressed: _toggleVerified,
-                    icon: const Icon(Icons.verified_user_outlined, size: 18),
-                    label: const Text('Mark as Verified'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: context.accent,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+        ),
+        const SizedBox(height: 24),
+        SizedBox(
+          width: double.infinity,
+          child: _isVerified
+              ? OutlinedButton.icon(
+                  onPressed: _toggleVerified,
+                  icon: const Icon(Icons.check_circle, size: 18),
+                  label: const Text('Verified'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: EchoTheme.online,
+                    side: const BorderSide(color: EchoTheme.online),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
+                )
+              : FilledButton.icon(
+                  onPressed: _toggleVerified,
+                  icon: const Icon(Icons.verified_user_outlined, size: 18),
+                  label: const Text('Mark as Verified'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: context.accent,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'If the numbers match, tap to mark this conversation as verified. '
+          'If they change later, the session may have been re-established.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: context.textMuted, fontSize: 11),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAddContactMode(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          'Let others scan this QR code to open your DM invite link.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: context.textSecondary, fontSize: 13),
+        ),
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
           ),
-          const SizedBox(height: 12),
-          Text(
-            'If the numbers match, tap to mark this conversation as verified. '
-            'If they change later, the session may have been re-established.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: context.textMuted, fontSize: 11),
+          child: QrImageView(
+            data: _inviteLink,
+            version: QrVersions.auto,
+            size: 180,
+            backgroundColor: Colors.white,
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          '@${widget.myUsername}',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _inviteLink,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: context.textMuted, fontSize: 12),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _copyInviteLink,
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text('Copy'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _shareInviteLink,
+                icon: const Icon(Icons.share_outlined, size: 16),
+                label: const Text('Share'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Tip: After copying or sharing the link, the recipient can open your invite, '
+          'view your profile, and send a contact request or message you directly.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: context.textMuted, fontSize: 11),
+        ),
+      ],
     );
   }
 }

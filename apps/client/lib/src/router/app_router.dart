@@ -14,6 +14,7 @@ import '../screens/onboarding_wizard.dart';
 import '../screens/register_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/splash_screen.dart';
+import '../screens/username_invite_screen.dart';
 import '../screens/user_profile_screen.dart';
 
 const _routeHome = '/home';
@@ -57,16 +58,17 @@ String? _authRedirect(Ref ref, GoRouterState state) {
       state.matchedLocation == _routeLogin ||
       state.matchedLocation == '/register';
   final isOnboarding = state.matchedLocation == '/onboarding';
-  final isJoinRoute =
+  final isInviteRoute =
       state.matchedLocation.startsWith('/join') ||
-      state.matchedLocation.startsWith('/invite');
+      state.matchedLocation.startsWith('/invite') ||
+      state.matchedLocation.startsWith('/u/');
 
   if (isSplash) return null;
 
   // Already logged in — skip onboarding
   if (isLoggedIn && isOnboarding) return _routeHome;
 
-  if (!isLoggedIn && !isAuthRoute && !isOnboarding && !isJoinRoute) {
+  if (!isLoggedIn && !isAuthRoute && !isOnboarding && !isInviteRoute) {
     final intended = state.matchedLocation;
     if (intended != _routeHome && intended != _routeLogin) {
       pendingDeepLink = state.uri.toString();
@@ -91,18 +93,11 @@ Widget _buildProfilePage(String userId) {
   );
 }
 
-/// Profile-related routes (/profile/:userId, /u/:userId, etc.).
+/// Profile-related routes (/profile/:userId, /user/:userId, etc.).
 List<GoRoute> _profileRoutes() {
   return [
     GoRoute(
       path: '/profile/:userId',
-      pageBuilder: (context, state) => _fadePage(
-        key: state.pageKey,
-        child: _buildProfilePage(state.pathParameters['userId']!),
-      ),
-    ),
-    GoRoute(
-      path: '/u/:userId',
       pageBuilder: (context, state) => _fadePage(
         key: state.pageKey,
         child: _buildProfilePage(state.pathParameters['userId']!),
@@ -217,6 +212,15 @@ final routerProvider = Provider<GoRouter>((ref) {
           if (groupId.isEmpty) return _routeHome;
           return '/join/$groupId';
         },
+      ),
+      GoRoute(
+        path: '/u/:username',
+        pageBuilder: (context, state) => _fadePage(
+          key: state.pageKey,
+          child: UsernameInviteScreen(
+            username: state.pathParameters['username']!,
+          ),
+        ),
       ),
       GoRoute(
         path: '/invite/:groupId',

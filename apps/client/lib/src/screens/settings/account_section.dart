@@ -364,9 +364,9 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
 
   void _showQrCodeDialog() {
     final authState = ref.read(authProvider);
-    final userId = authState.userId ?? '';
     final username = authState.username ?? 'Unknown';
-    final profileLink = 'https://echo-messenger.us/#/profile/$userId';
+    final inviteLink =
+        'https://echo-messenger.us/#/u/${Uri.encodeComponent(username)}';
 
     showDialog(
       context: context,
@@ -377,7 +377,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           side: BorderSide(color: context.border),
         ),
         title: Text(
-          'My QR Code',
+          'Add Me on Echo',
           style: TextStyle(
             color: context.textPrimary,
             fontSize: 18,
@@ -394,7 +394,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: QrImageView(
-                data: profileLink,
+                data: inviteLink,
                 version: QrVersions.auto,
                 size: 200,
                 backgroundColor: Colors.white,
@@ -411,13 +411,19 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
             ),
             const SizedBox(height: 4),
             Text(
-              profileLink,
+              inviteLink,
               style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Share this DM invite link or let a friend scan the QR code.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: context.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: () {
-                Clipboard.setData(ClipboardData(text: profileLink));
+                Clipboard.setData(ClipboardData(text: inviteLink));
                 ToastService.show(
                   dialogContext,
                   'Link copied to clipboard',
@@ -425,7 +431,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
                 );
               },
               icon: const Icon(Icons.copy, size: 16),
-              label: const Text('Copy link'),
+              label: const Text('Copy DM invite link'),
             ),
           ],
         ),
