@@ -104,6 +104,18 @@ pub struct UserPrivacyRow {
     pub searchable: bool,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct UsernameInviteResolutionRow {
+    pub id: Uuid,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub bio: Option<String>,
+    pub status_message: Option<String>,
+    pub relationship: String,
+    pub searchable: bool,
+}
+
 /// Search users by username, email, or phone prefix (case-insensitive).
 /// Returns up to 10 results. Excludes the calling user from results.
 /// Email matches only when the user has `email_discoverable` enabled;
@@ -132,6 +144,66 @@ pub async fn search_users(
     .bind(&pattern)
     .bind(exclude_user_id)
     .fetch_all(pool)
+    .await
+}
+
+/// Resolve a username for DM invites, including relationship state.
+///
+/// Relationship values:
+/// - "contact": accepted contact relation exists
+/// - "pending": pending request exists in either direction
+/// - "none": no relationship
+/// - "blocked": one user blocked the other
+pub async fn resolve_username_invite(
+    pool: &PgPool,
+    viewer_user_id: Uuid,
+    username: &str,
+) -> Result<Option<UsernameInviteResolutionRow>, sqlx::Error> {
+    sqlx::query_as::<_, UsernameInviteResolutionRow>(
+        "SELECT
+            u.id,
+            u.username,
+            u.display_name,
+            u.avatar_url,
+            u.bio,
+            u.status_message,
+            CASE
+                WHEN rel.is_blocked THEN 'blocked'
+                WHEN rel.has_contact THEN 'contact'
+                WHEN rel.has_pending THEN 'pending'
+                ELSE 'none'
+            END AS relationship,
+            u.searchable
+         FROM users u
+         LEFT JOIN LATERAL (
+            SELECT
+                EXISTS(
+                    SELECT 1
+                    FROM blocked_users b
+                    WHERE (b.blocker_id = $1 AND b.blocked_id = u.id)
+                       OR (b.blocker_id = u.id AND b.blocked_id = $1)
+                ) AS is_blocked,
+                EXISTS(
+                    SELECT 1
+                    FROM contacts c
+                    WHERE c.status = 'accepted'
+                      AND ((c.requester_id = $1 AND c.target_id = u.id)
+                        OR (c.requester_id = u.id AND c.target_id = $1))
+                ) AS has_contact,
+                EXISTS(
+                    SELECT 1
+                    FROM contacts c
+                    WHERE c.status = 'pending'
+                      AND ((c.requester_id = $1 AND c.target_id = u.id)
+                        OR (c.requester_id = u.id AND c.target_id = $1))
+                ) AS has_pending
+         ) rel ON true
+         WHERE LOWER(u.username) = LOWER($2)
+           AND u.id != $1",
+    )
+    .bind(viewer_user_id)
+    .bind(username)
+    .fetch_optional(pool)
     .await
 }
 

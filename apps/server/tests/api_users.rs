@@ -423,6 +423,170 @@ async fn search_users_does_not_return_self() {
 }
 
 // ---------------------------------------------------------------------------
+// Username invite resolution: GET /api/users/resolve/:username
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn resolve_username_invite_returns_contact_relationship() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let alice_name = common::unique_username("res_contact_a");
+    let bob_name = common::unique_username("res_contact_b");
+    common::register(&client, &base, &alice_name, "password123").await;
+    common::register(&client, &base, &bob_name, "password123").await;
+
+    let (alice_token, _alice_id) = common::login(&client, &base, &alice_name, "password123").await;
+    let (bob_token, bob_id) = common::login(&client, &base, &bob_name, "password123").await;
+
+    // Alice -> Bob request
+    let req = client
+        .post(format!("{base}/api/contacts/request"))
+        .header("Authorization", format!("Bearer {alice_token}"))
+        .json(&serde_json::json!({ "username": bob_name }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(req.status().as_u16(), 201);
+    let req_body: Value = req.json().await.unwrap();
+    let contact_id = req_body["contact_id"].as_str().unwrap();
+
+    // Bob accepts
+    let accept = client
+        .post(format!("{base}/api/contacts/accept"))
+        .header("Authorization", format!("Bearer {bob_token}"))
+        .json(&serde_json::json!({ "contact_id": contact_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(accept.status().as_u16(), 200);
+
+    let resp = client
+        .get(format!("{base}/api/users/resolve/{bob_name}"))
+        .header("Authorization", format!("Bearer {alice_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["user_id"].as_str(), Some(bob_id.as_str()));
+    assert_eq!(body["relationship"].as_str(), Some("contact"));
+}
+
+#[tokio::test]
+async fn resolve_username_invite_not_found_returns_404() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _) = setup_user(&client, &base, "res_notfound").await;
+
+    let missing = format!("nobody_{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
+    let resp = client
+        .get(format!("{base}/api/users/resolve/{missing}"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 404);
+}
+
+#[tokio::test]
+async fn resolve_username_invite_is_case_insensitive() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _) = setup_user(&client, &base, "res_case_a").await;
+    let target_name = common::unique_username("res_case_target");
+    common::register(&client, &base, &target_name, "password123").await;
+
+    let mixed = target_name.to_uppercase();
+    let resp = client
+        .get(format!("{base}/api/users/resolve/{mixed}"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["username"].as_str(), Some(target_name.as_str()));
+    assert_eq!(body["relationship"].as_str(), Some("none"));
+}
+
+#[tokio::test]
+async fn resolve_username_invite_hides_non_searchable_without_relationship() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let viewer_name = common::unique_username("res_priv_viewer");
+    let target_name = common::unique_username("res_priv_target");
+    common::register(&client, &base, &viewer_name, "password123").await;
+    common::register(&client, &base, &target_name, "password123").await;
+
+    let (viewer_token, _) = common::login(&client, &base, &viewer_name, "password123").await;
+    let (target_token, _) = common::login(&client, &base, &target_name, "password123").await;
+
+    // Target opts out of discoverability.
+    let privacy_resp = client
+        .patch(format!("{base}/api/users/me/privacy"))
+        .header("Authorization", format!("Bearer {target_token}"))
+        .json(&serde_json::json!({ "searchable": false }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(privacy_resp.status().as_u16(), 200);
+    let privacy_body: Value = privacy_resp.json().await.unwrap();
+    assert_eq!(privacy_body["searchable"], false);
+
+    let resp = client
+        .get(format!("{base}/api/users/resolve/{target_name}"))
+        .header("Authorization", format!("Bearer {viewer_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 404);
+}
+
+#[tokio::test]
+async fn resolve_username_invite_returns_blocked_relationship() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (viewer_token, _viewer_id) = setup_user(&client, &base, "res_block_viewer").await;
+
+    let target_name = common::unique_username("res_block_target");
+    common::register(&client, &base, &target_name, "password123").await;
+    let (target_token, target_id) =
+        common::login(&client, &base, &target_name, "password123").await;
+
+    // Viewer blocks target.
+    let block_resp = client
+        .post(format!("{base}/api/contacts/block"))
+        .header("Authorization", format!("Bearer {viewer_token}"))
+        .json(&serde_json::json!({ "user_id": target_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(block_resp.status().as_u16(), 201);
+
+    // Even if target is non-searchable, relationship should remain visible as blocked.
+    let privacy_resp = client
+        .patch(format!("{base}/api/users/me/privacy"))
+        .header("Authorization", format!("Bearer {target_token}"))
+        .json(&serde_json::json!({ "searchable": false }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(privacy_resp.status().as_u16(), 200);
+
+    let resp = client
+        .get(format!("{base}/api/users/resolve/{target_name}"))
+        .header("Authorization", format!("Bearer {viewer_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["relationship"].as_str(), Some("blocked"));
+}
+
+// ---------------------------------------------------------------------------
 // Account deletion: DELETE /api/users/me
 // ---------------------------------------------------------------------------
 

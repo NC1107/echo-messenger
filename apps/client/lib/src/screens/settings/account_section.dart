@@ -364,9 +364,8 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
 
   void _showQrCodeDialog() {
     final authState = ref.read(authProvider);
-    final userId = authState.userId ?? '';
-    final username = authState.username ?? 'Unknown';
-    final profileLink = 'https://echo-messenger.us/#/profile/$userId';
+    final username = authState.username ?? 'unknown';
+    final inviteLink = 'https://echo-messenger.us/#/u/${Uri.encodeComponent(username)}';
 
     showDialog(
       context: context,
@@ -377,7 +376,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           side: BorderSide(color: context.border),
         ),
         title: Text(
-          'My QR Code',
+          'Add Me on Echo',
           style: TextStyle(
             color: context.textPrimary,
             fontSize: 18,
@@ -394,7 +393,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: QrImageView(
-                data: profileLink,
+                data: inviteLink,
                 version: QrVersions.auto,
                 size: 200,
                 backgroundColor: Colors.white,
@@ -411,21 +410,27 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
             ),
             const SizedBox(height: 4),
             Text(
-              profileLink,
+              inviteLink,
               style: TextStyle(color: context.textMuted, fontSize: 12),
             ),
             const SizedBox(height: 16),
+            Text(
+              'Scan to open my DM invite. If we are not contacts yet, Echo will send a contact request first.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: context.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () {
-                Clipboard.setData(ClipboardData(text: profileLink));
+                Clipboard.setData(ClipboardData(text: inviteLink));
                 ToastService.show(
                   dialogContext,
-                  'Link copied to clipboard',
+                  'Invite link copied to clipboard',
                   type: ToastType.success,
                 );
               },
               icon: const Icon(Icons.copy, size: 16),
-              label: const Text('Copy link'),
+              label: const Text('Copy invite link'),
             ),
           ],
         ),

@@ -249,6 +249,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/me/avatar", put(users::upload_avatar))
         .route("/online", get(users::online_users))
         .route("/search", get(users::search_users))
+        .route("/resolve/{username}", get(users::resolve_username_invite))
         .route("/{id}/profile", get(users::get_profile))
         .route("/{id}/avatar", get(users::get_avatar));
 
