@@ -1102,15 +1102,49 @@ class _AvatarCircle extends StatelessWidget {
 
 /// Renders just the local screen share video track without extra decoration.
 /// Used inside [_DraggableScreenShareWindow] which already provides container styling.
-class _LocalScreenShareTrack extends StatelessWidget {
+///
+/// The screen share track may not be available immediately after the user
+/// selects a screen to share (LiveKit publishes asynchronously). This widget
+/// retries on a short timer until the track appears or the widget is disposed.
+class _LocalScreenShareTrack extends StatefulWidget {
   final WidgetRef ref;
   const _LocalScreenShareTrack({required this.ref});
 
   @override
-  Widget build(BuildContext context) {
-    final room = ref.read(livekitVoiceProvider.notifier).room;
+  State<_LocalScreenShareTrack> createState() => _LocalScreenShareTrackState();
+}
+
+class _LocalScreenShareTrackState extends State<_LocalScreenShareTrack> {
+  lk.VideoTrack? _track;
+  lk.EventsListener<lk.RoomEvent>? _listener;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveTrack();
+    _attachListener();
+  }
+
+  @override
+  void dispose() {
+    _listener?.dispose();
+    _listener = null;
+    super.dispose();
+  }
+
+  void _attachListener() {
+    final room = widget.ref.read(livekitVoiceProvider.notifier).room;
+    if (room == null) return;
+    _listener = room.createListener();
+    _listener!.on<lk.LocalTrackPublishedEvent>((_) {
+      _resolveTrack();
+    });
+  }
+
+  void _resolveTrack() {
+    final room = widget.ref.read(livekitVoiceProvider.notifier).room;
     final localParticipant = room?.localParticipant;
-    if (localParticipant == null) return const SizedBox.shrink();
+    if (localParticipant == null) return;
 
     final screenPub = localParticipant.videoTrackPublications
         .where(
@@ -1119,11 +1153,25 @@ class _LocalScreenShareTrack extends StatelessWidget {
               pub.source == lk.TrackSource.screenShareVideo,
         )
         .firstOrNull;
-    final screenTrack = screenPub?.track as lk.VideoTrack?;
-    if (screenTrack == null) return const SizedBox.shrink();
+    final track = screenPub?.track as lk.VideoTrack?;
+    if (track != null && track != _track) {
+      setState(() => _track = track);
+    }
+  }
 
+  @override
+  Widget build(BuildContext context) {
+    if (_track == null) {
+      return const Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
     return lk.VideoTrackRenderer(
-      screenTrack,
+      _track!,
       fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
     );
   }
