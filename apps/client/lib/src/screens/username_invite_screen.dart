@@ -16,6 +16,7 @@ import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 
 const _routeHome = '/home';
 const _routeLogin = '/login';
+const _routeUsernameInvitePrefix = '/u';
 
 class _InviteResolution {
   final String userId;
@@ -136,7 +137,7 @@ class _UsernameInviteScreenState extends ConsumerState<UsernameInviteScreen> {
   }
 
   void _goToLogin() {
-    pendingDeepLink = '/u/${widget.username}';
+    pendingDeepLink = '$_routeUsernameInvitePrefix/${widget.username}';
     context.go(_routeLogin);
   }
 

@@ -488,7 +488,7 @@ async fn resolve_username_invite_not_found_returns_404() {
 }
 
 #[tokio::test]
-async fn resolve_username_invite_is_case_insensitive() {
+async fn test_resolve_username_invite_is_case_insensitive() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
