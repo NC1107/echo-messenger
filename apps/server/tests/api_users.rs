@@ -552,7 +552,8 @@ async fn resolve_username_invite_returns_blocked_relationship() {
 
     let target_name = common::unique_username("res_block_target");
     common::register(&client, &base, &target_name, "password123").await;
-    let (target_token, target_id) = common::login(&client, &base, &target_name, "password123").await;
+    let (target_token, target_id) =
+        common::login(&client, &base, &target_name, "password123").await;
 
     // Viewer blocks target.
     let block_resp = client
