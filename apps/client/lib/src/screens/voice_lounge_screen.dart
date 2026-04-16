@@ -29,6 +29,9 @@ import '../widgets/voice_canvas.dart';
 
 const _kScreenshareLocal = 'screenshare-local';
 
+/// Which dock submenu is currently open.
+enum _DockSubmenu { mic, camera, screenShare, draw }
+
 /// Discord-style voice lounge that replaces the chat content area when the
 /// user is in a voice call and chooses to view the lounge.
 class VoiceLoungeScreen extends ConsumerStatefulWidget {
@@ -62,11 +65,14 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   /// Global key for the drawing canvas to access its state.
   final _drawingCanvasKey = GlobalKey<LoungeDrawingCanvasState>();
 
-  /// Anchor for the non-modal drawing tools panel.
+  /// Anchors for dock submenu panels.
   final LayerLink _drawingToolsLayerLink = LayerLink();
+  final LayerLink _micLayerLink = LayerLink();
+  final LayerLink _cameraLayerLink = LayerLink();
+  final LayerLink _screenShareLayerLink = LayerLink();
 
-  /// Whether the drawing tools panel is visible.
-  bool _showDrawingTools = false;
+  /// Which dock submenu is currently open (null = none).
+  _DockSubmenu? _activeSubmenu;
 
   /// When true, force the spotlight/participant grid instead of the canvas.
   bool _spotlightMode = false;
@@ -420,6 +426,51 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     );
   }
 
+  void _closeSubmenu() => setState(() => _activeSubmenu = null);
+
+  /// Build all dock submenu follower widgets for the current [_activeSubmenu].
+  List<Widget> _buildSubmenuFollowers(String conversationId) {
+    if (_activeSubmenu == null) return const [];
+
+    late final LayerLink link;
+    late final Widget content;
+
+    switch (_activeSubmenu!) {
+      case _DockSubmenu.mic:
+        link = _micLayerLink;
+        content = _MicSubmenuStandalone(onRequestClose: _closeSubmenu);
+      case _DockSubmenu.camera:
+        link = _cameraLayerLink;
+        content = _CameraSubmenuStandalone(onRequestClose: _closeSubmenu);
+      case _DockSubmenu.screenShare:
+        link = _screenShareLayerLink;
+        content = _ScreenShareSubmenuStandalone(onRequestClose: _closeSubmenu);
+      case _DockSubmenu.draw:
+        link = _drawingToolsLayerLink;
+        content = _DrawingToolsMenu(
+          drawingCanvasKey: _drawingCanvasKey,
+          onToggleDrawing: () => setState(() => _isDrawing = !_isDrawing),
+          isDrawing: _isDrawing,
+          conversationId: conversationId,
+          onRequestClose: _closeSubmenu,
+        );
+    }
+
+    return [
+      CompositedTransformFollower(
+        link: link,
+        showWhenUnlinked: false,
+        targetAnchor: Alignment.topCenter,
+        followerAnchor: Alignment.bottomCenter,
+        offset: const Offset(0, -10),
+        child: Material(
+          color: Colors.transparent,
+          child: _DrawingToolsPanel(child: content),
+        ),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final voiceLk = ref.watch(livekitVoiceProvider);
@@ -471,18 +522,23 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       channelId: channelId,
       isDrawing: _isDrawing,
       onToggleDrawing: () => setState(() => _isDrawing = !_isDrawing),
-      showDrawingTools: _showDrawingTools,
-      onToggleDrawingTools: () =>
-          setState(() => _showDrawingTools = !_showDrawingTools),
+      activeSubmenu: _activeSubmenu,
+      onToggleSubmenu: (submenu) {
+        setState(() {
+          _activeSubmenu = _activeSubmenu == submenu ? null : submenu;
+        });
+      },
+      micLayerLink: _micLayerLink,
+      cameraLayerLink: _cameraLayerLink,
+      screenShareLayerLink: _screenShareLayerLink,
       drawingToolsLayerLink: _drawingToolsLayerLink,
       spotlightMode: _spotlightMode,
       onToggleSpotlight: () {
         setState(() {
           _spotlightMode = !_spotlightMode;
-          // Disable drawing when entering spotlight mode
           if (_spotlightMode) {
             _isDrawing = false;
-            _showDrawingTools = false;
+            _activeSubmenu = null;
           }
         });
       },
@@ -511,29 +567,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                   ),
                   Column(children: [Expanded(child: contentArea)]),
                   if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
-                  if (_showDrawingTools)
-                    CompositedTransformFollower(
-                      link: _drawingToolsLayerLink,
-                      showWhenUnlinked: false,
-                      targetAnchor: Alignment.topCenter,
-                      followerAnchor: Alignment.bottomCenter,
-                      offset: const Offset(0, -10),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: _DrawingToolsPanel(
-                          child: _DrawingToolsMenu(
-                            drawingCanvasKey: _drawingCanvasKey,
-                            onToggleDrawing: () {
-                              setState(() => _isDrawing = !_isDrawing);
-                            },
-                            isDrawing: _isDrawing,
-                            conversationId: conversationId,
-                            onRequestClose: () =>
-                                setState(() => _showDrawingTools = false),
-                          ),
-                        ),
-                      ),
-                    ),
+                  ..._buildSubmenuFollowers(conversationId),
                   Positioned(bottom: 16, left: 0, right: 0, child: dock),
                   Positioned(
                     top: 16,
@@ -575,29 +609,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                   ],
                 ),
                 if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
-                if (_showDrawingTools)
-                  CompositedTransformFollower(
-                    link: _drawingToolsLayerLink,
-                    showWhenUnlinked: false,
-                    targetAnchor: Alignment.topCenter,
-                    followerAnchor: Alignment.bottomCenter,
-                    offset: const Offset(0, -10),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: _DrawingToolsPanel(
-                        child: _DrawingToolsMenu(
-                          drawingCanvasKey: _drawingCanvasKey,
-                          onToggleDrawing: () {
-                            setState(() => _isDrawing = !_isDrawing);
-                          },
-                          isDrawing: _isDrawing,
-                          conversationId: conversationId,
-                          onRequestClose: () =>
-                              setState(() => _showDrawingTools = false),
-                        ),
-                      ),
-                    ),
-                  ),
+                ..._buildSubmenuFollowers(conversationId),
                 Positioned(bottom: 16, left: 0, right: 0, child: dock),
               ],
             ),
@@ -1183,8 +1195,11 @@ class _FloatingDock extends ConsumerWidget {
   final String channelId;
   final bool isDrawing;
   final VoidCallback onToggleDrawing;
-  final bool showDrawingTools;
-  final VoidCallback onToggleDrawingTools;
+  final _DockSubmenu? activeSubmenu;
+  final ValueChanged<_DockSubmenu> onToggleSubmenu;
+  final LayerLink micLayerLink;
+  final LayerLink cameraLayerLink;
+  final LayerLink screenShareLayerLink;
   final LayerLink drawingToolsLayerLink;
   final bool spotlightMode;
   final VoidCallback onToggleSpotlight;
@@ -1197,8 +1212,11 @@ class _FloatingDock extends ConsumerWidget {
     required this.channelId,
     required this.isDrawing,
     required this.onToggleDrawing,
-    required this.showDrawingTools,
-    required this.onToggleDrawingTools,
+    required this.activeSubmenu,
+    required this.onToggleSubmenu,
+    required this.micLayerLink,
+    required this.cameraLayerLink,
+    required this.screenShareLayerLink,
     required this.drawingToolsLayerLink,
     required this.spotlightMode,
     required this.onToggleSpotlight,
@@ -1224,7 +1242,7 @@ class _FloatingDock extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Mic + 3-dot (noise suppression) ──
+            // -- Mic + submenu (noise suppression) --
             _DockButtonWithSubmenu(
               icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
               tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
@@ -1240,15 +1258,11 @@ class _FloatingDock extends ConsumerWidget {
                       !nextMuted && !voiceSettings.selfDeafened,
                     );
               },
-              menuBuilder: (ctx) => [
-                PopupMenuItem<void>(
-                  enabled: false,
-                  padding: EdgeInsets.zero,
-                  child: _MicSubmenu(voiceSettings: voiceSettings, ref: ref),
-                ),
-              ],
+              onSubmenuTap: () => onToggleSubmenu(_DockSubmenu.mic),
+              submenuActive: activeSubmenu == _DockSubmenu.mic,
+              submenuLayerLink: micLayerLink,
             ),
-            // ── Camera + 3-dot (device picker) ──
+            // -- Camera + submenu (device picker) --
             _DockButtonWithSubmenu(
               icon: voiceState.isVideoEnabled
                   ? Icons.videocam
@@ -1261,15 +1275,11 @@ class _FloatingDock extends ConsumerWidget {
               onPressed: () async {
                 await ref.read(livekitVoiceProvider.notifier).toggleVideo();
               },
-              menuBuilder: (ctx) => [
-                PopupMenuItem<void>(
-                  enabled: false,
-                  padding: EdgeInsets.zero,
-                  child: _CameraSubmenu(ref: ref),
-                ),
-              ],
+              onSubmenuTap: () => onToggleSubmenu(_DockSubmenu.camera),
+              submenuActive: activeSubmenu == _DockSubmenu.camera,
+              submenuLayerLink: cameraLayerLink,
             ),
-            // ── Screen Share + 3-dot (quality settings) ──
+            // -- Screen Share + submenu (quality settings) --
             if (VoiceLoungeScreen._supportsScreenShare)
               _DockButtonWithSubmenu(
                 icon: screenShare.isScreenSharing
@@ -1319,15 +1329,11 @@ class _FloatingDock extends ConsumerWidget {
                     }
                   }
                 },
-                menuBuilder: (ctx) => [
-                  PopupMenuItem<void>(
-                    enabled: false,
-                    padding: EdgeInsets.zero,
-                    child: const _ScreenShareSubmenu(),
-                  ),
-                ],
+                onSubmenuTap: () => onToggleSubmenu(_DockSubmenu.screenShare),
+                submenuActive: activeSubmenu == _DockSubmenu.screenShare,
+                submenuLayerLink: screenShareLayerLink,
               ),
-            // ── Draw toggle + 3-dot (tools) ── (hidden in spotlight mode)
+            // -- Draw toggle + submenu (tools) -- (hidden in spotlight mode)
             if (!spotlightMode)
               _DockButtonWithSubmenu(
                 icon: Icons.edit,
@@ -1335,8 +1341,8 @@ class _FloatingDock extends ConsumerWidget {
                 isActive: isDrawing,
                 activeColor: context.accent,
                 onPressed: onToggleDrawing,
-                onSubmenuTap: onToggleDrawingTools,
-                submenuActive: showDrawingTools,
+                onSubmenuTap: () => onToggleSubmenu(_DockSubmenu.draw),
+                submenuActive: activeSubmenu == _DockSubmenu.draw,
                 submenuLayerLink: drawingToolsLayerLink,
               ),
             _dockDivider(context),
@@ -1466,7 +1472,6 @@ class _DockButtonWithSubmenu extends StatelessWidget {
   final bool isActive;
   final Color? activeColor;
   final VoidCallback onPressed;
-  final List<PopupMenuEntry<void>> Function(BuildContext)? menuBuilder;
   final VoidCallback? onSubmenuTap;
   final bool submenuActive;
   final LayerLink? submenuLayerLink;
@@ -1477,7 +1482,6 @@ class _DockButtonWithSubmenu extends StatelessWidget {
     this.isActive = false,
     this.activeColor,
     required this.onPressed,
-    this.menuBuilder,
     this.onSubmenuTap,
     this.submenuActive = false,
     this.submenuLayerLink,
@@ -1492,16 +1496,12 @@ class _DockButtonWithSubmenu extends StatelessWidget {
         ? (activeColor ?? context.accent).withValues(alpha: 0.12)
         : Colors.transparent;
 
-    Widget buildSubmenuTrigger() {
-      final iconColor = submenuActive
+    Widget? buildSubmenuTrigger() {
+      if (onSubmenuTap == null) return null;
+      final arrowColor = submenuActive
           ? (activeColor ?? context.accent)
           : context.textMuted;
-      final child = SizedBox(
-        width: 20,
-        height: 44,
-        child: Icon(Icons.more_vert, size: 14, color: iconColor),
-      );
-
+      final arrowIcon = submenuActive ? Icons.expand_more : Icons.expand_less;
       final trigger = Tooltip(
         message: '$tooltip options',
         child: Material(
@@ -1509,10 +1509,14 @@ class _DockButtonWithSubmenu extends StatelessWidget {
           child: InkWell(
             onTap: () {
               HapticFeedback.selectionClick();
-              onSubmenuTap?.call();
+              onSubmenuTap!();
             },
             borderRadius: BorderRadius.circular(12),
-            child: child,
+            child: SizedBox(
+              width: 20,
+              height: 44,
+              child: Icon(arrowIcon, size: 14, color: arrowColor),
+            ),
           ),
         ),
       );
@@ -1529,7 +1533,6 @@ class _DockButtonWithSubmenu extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Main toggle button
         Tooltip(
           message: tooltip,
           child: Material(
@@ -1553,26 +1556,7 @@ class _DockButtonWithSubmenu extends StatelessWidget {
             ),
           ),
         ),
-        // 3-dot submenu
-        if (onSubmenuTap != null)
-          buildSubmenuTrigger()
-        else
-          PopupMenuButton<void>(
-            tooltip: '$tooltip options',
-            offset: const Offset(0, -8),
-            position: PopupMenuPosition.over,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: context.border),
-            ),
-            color: context.surface.withValues(alpha: 0.95),
-            itemBuilder: menuBuilder!,
-            child: const SizedBox(
-              width: 20,
-              height: 44,
-              child: Icon(Icons.more_vert, size: 14),
-            ),
-          ),
+        if (onSubmenuTap != null) buildSubmenuTrigger()!,
       ],
     );
   }
@@ -1590,7 +1574,7 @@ class _DrawingToolsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 220,
+      constraints: const BoxConstraints(minWidth: 220),
       decoration: BoxDecoration(
         color: context.surface.withValues(alpha: 0.96),
         borderRadius: BorderRadius.circular(14),
@@ -1610,17 +1594,17 @@ class _DrawingToolsPanel extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Mic submenu -- noise suppression, echo cancellation, auto gain
+// Standalone submenu widgets (non-modal, used with CompositedTransformFollower)
 // ---------------------------------------------------------------------------
 
-class _MicSubmenu extends StatelessWidget {
-  final VoiceSettingsState voiceSettings;
-  final WidgetRef ref;
+class _MicSubmenuStandalone extends ConsumerWidget {
+  final VoidCallback onRequestClose;
 
-  const _MicSubmenu({required this.voiceSettings, required this.ref});
+  const _MicSubmenuStandalone({required this.onRequestClose});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final voiceSettings = ref.watch(voiceSettingsProvider);
     return SizedBox(
       width: 220,
       child: Column(
@@ -1710,17 +1694,13 @@ class _MicSubmenu extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Camera submenu -- device picker
-// ---------------------------------------------------------------------------
+class _CameraSubmenuStandalone extends ConsumerWidget {
+  final VoidCallback onRequestClose;
 
-class _CameraSubmenu extends StatelessWidget {
-  final WidgetRef ref;
-
-  const _CameraSubmenu({required this.ref});
+  const _CameraSubmenuStandalone({required this.onRequestClose});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return SizedBox(
       width: 240,
       child: FutureBuilder<List<MediaDeviceInfo>>(
@@ -1761,7 +1741,6 @@ class _CameraSubmenu extends StatelessWidget {
                 final isCurrent = cam.deviceId == currentCamId;
                 return InkWell(
                   onTap: () async {
-                    Navigator.pop(context);
                     if (cam.deviceId != currentCamId) {
                       await ref
                           .read(voiceSettingsProvider.notifier)
@@ -1770,6 +1749,7 @@ class _CameraSubmenu extends StatelessWidget {
                           .read(livekitVoiceProvider.notifier)
                           .switchCamera();
                     }
+                    onRequestClose();
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -1814,18 +1794,16 @@ class _CameraSubmenu extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Screen share submenu -- quality / frame rate
-// ---------------------------------------------------------------------------
+class _ScreenShareSubmenuStandalone extends ConsumerWidget {
+  final VoidCallback onRequestClose;
 
-class _ScreenShareSubmenu extends ConsumerWidget {
-  const _ScreenShareSubmenu();
+  const _ScreenShareSubmenuStandalone({required this.onRequestClose});
 
   @override
-  Widget build(BuildContext context, WidgetRef localRef) {
-    final ss = localRef.watch(screenShareProvider);
-    final voice = localRef.watch(livekitVoiceProvider);
-    final notifier = localRef.read(livekitVoiceProvider.notifier);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ss = ref.watch(screenShareProvider);
+    final voice = ref.watch(livekitVoiceProvider);
+    final notifier = ref.read(livekitVoiceProvider.notifier);
 
     Future<void> applyPreset({required int bitrate, required int fps}) async {
       await notifier.setAutoQuality(false);
