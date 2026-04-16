@@ -85,10 +85,18 @@ class LoungeDrawingCanvasState extends State<LoungeDrawingCanvas> {
   }
 
   /// Load an image from a URL and pin it to the canvas center.
-  Future<void> addImageFromUrl(String url) async {
+  Future<void> addImageFromUrl(
+    String url, {
+    Map<String, String>? headers,
+  }) async {
     try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode != 200) return;
+      final response = await http.get(Uri.parse(url), headers: headers);
+      if (response.statusCode != 200) {
+        debugPrint(
+          '[DrawingCanvas] Image fetch failed: ${response.statusCode}',
+        );
+        return;
+      }
       await _addImageFromBytes(response.bodyBytes);
     } catch (e) {
       debugPrint('[DrawingCanvas] Failed to load image from URL: $e');
