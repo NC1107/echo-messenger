@@ -68,9 +68,14 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use sha2::{Digest, Sha256};
 
-/// Compute a SHA-256 fingerprint of a raw identity key.
-fn identity_fingerprint(identity_key: &[u8]) -> Vec<u8> {
-    Sha256::digest(identity_key).to_vec()
+/// Compute a SHA-256 fingerprint of the identity key + signing key combined.
+/// Including the signing key prevents an attacker from silently rotating it
+/// while keeping the identity key unchanged.
+fn identity_fingerprint(identity_key: &[u8], signing_key: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(identity_key);
+    hasher.update(signing_key);
+    hasher.finalize().to_vec()
 }
 
 /// Extract and base64-encode the signing key from a bundle, rejecting bundles
@@ -117,10 +122,10 @@ pub async fn upload_bundle(
     verify_signed_prekey_signature(&signing_key_bytes, &signed_prekey, &signed_prekey_signature)?;
 
     // --- Identity binding check ---
-    // On first upload the identity key fingerprint is stored on the user row.
-    // On subsequent uploads the identity key MUST match or the request is
-    // rejected with 409. Rotation requires a separate key-reset flow.
-    let new_fingerprint = identity_fingerprint(&identity_key);
+    // On first upload the identity+signing key fingerprint is stored on the
+    // user row. On subsequent uploads the keys MUST match or the request is
+    // rejected with 409. Rotation requires POST /api/keys/reset.
+    let new_fingerprint = identity_fingerprint(&identity_key, &signing_key_bytes);
     let stored_fingerprint =
         db::keys::get_identity_key_fingerprint(&state.pool, auth_user.user_id).await?;
     match stored_fingerprint {
@@ -391,6 +396,49 @@ pub async fn revoke_device(
     }
 
     Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+/// Request body for key reset -- requires current password for re-authentication.
+#[derive(Debug, Deserialize)]
+pub struct ResetKeysRequest {
+    pub password: String,
+}
+
+/// POST /api/keys/reset -- Clear the identity key fingerprint binding so the
+/// user can upload a fresh key bundle. Requires password re-authentication
+/// to prevent abuse.
+pub async fn reset_keys(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+    Json(body): Json<ResetKeysRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    use crate::auth::password;
+
+    // Re-authenticate: verify the user's current password
+    let user = db::users::find_by_id(&state.pool, auth_user.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::bad_request("User not found"))?;
+
+    let pw = body.password.clone();
+    let hash = user.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || password::verify_password(&pw, &hash))
+        .await
+        .map_err(|_| AppError::internal("Password verification failed"))??;
+
+    if !valid {
+        return Err(AppError::unauthorized("Invalid password"));
+    }
+
+    // Clear the fingerprint so the next upload_bundle can bind a new one
+    db::keys::clear_identity_key_fingerprint(&state.pool, auth_user.user_id).await?;
+
+    tracing::info!(
+        "Identity key fingerprint cleared for user {} (key reset)",
+        auth_user.user_id,
+    );
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Query parameters for the OTP count endpoint.

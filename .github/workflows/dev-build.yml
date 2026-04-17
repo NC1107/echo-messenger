@@ -48,6 +48,30 @@ jobs:
           path: echo-linux-dev.tar.gz
           retention-days: 7
 
+  build-macos:
+    name: Build macOS
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build
+        working-directory: apps/client
+        run: flutter build macos --release --dart-define=APP_VERSION=dev
+      - name: Package
+        run: |
+          cd apps/client/build/macos/Build/Products/Release
+          tar czf ${{ github.workspace }}/echo-macos-dev.tar.gz Echo.app
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dev-macos
+          path: echo-macos-dev.tar.gz
+          retention-days: 7
+
   build-web:
     name: Build Web
     runs-on: ubuntu-latest

@@ -339,8 +339,16 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
           image: img,
           httpHeaders: httpHeaders,
           onMove: (dx, dy) {
-            final newX = ((x + dx) / size.width).clamp(0.0, 1.0);
-            final newY = ((y + dy) / size.height).clamp(0.0, 1.0);
+            // Read current position from provider state to avoid stale closure
+            final current = ref
+                .read(canvasProvider)
+                .images
+                .where((i) => i.id == img.id)
+                .firstOrNull;
+            final curX = (current?.x ?? img.x) * size.width;
+            final curY = (current?.y ?? img.y) * size.height;
+            final newX = ((curX + dx) / size.width).clamp(0.0, 1.0);
+            final newY = ((curY + dy) / size.height).clamp(0.0, 1.0);
             ref.read(canvasProvider.notifier).moveImage(img.id, newX, newY);
           },
           onMoveEnd: () {

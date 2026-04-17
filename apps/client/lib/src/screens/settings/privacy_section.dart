@@ -23,13 +23,16 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
   }
 
   Future<void> _resetEncryptionKeys() async {
-    final confirmed = await showDialog<bool>(
+    final result = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
-        final controller = TextEditingController();
+        final confirmController = TextEditingController();
+        final passwordController = TextEditingController();
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
-            final matches = controller.text.trim().toUpperCase() == 'RESET';
+            final matches =
+                confirmController.text.trim().toUpperCase() == 'RESET';
+            final hasPassword = passwordController.text.isNotEmpty;
             return AlertDialog(
               backgroundColor: context.surface,
               shape: RoundedRectangleBorder(
@@ -60,6 +63,22 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
                   ),
                   const SizedBox(height: 16),
                   Text(
+                    'Enter your password:',
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    style: TextStyle(color: context.textPrimary, fontSize: 14),
+                    decoration: const InputDecoration(hintText: 'Password'),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
                     'Type RESET to confirm:',
                     style: TextStyle(
                       color: context.textSecondary,
@@ -68,7 +87,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
                   ),
                   const SizedBox(height: 8),
                   TextField(
-                    controller: controller,
+                    controller: confirmController,
                     style: TextStyle(color: context.textPrimary, fontSize: 14),
                     decoration: const InputDecoration(hintText: 'RESET'),
                     onChanged: (_) => setDialogState(() {}),
@@ -77,12 +96,15 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
+                  onPressed: () => Navigator.pop(dialogContext, null),
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
-                  onPressed: matches
-                      ? () => Navigator.pop(dialogContext, true)
+                  onPressed: matches && hasPassword
+                      ? () => Navigator.pop(
+                          dialogContext,
+                          passwordController.text,
+                        )
                       : null,
                   style: FilledButton.styleFrom(
                     backgroundColor: EchoTheme.danger,
@@ -96,10 +118,10 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
       },
     );
 
-    if (confirmed != true) return;
+    if (result == null) return;
 
     try {
-      await ref.read(cryptoProvider.notifier).resetKeys();
+      await ref.read(cryptoProvider.notifier).resetKeys(result);
       if (mounted) {
         ToastService.show(
           context,

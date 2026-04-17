@@ -1236,8 +1236,30 @@ class CryptoService {
     await store.delete('$_peerIdentityChangedPrefix$peerUserId');
   }
 
-  /// Reset all keys: delete identity + session keys, regenerate, and upload.
-  Future<void> resetAllKeys() async {
+  /// Reset all keys: clear server fingerprint, delete local keys, regenerate,
+  /// and upload a fresh bundle.
+  ///
+  /// [password] is required for server-side re-authentication to clear the
+  /// identity key fingerprint binding.
+  Future<void> resetAllKeys(String password) async {
+    // Clear the server-side identity fingerprint first so the new key upload
+    // won't be rejected with 409.
+    final resetResponse = await http.post(
+      Uri.parse('$serverUrl/api/keys/reset'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_token',
+      },
+      body: jsonEncode({'password': password}),
+    );
+
+    if (resetResponse.statusCode != 204) {
+      throw Exception(
+        'Server key reset failed: HTTP ${resetResponse.statusCode} '
+        '${resetResponse.body}',
+      );
+    }
+
     final store = SecureKeyStore.instance;
     for (final key in _allCryptoKeys) {
       await store.delete(key);
@@ -1401,12 +1423,14 @@ class CryptoService {
 
     if (_identityKeyPair == null) await init();
 
-    final bobIdentityKeyBytes = base64Decode(
-      bundleData['identity_key'] as String,
-    );
+    final identityKeyB64 = bundleData['identity_key'] as String;
+    final bobIdentityKeyBytes = base64Decode(identityKeyB64);
     final bobSignedPrekeyBytes = base64Decode(
       bundleData['signed_prekey'] as String,
     );
+
+    // TOFU check for this device's identity key
+    await _storePeerIdentityKeyTofu(peerUserId, identityKeyB64);
 
     // Verify signed prekey signature
     final signingKeyB64 = bundleData['signing_key'] as String?;
