@@ -161,6 +161,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let key_routes = Router::new()
         .route("/upload", post(keys::upload_bundle))
+        .route("/reset", post(keys::reset_keys))
         .route("/bundle/{user_id}", get(keys::get_bundle))
         .route(
             "/bundle/{user_id}/{device_id}",

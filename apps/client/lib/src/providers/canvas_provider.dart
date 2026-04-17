@@ -325,6 +325,7 @@ class CanvasNotifier extends StateNotifier<CanvasState> {
   @override
   void dispose() {
     _avatarThrottle?.cancel();
+    _imageThrottle?.cancel();
     super.dispose();
   }
 }

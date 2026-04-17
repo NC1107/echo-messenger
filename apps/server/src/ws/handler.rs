@@ -421,8 +421,25 @@ async fn run_receive_loop(
                 handle_text_message(&text, user_id, device_id, username, state).await;
             }
             WsMessage::Close(_) => break,
-            _ => {}
-        }
+            // Binary/Ping/Pong frames: count bytes toward the rate limit to
+            // prevent abuse via non-text frames.
+            other => {
+                let cost = match &other {
+                    WsMessage::Binary(b) => b.len() as f64,
+                    WsMessage::Ping(b) | WsMessage::Pong(b) => b.len() as f64,
+                    _ => 0.0,
+                };
+                if cost > 0.0 {
+                    if byte_tokens < cost {
+                        consecutive_violations += 1;
+                        if consecutive_violations >= MAX_CONSECUTIVE_VIOLATIONS {
+                            break;
+                        }
+                        continue;
+                    }
+                    byte_tokens -= cost;
+                }
+            }
     }
 }
 

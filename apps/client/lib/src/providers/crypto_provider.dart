@@ -224,10 +224,11 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
   }
 
   /// Reset all encryption keys (regenerate identity + session keys).
-  Future<void> resetKeys() async {
+  /// Requires [password] for server-side re-authentication.
+  Future<void> resetKeys(String password) async {
     try {
       final crypto = ref.read(cryptoServiceProvider);
-      await crypto.resetAllKeys();
+      await crypto.resetAllKeys(password);
       state = state.copyWith(
         isInitialized: true,
         keysUploadFailed: false,

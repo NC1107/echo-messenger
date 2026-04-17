@@ -1417,7 +1417,7 @@ class _FloatingDock extends ConsumerWidget {
                           context: context,
                           builder: (_) => lk.ScreenSelectDialog(),
                         );
-                        if (source == null) return;
+                        if (source == null || !context.mounted) return;
                         final track =
                             await lk.LocalVideoTrack.createScreenShareTrack(
                               lk.ScreenShareCaptureOptions(

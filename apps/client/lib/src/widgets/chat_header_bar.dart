@@ -399,6 +399,15 @@ class ChatHeaderBar extends ConsumerWidget {
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
+      if (!conv.isGroup)
+        IconButton(
+          icon: const Icon(Icons.timer_outlined, size: 20),
+          color: context.textSecondary,
+          tooltip: 'Disappearing messages',
+          onPressed: () => _showDisappearingDialog(context, ref, conv),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        ),
       if (conv.isGroup && onMembersToggle != null)
         IconButton(
           icon: const Icon(Icons.people_outline, size: 20),

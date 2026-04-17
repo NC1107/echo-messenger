@@ -345,5 +345,8 @@ class _DrawingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _DrawingPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _DrawingPainter oldDelegate) =>
+      strokes.length != oldDelegate.strokes.length ||
+      currentStroke != oldDelegate.currentStroke ||
+      images.length != oldDelegate.images.length;
 }

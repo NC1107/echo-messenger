@@ -481,7 +481,7 @@ class VoiceRtcNotifier extends StateNotifier<VoiceRtcState> {
       'iceTransportPolicy': 'all',
       'bundlePolicy': 'max-bundle',
       'dtlsSrtpKeyAgreement': true,
-      'iceCandidatePoolSize': 50,
+      'iceCandidatePoolSize': 4,
     };
 
     final pc = await createPeerConnection(config);

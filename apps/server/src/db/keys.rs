@@ -49,6 +49,18 @@ pub async fn set_identity_key_fingerprint(
     Ok(())
 }
 
+/// Clear the identity key fingerprint for a user (used during key reset).
+pub async fn clear_identity_key_fingerprint(
+    db: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET identity_key_fingerprint = NULL WHERE id = $1")
+        .bind(user_id)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
 /// Store or replace a user's identity key for a specific device.
 pub async fn store_identity_key(
     db: impl sqlx::PgExecutor<'_>,
