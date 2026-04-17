@@ -124,7 +124,8 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
   @override
   Widget build(BuildContext context) {
     final canvas = ref.watch(canvasProvider);
-    final myUserId = ref.read(authProvider).userId ?? '';
+    final authState = ref.watch(authProvider);
+    final myUserId = authState.userId ?? '';
     final tool = canvas.selectedTool;
 
     return Focus(
@@ -172,10 +173,10 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
                     ),
 
                     // 2. Images layer
-                    ..._buildImages(canvas),
+                    ..._buildImages(canvas, authState),
 
                     // 3. Avatars layer
-                    ..._buildAvatars(canvas, myUserId),
+                    ..._buildAvatars(canvas, myUserId, authState),
                   ],
                 ),
               ),
@@ -190,7 +191,11 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
   // Avatar widgets
   // -------------------------------------------------------------------------
 
-  List<Widget> _buildAvatars(CanvasState canvas, String myUserId) {
+  List<Widget> _buildAvatars(
+    CanvasState canvas,
+    String myUserId,
+    AuthState authState,
+  ) {
     final widgets = <Widget>[];
     final room = widget.room;
     final voiceState = widget.voiceState;
@@ -200,7 +205,7 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     final participants = <_ParticipantInfo>[];
 
     // Local user -- resolve camera video track
-    final localName = ref.read(authProvider).username ?? 'You';
+    final localName = authState.username ?? 'You';
     lk.VideoTrack? localVideoTrack;
     if (room != null && voiceState.isVideoEnabled) {
       final pub = room.localParticipant?.videoTrackPublications
@@ -278,8 +283,8 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
             participant: participant,
             canvasSize: size,
             currentPos: CanvasPoint(x: normalized.x, y: normalized.y),
-            httpHeaders: ref.read(authProvider).token != null
-                ? {'Authorization': 'Bearer ${ref.read(authProvider).token}'}
+            httpHeaders: authState.token != null
+                ? {'Authorization': 'Bearer ${authState.token}'}
                 : null,
             onDrag: (norm) {
               ref
@@ -321,9 +326,9 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
   // Image widgets
   // -------------------------------------------------------------------------
 
-  List<Widget> _buildImages(CanvasState canvas) {
+  List<Widget> _buildImages(CanvasState canvas, AuthState authState) {
     final size = _canvasSize();
-    final token = ref.read(authProvider).token;
+    final token = authState.token;
     final httpHeaders = token != null
         ? <String, String>{'Authorization': 'Bearer $token'}
         : null;
