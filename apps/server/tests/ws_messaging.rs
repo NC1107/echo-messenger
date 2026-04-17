@@ -414,7 +414,10 @@ async fn offline_delivery_uses_per_device_ciphertext() {
     // Alice receives message_sent confirmation.
     let alice_event = read_text_with_timeout(&mut alice_ws).await;
     let alice_msg: Value = serde_json::from_str(&alice_event).expect("Alice JSON parse failed");
-    assert_eq!(alice_msg["type"], "message_sent", "Alice should get message_sent");
+    assert_eq!(
+        alice_msg["type"], "message_sent",
+        "Alice should get message_sent"
+    );
 
     // Bob comes online with device 42 — his WS ticket carries device_id = 42.
     // Register Bob's key bundle with device_id=42 first so the WS auth knows
@@ -467,8 +470,7 @@ async fn device_content_db_roundtrip() {
 
     let (alice_token, _alice_id, _alice_name) =
         common::register_and_login(&client, &base, "dbrtalice").await;
-    let (bob_token, bob_id, bob_name) =
-        common::register_and_login(&client, &base, "dbrtbob").await;
+    let (bob_token, bob_id, bob_name) = common::register_and_login(&client, &base, "dbrtbob").await;
     common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
 
     // Alice sends a message that stores a device-specific ciphertext.

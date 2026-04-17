@@ -272,10 +272,9 @@ async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid, device_id
     let ids: Vec<Uuid> = undelivered.iter().map(|m| m.id).collect();
 
     // Batch-fetch all per-device ciphertexts in a single query to avoid N+1.
-    let device_ct_map =
-        db::messages::get_device_contents_batch(&state.pool, &ids, device_id)
-            .await
-            .unwrap_or_default();
+    let device_ct_map = db::messages::get_device_contents_batch(&state.pool, &ids, device_id)
+        .await
+        .unwrap_or_default();
 
     for msg in &undelivered {
         // Prefer device-specific ciphertext; fall back to canonical content.
