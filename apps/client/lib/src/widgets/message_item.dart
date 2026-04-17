@@ -707,7 +707,7 @@ class _MessageItemState extends State<MessageItem> {
       margin: const EdgeInsets.only(top: 4, right: 4),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.red.shade50,
+        color: EchoTheme.danger.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: EchoTheme.danger.withValues(alpha: 0.3)),
       ),

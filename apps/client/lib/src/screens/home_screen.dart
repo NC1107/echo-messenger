@@ -871,7 +871,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             }
           });
         },
-        child: Container(width: 4, color: context.border),
+        child: Container(
+          width: 12,
+          color: Colors.transparent,
+          child: Center(child: Container(width: 1, color: context.border)),
+        ),
       ),
     );
   }

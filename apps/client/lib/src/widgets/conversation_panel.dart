@@ -521,7 +521,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     int pendingCount,
   ) {
     return Container(
-      height: 48,
+      height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
@@ -789,7 +789,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ref.read(websocketProvider.notifier).connect();
           },
           child: Container(
-            height: 48,
+            height: 56,
             margin: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
               color: context.surface,
