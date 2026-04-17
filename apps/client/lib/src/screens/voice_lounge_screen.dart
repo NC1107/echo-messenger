@@ -41,15 +41,9 @@ class VoiceLoungeScreen extends ConsumerStatefulWidget {
 
   const VoiceLoungeScreen({super.key, this.onBackToChat});
 
-  /// Screen sharing is supported on desktop, web, and Android.
-  /// iOS requires a Broadcast Upload Extension which is not yet implemented.
-  static bool get _supportsScreenShare {
-    if (kIsWeb) return true;
-    return defaultTargetPlatform == TargetPlatform.linux ||
-        defaultTargetPlatform == TargetPlatform.windows ||
-        defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.macOS;
-  }
+  /// Screen sharing is supported on all platforms. iOS uses a ReplayKit
+  /// Broadcast Upload Extension (EchoBroadcast target).
+  static bool get _supportsScreenShare => true;
 
   @override
   ConsumerState<VoiceLoungeScreen> createState() => _VoiceLoungeScreenState();
