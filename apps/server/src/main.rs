@@ -123,8 +123,9 @@ async fn broadcast_voice_session_left(
         "user_id": user_id,
     });
     if let Ok(json) = serde_json::to_string(&event) {
+        let msg = WsMessage::Text(json.as_str().into());
         for member_id in &member_ids {
-            hub.send_to(member_id, WsMessage::Text(json.clone().into()));
+            hub.send_to(member_id, msg.clone());
         }
     }
 }
@@ -211,8 +212,9 @@ async fn cleanup_expired_messages(pool: &PgPool, hub: &ws::hub::Hub) {
             conversation_id,
         };
         if let Ok(json) = serde_json::to_string(&event) {
+            let msg = WsMessage::Text(json.as_str().into());
             for member_id in &member_ids {
-                hub.send_to(member_id, WsMessage::Text(json.clone().into()));
+                hub.send_to(member_id, msg.clone());
             }
         }
     }
