@@ -372,7 +372,17 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
     if (room == null) return false;
 
     try {
-      await room.localParticipant?.setScreenShareEnabled(enabled);
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        // iOS requires a ReplayKit Broadcast Upload Extension for screen
+        // capture. LiveKit's plugin reads RTCScreenSharingExtension from
+        // Info.plist and presents the system broadcast picker automatically.
+        await room.localParticipant?.setScreenShareEnabled(
+          enabled,
+          captureScreenAudio: true,
+        );
+      } else {
+        await room.localParticipant?.setScreenShareEnabled(enabled);
+      }
       return true;
     } catch (e) {
       debugPrint('[LiveKitVoice] setScreenShareEnabled($enabled) failed: $e');
