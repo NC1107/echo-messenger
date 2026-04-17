@@ -513,3 +513,27 @@ pub async fn get_device_content(
     .await?;
     Ok(row.map(|(c,)| c))
 }
+
+/// Fetch per-device ciphertexts for a batch of messages for a specific device
+/// in a single query.  Returns a map from message_id to device-specific content.
+///
+/// Used by `deliver_undelivered_messages` to avoid N+1 queries when replaying
+/// the offline queue.
+pub async fn get_device_contents_batch(
+    pool: &PgPool,
+    message_ids: &[Uuid],
+    device_id: i32,
+) -> Result<std::collections::HashMap<Uuid, String>, sqlx::Error> {
+    if message_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT message_id, content FROM message_device_contents \
+         WHERE message_id = ANY($1) AND device_id = $2",
+    )
+    .bind(message_ids)
+    .bind(device_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().collect())
+}
