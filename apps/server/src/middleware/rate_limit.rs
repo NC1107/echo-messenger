@@ -187,6 +187,12 @@ pub fn link_preview_limiter() -> RateLimiter {
     RateLimiter::new(20, 60)
 }
 
+/// Key reset rate limiter: 3 attempts per 300 seconds per IP.
+/// Tight limit since this is a password-guessing vector.
+pub fn key_reset_limiter() -> RateLimiter {
+    RateLimiter::new(3, 300)
+}
+
 /// Check whether an IP is in a private/reserved range (RFC 1918, link-local, ULA).
 fn is_private(ip: IpAddr) -> bool {
     match ip {

@@ -520,12 +520,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     bool wsConnected,
     int pendingCount,
   ) {
-    final totalUnread = ref.watch(
-      conversationsProvider.select(
-        (s) => s.conversations.fold<int>(0, (sum, c) => sum + c.unreadCount),
-      ),
-    );
-
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -534,7 +528,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       ),
       child: Row(
         children: [
-          _buildLogoWithBadge(totalUnread),
+          const EchoLogoIcon(size: 24),
           const SizedBox(width: 8),
           Text(
             'Echo',
@@ -569,12 +563,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ],
       ),
     );
-  }
-
-  Widget _buildLogoWithBadge(int totalUnread) {
-    // Unread count is already shown per-conversation in the sidebar list,
-    // so the logo badge is removed to reduce visual clutter.
-    return const EchoLogoIcon(size: 24);
   }
 
   Widget _buildConnectionDot(BuildContext context, bool wsConnected) {

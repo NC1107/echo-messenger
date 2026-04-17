@@ -30,6 +30,7 @@ const ALLOWED_MIME_TYPES: &[&str] = &[
     "image/gif",
     "image/webp",
     "image/heic",
+    "image/heif",
     // Video
     "video/mp4",
     "video/quicktime",
@@ -58,7 +59,7 @@ fn extension_for_mime(mime: &str) -> &str {
         "image/png" => "png",
         "image/gif" => "gif",
         "image/webp" => "webp",
-        "image/heic" => "heic",
+        "image/heic" | "image/heif" => "heic",
         "video/mp4" => "mp4",
         "video/quicktime" => "mov",
         "audio/mpeg" => "mp3",
