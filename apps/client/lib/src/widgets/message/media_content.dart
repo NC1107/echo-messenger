@@ -392,6 +392,8 @@ class MediaContentState extends State<MediaContent> {
                       )
                     : CachedNetworkImage(
                         imageUrl: fullUrl,
+                        cacheKey:
+                            '${fullUrl}_${widget.authToken != null ? 'auth' : 'noauth'}',
                         width: 300,
                         fit: BoxFit.cover,
                         httpHeaders: headers,

@@ -572,38 +572,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Widget _buildLogoWithBadge(int totalUnread) {
-    if (totalUnread <= 0) {
-      return const EchoLogoIcon(size: 24);
-    }
-    final label = totalUnread > 99 ? '99+' : '$totalUnread';
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        const EchoLogoIcon(size: 24),
-        Positioned(
-          top: -6,
-          right: -10,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-            constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-            decoration: BoxDecoration(
-              color: EchoTheme.danger,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
+    // Unread count is already shown per-conversation in the sidebar list,
+    // so the logo badge is removed to reduce visual clutter.
+    return const EchoLogoIcon(size: 24);
   }
 
   Widget _buildConnectionDot(BuildContext context, bool wsConnected) {

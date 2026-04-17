@@ -195,7 +195,12 @@ class LoungeDrawingCanvasState extends State<LoungeDrawingCanvas> {
 
     if (_currentStroke == null) return;
     setState(() {
-      _currentStroke!.points.add(event.localPosition);
+      _currentStroke = DrawingStroke(
+        points: [..._currentStroke!.points, event.localPosition],
+        color: _currentStroke!.color,
+        width: _currentStroke!.width,
+        isEraser: _currentStroke!.isEraser,
+      );
     });
   }
 

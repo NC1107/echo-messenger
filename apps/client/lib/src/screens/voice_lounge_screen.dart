@@ -276,7 +276,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               GestureDetector(
                 onTap: () =>
                     setState(() => _focusedTileKey = _kScreenshareLocal),
-                child: _ScreenShareViewer(ref: ref),
+                child: const _ScreenShareViewer(),
               ),
               const SizedBox(height: 16),
             ],
@@ -332,7 +332,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           if (screenShare.isScreenSharing)
             GestureDetector(
               onTap: () => setState(() => _focusedTileKey = _kScreenshareLocal),
-              child: _ScreenShareViewer(ref: ref),
+              child: const _ScreenShareViewer(),
             ),
           if (screenShare.isScreenSharing) const SizedBox(height: 16),
           _ParticipantGrid(
@@ -934,6 +934,7 @@ class _ParticipantTile extends StatelessWidget {
                   name: name,
                   avatarUrl: avatarUrl,
                   isSpeaking: isSpeaking,
+                  authToken: ref.read(authProvider).token,
                 ),
               _buildNameLabel(context),
             ],
@@ -1035,11 +1036,13 @@ class _AvatarCircle extends StatelessWidget {
   final String name;
   final String? avatarUrl;
   final bool isSpeaking;
+  final String? authToken;
 
   const _AvatarCircle({
     required this.name,
     this.avatarUrl,
     required this.isSpeaking,
+    this.authToken,
   });
 
   @override
@@ -1067,6 +1070,9 @@ class _AvatarCircle extends StatelessWidget {
         child: avatarUrl != null
             ? Image.network(
                 avatarUrl!,
+                headers: authToken != null
+                    ? {'Authorization': 'Bearer $authToken'}
+                    : null,
                 fit: BoxFit.cover,
                 width: 48,
                 height: 48,
@@ -1181,16 +1187,14 @@ class _LocalScreenShareTrackState extends State<_LocalScreenShareTrack> {
 // Screen share viewer (local)
 // ---------------------------------------------------------------------------
 
-class _ScreenShareViewer extends StatelessWidget {
-  final WidgetRef ref;
-
-  const _ScreenShareViewer({required this.ref});
+class _ScreenShareViewer extends ConsumerWidget {
+  const _ScreenShareViewer();
 
   @override
-  Widget build(BuildContext context) {
-    // Use the LiveKit room's local participant screen share track directly
-    // instead of screenShareProvider.screenRenderer (which is null when
-    // LiveKit SDK handles capture via setScreenShareEnabled).
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch the provider so the widget rebuilds when the screen share track
+    // becomes available (fixes grey screen on initial publish).
+    ref.watch(livekitVoiceProvider);
     final room = ref.read(livekitVoiceProvider.notifier).room;
     final localParticipant = room?.localParticipant;
     if (localParticipant == null) return const SizedBox.shrink();

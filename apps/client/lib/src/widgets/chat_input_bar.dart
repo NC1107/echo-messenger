@@ -772,30 +772,24 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   Widget _buildAttachFileButton() {
     final isMobile = Responsive.isMobile(context);
     if (isMobile) {
-      return Padding(
-        padding: const EdgeInsets.only(left: 4),
-        child: IconButton(
-          icon: Icon(Icons.add, size: 22, color: context.textSecondary),
-          tooltip: 'Attach',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          onPressed: _showMobileAttachMenu,
-        ),
+      return IconButton(
+        icon: Icon(Icons.add, size: 22, color: context.textSecondary),
+        tooltip: 'Attach',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        onPressed: _showMobileAttachMenu,
       );
     }
-    return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: IconButton(
-        icon: Icon(
-          Icons.attach_file_outlined,
-          size: 20,
-          color: context.textSecondary,
-        ),
-        tooltip: 'Attach file',
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-        onPressed: _pickFile,
+    return IconButton(
+      icon: Icon(
+        Icons.attach_file_outlined,
+        size: 20,
+        color: context.textSecondary,
       ),
+      tooltip: 'Attach file',
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      onPressed: _pickFile,
     );
   }
 
@@ -923,7 +917,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       ),
       tooltip: showMediaPicker ? 'Keyboard' : 'Emoji & GIF',
       padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
       onPressed: () {
         if (isMobileLayout) {
           if (_showInlinePicker) {
