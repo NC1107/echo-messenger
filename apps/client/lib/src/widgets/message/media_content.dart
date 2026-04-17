@@ -293,21 +293,37 @@ class MediaContentState extends State<MediaContent> {
                 child: InteractiveViewer(
                   minScale: 0.8,
                   maxScale: 4,
-                  child: CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    httpHeaders: headers,
-                    fit: BoxFit.contain,
-                    placeholder: (_, _) => const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
-                    ),
-                    errorWidget: (_, _, _) => const Center(
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.white54,
-                        size: 48,
-                      ),
-                    ),
-                  ),
+                  child: imageUrl.endsWith('.gif')
+                      ? Image.network(
+                          imageUrl,
+                          headers: headers,
+                          fit: BoxFit.contain,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, _, _) => const Center(
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              color: Colors.white54,
+                              size: 48,
+                            ),
+                          ),
+                        )
+                      : CachedNetworkImage(
+                          imageUrl: imageUrl,
+                          httpHeaders: headers,
+                          fit: BoxFit.contain,
+                          placeholder: (_, _) => const Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                            ),
+                          ),
+                          errorWidget: (_, _, _) => const Center(
+                            child: Icon(
+                              Icons.broken_image_outlined,
+                              color: Colors.white54,
+                              size: 48,
+                            ),
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -392,6 +408,8 @@ class MediaContentState extends State<MediaContent> {
                       )
                     : CachedNetworkImage(
                         imageUrl: fullUrl,
+                        cacheKey:
+                            '${fullUrl}_${widget.authToken != null ? 'auth' : 'noauth'}',
                         width: 300,
                         fit: BoxFit.cover,
                         httpHeaders: headers,

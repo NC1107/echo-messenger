@@ -148,7 +148,7 @@ class AvatarPosition {
 // Drawing tools
 // ---------------------------------------------------------------------------
 
-enum CanvasTool { pen, eraser }
+enum CanvasTool { none, pen, eraser }
 
 // ---------------------------------------------------------------------------
 // Full canvas state
@@ -182,7 +182,7 @@ class CanvasState {
     this.images = const [],
     this.avatarPositions = const {},
     this.activePoints = const [],
-    this.selectedTool = CanvasTool.pen,
+    this.selectedTool = CanvasTool.none,
     this.currentColor = const Color(0xFFFFFFFF),
     this.strokeWidth = 3.0,
     this.isLoaded = false,

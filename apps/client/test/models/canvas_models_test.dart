@@ -126,7 +126,7 @@ void main() {
       expect(state.images, isEmpty);
       expect(state.avatarPositions, isEmpty);
       expect(state.activePoints, isEmpty);
-      expect(state.selectedTool, CanvasTool.pen);
+      expect(state.selectedTool, CanvasTool.none);
       expect(state.isLoaded, isFalse);
     });
 

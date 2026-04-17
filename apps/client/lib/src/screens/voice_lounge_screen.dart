@@ -276,7 +276,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               GestureDetector(
                 onTap: () =>
                     setState(() => _focusedTileKey = _kScreenshareLocal),
-                child: _ScreenShareViewer(ref: ref),
+                child: const _ScreenShareViewer(),
               ),
               const SizedBox(height: 16),
             ],
@@ -285,6 +285,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               voiceState: voiceLk,
               localAvatarUrl: _buildAvatarUrl(),
               memberAvatars: memberAvatars,
+              authToken: ref.read(authProvider).token,
               onTileTap: (key) => setState(() => _focusedTileKey = key),
             ),
           ],
@@ -332,7 +333,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
           if (screenShare.isScreenSharing)
             GestureDetector(
               onTap: () => setState(() => _focusedTileKey = _kScreenshareLocal),
-              child: _ScreenShareViewer(ref: ref),
+              child: const _ScreenShareViewer(),
             ),
           if (screenShare.isScreenSharing) const SizedBox(height: 16),
           _ParticipantGrid(
@@ -340,6 +341,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             voiceState: voiceLk,
             localAvatarUrl: _buildAvatarUrl(),
             memberAvatars: memberAvatars,
+            authToken: ref.read(authProvider).token,
             onTileTap: (key) => setState(() => _focusedTileKey = key),
           ),
         ],
@@ -420,6 +422,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             localAvatarUrl: _buildAvatarUrl(),
             memberAvatars: memberAvatars,
             compact: true,
+            authToken: ref.read(authProvider).token,
             onTileTap: (key) => setState(() => _focusedTileKey = key),
           ),
         ),
@@ -714,6 +717,7 @@ class _ParticipantGrid extends StatelessWidget {
   final String? localAvatarUrl;
   final Map<String, String?> memberAvatars;
   final bool compact;
+  final String? authToken;
 
   /// Called with the tile key when the user taps a tile to focus it.
   final void Function(String key)? onTileTap;
@@ -725,6 +729,7 @@ class _ParticipantGrid extends StatelessWidget {
     this.memberAvatars = const {},
     this.compact = false,
     this.onTileTap,
+    this.authToken,
   });
 
   @override
@@ -782,6 +787,7 @@ class _ParticipantGrid extends StatelessWidget {
       isMuted: !voiceState.isCaptureEnabled,
       isLocal: true,
       onTap: onTileTap != null ? () => onTileTap!('local') : null,
+      authToken: authToken,
     );
   }
 
@@ -828,6 +834,7 @@ class _ParticipantGrid extends StatelessWidget {
           }
         }
       },
+      authToken: authToken,
     );
   }
 
@@ -870,6 +877,7 @@ class _ParticipantTile extends StatelessWidget {
   final bool isLocal;
   final VoidCallback? onTap;
   final VoidCallback? onMuteForMe;
+  final String? authToken;
 
   const _ParticipantTile({
     super.key,
@@ -884,6 +892,7 @@ class _ParticipantTile extends StatelessWidget {
     this.isLocal = false,
     this.onTap,
     this.onMuteForMe,
+    this.authToken,
   });
 
   @override
@@ -934,6 +943,7 @@ class _ParticipantTile extends StatelessWidget {
                   name: name,
                   avatarUrl: avatarUrl,
                   isSpeaking: isSpeaking,
+                  authToken: authToken,
                 ),
               _buildNameLabel(context),
             ],
@@ -1035,11 +1045,13 @@ class _AvatarCircle extends StatelessWidget {
   final String name;
   final String? avatarUrl;
   final bool isSpeaking;
+  final String? authToken;
 
   const _AvatarCircle({
     required this.name,
     this.avatarUrl,
     required this.isSpeaking,
+    this.authToken,
   });
 
   @override
@@ -1067,6 +1079,9 @@ class _AvatarCircle extends StatelessWidget {
         child: avatarUrl != null
             ? Image.network(
                 avatarUrl!,
+                headers: authToken != null
+                    ? {'Authorization': 'Bearer $authToken'}
+                    : null,
                 fit: BoxFit.cover,
                 width: 48,
                 height: 48,
@@ -1181,16 +1196,14 @@ class _LocalScreenShareTrackState extends State<_LocalScreenShareTrack> {
 // Screen share viewer (local)
 // ---------------------------------------------------------------------------
 
-class _ScreenShareViewer extends StatelessWidget {
-  final WidgetRef ref;
-
-  const _ScreenShareViewer({required this.ref});
+class _ScreenShareViewer extends ConsumerWidget {
+  const _ScreenShareViewer();
 
   @override
-  Widget build(BuildContext context) {
-    // Use the LiveKit room's local participant screen share track directly
-    // instead of screenShareProvider.screenRenderer (which is null when
-    // LiveKit SDK handles capture via setScreenShareEnabled).
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch the provider so the widget rebuilds when the screen share track
+    // becomes available (fixes grey screen on initial publish).
+    ref.watch(livekitVoiceProvider);
     final room = ref.read(livekitVoiceProvider.notifier).room;
     final localParticipant = room?.localParticipant;
     if (localParticipant == null) return const SizedBox.shrink();

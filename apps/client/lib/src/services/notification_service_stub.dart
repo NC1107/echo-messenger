@@ -25,6 +25,11 @@ class _NativeNotificationService implements NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
   static bool _appFocused = true;
+
+  /// Timestamp when the app was last foregrounded. Notifications are allowed
+  /// for a short grace period after foregrounding so WS-delivered messages
+  /// that were queued while offline still trigger local notifications.
+  static DateTime _lastForeground = DateTime.now();
   static int _fallbackId = 100000;
 
   // Cached notification preferences (loaded from SharedPreferences).
@@ -76,6 +81,7 @@ class _NativeNotificationService implements NotificationService {
       const initSettings = InitializationSettings(
         android: android,
         iOS: darwin,
+        macOS: darwin,
         linux: linux,
       );
       await _plugin.initialize(
@@ -159,8 +165,12 @@ class _NativeNotificationService implements NotificationService {
     bool isGroup = false,
     bool forceShow = false,
   }) {
-    // Suppress when the app is focused (matches web behaviour).
-    if (_appFocused && !forceShow) return;
+    // Suppress when the app is focused, but allow a 5-second grace period
+    // after foregrounding so WS-reconnect messages still trigger notifications.
+    if (_appFocused && !forceShow) {
+      final elapsed = DateTime.now().difference(_lastForeground);
+      if (elapsed.inSeconds > 5) return;
+    }
 
     // Respect user notification preferences.
     if (!forceShow) {
@@ -217,6 +227,9 @@ class _NativeNotificationService implements NotificationService {
 
   @override
   void setAppFocused(bool focused) {
+    if (focused && !_appFocused) {
+      _lastForeground = DateTime.now();
+    }
     _appFocused = focused;
   }
 

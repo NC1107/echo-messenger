@@ -278,6 +278,9 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
             participant: participant,
             canvasSize: size,
             currentPos: CanvasPoint(x: normalized.x, y: normalized.y),
+            httpHeaders: ref.read(authProvider).token != null
+                ? {'Authorization': 'Bearer ${ref.read(authProvider).token}'}
+                : null,
             onDrag: (norm) {
               ref
                   .read(canvasProvider.notifier)
@@ -584,6 +587,8 @@ class _DraggableAvatar extends StatefulWidget {
   final bool draggable;
   final VoidCallback? onDoubleTap;
 
+  final Map<String, String>? httpHeaders;
+
   const _DraggableAvatar({
     super.key,
     required this.participant,
@@ -593,6 +598,7 @@ class _DraggableAvatar extends StatefulWidget {
     required this.onDragEnd,
     this.draggable = false,
     this.onDoubleTap,
+    this.httpHeaders,
   });
 
   @override
@@ -645,6 +651,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
             : info.avatarUrl != null
             ? CachedNetworkImage(
                 imageUrl: info.avatarUrl!,
+                httpHeaders: widget.httpHeaders,
                 fit: BoxFit.cover,
                 placeholder: (_, _) => _initialsWidget(initial),
                 errorWidget: (_, _, _) => _initialsWidget(initial),

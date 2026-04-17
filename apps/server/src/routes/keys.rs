@@ -438,6 +438,18 @@ pub async fn reset_keys(
         auth_user.user_id,
     );
 
+    // Notify all of this user's active sessions so they can detect the reset.
+    use axum::extract::ws::Message as WsMessage;
+    let event = serde_json::json!({
+        "type": "identity_reset",
+        "user_id": auth_user.user_id,
+    });
+    if let Ok(json) = serde_json::to_string(&event) {
+        state
+            .hub
+            .send_to_user(&auth_user.user_id, WsMessage::Text(json.into()));
+    }
+
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -934,7 +934,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         label = '${_fullMonthName(dt.month)} ${dt.day}, ${dt.year}';
       }
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 48),
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
         child: Row(
           children: [
             Expanded(

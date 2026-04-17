@@ -520,12 +520,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     bool wsConnected,
     int pendingCount,
   ) {
-    final totalUnread = ref.watch(
-      conversationsProvider.select(
-        (s) => s.conversations.fold<int>(0, (sum, c) => sum + c.unreadCount),
-      ),
-    );
-
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -534,7 +528,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       ),
       child: Row(
         children: [
-          _buildLogoWithBadge(totalUnread),
+          const EchoLogoIcon(size: 24),
           const SizedBox(width: 8),
           Text(
             'Echo',
@@ -568,41 +562,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ),
         ],
       ),
-    );
-  }
-
-  Widget _buildLogoWithBadge(int totalUnread) {
-    if (totalUnread <= 0) {
-      return const EchoLogoIcon(size: 24);
-    }
-    final label = totalUnread > 99 ? '99+' : '$totalUnread';
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        const EchoLogoIcon(size: 24),
-        Positioned(
-          top: -6,
-          right: -10,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-            constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-            decoration: BoxDecoration(
-              color: EchoTheme.danger,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 

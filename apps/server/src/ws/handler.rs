@@ -438,6 +438,7 @@ async fn run_receive_loop(
                         continue;
                     }
                     byte_tokens -= cost;
+                    consecutive_violations = 0;
                 }
             }
         }

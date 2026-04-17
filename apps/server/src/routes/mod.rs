@@ -86,6 +86,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let ticket_limit = rate_limit::make_rate_limit_layer(rate_limit::ticket_limiter());
     let media_upload_limit = rate_limit::make_rate_limit_layer(rate_limit::media_upload_limiter());
     let link_preview_limit = rate_limit::make_rate_limit_layer(rate_limit::link_preview_limiter());
+    let key_reset_limit = rate_limit::make_rate_limit_layer(rate_limit::key_reset_limiter());
 
     let auth_routes = Router::new()
         .route(
@@ -161,7 +162,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let key_routes = Router::new()
         .route("/upload", post(keys::upload_bundle))
-        .route("/reset", post(keys::reset_keys))
+        .route(
+            "/reset",
+            post(keys::reset_keys).layer(middleware::from_fn(key_reset_limit)),
+        )
         .route("/bundle/{user_id}", get(keys::get_bundle))
         .route(
             "/bundle/{user_id}/{device_id}",

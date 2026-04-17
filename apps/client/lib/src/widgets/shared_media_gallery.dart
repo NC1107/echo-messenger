@@ -171,6 +171,7 @@ class _MediaGrid extends StatelessWidget {
               child: resolvedUrl.endsWith('.gif')
                   ? Image.network(
                       resolvedUrl,
+                      headers: headers,
                       fit: BoxFit.cover,
                       gaplessPlayback: true,
                       errorBuilder: (_, _, _) => _placeholder(context),

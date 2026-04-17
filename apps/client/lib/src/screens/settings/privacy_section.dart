@@ -23,11 +23,11 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
   }
 
   Future<void> _resetEncryptionKeys() async {
+    final confirmController = TextEditingController();
+    final passwordController = TextEditingController();
     final result = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
-        final confirmController = TextEditingController();
-        final passwordController = TextEditingController();
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
             final matches =
@@ -117,6 +117,8 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
         );
       },
     );
+    confirmController.dispose();
+    passwordController.dispose();
 
     if (result == null) return;
 

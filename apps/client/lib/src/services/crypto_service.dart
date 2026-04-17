@@ -1264,8 +1264,8 @@ class CryptoService {
     for (final key in _allCryptoKeys) {
       await store.delete(key);
     }
-    // Reset the OTP counter so fresh keys start from 0
-    await store.delete(_otpNextIdPref);
+    // Keep the OTP counter at its current value to avoid key-ID collisions
+    // with OTPs that the server may have already distributed to peers.
     final allEntries = await store.readAll();
     for (final key in allEntries.keys) {
       if (key.startsWith(_sessionPrefix) ||

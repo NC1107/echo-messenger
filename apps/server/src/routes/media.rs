@@ -29,8 +29,11 @@ const ALLOWED_MIME_TYPES: &[&str] = &[
     "image/png",
     "image/gif",
     "image/webp",
+    "image/heic",
+    "image/heif",
     // Video
     "video/mp4",
+    "video/quicktime",
     // Audio
     "audio/mpeg",
     "audio/ogg",
@@ -56,7 +59,9 @@ fn extension_for_mime(mime: &str) -> &str {
         "image/png" => "png",
         "image/gif" => "gif",
         "image/webp" => "webp",
+        "image/heic" | "image/heif" => "heic",
         "video/mp4" => "mp4",
+        "video/quicktime" => "mov",
         "audio/mpeg" => "mp3",
         "audio/ogg" => "ogg",
         "audio/wav" => "wav",

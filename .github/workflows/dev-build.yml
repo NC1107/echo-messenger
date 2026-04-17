@@ -58,9 +58,21 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+      - name: Disable sandbox for dev build
+        run: |
+          # Dev builds are unsigned — sandbox blocks Keychain without a valid
+          # signing identity. Disable it so flutter_secure_storage works.
+          ENT=apps/client/macos/Runner/Release.entitlements
+          /usr/libexec/PlistBuddy -c "Set :com.apple.security.app-sandbox false" "$ENT"
+          /usr/libexec/PlistBuddy -c "Delete :keychain-access-groups" "$ENT" 2>/dev/null || true
       - name: Build
         working-directory: apps/client
         run: flutter build macos --release --dart-define=APP_VERSION=dev
+      - name: Ad-hoc sign
+        run: |
+          codesign --force --deep --sign - \
+            --entitlements apps/client/macos/Runner/Release.entitlements \
+            apps/client/build/macos/Build/Products/Release/Echo.app
       - name: Package
         run: |
           cd apps/client/build/macos/Build/Products/Release
