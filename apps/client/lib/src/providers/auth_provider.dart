@@ -140,11 +140,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // We have a refresh token -- attempt to get a new access token
       state = state.copyWith(isLoading: true);
 
-      final response = await http.post(
-        Uri.parse('$_serverUrl/api/auth/refresh'),
-        headers: _kJsonHeaders,
-        body: jsonEncode({'refresh_token': storedRefreshToken}),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$_serverUrl/api/auth/refresh'),
+            headers: _kJsonHeaders,
+            body: jsonEncode({'refresh_token': storedRefreshToken}),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -223,11 +225,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
 
     try {
-      final response = await http.post(
-        Uri.parse('$_serverUrl/api/auth/refresh'),
-        headers: _kJsonHeaders,
-        body: jsonEncode({'refresh_token': currentRefreshToken}),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$_serverUrl/api/auth/refresh'),
+            headers: _kJsonHeaders,
+            body: jsonEncode({'refresh_token': currentRefreshToken}),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -266,18 +270,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// [requestFn] receives the current access token and should return the
   /// HTTP response. It will be called once normally, and a second time with
   /// a refreshed token if the first attempt returns 401.
+  ///
+  /// A 15-second timeout is applied to each individual HTTP call. Callers
+  /// should catch [TimeoutException] (from dart:async) alongside other errors
+  /// if they need custom timeout messaging.
   Future<http.Response> authenticatedRequest(
     Future<http.Response> Function(String token) requestFn,
   ) async {
+    const timeout = Duration(seconds: 15);
     final token = state.token ?? '';
-    final response = await requestFn(token);
+    final response = await requestFn(token).timeout(timeout);
 
     if (response.statusCode == 401) {
       // Attempt token refresh
       final refreshed = await refreshAccessToken();
       if (refreshed) {
         // Retry with new token
-        return requestFn(state.token ?? '');
+        return requestFn(state.token ?? '').timeout(timeout);
       }
       // Refresh failed -- logout already triggered by refreshAccessToken
     }
@@ -412,11 +421,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> register(String username, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await http.post(
-        Uri.parse('$_serverUrl/api/auth/register'),
-        headers: _kJsonHeaders,
-        body: jsonEncode({'username': username, 'password': password}),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$_serverUrl/api/auth/register'),
+            headers: _kJsonHeaders,
+            body: jsonEncode({'username': username, 'password': password}),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -452,7 +463,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         state = state.copyWith(isLoading: false, error: errorMsg);
       }
     } catch (e) {
-      final msg = e.toString().contains('FormatException')
+      final msg = e is TimeoutException
+          ? 'Cannot reach server. Check your connection.'
+          : e.toString().contains('FormatException')
           ? 'Cannot reach server. Check your connection.'
           : e.toString();
       state = state.copyWith(isLoading: false, error: msg);
@@ -462,11 +475,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> login(String username, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await http.post(
-        Uri.parse('$_serverUrl/api/auth/login'),
-        headers: _kJsonHeaders,
-        body: jsonEncode({'username': username, 'password': password}),
-      );
+      final response = await http
+          .post(
+            Uri.parse('$_serverUrl/api/auth/login'),
+            headers: _kJsonHeaders,
+            body: jsonEncode({'username': username, 'password': password}),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -506,7 +521,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         state = state.copyWith(isLoading: false, error: errorMsg);
       }
     } catch (e) {
-      final msg = e.toString().contains('FormatException')
+      final msg = e is TimeoutException
+          ? 'Cannot reach server. Check your connection.'
+          : e.toString().contains('FormatException')
           ? 'Cannot reach server. Check your connection.'
           : e.toString();
       state = state.copyWith(isLoading: false, error: msg);
