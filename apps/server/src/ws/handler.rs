@@ -440,6 +440,7 @@ async fn run_receive_loop(
                     byte_tokens -= cost;
                 }
             }
+        }
     }
 }
 
