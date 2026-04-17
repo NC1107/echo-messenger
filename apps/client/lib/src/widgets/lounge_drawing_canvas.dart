@@ -52,7 +52,14 @@ class LoungeDrawingCanvas extends StatefulWidget {
 class LoungeDrawingCanvasState extends State<LoungeDrawingCanvas> {
   final List<DrawingStroke> _strokes = [];
   final List<CanvasImage> _images = [];
-  DrawingStroke? _currentStroke;
+
+  /// Active stroke points accumulated during a drag. Mutable for performance
+  /// (avoids O(n) list copy on every pointer move). Wrapped in a DrawingStroke
+  /// only when the stroke is finalized on pointer up.
+  List<Offset>? _activePoints;
+  Color _activeColor = Colors.white;
+  double _activeWidth = 3.0;
+  bool _activeIsEraser = false;
 
   /// Index of image being dragged, or -1.
   int _draggingIndex = -1;
@@ -75,7 +82,7 @@ class LoungeDrawingCanvasState extends State<LoungeDrawingCanvas> {
     setState(() {
       _strokes.clear();
       _images.clear();
-      _currentStroke = null;
+      _activePoints = null;
     });
   }
 
@@ -174,13 +181,14 @@ class LoungeDrawingCanvasState extends State<LoungeDrawingCanvas> {
       return;
     }
 
-    final stroke = DrawingStroke(
-      points: [event.localPosition],
-      color: _tool == DrawingTool.eraser ? Colors.transparent : _penColor,
-      width: _tool == DrawingTool.eraser ? _eraserSize : _penSize,
-      isEraser: _tool == DrawingTool.eraser,
-    );
-    setState(() => _currentStroke = stroke);
+    setState(() {
+      _activePoints = [event.localPosition];
+      _activeColor = _tool == DrawingTool.eraser
+          ? Colors.transparent
+          : _penColor;
+      _activeWidth = _tool == DrawingTool.eraser ? _eraserSize : _penSize;
+      _activeIsEraser = _tool == DrawingTool.eraser;
+    });
   }
 
   void _onPointerMove(PointerMoveEvent event) {
@@ -193,14 +201,9 @@ class LoungeDrawingCanvasState extends State<LoungeDrawingCanvas> {
       return;
     }
 
-    if (_currentStroke == null) return;
+    if (_activePoints == null) return;
     setState(() {
-      _currentStroke = DrawingStroke(
-        points: [..._currentStroke!.points, event.localPosition],
-        color: _currentStroke!.color,
-        width: _currentStroke!.width,
-        isEraser: _currentStroke!.isEraser,
-      );
+      _activePoints!.add(event.localPosition);
     });
   }
 
@@ -209,27 +212,46 @@ class LoungeDrawingCanvasState extends State<LoungeDrawingCanvas> {
       _draggingIndex = -1;
       return;
     }
-    if (_currentStroke == null) return;
+    if (_activePoints == null) return;
     setState(() {
-      _strokes.add(_currentStroke!);
-      _currentStroke = null;
+      _strokes.add(
+        DrawingStroke(
+          points: List.from(_activePoints!),
+          color: _activeColor,
+          width: _activeWidth,
+          isEraser: _activeIsEraser,
+        ),
+      );
+      _activePoints = null;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final hasContent =
-        _strokes.isNotEmpty || _currentStroke != null || _images.isNotEmpty;
+        _strokes.isNotEmpty || _activePoints != null || _images.isNotEmpty;
 
     // Always render strokes/images; only capture pointer events when active.
     if (!widget.isActive && !hasContent) return const SizedBox.shrink();
+
+    // Build a temporary DrawingStroke for the active points so the painter
+    // can render the in-progress stroke. This is the only allocation per
+    // frame and is O(1) since we share the same list reference.
+    final activeStroke = _activePoints != null
+        ? DrawingStroke(
+            points: _activePoints!,
+            color: _activeColor,
+            width: _activeWidth,
+            isEraser: _activeIsEraser,
+          )
+        : null;
 
     final painter = RepaintBoundary(
       child: CustomPaint(
         size: Size.infinite,
         painter: _DrawingPainter(
           strokes: _strokes,
-          currentStroke: _currentStroke,
+          currentStroke: activeStroke,
           images: _images,
         ),
       ),
@@ -351,7 +373,7 @@ class _DrawingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DrawingPainter oldDelegate) =>
+      currentStroke != null ||
       strokes.length != oldDelegate.strokes.length ||
-      currentStroke != oldDelegate.currentStroke ||
       images.length != oldDelegate.images.length;
 }
