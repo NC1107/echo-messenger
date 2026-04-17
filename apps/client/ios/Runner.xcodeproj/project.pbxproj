@@ -17,7 +17,7 @@
 		70E08E0D756DA8BF241E6FBB /* ReplayKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F9EA70E4D226FAFFEFD48F9 /* ReplayKit.framework */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
-		8F5C7F9E4CFB17946DE7BA6C /* EchoBroadcast.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B717969E2D295AC29E2C65F9 /* EchoBroadcast.appex */; };
+		8F5C7F9E4CFB17946DE7BA6C /* EchoBroadcast.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B717969E2D295AC29E2C65F9 /* EchoBroadcast.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9400487C75B9A3B1F7AFEED8 /* SampleUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBC55E5753EC3F53FC7E9DC /* SampleUploader.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
@@ -571,6 +571,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = us.echomessenger.app.broadcast;
+				PRODUCT_NAME = EchoBroadcast;
 				PROVISIONING_PROFILE_SPECIFIER = "Echo Broadcast Distribution";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -751,6 +752,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = us.echomessenger.app.broadcast;
+				PRODUCT_NAME = EchoBroadcast;
 				PROVISIONING_PROFILE_SPECIFIER = "Echo Broadcast Distribution";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -773,6 +775,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = us.echomessenger.app.broadcast;
+				PRODUCT_NAME = EchoBroadcast;
 				PROVISIONING_PROFILE_SPECIFIER = "Echo Broadcast Distribution";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
