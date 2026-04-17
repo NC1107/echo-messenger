@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -71,7 +73,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
               );
             }
             // Server returns plain device_id integers
-            return _Device(deviceId: (d as num).toInt(), label: 'Device $d');
+            return _Device(deviceId: (d as num).toInt());
           }).toList();
           _loading = false;
         });
@@ -255,7 +257,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
                     vertical: 4,
                   ),
                   leading: Icon(
-                    Icons.devices,
+                    _deviceIcon(isThisDevice),
                     color: isThisDevice
                         ? context.accent
                         : context.textSecondary,
@@ -263,7 +265,9 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
                   title: Row(
                     children: [
                       Text(
-                        device.label,
+                        isThisDevice
+                            ? _currentPlatformName()
+                            : device.label ?? 'Device ${device.deviceId}',
                         style: TextStyle(
                           color: context.textPrimary,
                           fontWeight: FontWeight.w500,
@@ -322,8 +326,27 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
 
 class _Device {
   final int deviceId;
-  final String label;
+  final String? label;
   final String? lastSeen;
 
-  const _Device({required this.deviceId, required this.label, this.lastSeen});
+  const _Device({required this.deviceId, this.label, this.lastSeen});
+}
+
+String _currentPlatformName() {
+  if (kIsWeb) return 'Web Browser';
+  if (Platform.isIOS) return 'iPhone';
+  if (Platform.isAndroid) return 'Android';
+  if (Platform.isMacOS) return 'Mac';
+  if (Platform.isWindows) return 'Windows';
+  if (Platform.isLinux) return 'Linux';
+  return 'Unknown';
+}
+
+IconData _deviceIcon(bool isThisDevice) {
+  if (!isThisDevice) return Icons.devices;
+  if (kIsWeb) return Icons.language;
+  if (Platform.isIOS || Platform.isAndroid) return Icons.phone_iphone;
+  if (Platform.isMacOS) return Icons.laptop_mac;
+  if (Platform.isWindows || Platform.isLinux) return Icons.computer;
+  return Icons.devices;
 }
