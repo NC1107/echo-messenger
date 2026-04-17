@@ -155,8 +155,7 @@ pub async fn login(
     // from a wrong-password attempt (prevents username enumeration via timing).
     // The 32-byte output (43 base64 chars) matches Argon2::default() output
     // length to avoid measurable timing differences in the finalization pass.
-    const DUMMY_HASH: &str =
-        "$argon2id$v=19$m=19456,t=2,p=1$bm9uZXhpc3RlbnQ$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    const DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$bm9uZXhpc3RlbnQ$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     let maybe_user = db::users::find_by_username(&state.pool, &body.username).await?;
 

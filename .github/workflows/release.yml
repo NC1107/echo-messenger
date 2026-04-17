@@ -373,14 +373,6 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-      - name: Ensure macOS platform
-        working-directory: apps/client
-        run: |
-          if [ ! -f macos/Runner.xcodeproj/project.pbxproj ]; then
-            flutter create --platforms=macos --org us.echomessenger .
-          fi
-      - name: Install CocoaPods
-        run: gem install cocoapods
       - name: Build
         working-directory: apps/client
         run: flutter build macos --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
