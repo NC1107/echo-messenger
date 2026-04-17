@@ -24,6 +24,9 @@ const _routeSplash = '/splash';
 /// Stores a deep link path that was requested before the user was
 /// authenticated. After login or splash auto-login, the app navigates
 /// here instead of /home.
+///
+/// TODO(#158): migrate to a Riverpod provider to eliminate this top-level
+/// mutable variable and make deep-link state properly reactive/testable.
 String? pendingDeepLink;
 
 /// Shared fade transition used by all routes.

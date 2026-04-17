@@ -238,7 +238,7 @@ pub async fn handle_socket(
         }
     });
 
-    deliver_undelivered_messages(&state, user_id).await;
+    deliver_undelivered_messages(&state, user_id, device_id).await;
 
     run_receive_loop(&mut receiver, user_id, device_id, &username, &state).await;
 
@@ -257,7 +257,13 @@ pub async fn handle_socket(
 
 /// Deliver any messages that were stored while the user was offline, then mark
 /// them delivered and notify the original senders.
-async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid) {
+///
+/// For encrypted DMs, each device has its own ciphertext stored in
+/// `message_device_contents`.  A single batch query fetches all per-device
+/// ciphertexts for the reconnecting device; the canonical `content` column is
+/// used as a fallback when no device-specific row exists (group messages,
+/// unencrypted convs, or messages predating multi-device support).
+async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid, device_id: i32) {
     let undelivered = match db::messages::get_undelivered(&state.pool, user_id).await {
         Ok(msgs) => msgs,
         Err(_) => return,
@@ -265,7 +271,18 @@ async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid) {
 
     let ids: Vec<Uuid> = undelivered.iter().map(|m| m.id).collect();
 
+    // Batch-fetch all per-device ciphertexts in a single query to avoid N+1.
+    let device_ct_map = db::messages::get_device_contents_batch(&state.pool, &ids, device_id)
+        .await
+        .unwrap_or_default();
+
     for msg in &undelivered {
+        // Prefer device-specific ciphertext; fall back to canonical content.
+        let content = device_ct_map
+            .get(&msg.id)
+            .cloned()
+            .unwrap_or_else(|| msg.content.clone());
+
         let server_msg = ServerMessage::NewMessage {
             message_id: msg.id,
             from_user_id: msg.sender_id,
@@ -273,7 +290,7 @@ async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid) {
             from_username: msg.sender_username.clone(),
             conversation_id: msg.conversation_id,
             channel_id: msg.channel_id,
-            content: msg.content.clone(),
+            content,
             timestamp: msg.created_at,
             reply_to_id: msg.reply_to_id,
             reply_to_content: msg.reply_to_content.clone(),
@@ -281,9 +298,9 @@ async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid) {
             expires_at: None, // Offline delivery: expiry already passed if expired
         };
         if let Ok(json) = serde_json::to_string(&server_msg) {
-            let _ = state
+            state
                 .hub
-                .send_to_user(&user_id, WsMessage::Text(json.into()));
+                .send_to_device(&user_id, device_id, WsMessage::Text(json.into()));
         }
     }
 

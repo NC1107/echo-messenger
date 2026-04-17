@@ -84,12 +84,18 @@ impl Hub {
     }
 
     /// Broadcast a JSON event to all members of a conversation, optionally excluding one user.
+    ///
+    /// The JSON string is converted to a `WsMessage` once. Subsequent sends clone the
+    /// `WsMessage`, which is O(1) because `axum`'s `Message::Text` is backed by
+    /// `bytes::Bytes` (reference-counted). This avoids one `String` allocation per
+    /// recipient compared to constructing a new message inside the loop.
     pub fn broadcast_json(&self, member_ids: &[Uuid], json: &str, exclude: Option<Uuid>) {
+        let msg = WsMessage::Text(json.into());
         for member_id in member_ids {
             if Some(*member_id) == exclude {
                 continue;
             }
-            self.send_to_user(member_id, WsMessage::Text(json.to_string().into()));
+            self.send_to_user(member_id, msg.clone());
         }
     }
 }
@@ -183,6 +189,38 @@ mod tests {
 
         // Device 1 should NOT have a message
         assert!(rx1.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_json_delivers_to_all_except_excluded() {
+        let hub = Hub::new();
+        let user1 = Uuid::new_v4();
+        let user2 = Uuid::new_v4();
+        let user3 = Uuid::new_v4();
+        let (tx1, mut rx1) = mpsc::channel(16);
+        let (tx2, mut rx2) = mpsc::channel(16);
+        let (tx3, mut rx3) = mpsc::channel(16);
+
+        hub.register(user1, 1, tx1);
+        hub.register(user2, 1, tx2);
+        hub.register(user3, 1, tx3);
+
+        let members = [user1, user2, user3];
+        hub.broadcast_json(&members, r#"{"type":"test"}"#, Some(user2));
+
+        // user1 and user3 receive the message
+        let msg1 = rx1.recv().await.unwrap();
+        let msg3 = rx3.recv().await.unwrap();
+        match (msg1, msg3) {
+            (WsMessage::Text(t1), WsMessage::Text(t3)) => {
+                assert_eq!(t1.as_str(), r#"{"type":"test"}"#);
+                assert_eq!(t3.as_str(), r#"{"type":"test"}"#);
+            }
+            _ => panic!("Expected Text messages"),
+        }
+
+        // user2 (excluded) should not have received anything
+        assert!(rx2.try_recv().is_err());
     }
 
     #[tokio::test]

@@ -173,7 +173,7 @@ pub async fn upload_bundle(
     )
     .await?;
     db::keys::store_signed_prekey(
-        &mut *tx,
+        &mut tx,
         auth_user.user_id,
         device_id,
         body.signed_prekey_id,

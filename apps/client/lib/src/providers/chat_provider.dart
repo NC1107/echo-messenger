@@ -788,6 +788,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _sendTimeouts.clear();
     state = const ChatState();
   }
+
+  @override
+  void dispose() {
+    // Cancel any remaining timers so they don't fire after disposal.
+    for (final timer in _sendTimeouts.values) {
+      timer.cancel();
+    }
+    _sendTimeouts.clear();
+    super.dispose();
+  }
 }
 
 final chatProvider = StateNotifierProvider<ChatNotifier, ChatState>((ref) {

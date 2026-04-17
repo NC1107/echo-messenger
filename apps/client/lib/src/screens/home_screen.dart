@@ -127,9 +127,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   Future<void> _initData() async {
-    // 1. Initialize crypto (awaited -- must complete before anything else)
-    final cryptoNotifier = ref.read(cryptoProvider.notifier);
-    await cryptoNotifier.initAndUploadKeys();
+    // 1. Initialize crypto (awaited -- must complete before anything else).
+    // SplashScreen calls initAndUploadKeys() during auto-login, so this is
+    // typically a no-op (CryptoNotifier guards against double-init internally).
+    // The guard below avoids the async round-trip in the common case.
+    final cryptoState = ref.read(cryptoProvider);
+    if (!cryptoState.isInitialized) {
+      final cryptoNotifier = ref.read(cryptoProvider.notifier);
+      await cryptoNotifier.initAndUploadKeys();
+    }
 
     // 2. Connect WebSocket
     final wsState = ref.read(websocketProvider);

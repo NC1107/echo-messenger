@@ -27,6 +27,7 @@ import 'chat_header_bar.dart';
 import 'chat_input_bar.dart';
 import 'connection_status_banner.dart';
 import 'crypto_degraded_banner.dart';
+import 'identity_key_changed_banner.dart';
 import 'message_item.dart';
 import 'message_search_overlay.dart';
 
@@ -60,8 +61,17 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   final _chatInputBarKey = GlobalKey<ChatInputBarState>();
 
   /// Cache scroll offsets keyed by conversation ID so switching conversations
-  /// preserves the user's position.
+  /// preserves the user's position. Capped at [_kMaxScrollPositions] entries
+  /// to prevent unbounded growth as the user visits many conversations.
   static final Map<String, double> _scrollPositions = {};
+  static const int _kMaxScrollPositions = 50;
+
+  /// Evict the oldest entries from [_scrollPositions] when over the limit.
+  static void _evictScrollPositions() {
+    while (_scrollPositions.length > _kMaxScrollPositions) {
+      _scrollPositions.remove(_scrollPositions.keys.first);
+    }
+  }
 
   String _newMessagesBannerText() {
     if (_newMessagesBelowCount <= 0) return 'New messages';
@@ -134,6 +144,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       if (oldId != null && _scrollController.hasClients) {
         final oldKey = '$oldId:${_selectedTextChannelId ?? ""}';
         _scrollPositions[oldKey] = _scrollController.offset;
+        _evictScrollPositions();
       }
 
       _selectedTextChannelId = null;
@@ -246,6 +257,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       if (convId != null) {
         final cacheKey = '$convId:${_selectedTextChannelId ?? ""}';
         _scrollPositions[cacheKey] = target;
+        _evictScrollPositions();
       }
       if (_hasNewMessagesBelow) {
         setState(() {
@@ -1461,6 +1473,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
               const ConnectionStatusBanner(),
               const CryptoDegradedBanner(),
+              if (!conv.isGroup) IdentityKeyChangedBanner(conversation: conv),
 
               Expanded(
                 child: GestureDetector(

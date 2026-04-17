@@ -317,6 +317,22 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
     final groupCrypto = ref.read(groupCryptoServiceProvider);
     await groupCrypto.invalidateCache(conversationId);
   }
+
+  // -----------------------------------------------------------------------
+  // TOFU identity key change detection
+  // -----------------------------------------------------------------------
+
+  /// Check whether a peer's identity key has changed since first contact.
+  Future<bool> hasPeerIdentityKeyChanged(String peerUserId) async {
+    final crypto = ref.read(cryptoServiceProvider);
+    return crypto.hasPeerIdentityKeyChanged(peerUserId);
+  }
+
+  /// Acknowledge a peer identity key change (clears the persisted flag).
+  Future<void> acknowledgePeerIdentityKeyChange(String peerUserId) async {
+    final crypto = ref.read(cryptoServiceProvider);
+    await crypto.acknowledgePeerIdentityKeyChange(peerUserId);
+  }
 }
 
 final cryptoProvider = StateNotifierProvider<CryptoNotifier, CryptoState>((

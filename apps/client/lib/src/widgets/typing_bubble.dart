@@ -45,34 +45,63 @@ class _TypingDotsState extends State<TypingDots>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: List.generate(3, (i) {
-          return AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              final offset = i * 0.15;
-              final t = (_controller.value + offset) % 1.0;
-              // Ease-in-out bounce curve with sharper peak
-              final curve = Curves.easeInOut.transform(
-                t < 0.5 ? t * 2.0 : 2.0 - t * 2.0,
-              );
-              final bounce = curve * 8.0;
-              return Container(
-                margin: EdgeInsets.only(right: i < 2 ? 4 : 0),
-                child: Transform.translate(
-                  offset: Offset(0, -bounce),
-                  child: Container(
-                    width: widget.dotSize,
-                    height: widget.dotSize,
-                    decoration: BoxDecoration(
-                      color: dotColor.withValues(alpha: 0.4 + 0.6 * curve),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-              );
-            },
+          return _TypingDot(
+            controller: _controller,
+            color: dotColor,
+            size: widget.dotSize,
+            index: i,
           );
         }),
       ),
+    );
+  }
+}
+
+/// Single bouncing dot in the typing indicator.
+///
+/// Extracted as a separate widget so each dot rebuilds independently on
+/// animation ticks instead of rebuilding the entire [TypingDots] tree.
+class _TypingDot extends StatelessWidget {
+  final AnimationController controller;
+  final Color color;
+  final double size;
+  final int index;
+
+  const _TypingDot({
+    required this.controller,
+    required this.color,
+    required this.size,
+    required this.index,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, child) {
+        final offset = index * 0.15;
+        final t = (controller.value + offset) % 1.0;
+        // Ease-in-out bounce curve with sharper peak
+        final curve = Curves.easeInOut.transform(
+          t < 0.5 ? t * 2.0 : 2.0 - t * 2.0,
+        );
+        final bounce = curve * 8.0;
+        return Padding(
+          padding: EdgeInsets.only(right: index < 2 ? 4 : 0),
+          child: Transform.translate(
+            offset: Offset(0, -bounce),
+            child: SizedBox.square(
+              dimension: size,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.4 + 0.6 * curve),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

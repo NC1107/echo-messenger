@@ -231,12 +231,11 @@ async fn broadcast_to_conversation<T: Serialize>(
         }
     };
 
+    let msg = WsMessage::Text(json.as_str().into());
     for member_id in member_ids {
         if Some(member_id) == exclude_user_id {
             continue;
         }
-        state
-            .hub
-            .send_to(&member_id, WsMessage::Text(json.clone().into()));
+        state.hub.send_to(&member_id, msg.clone());
     }
 }

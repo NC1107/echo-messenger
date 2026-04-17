@@ -1201,9 +1201,9 @@ class _ScreenShareViewer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Watch the provider so the widget rebuilds when the screen share track
-    // becomes available (fixes grey screen on initial publish).
-    ref.watch(livekitVoiceProvider);
+    // Watch only isScreenSharing so the widget rebuilds when the screen share
+    // track becomes available, without rebuilding on every audio level tick.
+    ref.watch(screenShareProvider.select((s) => s.isScreenSharing));
     final room = ref.read(livekitVoiceProvider.notifier).room;
     final localParticipant = room?.localParticipant;
     if (localParticipant == null) return const SizedBox.shrink();
