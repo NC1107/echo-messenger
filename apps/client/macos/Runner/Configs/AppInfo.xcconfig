@@ -1,0 +1,6 @@
+// Application-level settings for the Runner target.
+//
+// This may be replaced with something auto-generated from pub://flutter_tools.
+PRODUCT_NAME = Echo
+PRODUCT_BUNDLE_IDENTIFIER = us.echomessenger.app
+COPYRIGHT = Copyright 2024-2026 Echo Contributors. All rights reserved.
