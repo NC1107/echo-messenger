@@ -22,18 +22,22 @@ import UserNotifications
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
-    // Set up MethodChannel for push token exchange with Dart
-    if let controller = engineBridge.pluginRegistry as? FlutterViewController {
-      pushChannel = FlutterMethodChannel(
-        name: "us.echomessenger/push",
-        binaryMessenger: controller.binaryMessenger
-      )
+    // Set up MethodChannel for push token exchange with Dart.
+    // Use the engine's binary messenger directly — casting pluginRegistry
+    // to FlutterViewController fails because they are different types.
+    let messenger: FlutterBinaryMessenger
+    if let engine = engineBridge.pluginRegistry as? FlutterEngine {
+      messenger = engine.binaryMessenger
     } else if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "EchoPush") {
-      pushChannel = FlutterMethodChannel(
-        name: "us.echomessenger/push",
-        binaryMessenger: registrar.messenger()
-      )
+      messenger = registrar.messenger()
+    } else {
+      NSLog("[Echo] WARNING: Could not obtain binary messenger for push channel")
+      return
     }
+    pushChannel = FlutterMethodChannel(
+      name: "us.echomessenger/push",
+      binaryMessenger: messenger
+    )
   }
 
   // MARK: - APNs Token Registration
@@ -62,22 +66,28 @@ import UserNotifications
     didReceiveRemoteNotification userInfo: [AnyHashable: Any],
     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
   ) {
-    // Silent push received — tell Flutter to reconnect WebSocket.
-    // Delay the completion handler so iOS keeps the app alive while
-    // Dart reconnects and fetches messages (~25s budget).
     NSLog("[Echo] Silent push received, waking Dart engine")
+
+    // Guard against double-calling completionHandler (iOS kills the app
+    // if it's invoked more than once).
+    var completed = false
+    let finish: (UIBackgroundFetchResult) -> Void = { result in
+      guard !completed else { return }
+      completed = true
+      completionHandler(result)
+    }
+
+    // Tell Dart to reconnect the WebSocket.
     pushChannel?.invokeMethod("onWake", arguments: nil) { _ in
-      // Dart has acknowledged the wake — give it a few more seconds
-      // to finish the WebSocket handshake before telling iOS we're done.
+      // Dart acknowledged — give a few more seconds for WS handshake.
       DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-        completionHandler(.newData)
+        finish(.newData)
       }
     }
 
-    // Safety net: if Dart doesn't respond within 25 seconds, complete anyway
-    // to avoid iOS killing us for exceeding the 30-second background limit.
+    // Safety net: complete before iOS's 30-second background limit.
     DispatchQueue.main.asyncAfter(deadline: .now() + 25.0) {
-      completionHandler(.newData)
+      finish(.newData)
     }
   }
 }
