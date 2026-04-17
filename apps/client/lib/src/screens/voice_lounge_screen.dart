@@ -285,6 +285,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               voiceState: voiceLk,
               localAvatarUrl: _buildAvatarUrl(),
               memberAvatars: memberAvatars,
+              authToken: ref.read(authProvider).token,
               onTileTap: (key) => setState(() => _focusedTileKey = key),
             ),
           ],
@@ -340,6 +341,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             voiceState: voiceLk,
             localAvatarUrl: _buildAvatarUrl(),
             memberAvatars: memberAvatars,
+            authToken: ref.read(authProvider).token,
             onTileTap: (key) => setState(() => _focusedTileKey = key),
           ),
         ],
@@ -420,6 +422,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             localAvatarUrl: _buildAvatarUrl(),
             memberAvatars: memberAvatars,
             compact: true,
+            authToken: ref.read(authProvider).token,
             onTileTap: (key) => setState(() => _focusedTileKey = key),
           ),
         ),
@@ -714,6 +717,7 @@ class _ParticipantGrid extends StatelessWidget {
   final String? localAvatarUrl;
   final Map<String, String?> memberAvatars;
   final bool compact;
+  final String? authToken;
 
   /// Called with the tile key when the user taps a tile to focus it.
   final void Function(String key)? onTileTap;
@@ -725,6 +729,7 @@ class _ParticipantGrid extends StatelessWidget {
     this.memberAvatars = const {},
     this.compact = false,
     this.onTileTap,
+    this.authToken,
   });
 
   @override
@@ -782,6 +787,7 @@ class _ParticipantGrid extends StatelessWidget {
       isMuted: !voiceState.isCaptureEnabled,
       isLocal: true,
       onTap: onTileTap != null ? () => onTileTap!('local') : null,
+      authToken: authToken,
     );
   }
 
@@ -828,6 +834,7 @@ class _ParticipantGrid extends StatelessWidget {
           }
         }
       },
+      authToken: authToken,
     );
   }
 
@@ -870,6 +877,7 @@ class _ParticipantTile extends StatelessWidget {
   final bool isLocal;
   final VoidCallback? onTap;
   final VoidCallback? onMuteForMe;
+  final String? authToken;
 
   const _ParticipantTile({
     super.key,
@@ -884,6 +892,7 @@ class _ParticipantTile extends StatelessWidget {
     this.isLocal = false,
     this.onTap,
     this.onMuteForMe,
+    this.authToken,
   });
 
   @override
@@ -934,7 +943,7 @@ class _ParticipantTile extends StatelessWidget {
                   name: name,
                   avatarUrl: avatarUrl,
                   isSpeaking: isSpeaking,
-                  authToken: ref.read(authProvider).token,
+                  authToken: authToken,
                 ),
               _buildNameLabel(context),
             ],
