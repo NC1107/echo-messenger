@@ -84,28 +84,60 @@ pub async fn store_identity_key(
     Ok(())
 }
 
-/// Store or replace a user's signed prekey for a specific device.
+/// Store a new signed prekey for a device, keeping the previously active key
+/// alive for a 14-day grace period so in-flight X3DH messages from peers that
+/// fetched the old bundle can still decrypt successfully.
+///
+/// Steps (all within the caller's transaction):
+/// 1. Expire the currently active row by setting `grace_expires_at`.
+/// 2. Insert the new row (no `grace_expires_at` → it becomes the active key).
+/// 3. Prune rows whose grace period has already elapsed.
 pub async fn store_signed_prekey(
-    db: impl sqlx::PgExecutor<'_>,
+    conn: &mut PgConnection,
     user_id: Uuid,
     device_id: i32,
     key_id: i32,
     public_key: &[u8],
     signature: &[u8],
 ) -> Result<(), sqlx::Error> {
+    // 1. Mark the current active row as entering its grace period.
+    sqlx::query(
+        "UPDATE signed_prekeys \
+         SET grace_expires_at = now() + INTERVAL '14 days' \
+         WHERE user_id = $1 AND device_id = $2 AND grace_expires_at IS NULL",
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .execute(&mut *conn)
+    .await?;
+
+    // 2. Insert the new active key (grace_expires_at stays NULL = active).
     sqlx::query(
         "INSERT INTO signed_prekeys (user_id, device_id, key_id, public_key, signature) \
          VALUES ($1, $2, $3, $4, $5) \
-         ON CONFLICT (user_id, device_id) DO UPDATE \
-         SET key_id = $3, public_key = $4, signature = $5, created_at = now()",
+         ON CONFLICT (user_id, device_id, key_id) DO UPDATE \
+         SET public_key = $4, signature = $5, \
+             grace_expires_at = NULL, created_at = now()",
     )
     .bind(user_id)
     .bind(device_id)
     .bind(key_id)
     .bind(public_key)
     .bind(signature)
-    .execute(db)
+    .execute(&mut *conn)
     .await?;
+
+    // 3. Purge rows whose grace period has elapsed.
+    sqlx::query(
+        "DELETE FROM signed_prekeys \
+         WHERE user_id = $1 AND device_id = $2 \
+           AND grace_expires_at IS NOT NULL AND grace_expires_at < now()",
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .execute(&mut *conn)
+    .await?;
+
     Ok(())
 }
 
@@ -171,10 +203,14 @@ pub async fn get_prekey_bundle(
         None => return Ok(None),
     };
 
-    // Fetch signed prekey for this device
+    // Fetch the current active signed prekey for this device (grace_expires_at IS NULL).
+    // Fall back to the most recently created in-grace-period row if no active key exists.
     let spk_row: Option<(i32, Vec<u8>, Vec<u8>)> = sqlx::query_as(
         "SELECT key_id, public_key, signature FROM signed_prekeys \
-         WHERE user_id = $1 AND device_id = $2",
+         WHERE user_id = $1 AND device_id = $2 \
+           AND (grace_expires_at IS NULL OR grace_expires_at > now()) \
+         ORDER BY grace_expires_at IS NULL DESC, created_at DESC \
+         LIMIT 1",
     )
     .bind(user_id)
     .bind(device_id)
