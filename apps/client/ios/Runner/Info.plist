@@ -77,6 +77,12 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>audio</string>
+		<string>voip</string>
 	</array>
+	<key>RTCScreenSharingExtension</key>
+	<string>us.echomessenger.app.broadcast</string>
+	<key>RTCAppGroupIdentifier</key>
+	<string>group.us.echomessenger.app</string>
 </dict>
 </plist>
