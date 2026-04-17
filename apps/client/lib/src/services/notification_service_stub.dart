@@ -81,6 +81,7 @@ class _NativeNotificationService implements NotificationService {
       const initSettings = InitializationSettings(
         android: android,
         iOS: darwin,
+        macOS: darwin,
         linux: linux,
       );
       await _plugin.initialize(
