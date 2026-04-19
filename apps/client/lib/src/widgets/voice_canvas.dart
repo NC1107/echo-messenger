@@ -442,8 +442,13 @@ class _DrawingLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // When no drawing tool is active, defer hit testing to children so that
+    // avatar drag gestures underneath the canvas layer are not blocked.
+    final behavior = canvas.selectedTool == CanvasTool.none
+        ? HitTestBehavior.deferToChild
+        : HitTestBehavior.translucent;
     return Listener(
-      behavior: HitTestBehavior.translucent,
+      behavior: behavior,
       onPointerDown: (e) {
         if (e.buttons != kPrimaryButton) return;
         onPointerDown(e.localPosition);

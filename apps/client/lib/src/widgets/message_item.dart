@@ -1338,6 +1338,8 @@ class _MessageItemState extends State<MessageItem> {
                 _handleLongPress(details, msg, isMine, mediaUrl, hasReactions),
             onHorizontalDragUpdate: canSwipeToReply
                 ? (details) {
+                    // Guard against iOS system back gesture zone (left 30px).
+                    if (details.globalPosition.dx < 30) return;
                     final newDx = (_swipeDx + details.delta.dx).clamp(
                       0.0,
                       72.0,

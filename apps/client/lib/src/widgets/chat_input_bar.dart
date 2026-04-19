@@ -1118,35 +1118,39 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     required bool showMediaPicker,
     required bool isMobileLayout,
   }) {
-    return IconButton(
-      icon: Icon(
-        showMediaPicker
-            ? Icons.keyboard_outlined
-            : Icons.sentiment_satisfied_alt_outlined,
-        size: 20,
-        color: showMediaPicker ? context.accent : context.textSecondary,
-      ),
-      tooltip: showMediaPicker ? 'Keyboard' : 'Emoji & GIF',
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-      onPressed: () {
-        if (isMobileLayout) {
-          if (_showInlinePicker) {
-            setState(() => _showInlinePicker = false);
-            _inputFocusNode.requestFocus();
+    return Semantics(
+      toggled: showMediaPicker,
+      label: 'Emoji picker',
+      child: IconButton(
+        icon: Icon(
+          showMediaPicker
+              ? Icons.keyboard_outlined
+              : Icons.sentiment_satisfied_alt_outlined,
+          size: 20,
+          color: showMediaPicker ? context.accent : context.textSecondary,
+        ),
+        tooltip: showMediaPicker ? 'Keyboard' : 'Emoji & GIF',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        onPressed: () {
+          if (isMobileLayout) {
+            if (_showInlinePicker) {
+              setState(() => _showInlinePicker = false);
+              _inputFocusNode.requestFocus();
+            } else {
+              setState(() => _showInlinePicker = true);
+              _inputFocusNode.unfocus();
+            }
+            widget.onMediaPickerChanged?.call();
           } else {
-            setState(() => _showInlinePicker = true);
-            _inputFocusNode.unfocus();
+            setState(() => _showMediaPicker = !_showMediaPicker);
+            widget.onMediaPickerChanged?.call();
+            if (!_showMediaPicker) {
+              _inputFocusNode.requestFocus();
+            }
           }
-          widget.onMediaPickerChanged?.call();
-        } else {
-          setState(() => _showMediaPicker = !_showMediaPicker);
-          widget.onMediaPickerChanged?.call();
-          if (!_showMediaPicker) {
-            _inputFocusNode.requestFocus();
-          }
-        }
-      },
+        },
+      ),
     );
   }
 
@@ -1745,6 +1749,14 @@ class _PulsingDotState extends State<_PulsingDot>
 
   @override
   Widget build(BuildContext context) {
+    if (MediaQuery.of(context).disableAnimations) {
+      // Respect reduced-motion accessibility preference -- show a static dot.
+      return Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
+      );
+    }
     return FadeTransition(
       opacity: _opacity,
       child: Container(

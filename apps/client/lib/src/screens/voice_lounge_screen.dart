@@ -2633,17 +2633,29 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => Navigator.of(context).pop(),
-        child: lk.VideoTrackRenderer(
-          widget.track,
-          fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
-          mirrorMode: widget.mirror
-              ? lk.VideoViewMirrorMode.mirror
-              : lk.VideoViewMirrorMode.off,
+    return PopScope(
+      canPop: true,
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () =>
+              Navigator.of(context).pop(),
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            backgroundColor: Colors.black,
+            body: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(),
+              child: lk.VideoTrackRenderer(
+                widget.track,
+                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                mirrorMode: widget.mirror
+                    ? lk.VideoViewMirrorMode.mirror
+                    : lk.VideoViewMirrorMode.off,
+              ),
+            ),
+          ),
         ),
       ),
     );
