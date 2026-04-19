@@ -6,12 +6,32 @@ import '../models/conversation.dart';
 import '../theme/echo_theme.dart';
 import 'avatar_utils.dart';
 
+/// Return the dot color for a peer presence status.
+Color presenceStatusDotColor(
+  BuildContext context,
+  String presenceStatus,
+  bool isOnline,
+) {
+  if (!isOnline) return const Color(0xFF6B6B6F);
+  return switch (presenceStatus) {
+    'online' => EchoTheme.online,
+    'away' => EchoTheme.warning,
+    'dnd' => EchoTheme.danger,
+    _ => const Color(0xFF6B6B6F),
+  };
+}
+
 class ConversationItem extends StatefulWidget {
   final Conversation conversation;
   final String myUserId;
   final bool isSelected;
   final bool isPinned;
   final bool isPeerOnline;
+
+  /// The peer's presence status: "online", "away", "dnd", "invisible", "offline".
+  /// Defaults to "online" when not provided (backward compat).
+  final String peerPresenceStatus;
+
   final String? peerAvatarUrl;
   final String? groupIconUrl;
   final String timestamp;
@@ -25,6 +45,7 @@ class ConversationItem extends StatefulWidget {
     required this.isSelected,
     required this.isPinned,
     required this.isPeerOnline,
+    this.peerPresenceStatus = 'online',
     this.peerAvatarUrl,
     this.groupIconUrl,
     required this.timestamp,
@@ -225,9 +246,11 @@ class _ConversationItemState extends State<ConversationItem> {
               width: 12,
               height: 12,
               decoration: BoxDecoration(
-                color: widget.isPeerOnline
-                    ? EchoTheme.online
-                    : const Color(0xFF6B6B6F),
+                color: presenceStatusDotColor(
+                  context,
+                  widget.peerPresenceStatus,
+                  widget.isPeerOnline,
+                ),
                 shape: BoxShape.circle,
                 border: Border.all(color: context.sidebarBg, width: 2),
               ),

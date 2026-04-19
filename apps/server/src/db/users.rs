@@ -322,6 +322,35 @@ pub struct PrivacyUpdate {
     pub searchable: bool,
 }
 
+/// Update the presence_status for a user. Returns the stored value.
+pub async fn update_presence_status(
+    pool: &PgPool,
+    user_id: Uuid,
+    status: &str,
+) -> Result<String, sqlx::Error> {
+    let row: (String,) = sqlx::query_as(
+        "UPDATE users SET presence_status = $1 WHERE id = $2 RETURNING presence_status",
+    )
+    .bind(status)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
+}
+
+/// Fetch the presence_status for a user.
+pub async fn get_presence_status(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<String>, sqlx::Error> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT presence_status FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.map(|(s,)| s))
+}
+
 pub async fn update_privacy_preferences(
     pool: &PgPool,
     user_id: Uuid,

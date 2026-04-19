@@ -251,6 +251,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/me/privacy",
             get(users::get_my_privacy).patch(users::update_my_privacy),
         )
+        .route("/me/status", patch(users::update_presence_status))
         .route("/me/avatar", put(users::upload_avatar))
         .route("/online", get(users::online_users))
         .route("/search", get(users::search_users))

@@ -289,6 +289,97 @@ pub async fn update_profile(
     }))
 }
 
+/// PATCH /api/users/me/status
+///
+/// Update the authenticated user's presence status. Accepted values:
+/// "online", "away", "dnd", "invisible".
+///
+/// Broadcasting is handled here: invisible users are announced as "offline"
+/// to contacts; all other statuses propagate their value.
+pub async fn update_presence_status(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<UpdatePresenceStatusRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let valid = ["online", "away", "dnd", "invisible"];
+    if !valid.contains(&body.status.as_str()) {
+        return Err(AppError::bad_request(
+            "status must be one of: online, away, dnd, invisible",
+        ));
+    }
+
+    db::users::update_presence_status(&state.pool, auth.user_id, &body.status)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in update_presence_status: {e:?}");
+            AppError::internal("Database error")
+        })?;
+
+    // Broadcast to contacts.  Invisible users appear offline to others.
+    let broadcast_status = if body.status == "invisible" {
+        "offline"
+    } else {
+        &body.status
+    };
+
+    // Fetch username for the presence payload.
+    let user = db::users::find_by_id(&state.pool, auth.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::internal("User not found"))?;
+
+    broadcast_presence_with_status(
+        &state,
+        auth.user_id,
+        &user.username,
+        broadcast_status,
+        &body.status,
+    )
+    .await;
+
+    Ok(Json(json!({ "status": body.status })))
+}
+
+#[derive(Deserialize)]
+pub struct UpdatePresenceStatusRequest {
+    pub status: String,
+}
+
+/// Broadcast a presence event to all contacts.
+///
+/// `broadcast_status` is what contacts see ("online"/"away"/"dnd"/"offline");
+/// `presence_status` is the raw stored value ("online"/"away"/"dnd"/"invisible").
+async fn broadcast_presence_with_status(
+    state: &AppState,
+    user_id: Uuid,
+    username: &str,
+    broadcast_status: &str,
+    presence_status: &str,
+) {
+    use axum::extract::ws::Message as WsMessage;
+
+    let contact_ids = match db::contacts::list_contact_user_ids(&state.pool, user_id).await {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!("Failed to fetch contacts for presence broadcast: {e}");
+            return;
+        }
+    };
+
+    let presence = serde_json::json!({
+        "type": "presence",
+        "user_id": user_id,
+        "username": username,
+        "status": broadcast_status,
+        "presence_status": presence_status,
+    });
+    if let Ok(json) = serde_json::to_string(&presence) {
+        for cid in &contact_ids {
+            state.hub.send_to(cid, WsMessage::Text(json.clone().into()));
+        }
+    }
+}
+
 /// DELETE /api/users/me
 ///
 /// Deletes the authenticated user's account. Revokes all refresh tokens first,

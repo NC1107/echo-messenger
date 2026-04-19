@@ -450,8 +450,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       isLoading: convIsLoading,
       error: convError,
     );
-    final (myUserId, myUsername, myAvatarUrl) = ref.watch(
-      authProvider.select((s) => (s.userId, s.username, s.avatarUrl)),
+    final (myUserId, myUsername, myAvatarUrl, myPresenceStatus) = ref.watch(
+      authProvider.select(
+        (s) => (s.userId, s.username, s.avatarUrl, s.presenceStatus),
+      ),
     );
     final userId = myUserId ?? '';
     final username = myUsername ?? 'User';
@@ -496,6 +498,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             avatarUrl: myAvatarUrl,
             wsConnected: wsConnected,
             wsReplaced: wsReplaced,
+            presenceStatus: myPresenceStatus,
           ),
         ],
       ),
@@ -832,6 +835,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     required String? avatarUrl,
     required bool wsConnected,
     required bool wsReplaced,
+    required String presenceStatus,
   }) {
     return Container(
       height: 60,
@@ -848,9 +852,16 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             serverUrl,
             avatarUrl,
             wsConnected,
+            presenceStatus,
           ),
           const SizedBox(width: 10),
-          _buildUserNameAndStatus(context, myUsername, wsConnected, wsReplaced),
+          _buildUserNameAndStatus(
+            context,
+            myUsername,
+            wsConnected,
+            wsReplaced,
+            presenceStatus,
+          ),
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 18),
             color: context.textSecondary,
@@ -870,36 +881,159 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     String serverUrl,
     String? avatarUrl,
     bool wsConnected,
+    String presenceStatus,
   ) {
-    return Stack(
-      children: [
-        buildAvatar(
-          name: myUsername,
-          radius: 16,
-          bgColor: context.accent,
-          imageUrl: resolveAvatarUrl(avatarUrl, serverUrl),
-        ),
-        Positioned(
-          bottom: 0,
-          right: 0,
-          child: Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: wsConnected ? EchoTheme.online : EchoTheme.warning,
-              shape: BoxShape.circle,
-              border: Border.all(color: context.mainBg, width: 2),
+    return GestureDetector(
+      onTap: () => _showPresenceStatusPicker(context, presenceStatus),
+      child: Stack(
+        children: [
+          buildAvatar(
+            name: myUsername,
+            radius: 16,
+            bgColor: context.accent,
+            imageUrl: resolveAvatarUrl(avatarUrl, serverUrl),
+          ),
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: wsConnected
+                    ? _presenceStatusColor(context, presenceStatus)
+                    : EchoTheme.warning,
+                shape: BoxShape.circle,
+                border: Border.all(color: context.mainBg, width: 2),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  static String _connectionStatusLabel(bool wsReplaced, bool wsConnected) {
+  /// Return the display color for a given presence status.
+  Color _presenceStatusColor(BuildContext context, String status) {
+    return switch (status) {
+      'online' => EchoTheme.online,
+      'away' => EchoTheme.warning,
+      'dnd' => EchoTheme.danger,
+      'invisible' => context.textMuted,
+      _ => EchoTheme.online,
+    };
+  }
+
+  /// Show a popup menu for choosing one of the four presence statuses.
+  void _showPresenceStatusPicker(
+    BuildContext context,
+    String currentStatus,
+  ) {
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    final offset = renderBox.localToGlobal(Offset.zero);
+    final size = renderBox.size;
+    // Position the menu above the status bar.
+    final position = RelativeRect.fromLTRB(
+      offset.dx + 16,
+      offset.dy + size.height - 64,
+      offset.dx + size.width,
+      0,
+    );
+
+    showMenu<String>(
+      context: context,
+      position: position,
+      color: context.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: context.border),
+      ),
+      items: [
+        _presenceMenuItem(
+          context,
+          value: 'online',
+          label: 'Online',
+          color: EchoTheme.online,
+          current: currentStatus,
+        ),
+        _presenceMenuItem(
+          context,
+          value: 'away',
+          label: 'Away',
+          color: EchoTheme.warning,
+          current: currentStatus,
+        ),
+        _presenceMenuItem(
+          context,
+          value: 'dnd',
+          label: 'Do Not Disturb',
+          color: EchoTheme.danger,
+          current: currentStatus,
+        ),
+        _presenceMenuItem(
+          context,
+          value: 'invisible',
+          label: 'Invisible',
+          color: context.textMuted,
+          current: currentStatus,
+        ),
+      ],
+    ).then((value) {
+      if (value != null && value != currentStatus) {
+        ref.read(authProvider.notifier).setPresenceStatus(value);
+      }
+    });
+  }
+
+  PopupMenuItem<String> _presenceMenuItem(
+    BuildContext context, {
+    required String value,
+    required String label,
+    required Color color,
+    required String current,
+  }) {
+    final isSelected = current == value;
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            label,
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 13,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+          if (isSelected) ...[
+            const Spacer(),
+            Icon(Icons.check, size: 14, color: context.accent),
+          ],
+        ],
+      ),
+    );
+  }
+
+  static String _connectionStatusLabel(
+    bool wsReplaced,
+    bool wsConnected,
+    String presenceStatus,
+  ) {
     if (wsReplaced) return 'Session replaced';
-    if (wsConnected) return 'Online';
-    return 'Reconnecting...';
+    if (!wsConnected) return 'Reconnecting...';
+    return switch (presenceStatus) {
+      'away' => 'Away',
+      'dnd' => 'Do Not Disturb',
+      'invisible' => 'Invisible',
+      _ => 'Online',
+    };
   }
 
   Widget _buildUserNameAndStatus(
@@ -907,7 +1041,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     String myUsername,
     bool wsConnected,
     bool wsReplaced,
+    String presenceStatus,
   ) {
+    final statusColor = wsConnected
+        ? _presenceStatusColor(context, presenceStatus)
+        : EchoTheme.warning;
     return Expanded(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -923,11 +1061,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             overflow: TextOverflow.ellipsis,
           ),
           Text(
-            _connectionStatusLabel(wsReplaced, wsConnected),
-            style: TextStyle(
-              color: wsConnected ? EchoTheme.online : EchoTheme.warning,
-              fontSize: 11,
-            ),
+            _connectionStatusLabel(wsReplaced, wsConnected, presenceStatus),
+            style: TextStyle(color: statusColor, fontSize: 11),
           ),
         ],
       ),
@@ -1232,12 +1367,17 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ? null
         : conv.members.where((m) => m.userId != myUserId).firstOrNull;
     final isPeerOnline = peer != null && wsOnlineUsers.contains(peer.userId);
+    final wsState = ref.read(websocketProvider);
+    final peerPresenceStatus = peer != null
+        ? wsState.presenceStatusFor(peer.userId)
+        : 'offline';
     return ConversationItem(
       conversation: conv,
       myUserId: myUserId,
       isSelected: conv.id == widget.selectedConversationId,
       isPinned: isPinned,
       isPeerOnline: isPeerOnline,
+      peerPresenceStatus: peerPresenceStatus,
       peerAvatarUrl: resolveAvatarUrl(peer?.avatarUrl, serverUrl),
       groupIconUrl: resolveAvatarUrl(conv.iconUrl, serverUrl),
       timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),

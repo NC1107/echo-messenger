@@ -25,6 +25,9 @@ class AuthState {
   final String? error;
   final bool isLoading;
 
+  /// The user's chosen presence status: "online", "away", "dnd", "invisible".
+  final String presenceStatus;
+
   const AuthState({
     this.isLoggedIn = false,
     this.userId,
@@ -34,6 +37,7 @@ class AuthState {
     this.avatarUrl,
     this.error,
     this.isLoading = false,
+    this.presenceStatus = 'online',
   });
 
   AuthState copyWith({
@@ -45,6 +49,7 @@ class AuthState {
     String? avatarUrl,
     String? error,
     bool? isLoading,
+    String? presenceStatus,
   }) {
     return AuthState(
       isLoggedIn: isLoggedIn ?? this.isLoggedIn,
@@ -55,6 +60,7 @@ class AuthState {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       error: error,
       isLoading: isLoading ?? this.isLoading,
+      presenceStatus: presenceStatus ?? this.presenceStatus,
     );
   }
 }
@@ -532,6 +538,27 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   void updateAvatarUrl(String url) {
     state = state.copyWith(avatarUrl: url);
+  }
+
+  /// Update the user's presence status locally and on the server.
+  Future<void> setPresenceStatus(String status) async {
+    if (!state.isLoggedIn) return;
+    // Optimistically update local state immediately.
+    state = state.copyWith(presenceStatus: status);
+    try {
+      await authenticatedRequest(
+        (token) => http.patch(
+          Uri.parse('$_serverUrl/api/users/me/status'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'status': status}),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[Auth] setPresenceStatus failed: $e');
+    }
   }
 
   Future<void> logout() async {
