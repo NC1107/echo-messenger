@@ -25,16 +25,16 @@ import '../widgets/echo_logo_icon.dart';
 
   // Strong: 12+ chars, mixed case, and numbers
   if (length >= 12 && hasMixedCase && hasDigit) {
-    return (value: 1.0, label: 'Strong', color: Colors.green);
+    return (value: 1.0, label: 'Strong', color: EchoTheme.online);
   }
 
   // Fair: 10+ chars or mixed case
   if (length >= 10 || hasMixedCase) {
-    return (value: 0.6, label: 'Fair', color: Colors.orange);
+    return (value: 0.6, label: 'Fair', color: EchoTheme.warning);
   }
 
   // Weak
-  return (value: 0.3, label: 'Weak', color: Colors.red);
+  return (value: 0.3, label: 'Weak', color: EchoTheme.danger);
 }
 
 class RegisterScreen extends ConsumerStatefulWidget {
@@ -54,6 +54,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   /// Tracks password text for the strength indicator (rebuilt via setState).
   String _passwordText = '';
+
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
 
   @override
   void initState() {
@@ -144,30 +147,32 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             padding: const EdgeInsets.all(24),
             child: Form(
               key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildHeader(context),
-                  const SizedBox(height: 32),
-                  _buildUsernameField(),
-                  const SizedBox(height: 16),
-                  _buildPasswordField(),
-                  _buildStrengthIndicator(context, strength),
-                  const SizedBox(height: 4),
-                  _buildPasswordHint(context),
-                  const SizedBox(height: 12),
-                  _buildConfirmPasswordField(),
-                  _buildErrorMessage(context, authState),
-                  const SizedBox(height: 24),
-                  _buildSubmitButton(authState),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () => context.go('/login'),
-                    child: const Text('Already have an account? Login'),
-                  ),
-                  const SizedBox(height: 16),
-                  _buildVersionFooter(context),
-                ],
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildHeader(context),
+                    const SizedBox(height: 32),
+                    _buildUsernameField(),
+                    const SizedBox(height: 16),
+                    _buildPasswordField(),
+                    _buildStrengthIndicator(context, strength),
+                    const SizedBox(height: 4),
+                    _buildPasswordHint(context),
+                    const SizedBox(height: 12),
+                    _buildConfirmPasswordField(),
+                    _buildErrorMessage(context, authState),
+                    const SizedBox(height: 24),
+                    _buildSubmitButton(authState),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      onPressed: () => context.go('/login'),
+                      child: const Text('Already have an account? Login'),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildVersionFooter(context),
+                  ],
+                ),
               ),
             ),
           ),
@@ -179,11 +184,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Widget _buildHeader(BuildContext context) {
     return Column(
       children: [
-        const EchoLogoIcon(size: 30),
-        const SizedBox(height: 10),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const EchoLogoIcon(size: 30),
+            const SizedBox(width: 10),
+            Text('Echo', style: Theme.of(context).textTheme.headlineLarge),
+          ],
+        ),
+        const SizedBox(height: 8),
         Text(
-          'Create Account',
-          style: Theme.of(context).textTheme.headlineLarge,
+          'Create your account',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16),
         ),
       ],
     );
@@ -192,7 +204,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Widget _buildUsernameField() {
     return TextFormField(
       controller: _usernameController,
-      autofillHints: const [],
+      autofillHints: const [AutofillHints.newUsername],
       decoration: const InputDecoration(
         labelText: 'Username',
         border: OutlineInputBorder(),
@@ -205,11 +217,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Widget _buildPasswordField() {
     return TextFormField(
       controller: _passwordController,
-      obscureText: true,
-      autofillHints: const [],
-      decoration: const InputDecoration(
+      obscureText: _obscurePassword,
+      autofillHints: const [AutofillHints.newPassword],
+      decoration: InputDecoration(
         labelText: 'Password',
-        border: OutlineInputBorder(),
+        border: const OutlineInputBorder(),
+        suffixIcon: IconButton(
+          icon: Icon(
+            _obscurePassword ? Icons.visibility_off : Icons.visibility,
+          ),
+          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+        ),
       ),
       textInputAction: TextInputAction.next,
       validator: _validatePassword,
@@ -263,11 +281,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Widget _buildConfirmPasswordField() {
     return TextFormField(
       controller: _confirmController,
-      obscureText: true,
-      autofillHints: const [],
-      decoration: const InputDecoration(
+      obscureText: _obscureConfirm,
+      autofillHints: const [AutofillHints.newPassword],
+      decoration: InputDecoration(
         labelText: 'Confirm password',
-        border: OutlineInputBorder(),
+        border: const OutlineInputBorder(),
+        suffixIcon: IconButton(
+          icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility),
+          onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+        ),
       ),
       onFieldSubmitted: (_) => _register(),
       validator: _validateConfirmPassword,
@@ -298,7 +320,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 width: 20,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : const Text('Register'),
+            : const Text('Create Account'),
       ),
     );
   }

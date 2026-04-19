@@ -97,7 +97,7 @@ class EchoTheme {
         foregroundColor: Colors.white,
         textStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       ),
     );
   }
@@ -146,7 +146,7 @@ class EchoTheme {
         borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(color: focusBorderColor, width: 1),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       hintStyle: GoogleFonts.inter(color: hintColor, fontSize: 13),
       labelStyle: GoogleFonts.inter(color: labelColor, fontSize: 13),
     );
