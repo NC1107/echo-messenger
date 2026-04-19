@@ -799,14 +799,16 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
                 child: GestureDetector(
                   onTap: widget.onRemove,
                   child: Container(
-                    padding: const EdgeInsets.all(4),
+                    width: 32,
+                    height: 32,
                     decoration: const BoxDecoration(
                       color: Colors.black54,
                       shape: BoxShape.circle,
                     ),
+                    alignment: Alignment.center,
                     child: const Icon(
                       Icons.close,
-                      size: 14,
+                      size: 16,
                       color: Colors.white,
                     ),
                   ),

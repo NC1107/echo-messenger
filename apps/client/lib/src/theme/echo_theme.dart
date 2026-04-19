@@ -13,7 +13,7 @@ class EchoTheme {
   static const accentLight = Color(0x1A6366F1);
   static const textPrimary = Color(0xFFEDEDEF);
   static const textSecondary = Color(0xFFABABB0);
-  static const textMuted = Color(0xFF636370);
+  static const textMuted = Color(0xFF848490);
   static const sentBubble = Color(0xFF5254D4);
   static const recvBubble = Color(0xFF242428);
   static const border = Color(0xFF27272A);
@@ -265,7 +265,7 @@ class EchoTheme {
   static const graphiteAccentLight = Color(0x1A14B8A6);
   static const graphiteTextPrimary = Color(0xFFE7F4F8);
   static const graphiteTextSecondary = Color(0xFFA3BAC2);
-  static const graphiteTextMuted = Color(0xFF6F8790);
+  static const graphiteTextMuted = Color(0xFF8FA8B2);
   static const graphiteSentBubble = Color(0xFF0FA594);
   static const graphiteRecvBubble = Color(0xFF22333B);
   static const graphiteBorder = Color(0xFF2C434D);
@@ -281,7 +281,7 @@ class EchoTheme {
   static const emberAccentLight = Color(0x1AF59E0B);
   static const emberTextPrimary = Color(0xFFF5F0E8);
   static const emberTextSecondary = Color(0xFFA89F91);
-  static const emberTextMuted = Color(0xFF736A5E);
+  static const emberTextMuted = Color(0xFF8F8478);
   static const emberSentBubble = Color(0xFFB45309);
   static const emberRecvBubble = Color(0xFF252019);
   static const emberBorder = Color(0xFF332D24);
@@ -296,8 +296,8 @@ class EchoTheme {
   static const neonAccentHover = Color(0xFF33FFaa);
   static const neonAccentLight = Color(0x1A00FF88);
   static const neonTextPrimary = Color(0xFFE0E0E8);
-  static const neonTextSecondary = Color(0xFF8888A0);
-  static const neonTextMuted = Color(0xFF555570);
+  static const neonTextSecondary = Color(0xFFA0A0B8);
+  static const neonTextMuted = Color(0xFF737390);
   static const neonSentBubble = Color(0xFF00CC6A);
   static const neonRecvBubble = Color(0xFF1A1A28);
   static const neonBorder = Color(0xFF222235);

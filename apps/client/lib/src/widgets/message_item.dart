@@ -1364,13 +1364,16 @@ class _HoverActionButton extends StatelessWidget {
       button: true,
       child: Tooltip(
         message: tooltip,
-        child: InkWell(
-          onTap: onPressed,
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: Opacity(
-              opacity: 0.75,
-              child: Icon(icon, size: 14, color: context.textSecondary),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          child: InkWell(
+            onTap: onPressed,
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Opacity(
+                opacity: 0.75,
+                child: Icon(icon, size: 14, color: context.textSecondary),
+              ),
             ),
           ),
         ),
