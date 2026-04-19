@@ -7,6 +7,28 @@ import 'package:echo_app/src/theme/echo_theme.dart';
 
 import '../helpers/mock_providers.dart';
 
+Widget _navListApp({
+  SettingsSection? selected,
+  void Function(SettingsSection)? onTap,
+  VoidCallback? onLogout,
+}) {
+  return ProviderScope(
+    overrides: [authOverride(loggedInAuthState), serverUrlOverride()],
+    child: MaterialApp(
+      theme: EchoTheme.darkTheme,
+      darkTheme: EchoTheme.darkTheme,
+      themeMode: ThemeMode.dark,
+      home: Scaffold(
+        body: SettingsNavList(
+          selected: selected,
+          onTap: onTap ?? (_) {},
+          onLogout: onLogout ?? () {},
+        ),
+      ),
+    ),
+  );
+}
+
 void main() {
   group('settingsSectionLabel', () {
     test('returns correct label for each section', () {
@@ -54,30 +76,21 @@ void main() {
   });
 
   group('SettingsNavList', () {
+    // The nav list needs ~700px of height to avoid overflow with all sections
+    // plus the Log Out item at the bottom. Set a tall viewport for all tests.
+    setUp(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+    });
+
     testWidgets('renders all navigation items', (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [authOverride(loggedInAuthState), serverUrlOverride()],
-          child: MaterialApp(
-            theme: EchoTheme.darkTheme,
-            darkTheme: EchoTheme.darkTheme,
-            themeMode: ThemeMode.dark,
-            home: Scaffold(
-              body: SizedBox(
-                height: 600,
-                child: SettingsNavList(
-                  selected: SettingsSection.account,
-                  onTap: (_) {},
-                  onLogout: () {},
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_navListApp(selected: SettingsSection.account));
       await tester.pumpAndSettle();
 
-      // Check all sections are rendered
       expect(find.text('Account'), findsOneWidget);
       expect(find.text('My Devices'), findsOneWidget);
       expect(find.text('Privacy & Safety'), findsOneWidget);
@@ -91,22 +104,12 @@ void main() {
     });
 
     testWidgets('renders category headers', (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [authOverride(loggedInAuthState), serverUrlOverride()],
-          child: MaterialApp(
-            theme: EchoTheme.darkTheme,
-            darkTheme: EchoTheme.darkTheme,
-            themeMode: ThemeMode.dark,
-            home: Scaffold(
-              body: SizedBox(
-                height: 600,
-                child: SettingsNavList(onTap: (_) {}, onLogout: () {}),
-              ),
-            ),
-          ),
-        ),
-      );
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_navListApp());
       await tester.pumpAndSettle();
 
       expect(find.text('USER SETTINGS'), findsOneWidget);
@@ -115,49 +118,25 @@ void main() {
     });
 
     testWidgets('renders Log Out button', (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [authOverride(loggedInAuthState), serverUrlOverride()],
-          child: MaterialApp(
-            theme: EchoTheme.darkTheme,
-            darkTheme: EchoTheme.darkTheme,
-            themeMode: ThemeMode.dark,
-            home: Scaffold(
-              body: SizedBox(
-                height: 600,
-                child: SettingsNavList(onTap: (_) {}, onLogout: () {}),
-              ),
-            ),
-          ),
-        ),
-      );
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_navListApp());
       await tester.pumpAndSettle();
 
       expect(find.text('Log Out'), findsOneWidget);
     });
 
     testWidgets('tapping a section calls onTap', (tester) async {
-      SettingsSection? tapped;
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [authOverride(loggedInAuthState), serverUrlOverride()],
-          child: MaterialApp(
-            theme: EchoTheme.darkTheme,
-            darkTheme: EchoTheme.darkTheme,
-            themeMode: ThemeMode.dark,
-            home: Scaffold(
-              body: SizedBox(
-                height: 600,
-                child: SettingsNavList(
-                  onTap: (s) => tapped = s,
-                  onLogout: () {},
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
+      SettingsSection? tapped;
+      await tester.pumpWidget(_navListApp(onTap: (s) => tapped = s));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Privacy & Safety'));
@@ -165,27 +144,13 @@ void main() {
     });
 
     testWidgets('tapping Log Out calls onLogout', (tester) async {
-      var loggedOut = false;
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [authOverride(loggedInAuthState), serverUrlOverride()],
-          child: MaterialApp(
-            theme: EchoTheme.darkTheme,
-            darkTheme: EchoTheme.darkTheme,
-            themeMode: ThemeMode.dark,
-            home: Scaffold(
-              body: SizedBox(
-                height: 600,
-                child: SettingsNavList(
-                  onTap: (_) {},
-                  onLogout: () => loggedOut = true,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
+      var loggedOut = false;
+      await tester.pumpWidget(_navListApp(onLogout: () => loggedOut = true));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Log Out'));

@@ -1130,15 +1130,38 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         ),
       ),
       if (myRole == 'owner') ...[
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
+        const Divider(),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: FilledButton.icon(
-            onPressed: _deleteGroup,
-            icon: const Icon(Icons.delete_forever_outlined),
-            label: const Text('Delete Group'),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Text(
+            'Danger Zone',
+            style: TextStyle(
+              color: EchoTheme.danger,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ),
+        ListTile(
+          onTap: _deleteGroup,
+          leading: const Icon(
+            Icons.delete_forever_outlined,
+            color: EchoTheme.danger,
+          ),
+          title: const Text(
+            'Delete Group',
+            style: TextStyle(
+              color: EchoTheme.danger,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          subtitle: Text(
+            'Permanently delete this group and all its messages.',
+            style: TextStyle(
+              color: EchoTheme.danger.withValues(alpha: 0.7),
+              fontSize: 12,
             ),
           ),
         ),

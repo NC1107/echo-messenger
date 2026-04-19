@@ -9,6 +9,7 @@ class ContactItem extends StatefulWidget {
   final String serverUrl;
   final VoidCallback onMessage;
   final VoidCallback onProfile;
+  final Set<String> onlineUsers;
 
   const ContactItem({
     super.key,
@@ -16,6 +17,7 @@ class ContactItem extends StatefulWidget {
     required this.serverUrl,
     required this.onMessage,
     required this.onProfile,
+    this.onlineUsers = const {},
   });
 
   @override
@@ -31,6 +33,7 @@ class _ContactItemState extends State<ContactItem> {
     final username = contact.username;
     final displayName = contact.displayName;
     final fullAvatarUrl = resolveAvatarUrl(contact.avatarUrl, widget.serverUrl);
+    final isOnline = widget.onlineUsers.contains(contact.userId);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
@@ -69,7 +72,9 @@ class _ContactItemState extends State<ContactItem> {
                               width: 10,
                               height: 10,
                               decoration: BoxDecoration(
-                                color: EchoTheme.online,
+                                color: isOnline
+                                    ? EchoTheme.online
+                                    : context.textMuted,
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: context.sidebarBg,

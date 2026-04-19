@@ -9,10 +9,12 @@ import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart';
+import 'contact_item.dart';
 import 'conversation_item.dart';
 import 'echo_logo_icon.dart';
 import 'skeleton_loader.dart';
@@ -20,9 +22,6 @@ import 'skeleton_loader.dart';
 // Re-export avatar utilities so existing `show` imports keep working.
 export 'avatar_utils.dart'
     show buildAvatar, avatarColor, groupAvatarColor, resolveAvatarUrl;
-
-/// Filter for the unified conversation list.
-enum _ConversationFilter { all, dms, groups }
 
 class ConversationPanel extends ConsumerStatefulWidget {
   final String? selectedConversationId;
@@ -35,7 +34,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
   final VoidCallback? onShowContacts;
   final VoidCallback? onGlobalSearch;
 
-  /// Called when the user taps "Message" on a contact.
+  /// Called when the user taps "Message" on a contact in the Contacts tab.
   /// Should call getOrCreateDm and then select the conversation.
   final void Function(String userId, String username)? onMessageContact;
 
@@ -67,9 +66,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   final _keyboardListenerFocusNode = FocusNode();
+  // Timer removed -- HomeScreen handles pending contacts polling
 
-  /// Active conversation filter.
-  _ConversationFilter _filter = _ConversationFilter.all;
+  /// 0 = Chats, 1 = Contacts, 2 = Groups
+  int _selectedTab = 0;
 
   /// Pinned conversation IDs
   Set<String> _pinnedIds = {};
@@ -89,6 +89,14 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       oldWidget.externalSearchFocusNode?.removeListener(_onExternalSearchFocus);
       widget.externalSearchFocusNode?.addListener(_onExternalSearchFocus);
     }
+    // When a conversation is selected while the user is on a non-Chats tab
+    // (e.g. "Message" button in Contacts), switch to the Chats tab so the
+    // selected conversation is visible and highlighted.
+    if (widget.selectedConversationId != null &&
+        widget.selectedConversationId != oldWidget.selectedConversationId &&
+        _selectedTab != 0) {
+      setState(() => _selectedTab = 0);
+    }
   }
 
   @override
@@ -106,6 +114,25 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final authState = ref.read(authProvider);
     if (authState.isLoggedIn) {
       ref.read(contactsProvider.notifier).loadPending(force: true);
+    }
+  }
+
+  void _onTabSelected(int index) {
+    setState(() {
+      _selectedTab = index;
+      // Clear search when switching tabs so filtered results from one tab
+      // don't bleed into another.
+      if (_searchQuery.isNotEmpty) {
+        _searchQuery = '';
+        _searchController.clear();
+        _isSearching = false;
+      }
+    });
+    if (index <= 1) {
+      final authState = ref.read(authProvider);
+      if (authState.isLoggedIn) {
+        ref.read(contactsProvider.notifier).loadPending(force: true);
+      }
     }
   }
 
@@ -161,7 +188,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     int byTimestamp(Conversation a, Conversation b) {
       final ta = a.lastMessageTimestamp ?? '';
       final tb = b.lastMessageTimestamp ?? '';
-      return tb.compareTo(ta); // descending -- newest first
+      return tb.compareTo(ta); // descending — newest first
     }
 
     pinned.sort(byTimestamp);
@@ -423,10 +450,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       isLoading: convIsLoading,
       error: convError,
     );
-    final (myUserId, myUsername, myAvatarUrl, myPresenceStatus) = ref.watch(
-      authProvider.select(
-        (s) => (s.userId, s.username, s.avatarUrl, s.presenceStatus),
-      ),
+    final (myUserId, myUsername, myAvatarUrl) = ref.watch(
+      authProvider.select((s) => (s.userId, s.username, s.avatarUrl)),
     );
     final userId = myUserId ?? '';
     final username = myUsername ?? 'User';
@@ -437,9 +462,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       ),
     );
     final contactsState = ref.watch(contactsProvider);
+
     final pendingCount = contactsState.pendingRequests.length;
 
     final conversations = _filterConversations(allConversations, userId);
+    final groupConversations = conversations.where((c) => c.isGroup).toList();
 
     return Container(
       color: context.sidebarBg,
@@ -447,18 +474,19 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         children: [
           _buildLogoHeader(context, wsConnected, pendingCount),
           _buildSearchBar(context),
-          _buildFilterChips(),
+          _buildTabBar(),
           const SizedBox(height: 8),
           _buildReplacedBanner(context, wsReplaced),
           Expanded(
-            child: _buildConversationContent(
+            child: _buildTabContent(
               conversationsState: convState,
               conversations: conversations,
+              groupConversations: groupConversations,
               allConversations: allConversations,
+              contactsState: contactsState,
               myUserId: userId,
               serverUrl: serverUrl,
               wsOnlineUsers: wsOnlineUsers,
-              pendingCount: pendingCount,
             ),
           ),
           _buildUserStatusBar(
@@ -468,41 +496,23 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             avatarUrl: myAvatarUrl,
             wsConnected: wsConnected,
             wsReplaced: wsReplaced,
-            presenceStatus: myPresenceStatus,
           ),
         ],
       ),
     );
   }
 
-  /// Filter conversations by search query and the active filter chip.
   List<Conversation> _filterConversations(
     List<Conversation> allConversations,
     String myUserId,
   ) {
-    var result = allConversations;
-
-    // Apply type filter.
-    switch (_filter) {
-      case _ConversationFilter.dms:
-        result = result.where((c) => !c.isGroup).toList();
-      case _ConversationFilter.groups:
-        result = result.where((c) => c.isGroup).toList();
-      case _ConversationFilter.all:
-        break;
-    }
-
-    // Apply search query.
-    if (_searchQuery.isNotEmpty) {
-      result = result.where((conv) {
-        final query = _searchQuery.toLowerCase();
-        final name = conv.displayName(myUserId).toLowerCase();
-        final lastMsg = (conv.lastMessage ?? '').toLowerCase();
-        return name.contains(query) || lastMsg.contains(query);
-      }).toList();
-    }
-
-    return result;
+    if (_searchQuery.isEmpty) return allConversations;
+    return allConversations.where((conv) {
+      final query = _searchQuery.toLowerCase();
+      final name = conv.displayName(myUserId).toLowerCase();
+      final lastMsg = (conv.lastMessage ?? '').toLowerCase();
+      return name.contains(query) || lastMsg.contains(query);
+    }).toList();
   }
 
   Widget _buildLogoHeader(
@@ -737,74 +747,34 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
-  Widget _buildFilterChips() {
+  Widget _buildTabBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          _buildFilterChip('All', _ConversationFilter.all),
-          const SizedBox(width: 6),
-          _buildFilterChip(
-            'DMs',
-            _ConversationFilter.dms,
-            icon: Icons.person_outline,
-          ),
-          const SizedBox(width: 6),
-          _buildFilterChip(
-            'Groups',
-            _ConversationFilter.groups,
-            icon: Icons.groups_outlined,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(
-    String label,
-    _ConversationFilter filter, {
-    IconData? icon,
-  }) {
-    final isSelected = _filter == filter;
-    final chipColor = isSelected
-        ? Theme.of(context).colorScheme.onPrimary
-        : context.textSecondary;
-    final chipWeight = isSelected ? FontWeight.w600 : FontWeight.w500;
-    return Semantics(
-      label: '$label filter',
-      button: true,
-      selected: isSelected,
-      child: GestureDetector(
-        onTap: () {
-          if (_filter != filter) {
-            setState(() => _filter = filter);
-          }
-        },
-        child: Container(
-          height: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            color: isSelected ? context.accent : context.surface,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final narrow = constraints.maxWidth < 300;
+          return Row(
             children: [
-              if (icon != null) ...[
-                Icon(icon, size: 14, color: chipColor),
-                const SizedBox(width: 4),
-              ],
-              Text(
-                label,
-                style: TextStyle(
-                  color: chipColor,
-                  fontSize: 12,
-                  fontWeight: chipWeight,
-                ),
+              _buildTabChip(
+                'Chats',
+                0,
+                icon: narrow ? Icons.chat_bubble_outline : null,
+              ),
+              const SizedBox(width: 6),
+              _buildTabChip(
+                'Contacts',
+                1,
+                icon: narrow ? Icons.people_outline : null,
+              ),
+              const SizedBox(width: 6),
+              _buildTabChip(
+                'Groups',
+                2,
+                icon: narrow ? Icons.groups_outlined : null,
               ),
             ],
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -862,7 +832,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     required String? avatarUrl,
     required bool wsConnected,
     required bool wsReplaced,
-    required String presenceStatus,
   }) {
     return Container(
       height: 60,
@@ -879,16 +848,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             serverUrl,
             avatarUrl,
             wsConnected,
-            presenceStatus,
           ),
           const SizedBox(width: 10),
-          _buildUserNameAndStatus(
-            context,
-            myUsername,
-            wsConnected,
-            wsReplaced,
-            presenceStatus,
-          ),
+          _buildUserNameAndStatus(context, myUsername, wsConnected, wsReplaced),
           IconButton(
             icon: const Icon(Icons.settings_outlined, size: 18),
             color: context.textSecondary,
@@ -908,156 +870,36 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     String serverUrl,
     String? avatarUrl,
     bool wsConnected,
-    String presenceStatus,
   ) {
-    return GestureDetector(
-      onTap: () => _showPresenceStatusPicker(context, presenceStatus),
-      child: Stack(
-        children: [
-          buildAvatar(
-            name: myUsername,
-            radius: 16,
-            bgColor: context.accent,
-            imageUrl: resolveAvatarUrl(avatarUrl, serverUrl),
-          ),
-          Positioned(
-            bottom: 0,
-            right: 0,
-            child: Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: wsConnected
-                    ? _presenceStatusColor(context, presenceStatus)
-                    : EchoTheme.warning,
-                shape: BoxShape.circle,
-                border: Border.all(color: context.mainBg, width: 2),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Return the display color for a given presence status.
-  Color _presenceStatusColor(BuildContext context, String status) {
-    return switch (status) {
-      'online' => EchoTheme.online,
-      'away' => EchoTheme.warning,
-      'dnd' => EchoTheme.danger,
-      'invisible' => context.textMuted,
-      _ => EchoTheme.online,
-    };
-  }
-
-  /// Show a popup menu for choosing one of the four presence statuses.
-  void _showPresenceStatusPicker(BuildContext context, String currentStatus) {
-    final renderBox = context.findRenderObject() as RenderBox?;
-    if (renderBox == null) return;
-    final offset = renderBox.localToGlobal(Offset.zero);
-    final size = renderBox.size;
-    // Position the menu above the status bar.
-    final position = RelativeRect.fromLTRB(
-      offset.dx + 16,
-      offset.dy + size.height - 64,
-      offset.dx + size.width,
-      0,
-    );
-
-    showMenu<String>(
-      context: context,
-      position: position,
-      color: context.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: context.border),
-      ),
-      items: [
-        _presenceMenuItem(
-          context,
-          value: 'online',
-          label: 'Online',
-          color: EchoTheme.online,
-          current: currentStatus,
+    return Stack(
+      children: [
+        buildAvatar(
+          name: myUsername,
+          radius: 16,
+          bgColor: context.accent,
+          imageUrl: resolveAvatarUrl(avatarUrl, serverUrl),
         ),
-        _presenceMenuItem(
-          context,
-          value: 'away',
-          label: 'Away',
-          color: EchoTheme.warning,
-          current: currentStatus,
-        ),
-        _presenceMenuItem(
-          context,
-          value: 'dnd',
-          label: 'Do Not Disturb',
-          color: EchoTheme.danger,
-          current: currentStatus,
-        ),
-        _presenceMenuItem(
-          context,
-          value: 'invisible',
-          label: 'Invisible',
-          color: context.textMuted,
-          current: currentStatus,
-        ),
-      ],
-    ).then((value) {
-      if (value != null && value != currentStatus) {
-        ref.read(authProvider.notifier).setPresenceStatus(value);
-      }
-    });
-  }
-
-  PopupMenuItem<String> _presenceMenuItem(
-    BuildContext context, {
-    required String value,
-    required String label,
-    required Color color,
-    required String current,
-  }) {
-    final isSelected = current == value;
-    return PopupMenuItem<String>(
-      value: value,
-      child: Row(
-        children: [
-          Container(
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: Container(
             width: 10,
             height: 10,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            label,
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 13,
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            decoration: BoxDecoration(
+              color: wsConnected ? EchoTheme.online : EchoTheme.warning,
+              shape: BoxShape.circle,
+              border: Border.all(color: context.mainBg, width: 2),
             ),
           ),
-          if (isSelected) ...[
-            const Spacer(),
-            Icon(Icons.check, size: 14, color: context.accent),
-          ],
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  static String _connectionStatusLabel(
-    bool wsReplaced,
-    bool wsConnected,
-    String presenceStatus,
-  ) {
+  static String _connectionStatusLabel(bool wsReplaced, bool wsConnected) {
     if (wsReplaced) return 'Session replaced';
-    if (!wsConnected) return 'Reconnecting...';
-    return switch (presenceStatus) {
-      'away' => 'Away',
-      'dnd' => 'Do Not Disturb',
-      'invisible' => 'Invisible',
-      _ => 'Online',
-    };
+    if (wsConnected) return 'Online';
+    return 'Reconnecting...';
   }
 
   Widget _buildUserNameAndStatus(
@@ -1065,11 +907,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     String myUsername,
     bool wsConnected,
     bool wsReplaced,
-    String presenceStatus,
   ) {
-    final statusColor = wsConnected
-        ? _presenceStatusColor(context, presenceStatus)
-        : EchoTheme.warning;
     return Expanded(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -1085,23 +923,108 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             overflow: TextOverflow.ellipsis,
           ),
           Text(
-            _connectionStatusLabel(wsReplaced, wsConnected, presenceStatus),
-            style: TextStyle(color: statusColor, fontSize: 11),
+            _connectionStatusLabel(wsReplaced, wsConnected),
+            style: TextStyle(
+              color: wsConnected ? EchoTheme.online : EchoTheme.warning,
+              fontSize: 11,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildConversationContent({
+  Widget _buildTabChip(String label, int index, {IconData? icon}) {
+    final isSelected = _selectedTab == index;
+    final chipColor = isSelected
+        ? Theme.of(context).colorScheme.onPrimary
+        : context.textSecondary;
+    final chipWeight = isSelected ? FontWeight.w600 : FontWeight.w500;
+    return Expanded(
+      child: Semantics(
+        label: '$label tab',
+        button: true,
+        selected: isSelected,
+        child: GestureDetector(
+          onTap: () => _onTabSelected(index),
+          child: Container(
+            height: 30,
+            decoration: BoxDecoration(
+              color: isSelected ? context.accent : context.surface,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: icon != null
+                  ? Icon(icon, size: 16, color: chipColor)
+                  : Text(
+                      label,
+                      style: TextStyle(
+                        color: chipColor,
+                        fontSize: 12,
+                        fontWeight: chipWeight,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabContent({
     required ConversationsState conversationsState,
     required List<Conversation> conversations,
+    required List<Conversation> groupConversations,
     required List<Conversation> allConversations,
+    required ContactsState contactsState,
     required String myUserId,
     required String serverUrl,
     required Set<String> wsOnlineUsers,
-    required int pendingCount,
   }) {
+    // Each tab MUST have a distinct key so Flutter fully rebuilds the subtree
+    // on tab switch instead of recycling the previous tab's ListView state.
+    // Without this, gesture and scroll state from one tab bleeds into the
+    // next, causing taps at position N in the Contacts tab to trigger the
+    // conversation at position N in the Chats tab.
+    switch (_selectedTab) {
+      case 1:
+        return KeyedSubtree(
+          key: const ValueKey('tab-contacts'),
+          child: _buildContactsTab(
+            contactsState,
+            myUserId,
+            serverUrl,
+            wsOnlineUsers,
+          ),
+        );
+      case 2:
+        return KeyedSubtree(
+          key: const ValueKey('tab-groups'),
+          child: _buildGroupsTab(groupConversations, myUserId, serverUrl),
+        );
+      default:
+        return KeyedSubtree(
+          key: const ValueKey('tab-chats'),
+          child: _buildChatsTab(
+            conversationsState,
+            conversations,
+            allConversations,
+            myUserId,
+            serverUrl,
+            wsOnlineUsers,
+          ),
+        );
+    }
+  }
+
+  Widget _buildChatsTab(
+    ConversationsState conversationsState,
+    List<Conversation> conversations,
+    List<Conversation> allConversations,
+    String myUserId,
+    String serverUrl,
+    Set<String> wsOnlineUsers,
+  ) {
     final Widget child;
     if (conversationsState.isLoading && allConversations.isEmpty) {
       child = const ConversationListSkeleton(key: ValueKey('skeleton'));
@@ -1144,7 +1067,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     } else if (conversations.isEmpty) {
       child = KeyedSubtree(
         key: const ValueKey('empty'),
-        child: _buildEmptyState(),
+        child: _buildChatsEmptyState(),
       );
     } else {
       final sorted = _sortConversations(conversations);
@@ -1155,7 +1078,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           myUserId,
           serverUrl,
           wsOnlineUsers,
-          pendingCount: pendingCount,
         ),
       );
     }
@@ -1165,7 +1087,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildChatsEmptyState() {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -1214,55 +1136,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
-  /// Builds the pending contact requests banner shown at the top of the list.
-  Widget _buildPendingRequestsBanner(int pendingCount) {
-    return GestureDetector(
-      onTap: widget.onShowContacts,
-      child: Container(
-        height: 44,
-        margin: const EdgeInsets.only(bottom: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: context.accent.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.person_add_outlined, size: 18, color: context.accent),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                '$pendingCount pending request${pendingCount == 1 ? '' : 's'}',
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: EchoTheme.danger,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                pendingCount > 9 ? '9+' : '$pendingCount',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(Icons.chevron_right, size: 16, color: context.textMuted),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildListItem({
     required int index,
     required List<Conversation> sorted,
@@ -1270,19 +1143,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     required String myUserId,
     required String serverUrl,
     required Set<String> wsOnlineUsers,
-    required int pendingCount,
   }) {
-    // Pending requests banner is at index 0 when there are pending requests.
-    final hasPendingBanner = pendingCount > 0;
-    if (hasPendingBanner && index == 0) {
-      return _buildPendingRequestsBanner(pendingCount);
-    }
-
-    // Adjust index to account for the pending banner.
-    final adjustedIndex = hasPendingBanner ? index - 1 : index;
-
     if (pinnedCount > 0) {
-      if (adjustedIndex == 0) {
+      if (index == 0) {
         return Padding(
           padding: const EdgeInsets.only(left: 8, top: 4, bottom: 2),
           child: Text(
@@ -1296,7 +1159,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           ),
         );
       }
-      if (adjustedIndex == pinnedCount + 1) {
+      if (index == pinnedCount + 1) {
         return Divider(
           height: 12,
           thickness: 1,
@@ -1305,9 +1168,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           color: context.border,
         );
       }
-      final convIndex = adjustedIndex <= pinnedCount
-          ? adjustedIndex - 1
-          : adjustedIndex - 2;
+      final convIndex = index <= pinnedCount ? index - 1 : index - 2;
       if (convIndex >= sorted.length) return const SizedBox.shrink();
       final conv = sorted[convIndex];
       return _buildConversationTile(
@@ -1319,8 +1180,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       );
     }
 
-    if (adjustedIndex >= sorted.length) return const SizedBox.shrink();
-    final conv = sorted[adjustedIndex];
+    final conv = sorted[index];
     return _buildConversationTile(
       conv,
       _pinnedIds.contains(conv.id),
@@ -1334,15 +1194,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     List<Conversation> sorted,
     String myUserId,
     String serverUrl,
-    Set<String> wsOnlineUsers, {
-    required int pendingCount,
-  }) {
+    Set<String> wsOnlineUsers,
+  ) {
     // Count how many pinned items are at the front of the sorted list.
     final pinnedCount = sorted.where((c) => _pinnedIds.contains(c.id)).length;
     // Extra items: section header for pinned (if any) + divider after pinned.
     final extraItems = pinnedCount > 0 ? 2 : 0;
-    // Pending requests banner adds one item at the top.
-    final pendingBannerCount = pendingCount > 0 ? 1 : 0;
 
     return RefreshIndicator(
       onRefresh: () =>
@@ -1353,9 +1210,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         child: ListView.builder(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-          // Cannot use fixed itemExtent when we have banners or section headers.
-          itemExtent: (extraItems == 0 && pendingBannerCount == 0) ? 70 : null,
-          itemCount: sorted.length + extraItems + pendingBannerCount,
+          // Use fixed itemExtent when no section headers/dividers for faster layout.
+          itemExtent: extraItems == 0 ? 70 : null,
+          itemCount: sorted.length + extraItems,
           itemBuilder: (context, index) => _buildListItem(
             index: index,
             sorted: sorted,
@@ -1363,7 +1220,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             myUserId: myUserId,
             serverUrl: serverUrl,
             wsOnlineUsers: wsOnlineUsers,
-            pendingCount: pendingCount,
           ),
         ),
       ),
@@ -1381,23 +1237,205 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ? null
         : conv.members.where((m) => m.userId != myUserId).firstOrNull;
     final isPeerOnline = peer != null && wsOnlineUsers.contains(peer.userId);
-    final wsState = ref.read(websocketProvider);
-    final peerPresenceStatus = peer != null
-        ? wsState.presenceStatusFor(peer.userId)
-        : 'offline';
     return ConversationItem(
       conversation: conv,
       myUserId: myUserId,
       isSelected: conv.id == widget.selectedConversationId,
       isPinned: isPinned,
       isPeerOnline: isPeerOnline,
-      peerPresenceStatus: peerPresenceStatus,
       peerAvatarUrl: resolveAvatarUrl(peer?.avatarUrl, serverUrl),
       groupIconUrl: resolveAvatarUrl(conv.iconUrl, serverUrl),
       timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
       onTap: () => widget.onConversationTap(conv),
       onContextMenu: (position) =>
           _showConversationContextMenu(context, conv, position),
+    );
+  }
+
+  Widget _buildContactsTab(
+    ContactsState contactsState,
+    String myUserId,
+    String serverUrl,
+    Set<String> onlineUsers,
+  ) {
+    final contacts = contactsState.contacts;
+
+    if (contactsState.isLoading && contacts.isEmpty) {
+      return const ConversationListSkeleton(count: 4);
+    }
+
+    if (contacts.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.people_outline,
+                size: 40,
+                color: context.textMuted.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No contacts yet',
+                style: TextStyle(
+                  color: context.textSecondary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Add a contact to get started',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: context.textMuted, fontSize: 13),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                height: 34,
+                child: FilledButton.icon(
+                  onPressed: widget.onNewChat,
+                  icon: const Icon(Icons.person_add_alt_1, size: 16),
+                  label: const Text('Add Contact'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Scrollbar(
+      thumbVisibility: true,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        itemCount: contacts.length,
+        itemBuilder: (context, index) {
+          final contact = contacts[index];
+          return ContactItem(
+            contact: contact,
+            serverUrl: serverUrl,
+            onlineUsers: onlineUsers,
+            onMessage: () {
+              widget.onMessageContact?.call(contact.userId, contact.username);
+            },
+            onProfile: () {
+              UserProfileScreen.show(context, ref, contact.userId);
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildGroupsTab(
+    List<Conversation> groupConversations,
+    String myUserId,
+    String serverUrl,
+  ) {
+    if (groupConversations.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _searchQuery.isNotEmpty
+                    ? Icons.search_off
+                    : Icons.group_outlined,
+                size: 40,
+                color: context.textMuted.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _searchQuery.isNotEmpty
+                    ? "No results found for '$_searchQuery'"
+                    : 'No groups yet',
+                style: TextStyle(
+                  color: context.textSecondary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _searchQuery.isNotEmpty
+                    ? 'Try a different search term'
+                    : 'Create or join a group',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: context.textMuted, fontSize: 13),
+              ),
+              if (_searchQuery.isEmpty) ...[
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  height: 34,
+                  child: FilledButton.icon(
+                    onPressed: widget.onNewGroup,
+                    icon: const Icon(Icons.group_add, size: 16),
+                    label: const Text('Create Group'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  height: 34,
+                  child: OutlinedButton.icon(
+                    onPressed: widget.onDiscover,
+                    icon: const Icon(Icons.explore_outlined, size: 16),
+                    label: const Text('Discover'),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    final sorted = _sortConversations(groupConversations);
+
+    return Scrollbar(
+      thumbVisibility: true,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        itemCount: sorted.length + 1,
+        itemBuilder: (context, index) {
+          // First item: Discover Groups button
+          if (index == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6, top: 2),
+              child: OutlinedButton.icon(
+                onPressed: widget.onDiscover,
+                icon: const Icon(Icons.explore_outlined, size: 16),
+                label: const Text('Discover Groups'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 34),
+                  textStyle: const TextStyle(fontSize: 13),
+                ),
+              ),
+            );
+          }
+          final conv = sorted[index - 1];
+          final isSelected = conv.id == widget.selectedConversationId;
+          final isPinned = _pinnedIds.contains(conv.id);
+          // Groups don't have a single peer, so isPeerOnline is always false
+          return ConversationItem(
+            conversation: conv,
+            myUserId: myUserId,
+            isSelected: isSelected,
+            isPinned: isPinned,
+            isPeerOnline: false,
+            groupIconUrl: resolveAvatarUrl(conv.iconUrl, serverUrl),
+            timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
+            onTap: () => widget.onConversationTap(conv),
+            onContextMenu: (position) =>
+                _showConversationContextMenu(context, conv, position),
+          );
+        },
+      ),
     );
   }
 }
