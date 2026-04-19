@@ -284,23 +284,8 @@ void main() {
   });
 
   // =========================================================================
-  // H5: Search query not cleared on tab switch
+  // H5: (Resolved) Tabs removed -- sidebar uses unified list with filter chips.
   // =========================================================================
-  group('H5: search persists across tab switches', () {
-    test(
-      'search query from chats tab should not filter contacts tab',
-      () {
-        // conversation_panel.dart:111-119 — _onTabSelected() does NOT
-        // clear _searchQuery. The state variable is widget-local.
-        //
-        // This is a widget-level issue requiring widget test.
-        // Documenting the expected behavior:
-        // When switching tabs, _searchQuery should be cleared or
-        // each tab should have its own independent search.
-      },
-      skip: 'widget-level bug, needs integration test with actual widget',
-    );
-  });
 
   // =========================================================================
   // H9: getOrCreateDm doesn't validate returned conversation type
