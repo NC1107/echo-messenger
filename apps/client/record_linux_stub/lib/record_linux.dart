@@ -22,10 +22,14 @@ class RecordLinux extends RecordPlatform {
       Amplitude(current: -160.0, max: -160.0);
 
   @override
-  Future<bool> hasPermission(String recorderId, {bool request = false}) async => false;
+  Future<bool> hasPermission(String recorderId, {bool request = false}) async =>
+      false;
 
   @override
-  Future<bool> isEncoderSupported(String recorderId, AudioEncoder encoder) async => false;
+  Future<bool> isEncoderSupported(
+    String recorderId,
+    AudioEncoder encoder,
+  ) async => false;
 
   @override
   Future<bool> isPaused(String recorderId) async => false;
@@ -34,7 +38,8 @@ class RecordLinux extends RecordPlatform {
   Future<bool> isRecording(String recorderId) async => false;
 
   @override
-  Future<List<InputDevice>> listInputDevices(String recorderId) async => const [];
+  Future<List<InputDevice>> listInputDevices(String recorderId) async =>
+      const [];
 
   @override
   Stream<RecordState> onStateChanged(String recorderId) => const Stream.empty();
@@ -46,11 +51,17 @@ class RecordLinux extends RecordPlatform {
   Future<void> resume(String recorderId) async {}
 
   @override
-  Future<void> start(String recorderId, RecordConfig config, {required String path}) async {}
+  Future<void> start(
+    String recorderId,
+    RecordConfig config, {
+    required String path,
+  }) async {}
 
   @override
-  Future<Stream<Uint8List>> startStream(String recorderId, RecordConfig config) async =>
-      const Stream.empty();
+  Future<Stream<Uint8List>> startStream(
+    String recorderId,
+    RecordConfig config,
+  ) async => const Stream.empty();
 
   @override
   Future<String?> stop(String recorderId) async => null;
