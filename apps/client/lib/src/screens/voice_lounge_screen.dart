@@ -802,9 +802,7 @@ class _ParticipantGrid extends StatelessWidget {
 
     return _ParticipantTile(
       key: ValueKey('remote-${participant.sid}'),
-      name: displayName.length > 16
-          ? displayName.substring(0, 16)
-          : displayName,
+      name: displayName,
       avatarUrl: memberAvatars[displayName],
       hasVideo: videoTrack?.track != null,
       videoTrack: videoTrack?.track as lk.VideoTrack?,
@@ -1603,7 +1601,7 @@ class _DockButtonWithSubmenu extends StatelessWidget {
       final arrowColor = submenuActive
           ? (activeColor ?? context.accent)
           : context.textMuted;
-      final arrowIcon = submenuActive ? Icons.expand_more : Icons.expand_less;
+      final arrowIcon = submenuActive ? Icons.expand_less : Icons.expand_more;
       final trigger = Tooltip(
         message: '$tooltip options',
         child: Material(

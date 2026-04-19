@@ -332,7 +332,8 @@ class ChatHeaderBar extends ConsumerWidget {
     );
   }
 
-  /// Wide layout: show all buttons inline.
+  /// Wide layout: call, pin, search, media, members inline; advanced actions
+  /// (safety number, encryption repair, disappearing timer) in overflow menu.
   List<Widget> _buildWideActionButtons(
     BuildContext context,
     WidgetRef ref,
@@ -340,24 +341,6 @@ class ChatHeaderBar extends ConsumerWidget {
     int pinnedCount,
   ) {
     return [
-      if (!conv.isGroup)
-        IconButton(
-          icon: const Icon(Icons.lock_outlined, size: 20),
-          color: EchoTheme.online,
-          tooltip: 'Verify safety number',
-          onPressed: () => _openSafetyNumber(context, ref, conv),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-        ),
-      if (!conv.isGroup && conv.isEncrypted)
-        IconButton(
-          icon: const Icon(Icons.healing, size: 18),
-          color: context.textMuted,
-          tooltip: 'Fix encryption issues',
-          onPressed: () => _resetPeerKeys(context, ref, conv, myUserId),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-        ),
       if (!conv.isGroup)
         IconButton(
           icon: const Icon(Icons.call_outlined, size: 20),
@@ -399,15 +382,6 @@ class ChatHeaderBar extends ConsumerWidget {
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
-      if (!conv.isGroup)
-        IconButton(
-          icon: const Icon(Icons.timer_outlined, size: 20),
-          color: context.textSecondary,
-          tooltip: 'Disappearing messages',
-          onPressed: () => _showDisappearingDialog(context, ref, conv),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-        ),
       if (conv.isGroup && onMembersToggle != null)
         IconButton(
           icon: const Icon(Icons.people_outline, size: 20),
@@ -417,6 +391,7 @@ class ChatHeaderBar extends ConsumerWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
+      _buildOverflowMenu(context, ref, conv, pinnedCount),
     ];
   }
 

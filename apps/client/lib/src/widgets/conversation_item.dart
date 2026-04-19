@@ -269,13 +269,7 @@ class _ConversationItemState extends State<ConversationItem> {
         if (widget.isPinned)
           Padding(
             padding: const EdgeInsets.only(right: 4),
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: Center(
-                child: Icon(Icons.push_pin, size: 12, color: context.textMuted),
-              ),
-            ),
+            child: Icon(Icons.push_pin, size: 12, color: context.textMuted),
           ),
         Expanded(
           child: Text(
@@ -349,16 +343,10 @@ class _ConversationItemState extends State<ConversationItem> {
         if (conv.isMuted)
           Padding(
             padding: const EdgeInsets.only(left: 6),
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: Center(
-                child: Icon(
-                  Icons.notifications_off_outlined,
-                  size: 14,
-                  color: context.textMuted,
-                ),
-              ),
+            child: Icon(
+              Icons.notifications_off_outlined,
+              size: 14,
+              color: context.textMuted,
             ),
           ),
         if (hasUnread)

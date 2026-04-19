@@ -44,6 +44,16 @@ class _VertexMeshBackgroundState extends State<VertexMeshBackground>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (TickerMode.valuesOf(context).enabled) {
+      if (!_ticker.isActive) _ticker.start();
+    } else {
+      if (_ticker.isActive) _ticker.stop();
+    }
+  }
+
+  @override
   void dispose() {
     _ticker.dispose();
     _repaint.dispose();

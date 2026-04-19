@@ -326,10 +326,11 @@ class _DockIconButton extends StatelessWidget {
       message: tooltip,
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(4),
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Icon(icon, size: 16, color: color),
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(child: Icon(icon, size: 16, color: color)),
         ),
       ),
     );

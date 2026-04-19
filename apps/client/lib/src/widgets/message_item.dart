@@ -674,18 +674,14 @@ class _MessageItemState extends State<MessageItem> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.lock_clock_outlined,
-              size: 14,
-              color: EchoTheme.danger,
-            ),
+            Icon(Icons.lock_clock_outlined, size: 14, color: context.textMuted),
             const SizedBox(width: 4),
             Flexible(
               child: Text(
                 'Secured message',
                 style: TextStyle(
                   fontStyle: FontStyle.italic,
-                  color: EchoTheme.danger.withValues(alpha: 0.8),
+                  color: context.textMuted,
                   fontSize: 13,
                 ),
               ),
