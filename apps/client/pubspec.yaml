@@ -61,5 +61,6 @@ flutter:
     - assets/sounds/
 
 dependency_overrides:
-  # Pin record platform interface to 1.4.0 for compatibility with record_linux 0.7.x
-  record_platform_interface: 1.4.0
+  # Pin record platform deps to versions compatible with each other
+  record_platform_interface: 1.1.0
+  record_linux: 0.7.0
