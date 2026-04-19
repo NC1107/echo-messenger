@@ -944,13 +944,13 @@ packages:
     source: hosted
     version: "1.2.2"
   record_linux:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: record_linux
-      sha256: "74d41a9ebb1eb498a38e9a813dd524e8f0b4fdd627270bda9756f437b110a3e3"
+      sha256: "7d0e70cd51635128fe9d37d89bafd6011d7cbba9af8dc323079ae60f23546aef"
       url: "https://pub.dev"
     source: hosted
-    version: "0.7.2"
+    version: "0.7.1"
   record_platform_interface:
     dependency: transitive
     description:

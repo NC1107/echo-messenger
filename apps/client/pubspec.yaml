@@ -60,3 +60,5 @@ flutter:
     - assets/images/
     - assets/sounds/
 
+dependency_overrides:
+  record_linux: 0.7.1
