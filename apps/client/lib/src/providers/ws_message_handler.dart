@@ -30,6 +30,10 @@ class WebSocketState {
   /// Set of user IDs currently known to be online (from presence events).
   final Set<String> onlineUsers;
 
+  /// Map of userId -> presence_status ("online", "away", "dnd", "invisible").
+  /// Updated from presence events that include the presence_status field.
+  final Map<String, String> presenceStatuses;
+
   /// True when the server sent a `session_replaced` event, meaning another
   /// device/tab took over this user's WebSocket session.
   final bool wasReplaced;
@@ -39,6 +43,7 @@ class WebSocketState {
     this.reconnectAttempts = 0,
     this.typingUsers = const {},
     this.onlineUsers = const {},
+    this.presenceStatuses = const {},
     this.wasReplaced = false,
   });
 
@@ -47,6 +52,7 @@ class WebSocketState {
     int? reconnectAttempts,
     Map<String, Map<String, DateTime>>? typingUsers,
     Set<String>? onlineUsers,
+    Map<String, String>? presenceStatuses,
     bool? wasReplaced,
   }) {
     return WebSocketState(
@@ -54,12 +60,20 @@ class WebSocketState {
       reconnectAttempts: reconnectAttempts ?? this.reconnectAttempts,
       typingUsers: typingUsers ?? this.typingUsers,
       onlineUsers: onlineUsers ?? this.onlineUsers,
+      presenceStatuses: presenceStatuses ?? this.presenceStatuses,
       wasReplaced: wasReplaced ?? this.wasReplaced,
     );
   }
 
   /// Check if a specific user is online.
   bool isUserOnline(String userId) => onlineUsers.contains(userId);
+
+  /// Return the presence status for a given user ID.
+  /// Returns "offline" when the user is not in the online set.
+  String presenceStatusFor(String userId) {
+    if (!onlineUsers.contains(userId)) return 'offline';
+    return presenceStatuses[userId] ?? 'online';
+  }
 
   String _typingKey(String conversationId, String? channelId) {
     return '$conversationId:${channelId ?? ''}';
@@ -708,15 +722,25 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   void _handlePresence(Map<String, dynamic> json) {
     final userId = json['user_id'] as String? ?? '';
     final status = json['status'] as String? ?? '';
+    // presence_status is the raw stored value (may differ from status when
+    // broadcast_status is "offline" due to invisible setting).
+    final presenceStatus = json['presence_status'] as String? ?? status;
     if (userId.isEmpty) return;
 
-    final updated = Set<String>.from(state.onlineUsers);
-    if (status == 'online') {
-      updated.add(userId);
+    final updatedOnline = Set<String>.from(state.onlineUsers);
+    final updatedStatuses = Map<String, String>.from(state.presenceStatuses);
+
+    if (status == 'offline') {
+      updatedOnline.remove(userId);
+      updatedStatuses.remove(userId);
     } else {
-      updated.remove(userId);
+      updatedOnline.add(userId);
+      updatedStatuses[userId] = presenceStatus;
     }
-    state = state.copyWith(onlineUsers: updated);
+    state = state.copyWith(
+      onlineUsers: updatedOnline,
+      presenceStatuses: updatedStatuses,
+    );
   }
 
   void _handlePresenceList(Map<String, dynamic> json) {

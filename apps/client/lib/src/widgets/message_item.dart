@@ -544,6 +544,7 @@ class _MessageItemState extends State<MessageItem> {
 
   Widget _buildHoverActions(ChatMessage msg, bool isMine, {String? mediaUrl}) {
     final isImage = mediaUrl != null && _isImageMedia(msg.content, mediaUrl);
+    const quickEmojis = ['👍', '❤️', '😂', '🎉'];
     return Container(
       decoration: BoxDecoration(
         color: context.surface.withValues(alpha: 0.95),
@@ -553,6 +554,28 @@ class _MessageItemState extends State<MessageItem> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          ...quickEmojis.map(
+            (emoji) => Tooltip(
+              message: emoji,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(4),
+                onTap: () => widget.onReactionSelect?.call(msg, emoji),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 4,
+                  ),
+                  child: Text(emoji, style: const TextStyle(fontSize: 16)),
+                ),
+              ),
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 20,
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            color: context.border,
+          ),
           if (isImage)
             _HoverActionButton(
               icon: Icons.image_outlined,
@@ -1059,6 +1082,25 @@ class _MessageItemState extends State<MessageItem> {
     );
   }
 
+  /// Inline timestamp that appears on hover/tap for messages that are not the
+  /// last in their group (those already always show the timestamp).
+  Widget _buildHoverTimestamp({
+    required ChatMessage msg,
+    required bool isMine,
+  }) {
+    return AnimatedOpacity(
+      opacity: _isHovered ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 140),
+      child: Padding(
+        padding: EdgeInsets.only(top: 2, left: isMine ? 0 : 36),
+        child: Text(
+          formatMessageTimestamp(msg.timestamp),
+          style: TextStyle(fontSize: 11, color: context.textMuted),
+        ),
+      ),
+    );
+  }
+
   /// Build the hover-actions overlay that appears above the bubble.
   ///
   /// When not hovered the overlay is wrapped in [ExcludeSemantics] so its
@@ -1270,7 +1312,9 @@ class _MessageItemState extends State<MessageItem> {
                 ),
               ),
               if (widget.isLastInGroup)
-                _buildTimestampRow(msg: msg, isMine: isMine),
+                _buildTimestampRow(msg: msg, isMine: isMine)
+              else
+                _buildHoverTimestamp(msg: msg, isMine: isMine),
               if (isFailed && isMine) _buildRetryRow(msg: msg),
             ],
           ),
@@ -1294,6 +1338,8 @@ class _MessageItemState extends State<MessageItem> {
                 _handleLongPress(details, msg, isMine, mediaUrl, hasReactions),
             onHorizontalDragUpdate: canSwipeToReply
                 ? (details) {
+                    // Guard against iOS system back gesture zone (left 30px).
+                    if (details.globalPosition.dx < 30) return;
                     final newDx = (_swipeDx + details.delta.dx).clamp(
                       0.0,
                       72.0,
@@ -1364,13 +1410,16 @@ class _HoverActionButton extends StatelessWidget {
       button: true,
       child: Tooltip(
         message: tooltip,
-        child: InkWell(
-          onTap: onPressed,
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: Opacity(
-              opacity: 0.75,
-              child: Icon(icon, size: 14, color: context.textSecondary),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          child: InkWell(
+            onTap: onPressed,
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Opacity(
+                opacity: 0.75,
+                child: Icon(icon, size: 14, color: context.textSecondary),
+              ),
             ),
           ),
         ),

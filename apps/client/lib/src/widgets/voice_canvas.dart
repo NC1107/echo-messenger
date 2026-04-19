@@ -442,8 +442,13 @@ class _DrawingLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // When no drawing tool is active, defer hit testing to children so that
+    // avatar drag gestures underneath the canvas layer are not blocked.
+    final behavior = canvas.selectedTool == CanvasTool.none
+        ? HitTestBehavior.deferToChild
+        : HitTestBehavior.translucent;
     return Listener(
-      behavior: HitTestBehavior.translucent,
+      behavior: behavior,
       onPointerDown: (e) {
         if (e.buttons != kPrimaryButton) return;
         onPointerDown(e.localPosition);
@@ -799,14 +804,16 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
                 child: GestureDetector(
                   onTap: widget.onRemove,
                   child: Container(
-                    padding: const EdgeInsets.all(4),
+                    width: 32,
+                    height: 32,
                     decoration: const BoxDecoration(
                       color: Colors.black54,
                       shape: BoxShape.circle,
                     ),
+                    alignment: Alignment.center,
                     child: const Icon(
                       Icons.close,
-                      size: 14,
+                      size: 16,
                       color: Colors.white,
                     ),
                   ),

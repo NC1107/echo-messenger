@@ -6,12 +6,32 @@ import '../models/conversation.dart';
 import '../theme/echo_theme.dart';
 import 'avatar_utils.dart';
 
+/// Return the dot color for a peer presence status.
+Color presenceStatusDotColor(
+  BuildContext context,
+  String presenceStatus,
+  bool isOnline,
+) {
+  if (!isOnline) return const Color(0xFF6B6B6F);
+  return switch (presenceStatus) {
+    'online' => EchoTheme.online,
+    'away' => EchoTheme.warning,
+    'dnd' => EchoTheme.danger,
+    _ => const Color(0xFF6B6B6F),
+  };
+}
+
 class ConversationItem extends StatefulWidget {
   final Conversation conversation;
   final String myUserId;
   final bool isSelected;
   final bool isPinned;
   final bool isPeerOnline;
+
+  /// The peer's presence status: "online", "away", "dnd", "invisible", "offline".
+  /// Defaults to "online" when not provided (backward compat).
+  final String peerPresenceStatus;
+
   final String? peerAvatarUrl;
   final String? groupIconUrl;
   final String timestamp;
@@ -25,6 +45,7 @@ class ConversationItem extends StatefulWidget {
     required this.isSelected,
     required this.isPinned,
     required this.isPeerOnline,
+    this.peerPresenceStatus = 'online',
     this.peerAvatarUrl,
     this.groupIconUrl,
     required this.timestamp,
@@ -225,9 +246,11 @@ class _ConversationItemState extends State<ConversationItem> {
               width: 12,
               height: 12,
               decoration: BoxDecoration(
-                color: widget.isPeerOnline
-                    ? EchoTheme.online
-                    : const Color(0xFF6B6B6F),
+                color: presenceStatusDotColor(
+                  context,
+                  widget.peerPresenceStatus,
+                  widget.isPeerOnline,
+                ),
                 shape: BoxShape.circle,
                 border: Border.all(color: context.sidebarBg, width: 2),
               ),
@@ -350,24 +373,29 @@ class _ConversationItemState extends State<ConversationItem> {
             ),
           ),
         if (hasUnread)
-          Container(
-            margin: const EdgeInsets.only(left: 8),
-            constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-            padding: const EdgeInsets.symmetric(horizontal: 5),
-            decoration: BoxDecoration(
-              color: context.accent,
-              borderRadius: BorderRadius.circular(9),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              widget.conversation.unreadCount > 99
-                  ? '99+'
-                  : '${widget.conversation.unreadCount}',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                height: 1,
+          Semantics(
+            label: '${widget.conversation.unreadCount} unread messages',
+            child: Container(
+              margin: const EdgeInsets.only(left: 8),
+              constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              decoration: BoxDecoration(
+                color: context.accent,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              alignment: Alignment.center,
+              child: ExcludeSemantics(
+                child: Text(
+                  widget.conversation.unreadCount > 99
+                      ? '99+'
+                      : '${widget.conversation.unreadCount}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
               ),
             ),
           ),

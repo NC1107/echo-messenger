@@ -5,6 +5,8 @@ import 'dart:io' show File;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -103,6 +105,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   String? _pendingAttachmentUrl;
   bool _isUploadingAttachment = false;
 
+  // Voice recording state
+  final AudioRecorder _recorder = AudioRecorder();
+  bool _isRecording = false;
+  DateTime? _recordingStartTime;
+  Timer? _recordingTimer;
+  Duration _recordingDuration = Duration.zero;
+  final List<double> _recordingAmplitudes = [];
+
   // Debounce for search (used by _detectMention indirectly via parent, but
   // kept here to match the cancel contract in dispose/didUpdateWidget).
   Timer? _searchDebounce;
@@ -148,6 +158,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   void dispose() {
     _draftSaveTimer?.cancel();
     _searchDebounce?.cancel();
+    _recordingTimer?.cancel();
+    _recorder.dispose();
     _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
     _inputFocusNode.dispose();
@@ -403,6 +415,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   String _buildMediaMarker({required String extension, required String url}) {
     const imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
     const videoExts = {'mp4', 'webm', 'mov'};
+    const audioExts = {'mp3', 'ogg', 'wav', 'm4a', 'aac'};
 
     final ext = extension.toLowerCase();
     if (imageExts.contains(ext)) {
@@ -410,6 +423,9 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     }
     if (videoExts.contains(ext)) {
       return '[video:$url]';
+    }
+    if (audioExts.contains(ext)) {
+      return '[audio:$url]';
     }
     return '[file:$url]';
   }
@@ -766,6 +782,201 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   // ---------------------------------------------------------------------------
+  // Voice recording
+  // ---------------------------------------------------------------------------
+
+  Future<void> _startRecording() async {
+    if (kIsWeb) {
+      // Web recording not supported via the record package in this config.
+      ToastService.show(
+        context,
+        'Voice messages are not supported in the browser yet',
+        type: ToastType.info,
+      );
+      return;
+    }
+
+    final hasPermission = await _recorder.hasPermission();
+    if (!hasPermission) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Microphone permission is required to send voice messages',
+          type: ToastType.error,
+        );
+      }
+      return;
+    }
+
+    final dir = await getTemporaryDirectory();
+    final path =
+        '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+    await _recorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        sampleRate: 44100,
+        bitRate: 64000,
+        numChannels: 1,
+      ),
+      path: path,
+    );
+
+    setState(() {
+      _isRecording = true;
+      _recordingStartTime = DateTime.now();
+      _recordingDuration = Duration.zero;
+      _recordingAmplitudes.clear();
+    });
+
+    // Tick every 100ms to update the duration counter and collect amplitudes.
+    _recordingTimer = Timer.periodic(const Duration(milliseconds: 100), (
+      _,
+    ) async {
+      if (!_isRecording || !mounted) return;
+      final elapsed = DateTime.now().difference(_recordingStartTime!);
+      setState(() => _recordingDuration = elapsed);
+
+      try {
+        final amp = await _recorder.getAmplitude();
+        // amp.current is in dBFS [-160, 0]. Map to [0, 1].
+        final normalised = ((amp.current + 60) / 60).clamp(0.0, 1.0);
+        _recordingAmplitudes.add(normalised);
+      } catch (_) {
+        // Amplitude polling is best-effort.
+      }
+    });
+  }
+
+  Future<void> _stopRecording({bool cancel = false}) async {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+
+    if (!_isRecording) return;
+
+    final path = await _recorder.stop();
+
+    setState(() {
+      _isRecording = false;
+      _recordingDuration = Duration.zero;
+    });
+
+    if (cancel || path == null) {
+      _recordingAmplitudes.clear();
+      return;
+    }
+
+    // Read the recorded bytes and attach as a pending voice message.
+    try {
+      final file = File(path);
+      if (!file.existsSync()) return;
+      final bytes = await file.readAsBytes();
+      _recordingAmplitudes.clear();
+
+      _setPendingVoiceAttachment(bytes: bytes);
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Could not read recording: $e',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
+  void _setPendingVoiceAttachment({required Uint8List bytes}) {
+    final fileName = 'voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+    _setPendingAttachment(
+      bytes: bytes,
+      fileName: fileName,
+      mimeType: 'audio/mp4',
+      ext: 'm4a',
+    );
+  }
+
+  String _formatRecordingDuration(Duration d) {
+    final m = d.inMinutes.remainder(60);
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  // Recording overlay shown in place of the input row while recording.
+  Widget _buildRecordingRow() {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 44),
+      decoration: BoxDecoration(
+        color: context.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: EchoTheme.danger.withValues(alpha: 0.6),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const SizedBox(width: 12),
+          // Pulsing red dot
+          _PulsingDot(color: EchoTheme.danger),
+          const SizedBox(width: 8),
+          Text(
+            _formatRecordingDuration(_recordingDuration),
+            style: TextStyle(
+              color: EchoTheme.danger,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Mini waveform bars (live amplitude)
+          Expanded(child: _LiveWaveformBars(amplitudes: _recordingAmplitudes)),
+          const SizedBox(width: 8),
+          // Cancel button
+          IconButton(
+            icon: Icon(
+              Icons.delete_outline,
+              color: context.textMuted,
+              size: 20,
+            ),
+            tooltip: 'Cancel recording',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            onPressed: () => _stopRecording(cancel: true),
+          ),
+          // Stop / send button
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: GestureDetector(
+              onTap: () => _stopRecording(),
+              child: SizedBox(
+                width: 44,
+                height: 44,
+                child: Center(
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: EchoTheme.danger,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.stop_rounded,
+                      size: 18,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Build helpers -- kept in root widget
   // ---------------------------------------------------------------------------
 
@@ -907,35 +1118,39 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     required bool showMediaPicker,
     required bool isMobileLayout,
   }) {
-    return IconButton(
-      icon: Icon(
-        showMediaPicker
-            ? Icons.keyboard_outlined
-            : Icons.sentiment_satisfied_alt_outlined,
-        size: 20,
-        color: showMediaPicker ? context.accent : context.textSecondary,
-      ),
-      tooltip: showMediaPicker ? 'Keyboard' : 'Emoji & GIF',
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-      onPressed: () {
-        if (isMobileLayout) {
-          if (_showInlinePicker) {
-            setState(() => _showInlinePicker = false);
-            _inputFocusNode.requestFocus();
+    return Semantics(
+      toggled: showMediaPicker,
+      label: 'Emoji picker',
+      child: IconButton(
+        icon: Icon(
+          showMediaPicker
+              ? Icons.keyboard_outlined
+              : Icons.sentiment_satisfied_alt_outlined,
+          size: 20,
+          color: showMediaPicker ? context.accent : context.textSecondary,
+        ),
+        tooltip: showMediaPicker ? 'Keyboard' : 'Emoji & GIF',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+        onPressed: () {
+          if (isMobileLayout) {
+            if (_showInlinePicker) {
+              setState(() => _showInlinePicker = false);
+              _inputFocusNode.requestFocus();
+            } else {
+              setState(() => _showInlinePicker = true);
+              _inputFocusNode.unfocus();
+            }
+            widget.onMediaPickerChanged?.call();
           } else {
-            setState(() => _showInlinePicker = true);
-            _inputFocusNode.unfocus();
+            setState(() => _showMediaPicker = !_showMediaPicker);
+            widget.onMediaPickerChanged?.call();
+            if (!_showMediaPicker) {
+              _inputFocusNode.requestFocus();
+            }
           }
-          widget.onMediaPickerChanged?.call();
-        } else {
-          setState(() => _showMediaPicker = !_showMediaPicker);
-          widget.onMediaPickerChanged?.call();
-          if (!_showMediaPicker) {
-            _inputFocusNode.requestFocus();
-          }
-        }
-      },
+        },
+      ),
     );
   }
 
@@ -1171,6 +1386,40 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final isDm = !widget.conversation.isGroup;
     final canSend = hasContent && (cryptoReady || !isDm);
 
+    // When there's no content and not editing, show mic button on non-web.
+    final showMic = !hasContent && !_isEditing && !kIsWeb;
+    if (showMic) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 4),
+        child: Semantics(
+          label: 'Record voice message',
+          button: true,
+          child: GestureDetector(
+            onTap: _startRecording,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Center(
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: context.textMuted.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.mic_outlined,
+                    size: 18,
+                    color: context.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final Color buttonColor;
     if (!canSend) {
       buttonColor = context.textMuted;
@@ -1226,6 +1475,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     required VoiceSettingsState voiceSettings,
     required String? effectiveActiveVoiceChannelId,
   }) {
+    // While recording, replace the entire input row with the recording UI.
+    if (_isRecording) {
+      return _buildRecordingRow();
+    }
+
     return Container(
       constraints: const BoxConstraints(minHeight: 44),
       decoration: BoxDecoration(
@@ -1458,6 +1712,121 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       ext: ext,
     );
   }
+}
+
+/// Pulsing red dot shown in the recording row to indicate active recording.
+class _PulsingDot extends StatefulWidget {
+  final Color color;
+  const _PulsingDot({required this.color});
+
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+    _opacity = Tween<double>(
+      begin: 0.3,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.of(context).disableAnimations) {
+      // Respect reduced-motion accessibility preference -- show a static dot.
+      return Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
+      );
+    }
+    return FadeTransition(
+      opacity: _opacity,
+      child: Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
+      ),
+    );
+  }
+}
+
+/// Live mini waveform bars that grow as amplitude samples arrive.
+/// Scrolls from right to left, showing the most recent [_kDisplayCount] bars.
+class _LiveWaveformBars extends StatelessWidget {
+  static const _kDisplayCount = 40;
+
+  final List<double> amplitudes;
+
+  const _LiveWaveformBars({required this.amplitudes});
+
+  @override
+  Widget build(BuildContext context) {
+    final bars = amplitudes.length > _kDisplayCount
+        ? amplitudes.sublist(amplitudes.length - _kDisplayCount)
+        : amplitudes;
+
+    return SizedBox(
+      height: 24,
+      child: CustomPaint(
+        painter: _LiveWaveformPainter(bars: bars, color: EchoTheme.danger),
+      ),
+    );
+  }
+}
+
+class _LiveWaveformPainter extends CustomPainter {
+  final List<double> bars;
+  final Color color;
+
+  const _LiveWaveformPainter({required this.bars, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (bars.isEmpty) return;
+    const barGap = 2.0;
+    final count = bars.length;
+    final barWidth = (size.width - barGap * (count - 1)) / count;
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.7)
+      ..style = PaintingStyle.fill;
+
+    for (var i = 0; i < count; i++) {
+      final h = (bars[i] * size.height).clamp(2.0, size.height);
+      final left = i * (barWidth + barGap);
+      final top = (size.height - h) / 2;
+      canvas.drawRRect(
+        RRect.fromLTRBR(
+          left,
+          top,
+          left + barWidth,
+          top + h,
+          const Radius.circular(2),
+        ),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LiveWaveformPainter old) => old.bars != bars;
 }
 
 /// A single row in the mobile attachment bottom sheet.

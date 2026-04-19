@@ -4,6 +4,7 @@ import 'package:network_image_mock/network_image_mock.dart';
 
 import 'package:echo_app/src/models/chat_message.dart';
 import 'package:echo_app/src/models/reaction.dart';
+import 'package:echo_app/src/widgets/message/reaction_bar.dart';
 import 'package:echo_app/src/widgets/message_item.dart';
 
 import '../helpers/pump_app.dart';
@@ -531,8 +532,8 @@ void main() {
         );
         await tester.pump();
 
-        // No emoji text should appear as a reaction pill
-        expect(find.text('\u{1F44D}'), findsNothing);
+        // No ReactionBar should appear when there are no reactions
+        expect(find.byType(ReactionBar), findsNothing);
       });
     });
 

@@ -125,23 +125,72 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
     final selected = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: const Text('Add Member'),
-        children: available.map((contact) {
-          final serverUrl = ref.read(serverUrlProvider);
-          return SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialogContext, contact.userId),
-            child: ListTile(
-              leading: buildAvatar(
-                name: contact.username,
-                radius: 20,
-                imageUrl: resolveAvatarUrl(contact.avatarUrl, serverUrl),
+      builder: (dialogContext) {
+        final searchController = TextEditingController();
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final query = searchController.text.trim().toLowerCase();
+            final filtered = query.isEmpty
+                ? available
+                : available
+                      .where(
+                        (c) =>
+                            c.username.toLowerCase().contains(query) ||
+                            (c.displayName?.toLowerCase().contains(query) ??
+                                false),
+                      )
+                      .toList();
+            final serverUrl = ref.read(serverUrlProvider);
+            return SimpleDialog(
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Add Member'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: searchController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Search contacts...',
+                      prefixIcon: Icon(Icons.search, size: 18),
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                ],
               ),
-              title: Text(contact.displayName ?? contact.username),
-            ),
-          );
-        }).toList(),
-      ),
+              children: filtered.isEmpty
+                  ? [
+                      const SimpleDialogOption(
+                        child: Text(
+                          'No contacts found',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    ]
+                  : filtered.map((contact) {
+                      return SimpleDialogOption(
+                        onPressed: () =>
+                            Navigator.pop(dialogContext, contact.userId),
+                        child: ListTile(
+                          leading: buildAvatar(
+                            name: contact.username,
+                            radius: 20,
+                            imageUrl: resolveAvatarUrl(
+                              contact.avatarUrl,
+                              serverUrl,
+                            ),
+                          ),
+                          title: Text(contact.displayName ?? contact.username),
+                        ),
+                      );
+                    }).toList(),
+            );
+          },
+        );
+      },
     );
 
     if (selected == null) return;
@@ -1081,15 +1130,38 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         ),
       ),
       if (myRole == 'owner') ...[
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
+        const Divider(),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: FilledButton.icon(
-            onPressed: _deleteGroup,
-            icon: const Icon(Icons.delete_forever_outlined),
-            label: const Text('Delete Group'),
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Text(
+            'Danger Zone',
+            style: TextStyle(
+              color: EchoTheme.danger,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ),
+        ListTile(
+          onTap: _deleteGroup,
+          leading: const Icon(
+            Icons.delete_forever_outlined,
+            color: EchoTheme.danger,
+          ),
+          title: const Text(
+            'Delete Group',
+            style: TextStyle(
+              color: EchoTheme.danger,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          subtitle: Text(
+            'Permanently delete this group and all its messages.',
+            style: TextStyle(
+              color: EchoTheme.danger.withValues(alpha: 0.7),
+              fontSize: 12,
             ),
           ),
         ),

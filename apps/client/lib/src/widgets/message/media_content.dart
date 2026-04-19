@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../utils/download_helper.dart';
+import 'voice_message_widget.dart';
 
 /// Regex for detecting image markers: [img:URL]
 final _imgRegex = RegExp(r'^\[img:(.+)\]$');
@@ -19,11 +20,15 @@ final _videoRegex = RegExp(r'^\[video:(.+)\]$');
 /// Regex for detecting generic file markers: [file:URL]
 final _fileRegex = RegExp(r'^\[file:(.+)\]$');
 
+/// Regex for detecting audio markers: [audio:URL]
+final _audioRegex = RegExp(r'^\[audio:(.+)\]$');
+
 /// Regex for detecting standalone URL messages.
 final _standaloneUrlRegex = RegExp(r'^https?://[^\s]+$', caseSensitive: false);
 
 const _imageExtensions = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
 const _videoExtensions = {'mp4', 'webm', 'mov'};
+const _audioExtensions = {'mp3', 'ogg', 'wav', 'm4a', 'aac'};
 const _fileExtensions = {'pdf'};
 
 /// Regex for image extensions in URLs (used for inline embed detection).
@@ -49,6 +54,7 @@ bool isStandaloneMediaUrl(String content) {
   final ext = urlExtension(trimmed);
   return _imageExtensions.contains(ext) ||
       _videoExtensions.contains(ext) ||
+      _audioExtensions.contains(ext) ||
       _fileExtensions.contains(ext);
 }
 
@@ -60,6 +66,9 @@ bool isImageUrl(String url) => _imageExtensions.contains(urlExtension(url));
 
 /// Returns true if the URL points to a known file extension.
 bool isFileUrl(String url) => _fileExtensions.contains(urlExtension(url));
+
+/// Returns true if the URL points to a known audio extension.
+bool isAudioUrl(String url) => _audioExtensions.contains(urlExtension(url));
 
 /// Resolves a potentially relative media URL to an absolute URL.
 ///
@@ -121,6 +130,9 @@ String? extractMediaUrl(String content) {
 
   final fileMatch = _fileRegex.firstMatch(content);
   if (fileMatch != null) return fileMatch.group(1);
+
+  final audioMatch = _audioRegex.firstMatch(content);
+  if (audioMatch != null) return audioMatch.group(1);
 
   if (isStandaloneMediaUrl(content)) {
     return content.trim();
@@ -552,6 +564,26 @@ class MediaContentState extends State<MediaContent> {
               ),
             ],
           ),
+        ),
+      );
+    }
+
+    // --- Audio ---
+    final audioMatch = _audioRegex.firstMatch(content);
+    final audioUrl =
+        audioMatch?.group(1) ??
+        (standaloneUrl != null && isAudioUrl(standaloneUrl)
+            ? standaloneUrl
+            : null);
+    if (audioUrl != null) {
+      final rawUrl = audioUrl;
+      final fullUrl = _resolveUrl(rawUrl);
+      return Semantics(
+        label: 'Voice message',
+        child: VoiceMessageWidget(
+          audioUrl: fullUrl,
+          headers: _headers(),
+          isMine: widget.isMine,
         ),
       );
     }

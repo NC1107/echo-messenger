@@ -6,6 +6,7 @@ import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
@@ -24,17 +25,43 @@ class MembersPanel extends ConsumerWidget {
     final conv = conversation;
     // Show nothing for DMs or when no group is selected
     if (conv == null || !conv.isGroup) {
-      return Container(width: 280, color: context.sidebarBg);
+      return const SizedBox.shrink();
     }
 
     final members = conv.members;
     final myUserId = ref.watch(authProvider).userId ?? '';
+    final onlineUsers = ref.watch(
+      websocketProvider.select((s) => s.onlineUsers),
+    );
 
     // Determine if current user is owner or admin
     final myMember = members.where((m) => m.userId == myUserId).firstOrNull;
     final myRole = myMember?.role;
     final isOwner = myRole == 'owner';
     final canRemove = isOwner || myRole == 'admin';
+
+    // Split members into online / offline sections
+    final onlineMembers = members
+        .where((m) => onlineUsers.contains(m.userId))
+        .toList();
+    final offlineMembers = members
+        .where((m) => !onlineUsers.contains(m.userId))
+        .toList();
+
+    // Build flat list items: section header + rows
+    final items = <_MemberListItem>[];
+    if (onlineMembers.isNotEmpty) {
+      items.add(_MemberListItem.header('ONLINE — ${onlineMembers.length}'));
+      for (final m in onlineMembers) {
+        items.add(_MemberListItem.member(m, isOnline: true));
+      }
+    }
+    if (offlineMembers.isNotEmpty) {
+      items.add(_MemberListItem.header('OFFLINE — ${offlineMembers.length}'));
+      for (final m in offlineMembers) {
+        items.add(_MemberListItem.member(m, isOnline: false));
+      }
+    }
 
     return Container(
       width: 280,
@@ -66,14 +93,30 @@ class MembersPanel extends ConsumerWidget {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: members.length,
+              itemCount: items.length,
               itemBuilder: (context, index) {
-                final member = members[index];
+                final item = items[index];
+                if (item.isHeader) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: Text(
+                      item.headerLabel!,
+                      style: TextStyle(
+                        color: context.textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  );
+                }
+                final member = item.member!;
                 return _MemberRow(
                   member: member,
                   conversationId: conv.id,
                   canRemove: canRemove && member.role != 'owner',
                   isMe: member.userId == myUserId,
+                  isOnline: item.isOnline,
                 );
               },
             ),
@@ -101,17 +144,42 @@ class MembersPanel extends ConsumerWidget {
   }
 }
 
+/// Simple discriminated-union item for the flat member list.
+class _MemberListItem {
+  final bool isHeader;
+  final String? headerLabel;
+  final ConversationMember? member;
+  final bool isOnline;
+
+  const _MemberListItem._({
+    required this.isHeader,
+    this.headerLabel,
+    this.member,
+    this.isOnline = false,
+  });
+
+  factory _MemberListItem.header(String label) =>
+      _MemberListItem._(isHeader: true, headerLabel: label);
+
+  factory _MemberListItem.member(
+    ConversationMember m, {
+    required bool isOnline,
+  }) => _MemberListItem._(isHeader: false, member: m, isOnline: isOnline);
+}
+
 class _MemberRow extends ConsumerStatefulWidget {
   final ConversationMember member;
   final String conversationId;
   final bool canRemove;
   final bool isMe;
+  final bool isOnline;
 
   const _MemberRow({
     required this.member,
     required this.conversationId,
     required this.canRemove,
     required this.isMe,
+    required this.isOnline,
   });
 
   @override
@@ -282,7 +350,9 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: EchoTheme.online,
+                    color: widget.isOnline
+                        ? EchoTheme.online
+                        : context.textMuted,
                     shape: BoxShape.circle,
                     border: Border.all(color: context.sidebarBg, width: 1.5),
                   ),

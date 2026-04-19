@@ -142,14 +142,6 @@ class SettingsNavList extends StatelessWidget {
           label: 'Accessibility',
           section: SettingsSection.accessibility,
         ),
-        // Logout button in nav list
-        _navItem(
-          context: context,
-          icon: Icons.logout,
-          label: _logOutLabel,
-          section: null,
-          isLogout: true,
-        ),
         _categoryHeader(context, 'ADVANCED'),
         _navItem(
           context: context,
@@ -170,6 +162,15 @@ class SettingsNavList extends StatelessWidget {
           section: SettingsSection.debug,
         ),
         const Spacer(),
+        Divider(color: context.border, thickness: 1, height: 1),
+        _navItem(
+          context: context,
+          icon: Icons.logout,
+          label: _logOutLabel,
+          section: null,
+          isLogout: true,
+        ),
+        const SizedBox(height: 8),
       ],
     );
   }

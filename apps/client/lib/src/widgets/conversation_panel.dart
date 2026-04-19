@@ -990,7 +990,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       case 1:
         return KeyedSubtree(
           key: const ValueKey('tab-contacts'),
-          child: _buildContactsTab(contactsState, myUserId, serverUrl),
+          child: _buildContactsTab(
+            contactsState,
+            myUserId,
+            serverUrl,
+            wsOnlineUsers,
+          ),
         );
       case 2:
         return KeyedSubtree(
@@ -1251,6 +1256,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     ContactsState contactsState,
     String myUserId,
     String serverUrl,
+    Set<String> onlineUsers,
   ) {
     final contacts = contactsState.contacts;
 
@@ -1310,6 +1316,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           return ContactItem(
             contact: contact,
             serverUrl: serverUrl,
+            onlineUsers: onlineUsers,
             onMessage: () {
               widget.onMessageContact?.call(contact.userId, contact.username);
             },

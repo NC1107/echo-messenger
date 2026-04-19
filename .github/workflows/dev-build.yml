@@ -33,7 +33,7 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libfuse2 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good libsecret-1-dev
+          sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libfuse2 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good libsecret-1-dev libayatana-appindicator3-dev
       - name: Build
         working-directory: apps/client
         run: flutter build linux --release --dart-define=APP_VERSION=dev

@@ -26,6 +26,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
 
+  bool _obscurePassword = true;
+
   Future<Map<String, String?>>? _versionFuture;
 
   @override
@@ -62,25 +64,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             padding: const EdgeInsets.all(24),
             child: Form(
               key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildHeader(),
-                  const SizedBox(height: 32),
-                  _buildUsernameField(),
-                  const SizedBox(height: 16),
-                  _buildPasswordField(),
-                  _buildErrorMessage(authState),
-                  const SizedBox(height: 24),
-                  _buildLoginButton(authState),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () => context.go('/register'),
-                    child: const Text('Create an account'),
+              child: SingleChildScrollView(
+                child: AutofillGroup(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildHeader(),
+                      const SizedBox(height: 32),
+                      _buildUsernameField(),
+                      const SizedBox(height: 16),
+                      _buildPasswordField(),
+                      _buildErrorMessage(authState),
+                      const SizedBox(height: 24),
+                      _buildLoginButton(authState),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 44,
+                        child: TextButton(
+                          onPressed: () => context.go('/register'),
+                          child: const Text('Create an account'),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildVersionInfo(),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  _buildVersionInfo(),
-                ],
+                ),
               ),
             ),
           ),
@@ -103,7 +112,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         const SizedBox(height: 8),
         Text(
           'Encrypted messaging',
-          style: Theme.of(context).textTheme.bodyMedium,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16),
         ),
       ],
     );
@@ -112,7 +121,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Widget _buildUsernameField() {
     return TextFormField(
       controller: _usernameController,
-      autofillHints: const [],
+      autofillHints: const [AutofillHints.username],
       decoration: const InputDecoration(
         labelText: 'Username',
         border: OutlineInputBorder(),
@@ -130,11 +139,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Widget _buildPasswordField() {
     return TextFormField(
       controller: _passwordController,
-      obscureText: true,
-      autofillHints: const [],
-      decoration: const InputDecoration(
+      obscureText: _obscurePassword,
+      autofillHints: const [AutofillHints.password],
+      decoration: InputDecoration(
         labelText: 'Password',
-        border: OutlineInputBorder(),
+        border: const OutlineInputBorder(),
+        suffixIcon: IconButton(
+          icon: Icon(
+            _obscurePassword ? Icons.visibility_off : Icons.visibility,
+          ),
+          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+        ),
       ),
       onFieldSubmitted: (_) => _login(),
       validator: (value) {
