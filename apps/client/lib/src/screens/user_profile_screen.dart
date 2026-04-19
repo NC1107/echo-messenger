@@ -2,14 +2,17 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
+import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import 'safety_number_screen.dart';
 
 /// Shows a user profile. On desktop (>=900px) opens as a dialog; on mobile as
 /// a full screen page.
@@ -59,6 +62,7 @@ class UserProfileScreen extends ConsumerStatefulWidget {
 
 class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
   bool _isLoading = true;
+  bool _isStartingDm = false;
   String? _error;
 
   String _username = '';
@@ -503,42 +507,107 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
 
   /// Add contact / already contact action button.
   Widget _buildActionButton() {
-    if (!_isContact && widget.userId != ref.read(authProvider).userId) {
-      return SizedBox(
-        width: double.infinity,
-        child: FilledButton.icon(
-          onPressed: _addContact,
-          icon: const Icon(Icons.person_add_outlined, size: 18),
-          label: const Text('Add Contact'),
-          style: FilledButton.styleFrom(
-            backgroundColor: context.accent,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 12),
-          ),
-        ),
-      );
-    }
+    final myAuth = ref.read(authProvider);
+    if (widget.userId == myAuth.userId) return const SizedBox.shrink();
+
     if (_isContact) {
-      return SizedBox(
-        width: double.infinity,
-        child: FilledButton.icon(
-          onPressed: null,
-          icon: const Icon(Icons.check, size: 18),
-          label: const Text('Contact'),
-          style: FilledButton.styleFrom(
-            backgroundColor: EchoTheme.online,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 12),
+      return Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _isStartingDm ? null : _messageDm,
+                  icon: _isStartingDm
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.chat_bubble_outline, size: 18),
+                  label: const Text('Message'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: context.accent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _openSafetyNumber,
+                  icon: const Icon(Icons.security_outlined, size: 18),
+                  label: const Text('Safety Number'),
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
+        ],
       );
     }
-    return const SizedBox.shrink();
+
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: _addContact,
+        icon: const Icon(Icons.person_add_outlined, size: 18),
+        label: const Text('Add Contact'),
+        style: FilledButton.styleFrom(
+          backgroundColor: context.accent,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _messageDm() async {
+    if (_isStartingDm) return;
+    setState(() => _isStartingDm = true);
+    try {
+      final conv = await ref
+          .read(conversationsProvider.notifier)
+          .getOrCreateDm(widget.userId, _username);
+      if (!mounted) return;
+      // Close dialog/sheet if open, then navigate.
+      if (Navigator.canPop(context)) Navigator.pop(context);
+      context.go('/home?conversation=${conv.id}');
+    } on DmException catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, e.message, type: ToastType.error);
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(
+        context,
+        'Could not start conversation',
+        type: ToastType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _isStartingDm = false);
+    }
+  }
+
+  void _openSafetyNumber() {
+    final myAuth = ref.read(authProvider);
+    SafetyNumberScreen.show(
+      context,
+      ref,
+      peerUserId: widget.userId,
+      peerUsername: _username,
+      myUsername: myAuth.username ?? '',
+    );
   }
 }

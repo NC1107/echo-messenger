@@ -125,23 +125,72 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
     final selected = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: const Text('Add Member'),
-        children: available.map((contact) {
-          final serverUrl = ref.read(serverUrlProvider);
-          return SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialogContext, contact.userId),
-            child: ListTile(
-              leading: buildAvatar(
-                name: contact.username,
-                radius: 20,
-                imageUrl: resolveAvatarUrl(contact.avatarUrl, serverUrl),
+      builder: (dialogContext) {
+        final searchController = TextEditingController();
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final query = searchController.text.trim().toLowerCase();
+            final filtered = query.isEmpty
+                ? available
+                : available
+                      .where(
+                        (c) =>
+                            c.username.toLowerCase().contains(query) ||
+                            (c.displayName?.toLowerCase().contains(query) ??
+                                false),
+                      )
+                      .toList();
+            final serverUrl = ref.read(serverUrlProvider);
+            return SimpleDialog(
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Add Member'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: searchController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Search contacts...',
+                      prefixIcon: Icon(Icons.search, size: 18),
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                ],
               ),
-              title: Text(contact.displayName ?? contact.username),
-            ),
-          );
-        }).toList(),
-      ),
+              children: filtered.isEmpty
+                  ? [
+                      const SimpleDialogOption(
+                        child: Text(
+                          'No contacts found',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    ]
+                  : filtered.map((contact) {
+                      return SimpleDialogOption(
+                        onPressed: () =>
+                            Navigator.pop(dialogContext, contact.userId),
+                        child: ListTile(
+                          leading: buildAvatar(
+                            name: contact.username,
+                            radius: 20,
+                            imageUrl: resolveAvatarUrl(
+                              contact.avatarUrl,
+                              serverUrl,
+                            ),
+                          ),
+                          title: Text(contact.displayName ?? contact.username),
+                        ),
+                      );
+                    }).toList(),
+            );
+          },
+        );
+      },
     );
 
     if (selected == null) return;
