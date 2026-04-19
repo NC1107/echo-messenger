@@ -9,12 +9,9 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_secure_storage_windows
   flutter_webrtc
   livekit_client
-<<<<<<< HEAD
+  record_windows
   screen_retriever_windows
   tray_manager
-=======
-  record_windows
->>>>>>> 9798290 (feat(client): voice messages with recording, waveform visualization, and playback)
   url_launcher_windows
   window_manager
 )

@@ -925,10 +925,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   /// Show a popup menu for choosing one of the four presence statuses.
-  void _showPresenceStatusPicker(
-    BuildContext context,
-    String currentStatus,
-  ) {
+  void _showPresenceStatusPicker(BuildContext context, String currentStatus) {
     final renderBox = context.findRenderObject() as RenderBox?;
     if (renderBox == null) return;
     final offset = renderBox.localToGlobal(Offset.zero);

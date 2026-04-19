@@ -15,11 +15,8 @@ import flutter_secure_storage_macos
 import flutter_webrtc
 import livekit_client
 import photo_manager
-<<<<<<< HEAD
-import screen_retriever_macos
-=======
 import record_darwin
->>>>>>> 9798290 (feat(client): voice messages with recording, waveform visualization, and playback)
+import screen_retriever_macos
 import shared_preferences_foundation
 import sqflite_darwin
 import tray_manager
@@ -38,11 +35,8 @@ func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
   FlutterWebRTCPlugin.register(with: registry.registrar(forPlugin: "FlutterWebRTCPlugin"))
   LiveKitPlugin.register(with: registry.registrar(forPlugin: "LiveKitPlugin"))
   PhotoManagerPlugin.register(with: registry.registrar(forPlugin: "PhotoManagerPlugin"))
-<<<<<<< HEAD
-  ScreenRetrieverMacosPlugin.register(with: registry.registrar(forPlugin: "ScreenRetrieverMacosPlugin"))
-=======
   RecordPlugin.register(with: registry.registrar(forPlugin: "RecordPlugin"))
->>>>>>> 9798290 (feat(client): voice messages with recording, waveform visualization, and playback)
+  ScreenRetrieverMacosPlugin.register(with: registry.registrar(forPlugin: "ScreenRetrieverMacosPlugin"))
   SharedPreferencesPlugin.register(with: registry.registrar(forPlugin: "SharedPreferencesPlugin"))
   SqflitePlugin.register(with: registry.registrar(forPlugin: "SqflitePlugin"))
   TrayManagerPlugin.register(with: registry.registrar(forPlugin: "TrayManagerPlugin"))

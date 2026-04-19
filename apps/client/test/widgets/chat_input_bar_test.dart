@@ -127,12 +127,8 @@ void main() {
       await tester.enterText(find.byType(TextField), 'Hello world');
       await tester.pump();
 
-      // After entering text, the Opacity of the send button should be 1.0
-      final sendButtonOpacity = tester
-          .widgetList<Opacity>(find.byType(Opacity))
-          .where((o) => o.opacity == 1.0)
-          .toList();
-      expect(sendButtonOpacity, isNotEmpty);
+      // After entering text, the send icon should appear (replaces mic button)
+      expect(find.byIcon(Icons.arrow_upward_rounded), findsOneWidget);
     });
 
     testWidgets('reply preview shows when reply is active', (tester) async {
