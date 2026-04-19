@@ -72,7 +72,10 @@ void main() {
       await tester.pumpWidget(_buildApp());
       await tester.pumpAndSettle();
 
-      expect(find.widgetWithText(FilledButton, 'Create Account'), findsOneWidget);
+      expect(
+        find.widgetWithText(FilledButton, 'Create Account'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('has link to login screen', (tester) async {
@@ -130,7 +133,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // Scroll down to make Register button visible if needed
-      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Create Account'));
+      await tester.ensureVisible(
+        find.widgetWithText(FilledButton, 'Create Account'),
+      );
       await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
       await tester.pumpAndSettle();
 
@@ -153,7 +158,9 @@ void main() {
         find.widgetWithText(TextFormField, 'Confirm password'),
         'short',
       );
-      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Create Account'));
+      await tester.ensureVisible(
+        find.widgetWithText(FilledButton, 'Create Account'),
+      );
       await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
       await tester.pumpAndSettle();
 
@@ -176,7 +183,9 @@ void main() {
         find.widgetWithText(TextFormField, 'Confirm password'),
         'different123',
       );
-      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Create Account'));
+      await tester.ensureVisible(
+        find.widgetWithText(FilledButton, 'Create Account'),
+      );
       await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
       await tester.pumpAndSettle();
 
@@ -191,7 +200,9 @@ void main() {
         find.widgetWithText(TextFormField, 'Username'),
         'user@name!',
       );
-      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Create Account'));
+      await tester.ensureVisible(
+        find.widgetWithText(FilledButton, 'Create Account'),
+      );
       await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
       await tester.pumpAndSettle();
 
@@ -209,7 +220,9 @@ void main() {
         find.widgetWithText(TextFormField, 'Username'),
         'ab',
       );
-      await tester.ensureVisible(find.widgetWithText(FilledButton, 'Create Account'));
+      await tester.ensureVisible(
+        find.widgetWithText(FilledButton, 'Create Account'),
+      );
       await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
       await tester.pumpAndSettle();
 
