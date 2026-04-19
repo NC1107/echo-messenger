@@ -22,6 +22,7 @@ import '../providers/livekit_voice_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/notification_service.dart';
+import '../services/tray_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../widgets/chat_panel.dart';
@@ -170,6 +171,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     // 6. Check for app updates (non-blocking)
     ref.read(updateProvider.notifier).check();
+
+    // 7b. Init system tray (desktop only; no-op on web/mobile).
+    unawaited(TrayService.instance.init());
 
     // 7. Show first-login server notice
     await _showServerNoticeIfNeeded();
@@ -678,6 +682,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ref.listen<ConversationsState>(conversationsProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
         ToastService.show(context, next.error!, type: ToastType.error);
+      }
+      // Update tray badge when total unread count changes.
+      if (TrayService.isSupported) {
+        final prevTotal =
+            prev?.conversations.fold<int>(0, (s, c) => s + c.unreadCount) ?? 0;
+        final nextTotal = next.conversations.fold<int>(
+          0,
+          (s, c) => s + c.unreadCount,
+        );
+        if (nextTotal != prevTotal) {
+          unawaited(TrayService.instance.updateBadge(nextTotal));
+        }
       }
     });
 
