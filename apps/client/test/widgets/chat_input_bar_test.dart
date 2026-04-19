@@ -101,7 +101,7 @@ void main() {
       expect(find.text('Type a message...'), findsOneWidget);
     });
 
-    testWidgets('send button is visually disabled when text is empty', (
+    testWidgets('mic button shown when text is empty (no send button)', (
       tester,
     ) async {
       await tester.pumpApp(
@@ -110,13 +110,9 @@ void main() {
       );
       await tester.pump();
 
-      // The send button is an Opacity widget. When the text field is empty,
-      // the send button should have reduced opacity (0.45).
-      final opacityWidgets = tester
-          .widgetList<Opacity>(find.byType(Opacity))
-          .where((o) => o.opacity < 1.0)
-          .toList();
-      expect(opacityWidgets, isNotEmpty);
+      // When the text field is empty the send button is replaced by a mic button
+      // for voice message recording. The mic_outlined icon should be visible.
+      expect(find.byIcon(Icons.mic_outlined), findsOneWidget);
     });
 
     testWidgets('send button becomes active when text is entered', (

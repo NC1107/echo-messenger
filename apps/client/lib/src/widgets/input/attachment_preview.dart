@@ -74,6 +74,17 @@ class AttachmentPreview extends StatelessWidget {
   }
 
   Widget _buildThumbnail(BuildContext context) {
+    // Audio attachments cannot be rendered as images -- show a mic icon.
+    final isAudio = mimeType?.startsWith('audio/') ?? false;
+    if (isAudio) {
+      return Container(
+        width: 48,
+        height: 48,
+        color: context.mainBg,
+        child: Icon(Icons.mic, color: EchoTheme.accent, size: 24),
+      );
+    }
+
     if (attachmentBytes != null) {
       return Image.memory(
         attachmentBytes!,

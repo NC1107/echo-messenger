@@ -7,8 +7,12 @@ list(APPEND FLUTTER_PLUGIN_LIST
   emoji_picker_flutter
   flutter_secure_storage_linux
   flutter_webrtc
+<<<<<<< HEAD
   screen_retriever_linux
   tray_manager
+=======
+  record_linux
+>>>>>>> 9798290 (feat(client): voice messages with recording, waveform visualization, and playback)
   url_launcher_linux
   window_manager
 )

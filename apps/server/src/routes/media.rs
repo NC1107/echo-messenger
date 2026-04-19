@@ -38,6 +38,9 @@ const ALLOWED_MIME_TYPES: &[&str] = &[
     "audio/mpeg",
     "audio/ogg",
     "audio/wav",
+    "audio/mp4",
+    "audio/aac",
+    "audio/x-m4a",
     // Documents
     "application/pdf",
     "text/plain",
@@ -65,6 +68,8 @@ fn extension_for_mime(mime: &str) -> &str {
         "audio/mpeg" => "mp3",
         "audio/ogg" => "ogg",
         "audio/wav" => "wav",
+        "audio/mp4" | "audio/x-m4a" => "m4a",
+        "audio/aac" => "aac",
         "application/pdf" => "pdf",
         "text/plain" => "txt",
         "application/msword" => "doc",
@@ -94,12 +99,22 @@ fn validate_bytes(data: &[u8], declared_mime: &str) -> Result<String, AppError> 
     match infer::get(data) {
         Some(inferred) => {
             let m = inferred.mime_type();
-            if !ALLOWED_MIME_TYPES.contains(&m) {
+            // M4A audio files share the same MP4 container magic bytes as video/mp4.
+            // When infer reports video/mp4 but the client declared an audio/mp4 type,
+            // trust the declared audio MIME -- the container is valid regardless.
+            let effective = if m == "video/mp4"
+                && matches!(declared_mime, "audio/mp4" | "audio/x-m4a" | "audio/aac")
+            {
+                declared_mime
+            } else {
+                m
+            };
+            if !ALLOWED_MIME_TYPES.contains(&effective) {
                 return Err(AppError::bad_request(format!(
                     "Detected file type '{m}' is not allowed"
                 )));
             }
-            Ok(m.to_string())
+            Ok(effective.to_string())
         }
         None => {
             if declared_mime == "text/plain" && std::str::from_utf8(data).is_ok() {
