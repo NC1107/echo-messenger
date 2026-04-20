@@ -286,6 +286,58 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     }
   }
 
+  /// Build a stack of up to 3 mini initials avatars with a "+N" overflow label.
+  Widget _buildMiniAvatarStack(List<VoiceSessionMember> participants) {
+    const radius = 8.0;
+    const overlap = 6.0;
+    final visible = participants.take(3).toList();
+    final overflow = participants.length - visible.length;
+    final avatarCount = visible.length;
+    // Total width: first avatar full diameter + (n-1) * (diameter - overlap)
+    final stackWidth = avatarCount * radius * 2 - (avatarCount - 1) * overlap;
+
+    Widget avatarStack = SizedBox(
+      width: stackWidth,
+      height: radius * 2,
+      child: Stack(
+        children: [
+          for (int i = 0; i < visible.length; i++)
+            Positioned(
+              left: i * (radius * 2 - overlap),
+              child: CircleAvatar(
+                radius: radius,
+                backgroundColor: context.accent.withValues(alpha: 0.7),
+                child: Text(
+                  visible[i].username.isNotEmpty
+                      ? visible[i].username[0].toUpperCase()
+                      : '?',
+                  style: const TextStyle(
+                    fontSize: 8,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    if (overflow <= 0) return avatarStack;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        avatarStack,
+        const SizedBox(width: 3),
+        Text(
+          '+$overflow',
+          style: TextStyle(color: context.textMuted, fontSize: 10),
+        ),
+      ],
+    );
+  }
+
   Widget _buildVoiceChannelChip(
     GroupChannel channel,
     List<VoiceSessionMember> participants,
@@ -337,11 +389,8 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                     ),
                   ),
                   if (participantCount > 0) ...[
-                    const SizedBox(width: 4),
-                    Text(
-                      '($participantCount)',
-                      style: TextStyle(color: context.textMuted, fontSize: 11),
-                    ),
+                    const SizedBox(width: 6),
+                    _buildMiniAvatarStack(participants),
                   ],
                 ],
               ),
@@ -606,8 +655,10 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     required LiveKitVoiceState voiceRtc,
     required VoiceSettingsState voiceSettings,
     required bool iAmConnected,
+    required List<VoiceSessionMember> participants,
   }) {
     final latencyLabel = _formatLatency(voiceRtc);
+    final participantNames = participants.map((p) => p.username).join(', ');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -617,16 +668,30 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
             Icon(Icons.graphic_eq, size: 16, color: context.accent),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                'Connected to ${activeVoiceChannel.name} '
-                '${voiceRtc.peerConnectionStates.length} peer(s)'
-                '${latencyLabel.isNotEmpty ? ' \u00b7 $latencyLabel' : ''}',
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${activeVoiceChannel.name}'
+                    '${latencyLabel.isNotEmpty ? ' \u00b7 $latencyLabel' : ''}',
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (participantNames.isNotEmpty)
+                    Text(
+                      participantNames,
+                      style: TextStyle(
+                        color: context.textSecondary,
+                        fontSize: 11,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
               ),
             ),
             if (iAmConnected) _buildConnectedIndicator(),
@@ -660,22 +725,35 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     required LiveKitVoiceState voiceRtc,
     required VoiceSettingsState voiceSettings,
     required bool iAmConnected,
+    required List<VoiceSessionMember> participants,
   }) {
     final latencyLabel = _formatLatency(voiceRtc);
+    final participantNames = participants.map((p) => p.username).join(', ');
     return Row(
       children: [
         Icon(Icons.graphic_eq, size: 16, color: context.accent),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(
-            'Connected to ${activeVoiceChannel.name} '
-            '${voiceRtc.peerConnectionStates.length} peer(s)'
-            '${latencyLabel.isNotEmpty ? ' \u00b7 $latencyLabel' : ''}',
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${activeVoiceChannel.name}'
+                '${latencyLabel.isNotEmpty ? ' \u00b7 $latencyLabel' : ''}',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (participantNames.isNotEmpty)
+                Text(
+                  participantNames,
+                  style: TextStyle(color: context.textSecondary, fontSize: 11),
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
           ),
         ),
         if (voiceRtc.isJoining)
@@ -728,12 +806,14 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
               voiceRtc: voiceRtc,
               voiceSettings: voiceSettings,
               iAmConnected: iAmConnected,
+              participants: participants,
             )
           : _buildWideVoiceDock(
               activeVoiceChannel: activeVoiceChannel,
               voiceRtc: voiceRtc,
               voiceSettings: voiceSettings,
               iAmConnected: iAmConnected,
+              participants: participants,
             ),
     );
   }
