@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
@@ -320,11 +321,38 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
 
     final fullAvatarUrl = resolveAvatarUrl(_avatarUrl, serverUrl);
 
+    final wsState = ref.watch(websocketProvider);
+    final isOnline = wsState.onlineUsers.contains(widget.userId);
+    final presenceStatus = wsState.presenceStatusFor(widget.userId);
+
+    final Color ringColor;
+    if (!isOnline) {
+      ringColor = const Color(0xFF6B6B6F);
+    } else {
+      ringColor = switch (presenceStatus) {
+        'online' => EchoTheme.online,
+        'away' => EchoTheme.warning,
+        'dnd' => EchoTheme.danger,
+        _ => const Color(0xFF6B6B6F),
+      };
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
       child: Column(
         children: [
-          buildAvatar(name: _username, radius: 40, imageUrl: fullAvatarUrl),
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: ringColor, width: 3),
+            ),
+            padding: const EdgeInsets.all(3),
+            child: buildAvatar(
+              name: _username,
+              radius: 52,
+              imageUrl: fullAvatarUrl,
+            ),
+          ),
           const SizedBox(height: 16),
           _buildNameSection(),
           _buildStatusSection(),

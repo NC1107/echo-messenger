@@ -89,8 +89,10 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
   bool _isLoading = true;
   String? _error;
   bool _isVerified = false;
+  DateTime? _verifiedAt;
 
   static const _verifiedPrefix = 'echo_safety_verified_';
+  static const _verifiedAtPrefix = 'verified_at_';
 
   @override
   void initState() {
@@ -158,6 +160,12 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
       final prefs = await SharedPreferences.getInstance();
       _isVerified =
           prefs.getBool('$_verifiedPrefix${widget.peerUserId}') ?? false;
+      final verifiedAtStr = prefs.getString(
+        '$_verifiedAtPrefix${widget.peerUserId}',
+      );
+      if (verifiedAtStr != null) {
+        _verifiedAt = DateTime.tryParse(verifiedAtStr);
+      }
 
       setState(() => _isLoading = false);
     } catch (e) {
@@ -172,7 +180,20 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
     final newState = !_isVerified;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('$_verifiedPrefix${widget.peerUserId}', newState);
-    setState(() => _isVerified = newState);
+    DateTime? newVerifiedAt;
+    if (newState) {
+      newVerifiedAt = DateTime.now();
+      await prefs.setString(
+        '$_verifiedAtPrefix${widget.peerUserId}',
+        newVerifiedAt.toIso8601String(),
+      );
+    } else {
+      await prefs.remove('$_verifiedAtPrefix${widget.peerUserId}');
+    }
+    setState(() {
+      _isVerified = newState;
+      _verifiedAt = newVerifiedAt;
+    });
 
     if (!mounted) return;
     ToastService.show(
@@ -180,6 +201,30 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
       newState ? 'Marked as verified' : 'Verification removed',
       type: newState ? ToastType.success : ToastType.info,
     );
+  }
+
+  /// Return a human-readable "X ago" string relative to [dateTime].
+  String _timeAgo(DateTime dateTime) {
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inSeconds < 60) return 'just now';
+    if (diff.inMinutes < 60) {
+      final m = diff.inMinutes;
+      return '$m ${m == 1 ? 'minute' : 'minutes'} ago';
+    }
+    if (diff.inHours < 24) {
+      final h = diff.inHours;
+      return '$h ${h == 1 ? 'hour' : 'hours'} ago';
+    }
+    if (diff.inDays < 30) {
+      final d = diff.inDays;
+      return '$d ${d == 1 ? 'day' : 'days'} ago';
+    }
+    if (diff.inDays < 365) {
+      final mo = diff.inDays ~/ 30;
+      return '$mo ${mo == 1 ? 'month' : 'months'} ago';
+    }
+    final y = diff.inDays ~/ 365;
+    return '$y ${y == 1 ? 'year' : 'years'} ago';
   }
 
   String get _inviteUrl =>
@@ -469,6 +514,14 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
                       ),
                     ),
             ),
+            if (_isVerified && _verifiedAt != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Verified ${_timeAgo(_verifiedAt!)}',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: EchoTheme.online, fontSize: 12),
+              ),
+            ],
             const SizedBox(height: 12),
             Text(
               'If the numbers match, tap to mark this conversation as verified. '

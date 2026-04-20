@@ -5,8 +5,10 @@ import 'package:go_router/go_router.dart';
 import '../models/contact.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 
 class CreateGroupScreen extends ConsumerStatefulWidget {
   const CreateGroupScreen({super.key});
@@ -247,11 +249,12 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
             }
           });
         },
-        secondary: CircleAvatar(
-          child: Text(
-            contact.username.isNotEmpty
-                ? contact.username[0].toUpperCase()
-                : '?',
+        secondary: buildAvatar(
+          name: contact.username,
+          radius: 20,
+          imageUrl: resolveAvatarUrl(
+            contact.avatarUrl,
+            ref.read(serverUrlProvider),
           ),
         ),
         title: Text(contact.displayName ?? contact.username),
