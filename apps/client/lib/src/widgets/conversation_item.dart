@@ -287,6 +287,15 @@ class _ConversationItemState extends State<ConversationItem> {
     String displayName,
     bool hasUnread,
   ) {
+    // On desktop (non-web, non-mobile), show a ... button on hover so users
+    // who don't right-click can still discover the context menu.
+    final showMoreButton =
+        _isHovered &&
+        widget.onContextMenu != null &&
+        !kIsWeb &&
+        defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS;
+
     return Row(
       children: [
         if (widget.isPinned)
@@ -305,7 +314,25 @@ class _ConversationItemState extends State<ConversationItem> {
             ),
           ),
         ),
-        if (widget.timestamp.isNotEmpty)
+        if (showMoreButton)
+          Semantics(
+            label: 'More options for $displayName',
+            button: true,
+            child: GestureDetector(
+              onTapDown: (details) {
+                widget.onContextMenu?.call(details.globalPosition);
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Icon(
+                  Icons.more_horiz,
+                  size: 16,
+                  color: context.textMuted,
+                ),
+              ),
+            ),
+          )
+        else if (widget.timestamp.isNotEmpty)
           Text(
             widget.timestamp,
             style: TextStyle(

@@ -87,15 +87,21 @@ class MessageItem extends StatefulWidget {
   State<MessageItem> createState() => _MessageItemState();
 }
 
-class _MessageItemState extends State<MessageItem> {
+class _MessageItemState extends State<MessageItem>
+    with SingleTickerProviderStateMixin {
   bool _isHovered = false;
   double _swipeDx = 0;
   bool _swipeTriggered = false;
   Timer? _expireTimer;
+  late final AnimationController _swipeAnimController;
 
   @override
   void initState() {
     super.initState();
+    _swipeAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
     _scheduleExpireTimer();
   }
 
@@ -110,8 +116,22 @@ class _MessageItemState extends State<MessageItem> {
 
   @override
   void dispose() {
+    _swipeAnimController.dispose();
     _expireTimer?.cancel();
     super.dispose();
+  }
+
+  /// Animate _swipeDx back to 0 with an ease-out spring-back over 200 ms.
+  void _startSpringBack() {
+    final startDx = _swipeDx;
+    if (startDx == 0) return;
+    final animation = Tween<double>(begin: startDx, end: 0).animate(
+      CurvedAnimation(parent: _swipeAnimController, curve: Curves.easeOut),
+    );
+    animation.addListener(() {
+      if (mounted) setState(() => _swipeDx = animation.value);
+    });
+    _swipeAnimController.forward(from: 0);
   }
 
   void _scheduleExpireTimer() {
@@ -544,7 +564,8 @@ class _MessageItemState extends State<MessageItem> {
 
   Widget _buildHoverActions(ChatMessage msg, bool isMine, {String? mediaUrl}) {
     final isImage = mediaUrl != null && _isImageMedia(msg.content, mediaUrl);
-    const quickEmojis = ['👍', '❤️', '😂', '🎉'];
+    // Two quick emojis only to keep the bar compact
+    const quickEmojis = ['👍', '❤️'];
     return Container(
       decoration: BoxDecoration(
         color: context.surface.withValues(alpha: 0.95),
@@ -576,33 +597,6 @@ class _MessageItemState extends State<MessageItem> {
             margin: const EdgeInsets.symmetric(horizontal: 2),
             color: context.border,
           ),
-          if (isImage)
-            _HoverActionButton(
-              icon: Icons.image_outlined,
-              tooltip: 'Copy image',
-              onPressed: () => _copyImageToClipboard(mediaUrl),
-            ),
-          _HoverActionButton(
-            icon: Icons.copy_outlined,
-            tooltip: mediaUrl != null ? 'Copy link' : 'Copy',
-            onPressed: () {
-              final copyText = mediaUrl != null
-                  ? _resolveUrl(mediaUrl)
-                  : msg.content;
-              Clipboard.setData(ClipboardData(text: copyText));
-              ToastService.show(
-                context,
-                mediaUrl != null ? 'Link copied' : 'Copied to clipboard',
-                type: ToastType.success,
-              );
-            },
-          ),
-          if (mediaUrl != null)
-            _HoverActionButton(
-              icon: Icons.download_outlined,
-              tooltip: 'Download',
-              onPressed: () => _downloadMedia(mediaUrl),
-            ),
           if (widget.onReply != null)
             Semantics(
               label: 'Reply to message',
@@ -622,31 +616,144 @@ class _MessageItemState extends State<MessageItem> {
               widget.onReactionTap?.call(msg, pos);
             },
           ),
-          if (msg.pinnedAt == null && widget.onPin != null)
-            _HoverActionButton(
-              icon: Icons.push_pin_outlined,
-              tooltip: 'Pin',
-              onPressed: () => widget.onPin?.call(msg),
-            ),
-          if (msg.pinnedAt != null && widget.onUnpin != null)
-            _HoverActionButton(
-              icon: Icons.push_pin,
-              tooltip: 'Unpin',
-              onPressed: () => widget.onUnpin?.call(msg),
-            ),
-          if (isMine && widget.onEdit != null)
-            _HoverActionButton(
-              icon: Icons.edit_outlined,
-              tooltip: 'Edit',
-              onPressed: () => widget.onEdit?.call(msg),
-            ),
-          if (isMine && widget.onDelete != null)
-            _HoverActionButton(
-              icon: Icons.delete_outlined,
-              tooltip: 'Delete',
-              onPressed: () => widget.onDelete?.call(msg),
-            ),
+          // Overflow menu: copy, download, image copy, pin, edit, delete
+          _buildOverflowMenu(msg, isMine, mediaUrl: mediaUrl, isImage: isImage),
         ],
+      ),
+    );
+  }
+
+  Widget _buildOverflowMenu(
+    ChatMessage msg,
+    bool isMine, {
+    String? mediaUrl,
+    bool isImage = false,
+  }) {
+    return Semantics(
+      label: 'More actions',
+      button: true,
+      child: Tooltip(
+        message: 'More',
+        child: PopupMenuButton<String>(
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          icon: Opacity(
+            opacity: 0.75,
+            child: Icon(
+              Icons.more_horiz,
+              size: 14,
+              color: context.textSecondary,
+            ),
+          ),
+          onSelected: (value) {
+            switch (value) {
+              case 'copy':
+                final copyText = mediaUrl != null
+                    ? _resolveUrl(mediaUrl)
+                    : msg.content;
+                Clipboard.setData(ClipboardData(text: copyText));
+                ToastService.show(
+                  context,
+                  mediaUrl != null ? 'Link copied' : 'Copied to clipboard',
+                  type: ToastType.success,
+                );
+              case 'copy_image':
+                _copyImageToClipboard(mediaUrl!);
+              case 'download':
+                _downloadMedia(mediaUrl!);
+              case 'pin':
+                widget.onPin?.call(msg);
+              case 'unpin':
+                widget.onUnpin?.call(msg);
+              case 'edit':
+                widget.onEdit?.call(msg);
+              case 'delete':
+                widget.onDelete?.call(msg);
+            }
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'copy',
+              child: Row(
+                children: [
+                  const Icon(Icons.copy_outlined, size: 16),
+                  const SizedBox(width: 8),
+                  Text(mediaUrl != null ? 'Copy link' : 'Copy'),
+                ],
+              ),
+            ),
+            if (isImage)
+              const PopupMenuItem(
+                value: 'copy_image',
+                child: Row(
+                  children: [
+                    Icon(Icons.image_outlined, size: 16),
+                    SizedBox(width: 8),
+                    Text('Copy image'),
+                  ],
+                ),
+              ),
+            if (mediaUrl != null)
+              const PopupMenuItem(
+                value: 'download',
+                child: Row(
+                  children: [
+                    Icon(Icons.download_outlined, size: 16),
+                    SizedBox(width: 8),
+                    Text('Download'),
+                  ],
+                ),
+              ),
+            if (msg.pinnedAt == null && widget.onPin != null)
+              const PopupMenuItem(
+                value: 'pin',
+                child: Row(
+                  children: [
+                    Icon(Icons.push_pin_outlined, size: 16),
+                    SizedBox(width: 8),
+                    Text('Pin'),
+                  ],
+                ),
+              ),
+            if (msg.pinnedAt != null && widget.onUnpin != null)
+              const PopupMenuItem(
+                value: 'unpin',
+                child: Row(
+                  children: [
+                    Icon(Icons.push_pin, size: 16),
+                    SizedBox(width: 8),
+                    Text('Unpin'),
+                  ],
+                ),
+              ),
+            if (isMine && widget.onEdit != null)
+              const PopupMenuItem(
+                value: 'edit',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_outlined, size: 16),
+                    SizedBox(width: 8),
+                    Text('Edit'),
+                  ],
+                ),
+              ),
+            if (isMine && widget.onDelete != null)
+              PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.delete_outlined,
+                      size: 16,
+                      color: EchoTheme.danger,
+                    ),
+                    const SizedBox(width: 8),
+                    Text('Delete', style: TextStyle(color: EchoTheme.danger)),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1354,17 +1461,15 @@ class _MessageItemState extends State<MessageItem> {
             onHorizontalDragEnd: canSwipeToReply
                 ? (_) {
                     if (_swipeTriggered) widget.onReply?.call(msg);
-                    setState(() {
-                      _swipeDx = 0;
-                      _swipeTriggered = false;
-                    });
+                    _swipeTriggered = false;
+                    _startSpringBack();
                   }
                 : null,
             onHorizontalDragCancel: canSwipeToReply
-                ? () => setState(() {
-                    _swipeDx = 0;
+                ? () {
                     _swipeTriggered = false;
-                  })
+                    _startSpringBack();
+                  }
                 : null,
             child: _buildSwipeToReplyWrapper(
               canSwipe: canSwipeToReply,

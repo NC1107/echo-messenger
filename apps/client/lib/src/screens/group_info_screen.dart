@@ -946,26 +946,51 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     required String role,
   }) {
     if (!isOwnerOrAdmin || isMe || role == 'owner') return null;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          icon: Icon(
-            Icons.person_remove_outlined,
-            size: 18,
-            color: Theme.of(context).colorScheme.error,
+    return PopupMenuButton<String>(
+      icon: Icon(
+        Icons.more_vert,
+        size: 18,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+      tooltip: 'Member actions',
+      onSelected: (value) {
+        if (value == 'remove') _kickMember(member);
+        if (value == 'ban') _banMember(member);
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'remove',
+          child: Row(
+            children: [
+              Icon(
+                Icons.person_remove_outlined,
+                size: 18,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Remove',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
           ),
-          tooltip: 'Kick member',
-          onPressed: () => _kickMember(member),
         ),
-        IconButton(
-          icon: Icon(
-            Icons.block_outlined,
-            size: 18,
-            color: Theme.of(context).colorScheme.error,
+        PopupMenuItem(
+          value: 'ban',
+          child: Row(
+            children: [
+              Icon(
+                Icons.block_outlined,
+                size: 18,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Ban',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
           ),
-          tooltip: 'Ban member',
-          onPressed: () => _banMember(member),
         ),
       ],
     );

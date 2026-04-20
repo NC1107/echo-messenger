@@ -358,10 +358,31 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Username
+                // Username + role icon
                 Expanded(
                   child: Row(
                     children: [
+                      if (member.role == 'owner') ...[
+                        Semantics(
+                          label: 'owner',
+                          child: Icon(
+                            Icons.star_rounded,
+                            size: 14,
+                            color: Colors.amber,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ] else if (member.role == 'admin') ...[
+                        Semantics(
+                          label: 'admin',
+                          child: Icon(
+                            Icons.shield_rounded,
+                            size: 14,
+                            color: Colors.blue,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
                       Flexible(
                         child: Text(
                           member.username,

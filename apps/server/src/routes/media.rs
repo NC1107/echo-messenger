@@ -34,6 +34,8 @@ const ALLOWED_MIME_TYPES: &[&str] = &[
     // Video
     "video/mp4",
     "video/quicktime",
+    "video/webm",
+    "video/x-msvideo",
     // Audio
     "audio/mpeg",
     "audio/ogg",
@@ -41,6 +43,8 @@ const ALLOWED_MIME_TYPES: &[&str] = &[
     "audio/mp4",
     "audio/aac",
     "audio/x-m4a",
+    "audio/flac",
+    "audio/x-flac",
     // Documents
     "application/pdf",
     "text/plain",
@@ -65,11 +69,14 @@ fn extension_for_mime(mime: &str) -> &str {
         "image/heic" | "image/heif" => "heic",
         "video/mp4" => "mp4",
         "video/quicktime" => "mov",
+        "video/webm" => "webm",
+        "video/x-msvideo" => "avi",
         "audio/mpeg" => "mp3",
         "audio/ogg" => "ogg",
         "audio/wav" => "wav",
         "audio/mp4" | "audio/x-m4a" => "m4a",
         "audio/aac" => "aac",
+        "audio/flac" | "audio/x-flac" => "flac",
         "application/pdf" => "pdf",
         "text/plain" => "txt",
         "application/msword" => "doc",
