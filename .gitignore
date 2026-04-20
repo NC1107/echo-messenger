@@ -32,6 +32,10 @@
 *.swo
 *~
 
+# Agent runtime state
+.claude/tasks.json
+agent-knowledge/
+
 # Secrets & Environment
 .env
 .env.local

@@ -8,6 +8,7 @@ on:
       - 'docs/**'
       - 'research/**'
       - 'context/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -50,6 +51,8 @@ jobs:
 
   build-macos:
     name: Build macOS
+    # macOS runners are 10x cost — only build on manual trigger or weekly
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
