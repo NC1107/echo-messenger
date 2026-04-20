@@ -250,7 +250,7 @@ void main() {
         findsOneWidget,
       );
       // File attach button
-      expect(find.byIcon(Icons.attach_file_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.add_circle_outline), findsOneWidget);
     });
   });
 }
