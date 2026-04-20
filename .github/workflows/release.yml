@@ -439,7 +439,7 @@ jobs:
           sed -i 's/^version = ".*"/version = "${{ needs.version.outputs.version }}"/' apps/server/Cargo.toml
           sed -i 's/^version = ".*"/version = "${{ needs.version.outputs.version }}"/' core/rust-core/Cargo.toml
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -487,7 +487,7 @@ jobs:
           path: echo-web.tar.gz
           retention-days: 3
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
