@@ -914,7 +914,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     try {
       final dt1 = DateTime.parse(ts1);
       final dt2 = DateTime.parse(ts2);
-      return dt2.difference(dt1).inMinutes.abs() < 2;
+      return dt2.difference(dt1).inMinutes.abs() < 5;
     } catch (_) {
       return false;
     }
@@ -1295,9 +1295,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   Widget _buildNewMessagesPill() {
     return Positioned(
       bottom: 12,
-      left: 0,
-      right: 0,
-      child: Center(
+      right: 24,
+      child: Align(
+        alignment: Alignment.centerRight,
         child: Semantics(
           label: 'scroll to new messages',
           button: true,

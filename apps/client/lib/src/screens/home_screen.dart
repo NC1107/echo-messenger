@@ -862,35 +862,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget _buildResizeHandle() {
     return MouseRegion(
       cursor: SystemMouseCursors.resizeColumn,
-      child: GestureDetector(
-        onHorizontalDragUpdate: (details) {
-          if (_sidebarCollapsed) return;
-          setState(() {
-            _sidebarWidth = (_sidebarWidth + details.delta.dx).clamp(
-              _sidebarMinWidth,
-              _sidebarMaxWidth,
-            );
-          });
-        },
-        onHorizontalDragEnd: (details) {
-          if (_sidebarWidth < 150) {
-            setState(() => _sidebarCollapsed = true);
-          }
-        },
-        onDoubleTap: () {
-          setState(() {
-            if (_sidebarCollapsed) {
-              _sidebarCollapsed = false;
-              _sidebarWidth = _sidebarDefaultWidth;
-            } else {
-              _sidebarCollapsed = true;
+      child: Semantics(
+        label: 'Resize sidebar',
+        child: GestureDetector(
+          onHorizontalDragUpdate: (details) {
+            if (_sidebarCollapsed) return;
+            setState(() {
+              _sidebarWidth = (_sidebarWidth + details.delta.dx).clamp(
+                _sidebarMinWidth,
+                _sidebarMaxWidth,
+              );
+            });
+          },
+          onHorizontalDragEnd: (details) {
+            if (_sidebarWidth < 150) {
+              setState(() => _sidebarCollapsed = true);
             }
-          });
-        },
-        child: Container(
-          width: 12,
-          color: Colors.transparent,
-          child: Center(child: Container(width: 1, color: context.border)),
+          },
+          onDoubleTap: () {
+            setState(() {
+              if (_sidebarCollapsed) {
+                _sidebarCollapsed = false;
+                _sidebarWidth = _sidebarDefaultWidth;
+              } else {
+                _sidebarCollapsed = true;
+              }
+            });
+          },
+          child: Container(
+            width: 12,
+            color: Colors.transparent,
+            child: Center(child: Container(width: 1, color: context.border)),
+          ),
         ),
       ),
     );

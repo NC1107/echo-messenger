@@ -712,7 +712,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           ? '$serverUrl$iconUrl?token=$token'
           : '$serverUrl$iconUrl';
       avatar = CircleAvatar(
-        radius: 40,
+        radius: 56,
         backgroundColor: Theme.of(context).colorScheme.tertiary,
         backgroundImage: NetworkImage(fullUrl),
         onBackgroundImageError: (_, _) {},
@@ -720,7 +720,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       );
     } else {
       avatar = CircleAvatar(
-        radius: 40,
+        radius: 56,
         backgroundColor: Theme.of(context).colorScheme.tertiary,
         child: const Icon(Icons.group_outlined, size: 40),
       );

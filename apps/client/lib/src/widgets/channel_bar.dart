@@ -383,6 +383,11 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                     _buildTextChannelChip(channel),
                     const SizedBox(width: 6),
                   ],
+                  if (textChannels.isNotEmpty && voiceChannels.isNotEmpty)
+                    const SizedBox(
+                      height: 24,
+                      child: VerticalDivider(width: 16, thickness: 1),
+                    ),
                   for (final channel in voiceChannels) ...[
                     _buildVoiceChannelChip(
                       channel,

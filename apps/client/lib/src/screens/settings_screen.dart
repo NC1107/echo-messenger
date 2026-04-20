@@ -95,83 +95,84 @@ class SettingsNavList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        const SizedBox(height: 8),
-        _categoryHeader(context, 'USER SETTINGS'),
-        _navItem(
-          context: context,
-          icon: Icons.person_outlined,
-          label: 'Account',
-          section: SettingsSection.account,
-        ),
-        _navItem(
-          context: context,
-          icon: Icons.devices_outlined,
-          label: 'My Devices',
-          section: SettingsSection.devices,
-        ),
-        _navItem(
-          context: context,
-          icon: Icons.lock_outline,
-          label: 'Privacy & Safety',
-          section: SettingsSection.privacy,
-        ),
-        _navItem(
-          context: context,
-          icon: Icons.notifications_outlined,
-          label: 'Notifications',
-          section: SettingsSection.notifications,
-        ),
-        _navItem(
-          context: context,
-          icon: Icons.graphic_eq,
-          label: 'Voice & Video',
-          section: SettingsSection.audio,
-        ),
-        _categoryHeader(context, 'APP SETTINGS'),
-        _navItem(
-          context: context,
-          icon: Icons.palette_outlined,
-          label: 'Appearance',
-          section: SettingsSection.appearance,
-        ),
-        _navItem(
-          context: context,
-          icon: Icons.accessibility_new,
-          label: 'Accessibility',
-          section: SettingsSection.accessibility,
-        ),
-        _categoryHeader(context, 'ADVANCED'),
-        _navItem(
-          context: context,
-          icon: Icons.info_outline,
-          label: 'About',
-          section: SettingsSection.about,
-        ),
-        _navItem(
-          context: context,
-          icon: Icons.storage_outlined,
-          label: 'Data & Storage',
-          section: SettingsSection.dataStorage,
-        ),
-        _navItem(
-          context: context,
-          icon: Icons.bug_report_outlined,
-          label: 'Debug Logs',
-          section: SettingsSection.debug,
-        ),
-        const Spacer(),
-        Divider(color: context.border, thickness: 1, height: 1),
-        _navItem(
-          context: context,
-          icon: Icons.logout,
-          label: _logOutLabel,
-          section: null,
-          isLogout: true,
-        ),
-        const SizedBox(height: 8),
-      ],
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          _categoryHeader(context, 'USER SETTINGS'),
+          _navItem(
+            context: context,
+            icon: Icons.person_outlined,
+            label: 'Account',
+            section: SettingsSection.account,
+          ),
+          _navItem(
+            context: context,
+            icon: Icons.devices_outlined,
+            label: 'My Devices',
+            section: SettingsSection.devices,
+          ),
+          _navItem(
+            context: context,
+            icon: Icons.lock_outline,
+            label: 'Privacy & Safety',
+            section: SettingsSection.privacy,
+          ),
+          _navItem(
+            context: context,
+            icon: Icons.notifications_outlined,
+            label: 'Notifications',
+            section: SettingsSection.notifications,
+          ),
+          _navItem(
+            context: context,
+            icon: Icons.graphic_eq,
+            label: 'Voice & Video',
+            section: SettingsSection.audio,
+          ),
+          _categoryHeader(context, 'APP SETTINGS'),
+          _navItem(
+            context: context,
+            icon: Icons.palette_outlined,
+            label: 'Appearance',
+            section: SettingsSection.appearance,
+          ),
+          _navItem(
+            context: context,
+            icon: Icons.accessibility_new,
+            label: 'Accessibility',
+            section: SettingsSection.accessibility,
+          ),
+          _categoryHeader(context, 'ADVANCED'),
+          _navItem(
+            context: context,
+            icon: Icons.info_outline,
+            label: 'About',
+            section: SettingsSection.about,
+          ),
+          _navItem(
+            context: context,
+            icon: Icons.storage_outlined,
+            label: 'Data & Storage',
+            section: SettingsSection.dataStorage,
+          ),
+          _navItem(
+            context: context,
+            icon: Icons.bug_report_outlined,
+            label: 'Debug Logs',
+            section: SettingsSection.debug,
+          ),
+          Divider(color: context.border, thickness: 1, height: 1),
+          _navItem(
+            context: context,
+            icon: Icons.logout,
+            label: _logOutLabel,
+            section: null,
+            isLogout: true,
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
     );
   }
 

@@ -268,6 +268,25 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
               : (value) =>
                     ref.read(privacyProvider.notifier).setPhoneVisible(value),
         ),
+        const SizedBox(height: 16),
+        Text(
+          'Discoverability',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Control whether others can find you using your contact details.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 12),
         SwitchListTile.adaptive(
           contentPadding: EdgeInsets.zero,
           title: Text(
@@ -342,8 +361,8 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
           'Encryption',
           style: TextStyle(
             color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 8),
@@ -395,7 +414,19 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
             ),
           ),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 8),
+        Text(
+          'Danger Zone',
+          style: TextStyle(
+            color: EchoTheme.danger,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(

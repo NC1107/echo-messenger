@@ -2135,25 +2135,33 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
                       _canvas?.setPenColor(c);
                       ref.read(canvasProvider.notifier).setColor(c);
                     },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 120),
-                      width: isSelected ? 24 : 20,
-                      height: isSelected ? 24 : 20,
-                      decoration: BoxDecoration(
-                        color: c,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: isSelected ? context.accent : context.border,
-                          width: isSelected ? 2.5 : 1,
+                    child: SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: Center(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          width: isSelected ? 24 : 20,
+                          height: isSelected ? 24 : 20,
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isSelected
+                                  ? context.accent
+                                  : context.border,
+                              width: isSelected ? 2.5 : 1,
+                            ),
+                            boxShadow: isSelected
+                                ? [
+                                    BoxShadow(
+                                      color: c.withValues(alpha: 0.5),
+                                      blurRadius: 6,
+                                    ),
+                                  ]
+                                : null,
+                          ),
                         ),
-                        boxShadow: isSelected
-                            ? [
-                                BoxShadow(
-                                  color: c.withValues(alpha: 0.5),
-                                  blurRadius: 6,
-                                ),
-                              ]
-                            : null,
                       ),
                     ),
                   );

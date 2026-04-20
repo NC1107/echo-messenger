@@ -475,8 +475,8 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: iconColor),
-        const SizedBox(width: 4),
+        Icon(icon, size: 16, color: iconColor),
+        const SizedBox(width: 8),
         Text(
           text,
           style: TextStyle(
