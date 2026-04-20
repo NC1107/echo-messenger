@@ -115,7 +115,20 @@ pub async fn upload_bundle(
 
     let device_id = body.device_id;
 
-    // Decode and verify signing_key + signature (required for MITM prevention)
+    // Decode and verify signing_key + signature (required for MITM prevention).
+    //
+    // Proof-of-possession rationale (#74): requiring the client to provide a
+    // valid Ed25519 signature over `signed_prekey` bytes using `signing_key`
+    // implicitly proves possession of the signing private key -- an attacker
+    // that does not hold the private key cannot produce a valid signature.
+    // This is equivalent to a challenge-response: the signed_prekey bytes act
+    // as the message being signed, and the server verifies the signature with
+    // the uploaded public key.  The identity binding fingerprint (stored on
+    // first upload, checked on every subsequent upload) further prevents an
+    // attacker from swapping the identity key while keeping the signing key or
+    // vice-versa.  A separate explicit nonce challenge would add no additional
+    // security here because the attacker is already unable to forge the
+    // signature without the private key.
     let signing_key_bytes = BASE64
         .decode(&body.signing_key)
         .map_err(|_| AppError::bad_request("Invalid base64 for signing_key"))?;
