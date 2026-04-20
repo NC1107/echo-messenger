@@ -171,8 +171,8 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
         ? ref.watch(cryptoServiceProvider).deviceId
         : null;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
+      shrinkWrap: true,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
@@ -210,9 +210,13 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
         ),
         const Divider(height: 1),
         if (_loading)
-          const Expanded(child: Center(child: CircularProgressIndicator()))
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 48),
+            child: Center(child: CircularProgressIndicator()),
+          )
         else if (_error != null)
-          Expanded(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 48),
             child: Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -234,7 +238,8 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
             ),
           )
         else if (_devices.isEmpty)
-          Expanded(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 48),
             child: Center(
               child: Text(
                 'No devices found.',
@@ -243,81 +248,74 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
             ),
           )
         else
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: _devices.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final device = _devices[index];
-                final isThisDevice = device.deviceId == myDeviceId;
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 4,
-                  ),
-                  leading: Icon(
-                    _deviceIcon(isThisDevice),
-                    color: isThisDevice
-                        ? context.accent
-                        : context.textSecondary,
-                  ),
-                  title: Row(
-                    children: [
-                      Text(
-                        isThisDevice
-                            ? _currentPlatformName()
-                            : device.label ?? 'Device ${device.deviceId}',
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: _devices.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final device = _devices[index];
+              final isThisDevice = device.deviceId == myDeviceId;
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 4,
+                ),
+                leading: Icon(
+                  _deviceIcon(isThisDevice),
+                  color: isThisDevice ? context.accent : context.textSecondary,
+                ),
+                title: Row(
+                  children: [
+                    Text(
+                      isThisDevice
+                          ? _currentPlatformName()
+                          : device.label ?? 'Device ${device.deviceId}',
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14,
+                      ),
+                    ),
+                    if (isThisDevice) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: context.accentLight,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'This device',
+                          style: TextStyle(
+                            color: context.accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                      if (isThisDevice) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: context.accentLight,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'This device',
-                            style: TextStyle(
-                              color: context.accent,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
                     ],
-                  ),
-                  subtitle: device.lastSeen != null
-                      ? Text(
-                          'Last seen: ${device.lastSeen}',
-                          style: TextStyle(
-                            color: context.textSecondary,
-                            fontSize: 12,
-                          ),
-                        )
-                      : null,
-                  trailing: isThisDevice
-                      ? null
-                      : TextButton(
-                          onPressed: () => _revokeDevice(device),
-                          style: TextButton.styleFrom(
-                            foregroundColor: EchoTheme.danger,
-                          ),
-                          child: const Text('Revoke'),
+                  ],
+                ),
+                subtitle: Text(
+                  'Last seen: ${_formatLastSeen(device.lastSeen)}',
+                  style: TextStyle(color: context.textSecondary, fontSize: 12),
+                ),
+                trailing: isThisDevice
+                    ? null
+                    : TextButton(
+                        onPressed: () => _revokeDevice(device),
+                        style: TextButton.styleFrom(
+                          foregroundColor: EchoTheme.danger,
                         ),
-                );
-              },
-            ),
+                        child: const Text('Revoke'),
+                      ),
+              );
+            },
           ),
       ],
     );
@@ -330,6 +328,23 @@ class _Device {
   final String? lastSeen;
 
   const _Device({required this.deviceId, this.label, this.lastSeen});
+}
+
+String _formatLastSeen(String? isoString) {
+  if (isoString == null) return 'Never';
+  try {
+    final dt = DateTime.parse(isoString).toLocal();
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 60) return 'just now';
+    if (diff.inHours < 24) {
+      final h = diff.inHours;
+      return '$h ${h == 1 ? 'hour' : 'hours'} ago';
+    }
+    final d = diff.inDays;
+    return '$d ${d == 1 ? 'day' : 'days'} ago';
+  } catch (_) {
+    return isoString;
+  }
 }
 
 String _currentPlatformName() {
