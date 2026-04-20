@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -1151,7 +1153,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   }) {
     return Scrollbar(
       controller: _scrollController,
-      thumbVisibility: true,
+      thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
       child: ListView.builder(
         controller: _scrollController,
         padding: const EdgeInsets.only(bottom: 16),

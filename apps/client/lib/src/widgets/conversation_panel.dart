@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1206,7 +1208,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           ref.read(conversationsProvider.notifier).loadConversations(),
       color: context.accent,
       child: Scrollbar(
-        thumbVisibility: true,
+        thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
         child: ListView.builder(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
@@ -1307,7 +1309,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     }
 
     return Scrollbar(
-      thumbVisibility: true,
+      thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
         itemCount: contacts.length,
@@ -1398,7 +1400,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final sorted = _sortConversations(groupConversations);
 
     return Scrollbar(
-      thumbVisibility: true,
+      thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
         itemCount: sorted.length + 1,
