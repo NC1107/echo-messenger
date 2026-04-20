@@ -34,6 +34,7 @@
 
 # Agent runtime state
 .claude/tasks.json
+.claude/settings.local.json
 agent-knowledge/
 
 # Secrets & Environment
