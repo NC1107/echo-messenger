@@ -1,3 +1,6 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -736,6 +739,10 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
   bool _hovered = false;
   bool _copied = false;
 
+  /// True on mobile/touch platforms where hover is unavailable.
+  static bool get _isTouchPlatform =>
+      !kIsWeb && (Platform.isIOS || Platform.isAndroid);
+
   void _copy() {
     Clipboard.setData(ClipboardData(text: widget.code));
     setState(() => _copied = true);
@@ -746,6 +753,9 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final showButton = _hovered || _copied || _isTouchPlatform;
+    final buttonOpacity = _isTouchPlatform && !_copied ? 0.5 : 1.0;
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -769,33 +779,36 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
               ),
             ),
           ),
-          if (_hovered || _copied)
+          if (showButton)
             Positioned(
               top: 8,
               right: 8,
-              child: Semantics(
-                label: 'copy code block',
-                button: true,
-                child: GestureDetector(
-                  onTap: _copy,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: widget.bgColor,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: widget.textColor.withValues(alpha: 0.2),
+              child: Opacity(
+                opacity: buttonOpacity,
+                child: Semantics(
+                  label: 'copy code block',
+                  button: true,
+                  child: GestureDetector(
+                    onTap: _copy,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
                       ),
-                    ),
-                    child: Text(
-                      _copied ? 'Copied!' : 'Copy',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: widget.textColor.withValues(alpha: 0.7),
-                        fontWeight: FontWeight.w600,
+                      decoration: BoxDecoration(
+                        color: widget.bgColor,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: widget.textColor.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Text(
+                        _copied ? 'Copied!' : 'Copy',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: widget.textColor.withValues(alpha: 0.7),
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),

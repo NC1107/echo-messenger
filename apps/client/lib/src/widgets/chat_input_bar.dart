@@ -984,7 +984,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final isMobile = Responsive.isMobile(context);
     if (isMobile) {
       return IconButton(
-        icon: Icon(Icons.add, size: 22, color: context.textSecondary),
+        icon: Icon(
+          Icons.add_circle_outline,
+          size: 22,
+          color: context.textSecondary,
+        ),
         tooltip: 'Attach',
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
@@ -993,8 +997,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     }
     return IconButton(
       icon: Icon(
-        Icons.attach_file_outlined,
-        size: 20,
+        Icons.add_circle_outline,
+        size: 22,
         color: context.textSecondary,
       ),
       tooltip: 'Attach file',
