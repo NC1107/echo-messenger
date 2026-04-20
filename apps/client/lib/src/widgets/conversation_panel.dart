@@ -741,9 +741,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         const SizedBox(width: 12),
         Icon(Icons.search_outlined, size: 18, color: context.textMuted),
         const SizedBox(width: 8),
-        Text(
-          'Search conversations',
-          style: TextStyle(color: context.textMuted, fontSize: 13),
+        Expanded(
+          child: Text(
+            'Search conversations',
+            style: TextStyle(color: context.textMuted, fontSize: 13),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ],
     );

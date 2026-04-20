@@ -431,20 +431,7 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.copy, size: 12, color: context.textMuted),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Tap to copy',
-                            style: TextStyle(
-                              color: context.textMuted,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
+                      Icon(Icons.copy, size: 16, color: context.textMuted),
                     ],
                   ),
                 ),
