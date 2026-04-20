@@ -338,7 +338,7 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                 // Avatar
                 buildAvatar(
                   name: member.username,
-                  radius: 10,
+                  radius: 14,
                   imageUrl: resolveAvatarUrl(
                     member.avatarUrl,
                     ref.watch(serverUrlProvider),
