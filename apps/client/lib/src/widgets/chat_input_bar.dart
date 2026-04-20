@@ -4,7 +4,7 @@ import 'dart:io' show File;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:flutter/material.dart';
@@ -681,7 +681,19 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       if (!mounted) return;
 
       final file = result.files.first;
-      if (file.bytes == null) {
+
+      // On mobile, withData:true may still yield null bytes for larger files
+      // or certain content URIs. Fall back to reading from the file path.
+      Uint8List? bytes = file.bytes;
+      if (bytes == null && file.path != null && !kIsWeb) {
+        try {
+          bytes = await File(file.path!).readAsBytes();
+        } catch (e) {
+          debugPrint('[ChatInput] Failed to read file from path: $e');
+        }
+      }
+
+      if (bytes == null) {
         if (mounted) {
           ToastService.show(
             context,
@@ -700,12 +712,19 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         'gif': ['image', 'gif'],
         'webp': ['image', 'webp'],
         'mp4': ['video', 'mp4'],
+        'mov': ['video', 'quicktime'],
+        'webm': ['video', 'webm'],
         'pdf': ['application', 'pdf'],
+        'mp3': ['audio', 'mpeg'],
+        'ogg': ['audio', 'ogg'],
+        'wav': ['audio', 'wav'],
+        'm4a': ['audio', 'mp4'],
+        'aac': ['audio', 'aac'],
       };
       final mime = mimeTypes[ext] ?? ['application', _kOctetStream];
 
       _setPendingAttachment(
-        bytes: file.bytes!,
+        bytes: bytes,
         fileName: file.name,
         mimeType: '${mime[0]}/${mime[1]}',
         ext: ext,
@@ -1075,7 +1094,13 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       if (result == null || result.files.isEmpty) return;
       if (!mounted) return;
       final file = result.files.first;
-      if (file.bytes == null) return;
+      Uint8List? bytes = file.bytes;
+      if (bytes == null && file.path != null && !kIsWeb) {
+        try {
+          bytes = await File(file.path!).readAsBytes();
+        } catch (_) {}
+      }
+      if (bytes == null) return;
       final ext = (file.extension ?? '').toLowerCase();
       final mimeTypes = <String, List<String>>{
         'jpg': ['image', 'jpeg'],
@@ -1088,7 +1113,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       };
       final mime = mimeTypes[ext] ?? ['application', _kOctetStream];
       _setPendingAttachment(
-        bytes: file.bytes!,
+        bytes: bytes,
         fileName: file.name,
         mimeType: '${mime[0]}/${mime[1]}',
         ext: ext,
@@ -1113,10 +1138,16 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       if (result == null || result.files.isEmpty) return;
       if (!mounted) return;
       final file = result.files.first;
-      if (file.bytes == null) return;
+      Uint8List? bytes = file.bytes;
+      if (bytes == null && file.path != null && !kIsWeb) {
+        try {
+          bytes = await File(file.path!).readAsBytes();
+        } catch (_) {}
+      }
+      if (bytes == null) return;
       final ext = (file.extension ?? 'jpg').toLowerCase();
       _setPendingAttachment(
-        bytes: file.bytes!,
+        bytes: bytes,
         fileName: file.name,
         mimeType: 'image/${ext == 'jpg' ? 'jpeg' : ext}',
         ext: ext,

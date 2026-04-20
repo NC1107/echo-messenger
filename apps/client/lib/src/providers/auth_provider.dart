@@ -401,7 +401,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
       if (value != null && value.isNotEmpty) {
         try {
           await store.writeGlobal(key, value);
-          await prefs.remove(key);
+          // On web, keep tokens in SharedPreferences as a reliable fallback.
+          // SecureKeyStore on web uses Web Crypto API encryption which can
+          // fail to decrypt after page refresh in some browsers, so
+          // SharedPreferences (plain localStorage) is the safety net.
+          if (!kIsWeb) {
+            await prefs.remove(key);
+          }
           debugPrint(
             '[Auth] Migrated $key from SharedPreferences to secure storage',
           );

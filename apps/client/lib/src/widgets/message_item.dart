@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
+import 'package:photo_manager/photo_manager.dart' show PhotoManager;
 
 import '../models/chat_message.dart';
 import '../services/toast_service.dart';
@@ -24,6 +25,12 @@ import 'message/rich_text_content.dart';
 
 /// Common emojis for the reaction picker.
 const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🎉'];
+
+/// True on Android/iOS (native, not web).
+bool get _isMobilePlatform =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS);
 
 /// Bounded cache manager for chat images to prevent unbounded disk usage.
 final chatImageCacheManager = CacheManager(
@@ -268,6 +275,47 @@ class _MessageItemState extends State<MessageItem>
     }
   }
 
+  /// Fetch image bytes from the server and save them to the device gallery.
+  /// Used on mobile platforms where clipboard image write is not supported.
+  Future<void> _saveImageToGallery(String rawUrl) async {
+    final url = _resolveUrl(rawUrl);
+    try {
+      final response = await http.get(Uri.parse(url), headers: _mediaHeaders());
+      if (!mounted) return;
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        ToastService.show(
+          context,
+          'Failed to download image',
+          type: ToastType.error,
+        );
+        return;
+      }
+
+      final bytes = Uint8List.fromList(response.bodyBytes);
+      final filename =
+          Uri.tryParse(url)?.pathSegments.lastOrNull ?? 'image.png';
+      await PhotoManager.editor.saveImage(bytes, filename: filename);
+      if (!mounted) return;
+      ToastService.show(
+        context,
+        'Image saved to gallery',
+        type: ToastType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ToastService.show(context, 'Failed to save image', type: ToastType.error);
+    }
+  }
+
+  /// On mobile, save image to gallery. On desktop, copy to clipboard.
+  Future<void> _handleImageAction(String mediaUrl) async {
+    if (_isMobilePlatform) {
+      await _saveImageToGallery(mediaUrl);
+    } else {
+      await _copyImageToClipboard(mediaUrl);
+    }
+  }
+
   /// Returns true if the media message contains an image (not video/file).
   bool _isImageMedia(String content, String mediaUrl) {
     if (content.trimLeft().startsWith('[img:')) return true;
@@ -393,9 +441,11 @@ class _MessageItemState extends State<MessageItem>
       if (isImage)
         _actionTile(
           sheetContext: sheetContext,
-          icon: Icons.image_outlined,
-          label: 'Copy image',
-          onTap: () => _copyImageToClipboard(mediaUrl),
+          icon: _isMobilePlatform
+              ? Icons.save_alt_outlined
+              : Icons.image_outlined,
+          label: _isMobilePlatform ? 'Save image' : 'Copy image',
+          onTap: () => _handleImageAction(mediaUrl),
         ),
       _actionTile(
         sheetContext: sheetContext,
@@ -658,7 +708,7 @@ class _MessageItemState extends State<MessageItem>
                   type: ToastType.success,
                 );
               case 'copy_image':
-                _copyImageToClipboard(mediaUrl!);
+                _handleImageAction(mediaUrl!);
               case 'download':
                 _downloadMedia(mediaUrl!);
               case 'pin':
@@ -683,13 +733,18 @@ class _MessageItemState extends State<MessageItem>
               ),
             ),
             if (isImage)
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'copy_image',
                 child: Row(
                   children: [
-                    Icon(Icons.image_outlined, size: 16),
-                    SizedBox(width: 8),
-                    Text('Copy image'),
+                    Icon(
+                      _isMobilePlatform
+                          ? Icons.save_alt_outlined
+                          : Icons.image_outlined,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(_isMobilePlatform ? 'Save image' : 'Copy image'),
                   ],
                 ),
               ),
