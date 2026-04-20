@@ -1060,6 +1060,33 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             'Start your conversation with $displayName',
             style: TextStyle(color: context.textMuted, fontSize: 13),
           ),
+          const SizedBox(height: 16),
+          Semantics(
+            label: 'Say hi to $displayName',
+            button: true,
+            child: TextButton(
+              onPressed: () {
+                _chatInputBarKey.currentState?.preFillText('Hey! \u{1F44B}');
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: context.accent,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(
+                    color: context.accent.withValues(alpha: 0.4),
+                  ),
+                ),
+              ),
+              child: const Text(
+                'Say hi \u{1F44B}',
+                style: TextStyle(fontSize: 14),
+              ),
+            ),
+          ),
         ],
       ),
     );

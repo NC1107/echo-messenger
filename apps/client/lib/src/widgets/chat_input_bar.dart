@@ -186,6 +186,17 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _inputFocusNode.requestFocus();
   }
 
+  /// Pre-fill the input with [text] and focus it.
+  /// Used by the "Say hi" CTA in the empty conversation placeholder.
+  void preFillText(String text) {
+    setState(() {
+      _messageController.text = text;
+      _isTextEmpty = text.trim().isEmpty;
+    });
+    _messageController.selection = TextSelection.collapsed(offset: text.length);
+    _inputFocusNode.requestFocus();
+  }
+
   // ---------------------------------------------------------------------------
   // Draft auto-save
   // ---------------------------------------------------------------------------

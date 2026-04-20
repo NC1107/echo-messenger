@@ -87,15 +87,21 @@ class MessageItem extends StatefulWidget {
   State<MessageItem> createState() => _MessageItemState();
 }
 
-class _MessageItemState extends State<MessageItem> {
+class _MessageItemState extends State<MessageItem>
+    with SingleTickerProviderStateMixin {
   bool _isHovered = false;
   double _swipeDx = 0;
   bool _swipeTriggered = false;
   Timer? _expireTimer;
+  late final AnimationController _swipeAnimController;
 
   @override
   void initState() {
     super.initState();
+    _swipeAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
     _scheduleExpireTimer();
   }
 
@@ -110,8 +116,22 @@ class _MessageItemState extends State<MessageItem> {
 
   @override
   void dispose() {
+    _swipeAnimController.dispose();
     _expireTimer?.cancel();
     super.dispose();
+  }
+
+  /// Animate _swipeDx back to 0 with an ease-out spring-back over 200 ms.
+  void _startSpringBack() {
+    final startDx = _swipeDx;
+    if (startDx == 0) return;
+    final animation = Tween<double>(begin: startDx, end: 0).animate(
+      CurvedAnimation(parent: _swipeAnimController, curve: Curves.easeOut),
+    );
+    animation.addListener(() {
+      if (mounted) setState(() => _swipeDx = animation.value);
+    });
+    _swipeAnimController.forward(from: 0);
   }
 
   void _scheduleExpireTimer() {
@@ -1441,17 +1461,15 @@ class _MessageItemState extends State<MessageItem> {
             onHorizontalDragEnd: canSwipeToReply
                 ? (_) {
                     if (_swipeTriggered) widget.onReply?.call(msg);
-                    setState(() {
-                      _swipeDx = 0;
-                      _swipeTriggered = false;
-                    });
+                    _swipeTriggered = false;
+                    _startSpringBack();
                   }
                 : null,
             onHorizontalDragCancel: canSwipeToReply
-                ? () => setState(() {
-                    _swipeDx = 0;
+                ? () {
                     _swipeTriggered = false;
-                  })
+                    _startSpringBack();
+                  }
                 : null,
             child: _buildSwipeToReplyWrapper(
               canSwipe: canSwipeToReply,
