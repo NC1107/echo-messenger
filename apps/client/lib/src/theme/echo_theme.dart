@@ -302,6 +302,23 @@ class EchoTheme {
   static const neonRecvBubble = Color(0xFF1A1A28);
   static const neonBorder = Color(0xFF222235);
 
+  // Aurora theme colors (deep violet dark with gradient chat background)
+  static const auroraMainBg = Color(0xFF0D0B14);
+  static const auroraSidebarBg = Color(0xFF110E1A);
+  static const auroraChatBg = Color(0xFF0D0B14);
+  static const auroraChatBgEnd = Color(0xFF0B0F1A);
+  static const auroraSurface = Color(0xFF1A1628);
+  static const auroraSurfaceHover = Color(0xFF231E34);
+  static const auroraAccent = Color(0xFF8B5CF6);
+  static const auroraAccentHover = Color(0xFFA78BFA);
+  static const auroraAccentLight = Color(0x1A8B5CF6);
+  static const auroraTextPrimary = Color(0xFFEDE9F6);
+  static const auroraTextSecondary = Color(0xFFABA4BE);
+  static const auroraTextMuted = Color(0xFF8780A0);
+  static const auroraSentBubble = Color(0xFF7C3AED);
+  static const auroraRecvBubble = Color(0xFF1E1A2E);
+  static const auroraBorder = Color(0xFF2D2744);
+
   // Sakura theme colors (feminine aesthetic -- light pink with soft pastels)
   static const sakuraMainBg = Color(0xFFFFF5F7);
   static const sakuraSidebarBg = Color(0xFFFFF0F3);
@@ -803,6 +820,100 @@ class EchoTheme {
   }
 
   // ---------------------------------------------------------------------------
+  // Aurora theme
+  // ---------------------------------------------------------------------------
+
+  static ThemeData get auroraTheme {
+    final textTheme = _buildTextTheme(
+      brightness: Brightness.dark,
+      primaryColor: auroraTextPrimary,
+      secondaryColor: auroraTextSecondary,
+      mutedColor: auroraTextMuted,
+    );
+
+    return ThemeData(
+      brightness: Brightness.dark,
+      extensions: const [EchoColorExtension.aurora],
+      scaffoldBackgroundColor: auroraMainBg,
+      textTheme: textTheme,
+      colorScheme: const ColorScheme.dark(
+        primary: auroraAccent,
+        secondary: auroraAccentHover,
+        surface: auroraSurface,
+        onSurfaceVariant: auroraTextSecondary,
+        error: danger,
+        onPrimary: Colors.white,
+        onSecondary: Colors.white,
+        onSurface: auroraTextPrimary,
+        onError: Colors.white,
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: auroraSidebarBg,
+        foregroundColor: auroraTextPrimary,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: GoogleFonts.inter(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: auroraTextPrimary,
+        ),
+      ),
+      dividerColor: auroraBorder,
+      dividerTheme: const DividerThemeData(
+        color: auroraBorder,
+        thickness: 1,
+        space: 1,
+      ),
+      inputDecorationTheme: _buildInputTheme(
+        fillColor: auroraSurface,
+        borderColor: auroraBorder,
+        focusBorderColor: auroraAccent,
+        hintColor: auroraTextMuted,
+        labelColor: auroraTextSecondary,
+      ),
+      filledButtonTheme: _buildFilledButtonTheme(auroraAccent),
+      textButtonTheme: _buildTextButtonTheme(auroraAccent),
+      outlinedButtonTheme: _buildOutlinedButtonTheme(
+        auroraTextPrimary,
+        auroraBorder,
+      ),
+      iconTheme: const IconThemeData(color: auroraTextSecondary, size: 20),
+      tooltipTheme: TooltipThemeData(
+        decoration: BoxDecoration(
+          color: auroraSurface,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: auroraBorder, width: 1),
+        ),
+        textStyle: GoogleFonts.inter(color: auroraTextPrimary, fontSize: 12),
+        waitDuration: const Duration(milliseconds: 500),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: auroraSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: auroraBorder),
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: auroraSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: auroraSurface,
+        contentTextStyle: GoogleFonts.inter(
+          color: auroraTextPrimary,
+          fontSize: 13,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        behavior: SnackBarBehavior.floating,
+        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // High-contrast themes
   // ---------------------------------------------------------------------------
 
@@ -872,6 +983,9 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
   final Color sentBubble;
   final Color recvBubble;
 
+  /// Optional gradient for the chat background. Null means use flat [chatBg].
+  final Gradient? chatBgGradient;
+
   const EchoColorExtension({
     required this.sidebarBg,
     required this.chatBg,
@@ -880,6 +994,7 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     required this.textMuted,
     required this.sentBubble,
     required this.recvBubble,
+    this.chatBgGradient,
   });
 
   /// Dark theme colors
@@ -948,6 +1063,22 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     recvBubble: EchoTheme.sakuraRecvBubble,
   );
 
+  /// Aurora theme colors
+  static const aurora = EchoColorExtension(
+    sidebarBg: EchoTheme.auroraSidebarBg,
+    chatBg: EchoTheme.auroraChatBg,
+    surfaceHover: EchoTheme.auroraSurfaceHover,
+    accentLight: EchoTheme.auroraAccentLight,
+    textMuted: EchoTheme.auroraTextMuted,
+    sentBubble: EchoTheme.auroraSentBubble,
+    recvBubble: EchoTheme.auroraRecvBubble,
+    chatBgGradient: LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [EchoTheme.auroraChatBg, EchoTheme.auroraChatBgEnd],
+    ),
+  );
+
   @override
   EchoColorExtension copyWith({
     Color? sidebarBg,
@@ -957,6 +1088,7 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     Color? textMuted,
     Color? sentBubble,
     Color? recvBubble,
+    Gradient? chatBgGradient,
   }) {
     return EchoColorExtension(
       sidebarBg: sidebarBg ?? this.sidebarBg,
@@ -966,6 +1098,7 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
       textMuted: textMuted ?? this.textMuted,
       sentBubble: sentBubble ?? this.sentBubble,
       recvBubble: recvBubble ?? this.recvBubble,
+      chatBgGradient: chatBgGradient ?? this.chatBgGradient,
     );
   }
 
@@ -980,6 +1113,7 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
       textMuted: Color.lerp(textMuted, other.textMuted, t)!,
       sentBubble: Color.lerp(sentBubble, other.sentBubble, t)!,
       recvBubble: Color.lerp(recvBubble, other.recvBubble, t)!,
+      chatBgGradient: t < 0.5 ? chatBgGradient : other.chatBgGradient,
     );
   }
 }
@@ -1008,4 +1142,5 @@ extension EchoColors on BuildContext {
   Color get textMuted => echo.textMuted;
   Color get sentBubble => echo.sentBubble;
   Color get recvBubble => echo.recvBubble;
+  Gradient? get chatBgGradient => echo.chatBgGradient;
 }

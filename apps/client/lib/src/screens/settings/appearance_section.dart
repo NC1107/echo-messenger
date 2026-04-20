@@ -97,6 +97,17 @@ const _sakuraPreview = _ThemePreviewColors(
   textSecondary: EchoTheme.sakuraTextSecondary,
 );
 
+const _auroraPreview = _ThemePreviewColors(
+  sidebarBg: EchoTheme.auroraSidebarBg,
+  mainBg: EchoTheme.auroraMainBg,
+  sentBubble: EchoTheme.auroraSentBubble,
+  recvBubble: EchoTheme.auroraRecvBubble,
+  accent: EchoTheme.auroraAccent,
+  border: EchoTheme.auroraBorder,
+  textPrimary: EchoTheme.auroraTextPrimary,
+  textSecondary: EchoTheme.auroraTextSecondary,
+);
+
 class AppearanceSection extends ConsumerStatefulWidget {
   const AppearanceSection({super.key});
 
@@ -172,6 +183,12 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
         label: 'Sakura',
         subtitle: 'Soft pink pastels',
         preview: _sakuraPreview,
+      ),
+      _ThemeCardData(
+        selection: AppThemeSelection.aurora,
+        label: 'Aurora',
+        subtitle: 'Violet gradient',
+        preview: _auroraPreview,
       ),
     ];
 
