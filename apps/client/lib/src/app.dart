@@ -22,12 +22,14 @@ class EchoApp extends ConsumerWidget {
       AppThemeSelection.graphite => ThemeMode.dark,
       AppThemeSelection.ember => ThemeMode.dark,
       AppThemeSelection.neon => ThemeMode.dark,
+      AppThemeSelection.aurora => ThemeMode.dark,
       AppThemeSelection.sakura => ThemeMode.light,
     };
     final darkTheme = switch (themeSelection) {
       AppThemeSelection.graphite => EchoTheme.graphiteTheme,
       AppThemeSelection.ember => EchoTheme.emberTheme,
       AppThemeSelection.neon => EchoTheme.neonTheme,
+      AppThemeSelection.aurora => EchoTheme.auroraTheme,
       _ => EchoTheme.darkTheme,
     };
     final lightTheme = switch (themeSelection) {

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
@@ -536,7 +537,24 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
   /// Add contact / already contact action button.
   Widget _buildActionButton() {
     final myAuth = ref.read(authProvider);
-    if (widget.userId == myAuth.userId) return const SizedBox.shrink();
+
+    // Own profile -- show QR share button
+    if (widget.userId == myAuth.userId) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _showQrShareDialog,
+          icon: const Icon(Icons.qr_code, size: 18),
+          label: const Text('Share QR'),
+          style: OutlinedButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      );
+    }
 
     if (_isContact) {
       return Column(
@@ -579,6 +597,25 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _blockContact,
+              icon: const Icon(Icons.block, size: 18, color: EchoTheme.danger),
+              label: const Text(
+                'Block',
+                style: TextStyle(color: EchoTheme.danger),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: EchoTheme.danger),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
           ),
         ],
       );
@@ -636,6 +673,111 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
       peerUserId: widget.userId,
       peerUsername: _username,
       myUsername: myAuth.username ?? '',
+    );
+  }
+
+  Future<void> _blockContact() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: const Text('Block user'),
+        content: Text(
+          'Are you sure you want to block @$_username? '
+          'They will not be able to message you.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: context.textSecondary),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Block'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final serverUrl = ref.read(serverUrlProvider);
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.post(
+              Uri.parse('$serverUrl/api/contacts/block'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({'user_id': widget.userId}),
+            ),
+          );
+      if (!mounted) return;
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        ToastService.show(
+          context,
+          '@$_username blocked',
+          type: ToastType.success,
+        );
+        if (Navigator.canPop(context)) Navigator.pop(context);
+      } else {
+        ToastService.show(
+          context,
+          'Failed to block user',
+          type: ToastType.error,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ToastService.show(context, 'Failed to block user', type: ToastType.error);
+    }
+  }
+
+  void _showQrShareDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: const Text('Share Profile'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: QrImageView(
+                data: 'https://echo-messenger.us/#/u/$_username',
+                size: 200,
+                backgroundColor: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '@$_username',
+              style: TextStyle(color: context.textSecondary, fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 }

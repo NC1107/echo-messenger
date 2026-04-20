@@ -81,7 +81,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   }
 
   void _next() {
-    if (_currentPage < 3) {
+    if (_currentPage < 4) {
       _goToPage(_currentPage + 1);
     } else {
       _finish();
@@ -276,6 +276,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                         _buildWelcomePage(context),
                         _buildAboutYouPage(context),
                         _buildAppearancePage(context),
+                        _buildEncryptionPage(context),
                         _buildContactPage(context),
                       ],
                     ),
@@ -625,6 +626,12 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           accent: EchoTheme.sakuraAccent,
           bg: EchoTheme.sakuraMainBg,
         ),
+        (
+          selection: AppThemeSelection.aurora,
+          label: 'Aurora',
+          accent: EchoTheme.auroraAccent,
+          bg: EchoTheme.auroraMainBg,
+        ),
       ];
 
   Widget _buildAppearancePage(BuildContext context) {
@@ -880,7 +887,61 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   }
 
   // ---------------------------------------------------------------------------
-  // Page 3 -- Add contact
+  // Encryption explanation page
+  // ---------------------------------------------------------------------------
+
+  Widget _buildEncryptionPage(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          const SizedBox(height: 24),
+          Icon(Icons.lock_outline, size: 64, color: context.accent),
+          const SizedBox(height: 24),
+          Text(
+            'Your messages are private',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Echo uses the Signal Protocol to encrypt your messages '
+              'end-to-end. Only you and the person you are talking to '
+              'can read them -- not even our servers can see the content.',
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 14,
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'You can verify a contact\'s identity at any time '
+              'by comparing Safety Numbers in their profile.',
+              style: TextStyle(
+                color: context.textMuted,
+                fontSize: 13,
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Page 4 -- Add contact
   // ---------------------------------------------------------------------------
 
   Widget _buildContactPage(BuildContext context) {
@@ -964,7 +1025,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         // Dot indicators
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(4, (i) {
+          children: List.generate(5, (i) {
             final isActive = i == _currentPage;
             return AnimatedContainer(
               duration: const Duration(milliseconds: 250),
@@ -985,11 +1046,11 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         // Buttons
         Builder(
           builder: (_) {
-            final buttonLabel = _currentPage == 3 ? 'Get Started' : 'Next';
+            final buttonLabel = _currentPage == 4 ? 'Get Started' : 'Next';
             return Row(
               children: [
                 // Skip button (hidden on last page -- "Skip for now" is inline)
-                if (_currentPage < 3)
+                if (_currentPage < 4)
                   TextButton(
                     onPressed: _saving ? null : _skip,
                     child: Text(

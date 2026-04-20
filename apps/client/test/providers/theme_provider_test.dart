@@ -35,6 +35,7 @@ void main() {
         'ember': AppThemeSelection.ember,
         'neon': AppThemeSelection.neon,
         'sakura': AppThemeSelection.sakura,
+        'aurora': AppThemeSelection.aurora,
       }.entries) {
         SharedPreferences.setMockInitialValues({'echo_theme_mode': entry.key});
         final notifier = ThemeNotifier();

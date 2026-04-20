@@ -262,9 +262,33 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
                   horizontal: 24,
                   vertical: 4,
                 ),
-                leading: Icon(
-                  _deviceIcon(isThisDevice),
-                  color: isThisDevice ? context.accent : context.textSecondary,
+                leading: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(
+                      _deviceIcon(isThisDevice),
+                      color: isThisDevice
+                          ? context.accent
+                          : context.textSecondary,
+                    ),
+                    if (isThisDevice)
+                      Positioned(
+                        right: -2,
+                        bottom: -2,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: EchoTheme.online,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: context.surface,
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 title: Row(
                   children: [
@@ -303,16 +327,18 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
                 ),
                 subtitle: Text(
                   'Last seen: ${_formatLastSeen(device.lastSeen)}',
-                  style: TextStyle(color: context.textSecondary, fontSize: 12),
+                  style: TextStyle(color: context.textSecondary, fontSize: 13),
                 ),
                 trailing: isThisDevice
                     ? null
-                    : TextButton(
+                    : OutlinedButton.icon(
                         onPressed: () => _revokeDevice(device),
-                        style: TextButton.styleFrom(
+                        style: OutlinedButton.styleFrom(
                           foregroundColor: EchoTheme.danger,
+                          side: const BorderSide(color: EchoTheme.danger),
                         ),
-                        child: const Text('Revoke'),
+                        icon: const Icon(Icons.remove_circle_outline, size: 16),
+                        label: const Text('Revoke'),
                       ),
               );
             },

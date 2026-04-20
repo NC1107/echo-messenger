@@ -94,6 +94,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   String? _highlightedMessageId;
   Timer? _highlightTimer;
   double _lastKeyboardInset = 0;
+
+  /// Floating date label state
+  String? _floatingDate;
+  bool _floatingDateVisible = false;
+  Timer? _floatingDateTimer;
   // Tracks near-bottom state from the user's last scroll event, before any
   // viewport resize (keyboard open/close). Used in _handleKeyboardScroll so
   // we don't lose context when maxScrollExtent shifts under us.
@@ -157,6 +162,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       _highlightedMessageId = null;
       _hasNewMessagesBelow = false;
       _newMessagesBelowCount = 0;
+      _floatingDate = null;
+      _floatingDateVisible = false;
+      _floatingDateTimer?.cancel();
       _highlightTimer?.cancel();
       _dismissReactionPicker();
 
@@ -185,6 +193,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     WidgetsBinding.instance.removeObserver(this);
     _dismissReactionPicker();
     _highlightTimer?.cancel();
+    _floatingDateTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
@@ -215,6 +224,60 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         _newMessagesBelowCount = 0;
       });
     }
+    _updateFloatingDate();
+  }
+
+  void _updateFloatingDate() {
+    final conv = widget.conversation;
+    if (conv == null || !_scrollController.hasClients) return;
+
+    final chatState = ref.read(chatProvider);
+    final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
+    final includeUnchanneled = conv.isGroup && _selectedTextChannelId == null;
+    final messages = _resolveMessages(
+      conv,
+      chatState,
+      selectedChannelId,
+      includeUnchanneled,
+    );
+    if (messages.isEmpty) return;
+
+    // Approximate the topmost visible message index from scroll offset.
+    // The ListView has a leading loader item (index 0), so message index =
+    // estimated item index - 1. Average message height ~60px.
+    final offset = _scrollController.position.pixels;
+    final estimatedIndex = (offset / 60.0).floor();
+    final msgIndex = (estimatedIndex - 1).clamp(0, messages.length - 1);
+
+    try {
+      final dt = DateTime.parse(messages[msgIndex].timestamp).toLocal();
+      final now = DateTime.now();
+      final yesterday = now.subtract(const Duration(days: 1));
+      String label;
+      if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+        label = 'Today';
+      } else if (dt.year == yesterday.year &&
+          dt.month == yesterday.month &&
+          dt.day == yesterday.day) {
+        label = 'Yesterday';
+      } else {
+        label = '${_fullMonthName(dt.month)} ${dt.day}, ${dt.year}';
+      }
+
+      if (label != _floatingDate || !_floatingDateVisible) {
+        setState(() {
+          _floatingDate = label;
+          _floatingDateVisible = true;
+        });
+      }
+    } catch (_) {
+      return;
+    }
+
+    _floatingDateTimer?.cancel();
+    _floatingDateTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _floatingDateVisible = false);
+    });
   }
 
   void _scrollToBottom({bool animated = true, int settleRetries = 3}) {
@@ -1002,8 +1065,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   // ---------------------------------------------------------------------------
 
   Widget _buildNoConversationPlaceholder() {
-    return Container(
-      color: context.chatBg,
+    final gradient = context.chatBgGradient;
+    return DecoratedBox(
+      decoration: gradient != null
+          ? BoxDecoration(gradient: gradient)
+          : BoxDecoration(color: context.chatBg),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1322,6 +1388,33 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   /// widgets needed (unlike the legacy P2P WebRTC approach).
   List<Widget> _buildVoiceRenderers() => const [];
 
+  /// Floating date pill shown at the top while scrolling.
+  Widget _buildFloatingDatePill() {
+    return Positioned(
+      top: 8,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: AnimatedOpacity(
+          opacity: _floatingDateVisible ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 200),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: context.surface.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.border),
+            ),
+            child: Text(
+              _floatingDate ?? '',
+              style: TextStyle(fontSize: 11, color: context.textMuted),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Floating pill shown when new messages arrive below the scroll viewport.
   Widget _buildNewMessagesPill() {
     return Positioned(
@@ -1450,8 +1543,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       memberAvatars[m.userId] = m.avatarUrl;
     }
 
-    return Container(
-      color: context.chatBg,
+    final chatGradient = context.chatBgGradient;
+
+    return DecoratedBox(
+      decoration: chatGradient != null
+          ? BoxDecoration(gradient: chatGradient)
+          : BoxDecoration(color: context.chatBg),
       child: Stack(
         children: [
           Column(
@@ -1522,6 +1619,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                         serverUrl: serverUrl,
                         authToken: authToken,
                       ),
+                      if (_floatingDate != null) _buildFloatingDatePill(),
                       if (_hasNewMessagesBelow) _buildNewMessagesPill(),
                     ],
                   ),
