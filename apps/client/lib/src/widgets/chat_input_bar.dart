@@ -1142,8 +1142,10 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
               setState(() => _showInlinePicker = false);
               _inputFocusNode.requestFocus();
             } else {
-              setState(() => _showInlinePicker = true);
               _inputFocusNode.unfocus();
+              Future<void>.delayed(const Duration(milliseconds: 300), () {
+                if (mounted) setState(() => _showInlinePicker = true);
+              });
             }
             widget.onMediaPickerChanged?.call();
           } else {
@@ -1659,43 +1661,52 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
               ),
             ),
             // Inline mobile picker (replaces keyboard)
-            if (_showInlinePicker && isMobileLayout)
-              SizedBox(
-                height: _lastKeyboardHeight > 0 ? _lastKeyboardHeight : 280,
-                child: MobileMediaPickerPanel(
-                  onEmojiSelected: (category, emoji) {
-                    final text = _messageController.text;
-                    final selection = _messageController.selection;
-                    final cursorPos = selection.baseOffset >= 0
-                        ? selection.baseOffset
-                        : text.length;
-                    final newText =
-                        text.substring(0, cursorPos) +
-                        emoji.emoji +
-                        text.substring(cursorPos);
-                    _messageController.text = newText;
-                    _messageController.selection = TextSelection.collapsed(
-                      offset: cursorPos + emoji.emoji.length,
-                    );
-                    _onInputChanged(newText);
-                  },
-                  onGifSelected: (gifUrl, slug) {
-                    setState(() {
-                      _showInlinePicker = false;
-                      _pendingAttachmentUrl = gifUrl;
-                      _pendingAttachmentExt = 'gif';
-                      _pendingAttachmentFileName = 'gif';
-                      _pendingAttachmentMimeType = _kImageGif;
-                      _pendingAttachmentBytes = null;
-                      _isUploadingAttachment = false;
-                    });
-                  },
-                  onPhotoSelected: _handlePhotoSelected,
-                  onClose: () {
-                    setState(() => _showInlinePicker = false);
-                    _inputFocusNode.requestFocus();
-                  },
-                ),
+            if (isMobileLayout)
+              AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeInOut,
+                child: _showInlinePicker
+                    ? SizedBox(
+                        height: _lastKeyboardHeight > 0
+                            ? _lastKeyboardHeight
+                            : 280,
+                        child: MobileMediaPickerPanel(
+                          onEmojiSelected: (category, emoji) {
+                            final text = _messageController.text;
+                            final selection = _messageController.selection;
+                            final cursorPos = selection.baseOffset >= 0
+                                ? selection.baseOffset
+                                : text.length;
+                            final newText =
+                                text.substring(0, cursorPos) +
+                                emoji.emoji +
+                                text.substring(cursorPos);
+                            _messageController.text = newText;
+                            _messageController.selection =
+                                TextSelection.collapsed(
+                                  offset: cursorPos + emoji.emoji.length,
+                                );
+                            _onInputChanged(newText);
+                          },
+                          onGifSelected: (gifUrl, slug) {
+                            setState(() {
+                              _showInlinePicker = false;
+                              _pendingAttachmentUrl = gifUrl;
+                              _pendingAttachmentExt = 'gif';
+                              _pendingAttachmentFileName = 'gif';
+                              _pendingAttachmentMimeType = _kImageGif;
+                              _pendingAttachmentBytes = null;
+                              _isUploadingAttachment = false;
+                            });
+                          },
+                          onPhotoSelected: _handlePhotoSelected,
+                          onClose: () {
+                            setState(() => _showInlinePicker = false);
+                            _inputFocusNode.requestFocus();
+                          },
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
           ],
         ),

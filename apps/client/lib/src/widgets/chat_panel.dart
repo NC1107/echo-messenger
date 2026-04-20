@@ -1238,7 +1238,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       // current value (which is unreliable after the viewport has already shrunk).
       final wasNearBottom = _wasNearBottom;
       _lastKeyboardInset = keyboardInset;
-      if (wasNearBottom) {
+      final inlinePickerActive =
+          _chatInputBarKey.currentState?.showInlinePicker ?? false;
+      if (wasNearBottom && !inlinePickerActive) {
         _scrollToBottom(animated: false, settleRetries: 2);
       }
     }
