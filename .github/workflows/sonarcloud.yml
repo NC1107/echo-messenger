@@ -3,7 +3,7 @@ name: SonarCloud
 on:
   pull_request:
   push:
-    branches: [main, dev]
+    branches: [main]
 
 permissions:
   contents: read
