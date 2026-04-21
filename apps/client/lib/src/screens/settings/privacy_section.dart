@@ -282,6 +282,23 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
                     .read(privacyProvider.notifier)
                     .setReadReceiptsEnabled(value),
         ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Show Online Status',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'When off, you will appear offline to other users.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: privacy.showOnlineStatus,
+          onChanged: privacy.isLoading
+              ? null
+              : (value) => ref
+                    .read(privacyProvider.notifier)
+                    .setShowOnlineStatus(value),
+        ),
         const SizedBox(height: 24),
         Text(
           'Contact Info Visibility',
