@@ -597,31 +597,43 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             }
           },
           itemBuilder: (context) => [
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'chat',
-              child: ListTile(
-                leading: Icon(Icons.person_add_outlined, size: 18),
-                title: Text('New Chat'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
+              child: Row(
+                children: [
+                  const Icon(Icons.person_add_outlined, size: 18),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text('New Chat', overflow: TextOverflow.ellipsis),
+                  ),
+                ],
               ),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'group',
-              child: ListTile(
-                leading: Icon(Icons.group_add_outlined, size: 18),
-                title: Text('New Group'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
+              child: Row(
+                children: [
+                  const Icon(Icons.group_add_outlined, size: 18),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text('New Group', overflow: TextOverflow.ellipsis),
+                  ),
+                ],
               ),
             ),
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'discover',
-              child: ListTile(
-                leading: Icon(Icons.explore_outlined, size: 18),
-                title: Text('Discover Groups'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
+              child: Row(
+                children: [
+                  const Icon(Icons.explore_outlined, size: 18),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      'Discover Groups',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

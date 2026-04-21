@@ -614,8 +614,6 @@ class _MessageItemState extends State<MessageItem>
 
   Widget _buildHoverActions(ChatMessage msg, bool isMine, {String? mediaUrl}) {
     final isImage = mediaUrl != null && _isImageMedia(msg.content, mediaUrl);
-    // Two quick emojis only to keep the bar compact
-    const quickEmojis = ['👍', '❤️'];
     return Container(
       decoration: BoxDecoration(
         color: context.surface.withValues(alpha: 0.95),
@@ -625,28 +623,6 @@ class _MessageItemState extends State<MessageItem>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ...quickEmojis.map(
-            (emoji) => Tooltip(
-              message: emoji,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(4),
-                onTap: () => widget.onReactionSelect?.call(msg, emoji),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 4,
-                  ),
-                  child: Text(emoji, style: const TextStyle(fontSize: 16)),
-                ),
-              ),
-            ),
-          ),
-          Container(
-            width: 1,
-            height: 20,
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            color: context.border,
-          ),
           if (widget.onReply != null)
             Semantics(
               label: 'Reply to message',
@@ -666,7 +642,7 @@ class _MessageItemState extends State<MessageItem>
               widget.onReactionTap?.call(msg, pos);
             },
           ),
-          // Overflow menu: copy, download, image copy, pin, edit, delete
+          // Overflow menu: copy, pin, edit, delete
           _buildOverflowMenu(msg, isMine, mediaUrl: mediaUrl, isImage: isImage),
         ],
       ),

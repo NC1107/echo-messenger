@@ -68,8 +68,10 @@ String? _authRedirect(Ref ref, GoRouterState state) {
 
   if (isSplash) return null;
 
-  // Already logged in — skip onboarding
-  if (isLoggedIn && isOnboarding) return _routeHome;
+  // Already logged in AND onboarding was previously completed — skip back to home.
+  // New accounts have onboardingCompleted=false so they are allowed through.
+  final onboardingCompleted = ref.read(authProvider).onboardingCompleted;
+  if (isLoggedIn && isOnboarding && onboardingCompleted) return _routeHome;
 
   if (!isLoggedIn && !isAuthRoute && !isOnboarding && !isJoinRoute) {
     final intended = state.matchedLocation;

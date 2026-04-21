@@ -28,6 +28,10 @@ class AuthState {
   /// The user's chosen presence status: "online", "away", "dnd", "invisible".
   final String presenceStatus;
 
+  /// Whether the onboarding wizard has been completed on this device.
+  /// False for newly registered accounts that haven't gone through onboarding.
+  final bool onboardingCompleted;
+
   const AuthState({
     this.isLoggedIn = false,
     this.userId,
@@ -38,6 +42,7 @@ class AuthState {
     this.error,
     this.isLoading = false,
     this.presenceStatus = 'online',
+    this.onboardingCompleted = true,
   });
 
   AuthState copyWith({
@@ -50,6 +55,7 @@ class AuthState {
     String? error,
     bool? isLoading,
     String? presenceStatus,
+    bool? onboardingCompleted,
   }) {
     return AuthState(
       isLoggedIn: isLoggedIn ?? this.isLoggedIn,
@@ -61,6 +67,7 @@ class AuthState {
       error: error,
       isLoading: isLoading ?? this.isLoading,
       presenceStatus: presenceStatus ?? this.presenceStatus,
+      onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
     );
   }
 }
@@ -129,11 +136,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
           // Restore the session optimistically -- it may be expired, but
           // individual API calls will handle 401 gracefully.
           await _setUserScope(storedUserId);
+          final legacyOnboardingDone =
+              prefs.getBool('onboarding_completed') ?? true;
           state = AuthState(
             isLoggedIn: true,
             userId: storedUserId,
             username: storedUsername,
             token: legacyToken,
+            onboardingCompleted: legacyOnboardingDone,
           );
           return true;
         }
@@ -175,12 +185,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
         );
 
         await _setUserScope(userId);
+        final onboardingDone = prefs.getBool('onboarding_completed') ?? true;
         state = AuthState(
           isLoggedIn: true,
           userId: userId,
           username: username,
           token: newAccessToken,
           refreshToken: newRefreshToken,
+          onboardingCompleted: onboardingDone,
         );
         return true;
       } else {
@@ -462,6 +474,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           username: username,
           token: accessToken,
           refreshToken: refreshToken,
+          onboardingCompleted: false,
         );
       } else {
         String errorMsg = 'Registration failed';

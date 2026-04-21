@@ -330,8 +330,12 @@ class CryptoService {
           readKey: readWithFallback,
         );
       } else {
-        // Generate all keys fresh — previous encryption sessions are lost.
-        _keysWereRegenerated = true;
+        // Generate all keys fresh.
+        // Only flag as "regenerated" when prior keys existed (device ID was
+        // already assigned). On a true first install there is nothing to
+        // regenerate, so suppress the misleading warning.
+        final isFirstInstall = storedDeviceId == null;
+        _keysWereRegenerated = !isFirstInstall;
         _identityKeyPair = await _x25519.newKeyPair();
         _signingKeyPair = await _ed25519.newKeyPair();
         _signedPrekeyPair = await _x25519.newKeyPair();
