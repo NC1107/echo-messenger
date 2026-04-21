@@ -362,6 +362,19 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     } catch (_) {}
   }
 
+  void _copyInviteLink() {
+    final username = ref.read(authProvider).username ?? '';
+    if (username.isEmpty) return;
+    final link =
+        'https://echo-messenger.us/#/u/${Uri.encodeComponent(username)}';
+    Clipboard.setData(ClipboardData(text: link));
+    ToastService.show(
+      context,
+      'Invite link copied to clipboard',
+      type: ToastType.success,
+    );
+  }
+
   void _showQrCodeDialog() {
     final authState = ref.read(authProvider);
     final username = authState.username ?? 'unknown';
@@ -637,6 +650,15 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _copyInviteLink,
+            icon: const Icon(Icons.link, size: 16),
+            label: const Text('Share Invite Link'),
+          ),
         ),
         if (_profileError) ...[
           const Divider(height: 40),

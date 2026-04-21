@@ -5,6 +5,7 @@ import 'providers/accessibility_provider.dart';
 import 'providers/theme_provider.dart';
 import 'router/app_router.dart';
 import 'theme/echo_theme.dart';
+import 'widgets/biometric_lock_guard.dart';
 
 class EchoApp extends ConsumerWidget {
   const EchoApp({super.key});
@@ -52,7 +53,7 @@ class EchoApp extends ConsumerWidget {
       // Apply font-scale and reduced-motion overrides via MaterialApp builder.
       builder: (context, child) {
         final mq = MediaQuery.of(context);
-        return MediaQuery(
+        final inner = MediaQuery(
           data: mq.copyWith(
             textScaler: TextScaler.linear(accessibility.fontScale),
             disableAnimations:
@@ -60,6 +61,7 @@ class EchoApp extends ConsumerWidget {
           ),
           child: child ?? const SizedBox.shrink(),
         );
+        return BiometricLockGuard(child: inner);
       },
     );
   }

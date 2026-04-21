@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../providers/biometric_provider.dart';
 import '../../providers/crypto_provider.dart';
 import '../../providers/privacy_provider.dart';
 import '../../services/toast_service.dart';
@@ -20,6 +21,20 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(privacyProvider.notifier).load();
     });
+  }
+
+  Future<void> _toggleBiometric(bool value) async {
+    await ref.read(biometricProvider.notifier).setEnabled(value);
+    if (!mounted) return;
+    final enabled = ref.read(biometricProvider).enabled;
+    if (value && !enabled) {
+      // Authentication failed — inform the user.
+      ToastService.show(
+        context,
+        'Biometric authentication failed. Lock not enabled.',
+        type: ToastType.error,
+      );
+    }
   }
 
   Future<void> _resetEncryptionKeys() async {
@@ -170,6 +185,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
   Widget build(BuildContext context) {
     final privacy = ref.watch(privacyProvider);
     final crypto = ref.watch(cryptoProvider);
+    final biometric = ref.watch(biometricProvider);
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -182,6 +198,55 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
               style: const TextStyle(color: EchoTheme.danger, fontSize: 12),
             ),
           ),
+        Text(
+          'App Lock',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Require biometric authentication when opening Echo.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (biometric.isLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: LinearProgressIndicator(),
+          )
+        else if (!biometric.isAvailable)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              'Biometric authentication is not available on this device.',
+              style: TextStyle(color: context.textMuted, fontSize: 13),
+            ),
+          )
+        else
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              'Require Biometric to Open App',
+              style: TextStyle(color: context.textPrimary, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Lock Echo when it goes to the background. '
+              'Use Face ID, fingerprint, or device PIN to unlock.',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+            value: biometric.enabled,
+            onChanged: _toggleBiometric,
+          ),
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 8),
         Text(
           'Messaging Privacy',
           style: TextStyle(
