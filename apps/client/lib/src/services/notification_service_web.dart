@@ -35,11 +35,30 @@ class _WebNotificationService implements NotificationService {
         _permissionGranted = false;
         return;
       }
-      // Ask the user
-      final result = await web.Notification.requestPermission().toDart;
-      _permissionGranted = result.toDart == 'granted';
+      // The browser requires that Notification.requestPermission() is called
+      // from inside a short-running user-gesture handler (click/tap). On
+      // startup there is no gesture context, so we only sync the current
+      // state here. The actual prompt is deferred to [promptPermission],
+      // which should be called from a user-initiated action (e.g. a button).
+      _permissionGranted = false;
     } catch (_) {
       _permissionGranted = false;
+    }
+  }
+
+  /// Prompt the user for notification permission.
+  ///
+  /// Must be called from a user-gesture context (e.g. a button tap).
+  /// Returns true if permission was granted.
+  @override
+  Future<bool> promptPermission() async {
+    try {
+      final result = await web.Notification.requestPermission().toDart;
+      _permissionGranted = result.toDart == 'granted';
+      return _permissionGranted;
+    } catch (_) {
+      _permissionGranted = false;
+      return false;
     }
   }
 

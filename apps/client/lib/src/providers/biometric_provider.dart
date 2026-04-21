@@ -37,6 +37,11 @@ class BiometricNotifier extends StateNotifier<BiometricState> {
   final _auth = LocalAuthentication();
 
   Future<void> _init() async {
+    // local_auth has no web implementation -- skip entirely on web.
+    if (kIsWeb) {
+      state = state.copyWith(isAvailable: false, isLoading: false);
+      return;
+    }
     try {
       final available = await _auth.isDeviceSupported();
       final canCheck = await _auth.canCheckBiometrics;

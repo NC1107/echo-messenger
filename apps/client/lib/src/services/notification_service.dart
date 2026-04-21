@@ -14,7 +14,20 @@ abstract class NotificationService {
   factory NotificationService() => createNotificationService();
 
   /// Request notification permission from the user.
+  ///
+  /// On web, this only syncs the current permission state (granted/denied)
+  /// without prompting, because browsers require the prompt to originate
+  /// from a user-gesture handler. Use [promptPermission] from a tap/click
+  /// callback to actually show the browser permission dialog.
   Future<void> requestPermission();
+
+  /// Prompt the user for notification permission from a user-gesture context.
+  ///
+  /// On web, this calls `Notification.requestPermission()` which must be
+  /// invoked inside a short-running user-gesture handler (click/tap).
+  /// On native platforms this is a no-op (permission is requested via
+  /// [requestPermission]).
+  Future<bool> promptPermission() async => true;
 
   /// Show a notification for an incoming message.
   ///

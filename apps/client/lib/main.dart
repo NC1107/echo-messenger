@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show SemanticsBinding;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'src/app.dart';
@@ -71,8 +72,13 @@ Future<void> _initAndRun() async {
   // Load persisted sound preference
   await SoundService().init();
 
-  // Request browser notification permission (no-op on non-web platforms).
-  // Awaited so that the permission flag is set before any messages arrive.
+  // Pre-load the Inter font family so CanvasKit has it ready before first
+  // frame, reducing "Could not find a set of Noto fonts" warnings on web.
+  await GoogleFonts.pendingFonts([GoogleFonts.inter()]);
+
+  // Sync browser notification permission state (granted/denied) without
+  // prompting. The actual permission dialog is shown later from a user
+  // gesture (e.g. the notification settings toggle).
   await NotificationService().requestPermission();
 
   // Auto-login + crypto init is handled by SplashScreen
