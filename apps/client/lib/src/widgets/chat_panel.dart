@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -95,6 +97,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   String? _highlightedMessageId;
   Timer? _highlightTimer;
   double _lastKeyboardInset = 0;
+
+  /// True while a file is being dragged over the chat area.
+  bool _isDragOver = false;
 
   /// Local mirror of SavedMessagesService so [MessageItem] can render the
   /// correct bookmark icon without async round-trips.
@@ -1416,6 +1421,87 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   /// widgets needed (unlike the legacy P2P WebRTC approach).
   List<Widget> _buildVoiceRenderers() => const [];
 
+  // ---------------------------------------------------------------------------
+  // Drag-and-drop file upload
+  // ---------------------------------------------------------------------------
+
+  /// Called when files are dropped onto the chat area. Forwards the first
+  /// dropped file to the input bar's attachment flow.
+  Future<void> _onDropDone(DropDoneDetails details) async {
+    if (details.files.isEmpty) return;
+    final item = details.files.first;
+
+    // Directories are not supported -- skip silently.
+    if (item is DropItemDirectory) return;
+
+    final inputBar = _chatInputBarKey.currentState;
+    if (inputBar == null) return;
+
+    // On web, DropItem may carry bytes directly (no filesystem path).
+    Uint8List? bytes;
+    if (kIsWeb) {
+      try {
+        bytes = await item.readAsBytes();
+      } catch (_) {}
+    }
+
+    await inputBar.attachDroppedFile(
+      path: item.path,
+      fileName: item.name,
+      bytes: bytes,
+    );
+  }
+
+  /// Overlay shown when dragging a file over the chat panel.
+  Widget _buildDropOverlay() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          opacity: _isDragOver ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 150),
+          child: Container(
+            color: Colors.black.withValues(alpha: 0.45),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 20,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.4),
+                    width: 2,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.upload_file_outlined,
+                      size: 40,
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Drop file to send',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.95),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Floating date pill shown at the top while scrolling.
   Widget _buildFloatingDatePill() {
     return Positioned(
@@ -1573,7 +1659,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
     final chatGradient = context.chatBgGradient;
 
-    return DecoratedBox(
+    final chatContent = DecoratedBox(
       decoration: chatGradient != null
           ? BoxDecoration(gradient: chatGradient)
           : BoxDecoration(color: context.chatBg),
@@ -1685,8 +1771,31 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               right: 16,
               child: _chatInputBarKey.currentState!.buildMediaPickerPanel(),
             ),
+          // Drag-and-drop overlay
+          if (_isDragOver) _buildDropOverlay(),
         ],
       ),
+    );
+
+    // Wrap in DropTarget on desktop and web only. Mobile platforms don't
+    // support external file drag-and-drop, so skip to avoid unnecessary
+    // platform channel setup.
+    final dropSupported =
+        kIsWeb ||
+        defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows;
+
+    if (!dropSupported) return chatContent;
+
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _isDragOver = true),
+      onDragExited: (_) => setState(() => _isDragOver = false),
+      onDragDone: (details) {
+        setState(() => _isDragOver = false);
+        _onDropDone(details);
+      },
+      child: chatContent,
     );
   }
 }

@@ -197,6 +197,64 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _inputFocusNode.requestFocus();
   }
 
+  /// Attach a file dropped from the OS (via drag-and-drop).
+  ///
+  /// Reads bytes from [path] (or uses [bytes] directly if provided),
+  /// resolves the MIME type from [fileName], and starts the upload preview
+  /// flow identical to picking a file via the attach button.
+  Future<void> attachDroppedFile({
+    required String path,
+    required String fileName,
+    Uint8List? bytes,
+  }) async {
+    Uint8List? fileBytes = bytes;
+    if (fileBytes == null && !kIsWeb) {
+      try {
+        fileBytes = await File(path).readAsBytes();
+      } catch (e) {
+        debugPrint('[ChatInput] Failed to read dropped file: $e');
+      }
+    }
+    if (fileBytes == null) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Could not read dropped file',
+          type: ToastType.error,
+        );
+      }
+      return;
+    }
+
+    final ext = fileName.contains('.')
+        ? fileName.split('.').last.toLowerCase()
+        : '';
+    final mimeTypes = <String, List<String>>{
+      'jpg': ['image', 'jpeg'],
+      'jpeg': ['image', 'jpeg'],
+      'png': ['image', 'png'],
+      'gif': ['image', 'gif'],
+      'webp': ['image', 'webp'],
+      'mp4': ['video', 'mp4'],
+      'mov': ['video', 'quicktime'],
+      'webm': ['video', 'webm'],
+      'pdf': ['application', 'pdf'],
+      'mp3': ['audio', 'mpeg'],
+      'ogg': ['audio', 'ogg'],
+      'wav': ['audio', 'wav'],
+      'm4a': ['audio', 'mp4'],
+      'aac': ['audio', 'aac'],
+    };
+    final mime = mimeTypes[ext] ?? ['application', _kOctetStream];
+
+    _setPendingAttachment(
+      bytes: fileBytes,
+      fileName: fileName,
+      mimeType: '${mime[0]}/${mime[1]}',
+      ext: ext.isNotEmpty ? ext : 'bin',
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Draft auto-save
   // ---------------------------------------------------------------------------
