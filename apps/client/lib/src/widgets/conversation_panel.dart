@@ -11,12 +11,10 @@ import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
-import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart';
-import 'contact_item.dart';
 import 'conversation_item.dart';
 import 'echo_logo_icon.dart';
 import 'skeleton_loader.dart';
@@ -24,6 +22,8 @@ import 'skeleton_loader.dart';
 // Re-export avatar utilities so existing `show` imports keep working.
 export 'avatar_utils.dart'
     show buildAvatar, avatarColor, groupAvatarColor, resolveAvatarUrl;
+
+enum _ConversationFilter { all, dms, groups }
 
 class ConversationPanel extends ConsumerStatefulWidget {
   final String? selectedConversationId;
@@ -70,8 +70,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   final _keyboardListenerFocusNode = FocusNode();
   // Timer removed -- HomeScreen handles pending contacts polling
 
-  /// 0 = Chats, 1 = Contacts, 2 = Groups
-  int _selectedTab = 0;
+  /// Active conversation type filter.
+  _ConversationFilter _filter = _ConversationFilter.all;
 
   /// Pinned conversation IDs
   Set<String> _pinnedIds = {};
@@ -91,13 +91,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       oldWidget.externalSearchFocusNode?.removeListener(_onExternalSearchFocus);
       widget.externalSearchFocusNode?.addListener(_onExternalSearchFocus);
     }
-    // When a conversation is selected while the user is on a non-Chats tab
-    // (e.g. "Message" button in Contacts), switch to the Chats tab so the
+    // When a conversation is selected externally, reset the filter so the
     // selected conversation is visible and highlighted.
     if (widget.selectedConversationId != null &&
         widget.selectedConversationId != oldWidget.selectedConversationId &&
-        _selectedTab != 0) {
-      setState(() => _selectedTab = 0);
+        _filter != _ConversationFilter.all) {
+      setState(() => _filter = _ConversationFilter.all);
     }
   }
 
@@ -119,23 +118,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     }
   }
 
-  void _onTabSelected(int index) {
-    setState(() {
-      _selectedTab = index;
-      // Clear search when switching tabs so filtered results from one tab
-      // don't bleed into another.
-      if (_searchQuery.isNotEmpty) {
-        _searchQuery = '';
-        _searchController.clear();
-        _isSearching = false;
-      }
-    });
-    if (index <= 1) {
-      final authState = ref.read(authProvider);
-      if (authState.isLoggedIn) {
-        ref.read(contactsProvider.notifier).loadPending(force: true);
-      }
-    }
+  void _onFilterChanged(_ConversationFilter filter) {
+    if (_filter == filter) return;
+    setState(() => _filter = filter);
   }
 
   void _onExternalSearchFocus() {
@@ -468,7 +453,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final pendingCount = contactsState.pendingRequests.length;
 
     final conversations = _filterConversations(allConversations, userId);
-    final groupConversations = conversations.where((c) => c.isGroup).toList();
 
     return Container(
       color: context.sidebarBg,
@@ -476,19 +460,17 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         children: [
           _buildLogoHeader(context, wsConnected, pendingCount),
           _buildSearchBar(context),
-          _buildTabBar(),
-          const SizedBox(height: 8),
+          _buildFilterChips(),
           _buildReplacedBanner(context, wsReplaced),
+          if (pendingCount > 0) _buildPendingBanner(pendingCount),
           Expanded(
-            child: _buildTabContent(
-              conversationsState: convState,
-              conversations: conversations,
-              groupConversations: groupConversations,
-              allConversations: allConversations,
-              contactsState: contactsState,
-              myUserId: userId,
-              serverUrl: serverUrl,
-              wsOnlineUsers: wsOnlineUsers,
+            child: _buildChatsTab(
+              convState,
+              conversations,
+              allConversations,
+              userId,
+              serverUrl,
+              wsOnlineUsers,
             ),
           ),
           _buildUserStatusBar(
@@ -508,13 +490,29 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     List<Conversation> allConversations,
     String myUserId,
   ) {
-    if (_searchQuery.isEmpty) return allConversations;
-    return allConversations.where((conv) {
+    var result = allConversations;
+
+    // Apply type filter.
+    switch (_filter) {
+      case _ConversationFilter.dms:
+        result = result.where((c) => !c.isGroup).toList();
+      case _ConversationFilter.groups:
+        result = result.where((c) => c.isGroup).toList();
+      case _ConversationFilter.all:
+        break;
+    }
+
+    // Apply search filter.
+    if (_searchQuery.isNotEmpty) {
       final query = _searchQuery.toLowerCase();
-      final name = conv.displayName(myUserId).toLowerCase();
-      final lastMsg = (conv.lastMessage ?? '').toLowerCase();
-      return name.contains(query) || lastMsg.contains(query);
-    }).toList();
+      result = result.where((conv) {
+        final name = conv.displayName(myUserId).toLowerCase();
+        final lastMsg = (conv.lastMessage ?? '').toLowerCase();
+        return name.contains(query) || lastMsg.contains(query);
+      }).toList();
+    }
+
+    return result;
   }
 
   Widget _buildLogoHeader(
@@ -752,34 +750,97 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
-  Widget _buildTabBar() {
+  Widget _buildFilterChips() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final narrow = constraints.maxWidth < 300;
-          return Row(
-            children: [
-              _buildTabChip(
-                'Chats',
-                0,
-                icon: narrow ? Icons.chat_bubble_outline : null,
-              ),
-              const SizedBox(width: 6),
-              _buildTabChip(
-                'Contacts',
-                1,
-                icon: narrow ? Icons.people_outline : null,
-              ),
-              const SizedBox(width: 6),
-              _buildTabChip(
-                'Groups',
-                2,
-                icon: narrow ? Icons.groups_outlined : null,
-              ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        children: [
+          _buildChip('All', _ConversationFilter.all),
+          const SizedBox(width: 6),
+          _buildChip(
+            'DMs',
+            _ConversationFilter.dms,
+            icon: Icons.person_outline,
+          ),
+          const SizedBox(width: 6),
+          _buildChip(
+            'Groups',
+            _ConversationFilter.groups,
+            icon: Icons.groups_outlined,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChip(
+    String label,
+    _ConversationFilter filter, {
+    IconData? icon,
+  }) {
+    final isSelected = _filter == filter;
+    final chipColor = isSelected
+        ? Theme.of(context).colorScheme.onPrimary
+        : context.textSecondary;
+    final chipWeight = isSelected ? FontWeight.w600 : FontWeight.w500;
+    return GestureDetector(
+      onTap: () => _onFilterChanged(filter),
+      child: Container(
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? context.accent : context.surface,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 14, color: chipColor),
+              const SizedBox(width: 4),
             ],
-          );
-        },
+            Text(
+              label,
+              style: TextStyle(
+                color: chipColor,
+                fontSize: 12,
+                fontWeight: chipWeight,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPendingBanner(int pendingCount) {
+    return GestureDetector(
+      onTap: widget.onShowContacts,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: context.accent.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: context.accent.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.person_add, size: 16, color: context.accent),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '$pendingCount pending contact ${pendingCount == 1 ? 'request' : 'requests'}',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 16, color: context.textSecondary),
+          ],
+        ),
       ),
     );
   }
@@ -937,89 +998,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ],
       ),
     );
-  }
-
-  Widget _buildTabChip(String label, int index, {IconData? icon}) {
-    final isSelected = _selectedTab == index;
-    final chipColor = isSelected
-        ? Theme.of(context).colorScheme.onPrimary
-        : context.textSecondary;
-    final chipWeight = isSelected ? FontWeight.w600 : FontWeight.w500;
-    return Expanded(
-      child: Semantics(
-        label: '$label tab',
-        button: true,
-        selected: isSelected,
-        child: GestureDetector(
-          onTap: () => _onTabSelected(index),
-          child: Container(
-            height: 30,
-            decoration: BoxDecoration(
-              color: isSelected ? context.accent : context.surface,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: icon != null
-                  ? Icon(icon, size: 16, color: chipColor)
-                  : Text(
-                      label,
-                      style: TextStyle(
-                        color: chipColor,
-                        fontSize: 12,
-                        fontWeight: chipWeight,
-                      ),
-                    ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTabContent({
-    required ConversationsState conversationsState,
-    required List<Conversation> conversations,
-    required List<Conversation> groupConversations,
-    required List<Conversation> allConversations,
-    required ContactsState contactsState,
-    required String myUserId,
-    required String serverUrl,
-    required Set<String> wsOnlineUsers,
-  }) {
-    // Each tab MUST have a distinct key so Flutter fully rebuilds the subtree
-    // on tab switch instead of recycling the previous tab's ListView state.
-    // Without this, gesture and scroll state from one tab bleeds into the
-    // next, causing taps at position N in the Contacts tab to trigger the
-    // conversation at position N in the Chats tab.
-    switch (_selectedTab) {
-      case 1:
-        return KeyedSubtree(
-          key: const ValueKey('tab-contacts'),
-          child: _buildContactsTab(
-            contactsState,
-            myUserId,
-            serverUrl,
-            wsOnlineUsers,
-          ),
-        );
-      case 2:
-        return KeyedSubtree(
-          key: const ValueKey('tab-groups'),
-          child: _buildGroupsTab(groupConversations, myUserId, serverUrl),
-        );
-      default:
-        return KeyedSubtree(
-          key: const ValueKey('tab-chats'),
-          child: _buildChatsTab(
-            conversationsState,
-            conversations,
-            allConversations,
-            myUserId,
-            serverUrl,
-            wsOnlineUsers,
-          ),
-        );
-    }
   }
 
   Widget _buildChatsTab(
@@ -1254,193 +1232,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       onTap: () => widget.onConversationTap(conv),
       onContextMenu: (position) =>
           _showConversationContextMenu(context, conv, position),
-    );
-  }
-
-  Widget _buildContactsTab(
-    ContactsState contactsState,
-    String myUserId,
-    String serverUrl,
-    Set<String> onlineUsers,
-  ) {
-    final contacts = contactsState.contacts;
-
-    if (contactsState.isLoading && contacts.isEmpty) {
-      return const ConversationListSkeleton(count: 4);
-    }
-
-    if (contacts.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.people_outline,
-                size: 40,
-                color: context.textMuted.withValues(alpha: 0.5),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'No contacts yet',
-                style: TextStyle(
-                  color: context.textSecondary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Add a contact to get started',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: context.textMuted, fontSize: 13),
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                height: 34,
-                child: FilledButton.icon(
-                  onPressed: widget.onNewChat,
-                  icon: const Icon(Icons.person_add_alt_1, size: 16),
-                  label: const Text('Add Contact'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return Scrollbar(
-      thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        itemCount: contacts.length,
-        itemBuilder: (context, index) {
-          final contact = contacts[index];
-          return ContactItem(
-            contact: contact,
-            serverUrl: serverUrl,
-            onlineUsers: onlineUsers,
-            onMessage: () {
-              widget.onMessageContact?.call(contact.userId, contact.username);
-            },
-            onProfile: () {
-              UserProfileScreen.show(context, ref, contact.userId);
-            },
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildGroupsTab(
-    List<Conversation> groupConversations,
-    String myUserId,
-    String serverUrl,
-  ) {
-    if (groupConversations.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                _searchQuery.isNotEmpty
-                    ? Icons.search_off
-                    : Icons.group_outlined,
-                size: 40,
-                color: context.textMuted.withValues(alpha: 0.5),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _searchQuery.isNotEmpty
-                    ? "No results found for '$_searchQuery'"
-                    : 'No groups yet',
-                style: TextStyle(
-                  color: context.textSecondary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _searchQuery.isNotEmpty
-                    ? 'Try a different search term'
-                    : 'Create or join a group',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: context.textMuted, fontSize: 13),
-              ),
-              if (_searchQuery.isEmpty) ...[
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  height: 34,
-                  child: FilledButton.icon(
-                    onPressed: widget.onNewGroup,
-                    icon: const Icon(Icons.group_add, size: 16),
-                    label: const Text('Create Group'),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  height: 34,
-                  child: OutlinedButton.icon(
-                    onPressed: widget.onDiscover,
-                    icon: const Icon(Icons.explore_outlined, size: 16),
-                    label: const Text('Discover'),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      );
-    }
-
-    final sorted = _sortConversations(groupConversations);
-
-    return Scrollbar(
-      thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        itemCount: sorted.length + 1,
-        itemBuilder: (context, index) {
-          // First item: Discover Groups button
-          if (index == 0) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 6, top: 2),
-              child: OutlinedButton.icon(
-                onPressed: widget.onDiscover,
-                icon: const Icon(Icons.explore_outlined, size: 16),
-                label: const Text('Discover Groups'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 34),
-                  textStyle: const TextStyle(fontSize: 13),
-                ),
-              ),
-            );
-          }
-          final conv = sorted[index - 1];
-          final isSelected = conv.id == widget.selectedConversationId;
-          final isPinned = _pinnedIds.contains(conv.id);
-          // Groups don't have a single peer, so isPeerOnline is always false
-          return ConversationItem(
-            conversation: conv,
-            myUserId: myUserId,
-            isSelected: isSelected,
-            isPinned: isPinned,
-            isPeerOnline: false,
-            groupIconUrl: resolveAvatarUrl(conv.iconUrl, serverUrl),
-            timestamp: formatConversationTimestamp(conv.lastMessageTimestamp),
-            onTap: () => widget.onConversationTap(conv),
-            onContextMenu: (position) =>
-                _showConversationContextMenu(context, conv, position),
-          );
-        },
-      ),
     );
   }
 }
