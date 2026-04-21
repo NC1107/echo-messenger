@@ -48,7 +48,9 @@ void main() {
 
       expect(crypto.isInitialized, isTrue);
       expect(crypto.keysAreFresh, isTrue);
-      expect(crypto.keysWereRegenerated, isTrue);
+      // First-ever install: no prior keys existed, so this is NOT a
+      // regeneration -- suppress the misleading "keys regenerated" warning.
+      expect(crypto.keysWereRegenerated, isFalse);
       expect(crypto.deviceId, greaterThan(0));
     });
 
