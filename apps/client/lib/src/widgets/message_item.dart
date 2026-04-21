@@ -56,7 +56,11 @@ class MessageItem extends StatefulWidget {
   final void Function(ChatMessage message)? onPin;
   final void Function(ChatMessage message)? onUnpin;
   final void Function(ChatMessage message)? onRetry;
-  final void Function(ChatMessage message)? onForward;
+  final void Function(ChatMessage message)? onSave;
+  final void Function(ChatMessage message)? onUnsave;
+
+  /// Whether this message is currently bookmarked.
+  final bool isSaved;
 
   /// Server URL for resolving relative image paths.
   final String? serverUrl;
@@ -85,7 +89,9 @@ class MessageItem extends StatefulWidget {
     this.onPin,
     this.onUnpin,
     this.onRetry,
-    this.onForward,
+    this.onSave,
+    this.onUnsave,
+    this.isSaved = false,
     this.serverUrl,
     this.authToken,
     this.senderAvatarUrl,
@@ -465,13 +471,6 @@ class _MessageItemState extends State<MessageItem>
           );
         },
       ),
-      if (widget.onForward != null)
-        _actionTile(
-          sheetContext: sheetContext,
-          icon: Icons.forward_outlined,
-          label: 'Forward',
-          onTap: () => widget.onForward?.call(msg),
-        ),
       if (mediaUrl != null)
         _actionTile(
           sheetContext: sheetContext,
@@ -485,6 +484,20 @@ class _MessageItemState extends State<MessageItem>
           icon: Icons.edit_outlined,
           label: 'Edit',
           onTap: () => widget.onEdit?.call(msg),
+        ),
+      if (!widget.isSaved && widget.onSave != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.bookmark_border_outlined,
+          label: 'Save',
+          onTap: () => widget.onSave?.call(msg),
+        ),
+      if (widget.isSaved && widget.onUnsave != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.bookmark_remove_outlined,
+          label: 'Unsave',
+          onTap: () => widget.onUnsave?.call(msg),
         ),
       if (msg.pinnedAt == null && widget.onPin != null)
         _actionTile(
@@ -696,12 +709,14 @@ class _MessageItemState extends State<MessageItem>
                 _handleImageAction(mediaUrl!);
               case 'download':
                 _downloadMedia(mediaUrl!);
-              case 'forward':
-                widget.onForward?.call(msg);
               case 'pin':
                 widget.onPin?.call(msg);
               case 'unpin':
                 widget.onUnpin?.call(msg);
+              case 'save':
+                widget.onSave?.call(msg);
+              case 'unsave':
+                widget.onUnsave?.call(msg);
               case 'edit':
                 widget.onEdit?.call(msg);
               case 'delete':
@@ -746,17 +761,6 @@ class _MessageItemState extends State<MessageItem>
                   ],
                 ),
               ),
-            if (widget.onForward != null)
-              const PopupMenuItem(
-                value: 'forward',
-                child: Row(
-                  children: [
-                    Icon(Icons.forward_outlined, size: 16),
-                    SizedBox(width: 8),
-                    Text('Forward'),
-                  ],
-                ),
-              ),
             if (msg.pinnedAt == null && widget.onPin != null)
               const PopupMenuItem(
                 value: 'pin',
@@ -776,6 +780,28 @@ class _MessageItemState extends State<MessageItem>
                     Icon(Icons.push_pin, size: 16),
                     SizedBox(width: 8),
                     Text('Unpin'),
+                  ],
+                ),
+              ),
+            if (!widget.isSaved && widget.onSave != null)
+              const PopupMenuItem(
+                value: 'save',
+                child: Row(
+                  children: [
+                    Icon(Icons.bookmark_border_outlined, size: 16),
+                    SizedBox(width: 8),
+                    Text('Save'),
+                  ],
+                ),
+              ),
+            if (widget.isSaved && widget.onUnsave != null)
+              const PopupMenuItem(
+                value: 'unsave',
+                child: Row(
+                  children: [
+                    Icon(Icons.bookmark_remove_outlined, size: 16),
+                    SizedBox(width: 8),
+                    Text('Unsave'),
                   ],
                 ),
               ),

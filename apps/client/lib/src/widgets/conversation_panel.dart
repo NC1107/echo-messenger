@@ -35,6 +35,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
   final VoidCallback? onSettings;
   final VoidCallback? onShowContacts;
   final VoidCallback? onGlobalSearch;
+  final VoidCallback? onSavedMessages;
 
   /// Called when the user taps "Message" on a contact in the Contacts tab.
   /// Should call getOrCreateDm and then select the conversation.
@@ -54,6 +55,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
     this.onSettings,
     this.onShowContacts,
     this.onGlobalSearch,
+    this.onSavedMessages,
     this.onMessageContact,
     this.externalSearchFocusNode,
   });
@@ -594,6 +596,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 widget.onNewGroup?.call();
               case 'discover':
                 widget.onDiscover?.call();
+              case 'saved':
+                widget.onSavedMessages?.call();
             }
           },
           itemBuilder: (context) => [
@@ -630,6 +634,21 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                   Flexible(
                     child: Text(
                       'Discover Groups',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: 'saved',
+              child: Row(
+                children: [
+                  const Icon(Icons.bookmark_border_outlined, size: 18),
+                  const SizedBox(width: 10),
+                  const Flexible(
+                    child: Text(
+                      'Saved Messages',
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),

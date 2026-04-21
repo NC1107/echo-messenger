@@ -11,6 +11,7 @@ import 'src/providers/server_url_provider.dart';
 import 'src/services/debug_log_service.dart';
 import 'src/services/message_cache.dart';
 import 'src/services/notification_service.dart';
+import 'src/services/saved_messages_service.dart';
 import 'src/services/sound_service.dart';
 import 'src/services/user_data_dir.dart';
 
@@ -48,6 +49,7 @@ Future<void> _initAndRun() async {
   await Hive.initFlutter();
   await UserDataDir.instance.init();
   await MessageCache.init();
+  await SavedMessagesService.instance.init();
 
   final container = ProviderContainer();
 
