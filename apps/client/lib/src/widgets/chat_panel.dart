@@ -940,6 +940,61 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   }
 
   // ---------------------------------------------------------------------------
+  // Forward message
+  // ---------------------------------------------------------------------------
+
+  void _forwardMessage(ChatMessage message) {
+    // Don't forward system events or media-only messages as plaintext.
+    if (message.isSystemEvent) return;
+
+    final conversations = ref.read(conversationsProvider).conversations;
+    final myUserId = ref.read(authProvider).userId ?? '';
+    // Exclude the current conversation from the picker.
+    final targets = conversations
+        .where((c) => c.id != widget.conversation?.id)
+        .toList();
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => _ForwardConversationPicker(
+        conversations: targets,
+        myUserId: myUserId,
+        onSelected: (targetConv) async {
+          Navigator.pop(sheetCtx);
+          final ws = ref.read(websocketProvider.notifier);
+          await ref.read(chatProvider.notifier).forwardMessage(
+            message.content,
+            targetConv.id,
+            (forwardedContent) async {
+              if (targetConv.isGroup) {
+                await ws.sendGroupMessage(targetConv.id, forwardedContent);
+              } else {
+                final peer = targetConv.members
+                    .where((m) => m.userId != myUserId)
+                    .firstOrNull;
+                if (peer == null) return;
+                await ws.sendMessage(
+                  peer.userId,
+                  forwardedContent,
+                  conversationId: targetConv.id,
+                );
+              }
+            },
+          );
+          if (!mounted) return;
+          ToastService.show(
+            context,
+            'Message forwarded to ${targetConv.displayName(myUserId)}',
+            type: ToastType.success,
+          );
+        },
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Message list helpers
   // ---------------------------------------------------------------------------
 
@@ -1226,6 +1281,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             },
             onPin: (msg) => _pinMessage(msg),
             onUnpin: (msg) => _unpinMessage(msg),
+            onForward: (msg) => _forwardMessage(msg),
             onAvatarTap: (userId) {
               UserProfileScreen.show(context, ref, userId);
             },
@@ -1658,6 +1714,203 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               child: _chatInputBarKey.currentState!.buildMediaPickerPanel(),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Bottom-sheet conversation picker used when forwarding a message.
+class _ForwardConversationPicker extends StatefulWidget {
+  final List<Conversation> conversations;
+  final String myUserId;
+  final void Function(Conversation) onSelected;
+
+  const _ForwardConversationPicker({
+    required this.conversations,
+    required this.myUserId,
+    required this.onSelected,
+  });
+
+  @override
+  State<_ForwardConversationPicker> createState() =>
+      _ForwardConversationPickerState();
+}
+
+class _ForwardConversationPickerState
+    extends State<_ForwardConversationPicker> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = widget.conversations
+        .where(
+          (c) => c
+              .displayName(widget.myUserId)
+              .toLowerCase()
+              .contains(_query.toLowerCase()),
+        )
+        .toList();
+
+    return SafeArea(
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (_, scrollController) {
+          return Container(
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
+              border: Border.all(color: context.border),
+            ),
+            child: Column(
+              children: [
+                // Handle
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(top: 10, bottom: 8),
+                  decoration: BoxDecoration(
+                    color: context.textMuted.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    'Forward to...',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: context.textPrimary,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: TextField(
+                    controller: _searchController,
+                    autofocus: false,
+                    decoration: InputDecoration(
+                      hintText: 'Search conversations',
+                      hintStyle: TextStyle(color: context.textMuted),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        size: 18,
+                        color: context.textMuted,
+                      ),
+                      filled: true,
+                      fillColor: context.surfaceHover,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    style: TextStyle(color: context.textPrimary, fontSize: 14),
+                    onChanged: (v) => setState(() => _query = v),
+                  ),
+                ),
+                Divider(height: 1, color: context.border),
+                Expanded(
+                  child: filtered.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No conversations found',
+                            style: TextStyle(
+                              color: context.textMuted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          controller: scrollController,
+                          itemCount: filtered.length,
+                          itemBuilder: (_, i) {
+                            final conv = filtered[i];
+                            final name = conv.displayName(widget.myUserId);
+                            return InkWell(
+                              onTap: () => widget.onSelected(conv),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 18,
+                                      backgroundColor: context.accent
+                                          .withValues(alpha: 0.2),
+                                      child: Text(
+                                        name.isNotEmpty
+                                            ? name[0].toUpperCase()
+                                            : '?',
+                                        style: TextStyle(
+                                          color: context.accent,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            name,
+                                            style: TextStyle(
+                                              color: context.textPrimary,
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                          if (conv.lastMessage != null)
+                                            Text(
+                                              conv.lastMessage!,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: context.textMuted,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    Icon(
+                                      conv.isGroup
+                                          ? Icons.group_outlined
+                                          : Icons.person_outline,
+                                      size: 16,
+                                      color: context.textMuted,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

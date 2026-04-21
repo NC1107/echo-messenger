@@ -780,6 +780,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.copyWith(messagesByConversation: updatedConv);
   }
 
+  /// Forward a message to a different conversation.
+  ///
+  /// Prepends "[Forwarded] " to the content and delegates the actual wire
+  /// send to [sender], which is supplied by the caller to avoid a circular
+  /// dependency (websocket_provider already imports chat_provider).
+  Future<void> forwardMessage(
+    String messageContent,
+    String targetConversationId,
+    Future<void> Function(String forwardedContent) sender,
+  ) async {
+    final forwarded = '[Forwarded] $messageContent';
+    await sender(forwarded);
+  }
+
   void clear() {
     // Cancel all pending send-timeout timers to prevent orphaned callbacks.
     for (final timer in _sendTimeouts.values) {

@@ -56,6 +56,7 @@ class MessageItem extends StatefulWidget {
   final void Function(ChatMessage message)? onPin;
   final void Function(ChatMessage message)? onUnpin;
   final void Function(ChatMessage message)? onRetry;
+  final void Function(ChatMessage message)? onForward;
 
   /// Server URL for resolving relative image paths.
   final String? serverUrl;
@@ -84,6 +85,7 @@ class MessageItem extends StatefulWidget {
     this.onPin,
     this.onUnpin,
     this.onRetry,
+    this.onForward,
     this.serverUrl,
     this.authToken,
     this.senderAvatarUrl,
@@ -463,6 +465,13 @@ class _MessageItemState extends State<MessageItem>
           );
         },
       ),
+      if (widget.onForward != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.forward_outlined,
+          label: 'Forward',
+          onTap: () => widget.onForward?.call(msg),
+        ),
       if (mediaUrl != null)
         _actionTile(
           sheetContext: sheetContext,
@@ -687,6 +696,8 @@ class _MessageItemState extends State<MessageItem>
                 _handleImageAction(mediaUrl!);
               case 'download':
                 _downloadMedia(mediaUrl!);
+              case 'forward':
+                widget.onForward?.call(msg);
               case 'pin':
                 widget.onPin?.call(msg);
               case 'unpin':
@@ -732,6 +743,17 @@ class _MessageItemState extends State<MessageItem>
                     Icon(Icons.download_outlined, size: 16),
                     SizedBox(width: 8),
                     Text('Download'),
+                  ],
+                ),
+              ),
+            if (widget.onForward != null)
+              const PopupMenuItem(
+                value: 'forward',
+                child: Row(
+                  children: [
+                    Icon(Icons.forward_outlined, size: 16),
+                    SizedBox(width: 8),
+                    Text('Forward'),
                   ],
                 ),
               ),
