@@ -586,8 +586,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           icon: Icon(Icons.add, size: 20, color: context.textSecondary),
           tooltip: 'New',
           padding: EdgeInsets.zero,
+          // Button tap target size
           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          offset: const Offset(0, 40),
+          // Menu minimum width so text never clips on narrow viewports
+          menuPadding: const EdgeInsets.symmetric(vertical: 4),
+          popUpAnimationStyle: AnimationStyle.noAnimation,
+          offset: const Offset(0, 36),
           onSelected: (value) {
             switch (value) {
               case 'chat':
@@ -603,68 +607,84 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           itemBuilder: (context) => [
             PopupMenuItem(
               value: 'chat',
-              child: Row(
-                children: [
-                  const Icon(Icons.person_add_outlined, size: 18),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Text('New Chat', overflow: TextOverflow.ellipsis),
-                  ),
-                ],
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 200),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.person_add_outlined, size: 18),
+                    const SizedBox(width: 10),
+                    const Flexible(
+                      child: Text('New Chat', overflow: TextOverflow.ellipsis),
+                    ),
+                  ],
+                ),
               ),
             ),
             PopupMenuItem(
               value: 'group',
-              child: Row(
-                children: [
-                  const Icon(Icons.group_add_outlined, size: 18),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Text('New Group', overflow: TextOverflow.ellipsis),
-                  ),
-                ],
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 200),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.group_add_outlined, size: 18),
+                    const SizedBox(width: 10),
+                    const Flexible(
+                      child: Text('New Group', overflow: TextOverflow.ellipsis),
+                    ),
+                  ],
+                ),
               ),
             ),
             PopupMenuItem(
               value: 'discover',
-              child: Row(
-                children: [
-                  const Icon(Icons.explore_outlined, size: 18),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Text(
-                      'Discover Groups',
-                      overflow: TextOverflow.ellipsis,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 200),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.explore_outlined, size: 18),
+                    const SizedBox(width: 10),
+                    const Flexible(
+                      child: Text(
+                        'Discover Groups',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             PopupMenuItem(
               value: 'saved',
-              child: Row(
-                children: [
-                  const Icon(Icons.bookmark_border_outlined, size: 18),
-                  const SizedBox(width: 10),
-                  const Flexible(
-                    child: Text(
-                      'Saved Messages',
-                      overflow: TextOverflow.ellipsis,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 200),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.bookmark_border_outlined, size: 18),
+                    const SizedBox(width: 10),
+                    const Flexible(
+                      child: Text(
+                        'Saved Messages',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
         ),
         if (pendingCount > 0)
           Positioned(
-            top: -2,
-            right: -2,
+            top: 2,
+            right: 2,
             child: IgnorePointer(
               child: Container(
-                width: 16,
-                height: 16,
+                width: 14,
+                height: 14,
                 decoration: const BoxDecoration(
                   color: EchoTheme.danger,
                   shape: BoxShape.circle,
@@ -674,7 +694,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                     pendingCount > 9 ? '9+' : '$pendingCount',
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 9,
+                      fontSize: 8,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -1133,14 +1153,16 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               style: TextStyle(color: context.textMuted, fontSize: 13),
             ),
             if (_searchQuery.isEmpty) ...[
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                height: 34,
-                child: FilledButton.icon(
-                  onPressed: widget.onNewChat,
-                  icon: const Icon(Icons.chat_outlined, size: 16),
-                  label: const Text('New Chat'),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: widget.onNewChat,
+                icon: const Icon(Icons.chat_outlined, size: 16),
+                label: const Text('New Chat'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 10,
+                  ),
                 ),
               ),
             ],
