@@ -226,6 +226,9 @@ class _NativeNotificationService implements NotificationService {
   }
 
   @override
+  Future<bool> promptPermission() async => true;
+
+  @override
   void setAppFocused(bool focused) {
     if (focused && !_appFocused) {
       _lastForeground = DateTime.now();
