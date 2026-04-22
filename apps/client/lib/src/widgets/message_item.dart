@@ -52,6 +52,7 @@ class MessageItem extends StatefulWidget {
   final void Function(ChatMessage message)? onDelete;
   final void Function(ChatMessage message)? onEdit;
   final void Function(ChatMessage message)? onReply;
+  final void Function(ChatMessage message)? onViewThread;
   final void Function(String userId)? onAvatarTap;
   final void Function(ChatMessage message)? onPin;
   final void Function(ChatMessage message)? onUnpin;
@@ -85,6 +86,7 @@ class MessageItem extends StatefulWidget {
     this.onDelete,
     this.onEdit,
     this.onReply,
+    this.onViewThread,
     this.onAvatarTap,
     this.onPin,
     this.onUnpin,
@@ -445,6 +447,14 @@ class _MessageItemState extends State<MessageItem>
           icon: Icons.reply_outlined,
           label: 'Reply',
           onTap: () => widget.onReply?.call(msg),
+        ),
+      if (msg.replyCount > 0 && widget.onViewThread != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.forum_outlined,
+          label:
+              'View ${msg.replyCount == 1 ? '1 reply' : '${msg.replyCount} replies'}',
+          onTap: () => widget.onViewThread?.call(msg),
         ),
       if (isImage)
         _actionTile(
@@ -1268,6 +1278,43 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
+  /// Build the "N replies" link shown below messages that have thread replies.
+  Widget _buildReplyCountBadge({
+    required ChatMessage msg,
+    required bool isMine,
+  }) {
+    final count = msg.replyCount;
+    final label = count == 1 ? '1 reply' : '$count replies';
+    return Padding(
+      padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
+      child: Semantics(
+        label: 'View $label',
+        button: true,
+        child: GestureDetector(
+          onTap: () => widget.onViewThread?.call(msg),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: isMine
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
+            children: [
+              Icon(Icons.forum_outlined, size: 12, color: context.accent),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: context.accent,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Inline timestamp that appears on hover/tap for messages that are not the
   /// last in their group (those already always show the timestamp).
   Widget _buildHoverTimestamp({
@@ -1497,6 +1544,8 @@ class _MessageItemState extends State<MessageItem>
                   bubbleWithReactions: bubbleWithReactions,
                 ),
               ),
+              if (msg.replyCount > 0)
+                _buildReplyCountBadge(msg: msg, isMine: isMine),
               if (widget.isLastInGroup)
                 _buildTimestampRow(msg: msg, isMine: isMine)
               else

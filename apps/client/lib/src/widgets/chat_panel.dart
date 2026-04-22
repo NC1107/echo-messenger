@@ -26,6 +26,7 @@ import '../screens/user_profile_screen.dart';
 import '../services/saved_messages_service.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../theme/responsive.dart';
 import 'skeleton_loader.dart';
 import 'channel_bar.dart';
 import 'chat_header_bar.dart';
@@ -35,6 +36,7 @@ import 'crypto_degraded_banner.dart';
 import 'identity_key_changed_banner.dart';
 import 'message_item.dart';
 import 'message_search_overlay.dart';
+import 'thread_view_panel.dart';
 
 // reactionEmojis imported from message_item.dart
 
@@ -94,6 +96,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   String? _autoScrollConversationKey;
 
   bool _showSearch = false;
+  ChatMessage? _threadParent;
   String? _highlightedMessageId;
   Timer? _highlightTimer;
   double _lastKeyboardInset = 0;
@@ -169,6 +172,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       _loadedHistoryKey = null;
       _autoScrollConversationKey = null;
       _showSearch = false;
+      _threadParent = null;
       _highlightedMessageId = null;
       _hasNewMessagesBelow = false;
       _newMessagesBelowCount = 0;
@@ -507,6 +511,31 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOut,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Thread view
+  // ---------------------------------------------------------------------------
+
+  void _openThread(ChatMessage message) {
+    final isMobile = Responsive.isMobile(context);
+    if (isMobile) {
+      final serverUrl = ref.read(serverUrlProvider);
+      final authToken = ref.read(authProvider).token ?? '';
+      showThreadBottomSheet(
+        context: context,
+        ref: ref,
+        parentMessage: message,
+        serverUrl: serverUrl,
+        authToken: authToken,
+        onReply: (msg) {
+          ref.read(chatProvider.notifier).setReplyTo(msg);
+          _chatInputBarKey.currentState?.requestInputFocus();
+        },
+      );
+    } else {
+      setState(() => _threadParent = message);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1252,6 +1281,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               ref.read(chatProvider.notifier).setReplyTo(msg);
               _chatInputBarKey.currentState?.requestInputFocus();
             },
+            onViewThread: (msg) => _openThread(msg),
             onPin: (msg) => _pinMessage(msg),
             onUnpin: (msg) => _unpinMessage(msg),
             isSaved:
@@ -1659,7 +1689,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
     final chatGradient = context.chatBgGradient;
 
-    final chatContent = DecoratedBox(
+    final chatContentBox = DecoratedBox(
       decoration: chatGradient != null
           ? BoxDecoration(gradient: chatGradient)
           : BoxDecoration(color: context.chatBg),
@@ -1776,6 +1806,28 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         ],
       ),
     );
+
+    // Compose the chat content with optional thread panel.
+    final Widget chatContent;
+    if (_threadParent != null && !Responsive.isMobile(context)) {
+      chatContent = Row(
+        children: [
+          Expanded(child: chatContentBox),
+          ThreadViewPanel(
+            parentMessage: _threadParent!,
+            serverUrl: serverUrl,
+            authToken: authToken,
+            onReply: (msg) {
+              ref.read(chatProvider.notifier).setReplyTo(msg);
+              _chatInputBarKey.currentState?.requestInputFocus();
+            },
+            onClose: () => setState(() => _threadParent = null),
+          ),
+        ],
+      );
+    } else {
+      chatContent = chatContentBox;
+    }
 
     // Wrap in DropTarget on desktop and web only. Mobile platforms don't
     // support external file drag-and-drop, so skip to avoid unnecessary

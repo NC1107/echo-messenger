@@ -398,6 +398,59 @@ pub async fn edit_message(
 }
 
 // ---------------------------------------------------------------------------
+// GET /api/messages/:message_id/replies -- thread replies for a message
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct ThreadRepliesQuery {
+    pub limit: Option<i64>,
+}
+
+pub async fn get_thread_replies(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(message_id): Path<Uuid>,
+    Query(params): Query<ThreadRepliesQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    // Look up the parent message to find its conversation_id and verify membership.
+    let parent: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT conversation_id FROM messages WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(message_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("DB error in get_thread_replies/lookup: {e:?}");
+        AppError::internal("Database error")
+    })?;
+
+    let conversation_id = parent
+        .map(|(cid,)| cid)
+        .ok_or_else(|| AppError::bad_request("Message not found"))?;
+
+    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in get_thread_replies/is_member: {e:?}");
+            AppError::internal("Database error")
+        })?;
+
+    if !is_member {
+        return Err(AppError::unauthorized("Not a member of this conversation"));
+    }
+
+    let limit = params.limit.unwrap_or(50).min(100);
+    let replies = db::messages::get_thread_replies(&state.pool, message_id, limit)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in get_thread_replies/fetch: {e:?}");
+            AppError::internal("Database error")
+        })?;
+
+    Ok(Json(replies))
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/conversations/:conversation_id/search -- full-text message search
 // ---------------------------------------------------------------------------
 
