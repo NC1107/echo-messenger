@@ -25,6 +25,15 @@ use crate::types::ConversationKind;
 static MEMBERSHIP_CACHE: LazyLock<DashMap<(Uuid, Uuid), Instant>> = LazyLock::new(DashMap::new);
 const MEMBERSHIP_CACHE_TTL: Duration = Duration::from_secs(60);
 
+/// Cached conversation member IDs.  Keyed by conversation_id, stores the
+/// member list and the instant it was fetched.  Same TTL as membership cache.
+static MEMBER_IDS_CACHE: LazyLock<DashMap<Uuid, (Vec<Uuid>, Instant)>> =
+    LazyLock::new(DashMap::new);
+
+/// Cached conversation kind (e.g. "dm", "group").  Avoids a DB hit on every
+/// typing indicator for the same conversation.
+static CONV_KIND_CACHE: LazyLock<DashMap<Uuid, (String, Instant)>> = LazyLock::new(DashMap::new);
+
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 enum ClientMessage {
@@ -472,8 +481,7 @@ async fn cleanup_user_voice_sessions(state: &AppState, user_id: Uuid) {
         };
 
     for (channel_id, conversation_id) in removed_sessions {
-        let member_ids =
-            db::groups::get_conversation_member_ids(&state.pool, conversation_id).await;
+        let member_ids = get_member_ids_cached(&state.pool, conversation_id).await;
         if let Ok(member_ids) = member_ids {
             let event = serde_json::json!({
                 "type": "voice_session_left",
@@ -628,19 +636,14 @@ async fn handle_broadcast_event<F>(
 ) where
     F: FnOnce(Uuid, String, Uuid) -> ServerMessage,
 {
-    let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
-        Ok(m) => m,
-        Err(_) => return,
-    };
-    if !is_member {
+    if !check_membership_cached(&state.pool, conversation_id, sender_id).await {
         return;
     }
 
-    let member_ids =
-        match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await {
-            Ok(ids) => ids,
-            Err(_) => return,
-        };
+    let member_ids = match get_member_ids_cached(&state.pool, conversation_id).await {
+        Ok(ids) => ids,
+        Err(_) => return,
+    };
 
     let event = build_event(sender_id, sender_username.to_string(), conversation_id);
     if let Ok(json) = serde_json::to_string(&event) {
@@ -1212,7 +1215,7 @@ async fn fanout_message(
         return;
     };
 
-    let member_ids = match db::groups::get_conversation_member_ids(&state.pool, conv_id).await {
+    let member_ids = match get_member_ids_cached(&state.pool, conv_id).await {
         Ok(ids) => ids,
         Err(_) => {
             tracing::error!("Failed to get conversation members for fan-out");
@@ -1302,6 +1305,46 @@ async fn check_membership_cached(
     is_member
 }
 
+/// Fetch conversation member IDs with a 60-second in-memory cache.
+async fn get_member_ids_cached(
+    pool: &sqlx::PgPool,
+    conversation_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    if let Some(entry) = MEMBER_IDS_CACHE.get(&conversation_id)
+        && entry.value().1.elapsed() < MEMBERSHIP_CACHE_TTL
+    {
+        return Ok(entry.value().0.clone());
+    }
+
+    let members = db::groups::get_conversation_member_ids(pool, conversation_id).await?;
+    MEMBER_IDS_CACHE.insert(conversation_id, (members.clone(), Instant::now()));
+    Ok(members)
+}
+
+/// Fetch conversation kind with a 60-second in-memory cache.
+async fn get_conversation_kind_cached(
+    pool: &sqlx::PgPool,
+    conversation_id: Uuid,
+) -> Option<String> {
+    if let Some(entry) = CONV_KIND_CACHE.get(&conversation_id)
+        && entry.value().1.elapsed() < MEMBERSHIP_CACHE_TTL
+    {
+        return Some(entry.value().0.clone());
+    }
+
+    let kind = db::groups::get_conversation_kind(pool, conversation_id)
+        .await
+        .ok()??;
+    CONV_KIND_CACHE.insert(conversation_id, (kind.clone(), Instant::now()));
+    Some(kind)
+}
+
+/// Invalidate the member-ID cache for a conversation.  Call this when
+/// members are added, removed, or banned.
+pub fn invalidate_member_cache(conversation_id: Uuid) {
+    MEMBER_IDS_CACHE.remove(&conversation_id);
+}
+
 async fn handle_typing(
     state: &AppState,
     sender_id: Uuid,
@@ -1314,9 +1357,9 @@ async fn handle_typing(
         return;
     }
 
-    let kind = match db::groups::get_conversation_kind(&state.pool, conversation_id).await {
-        Ok(Some(k)) => k,
-        _ => return,
+    let kind = match get_conversation_kind_cached(&state.pool, conversation_id).await {
+        Some(k) => k,
+        None => return,
     };
 
     let mut resolved_channel_id = None;
@@ -1333,11 +1376,10 @@ async fn handle_typing(
         resolved_channel_id = Some(cid);
     }
 
-    let member_ids =
-        match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await {
-            Ok(ids) => ids,
-            Err(_) => return,
-        };
+    let member_ids = match get_member_ids_cached(&state.pool, conversation_id).await {
+        Ok(ids) => ids,
+        Err(_) => return,
+    };
 
     let event = ServerMessage::Typing {
         conversation_id,
@@ -1353,12 +1395,7 @@ async fn handle_typing(
 }
 
 async fn handle_read_receipt(state: &AppState, sender_id: Uuid, conversation_id: Uuid) {
-    // Verify membership
-    let is_member = match db::groups::is_member(&state.pool, conversation_id, sender_id).await {
-        Ok(m) => m,
-        Err(_) => return,
-    };
-    if !is_member {
+    if !check_membership_cached(&state.pool, conversation_id, sender_id).await {
         return;
     }
 
@@ -1375,11 +1412,10 @@ async fn handle_read_receipt(state: &AppState, sender_id: Uuid, conversation_id:
     let _ = db::reactions::mark_read(&state.pool, conversation_id, sender_id).await;
 
     // Broadcast to other members
-    let member_ids =
-        match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await {
-            Ok(ids) => ids,
-            Err(_) => return,
-        };
+    let member_ids = match get_member_ids_cached(&state.pool, conversation_id).await {
+        Ok(ids) => ids,
+        Err(_) => return,
+    };
 
     let event = ServerMessage::ReadReceipt {
         conversation_id,
@@ -1676,11 +1712,10 @@ async fn handle_canvas_event(
     }
 
     // Broadcast to all other conversation members.
-    let member_ids =
-        match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await {
-            Ok(ids) => ids,
-            Err(_) => return,
-        };
+    let member_ids = match get_member_ids_cached(&state.pool, conversation_id).await {
+        Ok(ids) => ids,
+        Err(_) => return,
+    };
 
     let event = ServerMessage::CanvasEvent {
         channel_id,
