@@ -64,8 +64,8 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
   bool _hasSearched = false;
   String? _searchError;
 
-  /// User IDs that have been locally dismissed from pending requests.
-  final Set<String> _dismissedPending = {};
+  /// IDs of pending requests currently being declined (to block duplicate taps).
+  final Set<String> _decliningIds = {};
 
   @override
   void initState() {
@@ -395,9 +395,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
     BuildContext context,
     ContactsState contactsState,
   ) {
-    final visible = contactsState.pendingRequests
-        .where((c) => !_dismissedPending.contains(c.userId))
-        .toList();
+    final visible = contactsState.pendingRequests.toList();
 
     if (visible.isEmpty) return const SizedBox.shrink();
 
@@ -416,15 +414,26 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         ),
         ...visible.map((contact) {
           return _PendingRequestTile(
+            key: ValueKey(contact.id),
             contact: contact,
             serverUrl: serverUrl,
+            isDeclinePending: _decliningIds.contains(contact.id),
             onAccept: () {
               ref.read(contactsProvider.notifier).acceptRequest(contact.id);
             },
-            onDecline: () {
-              setState(() {
-                _dismissedPending.add(contact.userId);
-              });
+            onDecline: () async {
+              if (_decliningIds.contains(contact.id)) return;
+              setState(() => _decliningIds.add(contact.id));
+              try {
+                await ref
+                    .read(contactsProvider.notifier)
+                    .declineRequest(contact.id);
+                // Error is surfaced via the contactsProvider listener above.
+              } finally {
+                if (mounted) {
+                  setState(() => _decliningIds.remove(contact.id));
+                }
+              }
             },
           );
         }),
@@ -518,11 +527,8 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
   }
 
   Widget _buildEmptyState(ContactsState contactsState) {
-    final visiblePending = contactsState.pendingRequests
-        .where((c) => !_dismissedPending.contains(c.userId))
-        .toList();
-
-    if (contactsState.contacts.isNotEmpty || visiblePending.isNotEmpty) {
+    if (contactsState.contacts.isNotEmpty ||
+        contactsState.pendingRequests.isNotEmpty) {
       return const SizedBox.shrink();
     }
     return Padding(
@@ -680,12 +686,15 @@ class _SearchResultCard extends StatelessWidget {
 class _PendingRequestTile extends StatelessWidget {
   final Contact contact;
   final String serverUrl;
+  final bool isDeclinePending;
   final VoidCallback onAccept;
-  final VoidCallback onDecline;
+  final Future<void> Function() onDecline;
 
   const _PendingRequestTile({
+    super.key,
     required this.contact,
     required this.serverUrl,
+    required this.isDeclinePending,
     required this.onAccept,
     required this.onDecline,
   });
@@ -722,24 +731,37 @@ class _PendingRequestTile extends StatelessWidget {
               ],
             ),
           ),
-          SizedBox(
-            height: 32,
-            child: OutlinedButton(
-              onPressed: onDecline,
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
+          Semantics(
+            label: 'decline contact request from ${contact.username}',
+            button: true,
+            child: SizedBox(
+              height: 32,
+              child: OutlinedButton(
+                onPressed: isDeclinePending ? null : onDecline,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
                 ),
+                child: isDeclinePending
+                    ? SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: context.textSecondary,
+                        ),
+                      )
+                    : const Text('Decline', style: TextStyle(fontSize: 12)),
               ),
-              child: const Text('Decline', style: TextStyle(fontSize: 12)),
             ),
           ),
           const SizedBox(width: 8),
           SizedBox(
             height: 32,
             child: FilledButton(
-              onPressed: onAccept,
+              onPressed: isDeclinePending ? null : onAccept,
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 shape: RoundedRectangleBorder(

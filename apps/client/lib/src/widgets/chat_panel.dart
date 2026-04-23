@@ -23,6 +23,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
+import '../services/message_cache.dart';
 import '../services/saved_messages_service.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
@@ -34,6 +35,7 @@ import 'chat_input_bar.dart';
 import 'connection_status_banner.dart';
 import 'crypto_degraded_banner.dart';
 import 'identity_key_changed_banner.dart';
+import 'forward_message_dialog.dart';
 import 'message_item.dart';
 import 'message_search_overlay.dart';
 import 'thread_view_panel.dart';
@@ -514,6 +516,34 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   }
 
   // ---------------------------------------------------------------------------
+  // Jump to reply quote
+  // ---------------------------------------------------------------------------
+
+  void _jumpToReplyQuote(String replyToId) {
+    final conv = widget.conversation;
+    if (conv == null) return;
+    final chatState = ref.read(chatProvider);
+    final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
+    final includeUnchanneled = conv.isGroup && _selectedTextChannelId == null;
+    final messages = _resolveMessages(
+      conv,
+      chatState,
+      selectedChannelId,
+      includeUnchanneled,
+    );
+    final index = messages.indexWhere((m) => m.id == replyToId);
+    if (index < 0) {
+      ToastService.show(
+        context,
+        'Original message not loaded',
+        type: ToastType.info,
+      );
+      return;
+    }
+    _highlightMessage(replyToId);
+  }
+
+  // ---------------------------------------------------------------------------
   // Thread view
   // ---------------------------------------------------------------------------
 
@@ -820,13 +850,56 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   }
 
   // ---------------------------------------------------------------------------
+  // Forward message
+  // ---------------------------------------------------------------------------
+
+  void _forwardMessage(ChatMessage message) {
+    showForwardDialog(
+      context: context,
+      ref: ref,
+      onForward: (target) => _sendForwardedMessage(message, target),
+    );
+  }
+
+  Future<void> _sendForwardedMessage(
+    ChatMessage message,
+    Conversation target,
+  ) async {
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final ws = ref.read(websocketProvider.notifier);
+    final content = message.content;
+
+    await ref.read(chatProvider.notifier).forwardMessage(content, target.id, (
+      forwardedContent,
+    ) async {
+      if (target.isGroup) {
+        await ws.sendGroupMessage(target.id, forwardedContent);
+      } else {
+        final peer = target.members
+            .where((m) => m.userId != myUserId)
+            .firstOrNull;
+        if (peer == null) return;
+        await ws.sendMessage(
+          peer.userId,
+          forwardedContent,
+          conversationId: target.id,
+        );
+      }
+    });
+
+    if (mounted) {
+      ToastService.show(context, 'Message forwarded', type: ToastType.success);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Delete confirmation
   // ---------------------------------------------------------------------------
 
   void _confirmDelete(ChatMessage message) {
     final conv = widget.conversation;
     if (conv == null) return;
-    showDialog<bool>(
+    showDialog<_DeleteChoice>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: context.surface,
@@ -834,35 +907,70 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(color: context.border),
         ),
-        title: const Text('Delete Message'),
-        content: const Text('This message will be removed for everyone.'),
+        title: const Text('Delete message?'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: context.textSecondary),
-            ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Delete'),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, _DeleteChoice.forMe),
+                child: Text(
+                  'Delete for me',
+                  style: TextStyle(color: context.textSecondary),
+                ),
+              ),
+              if (message.isMine)
+                TextButton(
+                  onPressed: () =>
+                      Navigator.pop(ctx, _DeleteChoice.forEveryone),
+                  child: const Text(
+                    'Delete for everyone',
+                    style: TextStyle(color: EchoTheme.danger),
+                  ),
+                ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: context.textSecondary),
+                ),
+              ),
+            ],
           ),
         ],
       ),
-    ).then((confirmed) {
-      if (confirmed != true) return;
-      ref.read(chatProvider.notifier).deleteMessage(conv.id, message.id);
-      final serverUrl = ref.read(serverUrlProvider);
-      ref
-          .read(authProvider.notifier)
-          .authenticatedRequest(
-            (token) => http.delete(
-              Uri.parse('$serverUrl/api/messages/${message.id}'),
-              headers: {'Authorization': 'Bearer $token'},
-            ),
+    ).then((choice) {
+      if (choice == null) return;
+      if (choice == _DeleteChoice.forMe) {
+        ref.read(chatProvider.notifier).deleteMessage(conv.id, message.id);
+        MessageCache.removeMessage(conv.id, message.id);
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Message deleted for you',
+            type: ToastType.info,
           );
+        }
+      } else {
+        ref.read(chatProvider.notifier).deleteMessage(conv.id, message.id);
+        final serverUrl = ref.read(serverUrlProvider);
+        ref
+            .read(authProvider.notifier)
+            .authenticatedRequest(
+              (token) => http.delete(
+                Uri.parse('$serverUrl/api/messages/${message.id}'),
+                headers: {'Authorization': 'Bearer $token'},
+              ),
+            );
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Message deleted for everyone',
+            type: ToastType.success,
+          );
+        }
+      }
     });
   }
 
@@ -1284,11 +1392,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             onViewThread: (msg) => _openThread(msg),
             onPin: (msg) => _pinMessage(msg),
             onUnpin: (msg) => _unpinMessage(msg),
+            onForward: (msg) => _forwardMessage(msg),
             isSaved:
                 _savedIds.contains(msg.id) ||
                 SavedMessagesService.instance.isMessageSaved(msg.id),
             onSave: (msg) => _saveMessage(msg),
             onUnsave: (msg) => _unsaveMessage(msg),
+            onTapReplyQuote: _jumpToReplyQuote,
             onAvatarTap: (userId) {
               UserProfileScreen.show(context, ref, userId);
             },
@@ -1853,3 +1963,5 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     );
   }
 }
+
+enum _DeleteChoice { forMe, forEveryone }

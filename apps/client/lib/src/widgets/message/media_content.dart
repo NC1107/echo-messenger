@@ -637,9 +637,17 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
 
   @override
   void dispose() {
+    _controller?.removeListener(_onControllerUpdate);
     _controller?.dispose();
     super.dispose();
   }
+
+  void _onControllerUpdate() {
+    if (mounted) setState(() {});
+  }
+
+  String _formatDuration(Duration d) =>
+      '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
 
   /// Initialize video only when the user taps play. This avoids creating
   /// VideoPlayerControllers for every video message in the list, which
@@ -660,6 +668,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         controller.dispose();
         return;
       }
+      controller.addListener(_onControllerUpdate);
       setState(() => _controller = controller);
       controller.play();
     } catch (e) {
@@ -671,9 +680,23 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   void _togglePlayPause() {
     final c = _controller;
     if (c == null) return;
-    setState(() {
-      c.value.isPlaying ? c.pause() : c.play();
-    });
+    c.value.isPlaying ? c.pause() : c.play();
+  }
+
+  void _openFullscreen() {
+    final c = _controller;
+    if (c == null) return;
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black,
+      builder: (dialogContext) => _FullscreenVideoDialog(
+        controller: c,
+        formatDuration: _formatDuration,
+        accent: context.accent,
+        textPrimary: context.textPrimary,
+        textMuted: context.textMuted,
+      ),
+    );
   }
 
   @override
@@ -784,33 +807,281 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     }
 
     // Initialised -- show player with controls
-    return Semantics(
-      label: 'toggle video playback',
-      button: true,
-      child: GestureDetector(
-        onTap: _togglePlayPause,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            AspectRatio(
-              aspectRatio: c.value.aspectRatio.clamp(0.5, 3.0),
-              child: VideoPlayer(c),
+    final position = c.value.position;
+    final duration = c.value.duration;
+    final progress = (duration.inMilliseconds > 0)
+        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+
+    return GestureDetector(
+      onTap: _togglePlayPause,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          AspectRatio(
+            aspectRatio: c.value.aspectRatio.clamp(0.5, 3.0),
+            child: VideoPlayer(c),
+          ),
+          // Play/pause icon overlay
+          if (!c.value.isPlaying)
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.play_arrow, size: 32, color: Colors.white),
             ),
-            if (!c.value.isPlaying)
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.play_arrow,
-                  size: 32,
-                  color: Colors.white,
+          // Bottom controls: gradient scrim + seek bar + duration + fullscreen
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Colors.black87, Colors.transparent],
                 ),
               ),
-          ],
-        ),
+              padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Seek bar
+                  SizedBox(
+                    height: 20,
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 2,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 5,
+                        ),
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 12,
+                        ),
+                        activeTrackColor: context.accent,
+                        inactiveTrackColor:
+                            context.textMuted.withValues(alpha: 0.3),
+                        thumbColor: context.accent,
+                      ),
+                      child: Slider(
+                        value: progress,
+                        onChanged: (v) {
+                          final ms =
+                              (v * duration.inMilliseconds).round();
+                          c.seekTo(Duration(milliseconds: ms));
+                        },
+                      ),
+                    ),
+                  ),
+                  // Duration row
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8, right: 4, bottom: 4),
+                    child: Row(
+                      children: [
+                        Text(
+                          '${_formatDuration(position)} / ${_formatDuration(duration)}',
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 11,
+                          ),
+                        ),
+                        const Spacer(),
+                        // Fullscreen button — 44px touch target
+                        SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            icon: const Icon(
+                              Icons.fullscreen,
+                              size: 20,
+                              color: Colors.white,
+                            ),
+                            tooltip: 'Fullscreen',
+                            onPressed: _openFullscreen,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Fullscreen video dialog that reuses the already-initialised controller.
+class _FullscreenVideoDialog extends StatefulWidget {
+  final VideoPlayerController controller;
+  final String Function(Duration) formatDuration;
+  final Color accent;
+  final Color textPrimary;
+  final Color textMuted;
+
+  const _FullscreenVideoDialog({
+    required this.controller,
+    required this.formatDuration,
+    required this.accent,
+    required this.textPrimary,
+    required this.textMuted,
+  });
+
+  @override
+  State<_FullscreenVideoDialog> createState() => _FullscreenVideoDialogState();
+}
+
+class _FullscreenVideoDialogState extends State<_FullscreenVideoDialog> {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onUpdate);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onUpdate);
+    super.dispose();
+  }
+
+  void _onUpdate() {
+    if (mounted) setState(() {});
+  }
+
+  void _togglePlayPause() {
+    final c = widget.controller;
+    c.value.isPlaying ? c.pause() : c.play();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.controller;
+    final position = c.value.position;
+    final duration = c.value.duration;
+    final progress = (duration.inMilliseconds > 0)
+        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+
+    return Dialog.fullscreen(
+      backgroundColor: Colors.black,
+      child: Stack(
+        children: [
+          // Video fills screen
+          Center(
+            child: GestureDetector(
+              onTap: _togglePlayPause,
+              child: AspectRatio(
+                aspectRatio: c.value.aspectRatio.clamp(0.3, 5.0),
+                child: VideoPlayer(c),
+              ),
+            ),
+          ),
+          // Top bar — close button
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              child: Align(
+                alignment: Alignment.topRight,
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    tooltip: 'Close fullscreen',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Bottom controls
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [Colors.black87, Colors.transparent],
+                  ),
+                ),
+                padding: const EdgeInsets.fromLTRB(4, 16, 4, 4),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Play/pause + seek row
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            icon: Icon(
+                              c.value.isPlaying
+                                  ? Icons.pause
+                                  : Icons.play_arrow,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                            onPressed: _togglePlayPause,
+                          ),
+                        ),
+                        Expanded(
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 2,
+                              thumbShape: const RoundSliderThumbShape(
+                                enabledThumbRadius: 6,
+                              ),
+                              overlayShape: const RoundSliderOverlayShape(
+                                overlayRadius: 14,
+                              ),
+                              activeTrackColor: widget.accent,
+                              inactiveTrackColor:
+                                  widget.textMuted.withValues(alpha: 0.3),
+                              thumbColor: widget.accent,
+                            ),
+                            child: Slider(
+                              value: progress,
+                              onChanged: (v) {
+                                final ms =
+                                    (v * duration.inMilliseconds).round();
+                                c.seekTo(Duration(milliseconds: ms));
+                              },
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: Text(
+                            '${widget.formatDuration(position)} / ${widget.formatDuration(duration)}',
+                            style: TextStyle(
+                              color: widget.textPrimary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -145,6 +145,39 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
     }
   }
 
+  Future<void> declineRequest(String contactId) async {
+    try {
+      final response = await _authenticatedRequest(
+        (token) => http.post(
+          Uri.parse('$_serverUrl/api/contacts/decline'),
+          headers: _headersWithToken(token),
+          body: jsonEncode({'contact_id': contactId}),
+        ),
+      );
+      if (response.statusCode == 200) {
+        // Remove from local pending list immediately.
+        state = state.copyWith(
+          pendingRequests: state.pendingRequests
+              .where((c) => c.id != contactId)
+              .toList(),
+        );
+      } else {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        state = state.copyWith(
+          error: data['error'] as String? ?? 'Failed to decline request',
+        );
+      }
+    } catch (e) {
+      debugPrint('[Contacts] declineRequest failed for $contactId: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Contacts',
+        'declineRequest failed for $contactId: $e',
+      );
+      state = state.copyWith(error: e.toString());
+    }
+  }
+
   Future<void> acceptRequest(String contactId) async {
     try {
       await _authenticatedRequest(

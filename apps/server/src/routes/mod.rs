@@ -111,6 +111,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/", get(contacts::list_contacts))
         .route("/request", post(contacts::send_request))
         .route("/accept", post(contacts::accept_request))
+        .route("/decline", post(contacts::decline_request))
         .route("/pending", get(contacts::list_pending))
         .route("/block", post(contacts::block_user))
         .route("/unblock", post(contacts::unblock_user))
