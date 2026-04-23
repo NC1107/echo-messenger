@@ -137,6 +137,14 @@ pub async fn upload_bundle(
         .decode(&body.signed_prekey_signature)
         .map_err(|_| AppError::bad_request("Invalid base64 for signed_prekey_signature"))?;
 
+    // Platform label is surfaced in the device management UI; cap its length
+    // so a malicious client can't bloat the row with unbounded text.
+    if let Some(platform) = body.platform.as_deref()
+        && platform.len() > 32
+    {
+        return Err(AppError::bad_request("platform too long (max 32 chars)"));
+    }
+
     let device_id = body.device_id;
 
     // Decode and verify signing_key + signature (required for MITM prevention).
@@ -454,26 +462,33 @@ pub async fn revoke_other_devices(
     use crate::ws::handler::ServerMessage;
     use axum::extract::ws::Message as WsMessage;
 
+    // Self-lockout guard: refuse the request if the caller's current_device_id
+    // is not actually registered for this user. Without this check a client
+    // that passed a bogus ID (e.g. after a botched re-install) would silently
+    // wipe every one of its own devices.
     let devices = db::keys::get_user_devices(&state.pool, auth_user.user_id).await?;
+    if !devices
+        .iter()
+        .any(|d| d.device_id == body.current_device_id)
+    {
+        return Err(AppError::bad_request(
+            "current_device_id not found among your registered devices",
+        ));
+    }
 
-    let mut revoked = 0usize;
-    for device in devices {
-        if device.device_id == body.current_device_id {
-            continue;
-        }
-
-        let found = db::keys::revoke_device(&state.pool, auth_user.user_id, device.device_id)
+    // Perform the bulk delete in a single transaction and get back the list
+    // of revoked device IDs for WS fan-out.
+    let revoked_ids =
+        db::keys::revoke_devices_except(&state.pool, auth_user.user_id, body.current_device_id)
             .await
-            .map_err(|_| AppError::internal("Database error"))?;
+            .map_err(|e| {
+                tracing::error!("revoke_devices_except failed: {e:?}");
+                AppError::internal("Database error")
+            })?;
 
-        if !found {
-            continue;
-        }
-
-        revoked += 1;
-
+    for device_id in &revoked_ids {
         let event = ServerMessage::DeviceRevoked {
-            device_id: device.device_id,
+            device_id: *device_id,
         };
         if let Ok(json) = serde_json::to_string(&event) {
             state
@@ -485,11 +500,11 @@ pub async fn revoke_other_devices(
     tracing::info!(
         "User {} revoked {} other devices (kept device {})",
         auth_user.user_id,
-        revoked,
+        revoked_ids.len(),
         body.current_device_id,
     );
 
-    Ok(Json(serde_json::json!({ "revoked": revoked })))
+    Ok(Json(serde_json::json!({ "revoked": revoked_ids.len() })))
 }
 
 /// Request body for key reset -- requires current password for re-authentication.

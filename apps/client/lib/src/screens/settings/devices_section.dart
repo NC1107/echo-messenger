@@ -39,7 +39,12 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
         final myDeviceId = ref.read(cryptoServiceProvider).isInitialized
             ? ref.read(cryptoServiceProvider).deviceId
             : null;
-        if (revokedId is int && revokedId != myDeviceId && mounted) {
+        // Coalesce rapid bursts (e.g. revoke-others emits N events) into a
+        // single refresh -- skip if we're already reloading.
+        if (revokedId is int &&
+            revokedId != myDeviceId &&
+            mounted &&
+            !_loading) {
           _loadDevices();
         }
       });
@@ -484,9 +489,10 @@ class _Device {
 
   const _Device({required this.deviceId, this.platform, this.lastSeen});
 
-  /// Best-effort display label. Falls back to a generic "Device" when the
-  /// server has no platform string stored (e.g. older clients).
-  String get displayLabel => platform ?? 'Device';
+  /// Best-effort display label. Falls back to a device-id-specific label when
+  /// the server has no platform string stored (e.g. older clients) so that
+  /// multiple unknown devices remain distinguishable in the list.
+  String get displayLabel => platform ?? 'Device $deviceId';
 }
 
 String _formatLastSeen(String? isoString) {
@@ -494,7 +500,11 @@ String _formatLastSeen(String? isoString) {
   try {
     final dt = DateTime.parse(isoString).toLocal();
     final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 60) return 'just now';
+    if (diff.inMinutes < 2) return 'just now';
+    if (diff.inMinutes < 60) {
+      final m = diff.inMinutes;
+      return '$m ${m == 1 ? 'minute' : 'minutes'} ago';
+    }
     if (diff.inHours < 24) {
       final h = diff.inHours;
       return '$h ${h == 1 ? 'hour' : 'hours'} ago';

@@ -332,6 +332,48 @@ pub async fn revoke_device(
     Ok(r1.rows_affected() > 0)
 }
 
+/// Revoke every device belonging to `user_id` except `keep_device_id` in a
+/// single transaction. Returns the list of device IDs that were revoked so the
+/// caller can fan out WS notifications without another DB round-trip.
+pub async fn revoke_devices_except(
+    pool: &PgPool,
+    user_id: Uuid,
+    keep_device_id: i32,
+) -> Result<Vec<i32>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let revoked: Vec<(i32,)> = sqlx::query_as(
+        "SELECT device_id FROM identity_keys \
+         WHERE user_id = $1 AND device_id != $2",
+    )
+    .bind(user_id)
+    .bind(keep_device_id)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM identity_keys WHERE user_id = $1 AND device_id != $2")
+        .bind(user_id)
+        .bind(keep_device_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("DELETE FROM signed_prekeys WHERE user_id = $1 AND device_id != $2")
+        .bind(user_id)
+        .bind(keep_device_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("DELETE FROM one_time_prekeys WHERE user_id = $1 AND device_id != $2")
+        .bind(user_id)
+        .bind(keep_device_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    Ok(revoked.into_iter().map(|(id,)| id).collect())
+}
+
 /// Count available (unused) one-time prekeys for a user's device.
 pub async fn count_one_time_prekeys(
     pool: &PgPool,

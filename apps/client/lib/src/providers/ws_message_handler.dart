@@ -265,7 +265,9 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   }
 
   void _handleDeviceRevoked(Map<String, dynamic> json) {
-    final revokedDeviceId = json['device_id'] as int?;
+    // Use `num?` + toInt() so dart2js (web) doesn't blow up when the JSON
+    // number is decoded as a double rather than an int.
+    final revokedDeviceId = (json['device_id'] as num?)?.toInt();
     final myDeviceId = ref.read(cryptoServiceProvider).isInitialized
         ? ref.read(cryptoServiceProvider).deviceId
         : null;
