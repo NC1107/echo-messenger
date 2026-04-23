@@ -100,6 +100,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   static const _dismissedBannersKey = 'dismissed_encryption_banners';
   static Set<String> _dismissedBannerIds = {};
   static bool _bannersLoaded = false;
+
+  /// Persistent blocklist of message IDs deleted via "delete for me".
+  /// Survives app restarts so messages don't reappear on history reload.
+  static const _deletedForMeKey = 'deleted_for_me_ids';
+  static Set<String> _deletedForMeIds = {};
+  static bool _deletedForMeLoaded = false;
   String? _selectedTextChannelId;
   String? _activeVoiceChannelId;
   String? _loadedHistoryKey;
@@ -171,12 +177,26 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         .toSet();
   }
 
+  static Future<void> _loadDeletedForMe() async {
+    if (_deletedForMeLoaded) return;
+    _deletedForMeLoaded = true;
+    final prefs = await SharedPreferences.getInstance();
+    _deletedForMeIds = (prefs.getStringList(_deletedForMeKey) ?? []).toSet();
+  }
+
+  static Future<void> _addToDeletedForMe(String messageId) async {
+    _deletedForMeIds.add(messageId);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_deletedForMeKey, _deletedForMeIds.toList());
+  }
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addObserver(this);
     _loadDismissedBanners();
+    _loadDeletedForMe();
   }
 
   @override
@@ -421,6 +441,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     // Load cached messages first for instant display
     ref.read(chatProvider.notifier).loadFromCache(conv.id, auth.userId!);
 
+    // Capture unread boundary from cached messages before they are marked read.
+    _captureUnreadBoundary();
+
     final groupCrypto = conv.isGroup
         ? ref.read(groupCryptoServiceProvider)
         : null;
@@ -593,6 +616,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
   void _onTextChannelChanged(String? channelId) {
     if (_selectedTextChannelId == channelId) return;
+    _messageKeys.clear();
     setState(() {
       _selectedTextChannelId = channelId;
       _loadedHistoryKey = null;
@@ -1007,7 +1031,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   void _forwardMessage(ChatMessage message) {
     showForwardDialog(
       context: context,
-      ref: ref,
       onForward: (target) => _sendForwardedMessage(message, target),
     );
   }
@@ -1127,6 +1150,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       if (choice == _DeleteChoice.forMe) {
         ref.read(chatProvider.notifier).deleteMessage(conv.id, message.id);
         MessageCache.removeMessage(conv.id, message.id);
+        _addToDeletedForMe(message.id);
         if (mounted) {
           ToastService.show(
             context,
@@ -1394,7 +1418,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     );
   }
 
-  bool _withinTwoMinutes(String ts1, String ts2) {
+  bool _withinGroupingWindow(String ts1, String ts2) {
     try {
       final dt1 = DateTime.parse(ts1);
       final dt2 = DateTime.parse(ts2);
@@ -1622,7 +1646,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     final showHeader =
         i == 0 ||
         messages[i - 1].fromUserId != msg.fromUserId ||
-        !_withinTwoMinutes(messages[i - 1].timestamp, msg.timestamp);
+        !_withinGroupingWindow(messages[i - 1].timestamp, msg.timestamp);
 
     final isLastInGroup =
         i == messages.length - 1 ||
@@ -2032,20 +2056,25 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   }
 
   /// Resolve messages for the current conversation and channel.
+  /// Filters out messages the user has deleted locally ("delete for me").
   List<ChatMessage> _resolveMessages(
     Conversation conv,
     ChatState chatState,
     String? selectedChannelId,
     bool includeUnchanneled,
   ) {
+    final List<ChatMessage> raw;
     if (conv.isGroup) {
-      return chatState.messagesForConversationChannel(
+      raw = chatState.messagesForConversationChannel(
         conv.id,
         channelId: selectedChannelId,
         includeUnchanneled: includeUnchanneled,
       );
+    } else {
+      raw = chatState.messagesForConversation(conv.id);
     }
-    return chatState.messagesForConversation(conv.id);
+    if (_deletedForMeIds.isEmpty) return raw;
+    return raw.where((m) => !_deletedForMeIds.contains(m.id)).toList();
   }
 
   // ---------------------------------------------------------------------------

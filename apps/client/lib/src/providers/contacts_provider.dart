@@ -11,6 +11,10 @@ import 'auth_provider.dart';
 import 'conversations_provider.dart';
 import 'server_url_provider.dart';
 
+/// Sentinel used by [ContactsState.copyWith] to distinguish "not provided"
+/// from an explicit `null` (which clears the error).
+const Object _sentinel = Object();
+
 class ContactsState {
   final List<Contact> contacts;
   final List<Contact> pendingRequests;
@@ -34,7 +38,7 @@ class ContactsState {
     List<BlockedUser>? blockedUsers,
     bool? isLoading,
     bool? isBlockedLoading,
-    String? error,
+    Object? error = _sentinel,
   }) {
     return ContactsState(
       contacts: contacts ?? this.contacts,
@@ -42,7 +46,7 @@ class ContactsState {
       blockedUsers: blockedUsers ?? this.blockedUsers,
       isLoading: isLoading ?? this.isLoading,
       isBlockedLoading: isBlockedLoading ?? this.isBlockedLoading,
-      error: error,
+      error: error == _sentinel ? this.error : error as String?,
     );
   }
 }
@@ -117,6 +121,7 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
             .map((e) => Contact.fromJson(e as Map<String, dynamic>))
             .toList();
         state = state.copyWith(pendingRequests: list);
+        _lastPendingLoadedAt = DateTime.now();
       }
     } catch (e) {
       debugPrint('[Contacts] loadPending failed: $e');
@@ -127,7 +132,6 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
       );
     } finally {
       _isPendingLoadInFlight = false;
-      _lastPendingLoadedAt = DateTime.now();
     }
   }
 
@@ -189,13 +193,20 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
 
   Future<void> acceptRequest(String contactId) async {
     try {
-      await _authenticatedRequest(
+      final response = await _authenticatedRequest(
         (token) => http.post(
           Uri.parse('$_serverUrl/api/contacts/accept'),
           headers: _headersWithToken(token),
           body: jsonEncode({'contact_id': contactId}),
         ),
       );
+      if (response.statusCode != 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        state = state.copyWith(
+          error: data['error'] as String? ?? 'Failed to accept request',
+        );
+        return;
+      }
       await loadContacts();
       await loadPending();
       // Accepting a contact creates a DM conversation on the server —

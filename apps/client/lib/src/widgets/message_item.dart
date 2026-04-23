@@ -1212,7 +1212,7 @@ class _MessageItemState extends State<MessageItem>
         isFailed: isFailed,
         hasMedia: hasMedia,
       ),
-      if (msg.editedAt != null)
+      if (msg.editedAt != null && !widget.isLastInGroup)
         Padding(
           padding: const EdgeInsets.only(top: 2),
           child: Text(

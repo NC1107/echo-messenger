@@ -38,12 +38,17 @@ void main() {
       expect(copied.isLoading, isTrue);
     });
 
-    test('copyWith with no error argument clears error (by design)', () {
+    test('copyWith with no error argument preserves existing error', () {
       final state = ContactsState(error: 'old error');
-      // The copyWith uses direct assignment for error (not null-coalesce),
-      // so calling copyWith() without error clears it.
+      // Omitting the error parameter preserves the current value.
       final copied = state.copyWith();
-      expect(copied.error, isNull);
+      expect(copied.error, 'old error');
+    });
+
+    test('copyWith with explicit null clears error', () {
+      final state = ContactsState(error: 'old error');
+      final cleared = state.copyWith(error: null);
+      expect(cleared.error, isNull);
     });
 
     test('copyWith updates contacts list', () {

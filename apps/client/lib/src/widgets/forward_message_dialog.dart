@@ -11,7 +11,6 @@ import 'avatar_utils.dart' show buildAvatar, avatarColor;
 /// message to, then calls [onForward] with the selected conversation.
 Future<void> showForwardDialog({
   required BuildContext context,
-  required WidgetRef ref,
   required void Function(Conversation target) onForward,
 }) {
   return showDialog<void>(
