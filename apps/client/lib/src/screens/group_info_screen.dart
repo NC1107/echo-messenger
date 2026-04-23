@@ -777,10 +777,12 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
             ),
             IconButton(
               icon: const Icon(Icons.check),
+              tooltip: 'Save group name',
               onPressed: _saveGroupName,
             ),
             IconButton(
               icon: const Icon(Icons.close),
+              tooltip: 'Cancel editing',
               onPressed: () => setState(() => _isEditingName = false),
             ),
           ],
@@ -865,10 +867,12 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.check),
+                  tooltip: 'Save description',
                   onPressed: _saveDescription,
                 ),
                 IconButton(
                   icon: const Icon(Icons.close),
+                  tooltip: 'Cancel editing',
                   onPressed: () =>
                       setState(() => _isEditingDescription = false),
                 ),

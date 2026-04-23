@@ -89,7 +89,10 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
                     controller: passwordController,
                     obscureText: true,
                     style: TextStyle(color: context.textPrimary, fontSize: 14),
-                    decoration: const InputDecoration(hintText: 'Password'),
+                    decoration: const InputDecoration(
+                      labelText: 'Password',
+                      hintText: 'Password',
+                    ),
                     onChanged: (_) => setDialogState(() {}),
                   ),
                   const SizedBox(height: 16),
@@ -104,7 +107,10 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
                   TextField(
                     controller: confirmController,
                     style: TextStyle(color: context.textPrimary, fontSize: 14),
-                    decoration: const InputDecoration(hintText: 'RESET'),
+                    decoration: const InputDecoration(
+                      labelText: 'Confirm reset',
+                      hintText: 'RESET',
+                    ),
                     onChanged: (_) => setDialogState(() {}),
                   ),
                 ],

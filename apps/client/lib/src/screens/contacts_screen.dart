@@ -248,6 +248,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         focusNode: _searchFocusNode,
         style: TextStyle(color: context.textPrimary, fontSize: 14),
         decoration: InputDecoration(
+          labelText: 'Search contacts',
           hintText: 'Search by username, email, or phone...',
           prefixIcon: Icon(Icons.search, color: context.textMuted, size: 20),
           suffixIcon: _searchController.text.isNotEmpty

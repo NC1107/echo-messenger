@@ -1111,6 +1111,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
               child: DropdownButtonFormField<_CountryCode>(
                 initialValue: _selectedCountry,
                 decoration: InputDecoration(
+                  labelText: 'Country code',
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 8,
                     vertical: 10,
@@ -1157,6 +1158,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
                 ],
                 style: TextStyle(color: context.textPrimary, fontSize: 14),
                 decoration: InputDecoration(
+                  labelText: 'Phone number',
                   hintText: '5551234567',
                   hintStyle: TextStyle(color: context.textMuted),
                   counterText: '',

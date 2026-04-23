@@ -89,12 +89,24 @@ fn validate_url(url: &str) -> Result<ValidatedUrl, AppError> {
     // Validate ALL resolved addresses are safe (reject if any is private)
     for addr in &addrs {
         let ip = addr.ip();
-        if ip.is_loopback()
-            || ip.is_unspecified()
-            || matches!(ip, std::net::IpAddr::V4(v4) if v4.is_private()
+        let is_private = match ip {
+            std::net::IpAddr::V4(v4) => {
+                v4.is_private()
                     || v4.is_link_local()
-                    || v4.octets()[0] == 169 && v4.octets()[1] == 254)
-        {
+                    || v4.octets()[0] == 169 && v4.octets()[1] == 254
+            }
+            std::net::IpAddr::V6(v6) => {
+                let seg = v6.segments();
+                // ULA (fc00::/7)
+                (seg[0] & 0xfe00) == 0xfc00
+                // Link-local (fe80::/10)
+                || (seg[0] & 0xffc0) == 0xfe80
+                // IPv4-mapped (::ffff:0:0/96) -- check the mapped IPv4
+                || matches!(v6.to_ipv4_mapped(), Some(v4) if v4.is_private()
+                    || v4.is_loopback() || v4.is_link_local())
+            }
+        };
+        if ip.is_loopback() || ip.is_unspecified() || is_private {
             return Err(AppError::bad_request(
                 "URL resolves to a private or reserved address",
             ));
