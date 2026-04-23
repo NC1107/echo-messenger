@@ -16,7 +16,7 @@ use crate::auth::middleware::AuthUser;
 use crate::db;
 use crate::error::AppError;
 use crate::types::{ConversationKind, Role};
-use crate::ws::handler::invalidate_member_cache;
+use crate::ws::typing_service::invalidate_member_cache;
 
 use super::AppState;
 
