@@ -812,7 +812,7 @@ async fn store_and_confirm(
 ) -> Option<db::messages::MessageRow> {
     // Resolve TTL: use per-message override first, then fall back to conversation setting.
     // Clamp to valid range: 5 seconds to 1 year. Reject non-positive values.
-    let ttl_seconds = ttl_seconds.filter(|&s| s >= 5 && s <= 31_536_000);
+    let ttl_seconds = ttl_seconds.filter(|&s| (5..=31_536_000).contains(&s));
     let effective_ttl = if ttl_seconds.is_some() {
         ttl_seconds
     } else {
