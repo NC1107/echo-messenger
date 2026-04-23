@@ -666,41 +666,10 @@ class CryptoService {
     );
 
     if (response.statusCode == 409) {
-      // Identity key changed -- auto-reset fingerprint and retry.
-      // JWT auth is sufficient; password left empty.
-      debugPrint('[Crypto] 409 on key upload -- auto-resetting fingerprint');
-      final resetResponse = await http.post(
-        Uri.parse('$serverUrl/api/keys/reset'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_token',
-        },
-        body: jsonEncode({'password': ''}),
+      throw Exception(
+        'Identity key conflict (409). Log out and back in to reset '
+        'encryption keys.',
       );
-      if (resetResponse.statusCode == 204) {
-        // Retry the upload with the same body
-        final retryResponse = await http.post(
-          Uri.parse('$serverUrl/api/keys/upload'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $_token',
-          },
-          body: body,
-        );
-        if (retryResponse.statusCode != 201) {
-          throw Exception(
-            'Key upload failed after reset: HTTP ${retryResponse.statusCode} '
-            '${retryResponse.body}',
-          );
-        }
-        debugPrint('[Crypto] Key upload succeeded after auto-reset');
-        return;
-      } else {
-        throw Exception(
-          'Auto-reset failed: HTTP ${resetResponse.statusCode} '
-          '${resetResponse.body}',
-        );
-      }
     }
 
     if (response.statusCode != 201) {

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -33,12 +34,18 @@ class TrayService with TrayListener, WindowListener {
     await windowManager.setPreventClose(true);
     windowManager.addListener(this);
 
-    await trayManager.setIcon(_iconPath());
-    await trayManager.setToolTip('Echo');
-    await _setContextMenu();
-    trayManager.addListener(this);
-
-    _initialised = true;
+    try {
+      await trayManager.setIcon(_iconPath());
+      await trayManager.setToolTip('Echo');
+      await _setContextMenu();
+      trayManager.addListener(this);
+      _initialised = true;
+    } catch (e) {
+      // Tray plugin may be unavailable (e.g. MissingPluginException on some
+      // Linux configurations). Swallow the error so the app continues without
+      // system tray support -- updateBadge becomes a no-op.
+      debugPrint('[TrayService] init failed (tray unavailable): $e');
+    }
   }
 
   /// Call when [TrayService] is no longer needed (e.g. user logs out).

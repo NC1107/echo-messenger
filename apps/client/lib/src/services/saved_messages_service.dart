@@ -18,11 +18,25 @@ class SavedMessagesService {
   Box<Map>? _box;
 
   /// Open the Hive box. Call once during app init (after [Hive.initFlutter]).
+  ///
+  /// Retries up to 3 times with exponential backoff to handle lock-file
+  /// conflicts when another instance holds the Hive box (errno 11).
   Future<void> init() async {
-    try {
-      _box = await Hive.openBox<Map>(_boxName);
-    } catch (e) {
-      debugLog('Failed to open saved-messages box: $e', 'SavedMessagesService');
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        _box = await Hive.openBox<Map>(_boxName);
+        return;
+      } catch (e) {
+        debugLog(
+          'Attempt ${attempt + 1}/3 failed to open saved-messages box: $e',
+          'SavedMessagesService',
+        );
+        if (attempt < 2) {
+          await Future<void>.delayed(
+            Duration(milliseconds: 100 * (attempt + 1)),
+          );
+        }
+      }
     }
   }
 

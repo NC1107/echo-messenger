@@ -78,13 +78,18 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
         );
         return null;
       } catch (uploadError) {
+        final errorStr = uploadError.toString();
         DebugLogService.instance.log(
           LogLevel.error,
           'Crypto',
           'Key upload attempt $attempt failed: $uploadError',
         );
-        if (attempt == 2) return uploadError.toString();
-        await Future<void>.delayed(const Duration(seconds: 1));
+        // Don't retry on rate limit or identity conflict -- same error repeats.
+        if (errorStr.contains('429') || errorStr.contains('409')) {
+          return errorStr;
+        }
+        if (attempt == 2) return errorStr;
+        await Future<void>.delayed(Duration(seconds: attempt * 2));
       }
     }
     return null; // unreachable
@@ -115,11 +120,12 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
       if (crypto.keysAreFresh) {
         final uploadError = await _uploadKeysWithRetry(crypto);
         if (uploadError != null) {
-          // Keys are initialized locally but NOT on the server. Mark as
-          // NOT initialized so callers won't send encrypted messages that
-          // the recipient can never decrypt (server doesn't have the keys).
+          // Keys are initialized locally but upload to server failed.
+          // Mark initialized so incoming messages can still be decrypted
+          // with the valid local keys. The keysUploadFailed flag blocks
+          // outgoing encrypted sends and shows a degradation banner.
           state = state.copyWith(
-            isInitialized: false,
+            isInitialized: true,
             isUploading: false,
             keysUploadFailed: true,
             error: 'Key upload failed: $uploadError',

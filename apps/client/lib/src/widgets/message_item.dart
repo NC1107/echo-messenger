@@ -1432,7 +1432,7 @@ class _MessageItemState extends State<MessageItem>
     return Positioned(
       top: widget.compactLayout ? -28 : (widget.showHeader ? 0 : -12),
       left: isMine ? null : 36,
-      right: isMine ? 0 : 8,
+      right: isMine ? 0 : null,
       child: ExcludeSemantics(
         excluding: !_isHovered,
         child: IgnorePointer(
