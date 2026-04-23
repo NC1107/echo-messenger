@@ -3,22 +3,28 @@ import 'package:flutter/material.dart';
 import '../../models/reaction.dart';
 import '../../theme/echo_theme.dart';
 
-/// Displays a compact pill showing all reaction emojis and a total count.
+/// Displays per-emoji reaction pills, each showing the emoji and its count.
+/// Pills where the current user has reacted are highlighted with accent color.
 class ReactionBar extends StatelessWidget {
   final List<Reaction> reactions;
+  final String? currentUserId;
   final void Function(Offset globalPosition)? onTap;
 
-  const ReactionBar({super.key, required this.reactions, this.onTap});
+  const ReactionBar({
+    super.key,
+    required this.reactions,
+    this.currentUserId,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     if (reactions.isEmpty) return const SizedBox.shrink();
 
-    // Collect unique emojis preserving order of first appearance.
-    final seen = <String>{};
-    final uniqueEmojis = <String>[];
+    // Group reactions by emoji, preserving order of first appearance.
+    final grouped = <String, List<Reaction>>{};
     for (final r in reactions) {
-      if (seen.add(r.emoji)) uniqueEmojis.add(r.emoji);
+      grouped.putIfAbsent(r.emoji, () => []).add(r);
     }
 
     final totalCount = reactions.length;
@@ -31,42 +37,77 @@ class ReactionBar extends StatelessWidget {
       child: Semantics(
         label:
             '$totalCount ${totalCount == 1 ? 'reaction' : 'reactions'}: '
-            '${uniqueEmojis.join(" ")}',
+            '${grouped.keys.join(" ")}',
         button: true,
-        child: GestureDetector(
-          onTapUp: (details) => onTap?.call(details.globalPosition),
-          child: Container(
-            height: 24,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            decoration: BoxDecoration(
-              color: context.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.border, width: 1),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final emoji in uniqueEmojis)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 2),
-                    child: Text(
-                      emoji,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        decoration: TextDecoration.none,
-                      ),
-                    ),
-                  ),
-                if (totalCount > 1) ...[
-                  const SizedBox(width: 2),
-                  Text(
-                    '$totalCount',
-                    style: TextStyle(fontSize: 12, color: context.textMuted),
-                  ),
-                ],
-              ],
-            ),
+        child: Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          children: [
+            for (final entry in grouped.entries)
+              _ReactionPill(
+                emoji: entry.key,
+                count: entry.value.length,
+                isHighlighted:
+                    currentUserId != null &&
+                    entry.value.any((r) => r.userId == currentUserId),
+                onTap: onTap,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReactionPill extends StatelessWidget {
+  final String emoji;
+  final int count;
+  final bool isHighlighted;
+  final void Function(Offset globalPosition)? onTap;
+
+  const _ReactionPill({
+    required this.emoji,
+    required this.count,
+    required this.isHighlighted,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapUp: (details) => onTap?.call(details.globalPosition),
+      child: Container(
+        height: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        decoration: BoxDecoration(
+          color: isHighlighted
+              ? EchoTheme.accent.withValues(alpha: 0.15)
+              : context.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isHighlighted ? EchoTheme.accent : context.border,
+            width: 1,
           ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              emoji,
+              style: const TextStyle(
+                fontSize: 14,
+                decoration: TextDecoration.none,
+              ),
+            ),
+            const SizedBox(width: 3),
+            Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 12,
+                color: isHighlighted ? EchoTheme.accent : context.textMuted,
+              ),
+            ),
+          ],
         ),
       ),
     );

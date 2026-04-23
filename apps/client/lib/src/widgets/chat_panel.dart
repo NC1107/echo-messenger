@@ -1307,40 +1307,42 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String serverUrl,
     required String authToken,
   }) {
-    return Scrollbar(
-      controller: _scrollController,
-      thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
-      child: ListView.builder(
+    return SelectionArea(
+      child: Scrollbar(
         controller: _scrollController,
-        padding: const EdgeInsets.only(bottom: 16),
-        itemCount: messages.length + 1,
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            if (chatState.hasMore[conv.id] ?? true) {
-              return SizedBox(
-                height: 48,
-                child: (chatState.loadingHistory[conv.id] ?? false)
-                    ? const Center(
-                        child: SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              );
+        thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
+        child: ListView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.only(bottom: 16),
+          itemCount: messages.length + 1,
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              if (chatState.hasMore[conv.id] ?? true) {
+                return SizedBox(
+                  height: 48,
+                  child: (chatState.loadingHistory[conv.id] ?? false)
+                      ? const Center(
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                );
+              }
+              return const SizedBox(height: 8);
             }
-            return const SizedBox(height: 8);
-          }
-          return _buildMessageAtIndex(
-            i: index - 1,
-            messages: messages,
-            memberAvatars: memberAvatars,
-            myUserId: myUserId,
-            serverUrl: serverUrl,
-            authToken: authToken,
-          );
-        },
+            return _buildMessageAtIndex(
+              i: index - 1,
+              messages: messages,
+              memberAvatars: memberAvatars,
+              myUserId: myUserId,
+              serverUrl: serverUrl,
+              authToken: authToken,
+            );
+          },
+        ),
       ),
     );
   }

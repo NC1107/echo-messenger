@@ -143,18 +143,18 @@ class SettingsNavList extends StatelessWidget {
             label: 'Accessibility',
             section: SettingsSection.accessibility,
           ),
+          _navItem(
+            context: context,
+            icon: Icons.storage_outlined,
+            label: 'Data & Storage',
+            section: SettingsSection.dataStorage,
+          ),
           _categoryHeader(context, 'ADVANCED'),
           _navItem(
             context: context,
             icon: Icons.info_outline,
             label: 'About',
             section: SettingsSection.about,
-          ),
-          _navItem(
-            context: context,
-            icon: Icons.storage_outlined,
-            label: 'Data & Storage',
-            section: SettingsSection.dataStorage,
           ),
           _navItem(
             context: context,
@@ -306,13 +306,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        content: Text(
-          'Are you sure you want to log out?',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to log out?',
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Your local encryption keys will be cleared. '
+              'Old encrypted messages on this device may become unreadable.',
+              style: TextStyle(
+                color: EchoTheme.danger,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(

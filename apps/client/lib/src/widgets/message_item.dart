@@ -1497,6 +1497,7 @@ class _MessageItemState extends State<MessageItem>
     final hasReactions = msg.reactions.isNotEmpty;
     final reactionPill = ReactionBar(
       reactions: msg.reactions,
+      currentUserId: widget.myUserId,
       onTap: (pos) => widget.onReactionTap?.call(msg, pos),
     );
 

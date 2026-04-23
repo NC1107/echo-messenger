@@ -184,6 +184,14 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
     return '$m:$s';
   }
 
+  /// Seek to a position based on tap/drag x offset within the waveform width.
+  void _seekToFraction(double dx, double totalWidth) {
+    if (_duration.inMilliseconds == 0) return;
+    final fraction = (dx / totalWidth).clamp(0.0, 1.0);
+    final seekMs = (fraction * _duration.inMilliseconds).round();
+    _player.seek(Duration(milliseconds: seekMs));
+  }
+
   /// Playback progress in [0, 1].
   double get _progress {
     if (_duration.inMilliseconds == 0) return 0;
@@ -199,10 +207,8 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final accentColor = widget.isMine ? Colors.white : EchoTheme.accent;
-    final mutedColor = widget.isMine
-        ? Colors.white.withValues(alpha: 0.4)
-        : EchoTheme.textMuted;
+    final accentColor = widget.isMine ? context.textPrimary : context.accent;
+    final mutedColor = widget.isMine ? context.textMuted : context.textMuted;
 
     final showPosition = _position > Duration.zero;
     final showDuration = _duration > Duration.zero;
@@ -251,12 +257,27 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _WaveformBars(
-                  bars: _bars,
-                  progress: _progress,
-                  activeColor: accentColor,
-                  inactiveColor: mutedColor,
-                  height: 28,
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: (details) => _seekToFraction(
+                        details.localPosition.dx,
+                        constraints.maxWidth,
+                      ),
+                      onHorizontalDragUpdate: (details) => _seekToFraction(
+                        details.localPosition.dx,
+                        constraints.maxWidth,
+                      ),
+                      child: _WaveformBars(
+                        bars: _bars,
+                        progress: _progress,
+                        activeColor: accentColor,
+                        inactiveColor: mutedColor,
+                        height: 28,
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 2),
                 Text(

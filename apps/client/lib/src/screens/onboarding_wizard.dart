@@ -1049,6 +1049,17 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             final buttonLabel = _currentPage == 4 ? 'Get Started' : 'Next';
             return Row(
               children: [
+                // Back button (hidden on first page)
+                if (_currentPage > 0)
+                  TextButton(
+                    onPressed: _saving
+                        ? null
+                        : () => _goToPage(_currentPage - 1),
+                    child: Text(
+                      'Back',
+                      style: TextStyle(color: context.textMuted),
+                    ),
+                  ),
                 // Skip button (hidden on last page -- "Skip for now" is inline)
                 if (_currentPage < 4)
                   TextButton(

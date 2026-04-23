@@ -463,6 +463,23 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
             height: 1.5,
           ),
         ),
+        if (crypto.isInitialized && !crypto.keysUploadFailed) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Icon(Icons.verified_user, color: Colors.green, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Encryption keys active',
+                style: TextStyle(
+                  color: Colors.green,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ],
         if (crypto.keysUploadFailed) ...[
           const SizedBox(height: 12),
           const Text(

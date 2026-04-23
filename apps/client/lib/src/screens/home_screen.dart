@@ -473,7 +473,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
-  void _logout() {
+  Future<void> _logout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: Text(
+          'Log Out',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to log out?',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Log Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
     ref.read(websocketProvider.notifier).disconnect();
     ref.read(chatProvider.notifier).clear();
     unawaited(ref.read(cryptoProvider.notifier).resetState());
