@@ -21,6 +21,7 @@ import 'message/media_content.dart';
 import 'message/message_status_icon.dart';
 import 'message/reaction_bar.dart';
 import 'message/reply_quote.dart';
+import 'message/link_preview_card.dart';
 import 'message/rich_text_content.dart';
 
 /// Common emojis for the reaction picker.
@@ -59,6 +60,8 @@ class MessageItem extends StatefulWidget {
   final void Function(ChatMessage message)? onRetry;
   final void Function(ChatMessage message)? onSave;
   final void Function(ChatMessage message)? onUnsave;
+  final void Function(ChatMessage message)? onForward;
+  final void Function(String replyToId)? onTapReplyQuote;
 
   /// Whether this message is currently bookmarked.
   final bool isSaved;
@@ -74,6 +77,11 @@ class MessageItem extends StatefulWidget {
 
   /// When true, uses Discord-style compact layout (all left-aligned, colored usernames).
   final bool compactLayout;
+
+  /// Called when an image in this message is tapped, with the resolved URL.
+  /// When provided, the gallery viewer in the parent is opened instead of the
+  /// single-image dialog inside [MediaContent] / [_showImageViewer].
+  final void Function(String resolvedUrl)? onImageTap;
 
   const MessageItem({
     super.key,
@@ -93,11 +101,14 @@ class MessageItem extends StatefulWidget {
     this.onRetry,
     this.onSave,
     this.onUnsave,
+    this.onForward,
+    this.onTapReplyQuote,
     this.isSaved = false,
     this.serverUrl,
     this.authToken,
     this.senderAvatarUrl,
     this.compactLayout = false,
+    this.onImageTap,
   });
 
   @override
@@ -456,6 +467,12 @@ class _MessageItemState extends State<MessageItem>
               'View ${msg.replyCount == 1 ? '1 reply' : '${msg.replyCount} replies'}',
           onTap: () => widget.onViewThread?.call(msg),
         ),
+      _actionTile(
+        sheetContext: sheetContext,
+        icon: Icons.forward_outlined,
+        label: 'Forward',
+        onTap: () => widget.onForward?.call(msg),
+      ),
       if (isImage)
         _actionTile(
           sheetContext: sheetContext,
@@ -523,12 +540,12 @@ class _MessageItemState extends State<MessageItem>
           label: 'Unpin',
           onTap: () => widget.onUnpin?.call(msg),
         ),
-      if (isMine && widget.onDelete != null)
+      if (widget.onDelete != null)
         _actionTile(
           sheetContext: sheetContext,
           icon: Icons.delete_outlined,
           label: 'Delete',
-          color: EchoTheme.danger,
+          color: isMine ? EchoTheme.danger : null,
           onTap: () => widget.onDelete?.call(msg),
         ),
     ];
@@ -727,6 +744,8 @@ class _MessageItemState extends State<MessageItem>
                 widget.onSave?.call(msg);
               case 'unsave':
                 widget.onUnsave?.call(msg);
+              case 'forward':
+                widget.onForward?.call(msg);
               case 'edit':
                 widget.onEdit?.call(msg);
               case 'delete':
@@ -815,6 +834,16 @@ class _MessageItemState extends State<MessageItem>
                   ],
                 ),
               ),
+            const PopupMenuItem(
+              value: 'forward',
+              child: Row(
+                children: [
+                  Icon(Icons.forward_outlined, size: 16),
+                  SizedBox(width: 8),
+                  Text('Forward'),
+                ],
+              ),
+            ),
             if (isMine && widget.onEdit != null)
               const PopupMenuItem(
                 value: 'edit',
@@ -826,18 +855,23 @@ class _MessageItemState extends State<MessageItem>
                   ],
                 ),
               ),
-            if (isMine && widget.onDelete != null)
+            if (widget.onDelete != null)
               PopupMenuItem(
                 value: 'delete',
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.delete_outlined,
                       size: 16,
-                      color: EchoTheme.danger,
+                      color: isMine ? EchoTheme.danger : null,
                     ),
                     const SizedBox(width: 8),
-                    Text('Delete', style: TextStyle(color: EchoTheme.danger)),
+                    Text(
+                      'Delete',
+                      style: isMine
+                          ? const TextStyle(color: EchoTheme.danger)
+                          : null,
+                    ),
                   ],
                 ),
               ),
@@ -1009,6 +1043,7 @@ class _MessageItemState extends State<MessageItem>
         isMine: isMine,
         serverUrl: widget.serverUrl,
         authToken: widget.authToken,
+        onImageTap: widget.onImageTap,
       );
     }
     if (msg.content.startsWith('[Could not decrypt')) {
@@ -1024,7 +1059,36 @@ class _MessageItemState extends State<MessageItem>
     );
 
     final embeddedImages = extractEmbeddedImageUrls(msg.content);
-    if (embeddedImages.isEmpty) return textWidget;
+
+    // Link preview for the first URL (skip attachment-only messages and
+    // internal server links).
+    Widget? linkPreview;
+    if (!msg.content.startsWith('[img:') && !msg.content.startsWith('[file:')) {
+      final urlMatch = urlRegex.firstMatch(msg.content);
+      if (urlMatch != null) {
+        final previewUrl = urlMatch.group(0)!;
+        final serverHost = Uri.tryParse(widget.serverUrl ?? '')?.host;
+        final previewHost = Uri.tryParse(previewUrl)?.host;
+        if (serverHost == null ||
+            previewHost == null ||
+            previewHost != serverHost) {
+          linkPreview = LinkPreviewCard(
+            url: previewUrl,
+            serverUrl: widget.serverUrl ?? '',
+            token: widget.authToken ?? '',
+          );
+        }
+      }
+    }
+
+    if (embeddedImages.isEmpty && linkPreview == null) return textWidget;
+    if (embeddedImages.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [textWidget, linkPreview!],
+      );
+    }
 
     final headers = _mediaHeaders();
     return Column(
@@ -1032,12 +1096,15 @@ class _MessageItemState extends State<MessageItem>
       mainAxisSize: MainAxisSize.min,
       children: [
         textWidget,
+        ?linkPreview,
         for (final imgUrl in embeddedImages) ...[
           const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: GestureDetector(
-              onTap: () => _showImageViewer(imageUrl: imgUrl),
+              onTap: () => widget.onImageTap != null
+                  ? widget.onImageTap!(imgUrl)
+                  : _showImageViewer(imageUrl: imgUrl),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 400),
                 child: imgUrl.endsWith('.gif')
@@ -1129,6 +1196,9 @@ class _MessageItemState extends State<MessageItem>
           replyToUsername: msg.replyToUsername,
           replyToContent: msg.replyToContent!,
           isMine: isMine,
+          onTap: msg.replyToId != null && widget.onTapReplyQuote != null
+              ? () => widget.onTapReplyQuote!(msg.replyToId!)
+              : null,
         ),
       _buildBubbleContent(
         msg: msg,
@@ -1497,6 +1567,7 @@ class _MessageItemState extends State<MessageItem>
     final hasReactions = msg.reactions.isNotEmpty;
     final reactionPill = ReactionBar(
       reactions: msg.reactions,
+      currentUserId: widget.myUserId,
       onTap: (pos) => widget.onReactionTap?.call(msg, pos),
     );
 

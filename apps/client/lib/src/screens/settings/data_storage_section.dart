@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../providers/auth_provider.dart';
+import '../../providers/server_url_provider.dart';
 import '../../services/message_cache.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 
-class DataStorageSection extends StatefulWidget {
+class DataStorageSection extends ConsumerStatefulWidget {
   const DataStorageSection({super.key});
 
   @override
-  State<DataStorageSection> createState() => _DataStorageSectionState();
+  ConsumerState<DataStorageSection> createState() => _DataStorageSectionState();
 }
 
-class _DataStorageSectionState extends State<DataStorageSection> {
+class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
   String _cacheSize = 'Calculating...';
 
   @override
@@ -84,6 +88,23 @@ class _DataStorageSectionState extends State<DataStorageSection> {
     }
   }
 
+  Future<void> _copyAccountInfo() async {
+    final auth = ref.read(authProvider);
+    final serverUrl = ref.read(serverUrlProvider);
+
+    final lines = [
+      'User ID: ${auth.userId ?? 'unknown'}',
+      'Username: ${auth.username ?? 'unknown'}',
+      'Server: $serverUrl',
+    ];
+
+    await Clipboard.setData(ClipboardData(text: lines.join('\n')));
+
+    if (mounted) {
+      ToastService.show(context, 'Account info copied to clipboard');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -125,28 +146,31 @@ class _DataStorageSectionState extends State<DataStorageSection> {
           ),
         ),
         const SizedBox(height: 24),
-        // Export (coming soon)
+        // Export section
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: Icon(Icons.download, color: context.textMuted),
+          leading: Icon(Icons.download_outlined, color: context.textSecondary),
           title: Text(
             'Export My Data',
-            style: TextStyle(color: context.textMuted, fontSize: 14),
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
           ),
           subtitle: Text(
-            'Download all your messages and account data.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
+            'Your messages are stored encrypted on the server and synced to '
+            'this device. Full export is in development.',
+            style: TextStyle(
+              color: context.textSecondary,
+              fontSize: 12,
+              height: 1.4,
+            ),
           ),
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: context.surfaceHover,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              'Coming soon',
-              style: TextStyle(color: context.textMuted, fontSize: 11),
-            ),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: _copyAccountInfo,
+            icon: const Icon(Icons.copy, size: 16),
+            label: const Text('Copy Account Info'),
           ),
         ),
       ],

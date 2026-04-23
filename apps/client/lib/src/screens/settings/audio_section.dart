@@ -299,7 +299,7 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
       padding: const EdgeInsets.all(24),
       children: [
         Text(
-          'Voice & Audio',
+          'Voice & Video',
           style: TextStyle(
             color: context.textPrimary,
             fontSize: 18,

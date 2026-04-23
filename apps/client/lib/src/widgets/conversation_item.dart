@@ -175,17 +175,26 @@ class _ConversationItemState extends State<ConversationItem> {
     return Semantics(
       label: 'Conversation with $displayName',
       button: true,
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _isHovered = true),
-        onExit: (_) => setState(() => _isHovered = false),
-        child: GestureDetector(
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onHover: (hovered) => setState(() => _isHovered = hovered),
           onTap: widget.onTap,
           onSecondaryTapUp: (details) {
             widget.onContextMenu?.call(details.globalPosition);
           },
-          onLongPressStart: _enableLongPressMenu
-              ? (details) {
-                  widget.onContextMenu?.call(details.globalPosition);
+          onLongPress: _enableLongPressMenu
+              ? () {
+                  // globalPosition not available on InkWell.onLongPress;
+                  // fall back to the widget's own render box center.
+                  final box = context.findRenderObject() as RenderBox?;
+                  if (box != null) {
+                    final center = box.localToGlobal(
+                      Offset(box.size.width / 2, box.size.height / 2),
+                    );
+                    widget.onContextMenu?.call(center);
+                  }
                 }
               : null,
           child: Container(
@@ -318,7 +327,8 @@ class _ConversationItemState extends State<ConversationItem> {
           Semantics(
             label: 'More options for $displayName',
             button: true,
-            child: GestureDetector(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(4),
               onTapDown: (details) {
                 widget.onContextMenu?.call(details.globalPosition);
               },

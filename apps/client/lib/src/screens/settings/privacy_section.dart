@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/biometric_provider.dart';
+import '../../providers/contacts_provider.dart';
 import '../../providers/crypto_provider.dart';
 import '../../providers/privacy_provider.dart';
 import '../../services/toast_service.dart';
@@ -20,6 +21,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(privacyProvider.notifier).load();
+      ref.read(contactsProvider.notifier).loadBlockedUsers();
     });
   }
 
@@ -187,11 +189,66 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
     }
   }
 
+  Future<void> _confirmUnblock(String userId, String username) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: Text(
+          'Unblock @$username?',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'They will be able to message you again.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: context.textSecondary),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Unblock'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final success = await ref
+        .read(contactsProvider.notifier)
+        .unblockUser(userId);
+    if (!mounted) return;
+    ToastService.show(
+      context,
+      success ? '@$username unblocked' : 'Failed to unblock user',
+      type: success ? ToastType.success : ToastType.error,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final privacy = ref.watch(privacyProvider);
     final crypto = ref.watch(cryptoProvider);
     final biometric = ref.watch(biometricProvider);
+    final contacts = ref.watch(contactsProvider);
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -463,6 +520,47 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
             height: 1.5,
           ),
         ),
+        const SizedBox(height: 10),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.verified_user_outlined,
+              size: 16,
+              color: context.textMuted,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'You can verify encryption with each contact by comparing '
+                'safety numbers. Open any DM and tap the shield icon in the '
+                'header to check.',
+                style: TextStyle(
+                  color: context.textMuted,
+                  fontSize: 12,
+                  height: 1.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (crypto.isInitialized && !crypto.keysUploadFailed) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Icon(Icons.verified_user, color: Colors.green, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Encryption keys active',
+                style: TextStyle(
+                  color: Colors.green,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ],
         if (crypto.keysUploadFailed) ...[
           const SizedBox(height: 12),
           const Text(
@@ -502,6 +600,102 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
             ),
           ),
         ],
+        const SizedBox(height: 24),
+        const Divider(),
+        const SizedBox(height: 8),
+        Text(
+          'Blocked Users',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Blocked users cannot send you messages or see your '
+          'online status.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (contacts.isBlockedLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          )
+        else if (contacts.blockedUsers.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'No blocked users',
+              style: TextStyle(color: context.textMuted, fontSize: 13),
+            ),
+          )
+        else
+          ...contacts.blockedUsers.map((user) {
+            final initials = (user.displayName ?? user.username)
+                .substring(0, 1)
+                .toUpperCase();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: context.accent.withValues(alpha: 0.15),
+                    child: Text(
+                      initials,
+                      style: TextStyle(
+                        color: context.accent,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      user.displayName ?? user.username,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 14,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  SizedBox(
+                    height: 44,
+                    child: OutlinedButton(
+                      onPressed: () =>
+                          _confirmUnblock(user.blockedId, user.username),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: EchoTheme.danger,
+                        side: const BorderSide(color: EchoTheme.danger),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                      ),
+                      child: Semantics(
+                        label: 'Unblock ${user.username}',
+                        child: const Text('Unblock'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
         const SizedBox(height: 24),
         const Divider(),
         const SizedBox(height: 8),

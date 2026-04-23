@@ -23,6 +23,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/user_profile_screen.dart';
+import '../services/message_cache.dart';
 import '../services/saved_messages_service.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
@@ -34,6 +35,15 @@ import 'chat_input_bar.dart';
 import 'connection_status_banner.dart';
 import 'crypto_degraded_banner.dart';
 import 'identity_key_changed_banner.dart';
+import 'forward_message_dialog.dart';
+import 'image_gallery_viewer.dart';
+import 'message/media_content.dart'
+    show
+        extractEmbeddedImageUrls,
+        isImageUrl,
+        isStandaloneMediaUrl,
+        mediaHeaders,
+        resolveMediaUrl;
 import 'message_item.dart';
 import 'message_search_overlay.dart';
 import 'thread_view_panel.dart';
@@ -94,6 +104,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   String? _loadedHistoryKey;
   String? _loadedChannelsConversationId;
   String? _autoScrollConversationKey;
+
+  /// The message ID at which the "New Messages" divider should appear.
+  /// Set when opening a conversation with unread messages, cleared when
+  /// the unread count drops to 0.
+  String? _unreadBoundaryMessageId;
+  int _unreadBoundaryCount = 0;
+
+  /// GlobalKeys for rendered message items, keyed by message ID.
+  /// Used by [_scrollToMessage] for pixel-accurate scrolling (via
+  /// [Scrollable.ensureVisible]) and by [_updateFloatingDate] to detect which
+  /// message is at the top of the viewport without a hardcoded height estimate.
+  /// Cleared whenever the active conversation changes to prevent leaks.
+  final _messageKeys = <String, GlobalKey>{};
 
   bool _showSearch = false;
   ChatMessage? _threadParent;
@@ -176,20 +199,31 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       _highlightedMessageId = null;
       _hasNewMessagesBelow = false;
       _newMessagesBelowCount = 0;
+      _unreadBoundaryMessageId = null;
+      _unreadBoundaryCount = 0;
       _floatingDate = null;
       _floatingDateVisible = false;
       _floatingDateTimer?.cancel();
       _highlightTimer?.cancel();
+      _messageKeys.clear();
       _dismissReactionPicker();
 
       // Restore cached scroll position for the new conversation, or scroll
-      // to bottom if no cached position exists.
+      // to bottom if no cached position exists. If there's an unread boundary,
+      // defer to the first-load callback which scrolls to the divider.
       final newId = widget.conversation?.id;
       if (newId != null) {
         final newKey = '$newId:${_selectedTextChannelId ?? ""}';
         final cached = _scrollPositions[newKey];
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!_scrollController.hasClients) return;
+          // Defer to the first-load callback if unread boundary will be set
+          final convData = ref
+              .read(conversationsProvider)
+              .conversations
+              .where((c) => c.id == newId)
+              .firstOrNull;
+          if (convData != null && convData.unreadCount > 0) return;
           if (cached != null) {
             _scrollController.jumpTo(
               cached.clamp(0, _scrollController.position.maxScrollExtent),
@@ -231,12 +265,17 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         _scrollController.position.minScrollExtent + 50) {
       _loadOlderMessages();
     }
-    // Clear "new messages" pill when user scrolls near the bottom.
-    if (_hasNewMessagesBelow && _isNearBottom()) {
-      setState(() {
-        _hasNewMessagesBelow = false;
-        _newMessagesBelowCount = 0;
-      });
+    // Clear "new messages" pill and unread divider when user scrolls near
+    // the bottom -- they've seen all the new messages.
+    if (_isNearBottom()) {
+      if (_hasNewMessagesBelow || _unreadBoundaryMessageId != null) {
+        setState(() {
+          _hasNewMessagesBelow = false;
+          _newMessagesBelowCount = 0;
+          _unreadBoundaryMessageId = null;
+          _unreadBoundaryCount = 0;
+        });
+      }
     }
     _updateFloatingDate();
   }
@@ -256,12 +295,27 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     );
     if (messages.isEmpty) return;
 
-    // Approximate the topmost visible message index from scroll offset.
-    // The ListView has a leading loader item (index 0), so message index =
-    // estimated item index - 1. Average message height ~60px.
-    final offset = _scrollController.position.pixels;
-    final estimatedIndex = (offset / 60.0).floor();
-    final msgIndex = (estimatedIndex - 1).clamp(0, messages.length - 1);
+    // Find the topmost rendered message by querying each message's RenderBox
+    // position in the viewport. This is accurate for any message height
+    // (images, reactions, multi-line text) and avoids the old 60px estimate.
+    String? topmostId;
+    double closestY = double.infinity;
+    for (final entry in _messageKeys.entries) {
+      final ctx = entry.value.currentContext;
+      if (ctx == null) continue;
+      final box = ctx.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) continue;
+      final y = box.localToGlobal(Offset.zero).dy;
+      if (y < closestY) {
+        closestY = y;
+        topmostId = entry.key;
+      }
+    }
+    final msgIndex = topmostId == null
+        ? 0
+        : messages
+              .indexWhere((m) => m.id == topmostId)
+              .clamp(0, messages.length - 1);
 
     try {
       final dt = DateTime.parse(messages[msgIndex].timestamp).toLocal();
@@ -467,6 +521,75 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     ref.read(websocketProvider.notifier).sendReadReceipt(conv.id);
   }
 
+  /// Compute the unread boundary message ID from the current unread count.
+  /// Called once when a conversation is first opened or messages finish loading.
+  void _captureUnreadBoundary() {
+    final conv = widget.conversation;
+    if (conv == null) return;
+    // Only capture once per conversation open
+    if (_unreadBoundaryMessageId != null) return;
+
+    final convState = ref.read(conversationsProvider);
+    final convData = convState.conversations
+        .where((c) => c.id == conv.id)
+        .firstOrNull;
+    if (convData == null || convData.unreadCount <= 0) return;
+
+    final chatState = ref.read(chatProvider);
+    final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
+    final includeUnchanneled = conv.isGroup && _selectedTextChannelId == null;
+    final messages = _resolveMessages(
+      conv,
+      chatState,
+      selectedChannelId,
+      includeUnchanneled,
+    );
+    if (messages.isEmpty) return;
+
+    final boundaryIndex = messages.length - convData.unreadCount;
+    if (boundaryIndex > 0 && boundaryIndex < messages.length) {
+      setState(() {
+        _unreadBoundaryMessageId = messages[boundaryIndex].id;
+        _unreadBoundaryCount = convData.unreadCount;
+      });
+    }
+  }
+
+  /// Scroll to the unread boundary divider so it appears near the top.
+  void _scrollToUnreadBoundary() {
+    final conv = widget.conversation;
+    if (conv == null || _unreadBoundaryMessageId == null) return;
+
+    final chatState = ref.read(chatProvider);
+    final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
+    final includeUnchanneled = conv.isGroup && _selectedTextChannelId == null;
+    final messages = _resolveMessages(
+      conv,
+      chatState,
+      selectedChannelId,
+      includeUnchanneled,
+    );
+    final index = messages.indexWhere((m) => m.id == _unreadBoundaryMessageId);
+    if (index < 0 || !_scrollController.hasClients) return;
+
+    // Use Scrollable.ensureVisible if the key is available for pixel-accurate
+    // positioning; fall back to a jump when the item is not yet rendered.
+    final key = _messageKeys[_unreadBoundaryMessageId];
+    if (key?.currentContext != null) {
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        alignment: 0.15,
+        duration: Duration.zero,
+      );
+    } else {
+      // Item not rendered yet — scroll by index (approximate).
+      final estimatedOffset = (index + 1) * 60.0 - 120.0;
+      _scrollController.jumpTo(
+        estimatedOffset.clamp(0, _scrollController.position.maxScrollExtent),
+      );
+    }
+  }
+
   void _onTextChannelChanged(String? channelId) {
     if (_selectedTextChannelId == channelId) return;
     setState(() {
@@ -493,24 +616,43 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   }
 
   void _scrollToMessage(String messageId) {
+    final key = _messageKeys[messageId];
+    if (key?.currentContext != null) {
+      Scrollable.ensureVisible(
+        key!.currentContext!,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+        alignment: 0.3,
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Jump to reply quote
+  // ---------------------------------------------------------------------------
+
+  void _jumpToReplyQuote(String replyToId) {
     final conv = widget.conversation;
     if (conv == null) return;
     final chatState = ref.read(chatProvider);
-    final messages = conv.isGroup
-        ? chatState.messagesForConversationChannel(
-            conv.id,
-            channelId: _selectedTextChannelId,
-            includeUnchanneled: _selectedTextChannelId == null,
-          )
-        : chatState.messagesForConversation(conv.id);
-    final index = messages.indexWhere((m) => m.id == messageId);
-    if (index < 0 || !_scrollController.hasClients) return;
-    final estimatedOffset = (index + 1) * 60.0;
-    _scrollController.animateTo(
-      estimatedOffset.clamp(0, _scrollController.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
+    final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
+    final includeUnchanneled = conv.isGroup && _selectedTextChannelId == null;
+    final messages = _resolveMessages(
+      conv,
+      chatState,
+      selectedChannelId,
+      includeUnchanneled,
     );
+    final index = messages.indexWhere((m) => m.id == replyToId);
+    if (index < 0) {
+      ToastService.show(
+        context,
+        'Original message not loaded',
+        type: ToastType.info,
+      );
+      return;
+    }
+    _highlightMessage(replyToId);
   }
 
   // ---------------------------------------------------------------------------
@@ -820,13 +962,56 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   }
 
   // ---------------------------------------------------------------------------
+  // Forward message
+  // ---------------------------------------------------------------------------
+
+  void _forwardMessage(ChatMessage message) {
+    showForwardDialog(
+      context: context,
+      ref: ref,
+      onForward: (target) => _sendForwardedMessage(message, target),
+    );
+  }
+
+  Future<void> _sendForwardedMessage(
+    ChatMessage message,
+    Conversation target,
+  ) async {
+    final myUserId = ref.read(authProvider).userId ?? '';
+    final ws = ref.read(websocketProvider.notifier);
+    final content = message.content;
+
+    await ref.read(chatProvider.notifier).forwardMessage(content, target.id, (
+      forwardedContent,
+    ) async {
+      if (target.isGroup) {
+        await ws.sendGroupMessage(target.id, forwardedContent);
+      } else {
+        final peer = target.members
+            .where((m) => m.userId != myUserId)
+            .firstOrNull;
+        if (peer == null) return;
+        await ws.sendMessage(
+          peer.userId,
+          forwardedContent,
+          conversationId: target.id,
+        );
+      }
+    });
+
+    if (mounted) {
+      ToastService.show(context, 'Message forwarded', type: ToastType.success);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Delete confirmation
   // ---------------------------------------------------------------------------
 
   void _confirmDelete(ChatMessage message) {
     final conv = widget.conversation;
     if (conv == null) return;
-    showDialog<bool>(
+    showDialog<_DeleteChoice>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: context.surface,
@@ -834,35 +1019,70 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(color: context.border),
         ),
-        title: const Text('Delete Message'),
-        content: const Text('This message will be removed for everyone.'),
+        title: const Text('Delete message?'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: context.textSecondary),
-            ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
-            child: const Text('Delete'),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, _DeleteChoice.forMe),
+                child: Text(
+                  'Delete for me',
+                  style: TextStyle(color: context.textSecondary),
+                ),
+              ),
+              if (message.isMine)
+                TextButton(
+                  onPressed: () =>
+                      Navigator.pop(ctx, _DeleteChoice.forEveryone),
+                  child: const Text(
+                    'Delete for everyone',
+                    style: TextStyle(color: EchoTheme.danger),
+                  ),
+                ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: context.textSecondary),
+                ),
+              ),
+            ],
           ),
         ],
       ),
-    ).then((confirmed) {
-      if (confirmed != true) return;
-      ref.read(chatProvider.notifier).deleteMessage(conv.id, message.id);
-      final serverUrl = ref.read(serverUrlProvider);
-      ref
-          .read(authProvider.notifier)
-          .authenticatedRequest(
-            (token) => http.delete(
-              Uri.parse('$serverUrl/api/messages/${message.id}'),
-              headers: {'Authorization': 'Bearer $token'},
-            ),
+    ).then((choice) {
+      if (choice == null) return;
+      if (choice == _DeleteChoice.forMe) {
+        ref.read(chatProvider.notifier).deleteMessage(conv.id, message.id);
+        MessageCache.removeMessage(conv.id, message.id);
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Message deleted for you',
+            type: ToastType.info,
           );
+        }
+      } else {
+        ref.read(chatProvider.notifier).deleteMessage(conv.id, message.id);
+        final serverUrl = ref.read(serverUrlProvider);
+        ref
+            .read(authProvider.notifier)
+            .authenticatedRequest(
+              (token) => http.delete(
+                Uri.parse('$serverUrl/api/messages/${message.id}'),
+                headers: {'Authorization': 'Bearer $token'},
+              ),
+            );
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Message deleted for everyone',
+            type: ToastType.success,
+          );
+        }
+      }
     });
   }
 
@@ -997,6 +1217,71 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   }
 
   // ---------------------------------------------------------------------------
+  // Image gallery
+  // ---------------------------------------------------------------------------
+
+  /// Collects all resolved image URLs from [messages] in order, then opens the
+  /// gallery viewer starting at the image matching [tappedUrl].
+  void _openImageGallery({
+    required String tappedUrl,
+    required List<ChatMessage> messages,
+    required String serverUrl,
+    required String authToken,
+  }) {
+    final headers = mediaHeaders(authToken: authToken);
+
+    // Build an ordered list of all image URLs from this message list.
+    final allUrls = <String>[];
+    for (final msg in messages) {
+      // [img:URL] marker — single image message.
+      final imgMatch = RegExp(r'^\[img:(.+)\]$').firstMatch(msg.content);
+      if (imgMatch != null) {
+        final raw = imgMatch.group(1)!;
+        allUrls.add(
+          resolveMediaUrl(raw, serverUrl: serverUrl, authToken: authToken),
+        );
+        continue;
+      }
+
+      // Standalone image URL (e.g. https://…/photo.png).
+      if (isStandaloneMediaUrl(msg.content) && isImageUrl(msg.content.trim())) {
+        allUrls.add(
+          resolveMediaUrl(
+            msg.content.trim(),
+            serverUrl: serverUrl,
+            authToken: authToken,
+          ),
+        );
+        continue;
+      }
+
+      // Embedded image URLs mixed into text.
+      for (final embUrl in extractEmbeddedImageUrls(msg.content)) {
+        allUrls.add(embUrl);
+      }
+    }
+
+    if (allUrls.isEmpty) {
+      // Fallback: show only the tapped image.
+      allUrls.add(tappedUrl);
+    }
+
+    // Find the index of the tapped URL. Use string-starts-with matching to
+    // handle minor URL differences (e.g. trailing query params differ).
+    final idx = allUrls.indexWhere(
+      (u) =>
+          u == tappedUrl || u.startsWith(tappedUrl) || tappedUrl.startsWith(u),
+    );
+
+    showImageGallery(
+      context: context,
+      imageUrls: allUrls,
+      initialIndex: idx < 0 ? 0 : idx,
+      headers: headers,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Message list helpers
   // ---------------------------------------------------------------------------
 
@@ -1096,6 +1381,30 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     } catch (_) {
       return const SizedBox.shrink();
     }
+  }
+
+  Widget _buildUnreadDivider(int count) {
+    final noun = count == 1 ? 'message' : 'messages';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: context.accent, height: 1)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              '$count new $noun',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: context.accent,
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: context.accent, height: 1)),
+        ],
+      ),
+    );
   }
 
   String _fullMonthName(int m) {
@@ -1244,11 +1553,17 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     final senderAvatarUrl = memberAvatars[msg.fromUserId];
     final isHighlighted = _highlightedMessageId == msg.id;
 
+    final showUnreadDivider = _unreadBoundaryMessageId == msg.id;
+
+    final messageKey = _messageKeys.putIfAbsent(msg.id, () => GlobalKey());
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (needsDateDivider) _buildDateDivider(msg.timestamp),
+        if (showUnreadDivider) _buildUnreadDivider(_unreadBoundaryCount),
         AnimatedContainer(
+          key: messageKey,
           duration: const Duration(milliseconds: 400),
           color: isHighlighted
               ? context.accent.withValues(alpha: 0.15)
@@ -1284,14 +1599,22 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             onViewThread: (msg) => _openThread(msg),
             onPin: (msg) => _pinMessage(msg),
             onUnpin: (msg) => _unpinMessage(msg),
+            onForward: (msg) => _forwardMessage(msg),
             isSaved:
                 _savedIds.contains(msg.id) ||
                 SavedMessagesService.instance.isMessageSaved(msg.id),
             onSave: (msg) => _saveMessage(msg),
             onUnsave: (msg) => _unsaveMessage(msg),
+            onTapReplyQuote: _jumpToReplyQuote,
             onAvatarTap: (userId) {
               UserProfileScreen.show(context, ref, userId);
             },
+            onImageTap: (resolvedUrl) => _openImageGallery(
+              tappedUrl: resolvedUrl,
+              messages: messages,
+              serverUrl: serverUrl,
+              authToken: authToken,
+            ),
           ),
         ),
       ],
@@ -1307,40 +1630,42 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String serverUrl,
     required String authToken,
   }) {
-    return Scrollbar(
-      controller: _scrollController,
-      thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
-      child: ListView.builder(
+    return SelectionArea(
+      child: Scrollbar(
         controller: _scrollController,
-        padding: const EdgeInsets.only(bottom: 16),
-        itemCount: messages.length + 1,
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            if (chatState.hasMore[conv.id] ?? true) {
-              return SizedBox(
-                height: 48,
-                child: (chatState.loadingHistory[conv.id] ?? false)
-                    ? const Center(
-                        child: SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              );
+        thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
+        child: ListView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.only(bottom: 16),
+          itemCount: messages.length + 1,
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              if (chatState.hasMore[conv.id] ?? true) {
+                return SizedBox(
+                  height: 48,
+                  child: (chatState.loadingHistory[conv.id] ?? false)
+                      ? const Center(
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                );
+              }
+              return const SizedBox(height: 8);
             }
-            return const SizedBox(height: 8);
-          }
-          return _buildMessageAtIndex(
-            i: index - 1,
-            messages: messages,
-            memberAvatars: memberAvatars,
-            myUserId: myUserId,
-            serverUrl: serverUrl,
-            authToken: authToken,
-          );
-        },
+            return _buildMessageAtIndex(
+              i: index - 1,
+              messages: messages,
+              memberAvatars: memberAvatars,
+              myUserId: myUserId,
+              serverUrl: serverUrl,
+              authToken: authToken,
+            );
+          },
+        ),
       ),
     );
   }
@@ -1425,6 +1750,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
       final prevCount = prev == null ? 0 : visibleCount(prev);
       final nextCount = visibleCount(next);
+
+      // Attempt to capture unread boundary when messages first arrive
+      // (e.g. history loaded asynchronously after conversation opened).
+      if (prevCount == 0 && nextCount > 0 && _unreadBoundaryMessageId == null) {
+        _captureUnreadBoundary();
+        if (_unreadBoundaryMessageId != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _scrollToUnreadBoundary();
+          });
+          return;
+        }
+      }
+
       if (nextCount > prevCount) {
         if (_isNearBottom()) {
           _scrollToBottom(settleRetries: 3);
@@ -1455,31 +1793,33 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   // Drag-and-drop file upload
   // ---------------------------------------------------------------------------
 
-  /// Called when files are dropped onto the chat area. Forwards the first
-  /// dropped file to the input bar's attachment flow.
+  /// Called when files are dropped onto the chat area. Forwards all dropped
+  /// files to the input bar's attachment flow, one after another.
   Future<void> _onDropDone(DropDoneDetails details) async {
     if (details.files.isEmpty) return;
-    final item = details.files.first;
-
-    // Directories are not supported -- skip silently.
-    if (item is DropItemDirectory) return;
 
     final inputBar = _chatInputBarKey.currentState;
     if (inputBar == null) return;
 
-    // On web, DropItem may carry bytes directly (no filesystem path).
-    Uint8List? bytes;
-    if (kIsWeb) {
-      try {
-        bytes = await item.readAsBytes();
-      } catch (_) {}
-    }
+    // Filter out directories before processing.
+    final items = details.files.where((f) => f is! DropItemDirectory).toList();
+    if (items.isEmpty) return;
 
-    await inputBar.attachDroppedFile(
-      path: item.path,
-      fileName: item.name,
-      bytes: bytes,
-    );
+    for (final item in items) {
+      // On web, DropItem may carry bytes directly (no filesystem path).
+      Uint8List? bytes;
+      if (kIsWeb) {
+        try {
+          bytes = await item.readAsBytes();
+        } catch (_) {}
+      }
+
+      await inputBar.attachDroppedFile(
+        path: item.path,
+        fileName: item.name,
+        bytes: bytes,
+      );
+    }
   }
 
   /// Overlay shown when dragging a file over the chat panel.
@@ -1637,13 +1977,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
     if (conv == null) return _buildNoConversationPlaceholder();
 
-    // Load on first build + scroll to newest message
+    // Load on first build + scroll to newest message (or unread boundary)
     if (_loadedHistoryKey == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadHistory();
         _loadChannels();
+        // Capture unread boundary before marking as read (which resets count)
+        _captureUnreadBoundary();
         _markAsRead();
-        _scrollToBottom(settleRetries: 3);
+        if (_unreadBoundaryMessageId != null) {
+          _scrollToUnreadBoundary();
+        } else {
+          _scrollToBottom(settleRetries: 3);
+        }
       });
     }
 
@@ -1851,3 +2197,5 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     );
   }
 }
+
+enum _DeleteChoice { forMe, forEveryone }

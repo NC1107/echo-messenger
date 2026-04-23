@@ -66,6 +66,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
     setState(() => _isCreating = false);
 
     if (conversationId != null && conversationId.isNotEmpty) {
+      ToastService.show(context, 'Group created', type: ToastType.success);
       if (Navigator.canPop(context)) {
         Navigator.pop(context);
       }

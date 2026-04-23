@@ -171,6 +171,14 @@ class MessageCache {
     return latest;
   }
 
+  /// Remove a single message from the cache.
+  static Future<void> removeMessage(
+    String conversationId,
+    String messageId,
+  ) async {
+    await _box?.delete('$conversationId:$messageId');
+  }
+
   static Future<void> clearAll() async {
     await _box?.clear();
   }

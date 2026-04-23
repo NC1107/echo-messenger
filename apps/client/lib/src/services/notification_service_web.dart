@@ -4,6 +4,8 @@ import 'dart:js_interop';
 import 'package:web/web.dart' as web;
 
 import 'notification_service.dart';
+import '../screens/settings/notification_section.dart'
+    show shouldSuppressNotification;
 
 /// Web implementation using the browser Notifications API.
 ///
@@ -72,10 +74,30 @@ class _WebNotificationService implements NotificationService {
     bool forceShow = false,
   }) {
     if (!_permissionGranted) return;
+
+    // Check Do Not Disturb and Quiet Hours (async, suppress if active).
+    if (!forceShow) {
+      shouldSuppressNotification().then((suppress) {
+        if (!suppress) {
+          _showWebNotification(senderUsername, body, conversationId);
+        }
+      });
+      return;
+    }
+
+    _showWebNotification(senderUsername, body, conversationId, force: true);
+  }
+
+  void _showWebNotification(
+    String senderUsername,
+    String body,
+    String? conversationId, {
+    bool force = false,
+  }) {
     try {
       // Show when the document is not visible (user tabbed away),
-      // or when forceShow is true (e.g. test notification button).
-      if (web.document.hidden || forceShow) {
+      // or when forced (e.g. test notification button).
+      if (web.document.hidden || force) {
         final notification = web.Notification(
           senderUsername,
           web.NotificationOptions(body: body),

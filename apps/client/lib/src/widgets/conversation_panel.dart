@@ -1122,50 +1122,100 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Widget _buildChatsEmptyState() {
+    if (_searchQuery.isNotEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.search_off,
+                size: 40,
+                color: context.textMuted.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                "No results found for '$_searchQuery'",
+                style: TextStyle(
+                  color: context.textSecondary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Try a different search term',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: context.textMuted, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // No conversations yet — show onboarding guidance.
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              _searchQuery.isNotEmpty ? Icons.search_off : Icons.forum_outlined,
-              size: 40,
-              color: context.textMuted.withValues(alpha: 0.5),
+              Icons.chat_bubble_outline,
+              size: 64,
+              color: context.textMuted.withValues(alpha: 0.45),
             ),
             const SizedBox(height: 16),
             Text(
-              _searchQuery.isNotEmpty
-                  ? "No results found for '$_searchQuery'"
-                  : 'No conversations yet',
+              'No conversations yet',
               style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+                color: context.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
               ),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              _searchQuery.isNotEmpty
-                  ? 'Try a different search term'
-                  : 'Add a contact to start messaging',
+              'Start chatting by adding a contact or joining a group',
               textAlign: TextAlign.center,
-              style: TextStyle(color: context.textMuted, fontSize: 13),
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 14,
+                height: 1.4,
+              ),
             ),
-            if (_searchQuery.isEmpty) ...[
-              const SizedBox(height: 16),
-              FilledButton.icon(
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
                 onPressed: widget.onNewChat,
-                icon: const Icon(Icons.chat_outlined, size: 16),
-                label: const Text('New Chat'),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 10,
-                  ),
+                icon: const Icon(Icons.person_add_outlined, size: 18),
+                label: const Text('Add Contact'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: BorderSide(color: context.accent),
+                  foregroundColor: context.accent,
                 ),
               ),
-            ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: widget.onDiscover,
+                icon: const Icon(Icons.groups_outlined, size: 18),
+                label: const Text('Browse Groups'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: BorderSide(color: context.border),
+                  foregroundColor: context.textSecondary,
+                ),
+              ),
+            ),
           ],
         ),
       ),

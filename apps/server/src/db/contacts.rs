@@ -194,6 +194,23 @@ pub async fn list_blocked_users(
     .await
 }
 
+/// Decline (delete) a pending contact request where `declining_user_id` is the target.
+/// Returns true if a row was actually deleted.
+pub async fn decline_contact_request(
+    pool: &PgPool,
+    contact_id: Uuid,
+    declining_user_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let result =
+        sqlx::query("DELETE FROM contacts WHERE id = $1 AND target_id = $2 AND status = 'pending'")
+            .bind(contact_id)
+            .bind(declining_user_id)
+            .execute(pool)
+            .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
 /// Check if either user has blocked the other (bidirectional check in a single query).
 pub async fn is_either_blocked(
     pool: &PgPool,

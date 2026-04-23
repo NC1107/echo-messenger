@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/chat_message.dart';
 import '../providers/auth_provider.dart';
+import '../providers/chat_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
@@ -15,6 +16,11 @@ import 'message/reply_quote.dart';
 ///
 /// The parent message is displayed at the top, followed by a chronological list
 /// of replies. Users can compose new replies from this panel.
+///
+/// Replies are sourced reactively from [chatProvider] so that messages arriving
+/// via WebSocket while the panel is open appear immediately without any manual
+/// refresh.  The initial HTTP fetch seeds the provider with historical replies
+/// that may not yet be in memory.
 class ThreadViewPanel extends ConsumerStatefulWidget {
   final ChatMessage parentMessage;
   final String? serverUrl;
@@ -36,14 +42,25 @@ class ThreadViewPanel extends ConsumerStatefulWidget {
 }
 
 class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
-  List<ChatMessage> _replies = [];
   bool _isLoading = true;
   String? _error;
+
+  /// Tracks the reply count from the previous build so we can detect new
+  /// arrivals and scroll to the bottom.
+  int _previousReplyCount = 0;
+
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _loadReplies();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadReplies() async {
@@ -70,18 +87,19 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
         final myUserId = ref.read(authProvider).userId ?? '';
-        final replies = data
-            .map(
-              (json) => ChatMessage.fromServerJson(
-                json as Map<String, dynamic>,
-                myUserId,
-              ),
-            )
-            .toList();
-        setState(() {
-          _replies = replies;
-          _isLoading = false;
-        });
+        // Seed chatProvider with the fetched historical replies so the
+        // reactive filter below picks them up immediately.
+        final notifier = ref.read(chatProvider.notifier);
+        for (final json in data) {
+          notifier.addMessage(
+            ChatMessage.fromServerJson(json as Map<String, dynamic>, myUserId),
+          );
+        }
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
       } else {
         setState(() {
           _error = 'Failed to load replies';
@@ -97,10 +115,37 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
     }
   }
 
+  void _scrollToBottom() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile = Responsive.isMobile(context);
     final parent = widget.parentMessage;
+
+    // Watch the full conversation message list and filter for replies to this
+    // parent.  Any WS-delivered message that has replyToId == parent.id will
+    // automatically appear here because chatProvider notifies on addMessage().
+    final allMessages = ref.watch(
+      chatProvider.select(
+        (s) => s.messagesForConversation(parent.conversationId),
+      ),
+    );
+    final replies = allMessages.where((m) => m.replyToId == parent.id).toList();
+
+    // Scroll to bottom when a new reply arrives while the panel is open.
+    if (!_isLoading && replies.length > _previousReplyCount) {
+      _previousReplyCount = replies.length;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    } else if (!_isLoading) {
+      _previousReplyCount = replies.length;
+    }
 
     return Container(
       width: isMobile ? double.infinity : 380,
@@ -114,9 +159,9 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
         children: [
           _buildHeader(context),
           Divider(height: 1, color: context.border),
-          _buildParentMessage(context, parent),
+          _buildParentMessage(context, parent, replies),
           Divider(height: 1, color: context.border),
-          Expanded(child: _buildRepliesList(context)),
+          Expanded(child: _buildRepliesList(context, replies)),
           _buildReplyAction(context),
         ],
       ),
@@ -153,7 +198,11 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
     );
   }
 
-  Widget _buildParentMessage(BuildContext context, ChatMessage parent) {
+  Widget _buildParentMessage(
+    BuildContext context,
+    ChatMessage parent,
+    List<ChatMessage> replies,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       color: context.chatBg,
@@ -182,10 +231,10 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
             parent.content,
             style: TextStyle(fontSize: 14, color: context.textPrimary),
           ),
-          if (_replies.isNotEmpty && !_isLoading) ...[
+          if (replies.isNotEmpty && !_isLoading) ...[
             const SizedBox(height: 8),
             Text(
-              '${_replies.length} ${_replies.length == 1 ? 'reply' : 'replies'}',
+              '${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}',
               style: TextStyle(
                 fontSize: 12,
                 color: context.textMuted,
@@ -198,7 +247,7 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
     );
   }
 
-  Widget _buildRepliesList(BuildContext context) {
+  Widget _buildRepliesList(BuildContext context, List<ChatMessage> replies) {
     if (_isLoading) {
       return const Center(
         child: SizedBox(
@@ -227,7 +276,7 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
       );
     }
 
-    if (_replies.isEmpty) {
+    if (replies.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -253,11 +302,12 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
     }
 
     return ListView.separated(
+      controller: _scrollController,
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: _replies.length,
+      itemCount: replies.length,
       separatorBuilder: (_, _) => const SizedBox(height: 2),
       itemBuilder: (context, index) {
-        final reply = _replies[index];
+        final reply = replies[index];
         return _buildReplyItem(context, reply);
       },
     );

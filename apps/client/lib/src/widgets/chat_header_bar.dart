@@ -382,6 +382,15 @@ class ChatHeaderBar extends ConsumerWidget {
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
+      if (!conv.isGroup && conv.isEncrypted)
+        IconButton(
+          icon: const Icon(Icons.verified_user_outlined, size: 18),
+          color: context.textSecondary,
+          tooltip: 'Verify encryption',
+          onPressed: () => _openSafetyNumber(context, ref, conv),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        ),
       if (conv.isGroup && onMembersToggle != null)
         IconButton(
           icon: const Icon(Icons.people_outline, size: 20),

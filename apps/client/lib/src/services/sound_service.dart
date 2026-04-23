@@ -2,6 +2,41 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Which sound to play for incoming message notifications.
+enum NotificationSound {
+  /// No sound.
+  none,
+
+  /// The default "ding" (received.mp3).
+  defaultSound,
+
+  /// A softer "whoosh" tone (sent.mp3) used as an alternate notification.
+  subtle;
+
+  /// Persisted string value stored in SharedPreferences.
+  String get prefValue => name;
+
+  static NotificationSound fromPrefValue(String? value) =>
+      NotificationSound.values.firstWhere(
+        (e) => e.name == value,
+        orElse: () => NotificationSound.defaultSound,
+      );
+
+  /// Human-readable label shown in the UI.
+  String get label => switch (this) {
+    NotificationSound.none => 'None',
+    NotificationSound.defaultSound => 'Default',
+    NotificationSound.subtle => 'Subtle',
+  };
+
+  /// Asset path for this sound, or null when [none].
+  String? get assetPath => switch (this) {
+    NotificationSound.none => null,
+    NotificationSound.defaultSound => 'sounds/received.mp3',
+    NotificationSound.subtle => 'sounds/sent.mp3',
+  };
+}
+
 /// Simple service for playing UI sound effects.
 ///
 /// Uses the audioplayers package which supports web via HTML5 audio.
@@ -11,6 +46,7 @@ class SoundService {
   SoundService._();
 
   static const _prefKey = 'sound_enabled';
+  static const _notificationSoundPrefKey = 'notification_sound';
 
   final AudioPlayer _sentPlayer = AudioPlayer();
   final AudioPlayer _receivedPlayer = AudioPlayer();
@@ -19,14 +55,32 @@ class SoundService {
 
   bool _enabled = true;
   bool _initialized = false;
+  NotificationSound _notificationSound = NotificationSound.defaultSound;
 
   /// Whether sound effects are currently enabled.
   bool get enabled => _enabled;
+
+  /// The selected notification sound for incoming messages.
+  NotificationSound get notificationSound => _notificationSound;
 
   /// Toggle sound effects on or off and persist the preference.
   set enabled(bool value) {
     _enabled = value;
     _persist(value);
+  }
+
+  /// Update and persist the notification sound selection.
+  Future<void> setNotificationSound(NotificationSound sound) async {
+    _notificationSound = sound;
+    // Keep the legacy enabled flag in sync: "none" means disabled.
+    _enabled = sound != NotificationSound.none;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_notificationSoundPrefKey, sound.prefValue);
+      await prefs.setBool(_prefKey, _enabled);
+    } catch (e) {
+      debugPrint('[Sound] Failed to save notification sound preference: $e');
+    }
   }
 
   /// Load the persisted sound preference from SharedPreferences.
@@ -36,7 +90,18 @@ class SoundService {
     _initialized = true;
     try {
       final prefs = await SharedPreferences.getInstance();
-      _enabled = prefs.getBool(_prefKey) ?? true;
+      final soundValue = prefs.getString(_notificationSoundPrefKey);
+      if (soundValue != null) {
+        _notificationSound = NotificationSound.fromPrefValue(soundValue);
+        _enabled = _notificationSound != NotificationSound.none;
+      } else {
+        // Migrate from old boolean pref.
+        final legacyEnabled = prefs.getBool(_prefKey) ?? true;
+        _enabled = legacyEnabled;
+        _notificationSound = legacyEnabled
+            ? NotificationSound.defaultSound
+            : NotificationSound.none;
+      }
     } catch (e) {
       debugPrint('[Sound] Failed to load preference: $e');
     }
@@ -61,16 +126,26 @@ class SoundService {
     }
   }
 
-  /// Play a short "ding" sound when a new message is received.
+  /// Play the selected notification sound when a new message is received.
   Future<void> playMessageReceived() async {
     if (!_enabled) return;
+    final path = _notificationSound.assetPath;
+    if (path == null) return;
     try {
-      await _receivedPlayer.play(
-        AssetSource('sounds/received.mp3'),
-        volume: 0.3,
-      );
+      await _receivedPlayer.play(AssetSource(path), volume: 0.3);
     } catch (e) {
       debugPrint('[Sound] Failed to play received sound: $e');
+    }
+  }
+
+  /// Preview the given [sound] regardless of the current enabled state.
+  Future<void> previewSound(NotificationSound sound) async {
+    final path = sound.assetPath;
+    if (path == null) return;
+    try {
+      await _receivedPlayer.play(AssetSource(path), volume: 0.3);
+    } catch (e) {
+      debugPrint('[Sound] Failed to preview sound: $e');
     }
   }
 

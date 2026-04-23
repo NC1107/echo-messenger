@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'debug_log_service.dart';
 import 'notification_service.dart';
+import '../screens/settings/notification_section.dart'
+    show shouldSuppressNotification;
 
 /// Native (non-web) implementation using flutter_local_notifications.
 ///
@@ -179,6 +181,38 @@ class _NativeNotificationService implements NotificationService {
       if (!isGroup && !_dmEnabled) return;
     }
 
+    // Check Do Not Disturb and Quiet Hours (async, suppress if active).
+    if (!forceShow) {
+      shouldSuppressNotification().then((suppress) {
+        if (!suppress) {
+          _showNotification(
+            conversationId,
+            senderUsername,
+            body,
+            isGroup,
+            conversationName,
+          );
+        }
+      });
+      return;
+    }
+
+    _showNotification(
+      conversationId,
+      senderUsername,
+      body,
+      isGroup,
+      conversationName,
+    );
+  }
+
+  void _showNotification(
+    String? conversationId,
+    String senderUsername,
+    String body,
+    bool isGroup,
+    String? conversationName,
+  ) {
     _ensureInitialized().then((_) {
       if (!_initialized) return;
 
