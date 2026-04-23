@@ -399,10 +399,8 @@ pub async fn revoke_device(
 }
 
 /// Request body for key reset -- requires current password for re-authentication.
-/// Password is optional: if empty/missing, the JWT auth already proves identity.
 #[derive(Debug, Deserialize)]
 pub struct ResetKeysRequest {
-    #[serde(default)]
     pub password: String,
 }
 
@@ -416,22 +414,25 @@ pub async fn reset_keys(
 ) -> Result<impl IntoResponse, AppError> {
     use crate::auth::password;
 
-    // If a password was provided, verify it. If empty, the JWT auth is sufficient.
-    if !body.password.is_empty() {
-        let user = db::users::find_by_id(&state.pool, auth_user.user_id)
-            .await
-            .map_err(|_| AppError::internal("Database error"))?
-            .ok_or_else(|| AppError::bad_request("User not found"))?;
+    // Always require password -- key reset is the most security-critical
+    // operation. A stolen JWT must not be sufficient to replace identity keys.
+    if body.password.is_empty() {
+        return Err(AppError::bad_request("Password is required for key reset"));
+    }
 
-        let pw = body.password.clone();
-        let hash = user.password_hash.clone();
-        let valid = tokio::task::spawn_blocking(move || password::verify_password(&pw, &hash))
-            .await
-            .map_err(|_| AppError::internal("Password verification failed"))??;
+    let user = db::users::find_by_id(&state.pool, auth_user.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::bad_request("User not found"))?;
 
-        if !valid {
-            return Err(AppError::unauthorized("Invalid password"));
-        }
+    let pw = body.password.clone();
+    let hash = user.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || password::verify_password(&pw, &hash))
+        .await
+        .map_err(|_| AppError::internal("Password verification failed"))??;
+
+    if !valid {
+        return Err(AppError::unauthorized("Invalid password"));
     }
 
     // Clear the fingerprint so the next upload_bundle can bind a new one

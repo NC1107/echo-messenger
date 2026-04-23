@@ -1,7 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: cargo
-    directory: /apps/server
+    directory: /
     schedule:
       interval: weekly
     labels:

@@ -634,15 +634,24 @@ pub async fn ban_member(
         ));
     }
 
-    // Prevent banning the owner
+    // Prevent banning the owner or peers of equal rank
     let target_role = db::groups::get_member_role(&state.pool, group_id, target_user_id)
         .await
         .map_err(|e| {
             tracing::error!("DB error in ban_member/get_target_role: {e:?}");
             AppError::internal("Database error")
         })?;
-    if target_role.as_deref().and_then(Role::from_str_opt) == Some(Role::Owner) {
+    let target_role_enum = target_role
+        .as_deref()
+        .and_then(Role::from_str_opt)
+        .unwrap_or(Role::Member);
+    if target_role_enum == Role::Owner {
         return Err(AppError::bad_request("Cannot ban the group owner"));
+    }
+    if target_role_enum.is_admin_or_above() && caller_role_enum != Role::Owner {
+        return Err(AppError::bad_request(
+            "Only the group owner can ban admins",
+        ));
     }
 
     db::groups::ban_member(&state.pool, group_id, target_user_id, auth.user_id)
@@ -772,10 +781,20 @@ pub async fn upload_group_avatar(
             continue;
         }
 
-        let mime_type = field
-            .content_type()
-            .unwrap_or("application/octet-stream")
-            .to_string();
+        let data = field
+            .bytes()
+            .await
+            .map_err(|e| AppError::bad_request(format!("Failed to read avatar data: {e}")))?;
+
+        // Validate via magic bytes, not client-declared Content-Type
+        let mime_type = match infer::get(&data) {
+            Some(inferred) => inferred.mime_type().to_string(),
+            None => {
+                return Err(AppError::bad_request(
+                    "Could not determine avatar file type from content",
+                ));
+            }
+        };
 
         if !ALLOWED_GROUP_AVATAR_TYPES.contains(&mime_type.as_str()) {
             return Err(AppError::bad_request(format!(
@@ -784,11 +803,6 @@ pub async fn upload_group_avatar(
                 ALLOWED_GROUP_AVATAR_TYPES.join(", ")
             )));
         }
-
-        let data = field
-            .bytes()
-            .await
-            .map_err(|e| AppError::bad_request(format!("Failed to read avatar data: {e}")))?;
 
         if data.len() > MAX_GROUP_AVATAR_SIZE {
             return Err(AppError::bad_request(format!(
