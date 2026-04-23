@@ -287,25 +287,21 @@ pub async fn request_media_ticket(
     Ok(Json(MediaTicketResponse { ticket }))
 }
 
-/// Query param for media download -- accepts `?ticket=` (single-use media
-/// ticket), legacy `?token=` (validated as media ticket, not JWT), or
-/// `?jwt=` (validated as a full JWT -- used by web `<img>` tags that
-/// cannot send `Authorization` headers).
+/// Query param for media download -- accepts `?ticket=` (reusable media
+/// ticket, valid for 5 minutes) or legacy `?token=` (alias for ticket).
 #[derive(Debug, Deserialize)]
 pub struct MediaDownloadQuery {
     pub ticket: Option<String>,
     pub token: Option<String>,
-    pub jwt: Option<String>,
 }
 
 /// GET /api/media/:id
 ///
 /// Returns the file with correct Content-Type and Content-Disposition headers.
 /// Accepts auth via:
-///   1. `Authorization: Bearer <JWT>` header
-///   2. `?jwt=<JWT>` query param (for web `<img>` tags that can't send headers)
-///   3. `?ticket=<media_ticket>` query param (single-use, consumed on use)
-///   4. `?token=<media_ticket>` query param (legacy compat, same as ticket)
+///   1. `Authorization: Bearer <JWT>` header (native apps)
+///   2. `?ticket=<media_ticket>` query param (web -- reusable within 5-min TTL)
+///   3. `?token=<media_ticket>` query param (legacy alias for ticket)
 pub async fn download(
     State(state): State<Arc<AppState>>,
     Path(id): Path<Uuid>,
@@ -322,13 +318,7 @@ pub async fn download(
         Uuid::parse_str(&claims.sub)
             .map_err(|_| AppError::unauthorized("Invalid user ID in token"))?
     }
-    // 2. Try ?jwt= query param (web <img> tags cannot send Authorization headers)
-    else if let Some(ref jwt_str) = query.jwt {
-        let claims = jwt::validate_token(jwt_str, &state.jwt_secret)?;
-        Uuid::parse_str(&claims.sub)
-            .map_err(|_| AppError::unauthorized("Invalid user ID in token"))?
-    }
-    // 3. Try ?ticket= or legacy ?token= as media ticket
+    // 2. Try ?ticket= or legacy ?token= as media ticket
     else if let Some(ticket_str) = query.ticket.or(query.token) {
         validate_media_ticket(&state, &ticket_str)?
     } else {
@@ -393,21 +383,25 @@ pub async fn download(
     Ok(response)
 }
 
-/// Validate a single-use media ticket. Removes the ticket from the store
-/// on success (single-use). Returns the associated `user_id`.
+/// Validate a media ticket.  Tickets are reusable within their 5-minute TTL
+/// so that web `<img>` tags can load multiple images with the same ticket.
+/// Expired tickets are rejected and removed.
 fn validate_media_ticket(state: &AppState, ticket: &str) -> Result<Uuid, AppError> {
     const TICKET_TTL: Duration = Duration::from_secs(300);
 
-    let (_, (user_id, created_at)) = state
+    let entry = state
         .media_tickets
-        .remove(ticket)
+        .get(ticket)
         .ok_or_else(|| AppError::unauthorized("Invalid or expired media ticket"))?;
 
-    if Instant::now().duration_since(created_at) >= TICKET_TTL {
+    let (user_id, created_at) = entry.value();
+    if Instant::now().duration_since(*created_at) >= TICKET_TTL {
+        drop(entry); // release read lock before mutation
+        state.media_tickets.remove(ticket);
         return Err(AppError::unauthorized("Invalid or expired media ticket"));
     }
 
-    Ok(user_id)
+    Ok(*user_id)
 }
 
 #[cfg(test)]

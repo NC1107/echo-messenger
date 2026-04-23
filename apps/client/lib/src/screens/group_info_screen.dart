@@ -15,6 +15,7 @@ import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/media_ticket_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 
@@ -703,13 +704,13 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
   Widget _buildGroupAvatar({required bool isOwnerOrAdmin, String? iconUrl}) {
     final serverUrl = ref.read(serverUrlProvider);
-    final token = ref.read(authProvider).token;
+    final ticket = ref.read(mediaTicketProvider);
     final hasIcon = iconUrl != null && iconUrl.isNotEmpty;
 
     Widget avatar;
     if (hasIcon) {
-      final fullUrl = token != null && token.isNotEmpty
-          ? '$serverUrl$iconUrl?jwt=$token'
+      final fullUrl = ticket != null && ticket.isNotEmpty
+          ? '$serverUrl$iconUrl?ticket=$ticket'
           : '$serverUrl$iconUrl';
       avatar = CircleAvatar(
         radius: 56,
