@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/chat_message.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
+import '../providers/media_ticket_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
@@ -22,6 +23,7 @@ class SharedMediaGallery extends ConsumerWidget {
     final chatState = ref.watch(chatProvider);
     final serverUrl = ref.watch(serverUrlProvider);
     final authToken = ref.watch(authProvider.select((s) => s.token)) ?? '';
+    final mediaTicket = ref.watch(mediaTicketProvider);
     final messages = chatState.messagesForConversation(conversationId);
 
     // Collect media items from all cached messages
@@ -69,18 +71,21 @@ class SharedMediaGallery extends ConsumerWidget {
               items: mediaItems.where(_isImage).toList(),
               serverUrl: serverUrl,
               authToken: authToken,
+              mediaTicket: mediaTicket,
               emptyLabel: 'No images shared yet',
             ),
             _MediaGrid(
               items: mediaItems.where(_isVideo).toList(),
               serverUrl: serverUrl,
               authToken: authToken,
+              mediaTicket: mediaTicket,
               emptyLabel: 'No videos shared yet',
             ),
             _FileList(
               items: mediaItems.where(_isFile).toList(),
               serverUrl: serverUrl,
               authToken: authToken,
+              mediaTicket: mediaTicket,
             ),
           ],
         ),
@@ -113,12 +118,14 @@ class _MediaGrid extends StatelessWidget {
   final List<_MediaItem> items;
   final String serverUrl;
   final String authToken;
+  final String? mediaTicket;
   final String emptyLabel;
 
   const _MediaGrid({
     required this.items,
     required this.serverUrl,
     required this.authToken,
+    this.mediaTicket,
     required this.emptyLabel,
   });
 
@@ -158,6 +165,7 @@ class _MediaGrid extends StatelessWidget {
           item.rawUrl,
           serverUrl: serverUrl,
           authToken: authToken,
+          mediaTicket: mediaTicket,
         );
         final headers = mediaHeaders(authToken: authToken);
 
@@ -263,11 +271,13 @@ class _FileList extends StatelessWidget {
   final List<_MediaItem> items;
   final String serverUrl;
   final String authToken;
+  final String? mediaTicket;
 
   const _FileList({
     required this.items,
     required this.serverUrl,
     required this.authToken,
+    this.mediaTicket,
   });
 
   @override
@@ -303,6 +313,7 @@ class _FileList extends StatelessWidget {
           item.rawUrl,
           serverUrl: serverUrl,
           authToken: authToken,
+          mediaTicket: mediaTicket,
         );
         final filename =
             Uri.tryParse(resolvedUrl)?.pathSegments.lastOrNull ?? 'file';

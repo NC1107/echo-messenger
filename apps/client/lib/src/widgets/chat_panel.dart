@@ -35,6 +35,7 @@ import 'chat_input_bar.dart';
 import 'connection_status_banner.dart';
 import 'crypto_degraded_banner.dart';
 import 'identity_key_changed_banner.dart';
+import '../providers/media_ticket_provider.dart';
 import 'forward_message_dialog.dart';
 import 'image_gallery_viewer.dart';
 import 'message/media_content.dart'
@@ -1298,6 +1299,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String authToken,
   }) {
     final headers = mediaHeaders(authToken: authToken);
+    final mediaTicket = ref.read(mediaTicketProvider);
 
     // Build an ordered list of all image URLs from this message list.
     final allUrls = <String>[];
@@ -1307,7 +1309,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       if (imgMatch != null) {
         final raw = imgMatch.group(1)!;
         allUrls.add(
-          resolveMediaUrl(raw, serverUrl: serverUrl, authToken: authToken),
+          resolveMediaUrl(
+            raw,
+            serverUrl: serverUrl,
+            authToken: authToken,
+            mediaTicket: mediaTicket,
+          ),
         );
         continue;
       }
@@ -1319,6 +1326,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             msg.content.trim(),
             serverUrl: serverUrl,
             authToken: authToken,
+            mediaTicket: mediaTicket,
           ),
         );
         continue;
@@ -1600,6 +1608,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String myUserId,
     required String serverUrl,
     required String authToken,
+    String? mediaTicket,
   }) {
     final msg = messages[i];
 
@@ -1644,6 +1653,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             myUserId: myUserId,
             serverUrl: serverUrl,
             authToken: authToken,
+            mediaTicket: mediaTicket,
             senderAvatarUrl: senderAvatarUrl,
             compactLayout:
                 ref.watch(messageLayoutProvider) == MessageLayout.compact,
@@ -1698,6 +1708,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String myUserId,
     required String serverUrl,
     required String authToken,
+    String? mediaTicket,
   }) {
     return Scrollbar(
       controller: _scrollController,
@@ -1731,6 +1742,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             myUserId: myUserId,
             serverUrl: serverUrl,
             authToken: authToken,
+            mediaTicket: mediaTicket,
           );
         },
       ),
@@ -1747,6 +1759,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String myUserId,
     required String serverUrl,
     required String authToken,
+    String? mediaTicket,
   }) {
     final Widget child;
     if (messages.isEmpty && isLoadingHistory) {
@@ -1770,6 +1783,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           myUserId: myUserId,
           serverUrl: serverUrl,
           authToken: authToken,
+          mediaTicket: mediaTicket,
         ),
       );
     }
@@ -2065,6 +2079,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     final myUserId = ref.watch(authProvider.select((s) => s.userId)) ?? '';
     final authToken = ref.watch(authProvider.select((s) => s.token)) ?? '';
     final serverUrl = ref.watch(serverUrlProvider);
+    final mediaTicket = ref.watch(mediaTicketProvider);
     final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
     final includeUnchanneled = conv.isGroup && _selectedTextChannelId == null;
 
@@ -2175,6 +2190,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                         myUserId: myUserId,
                         serverUrl: serverUrl,
                         authToken: authToken,
+                        mediaTicket: mediaTicket,
                       ),
                       if (_floatingDate != null) _buildFloatingDatePill(),
                       if (_hasNewMessagesBelow) _buildNewMessagesPill(),
