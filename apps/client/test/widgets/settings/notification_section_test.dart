@@ -35,11 +35,12 @@ void main() {
       expect(find.byType(SwitchListTile), findsWidgets);
     });
 
-    testWidgets('renders message sounds toggle', (tester) async {
+    testWidgets('renders message sound selector', (tester) async {
       await tester.pumpWidget(buildSection());
       await tester.pumpAndSettle();
 
-      expect(find.text('Message Sounds'), findsOneWidget);
+      // Sound toggle was replaced by a dropdown selector in sprint 4.
+      expect(find.text('Message Sound'), findsOneWidget);
     });
 
     testWidgets('shows sub-toggles when notifications enabled', (tester) async {
@@ -60,7 +61,11 @@ void main() {
       await tester.pumpWidget(buildSection());
       await tester.pumpAndSettle();
 
-      expect(find.text('Send Test Notification'), findsOneWidget);
+      // DND + quiet hours sections push the button off-screen.
+      expect(
+        find.text('Send Test Notification', skipOffstage: false),
+        findsOneWidget,
+      );
     });
   });
 }
