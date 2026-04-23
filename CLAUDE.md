@@ -128,6 +128,17 @@ Keep it concise -- no multi-paragraph explanations, no bullet lists in commit me
 
 Allowed types: `feat fix docs style refactor perf test build ci chore revert security`. Optional scopes: `core server client infra proto crypto ci deps`. Subject must be lowercase, max 72 chars.
 
+## Project Commands
+
+Slash commands scoped to this project (`.claude/commands/`):
+- `/echo-dev <task>` -- Full development workflow with all project standards
+- `/echo-fix <bug>` -- Bug fix with mandatory reproduction test before the fix
+- `/echo-feat <feature>` -- Feature implementation with tests, a11y, and pipeline compliance
+
+These enforce: test-first for bugs, test-after for features, conventional commits (no co-author), semantic labels on interactive widgets, theme-aware colors, and pipeline formatting rules.
+
+**When to use**: Any code change should follow `/echo-dev` rules. Use `/echo-fix` for bugs (writes reproduction test first) and `/echo-feat` for features (writes tests after). During `/next-task` or any implementation workflow, follow the standards in `/echo-dev` automatically — do not wait for explicit invocation.
+
 ## Docker Production
 
 Server image: multi-stage Rust build -> `debian:bookworm-slim`, non-root user (`echo:echo`, UID 1000), `tini` for signal handling. Web image: `nginx:alpine` serving Flutter web build. Both versioned via build args (`BUILD_ID`, `APP_VERSION`).
