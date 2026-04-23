@@ -837,45 +837,48 @@
 		1C6A901CAD75CAD9474AE197 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = TEAM_ID_PLACEHOLDER;
 				INFOPLIST_FILE = EchoNotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = us.echomessenger.app.EchoNotificationService;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
-				CODE_SIGN_STYLE = Automatic;
-				SKIP_INSTALL = YES;
 			};
 			name = Debug;
 		};
 		8626D0C3212016E97E2F2263 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = TEAM_ID_PLACEHOLDER;
 				INFOPLIST_FILE = EchoNotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = us.echomessenger.app.EchoNotificationService;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
-				CODE_SIGN_STYLE = Automatic;
-				SKIP_INSTALL = YES;
 			};
 			name = Release;
 		};
 		E9F282614FEC5BC2200A524E /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = TEAM_ID_PLACEHOLDER;
 				INFOPLIST_FILE = EchoNotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = us.echomessenger.app.EchoNotificationService;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
-				CODE_SIGN_STYLE = Automatic;
-				SKIP_INSTALL = YES;
 			};
 			name = Profile;
 		};
