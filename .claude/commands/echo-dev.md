@@ -171,14 +171,34 @@ cd apps/client && dart format --set-exit-if-changed .
 - **Always** use ticket-based auth for media downloads when possible
 - Message wire format is versioned (V1/V2) — don't change without updating both server and client
 
-## 10. When You're Done
+## 10. Existing Test Compatibility
+
+**CRITICAL**: When agents modify UI (widgets, screens, settings), they MUST check for existing tests that assert on the changed UI. Agents that change text, remove elements, add sections, or restructure layouts will break tests that look for specific strings or scroll positions.
+
+After ANY UI change, check for existing tests:
+```bash
+# Find tests for a changed screen/widget
+grep -rl "SettingName\|WidgetName" apps/client/test/
+```
+
+Common breakage patterns:
+- **Renamed text**: "Message Sounds" → "Message Sound" breaks `find.text('Message Sounds')`
+- **Removed elements**: Removing "Coming soon" badge breaks `find.text('Coming soon')`
+- **Added sections**: New sections push old content off-screen, breaking `scrollUntilVisible`
+- **Changed widget type**: `StatelessWidget` → `ConsumerStatefulWidget` requires `ProviderScope` in test
+
+Fix: update the existing test assertions to match the new UI. Use `skipOffstage: false` when elements move off-screen due to new content above them.
+
+## 11. When You're Done
 
 Before requesting review or pushing:
 
 1. `git diff` — review your own changes
-2. Run relevant test suites
-3. Check for console.log / debugPrint / print statements left behind
-4. Check for TODO comments you introduced — either resolve them or file an issue
-5. Verify semantic labels on new interactive widgets
-6. Verify theme compliance (no hardcoded colors)
-7. Commit with proper conventional commit format (no co-author)
+2. **Run `dart format` on all changed .dart files** (agents cannot hand-format)
+3. **Check existing tests for files you modified** — update assertions if UI changed
+4. Run relevant test suites
+5. Check for console.log / debugPrint / print statements left behind
+6. Check for TODO comments you introduced — either resolve them or file an issue
+7. Verify semantic labels on new interactive widgets
+8. Verify theme compliance (no hardcoded colors)
+9. Commit with proper conventional commit format (no co-author, fully lowercase subject)
