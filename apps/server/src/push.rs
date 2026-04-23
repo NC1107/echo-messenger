@@ -202,7 +202,7 @@ fn format_push_body(content: &str, is_encrypted: bool) -> String {
     const MAX_PREVIEW_BYTES: usize = 140;
 
     if is_encrypted {
-        "Encrypted message".to_string()
+        "New message".to_string()
     } else if content.len() > MAX_PREVIEW_BYTES {
         let end = content.floor_char_boundary(MAX_PREVIEW_BYTES);
         format!("{}...", &content[..end])
@@ -213,12 +213,13 @@ fn format_push_body(content: &str, is_encrypted: bool) -> String {
 
 /// Send an APNs push notification to an iOS device.
 ///
-/// - **Encrypted DMs**: Shows "Encrypted message" as the body (server can't
+/// - **Encrypted DMs**: Shows "New message" as the body (server can't
 ///   read the ciphertext). The sender name is always visible.
 /// - **Plaintext messages**: Shows a truncated preview of the actual content.
 ///
-/// Also includes `content-available: 1` so the app wakes in the background
-/// and reconnects the WebSocket to fetch the full message.
+/// Uses `mutable-content: 1` so a Notification Service Extension can modify
+/// the payload before display.  Also includes `content-available: 1` to wake
+/// the app for WebSocket reconnect.
 async fn send_apns_push(p: ApnsPushParams<'_>) {
     let config = match get_apns_config() {
         Some(c) => c,
@@ -233,7 +234,12 @@ async fn send_apns_push(p: ApnsPushParams<'_>) {
         }
     };
 
-    let url = format!("https://api.push.apple.com/3/device/{}", p.device_token);
+    let host = if std::env::var("APNS_SANDBOX").is_ok() {
+        "api.sandbox.push.apple.com"
+    } else {
+        "api.push.apple.com"
+    };
+    let url = format!("https://{host}/3/device/{}", p.device_token);
 
     let body = format_push_body(p.content, p.is_encrypted);
 
@@ -246,6 +252,7 @@ async fn send_apns_push(p: ApnsPushParams<'_>) {
             "sound": "default",
             "badge": 1,
             "thread-id": p.conversation_id.to_string(),
+            "mutable-content": 1,
             "content-available": 1,
         },
         "conversation_id": p.conversation_id.to_string(),

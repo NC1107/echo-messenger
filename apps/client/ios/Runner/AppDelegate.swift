@@ -59,6 +59,18 @@ import UserNotifications
     NSLog("[Echo] APNs registration failed: \(error.localizedDescription)")
   }
 
+  // MARK: - Foreground Notification Display
+
+  /// Show push notifications even when the app is in the foreground.
+  /// Without this, iOS suppresses the visible banner for foreground apps.
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    completionHandler([.banner, .sound, .badge])
+  }
+
   // MARK: - Silent Push Handling
 
   override func application(
