@@ -413,16 +413,15 @@ pub async fn get_thread_replies(
     Query(params): Query<ThreadRepliesQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     // Look up the parent message to find its conversation_id and verify membership.
-    let parent: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT conversation_id FROM messages WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(message_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("DB error in get_thread_replies/lookup: {e:?}");
-        AppError::internal("Database error")
-    })?;
+    let parent: Option<(Uuid,)> =
+        sqlx::query_as("SELECT conversation_id FROM messages WHERE id = $1 AND deleted_at IS NULL")
+            .bind(message_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error in get_thread_replies/lookup: {e:?}");
+                AppError::internal("Database error")
+            })?;
 
     let conversation_id = parent
         .map(|(cid,)| cid)

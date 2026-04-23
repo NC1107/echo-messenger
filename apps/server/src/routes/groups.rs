@@ -649,9 +649,7 @@ pub async fn ban_member(
         return Err(AppError::bad_request("Cannot ban the group owner"));
     }
     if target_role_enum.is_admin_or_above() && caller_role_enum != Role::Owner {
-        return Err(AppError::bad_request(
-            "Only the group owner can ban admins",
-        ));
+        return Err(AppError::bad_request("Only the group owner can ban admins"));
     }
 
     db::groups::ban_member(&state.pool, group_id, target_user_id, auth.user_id)

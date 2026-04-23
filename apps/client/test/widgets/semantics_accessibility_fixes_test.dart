@@ -124,11 +124,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Scroll to the phone section
+      // Scroll down to reveal the phone section — use the last
+      // Scrollable which is the main settings list.
+      final scrollables = find.byType(Scrollable);
       await tester.scrollUntilVisible(
-        find.text('Phone'),
+        find.text('Country code'),
         200,
-        scrollable: find.byType(Scrollable).first,
+        scrollable: scrollables.last,
       );
 
       // The country code dropdown should have a label

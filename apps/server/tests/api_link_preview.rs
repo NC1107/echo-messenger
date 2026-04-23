@@ -52,9 +52,12 @@ async fn request_without_auth_returns_401() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
-    let resp =
-        post_link_preview_no_auth(&client, &base, &serde_json::json!({"url": "https://example.com"}))
-            .await;
+    let resp = post_link_preview_no_auth(
+        &client,
+        &base,
+        &serde_json::json!({"url": "https://example.com"}),
+    )
+    .await;
 
     assert_eq!(resp.status().as_u16(), 401);
 }

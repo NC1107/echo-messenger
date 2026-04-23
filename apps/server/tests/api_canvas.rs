@@ -170,8 +170,7 @@ async fn get_canvas_non_member_returns_401() {
     let client = Client::new();
     let (group_id, channel_id, _) = setup_group_with_lounge(&client, &base).await;
 
-    let (stranger_token, _, _) =
-        common::register_and_login(&client, &base, "canvasstranger").await;
+    let (stranger_token, _, _) = common::register_and_login(&client, &base, "canvasstranger").await;
 
     let resp = client
         .get(format!(
