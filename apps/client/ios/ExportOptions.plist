@@ -14,6 +14,8 @@
 		<string>Echo App Store Distribution</string>
 		<key>us.echomessenger.app.broadcast</key>
 		<string>Echo Broadcast Distribution</string>
+		<key>us.echomessenger.app.notification-service</key>
+		<string>Echo Notification Service Distribution</string>
 	</dict>
 	<key>signingCertificate</key>
 	<string>Apple Distribution</string>
