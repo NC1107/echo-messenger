@@ -191,8 +191,8 @@ class _NotificationSectionState extends State<NotificationSection> {
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: context.accent.withAlpha(30),
-              border: Border.all(color: context.accent.withAlpha(80)),
+              color: context.accent.withValues(alpha: 0.12),
+              border: Border.all(color: context.accent.withValues(alpha: 0.31)),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
@@ -518,8 +518,6 @@ class _SoundDropdown extends StatelessWidget {
     );
   }
 }
-
-// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Helpers (file-private)

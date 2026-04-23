@@ -70,14 +70,14 @@ class SoundService {
   }
 
   /// Update and persist the notification sound selection.
+  ///
+  /// Only changes the notification sound — does not affect the global [enabled]
+  /// flag (which also gates sent-message sounds and voice join/leave sounds).
   Future<void> setNotificationSound(NotificationSound sound) async {
     _notificationSound = sound;
-    // Keep the legacy enabled flag in sync: "none" means disabled.
-    _enabled = sound != NotificationSound.none;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_notificationSoundPrefKey, sound.prefValue);
-      await prefs.setBool(_prefKey, _enabled);
     } catch (e) {
       debugPrint('[Sound] Failed to save notification sound preference: $e');
     }

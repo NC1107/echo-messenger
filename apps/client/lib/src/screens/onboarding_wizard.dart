@@ -227,7 +227,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     });
 
     try {
-      ref.read(contactsProvider.notifier).sendRequest(username);
+      await ref.read(contactsProvider.notifier).sendRequest(username);
       if (mounted) {
         setState(() {
           _contactResult = 'Request sent to @$username';

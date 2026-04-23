@@ -1894,8 +1894,13 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   /// Handle a photo selected from the camera roll gallery.
-  void _handlePhotoSelected(File file, String fileName, String mimeType) {
-    final bytes = file.readAsBytesSync();
+  Future<void> _handlePhotoSelected(
+    File file,
+    String fileName,
+    String mimeType,
+  ) async {
+    final bytes = await file.readAsBytes();
+    if (!mounted) return;
     final ext = fileName.split('.').last.toLowerCase();
     setState(() => _showInlinePicker = false);
     _setPendingAttachment(

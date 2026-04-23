@@ -30,6 +30,9 @@ class ReplyQuote extends StatelessWidget {
           : 'In reply to ${replyToUsername ?? 'Unknown'}: $truncated',
       child: GestureDetector(
         onTap: onTap,
+        mouseCursor: onTap != null
+            ? SystemMouseCursors.click
+            : MouseCursor.defer,
         child: Container(
           margin: const EdgeInsets.only(bottom: 6),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),

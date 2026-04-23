@@ -81,11 +81,11 @@ class _ReactionPill extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6),
         decoration: BoxDecoration(
           color: isHighlighted
-              ? EchoTheme.accent.withValues(alpha: 0.15)
+              ? context.accent.withValues(alpha: 0.15)
               : context.surface,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isHighlighted ? EchoTheme.accent : context.border,
+            color: isHighlighted ? context.accent : context.border,
             width: 1,
           ),
         ),
@@ -104,7 +104,7 @@ class _ReactionPill extends StatelessWidget {
               '$count',
               style: TextStyle(
                 fontSize: 12,
-                color: isHighlighted ? EchoTheme.accent : context.textMuted,
+                color: isHighlighted ? context.accent : context.textMuted,
               ),
             ),
           ],

@@ -58,6 +58,10 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
 
+  /// Visual-only progress fraction during a drag gesture ([0, 1]).
+  /// null means no drag is in progress — use [_progress] instead.
+  double? _dragProgress;
+
   StreamSubscription<void>? _completeSub;
   StreamSubscription<Duration>? _durationSub;
   StreamSubscription<Duration>? _positionSub;
@@ -184,12 +188,23 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
     return '$m:$s';
   }
 
-  /// Seek to a position based on tap/drag x offset within the waveform width.
+  /// Commit a seek to the player based on an x offset within the waveform width.
   void _seekToFraction(double dx, double totalWidth) {
     if (_duration.inMilliseconds == 0) return;
     final fraction = (dx / totalWidth).clamp(0.0, 1.0);
     final seekMs = (fraction * _duration.inMilliseconds).round();
     _player.seek(Duration(milliseconds: seekMs));
+  }
+
+  /// Update the visual-only drag progress without touching the player.
+  void _updateDragProgress(double dx, double totalWidth) {
+    setState(() {
+      _dragProgress = (dx / totalWidth).clamp(0.0, 1.0);
+    });
+  }
+
+  void _cancelDrag() {
+    setState(() => _dragProgress = null);
   }
 
   /// Playback progress in [0, 1].
@@ -208,7 +223,7 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
   @override
   Widget build(BuildContext context) {
     final accentColor = widget.isMine ? context.textPrimary : context.accent;
-    final mutedColor = widget.isMine ? context.textMuted : context.textMuted;
+    final mutedColor = context.textMuted;
 
     final showPosition = _position > Duration.zero;
     final showDuration = _duration > Duration.zero;
@@ -265,13 +280,23 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
                         details.localPosition.dx,
                         constraints.maxWidth,
                       ),
-                      onHorizontalDragUpdate: (details) => _seekToFraction(
+                      onHorizontalDragUpdate: (details) => _updateDragProgress(
                         details.localPosition.dx,
                         constraints.maxWidth,
                       ),
+                      onHorizontalDragEnd: (details) {
+                        // Recover last x from dragProgress to commit the seek.
+                        final p = _dragProgress;
+                        if (p != null && _duration.inMilliseconds > 0) {
+                          final seekMs = (p * _duration.inMilliseconds).round();
+                          _player.seek(Duration(milliseconds: seekMs));
+                        }
+                        setState(() => _dragProgress = null);
+                      },
+                      onHorizontalDragCancel: _cancelDrag,
                       child: _WaveformBars(
                         bars: _bars,
-                        progress: _progress,
+                        progress: _dragProgress ?? _progress,
                         activeColor: accentColor,
                         inactiveColor: mutedColor,
                         height: 28,

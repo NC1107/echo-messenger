@@ -190,11 +190,12 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
 
   /// Determine the relationship status of a search result user.
   /// Returns 'contact', 'pending', or null (no relationship).
-  String? _contactStatus(String userId) {
-    final contacts = ref.read(contactsProvider);
-    final isContact = contacts.contacts.any((c) => c.userId == userId);
+  String? _contactStatus(String userId, ContactsState contactsState) {
+    final isContact = contactsState.contacts.any((c) => c.userId == userId);
     if (isContact) return 'contact';
-    final isPending = contacts.pendingRequests.any((c) => c.userId == userId);
+    final isPending = contactsState.pendingRequests.any(
+      (c) => c.userId == userId,
+    );
     if (isPending) return 'pending';
     return null;
   }
@@ -338,7 +339,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
           return const SizedBox.shrink();
         }
 
-        final status = _contactStatus(user.userId);
+        final status = _contactStatus(user.userId, ref.watch(contactsProvider));
         final avatarImageUrl = resolveAvatarUrl(user.avatarUrl, serverUrl);
 
         return _SearchResultCard(

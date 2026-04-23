@@ -45,10 +45,6 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
   bool _isLoading = true;
   String? _error;
 
-  /// Tracks the reply count from the previous build so we can detect new
-  /// arrivals and scroll to the bottom.
-  int _previousReplyCount = 0;
-
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -89,11 +85,22 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
         final myUserId = ref.read(authProvider).userId ?? '';
         // Seed chatProvider with the fetched historical replies so the
         // reactive filter below picks them up immediately.
+        // Use addMessage only for genuinely new replies to avoid
+        // double-counting replyCount on the parent badge.
         final notifier = ref.read(chatProvider.notifier);
+        final chatState = ref.read(chatProvider);
+        final existingIds = chatState
+            .messagesForConversation(widget.parentMessage.conversationId)
+            .map((m) => m.id)
+            .toSet();
         for (final json in data) {
-          notifier.addMessage(
-            ChatMessage.fromServerJson(json as Map<String, dynamic>, myUserId),
+          final reply = ChatMessage.fromServerJson(
+            json as Map<String, dynamic>,
+            myUserId,
           );
+          if (!existingIds.contains(reply.id)) {
+            notifier.addMessage(reply);
+          }
         }
         if (mounted) {
           setState(() {
@@ -101,6 +108,7 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
           });
         }
       } else {
+        if (!mounted) return;
         setState(() {
           _error = 'Failed to load replies';
           _isLoading = false;
@@ -140,12 +148,22 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
     final replies = allMessages.where((m) => m.replyToId == parent.id).toList();
 
     // Scroll to bottom when a new reply arrives while the panel is open.
-    if (!_isLoading && replies.length > _previousReplyCount) {
-      _previousReplyCount = replies.length;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    } else if (!_isLoading) {
-      _previousReplyCount = replies.length;
-    }
+    // Use ref.listen to trigger the side-effect outside the build phase.
+    ref.listen<List<ChatMessage>>(
+      chatProvider.select(
+        (s) => s
+            .messagesForConversation(parent.conversationId)
+            .where((m) => m.replyToId == parent.id)
+            .toList(),
+      ),
+      (prev, next) {
+        if (!_isLoading && next.length > (prev?.length ?? 0)) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _scrollToBottom(),
+          );
+        }
+      },
+    );
 
     return Container(
       width: isMobile ? double.infinity : 380,

@@ -43,7 +43,10 @@ class LinkPreviewCard extends StatefulWidget {
   });
 
   /// In-memory cache keyed by URL to avoid redundant fetches.
-  static final Map<String, LinkPreviewData?> _cache = {};
+  /// Only successful results are cached. Evicts oldest entries beyond
+  /// [_maxCacheSize] to prevent unbounded growth.
+  static final Map<String, LinkPreviewData> _cache = {};
+  static const int _maxCacheSize = 200;
 
   @override
   State<LinkPreviewCard> createState() => _LinkPreviewCardState();
@@ -92,13 +95,15 @@ class _LinkPreviewCardState extends State<LinkPreviewCard> {
           image: json['image'] as String?,
           siteName: json['site_name'] as String?,
         );
+        // Evict oldest entry when cache is full.
+        if (LinkPreviewCard._cache.length >= LinkPreviewCard._maxCacheSize) {
+          LinkPreviewCard._cache.remove(LinkPreviewCard._cache.keys.first);
+        }
         LinkPreviewCard._cache[widget.url] = data;
         if (mounted) setState(() => _data = data);
-      } else {
-        LinkPreviewCard._cache[widget.url] = null;
       }
     } catch (_) {
-      LinkPreviewCard._cache[widget.url] = null;
+      // Don't cache failures — allow retry on next render.
     }
 
     if (mounted) setState(() => _loaded = true);
