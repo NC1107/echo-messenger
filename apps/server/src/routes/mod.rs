@@ -154,6 +154,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
                 .delete(messages::delete_message)
                 .put(messages::edit_message),
         )
+        .route(
+            "/messages/{id}/replies",
+            get(messages::get_thread_replies),
+        )
         .route("/messages/{id}/reactions", post(reactions::add_reaction))
         .route(
             "/messages/{message_id}/reactions/{emoji}",

@@ -89,6 +89,15 @@ void main() {
       expect(copy.channelId, 'ch-1');
     });
 
+    test('updates replyCount', () {
+      final copy = base.copyWith(replyCount: 5);
+      expect(copy.replyCount, 5);
+    });
+
+    test('replyCount defaults to 0', () {
+      expect(base.replyCount, 0);
+    });
+
     test('updates editedAt', () {
       final copy = base.copyWith(editedAt: '2026-01-02T00:00:00Z');
       expect(copy.editedAt, '2026-01-02T00:00:00Z');
@@ -140,6 +149,12 @@ void main() {
 
     test('hashCode differs for different messages', () {
       expect(msg1.hashCode, isNot(equals(msg2.hashCode)));
+    });
+
+    test('messages with different replyCount are not equal', () {
+      final a = msg1.copyWith(replyCount: 0);
+      final b = msg1.copyWith(replyCount: 3);
+      expect(a, isNot(equals(b)));
     });
   });
 
@@ -227,6 +242,31 @@ void main() {
       expect(msg.channelId, isNull);
     });
 
+    test('parses reply_count field', () {
+      final msg = ChatMessage.fromServerJson({
+        'id': 'msg-1',
+        'from_user_id': 'u1',
+        'from_username': 'alice',
+        'conversation_id': 'c1',
+        'content': 'test',
+        'timestamp': '2026-01-01T00:00:00Z',
+        'reply_count': 3,
+      }, 'u1');
+      expect(msg.replyCount, 3);
+    });
+
+    test('defaults reply_count to 0 when missing', () {
+      final msg = ChatMessage.fromServerJson({
+        'id': 'msg-1',
+        'from_user_id': 'u1',
+        'from_username': 'alice',
+        'conversation_id': 'c1',
+        'content': 'test',
+        'timestamp': '2026-01-01T00:00:00Z',
+      }, 'u1');
+      expect(msg.replyCount, 0);
+    });
+
     test('uses created_at as fallback for timestamp', () {
       final msg = ChatMessage.fromServerJson({
         'id': 'msg-1',
@@ -269,6 +309,22 @@ void main() {
       expect(json['reply_to_id'], 'msg-0');
       expect(json['reply_to_content'], 'Original');
       expect(json['reply_to_username'], 'bob');
+      expect(json['reply_count'], 0);
+    });
+
+    test('includes non-zero reply_count', () {
+      const msg = ChatMessage(
+        id: 'msg-1',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'Hello',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        replyCount: 7,
+      );
+      final json = msg.toJson();
+      expect(json['reply_count'], 7);
     });
   });
 

@@ -709,7 +709,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     Widget avatar;
     if (hasIcon) {
       final fullUrl = token != null && token.isNotEmpty
-          ? '$serverUrl$iconUrl?token=$token'
+          ? '$serverUrl$iconUrl?jwt=$token'
           : '$serverUrl$iconUrl';
       avatar = CircleAvatar(
         radius: 56,

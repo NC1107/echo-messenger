@@ -134,7 +134,7 @@ void main() {
 
       expect(find.text('lounge'), findsOneWidget);
 
-      await tester.tap(find.text('lounge'));
+      await tester.tap(find.text('lounge').first);
       await tester.pumpAndSettle();
 
       expect(find.text('Join Voice Channel?'), findsOneWidget);
@@ -176,7 +176,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('lounge'));
+      await tester.tap(find.text('lounge').first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Join'));
       await tester.pumpAndSettle();
@@ -223,7 +223,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Join first.
-      await tester.tap(find.text('lounge'));
+      await tester.tap(find.text('lounge').first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Join'));
       await tester.pumpAndSettle();
@@ -233,7 +233,7 @@ void main() {
       expect(activeVoice, 'voice-1');
 
       // Tap active channel again -- should show lounge, not leave.
-      await tester.tap(find.text('lounge'));
+      await tester.tap(find.text('lounge').first);
       await tester.pumpAndSettle();
 
       expect(showLoungeCalls, 1);

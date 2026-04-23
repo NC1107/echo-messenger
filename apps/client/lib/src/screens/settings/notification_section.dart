@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -45,6 +46,10 @@ class _NotificationSectionState extends State<NotificationSection> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_kNotificationsEnabled, value);
     NotificationService().refreshPreferences();
+    // On web, prompt the browser permission dialog on user gesture.
+    if (value && kIsWeb) {
+      await NotificationService().promptPermission();
+    }
   }
 
   Future<void> _setDmNotifications(bool value) async {

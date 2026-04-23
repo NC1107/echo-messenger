@@ -41,6 +41,7 @@ void main() {
         serverUrlOverride(),
         cryptoOverride(),
         privacyOverride(privacyState),
+        biometricOverride(),
       ],
       child: MaterialApp(
         theme: EchoTheme.darkTheme,
@@ -85,7 +86,17 @@ void main() {
       await tester.pumpWidget(buildSection());
       await tester.pumpAndSettle();
 
+      await tester.scrollUntilVisible(
+        find.text('Discoverable by Email'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Discoverable by Email'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Discoverable by Phone'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Discoverable by Phone'), findsOneWidget);
     });
 

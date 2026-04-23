@@ -30,6 +30,7 @@ pub struct MessageWithSender {
     pub reply_to_id: Option<Uuid>,
     pub reply_to_content: Option<String>,
     pub reply_to_username: Option<String>,
+    pub reply_count: i64,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -141,11 +142,16 @@ pub async fn get_messages(
                 u.username AS sender_username, \
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
-                ru.username AS reply_to_username \
+                ru.username AS reply_to_username, \
+                COALESCE(rc.cnt, 0) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
+         LEFT JOIN LATERAL ( \
+             SELECT COUNT(*) AS cnt FROM messages r \
+             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
+         ) rc ON true \
          WHERE m.conversation_id = $1 \
            AND ($2::uuid IS NULL OR m.channel_id = $2) \
            AND ($3::timestamptz IS NULL OR m.created_at < $3) \
@@ -170,11 +176,16 @@ pub async fn get_undelivered(
                 u.username AS sender_username, \
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
-                ru.username AS reply_to_username \
+                ru.username AS reply_to_username, \
+                COALESCE(rc.cnt, 0) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
+         LEFT JOIN LATERAL ( \
+             SELECT COUNT(*) AS cnt FROM messages r \
+             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
+         ) rc ON true \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
                   AND cm.is_removed = false \
          WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
@@ -276,11 +287,16 @@ pub async fn search_messages(
                 u.username AS sender_username, \
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
-                ru.username AS reply_to_username \
+                ru.username AS reply_to_username, \
+                COALESCE(rc.cnt, 0) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
+         LEFT JOIN LATERAL ( \
+             SELECT COUNT(*) AS cnt FROM messages r \
+             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
+         ) rc ON true \
          WHERE m.conversation_id = $1 \
            AND m.deleted_at IS NULL \
            AND to_tsvector('english', m.content) @@ plainto_tsquery('english', $2) \
@@ -536,4 +552,42 @@ pub async fn get_device_contents_batch(
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().collect())
+}
+
+// ---------------------------------------------------------------------------
+// Thread replies
+// ---------------------------------------------------------------------------
+
+/// Fetch all replies to a given parent message, ordered chronologically.
+/// Each reply includes its own reply_count so the client can show nested thread
+/// indicators.
+pub async fn get_thread_replies(
+    pool: &PgPool,
+    parent_message_id: Uuid,
+    limit: i64,
+) -> Result<Vec<MessageWithSender>, sqlx::Error> {
+    sqlx::query_as::<_, MessageWithSender>(
+        "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                u.username AS sender_username, \
+                m.content, m.created_at, m.edited_at, m.reply_to_id, \
+                rm.content AS reply_to_content, \
+                ru.username AS reply_to_username, \
+                COALESCE(rc.cnt, 0) AS reply_count \
+         FROM messages m \
+         JOIN users u ON u.id = m.sender_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id \
+         LEFT JOIN users ru ON ru.id = rm.sender_id \
+         LEFT JOIN LATERAL ( \
+             SELECT COUNT(*) AS cnt FROM messages r \
+             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
+         ) rc ON true \
+         WHERE m.reply_to_id = $1 \
+           AND m.deleted_at IS NULL \
+         ORDER BY m.created_at ASC \
+         LIMIT $2",
+    )
+    .bind(parent_message_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
 }

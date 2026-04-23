@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
+import 'package:photo_manager/photo_manager.dart' show PhotoManager;
 
 import '../models/chat_message.dart';
 import '../services/toast_service.dart';
@@ -24,6 +25,12 @@ import 'message/rich_text_content.dart';
 
 /// Common emojis for the reaction picker.
 const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🎉'];
+
+/// True on Android/iOS (native, not web).
+bool get _isMobilePlatform =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS);
 
 /// Bounded cache manager for chat images to prevent unbounded disk usage.
 final chatImageCacheManager = CacheManager(
@@ -45,10 +52,16 @@ class MessageItem extends StatefulWidget {
   final void Function(ChatMessage message)? onDelete;
   final void Function(ChatMessage message)? onEdit;
   final void Function(ChatMessage message)? onReply;
+  final void Function(ChatMessage message)? onViewThread;
   final void Function(String userId)? onAvatarTap;
   final void Function(ChatMessage message)? onPin;
   final void Function(ChatMessage message)? onUnpin;
   final void Function(ChatMessage message)? onRetry;
+  final void Function(ChatMessage message)? onSave;
+  final void Function(ChatMessage message)? onUnsave;
+
+  /// Whether this message is currently bookmarked.
+  final bool isSaved;
 
   /// Server URL for resolving relative image paths.
   final String? serverUrl;
@@ -73,10 +86,14 @@ class MessageItem extends StatefulWidget {
     this.onDelete,
     this.onEdit,
     this.onReply,
+    this.onViewThread,
     this.onAvatarTap,
     this.onPin,
     this.onUnpin,
     this.onRetry,
+    this.onSave,
+    this.onUnsave,
+    this.isSaved = false,
     this.serverUrl,
     this.authToken,
     this.senderAvatarUrl,
@@ -268,6 +285,47 @@ class _MessageItemState extends State<MessageItem>
     }
   }
 
+  /// Fetch image bytes from the server and save them to the device gallery.
+  /// Used on mobile platforms where clipboard image write is not supported.
+  Future<void> _saveImageToGallery(String rawUrl) async {
+    final url = _resolveUrl(rawUrl);
+    try {
+      final response = await http.get(Uri.parse(url), headers: _mediaHeaders());
+      if (!mounted) return;
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        ToastService.show(
+          context,
+          'Failed to download image',
+          type: ToastType.error,
+        );
+        return;
+      }
+
+      final bytes = Uint8List.fromList(response.bodyBytes);
+      final filename =
+          Uri.tryParse(url)?.pathSegments.lastOrNull ?? 'image.png';
+      await PhotoManager.editor.saveImage(bytes, filename: filename);
+      if (!mounted) return;
+      ToastService.show(
+        context,
+        'Image saved to gallery',
+        type: ToastType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ToastService.show(context, 'Failed to save image', type: ToastType.error);
+    }
+  }
+
+  /// On mobile, save image to gallery. On desktop, copy to clipboard.
+  Future<void> _handleImageAction(String mediaUrl) async {
+    if (_isMobilePlatform) {
+      await _saveImageToGallery(mediaUrl);
+    } else {
+      await _copyImageToClipboard(mediaUrl);
+    }
+  }
+
   /// Returns true if the media message contains an image (not video/file).
   bool _isImageMedia(String content, String mediaUrl) {
     if (content.trimLeft().startsWith('[img:')) return true;
@@ -390,12 +448,22 @@ class _MessageItemState extends State<MessageItem>
           label: 'Reply',
           onTap: () => widget.onReply?.call(msg),
         ),
+      if (msg.replyCount > 0 && widget.onViewThread != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.forum_outlined,
+          label:
+              'View ${msg.replyCount == 1 ? '1 reply' : '${msg.replyCount} replies'}',
+          onTap: () => widget.onViewThread?.call(msg),
+        ),
       if (isImage)
         _actionTile(
           sheetContext: sheetContext,
-          icon: Icons.image_outlined,
-          label: 'Copy image',
-          onTap: () => _copyImageToClipboard(mediaUrl),
+          icon: _isMobilePlatform
+              ? Icons.save_alt_outlined
+              : Icons.image_outlined,
+          label: _isMobilePlatform ? 'Save image' : 'Copy image',
+          onTap: () => _handleImageAction(mediaUrl),
         ),
       _actionTile(
         sheetContext: sheetContext,
@@ -426,6 +494,20 @@ class _MessageItemState extends State<MessageItem>
           icon: Icons.edit_outlined,
           label: 'Edit',
           onTap: () => widget.onEdit?.call(msg),
+        ),
+      if (!widget.isSaved && widget.onSave != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.bookmark_border_outlined,
+          label: 'Save',
+          onTap: () => widget.onSave?.call(msg),
+        ),
+      if (widget.isSaved && widget.onUnsave != null)
+        _actionTile(
+          sheetContext: sheetContext,
+          icon: Icons.bookmark_remove_outlined,
+          label: 'Unsave',
+          onTap: () => widget.onUnsave?.call(msg),
         ),
       if (msg.pinnedAt == null && widget.onPin != null)
         _actionTile(
@@ -564,8 +646,6 @@ class _MessageItemState extends State<MessageItem>
 
   Widget _buildHoverActions(ChatMessage msg, bool isMine, {String? mediaUrl}) {
     final isImage = mediaUrl != null && _isImageMedia(msg.content, mediaUrl);
-    // Two quick emojis only to keep the bar compact
-    const quickEmojis = ['👍', '❤️'];
     return Container(
       decoration: BoxDecoration(
         color: context.surface.withValues(alpha: 0.95),
@@ -575,28 +655,6 @@ class _MessageItemState extends State<MessageItem>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ...quickEmojis.map(
-            (emoji) => Tooltip(
-              message: emoji,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(4),
-                onTap: () => widget.onReactionSelect?.call(msg, emoji),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 4,
-                  ),
-                  child: Text(emoji, style: const TextStyle(fontSize: 16)),
-                ),
-              ),
-            ),
-          ),
-          Container(
-            width: 1,
-            height: 20,
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            color: context.border,
-          ),
           if (widget.onReply != null)
             Semantics(
               label: 'Reply to message',
@@ -616,7 +674,7 @@ class _MessageItemState extends State<MessageItem>
               widget.onReactionTap?.call(msg, pos);
             },
           ),
-          // Overflow menu: copy, download, image copy, pin, edit, delete
+          // Overflow menu: copy, pin, edit, delete
           _buildOverflowMenu(msg, isMine, mediaUrl: mediaUrl, isImage: isImage),
         ],
       ),
@@ -658,13 +716,17 @@ class _MessageItemState extends State<MessageItem>
                   type: ToastType.success,
                 );
               case 'copy_image':
-                _copyImageToClipboard(mediaUrl!);
+                _handleImageAction(mediaUrl!);
               case 'download':
                 _downloadMedia(mediaUrl!);
               case 'pin':
                 widget.onPin?.call(msg);
               case 'unpin':
                 widget.onUnpin?.call(msg);
+              case 'save':
+                widget.onSave?.call(msg);
+              case 'unsave':
+                widget.onUnsave?.call(msg);
               case 'edit':
                 widget.onEdit?.call(msg);
               case 'delete':
@@ -683,13 +745,18 @@ class _MessageItemState extends State<MessageItem>
               ),
             ),
             if (isImage)
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'copy_image',
                 child: Row(
                   children: [
-                    Icon(Icons.image_outlined, size: 16),
-                    SizedBox(width: 8),
-                    Text('Copy image'),
+                    Icon(
+                      _isMobilePlatform
+                          ? Icons.save_alt_outlined
+                          : Icons.image_outlined,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(_isMobilePlatform ? 'Save image' : 'Copy image'),
                   ],
                 ),
               ),
@@ -723,6 +790,28 @@ class _MessageItemState extends State<MessageItem>
                     Icon(Icons.push_pin, size: 16),
                     SizedBox(width: 8),
                     Text('Unpin'),
+                  ],
+                ),
+              ),
+            if (!widget.isSaved && widget.onSave != null)
+              const PopupMenuItem(
+                value: 'save',
+                child: Row(
+                  children: [
+                    Icon(Icons.bookmark_border_outlined, size: 16),
+                    SizedBox(width: 8),
+                    Text('Save'),
+                  ],
+                ),
+              ),
+            if (widget.isSaved && widget.onUnsave != null)
+              const PopupMenuItem(
+                value: 'unsave',
+                child: Row(
+                  children: [
+                    Icon(Icons.bookmark_remove_outlined, size: 16),
+                    SizedBox(width: 8),
+                    Text('Unsave'),
                   ],
                 ),
               ),
@@ -1189,6 +1278,43 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
+  /// Build the "N replies" link shown below messages that have thread replies.
+  Widget _buildReplyCountBadge({
+    required ChatMessage msg,
+    required bool isMine,
+  }) {
+    final count = msg.replyCount;
+    final label = count == 1 ? '1 reply' : '$count replies';
+    return Padding(
+      padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
+      child: Semantics(
+        label: 'View $label',
+        button: true,
+        child: GestureDetector(
+          onTap: () => widget.onViewThread?.call(msg),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: isMine
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
+            children: [
+              Icon(Icons.forum_outlined, size: 12, color: context.accent),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: context.accent,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Inline timestamp that appears on hover/tap for messages that are not the
   /// last in their group (those already always show the timestamp).
   Widget _buildHoverTimestamp({
@@ -1418,6 +1544,8 @@ class _MessageItemState extends State<MessageItem>
                   bubbleWithReactions: bubbleWithReactions,
                 ),
               ),
+              if (msg.replyCount > 0)
+                _buildReplyCountBadge(msg: msg, isMine: isMine),
               if (widget.isLastInGroup)
                 _buildTimestampRow(msg: msg, isMine: isMine)
               else

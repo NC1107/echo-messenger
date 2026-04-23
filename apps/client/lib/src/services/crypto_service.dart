@@ -148,13 +148,19 @@ class CryptoService {
     final prefs = await SharedPreferences.getInstance();
     var allSucceeded = true;
 
+    // On web, skip removing keys from SharedPreferences after copying to
+    // secure storage. SecureKeyStore on web uses Web Crypto API encryption
+    // which can fail to decrypt after page refresh in some browsers, so
+    // SharedPreferences (plain localStorage) is the reliable fallback.
+    final removeFromPrefs = !kIsWeb;
+
     // Migrate identity + signing + signed prekey (named keys)
     for (final key in _allCryptoKeys) {
       final value = prefs.getString(key);
       if (value != null) {
         try {
           await store.write(key, value);
-          await prefs.remove(key);
+          if (removeFromPrefs) await prefs.remove(key);
           debugPrint(
             '[Crypto] Migrated $key from SharedPreferences to '
             'secure storage',
@@ -181,7 +187,7 @@ class CryptoService {
         if (value != null) {
           try {
             await store.write(key, value);
-            await prefs.remove(key);
+            if (removeFromPrefs) await prefs.remove(key);
             debugPrint('[Crypto] Migrated $key to secure storage');
           } catch (e) {
             allSucceeded = false;
@@ -200,7 +206,7 @@ class CryptoService {
       if (value != null) {
         try {
           await store.write(key, value);
-          await prefs.remove(key);
+          if (removeFromPrefs) await prefs.remove(key);
         } catch (e) {
           allSucceeded = false;
         }
@@ -216,12 +222,19 @@ class CryptoService {
   }
 
   /// Restore identity, signing, and signed prekey from secure storage.
+  ///
+  /// [readKey] is used to read values, allowing callers to inject a fallback
+  /// strategy (e.g. SharedPreferences on web) when SecureKeyStore fails.
   Future<void> _restoreKeysFromStorage(
     SecureKeyStore store,
-    String storedPrivate,
-  ) async {
+    String storedPrivate, {
+    Future<String?> Function(String key)? readKey,
+  }) async {
+    Future<String?> read(String key) async =>
+        readKey != null ? readKey(key) : store.read(key);
+
     final privateBytes = base64Decode(storedPrivate);
-    final publicBytes = base64Decode((await store.read(_identityPubKeyPref))!);
+    final publicBytes = base64Decode((await read(_identityPubKeyPref))!);
     _identityKeyPair = SimpleKeyPairData(
       privateBytes,
       publicKey: SimplePublicKey(publicBytes, type: KeyPairType.x25519),
@@ -229,8 +242,8 @@ class CryptoService {
     );
 
     // Restore Ed25519 signing key pair
-    final sigPriv = await store.read(_signingKeyPref);
-    final sigPub = await store.read(_signingPubKeyPref);
+    final sigPriv = await read(_signingKeyPref);
+    final sigPub = await read(_signingPubKeyPref);
     if (sigPriv != null && sigPub != null) {
       _signingKeyPair = SimpleKeyPairData(
         base64Decode(sigPriv),
@@ -247,8 +260,8 @@ class CryptoService {
     }
 
     // Restore signed prekey pair
-    final spkPriv = await store.read(_signedPrekeyPref);
-    final spkPub = await store.read(_signedPrekeyPubPref);
+    final spkPriv = await read(_signedPrekeyPref);
+    final spkPub = await read(_signedPrekeyPubPref);
     if (spkPriv != null && spkPub != null) {
       _signedPrekeyPair = SimpleKeyPairData(
         base64Decode(spkPriv),
@@ -282,8 +295,22 @@ class CryptoService {
 
       final store = SecureKeyStore.instance;
 
+      // On web, SecureKeyStore encrypts values with Web Crypto API. If the
+      // encryption key is lost (browser cleared storage, incognito, etc.),
+      // reads return null even though the keys were previously stored. Fall
+      // back to SharedPreferences which uses plain localStorage.
+      final SharedPreferences? webFallbackPrefs = kIsWeb
+          ? await SharedPreferences.getInstance()
+          : null;
+
+      Future<String?> readWithFallback(String key) async {
+        final value = await store.read(key);
+        if (value != null) return value;
+        return webFallbackPrefs?.getString(key);
+      }
+
       // Load or generate a unique device ID for this installation.
-      final storedDeviceId = await store.read(_deviceIdPref);
+      final storedDeviceId = await readWithFallback(_deviceIdPref);
       if (storedDeviceId != null) {
         _deviceId = int.tryParse(storedDeviceId) ?? 0;
       } else {
@@ -294,13 +321,21 @@ class CryptoService {
         debugPrint('[Crypto] Generated new device_id: $_deviceId');
       }
 
-      final storedPrivate = await store.read(_identityKeyPref);
+      final storedPrivate = await readWithFallback(_identityKeyPref);
 
       if (storedPrivate != null) {
-        await _restoreKeysFromStorage(store, storedPrivate);
+        await _restoreKeysFromStorage(
+          store,
+          storedPrivate,
+          readKey: readWithFallback,
+        );
       } else {
-        // Generate all keys fresh — previous encryption sessions are lost.
-        _keysWereRegenerated = true;
+        // Generate all keys fresh.
+        // Only flag as "regenerated" when prior keys existed (device ID was
+        // already assigned). On a true first install there is nothing to
+        // regenerate, so suppress the misleading warning.
+        final isFirstInstall = storedDeviceId == null;
+        _keysWereRegenerated = !isFirstInstall;
         _identityKeyPair = await _x25519.newKeyPair();
         _signingKeyPair = await _ed25519.newKeyPair();
         _signedPrekeyPair = await _x25519.newKeyPair();

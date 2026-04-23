@@ -47,6 +47,8 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Echo uses Face ID to protect your messages</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Echo needs your microphone for voice channels</string>
 	<key>NSCameraUsageDescription</key>

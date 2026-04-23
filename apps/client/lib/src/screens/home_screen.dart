@@ -35,6 +35,7 @@ import '../widgets/global_search_overlay.dart';
 import '../widgets/quick_switcher_overlay.dart';
 import '../widgets/voice_dock.dart';
 import 'contacts_screen.dart';
+import 'saved_messages_screen.dart';
 import 'voice_lounge_screen.dart';
 import 'create_group_screen.dart';
 import 'discover_groups_screen.dart';
@@ -426,6 +427,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     });
   }
 
+  void _openSavedMessages() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        final size = MediaQuery.of(dialogContext).size;
+        return Dialog(
+          backgroundColor: context.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: context.border),
+          ),
+          child: SizedBox(
+            width: (size.width * 0.45).clamp(340.0, 600.0),
+            height: (size.height * 0.7).clamp(400.0, 720.0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SavedMessagesScreen(
+                onNavigateToConversation: (convId) {
+                  Navigator.pop(dialogContext);
+                  final conversations = ref
+                      .read(conversationsProvider)
+                      .conversations;
+                  final conv = conversations
+                      .where((c) => c.id == convId)
+                      .firstOrNull;
+                  if (conv != null) _selectConversation(conv);
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _openSettings() {
     if (_isDesktop || !Responsive.isMobile(context)) {
       setState(() {
@@ -452,6 +488,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       onNewChat: _openContacts,
       onNewGroup: _openCreateGroup,
       onDiscover: _openDiscoverGroups,
+      onSavedMessages: _openSavedMessages,
       onCollapseSidebar: onCollapseSidebar,
       onSettings: _openSettings,
       onShowContacts: _openContacts,

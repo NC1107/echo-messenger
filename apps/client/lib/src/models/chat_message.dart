@@ -34,6 +34,7 @@ class ChatMessage {
   final String? replyToId;
   final String? replyToContent;
   final String? replyToUsername;
+  final int replyCount;
   final String? pinnedById;
   final DateTime? pinnedAt;
   final DateTime? expiresAt;
@@ -62,6 +63,7 @@ class ChatMessage {
     this.replyToId,
     this.replyToContent,
     this.replyToUsername,
+    this.replyCount = 0,
     this.pinnedById,
     this.pinnedAt,
     this.expiresAt,
@@ -111,6 +113,7 @@ class ChatMessage {
       replyToId: json['reply_to_id'] as String?,
       replyToContent: json['reply_to_content'] as String?,
       replyToUsername: json['reply_to_username'] as String?,
+      replyCount: (json['reply_count'] as int?) ?? 0,
       pinnedById: pinnedByIdRaw,
       pinnedAt: pinnedAtRaw != null ? DateTime.tryParse(pinnedAtRaw) : null,
       expiresAt: json['expires_at'] != null
@@ -133,6 +136,7 @@ class ChatMessage {
       'reply_to_id': replyToId,
       'reply_to_content': replyToContent,
       'reply_to_username': replyToUsername,
+      'reply_count': replyCount,
       'pinned_by_id': pinnedById,
       'pinned_at': pinnedAt?.toIso8601String(),
       'expires_at': expiresAt?.toIso8601String(),
@@ -156,6 +160,7 @@ class ChatMessage {
     String? replyToId,
     String? replyToContent,
     String? replyToUsername,
+    int? replyCount,
     Object? pinnedById = _sentinel,
     Object? pinnedAt = _sentinel,
     Object? expiresAt = _sentinel,
@@ -177,6 +182,7 @@ class ChatMessage {
       replyToId: replyToId ?? this.replyToId,
       replyToContent: replyToContent ?? this.replyToContent,
       replyToUsername: replyToUsername ?? this.replyToUsername,
+      replyCount: replyCount ?? this.replyCount,
       pinnedById: pinnedById == _sentinel
           ? this.pinnedById
           : pinnedById as String?,
@@ -209,6 +215,7 @@ class ChatMessage {
             replyToId == other.replyToId &&
             replyToContent == other.replyToContent &&
             replyToUsername == other.replyToUsername &&
+            replyCount == other.replyCount &&
             pinnedById == other.pinnedById &&
             pinnedAt == other.pinnedAt &&
             expiresAt == other.expiresAt &&
@@ -232,6 +239,7 @@ class ChatMessage {
     replyToId,
     replyToContent,
     replyToUsername,
+    replyCount,
     pinnedById,
     pinnedAt,
     expiresAt,

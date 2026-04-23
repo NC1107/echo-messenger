@@ -184,6 +184,9 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
             audioBitrate: AudioPreset.music,
             dtx: true,
           ),
+          defaultCameraCaptureOptions: const CameraCaptureOptions(
+            params: VideoParametersPresets.h720_169,
+          ),
           defaultVideoPublishOptions: VideoPublishOptions(
             videoEncoding: VideoEncoding(
               maxBitrate: state.videoBitrate,

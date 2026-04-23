@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:echo_app/src/models/conversation.dart';
 import 'package:echo_app/src/providers/auth_provider.dart';
+import 'package:echo_app/src/providers/biometric_provider.dart';
 import 'package:echo_app/src/providers/conversations_provider.dart';
 import 'package:echo_app/src/providers/contacts_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
@@ -218,6 +219,32 @@ class FakeCryptoNotifier extends CryptoNotifier {
 
   @override
   Future<void> retryKeyUpload() async {}
+}
+
+// ---------------------------------------------------------------------------
+// Biometric
+// ---------------------------------------------------------------------------
+
+/// Override [biometricProvider] with a fixed state (unavailable by default in
+/// tests since [LocalAuthentication] is not available on host machines).
+Override biometricOverride([
+  BiometricState initialState = const BiometricState(isLoading: false),
+]) {
+  return biometricProvider.overrideWith(
+    (_) => _FakeBiometricNotifier(initialState),
+  );
+}
+
+class _FakeBiometricNotifier extends BiometricNotifier {
+  _FakeBiometricNotifier(super.initial) : super.forTest();
+
+  @override
+  Future<void> setEnabled(bool value) async {
+    state = state.copyWith(enabled: value && state.isAvailable);
+  }
+
+  @override
+  Future<bool> authenticate() async => true;
 }
 
 // ---------------------------------------------------------------------------

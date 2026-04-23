@@ -154,7 +154,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   void addMessage(ChatMessage msg) {
-    state = state.withMessage(msg);
+    var newState = state.withMessage(msg);
+    // Increment reply count on the parent when an incoming message is a reply.
+    if (msg.replyToId != null) {
+      newState = _incrementReplyCount(
+        newState,
+        msg.conversationId,
+        msg.replyToId!,
+      );
+    }
+    state = newState;
   }
 
   /// Set the message being replied to (shown in the input bar).
@@ -216,7 +225,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
       replyToUsername: replyToUsername,
       failedContent: content, // preserve for retry if send times out
     );
-    state = state.withMessage(msg);
+    var newState = state.withMessage(msg);
+
+    // Optimistically increment reply count on the parent message.
+    if (replyToId != null) {
+      newState = _incrementReplyCount(newState, conversationId, replyToId);
+    }
+
+    state = newState;
 
     // Cancel any existing timer for this ID (defensive, prevents orphans).
     _sendTimeouts.remove(pendingId)?.cancel();
@@ -227,6 +243,26 @@ class ChatNotifier extends StateNotifier<ChatState> {
       if (removed == null) return; // timer was already cancelled
       _transitionToFailed(conversationId, pendingId, content);
     });
+  }
+
+  /// Increment the reply count on a parent message by 1.
+  ChatState _incrementReplyCount(
+    ChatState s,
+    String conversationId,
+    String parentId,
+  ) {
+    final messages = s.messagesForConversation(conversationId);
+    final idx = messages.indexWhere((m) => m.id == parentId);
+    if (idx == -1) return s;
+    final parent = messages[idx];
+    final updated = parent.copyWith(replyCount: parent.replyCount + 1);
+    final newList = List<ChatMessage>.from(messages);
+    newList[idx] = updated;
+    final newMap = Map<String, List<ChatMessage>>.from(
+      s.messagesByConversation,
+    );
+    newMap[conversationId] = newList;
+    return s.copyWith(messagesByConversation: newMap);
   }
 
   /// Transition a pending message to failed status after send timeout.
@@ -778,6 +814,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }).toList();
 
     state = state.copyWith(messagesByConversation: updatedConv);
+  }
+
+  /// Forward a message to a different conversation.
+  ///
+  /// Prepends "[Forwarded] " to the content and delegates the actual wire
+  /// send to [sender], which is supplied by the caller to avoid a circular
+  /// dependency (websocket_provider already imports chat_provider).
+  Future<void> forwardMessage(
+    String messageContent,
+    String targetConversationId,
+    Future<void> Function(String forwardedContent) sender,
+  ) async {
+    final forwarded = '[Forwarded] $messageContent';
+    await sender(forwarded);
   }
 
   void clear() {

@@ -22,7 +22,7 @@ class CanvasNotifier extends StateNotifier<CanvasState> {
   /// The channel this canvas is attached to.
   String? _channelId;
 
-  /// Throttle timer for avatar position broadcasts (~10 fps).
+  /// Throttle timer for avatar position broadcasts (~20 fps).
   Timer? _avatarThrottle;
   ({String userId, CanvasPoint pos})? _pendingAvatar;
 
@@ -215,7 +215,7 @@ class CanvasNotifier extends StateNotifier<CanvasState> {
 
     _pendingAvatar = (userId: userId, pos: pos);
     _avatarThrottle ??= Timer.periodic(
-      const Duration(milliseconds: 100), // ~10 fps
+      const Duration(milliseconds: 50), // ~20 fps for smoother avatar sync
       (_) => _flushAvatarMove(),
     );
   }
