@@ -16,6 +16,7 @@ use crate::auth::middleware::AuthUser;
 use crate::db;
 use crate::error::AppError;
 use crate::types::{ConversationKind, Role};
+use crate::ws::handler::invalidate_member_cache;
 
 use super::AppState;
 
@@ -311,6 +312,7 @@ pub async fn add_member(
         return Err(AppError::conflict("User is already a member"));
     }
 
+    invalidate_member_cache(group_id);
     Ok(Json(serde_json::json!({ "status": "added" })))
 }
 
@@ -360,6 +362,8 @@ pub async fn remove_member(
     if !removed {
         return Err(AppError::bad_request("User is not a member of this group"));
     }
+
+    invalidate_member_cache(group_id);
 
     // Auto-delete group if no members remain
     let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
@@ -529,6 +533,8 @@ pub async fn leave_group(
         return Err(AppError::bad_request("Not a member of this group"));
     }
 
+    invalidate_member_cache(group_id);
+
     // Auto-delete group if no members remain
     let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
         .await
@@ -658,6 +664,8 @@ pub async fn ban_member(
             tracing::error!("DB error in ban_member: {e:?}");
             AppError::internal("Failed to ban member")
         })?;
+
+    invalidate_member_cache(group_id);
 
     // Auto-delete group if no members remain
     let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)

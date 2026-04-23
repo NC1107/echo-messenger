@@ -72,10 +72,17 @@ bool isAudioUrl(String url) => _audioExtensions.contains(urlExtension(url));
 
 /// Resolves a potentially relative media URL to an absolute URL.
 ///
-/// On web, appends the auth token as a query parameter because
+/// On web, appends a short-lived media ticket (not the JWT) because
 /// CachedNetworkImage uses HTML <img> elements which cannot send custom
-/// HTTP headers. On native platforms, callers use [mediaHeaders] instead.
-String resolveMediaUrl(String url, {String? serverUrl, String? authToken}) {
+/// HTTP headers.  This prevents JWT leakage into browser history, server
+/// logs, and Referer headers.  On native platforms, callers use
+/// [mediaHeaders] instead.
+String resolveMediaUrl(
+  String url, {
+  String? serverUrl,
+  String? authToken,
+  String? mediaTicket,
+}) {
   String resolved = url;
   if (!url.startsWith('http')) {
     final base = serverUrl ?? '';
@@ -83,11 +90,12 @@ String resolveMediaUrl(String url, {String? serverUrl, String? authToken}) {
       resolved = '$base$url';
     }
   }
-  // On web, <img> tags cannot carry Authorization headers, so pass the
-  // token via query parameter (server accepts ?token= for media downloads).
-  if (kIsWeb && authToken != null && authToken.isNotEmpty) {
+  // On web, <img> tags cannot carry Authorization headers, so pass a
+  // media ticket via query parameter.  Tickets are scoped to media only
+  // and expire after 5 minutes (unlike JWTs which grant full API access).
+  if (kIsWeb && mediaTicket != null && mediaTicket.isNotEmpty) {
     final separator = resolved.contains('?') ? '&' : '?';
-    resolved = '$resolved${separator}jwt=$authToken';
+    resolved = '$resolved${separator}ticket=$mediaTicket';
   }
   return resolved;
 }
@@ -181,6 +189,7 @@ class MediaContent extends StatefulWidget {
   final bool isMine;
   final String? serverUrl;
   final String? authToken;
+  final String? mediaTicket;
 
   /// Called when the user taps an image with the resolved full URL.
   /// When null, the widget falls back to opening its own single-image dialog.
@@ -192,6 +201,7 @@ class MediaContent extends StatefulWidget {
     required this.isMine,
     this.serverUrl,
     this.authToken,
+    this.mediaTicket,
     this.onImageTap,
   });
 
@@ -204,6 +214,7 @@ class MediaContentState extends State<MediaContent> {
     url,
     serverUrl: widget.serverUrl,
     authToken: widget.authToken,
+    mediaTicket: widget.mediaTicket,
   );
 
   Map<String, String> _headers() => mediaHeaders(authToken: widget.authToken);

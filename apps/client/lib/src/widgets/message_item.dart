@@ -72,6 +72,9 @@ class MessageItem extends StatefulWidget {
   /// Auth token for authenticated image requests.
   final String? authToken;
 
+  /// Short-lived media ticket for web image auth (avoids JWT in URLs).
+  final String? mediaTicket;
+
   /// Avatar URL path for the message sender (relative, e.g. /api/users/.../avatar).
   final String? senderAvatarUrl;
 
@@ -106,6 +109,7 @@ class MessageItem extends StatefulWidget {
     this.isSaved = false,
     this.serverUrl,
     this.authToken,
+    this.mediaTicket,
     this.senderAvatarUrl,
     this.compactLayout = false,
     this.onImageTap,
@@ -207,6 +211,7 @@ class _MessageItemState extends State<MessageItem>
     url,
     serverUrl: widget.serverUrl,
     authToken: widget.authToken,
+    mediaTicket: widget.mediaTicket,
   );
 
   Future<void> _downloadMedia(String rawUrl) async {
@@ -1043,6 +1048,7 @@ class _MessageItemState extends State<MessageItem>
         isMine: isMine,
         serverUrl: widget.serverUrl,
         authToken: widget.authToken,
+        mediaTicket: widget.mediaTicket,
         onImageTap: widget.onImageTap,
       );
     }

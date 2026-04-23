@@ -143,15 +143,12 @@ pub async fn get_messages(
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                COALESCE(rc.cnt, 0) AS reply_count \
+                (SELECT COUNT(*) FROM messages r \
+                 WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
-         LEFT JOIN LATERAL ( \
-             SELECT COUNT(*) AS cnt FROM messages r \
-             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
-         ) rc ON true \
          WHERE m.conversation_id = $1 \
            AND ($2::uuid IS NULL OR m.channel_id = $2) \
            AND ($3::timestamptz IS NULL OR m.created_at < $3) \
@@ -177,15 +174,12 @@ pub async fn get_undelivered(
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                COALESCE(rc.cnt, 0) AS reply_count \
+                (SELECT COUNT(*) FROM messages r \
+                 WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
-         LEFT JOIN LATERAL ( \
-             SELECT COUNT(*) AS cnt FROM messages r \
-             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
-         ) rc ON true \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
                   AND cm.is_removed = false \
          WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \

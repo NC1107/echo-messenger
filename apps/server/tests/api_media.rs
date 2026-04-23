@@ -193,7 +193,7 @@ async fn download_with_invalid_ticket_returns_401() {
 }
 
 #[tokio::test]
-async fn ticket_is_single_use() {
+async fn ticket_is_reusable_within_ttl() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let (token, _, _) = common::register_and_login(&client, &base, "media_once").await;
@@ -209,13 +209,14 @@ async fn ticket_is_single_use() {
         .unwrap();
     assert_eq!(resp.status().as_u16(), 200);
 
-    // Second use -- ticket consumed, should fail
+    // Second use -- tickets are reusable within their 5-min TTL
+    // (web <img> tags need to reuse the same ticket for multiple images)
     let resp = client
         .get(format!("{base}/api/media/{id}?ticket={ticket}"))
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 401);
+    assert_eq!(resp.status().as_u16(), 200);
 }
 
 #[tokio::test]
