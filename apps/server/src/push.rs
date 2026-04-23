@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn encrypted_message_returns_placeholder() {
-        assert_eq!(format_push_body("secret stuff", true), "Encrypted message");
+        assert_eq!(format_push_body("secret stuff", true), "New message");
     }
 
     #[test]
@@ -365,9 +365,6 @@ mod tests {
 
     #[test]
     fn encrypted_with_long_content_still_returns_placeholder() {
-        assert_eq!(
-            format_push_body(&"x".repeat(200), true),
-            "Encrypted message"
-        );
+        assert_eq!(format_push_body(&"x".repeat(200), true), "New message");
     }
 }
