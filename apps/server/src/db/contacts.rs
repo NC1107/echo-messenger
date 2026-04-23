@@ -201,13 +201,12 @@ pub async fn decline_contact_request(
     contact_id: Uuid,
     declining_user_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-        "DELETE FROM contacts WHERE id = $1 AND target_id = $2 AND status = 'pending'",
-    )
-    .bind(contact_id)
-    .bind(declining_user_id)
-    .execute(pool)
-    .await?;
+    let result =
+        sqlx::query("DELETE FROM contacts WHERE id = $1 AND target_id = $2 AND status = 'pending'")
+            .bind(contact_id)
+            .bind(declining_user_id)
+            .execute(pool)
+            .await?;
 
     Ok(result.rows_affected() > 0)
 }

@@ -78,8 +78,9 @@ class _WebNotificationService implements NotificationService {
     // Check Do Not Disturb and Quiet Hours (async, suppress if active).
     if (!forceShow) {
       shouldSuppressNotification().then((suppress) {
-        if (!suppress)
+        if (!suppress) {
           _showWebNotification(senderUsername, body, conversationId);
+        }
       });
       return;
     }

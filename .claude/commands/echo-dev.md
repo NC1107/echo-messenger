@@ -64,15 +64,16 @@ Optional body (keep brief).
 
 **Rules**:
 - No `Co-Authored-By` tags. Ever. This is our convention.
+- **Subject MUST be fully lowercase** — commitlint enforces `subject-case: lower-case`. Words after `--` or `:` must also be lowercase. "UX Sprint 2" will fail; "ux sprint 2" is correct.
 - No multi-paragraph explanations or bullet lists in commit messages.
 - One line subject. Optional brief body. That's it.
 - If a pre-commit hook fails, fix the issue and create a NEW commit (never amend).
 
 **Examples from this repo**:
 ```
-fix: Signal Protocol session establishment -- Alice/Bob role detection
+fix: signal protocol session establishment -- alice/bob role detection
 feat(client): threaded replies with thread view panel and reply count badges
-refactor: upgrade theme to ThemeExtension for scalable custom themes
+refactor: upgrade theme to themeextension for scalable custom themes
 security: audit fixes, integration tests, and accessibility labels
 ```
 
@@ -100,11 +101,19 @@ cargo clippy --workspace --all-targets -- -D warnings  # Lint (zero warnings)
 cargo test --workspace              # Tests pass
 ```
 
-**Common gotchas**:
-- `rustfmt` at max_width=100 — lines that fit in 101 chars will fail CI
+**CRITICAL — Rust formatting**:
+Subagents also cannot run `cargo fmt`. The same rule as Dart applies: after any agent writes `.rs` files, verify lines are under 100 chars. Key `rustfmt` patterns agents get wrong:
+- `sqlx::query("long string")` on a separate line — rustfmt joins short strings onto the `query_as(` line
+- `.await.map_err(...)` chain indentation — rustfmt has specific rules about when to break/indent chains
+- Multi-line function calls — rustfmt groups args differently than agents expect
+
+After agent work on `.rs` files, check with: `awk 'length > 100' apps/server/src/path/to/file.rs`
+
+**Other gotchas**:
 - Clippy `manual_range_contains` — use `(a..=b).contains(&x)` not `x >= a && x <= b`
 - Clippy `-D warnings` — any warning is a build failure
 - New SQL columns need migration files in `apps/server/migrations/`
+- `flutter analyze --fatal-infos` catches lint issues like missing curly braces in if-statements
 
 ### Flutter (client)
 ```bash
