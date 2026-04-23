@@ -64,7 +64,6 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // The TextField should have a labelText exposed in semantics
       expect(find.text('Search contacts'), findsOneWidget);
     });
   });
@@ -77,6 +76,7 @@ void main() {
           serverUrlOverride(),
           cryptoOverride(),
           _privacyOverride(),
+          biometricOverride(),
         ],
         child: MaterialApp(
           theme: EchoTheme.darkTheme,
@@ -110,7 +110,10 @@ void main() {
   });
 
   group('Account section phone field accessibility', () {
-    testWidgets('phone fields have labels', (tester) async {
+    testWidgets('phone input has labelText', (tester) async {
+      // Render the AccountSection and verify labels exist in the widget tree,
+      // even if they are scrolled off-screen. The InputDecoration labelText
+      // is always built regardless of visibility.
       await tester.pumpWidget(
         ProviderScope(
           overrides: [...standardOverrides()],
@@ -124,19 +127,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Scroll down to reveal the phone section — use the last
-      // Scrollable which is the main settings list.
-      final scrollables = find.byType(Scrollable);
-      await tester.scrollUntilVisible(
-        find.text('Country code'),
-        200,
-        scrollable: scrollables.last,
-      );
-
-      // The country code dropdown should have a label
-      expect(find.text('Country code'), findsOneWidget);
-      // The phone number field should have a label
-      expect(find.text('Phone number'), findsOneWidget);
+      // The labels should be in the widget tree (InputDecoration builds
+      // them even when not visible on screen).
+      expect(find.text('Phone number', skipOffstage: false), findsOneWidget);
+      expect(find.text('Country code', skipOffstage: false), findsOneWidget);
     });
   });
 }
