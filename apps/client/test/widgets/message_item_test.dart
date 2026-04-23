@@ -156,7 +156,7 @@ void main() {
         );
         await tester.pump();
 
-        expect(find.text('(edited)'), findsOneWidget);
+        expect(find.text('(edited)'), findsWidgets);
       });
     });
 

@@ -327,6 +327,19 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       return;
     }
 
+    // Attachment is still uploading -- don't send text-only and lose it.
+    if (_isUploadingAttachment ||
+        (_pendingAttachmentBytes != null && _pendingAttachmentUrl == null)) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Attachment still uploading...',
+          type: ToastType.info,
+        );
+      }
+      return;
+    }
+
     final text = caption;
     if (text.isEmpty) return;
 
