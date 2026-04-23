@@ -11,6 +11,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:math';
 
 import 'package:cryptography/cryptography.dart';
@@ -607,6 +608,20 @@ class CryptoService {
     await store.write('$_sessionPrefix$peerId', jsonEncode(json));
   }
 
+  /// Human-readable label for the current platform, sent to the server as part
+  /// of the prekey bundle so the device-management UI can display "iOS",
+  /// "Linux", etc. Returns `null` on unrecognised platforms so the server
+  /// falls back to its stored value.
+  String? _platformString() {
+    if (kIsWeb) return 'Web';
+    if (Platform.isIOS) return 'iOS';
+    if (Platform.isAndroid) return 'Android';
+    if (Platform.isMacOS) return 'macOS';
+    if (Platform.isWindows) return 'Windows';
+    if (Platform.isLinux) return 'Linux';
+    return null;
+  }
+
   /// Upload our public keys to the server as a PreKey bundle.
   ///
   /// Includes:
@@ -646,7 +661,7 @@ class CryptoService {
       _needsOtpReplenishment = false;
     }
 
-    final body = jsonEncode({
+    final payload = <String, dynamic>{
       'identity_key': pubKeyB64,
       'signing_key': signingPubB64,
       'signed_prekey': spkPubB64,
@@ -654,7 +669,12 @@ class CryptoService {
       'signed_prekey_id': 1,
       'one_time_prekeys': otps,
       'device_id': _deviceId,
-    });
+    };
+    final platform = _platformString();
+    if (platform != null) {
+      payload['platform'] = platform;
+    }
+    final body = jsonEncode(payload);
 
     final response = await http.post(
       Uri.parse('$serverUrl/api/keys/upload'),

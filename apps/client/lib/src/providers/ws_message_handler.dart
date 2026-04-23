@@ -101,6 +101,11 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   Ref get ref;
   StreamController<Map<String, dynamic>> get voiceSignalController;
 
+  /// Broadcast of `device_revoked` events for the current user. UI surfaces
+  /// (e.g. the Devices settings screen) listen here so they can refresh their
+  /// lists when another device is revoked.
+  StreamController<Map<String, dynamic>> get deviceRevokedController;
+
   /// Messages received before crypto was initialized.
   /// Drained by [drainPendingDecryptQueue] once crypto is ready.
   final List<Map<String, dynamic>> _pendingDecryptQueue = [];
@@ -264,6 +269,9 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     final myDeviceId = ref.read(cryptoServiceProvider).isInitialized
         ? ref.read(cryptoServiceProvider).deviceId
         : null;
+
+    // Always broadcast so interested UIs (Devices settings) can refresh.
+    deviceRevokedController.add(json);
 
     if (revokedDeviceId != null &&
         myDeviceId != null &&
