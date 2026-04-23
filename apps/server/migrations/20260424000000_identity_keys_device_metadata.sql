@@ -1,0 +1,3 @@
+ALTER TABLE identity_keys
+    ADD COLUMN IF NOT EXISTS platform TEXT,
+    ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ;

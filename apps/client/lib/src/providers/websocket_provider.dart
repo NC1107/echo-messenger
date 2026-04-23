@@ -35,10 +35,20 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   final _random = math.Random();
   final _voiceSignalController =
       StreamController<Map<String, dynamic>>.broadcast();
+  final _deviceRevokedController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   @override
   StreamController<Map<String, dynamic>> get voiceSignalController =>
       _voiceSignalController;
+
+  @override
+  StreamController<Map<String, dynamic>> get deviceRevokedController =>
+      _deviceRevokedController;
+
+  /// Stream of `device_revoked` events for the authenticated user.
+  Stream<Map<String, dynamic>> get deviceRevokedEvents =>
+      _deviceRevokedController.stream;
 
   /// Throttle: track last typing event sent per conversation.
   final Map<String, DateTime> _lastTypingSent = {};
@@ -648,6 +658,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     _reconnectTimer = null;
     _typingCleanupTimer?.cancel();
     _voiceSignalController.close();
+    _deviceRevokedController.close();
     disconnect();
     super.dispose();
   }

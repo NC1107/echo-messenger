@@ -370,14 +370,19 @@ async fn get_devices_returns_device_ids() {
         .unwrap();
     assert_eq!(resp.status().as_u16(), 200);
     let body: Value = resp.json().await.unwrap();
-    let device_ids: Vec<i64> = body["device_ids"]
-        .as_array()
-        .unwrap()
+    let devices = body["devices"].as_array().expect("devices array present");
+    let device_ids: Vec<i64> = devices
         .iter()
-        .map(|v| v.as_i64().unwrap())
+        .map(|d| d["device_id"].as_i64().unwrap())
         .collect();
     assert!(device_ids.contains(&0), "should list device 0");
     assert!(device_ids.contains(&1), "should list device 1");
+    // Each entry must at minimum expose a device_id; platform and last_seen
+    // are optional and only populated once the client uploads metadata or the
+    // device connects over WebSocket.
+    for d in devices {
+        assert!(d.get("device_id").is_some(), "missing device_id field");
+    }
 }
 
 #[tokio::test]
@@ -436,4 +441,119 @@ async fn revoke_device_removes_keys() {
         .await
         .unwrap();
     assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn revoke_other_devices_without_auth_returns_401() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let resp = client
+        .post(format!("{base}/api/keys/devices/revoke-others"))
+        .json(&serde_json::json!({ "current_device_id": 0 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 401);
+}
+
+#[tokio::test]
+async fn revoke_other_devices_with_unknown_current_id_returns_400() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keyrevunknown").await;
+
+    // Upload exactly one device (device 0).
+    common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
+
+    // Pass a current_device_id that isn't registered.
+    let resp = client
+        .post(format!("{base}/api/keys/devices/revoke-others"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "current_device_id": -1 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn revoke_other_devices_with_single_device_returns_zero() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, uid, _) = common::register_and_login(&client, &base, "keyrevsingle").await;
+
+    // Upload exactly one device (device 0).
+    common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
+
+    let resp = client
+        .post(format!("{base}/api/keys/devices/revoke-others"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "current_device_id": 0 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["revoked"].as_i64().unwrap(), 0, "nothing to revoke");
+
+    // Device 0 must still be in the device list.
+    let (token_other, _, _) = common::register_and_login(&client, &base, "keyrevsingleob").await;
+    let resp = client
+        .get(format!("{base}/api/keys/devices/{uid}"))
+        .header("Authorization", format!("Bearer {token_other}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let device_ids: Vec<i64> = body["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["device_id"].as_i64().unwrap())
+        .collect();
+    assert_eq!(device_ids, vec![0], "device 0 must still exist");
+}
+
+#[tokio::test]
+async fn revoke_other_devices_keeps_current_drops_rest() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, uid, _) = common::register_and_login(&client, &base, "keyrevothers").await;
+
+    // Upload three devices (0, 1, 2)
+    let bundle0 = common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
+    common::upload_additional_device(&client, &base, &token, &bundle0, 1).await;
+    common::upload_additional_device(&client, &base, &token, &bundle0, 2).await;
+
+    // Keep device 0, revoke the rest.
+    let resp = client
+        .post(format!("{base}/api/keys/devices/revoke-others"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "current_device_id": 0 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["revoked"].as_i64().unwrap(), 2, "should revoke 2");
+
+    // Only device 0 should remain in the device list.
+    let (token_other, _, _) = common::register_and_login(&client, &base, "keyrevothersobs").await;
+    let resp = client
+        .get(format!("{base}/api/keys/devices/{uid}"))
+        .header("Authorization", format!("Bearer {token_other}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let device_ids: Vec<i64> = body["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["device_id"].as_i64().unwrap())
+        .collect();
+    assert_eq!(device_ids, vec![0], "only device 0 should remain");
 }

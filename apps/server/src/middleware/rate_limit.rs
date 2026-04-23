@@ -193,6 +193,13 @@ pub fn key_reset_limiter() -> RateLimiter {
     RateLimiter::new(3, 300)
 }
 
+/// Revoke-others rate limiter: 3 requests per 60 seconds per IP.
+/// Revoking every other device is a disruptive op -- cap it tightly so
+/// stolen tokens can't wipe a user's whole device list in a loop.
+pub fn revoke_others_limiter() -> RateLimiter {
+    RateLimiter::new(3, 60)
+}
+
 /// Check whether an IP is in a private/reserved range (RFC 1918, link-local, ULA).
 fn is_private(ip: IpAddr) -> bool {
     match ip {
