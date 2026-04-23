@@ -40,7 +40,7 @@ base64 = "0.22"
 
 # Crypto (refresh tokens)
 sha2 = "0.10"
-rand = "0.9"
+rand = "0.10"
 
 # Signal Protocol signature verification
 ed25519-dalek = { version = "2", features = ["std"] }
