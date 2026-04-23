@@ -13,6 +13,7 @@ use crate::auth::middleware::AuthUser;
 use crate::db;
 use crate::error::AppError;
 use crate::types::{ConversationKind, Role};
+use crate::ws::handler::invalidate_member_cache;
 
 use super::AppState;
 
@@ -565,6 +566,8 @@ pub async fn leave_conversation(
     if !removed {
         return Err(AppError::bad_request("Not a member of this conversation"));
     }
+
+    invalidate_member_cache(conversation_id);
 
     // Auto-delete conversation if no members remain
     let remaining = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
