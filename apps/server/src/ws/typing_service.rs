@@ -1,7 +1,4 @@
 //! Typing indicators, read receipts, presence, and membership caches.
-//!
-//! Extracted from `ws/handler.rs` as part of a pure refactor; behavior is
-//! unchanged.
 
 use axum::extract::ws::Message as WsMessage;
 use dashmap::DashMap;
@@ -99,10 +96,12 @@ pub(super) async fn get_conversation_kind_cached(
     Some(kind)
 }
 
-/// Invalidate the member-ID cache for a conversation.  Call this when
-/// members are added, removed, or banned.
+/// Invalidate the member-ID and membership caches for a conversation.
+/// Call this when members are added, removed, or banned so revoked members
+/// cannot continue to use cached positive membership entries.
 pub fn invalidate_member_cache(conversation_id: Uuid) {
     MEMBER_IDS_CACHE.remove(&conversation_id);
+    MEMBERSHIP_CACHE.retain(|(_, conv_id), _| *conv_id != conversation_id);
 }
 
 pub(super) async fn handle_typing(

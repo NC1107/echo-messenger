@@ -1,7 +1,4 @@
 //! Message send, fanout, and delivery logic.
-//!
-//! Extracted from `ws/handler.rs` as part of a pure refactor; behavior is
-//! unchanged.
 
 use axum::extract::ws::Message as WsMessage;
 use chrono::{DateTime, Utc};
