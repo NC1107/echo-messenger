@@ -1,16 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:echo_app/src/screens/settings/data_storage_section.dart';
 import 'package:echo_app/src/theme/echo_theme.dart';
 
+import '../../helpers/mock_providers.dart';
+
 void main() {
   Widget buildSection() {
-    return MaterialApp(
-      theme: EchoTheme.darkTheme,
-      darkTheme: EchoTheme.darkTheme,
-      themeMode: ThemeMode.dark,
-      home: const Scaffold(body: DataStorageSection()),
+    return ProviderScope(
+      overrides: [...standardOverrides()],
+      child: MaterialApp(
+        theme: EchoTheme.darkTheme,
+        darkTheme: EchoTheme.darkTheme,
+        themeMode: ThemeMode.dark,
+        home: const Scaffold(body: DataStorageSection()),
+      ),
     );
   }
 
@@ -43,11 +49,11 @@ void main() {
       expect(find.text('Export My Data'), findsOneWidget);
     });
 
-    testWidgets('export has coming soon badge', (tester) async {
+    testWidgets('export shows copy account info button', (tester) async {
       await tester.pumpWidget(buildSection());
       await tester.pumpAndSettle();
 
-      expect(find.text('Coming soon'), findsOneWidget);
+      expect(find.text('Copy Account Info'), findsOneWidget);
     });
   });
 }

@@ -86,18 +86,16 @@ void main() {
       await tester.pumpWidget(buildSection());
       await tester.pumpAndSettle();
 
-      await tester.scrollUntilVisible(
-        find.text('Discoverable by Email'),
-        200,
-        scrollable: find.byType(Scrollable).first,
+      // Discoverable toggles may be far down due to blocked users / safety
+      // number sections. Use skipOffstage to find them even if off-screen.
+      expect(
+        find.text('Discoverable by Email', skipOffstage: false),
+        findsOneWidget,
       );
-      expect(find.text('Discoverable by Email'), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('Discoverable by Phone'),
-        200,
-        scrollable: find.byType(Scrollable).first,
+      expect(
+        find.text('Discoverable by Phone', skipOffstage: false),
+        findsOneWidget,
       );
-      expect(find.text('Discoverable by Phone'), findsOneWidget);
     });
 
     testWidgets('renders search and encryption sections via scroll', (
