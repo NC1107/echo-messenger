@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+import '../models/blocked_user.dart';
 import '../models/contact.dart';
 import '../services/debug_log_service.dart';
 import 'auth_provider.dart';
@@ -13,26 +14,34 @@ import 'server_url_provider.dart';
 class ContactsState {
   final List<Contact> contacts;
   final List<Contact> pendingRequests;
+  final List<BlockedUser> blockedUsers;
   final bool isLoading;
+  final bool isBlockedLoading;
   final String? error;
 
   const ContactsState({
     this.contacts = const [],
     this.pendingRequests = const [],
+    this.blockedUsers = const [],
     this.isLoading = false,
+    this.isBlockedLoading = false,
     this.error,
   });
 
   ContactsState copyWith({
     List<Contact>? contacts,
     List<Contact>? pendingRequests,
+    List<BlockedUser>? blockedUsers,
     bool? isLoading,
+    bool? isBlockedLoading,
     String? error,
   }) {
     return ContactsState(
       contacts: contacts ?? this.contacts,
       pendingRequests: pendingRequests ?? this.pendingRequests,
+      blockedUsers: blockedUsers ?? this.blockedUsers,
       isLoading: isLoading ?? this.isLoading,
+      isBlockedLoading: isBlockedLoading ?? this.isBlockedLoading,
       error: error,
     );
   }
@@ -199,6 +208,60 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
         'Contacts',
         'acceptRequest failed for $contactId: $e',
       );
+    }
+  }
+
+  Future<void> loadBlockedUsers() async {
+    state = state.copyWith(isBlockedLoading: true, error: null);
+    try {
+      final response = await _authenticatedRequest(
+        (token) => http.get(
+          Uri.parse('$_serverUrl/api/contacts/blocked'),
+          headers: _headersWithToken(token),
+        ),
+      );
+      if (response.statusCode == 200) {
+        final list = (jsonDecode(response.body) as List)
+            .map((e) => BlockedUser.fromJson(e as Map<String, dynamic>))
+            .toList();
+        state = state.copyWith(blockedUsers: list, isBlockedLoading: false);
+      } else {
+        state = state.copyWith(
+          isBlockedLoading: false,
+          error: 'Failed to load blocked users',
+        );
+      }
+    } catch (e) {
+      state = state.copyWith(isBlockedLoading: false, error: e.toString());
+    }
+  }
+
+  Future<bool> unblockUser(String userId) async {
+    try {
+      final response = await _authenticatedRequest(
+        (token) => http.post(
+          Uri.parse('$_serverUrl/api/contacts/unblock'),
+          headers: _headersWithToken(token),
+          body: jsonEncode({'user_id': userId}),
+        ),
+      );
+      if (response.statusCode == 200) {
+        state = state.copyWith(
+          blockedUsers: state.blockedUsers
+              .where((u) => u.blockedId != userId)
+              .toList(),
+        );
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('[Contacts] unblockUser failed for $userId: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'Contacts',
+        'unblockUser failed for $userId: $e',
+      );
+      return false;
     }
   }
 }

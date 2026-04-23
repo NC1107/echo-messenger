@@ -35,26 +35,25 @@ class _ContactItemState extends State<ContactItem> {
     final fullAvatarUrl = resolveAvatarUrl(contact.avatarUrl, widget.serverUrl);
     final isOnline = widget.onlineUsers.contains(contact.userId);
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: Container(
-        height: 56,
-        margin: const EdgeInsets.symmetric(vertical: 1),
-        decoration: BoxDecoration(
-          color: _isHovered ? context.surfaceHover : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: Semantics(
-                label: 'contact: $username',
-                button: true,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: widget.onProfile,
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onHover: (hovered) => setState(() => _isHovered = hovered),
+        onTap: widget.onProfile,
+        child: Container(
+          height: 56,
+          margin: const EdgeInsets.symmetric(vertical: 1),
+          decoration: BoxDecoration(
+            color: _isHovered ? context.surfaceHover : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  label: 'contact: $username',
                   child: Row(
                     children: [
                       // Avatar with online dot
@@ -116,27 +115,27 @@ class _ContactItemState extends State<ContactItem> {
                   ),
                 ),
               ),
-            ),
-            Semantics(
-              label: 'message $username',
-              button: true,
-              child: SizedBox(
-                height: 28,
-                child: Material(
-                  color: context.accentLight,
-                  borderRadius: BorderRadius.circular(6),
-                  child: InkWell(
+              Semantics(
+                label: 'message $username',
+                button: true,
+                child: SizedBox(
+                  height: 28,
+                  child: Material(
+                    color: context.accentLight,
                     borderRadius: BorderRadius.circular(6),
-                    onTap: widget.onMessage,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Center(
-                        child: Text(
-                          'Message',
-                          style: TextStyle(
-                            color: context.accent,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: widget.onMessage,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Center(
+                          child: Text(
+                            'Message',
+                            style: TextStyle(
+                              color: context.accent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       ),
@@ -144,8 +143,8 @@ class _ContactItemState extends State<ContactItem> {
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -12,6 +12,7 @@ import '../screens/join_group_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/onboarding_wizard.dart';
 import '../screens/register_screen.dart';
+import '../screens/safety_number_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/splash_screen.dart';
 import '../screens/username_invite_screen.dart';
@@ -216,6 +217,23 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/settings',
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const SettingsScreen()),
+      ),
+      GoRoute(
+        path: '/safety-number/:peerId',
+        pageBuilder: (context, state) {
+          final peerId = state.pathParameters['peerId']!;
+          final qp = state.uri.queryParameters;
+          final peerUsername = qp['peerUsername'] ?? peerId;
+          final myUsername = qp['myUsername'] ?? '';
+          return _fadePage(
+            key: state.pageKey,
+            child: SafetyNumberScreen(
+              peerUserId: peerId,
+              peerUsername: peerUsername,
+              myUsername: myUsername,
+            ),
+          );
+        },
       ),
       GoRoute(
         path: '/join/:groupId',
