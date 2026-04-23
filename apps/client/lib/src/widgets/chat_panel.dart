@@ -624,7 +624,45 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         curve: Curves.easeOut,
         alignment: 0.3,
       );
+      return;
     }
+
+    // Target message is off-screen (not rendered by ListView.builder).
+    // Find its index and estimate scroll position to jump near it.
+    final conv = widget.conversation;
+    if (conv == null || !_scrollController.hasClients) return;
+    final chatState = ref.read(chatProvider);
+    final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
+    final includeUnchanneled = conv.isGroup && _selectedTextChannelId == null;
+    final messages = _resolveMessages(
+      conv,
+      chatState,
+      selectedChannelId,
+      includeUnchanneled,
+    );
+    final index = messages.indexWhere((m) => m.id == messageId);
+    if (index < 0) return;
+
+    // +1 accounts for the loading indicator at index 0 in the ListView.
+    final estimatedOffset = (index + 1) * 60.0;
+    _scrollController.animateTo(
+      estimatedOffset.clamp(0, _scrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+
+    // After the jump, retry with ensureVisible once the widget is rendered.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final retryKey = _messageKeys[messageId];
+      if (retryKey?.currentContext != null) {
+        Scrollable.ensureVisible(
+          retryKey!.currentContext!,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          alignment: 0.3,
+        );
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -981,26 +1019,57 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     final ws = ref.read(websocketProvider.notifier);
     final content = message.content;
 
-    await ref.read(chatProvider.notifier).forwardMessage(content, target.id, (
-      forwardedContent,
-    ) async {
-      if (target.isGroup) {
-        await ws.sendGroupMessage(target.id, forwardedContent);
-      } else {
-        final peer = target.members
-            .where((m) => m.userId != myUserId)
-            .firstOrNull;
-        if (peer == null) return;
-        await ws.sendMessage(
-          peer.userId,
-          forwardedContent,
-          conversationId: target.id,
+    try {
+      await ref.read(chatProvider.notifier).forwardMessage(content, target.id, (
+        forwardedContent,
+      ) async {
+        // Add optimistic message so the sender sees it locally immediately.
+        String peerUserId = '';
+        if (!target.isGroup) {
+          final peer = target.members
+              .where((m) => m.userId != myUserId)
+              .firstOrNull;
+          peerUserId = peer?.userId ?? '';
+        }
+        ref
+            .read(chatProvider.notifier)
+            .addOptimistic(
+              peerUserId,
+              forwardedContent,
+              myUserId,
+              conversationId: target.id,
+            );
+
+        if (target.isGroup) {
+          await ws.sendGroupMessage(target.id, forwardedContent);
+        } else {
+          final peer = target.members
+              .where((m) => m.userId != myUserId)
+              .firstOrNull;
+          if (peer == null) return;
+          await ws.sendMessage(
+            peer.userId,
+            forwardedContent,
+            conversationId: target.id,
+          );
+        }
+      });
+
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Message forwarded',
+          type: ToastType.success,
         );
       }
-    });
-
-    if (mounted) {
-      ToastService.show(context, 'Message forwarded', type: ToastType.success);
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Failed to forward message',
+          type: ToastType.error,
+        );
+      }
     }
   }
 
@@ -1630,42 +1699,40 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String serverUrl,
     required String authToken,
   }) {
-    return SelectionArea(
-      child: Scrollbar(
+    return Scrollbar(
+      controller: _scrollController,
+      thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
+      child: ListView.builder(
         controller: _scrollController,
-        thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
-        child: ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.only(bottom: 16),
-          itemCount: messages.length + 1,
-          itemBuilder: (context, index) {
-            if (index == 0) {
-              if (chatState.hasMore[conv.id] ?? true) {
-                return SizedBox(
-                  height: 48,
-                  child: (chatState.loadingHistory[conv.id] ?? false)
-                      ? const Center(
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                );
-              }
-              return const SizedBox(height: 8);
+        padding: const EdgeInsets.only(bottom: 16),
+        itemCount: messages.length + 1,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            if (chatState.hasMore[conv.id] ?? true) {
+              return SizedBox(
+                height: 48,
+                child: (chatState.loadingHistory[conv.id] ?? false)
+                    ? const Center(
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              );
             }
-            return _buildMessageAtIndex(
-              i: index - 1,
-              messages: messages,
-              memberAvatars: memberAvatars,
-              myUserId: myUserId,
-              serverUrl: serverUrl,
-              authToken: authToken,
-            );
-          },
-        ),
+            return const SizedBox(height: 8);
+          }
+          return _buildMessageAtIndex(
+            i: index - 1,
+            messages: messages,
+            memberAvatars: memberAvatars,
+            myUserId: myUserId,
+            serverUrl: serverUrl,
+            authToken: authToken,
+          );
+        },
       ),
     );
   }

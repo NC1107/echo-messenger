@@ -1206,6 +1206,18 @@ class _MessageItemState extends State<MessageItem>
         isFailed: isFailed,
         hasMedia: hasMedia,
       ),
+      if (msg.editedAt != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text(
+            '(edited)',
+            style: TextStyle(
+              fontSize: 11,
+              fontStyle: FontStyle.italic,
+              color: context.textMuted,
+            ),
+          ),
+        ),
     ];
   }
 
@@ -1397,7 +1409,9 @@ class _MessageItemState extends State<MessageItem>
       child: Padding(
         padding: EdgeInsets.only(top: 2, left: isMine ? 0 : 36),
         child: Text(
-          formatMessageTimestamp(msg.timestamp),
+          msg.editedAt != null
+              ? '${formatMessageTimestamp(msg.timestamp)} (edited)'
+              : formatMessageTimestamp(msg.timestamp),
           style: TextStyle(fontSize: 11, color: context.textMuted),
         ),
       ),
@@ -1416,9 +1430,9 @@ class _MessageItemState extends State<MessageItem>
     required String? mediaUrl,
   }) {
     return Positioned(
-      top: widget.showHeader ? 0 : -12,
+      top: widget.compactLayout ? -28 : (widget.showHeader ? 0 : -12),
       left: isMine ? null : 36,
-      right: isMine ? 0 : null,
+      right: isMine ? 0 : 8,
       child: ExcludeSemantics(
         excluding: !_isHovered,
         child: IgnorePointer(
