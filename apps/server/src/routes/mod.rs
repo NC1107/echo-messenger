@@ -87,6 +87,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let media_upload_limit = rate_limit::make_rate_limit_layer(rate_limit::media_upload_limiter());
     let link_preview_limit = rate_limit::make_rate_limit_layer(rate_limit::link_preview_limiter());
     let key_reset_limit = rate_limit::make_rate_limit_layer(rate_limit::key_reset_limiter());
+    let revoke_others_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::revoke_others_limiter());
 
     let auth_routes = Router::new()
         .route(
@@ -174,6 +176,12 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             get(keys::get_device_bundle),
         )
         .route("/bundles/{user_id}", get(keys::get_all_bundles))
+        // NOTE: register `/devices/revoke-others` BEFORE `/devices/{user_id}`
+        // so the static path always wins the route match.
+        .route(
+            "/devices/revoke-others",
+            post(keys::revoke_other_devices).layer(middleware::from_fn(revoke_others_limit)),
+        )
         .route("/devices/{user_id}", get(keys::get_devices))
         .route("/device/{device_id}", delete(keys::revoke_device))
         .route("/otp-count", get(keys::get_otp_count));

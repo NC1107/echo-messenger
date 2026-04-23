@@ -230,6 +230,19 @@ pub async fn handle_socket(
         }
     });
 
+    // Update device last_seen so the management UI reflects recent activity.
+    // Fire-and-forget: the connection must not block on a DB write here.
+    {
+        let pool = state.pool.clone();
+        tokio::spawn(async move {
+            if let Err(e) = db::keys::update_last_seen(&pool, user_id, device_id).await {
+                tracing::warn!(
+                    "update_last_seen failed for user {user_id} device {device_id}: {e}"
+                );
+            }
+        });
+    }
+
     message_service::deliver_undelivered_messages(&state, user_id, device_id).await;
 
     run_receive_loop(&mut receiver, user_id, device_id, &username, &state).await;

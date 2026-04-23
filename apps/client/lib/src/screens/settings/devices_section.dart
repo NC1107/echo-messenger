@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
@@ -9,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../../providers/auth_provider.dart';
 import '../../providers/crypto_provider.dart';
 import '../../providers/server_url_provider.dart';
+import '../../providers/websocket_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 
@@ -23,11 +25,36 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
   List<_Device> _devices = [];
   bool _loading = true;
   String? _error;
+  StreamSubscription<Map<String, dynamic>>? _deviceRevokedSub;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadDevices());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadDevices();
+      // Refresh when any device_revoked event arrives for another device.
+      final ws = ref.read(websocketProvider.notifier);
+      _deviceRevokedSub = ws.deviceRevokedEvents.listen((event) {
+        final revokedId = event['device_id'];
+        final myDeviceId = ref.read(cryptoServiceProvider).isInitialized
+            ? ref.read(cryptoServiceProvider).deviceId
+            : null;
+        // Coalesce rapid bursts (e.g. revoke-others emits N events) into a
+        // single refresh -- skip if we're already reloading.
+        if (revokedId is int &&
+            revokedId != myDeviceId &&
+            mounted &&
+            !_loading) {
+          _loadDevices();
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _deviceRevokedSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadDevices() async {
@@ -55,24 +82,30 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
-        final List<dynamic> deviceIds;
+        // New shape: { user_id, devices: [{device_id, platform, last_seen}] }
+        // Old shape (backward compat): { user_id, device_ids: [<int>] } or a
+        // bare list of device_id integers.
+        final List<dynamic> rawDevices;
         if (body is List) {
-          deviceIds = body;
+          rawDevices = body;
         } else if (body is Map<String, dynamic>) {
-          deviceIds = body['device_ids'] as List<dynamic>? ?? [];
+          rawDevices =
+              (body['devices'] as List<dynamic>?) ??
+              (body['device_ids'] as List<dynamic>?) ??
+              [];
         } else {
-          deviceIds = [];
+          rawDevices = [];
         }
         setState(() {
-          _devices = deviceIds.map((d) {
+          _devices = rawDevices.map((d) {
             if (d is Map<String, dynamic>) {
               return _Device(
                 deviceId: (d['device_id'] as num).toInt(),
-                label: d['label'] as String? ?? 'Device',
+                platform: d['platform'] as String?,
                 lastSeen: d['last_seen'] as String?,
               );
             }
-            // Server returns plain device_id integers
+            // Legacy: bare device_id integer
             return _Device(deviceId: (d as num).toInt());
           }).toList();
           _loading = false;
@@ -101,7 +134,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
           side: BorderSide(color: context.border),
         ),
         title: Text(
-          'Revoke ${device.label}',
+          'Revoke ${device.displayLabel}',
           style: const TextStyle(
             color: EchoTheme.danger,
             fontSize: 18,
@@ -109,7 +142,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
           ),
         ),
         content: Text(
-          'This will remove ${device.label} from your account. '
+          'This will remove ${device.displayLabel} from your account. '
           'Any active session on that device will be signed out immediately.',
           style: TextStyle(
             color: context.textSecondary,
@@ -154,6 +187,91 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
           ToastService.show(
             context,
             'Failed to revoke device (${response.statusCode})',
+            type: ToastType.error,
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(context, 'Network error', type: ToastType.error);
+      }
+    }
+  }
+
+  /// Revoke every device except the current one after confirming with the user.
+  Future<void> _revokeOtherDevices(int currentDeviceId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: Text(
+          'Log out all other devices',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'This will log out every device except this one. Continue?',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 14,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Log out others'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final serverUrl = ref.read(serverUrlProvider);
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.post(
+              Uri.parse('$serverUrl/api/keys/devices/revoke-others'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({'current_device_id': currentDeviceId}),
+            ),
+          );
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        final count = (body['revoked'] as num?)?.toInt() ?? 0;
+        if (mounted) {
+          ToastService.show(
+            context,
+            count == 1
+                ? 'Logged out 1 other device'
+                : 'Logged out $count other devices',
+          );
+        }
+        await _loadDevices();
+      } else {
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Failed to log out other devices (${response.statusCode})',
             type: ToastType.error,
           );
         }
@@ -295,7 +413,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
                     Text(
                       isThisDevice
                           ? _currentPlatformName()
-                          : device.label ?? 'Device ${device.deviceId}',
+                          : device.displayLabel,
                       style: TextStyle(
                         color: context.textPrimary,
                         fontWeight: FontWeight.w500,
@@ -343,6 +461,22 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
               );
             },
           ),
+        if (!_loading &&
+            _error == null &&
+            myDeviceId != null &&
+            _devices.any((d) => d.deviceId != myDeviceId))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => _revokeOtherDevices(myDeviceId),
+                icon: const Icon(Icons.devices_other, size: 18),
+                label: const Text('Log out all other devices'),
+                style: TextButton.styleFrom(foregroundColor: EchoTheme.danger),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -350,10 +484,15 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
 
 class _Device {
   final int deviceId;
-  final String? label;
+  final String? platform;
   final String? lastSeen;
 
-  const _Device({required this.deviceId, this.label, this.lastSeen});
+  const _Device({required this.deviceId, this.platform, this.lastSeen});
+
+  /// Best-effort display label. Falls back to a device-id-specific label when
+  /// the server has no platform string stored (e.g. older clients) so that
+  /// multiple unknown devices remain distinguishable in the list.
+  String get displayLabel => platform ?? 'Device $deviceId';
 }
 
 String _formatLastSeen(String? isoString) {
@@ -361,7 +500,11 @@ String _formatLastSeen(String? isoString) {
   try {
     final dt = DateTime.parse(isoString).toLocal();
     final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 60) return 'just now';
+    if (diff.inMinutes < 2) return 'just now';
+    if (diff.inMinutes < 60) {
+      final m = diff.inMinutes;
+      return '$m ${m == 1 ? 'minute' : 'minutes'} ago';
+    }
     if (diff.inHours < 24) {
       final h = diff.inHours;
       return '$h ${h == 1 ? 'hour' : 'hours'} ago';

@@ -101,6 +101,10 @@ class _TestWsHandler extends StateNotifier<WebSocketState>
   final StreamController<Map<String, dynamic>> voiceSignalController =
       StreamController<Map<String, dynamic>>.broadcast();
 
+  @override
+  final StreamController<Map<String, dynamic>> deviceRevokedController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
   _TestWsHandler(this.ref) : super(const WebSocketState());
 }
 
