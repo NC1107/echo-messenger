@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:echo_app/src/models/chat_message.dart';
 import 'package:echo_app/src/models/conversation.dart';
@@ -164,7 +165,11 @@ void _setup() {
 const _myUserId = 'my-user-id';
 
 void main() {
-  setUp(_setup);
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    _setup();
+  });
 
   tearDown(() {
     container.dispose();
