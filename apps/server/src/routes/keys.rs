@@ -32,6 +32,10 @@ pub struct UploadBundleRequest {
     pub device_id: i32,
     /// Ed25519 signing public key, base64-encoded. Required to prevent MITM attacks.
     pub signing_key: String,
+    /// Optional human-readable platform label (e.g. "iOS", "Linux") written
+    /// alongside the identity key so the device-management UI can display it.
+    #[serde(default)]
+    pub platform: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,11 +61,31 @@ pub struct OneTimePreKeyResponse {
     pub public_key: String,
 }
 
+/// Device info returned in the device list response.
+#[derive(Debug, Serialize)]
+pub struct DeviceInfo {
+    pub device_id: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_seen: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl From<db::keys::DeviceRow> for DeviceInfo {
+    fn from(row: db::keys::DeviceRow) -> Self {
+        DeviceInfo {
+            device_id: row.device_id,
+            platform: row.platform,
+            last_seen: row.last_seen,
+        }
+    }
+}
+
 /// Response body for device list query.
 #[derive(Debug, Serialize)]
 pub struct DeviceListResponse {
     pub user_id: Uuid,
-    pub device_ids: Vec<i32>,
+    pub devices: Vec<DeviceInfo>,
 }
 
 use base64::Engine;
@@ -183,6 +207,7 @@ pub async fn upload_bundle(
         device_id,
         &identity_key,
         Some(&signing_key_bytes),
+        body.platform.as_deref(),
     )
     .await?;
     db::keys::store_signed_prekey(
@@ -259,9 +284,9 @@ pub async fn get_bundle(
             // No device 0 — find the most recently registered device and use that
             let devices = db::keys::get_user_devices(&state.pool, user_id).await?;
             let mut found = None;
-            for device_id in devices {
+            for device in devices {
                 if let Some(b) =
-                    db::keys::get_prekey_bundle(&state.pool, user_id, device_id).await?
+                    db::keys::get_prekey_bundle(&state.pool, user_id, device.device_id).await?
                 {
                     found = Some(b);
                     break;
@@ -317,17 +342,16 @@ pub async fn get_device_bundle(
     Ok(Json(response))
 }
 
-/// GET /api/keys/devices/:user_id -- List all device_ids for a user.
+/// GET /api/keys/devices/:user_id -- List all devices for a user, including
+/// their platform and last_seen timestamp.
 pub async fn get_devices(
     State(state): State<Arc<AppState>>,
     _auth_user: AuthUser,
     Path(user_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let device_ids = db::keys::get_user_devices(&state.pool, user_id).await?;
-    Ok(Json(DeviceListResponse {
-        user_id,
-        device_ids,
-    }))
+    let rows = db::keys::get_user_devices(&state.pool, user_id).await?;
+    let devices: Vec<DeviceInfo> = rows.into_iter().map(DeviceInfo::from).collect();
+    Ok(Json(DeviceListResponse { user_id, devices }))
 }
 
 /// Response for a single device bundle within the all-bundles response.
@@ -351,10 +375,11 @@ pub async fn get_all_bundles(
     _auth_user: AuthUser,
     Path(user_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let device_ids = db::keys::get_user_devices(&state.pool, user_id).await?;
+    let devices = db::keys::get_user_devices(&state.pool, user_id).await?;
     let mut bundles = Vec::new();
 
-    for device_id in device_ids {
+    for device in devices {
+        let device_id = device.device_id;
         if let Some(bundle) = db::keys::get_prekey_bundle(&state.pool, user_id, device_id).await? {
             let signing_key = match require_signing_key(&bundle, user_id) {
                 Ok(sk) => sk,
@@ -409,6 +434,62 @@ pub async fn revoke_device(
     }
 
     Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+/// Request body for `POST /api/keys/devices/revoke-others`.
+#[derive(Debug, Deserialize)]
+pub struct RevokeOthersRequest {
+    pub current_device_id: i32,
+}
+
+/// POST /api/keys/devices/revoke-others -- Revoke every device belonging to
+/// the authenticated user except `current_device_id`. Broadcasts a
+/// `device_revoked` event for each revoked device so live sessions log out
+/// immediately. Returns `{ "revoked": <count> }`.
+pub async fn revoke_other_devices(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+    Json(body): Json<RevokeOthersRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    use crate::ws::handler::ServerMessage;
+    use axum::extract::ws::Message as WsMessage;
+
+    let devices = db::keys::get_user_devices(&state.pool, auth_user.user_id).await?;
+
+    let mut revoked = 0usize;
+    for device in devices {
+        if device.device_id == body.current_device_id {
+            continue;
+        }
+
+        let found = db::keys::revoke_device(&state.pool, auth_user.user_id, device.device_id)
+            .await
+            .map_err(|_| AppError::internal("Database error"))?;
+
+        if !found {
+            continue;
+        }
+
+        revoked += 1;
+
+        let event = ServerMessage::DeviceRevoked {
+            device_id: device.device_id,
+        };
+        if let Ok(json) = serde_json::to_string(&event) {
+            state
+                .hub
+                .send_to_user(&auth_user.user_id, WsMessage::Text(json.into()));
+        }
+    }
+
+    tracing::info!(
+        "User {} revoked {} other devices (kept device {})",
+        auth_user.user_id,
+        revoked,
+        body.current_device_id,
+    );
+
+    Ok(Json(serde_json::json!({ "revoked": revoked })))
 }
 
 /// Request body for key reset -- requires current password for re-authentication.

@@ -62,23 +62,32 @@ pub async fn clear_identity_key_fingerprint(
 }
 
 /// Store or replace a user's identity key for a specific device.
+///
+/// If `platform` is provided, it is written alongside the identity keys so the
+/// UI can show "iOS", "Linux", etc. Omitted platforms leave the existing value
+/// intact (useful for OTP replenishment that re-uploads the identity without
+/// new metadata).
 pub async fn store_identity_key(
     db: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
     device_id: i32,
     identity_key: &[u8],
     signing_key: Option<&[u8]>,
+    platform: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO identity_keys (user_id, device_id, identity_key, signing_key) \
-         VALUES ($1, $2, $3, $4) \
+        "INSERT INTO identity_keys (user_id, device_id, identity_key, signing_key, platform) \
+         VALUES ($1, $2, $3, $4, $5) \
          ON CONFLICT (user_id, device_id) DO UPDATE \
-         SET identity_key = $3, signing_key = $4",
+         SET identity_key = $3, \
+             signing_key = $4, \
+             platform = COALESCE($5, identity_keys.platform)",
     )
     .bind(user_id)
     .bind(device_id)
     .bind(identity_key)
     .bind(signing_key)
+    .bind(platform)
     .execute(db)
     .await?;
     Ok(())
@@ -250,15 +259,45 @@ pub async fn get_prekey_bundle(
     }))
 }
 
-/// Return device_ids registered for a given user (capped at 10).
-pub async fn get_user_devices(pool: &PgPool, user_id: Uuid) -> Result<Vec<i32>, sqlx::Error> {
-    let rows: Vec<(i32,)> = sqlx::query_as(
-        "SELECT device_id FROM identity_keys WHERE user_id = $1 ORDER BY device_id DESC LIMIT 10",
+/// Device metadata returned by [`get_user_devices`].
+#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+pub struct DeviceRow {
+    pub device_id: i32,
+    pub platform: Option<String>,
+    pub last_seen: Option<DateTime<Utc>>,
+}
+
+/// Return devices registered for a given user (capped at 10), including
+/// their platform and last-seen timestamp.
+pub async fn get_user_devices(pool: &PgPool, user_id: Uuid) -> Result<Vec<DeviceRow>, sqlx::Error> {
+    sqlx::query_as::<_, DeviceRow>(
+        "SELECT device_id, platform, last_seen \
+         FROM identity_keys \
+         WHERE user_id = $1 \
+         ORDER BY device_id DESC \
+         LIMIT 10",
     )
     .bind(user_id)
     .fetch_all(pool)
+    .await
+}
+
+/// Update the `last_seen` timestamp for a user's device to NOW(). Called on
+/// WebSocket connect so the device list reflects recent activity.
+pub async fn update_last_seen(
+    pool: &PgPool,
+    user_id: Uuid,
+    device_id: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE identity_keys SET last_seen = NOW() \
+         WHERE user_id = $1 AND device_id = $2",
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .execute(pool)
     .await?;
-    Ok(rows.into_iter().map(|(d,)| d).collect())
+    Ok(())
 }
 
 /// Revoke all keys for a specific (user_id, device_id) pair.

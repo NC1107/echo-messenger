@@ -230,6 +230,17 @@ pub async fn handle_socket(
         }
     });
 
+    // Update device last_seen so the management UI reflects recent activity.
+    // Fire-and-forget: a failure here must not affect the connection.
+    if let Err(e) = db::keys::update_last_seen(&state.pool, user_id, device_id).await {
+        tracing::warn!(
+            "Failed to update last_seen for user {} device {}: {:?}",
+            user_id,
+            device_id,
+            e,
+        );
+    }
+
     message_service::deliver_undelivered_messages(&state, user_id, device_id).await;
 
     run_receive_loop(&mut receiver, user_id, device_id, &username, &state).await;

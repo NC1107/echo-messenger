@@ -175,6 +175,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         )
         .route("/bundles/{user_id}", get(keys::get_all_bundles))
         .route("/devices/{user_id}", get(keys::get_devices))
+        .route("/devices/revoke-others", post(keys::revoke_other_devices))
         .route("/device/{device_id}", delete(keys::revoke_device))
         .route("/otp-count", get(keys::get_otp_count));
 
