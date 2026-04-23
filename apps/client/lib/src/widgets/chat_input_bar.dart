@@ -726,67 +726,116 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _onInputChanged(_messageController.text);
   }
 
+  // ---------------------------------------------------------------------------
+  // File mime resolution (shared between pickers)
+  // ---------------------------------------------------------------------------
+
+  static const _kMimeTypes = <String, List<String>>{
+    'jpg': ['image', 'jpeg'],
+    'jpeg': ['image', 'jpeg'],
+    'png': ['image', 'png'],
+    'gif': ['image', 'gif'],
+    'webp': ['image', 'webp'],
+    'mp4': ['video', 'mp4'],
+    'mov': ['video', 'quicktime'],
+    'webm': ['video', 'webm'],
+    'pdf': ['application', 'pdf'],
+    'mp3': ['audio', 'mpeg'],
+    'ogg': ['audio', 'ogg'],
+    'wav': ['audio', 'wav'],
+    'm4a': ['audio', 'mp4'],
+    'aac': ['audio', 'aac'],
+  };
+
+  /// Upload [bytes] and immediately send the result as a message.
+  /// Used for the 2nd..Nth files when multiple are selected at once.
+  Future<void> _sendFileImmediately({
+    required Uint8List bytes,
+    required String fileName,
+    required String mimeType,
+    required String ext,
+  }) async {
+    final serverUrl = ref.read(serverUrlProvider);
+    final url = await _uploadWithAuthRetry(
+      serverUrl: serverUrl,
+      bytes: bytes,
+      fileName: fileName,
+      mimeType: mimeType,
+    );
+    if (!mounted || url == null) return;
+    final marker = _buildMediaMarker(extension: ext, url: url);
+    await _doSend(marker);
+  }
+
   Future<void> _pickFile() async {
     if (_isPickingFile) return;
     _isPickingFile = true;
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.any,
-        allowMultiple: false,
+        allowMultiple: true,
         withData: true,
       );
       if (result == null || result.files.isEmpty) return;
       if (!mounted) return;
 
-      final file = result.files.first;
-
-      // On mobile, withData:true may still yield null bytes for larger files
-      // or certain content URIs. Fall back to reading from the file path.
-      Uint8List? bytes = file.bytes;
-      if (bytes == null && file.path != null && !kIsWeb) {
-        try {
-          bytes = await File(file.path!).readAsBytes();
-        } catch (e) {
-          debugPrint('[ChatInput] Failed to read file from path: $e');
-        }
+      // Show toast for multi-file selections so the user knows all are queued.
+      if (result.files.length > 1) {
+        ToastService.show(
+          context,
+          'Sending ${result.files.length} files...',
+          type: ToastType.info,
+        );
       }
 
-      if (bytes == null) {
-        if (mounted) {
-          ToastService.show(
-            context,
-            'Could not read file data',
-            type: ToastType.error,
+      bool firstAttached = false;
+
+      for (final file in result.files) {
+        // On mobile, withData:true may still yield null bytes for larger files
+        // or certain content URIs. Fall back to reading from the file path.
+        Uint8List? bytes = file.bytes;
+        if (bytes == null && file.path != null && !kIsWeb) {
+          try {
+            bytes = await File(file.path!).readAsBytes();
+          } catch (e) {
+            debugPrint('[ChatInput] Failed to read file from path: $e');
+          }
+        }
+
+        if (bytes == null) {
+          if (mounted) {
+            ToastService.show(
+              context,
+              'Could not read file: ${file.name}',
+              type: ToastType.error,
+            );
+          }
+          continue;
+        }
+
+        final ext = (file.extension ?? '').toLowerCase();
+        final mime = _kMimeTypes[ext] ?? ['application', _kOctetStream];
+        final mimeType = '${mime[0]}/${mime[1]}';
+
+        if (!firstAttached) {
+          // First file goes through the normal preview flow.
+          firstAttached = true;
+          _setPendingAttachment(
+            bytes: bytes,
+            fileName: file.name,
+            mimeType: mimeType,
+            ext: ext,
+          );
+        } else {
+          // Additional files are uploaded and sent immediately.
+          await _sendFileImmediately(
+            bytes: bytes,
+            fileName: file.name,
+            mimeType: mimeType,
+            ext: ext,
           );
         }
-        return;
       }
-
-      final ext = (file.extension ?? '').toLowerCase();
-      final mimeTypes = <String, List<String>>{
-        'jpg': ['image', 'jpeg'],
-        'jpeg': ['image', 'jpeg'],
-        'png': ['image', 'png'],
-        'gif': ['image', 'gif'],
-        'webp': ['image', 'webp'],
-        'mp4': ['video', 'mp4'],
-        'mov': ['video', 'quicktime'],
-        'webm': ['video', 'webm'],
-        'pdf': ['application', 'pdf'],
-        'mp3': ['audio', 'mpeg'],
-        'ogg': ['audio', 'ogg'],
-        'wav': ['audio', 'wav'],
-        'm4a': ['audio', 'mp4'],
-        'aac': ['audio', 'aac'],
-      };
-      final mime = mimeTypes[ext] ?? ['application', _kOctetStream];
-
-      _setPendingAttachment(
-        bytes: bytes,
-        fileName: file.name,
-        mimeType: '${mime[0]}/${mime[1]}',
-        ext: ext,
-      );
     } catch (e) {
       if (!mounted) return;
       ToastService.show(context, 'File pick error: $e', type: ToastType.error);
@@ -1146,36 +1195,52 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.media,
-        allowMultiple: false,
+        allowMultiple: true,
         withData: true,
       );
       if (result == null || result.files.isEmpty) return;
       if (!mounted) return;
-      final file = result.files.first;
-      Uint8List? bytes = file.bytes;
-      if (bytes == null && file.path != null && !kIsWeb) {
-        try {
-          bytes = await File(file.path!).readAsBytes();
-        } catch (_) {}
+
+      if (result.files.length > 1) {
+        ToastService.show(
+          context,
+          'Sending ${result.files.length} files...',
+          type: ToastType.info,
+        );
       }
-      if (bytes == null) return;
-      final ext = (file.extension ?? '').toLowerCase();
-      final mimeTypes = <String, List<String>>{
-        'jpg': ['image', 'jpeg'],
-        'jpeg': ['image', 'jpeg'],
-        'png': ['image', 'png'],
-        'gif': ['image', 'gif'],
-        'webp': ['image', 'webp'],
-        'mp4': ['video', 'mp4'],
-        'mov': ['video', 'quicktime'],
-      };
-      final mime = mimeTypes[ext] ?? ['application', _kOctetStream];
-      _setPendingAttachment(
-        bytes: bytes,
-        fileName: file.name,
-        mimeType: '${mime[0]}/${mime[1]}',
-        ext: ext,
-      );
+
+      bool firstAttached = false;
+
+      for (final file in result.files) {
+        Uint8List? bytes = file.bytes;
+        if (bytes == null && file.path != null && !kIsWeb) {
+          try {
+            bytes = await File(file.path!).readAsBytes();
+          } catch (_) {}
+        }
+        if (bytes == null) continue;
+
+        final ext = (file.extension ?? '').toLowerCase();
+        final mime = _kMimeTypes[ext] ?? ['application', _kOctetStream];
+        final mimeType = '${mime[0]}/${mime[1]}';
+
+        if (!firstAttached) {
+          firstAttached = true;
+          _setPendingAttachment(
+            bytes: bytes,
+            fileName: file.name,
+            mimeType: mimeType,
+            ext: ext,
+          );
+        } else {
+          await _sendFileImmediately(
+            bytes: bytes,
+            fileName: file.name,
+            mimeType: mimeType,
+            ext: ext,
+          );
+        }
+      }
     } catch (e) {
       if (!mounted) return;
       ToastService.show(context, 'Pick error: $e', type: ToastType.error);

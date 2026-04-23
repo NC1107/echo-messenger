@@ -182,12 +182,17 @@ class MediaContent extends StatefulWidget {
   final String? serverUrl;
   final String? authToken;
 
+  /// Called when the user taps an image with the resolved full URL.
+  /// When null, the widget falls back to opening its own single-image dialog.
+  final void Function(String resolvedUrl)? onImageTap;
+
   const MediaContent({
     super.key,
     required this.content,
     required this.isMine,
     this.serverUrl,
     this.authToken,
+    this.onImageTap,
   });
 
   @override
@@ -390,7 +395,9 @@ class MediaContentState extends State<MediaContent> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: GestureDetector(
-            onTap: () => showImageViewer(imageUrl: fullUrl),
+            onTap: () => widget.onImageTap != null
+                ? widget.onImageTap!(fullUrl)
+                : showImageViewer(imageUrl: fullUrl),
             child: Stack(
               children: [
                 fullUrl.startsWith('http') && urlExtension(rawUrl) == 'gif'
@@ -830,7 +837,11 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
                 color: Colors.black.withValues(alpha: 0.5),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.play_arrow, size: 32, color: Colors.white),
+              child: const Icon(
+                Icons.play_arrow,
+                size: 32,
+                color: Colors.white,
+              ),
             ),
           // Bottom controls: gradient scrim + seek bar + duration + fullscreen
           Positioned(
@@ -862,15 +873,15 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
                           overlayRadius: 12,
                         ),
                         activeTrackColor: context.accent,
-                        inactiveTrackColor:
-                            context.textMuted.withValues(alpha: 0.3),
+                        inactiveTrackColor: context.textMuted.withValues(
+                          alpha: 0.3,
+                        ),
                         thumbColor: context.accent,
                       ),
                       child: Slider(
                         value: progress,
                         onChanged: (v) {
-                          final ms =
-                              (v * duration.inMilliseconds).round();
+                          final ms = (v * duration.inMilliseconds).round();
                           c.seekTo(Duration(milliseconds: ms));
                         },
                       ),
@@ -878,7 +889,11 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
                   ),
                   // Duration row
                   Padding(
-                    padding: const EdgeInsets.only(left: 8, right: 4, bottom: 4),
+                    padding: const EdgeInsets.only(
+                      left: 8,
+                      right: 4,
+                      bottom: 4,
+                    ),
                     child: Row(
                       children: [
                         Text(
@@ -1050,15 +1065,16 @@ class _FullscreenVideoDialogState extends State<_FullscreenVideoDialog> {
                                 overlayRadius: 14,
                               ),
                               activeTrackColor: widget.accent,
-                              inactiveTrackColor:
-                                  widget.textMuted.withValues(alpha: 0.3),
+                              inactiveTrackColor: widget.textMuted.withValues(
+                                alpha: 0.3,
+                              ),
                               thumbColor: widget.accent,
                             ),
                             child: Slider(
                               value: progress,
                               onChanged: (v) {
-                                final ms =
-                                    (v * duration.inMilliseconds).round();
+                                final ms = (v * duration.inMilliseconds)
+                                    .round();
                                 c.seekTo(Duration(milliseconds: ms));
                               },
                             ),
