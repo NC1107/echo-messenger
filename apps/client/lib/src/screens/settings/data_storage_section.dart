@@ -157,7 +157,11 @@ class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
           subtitle: Text(
             'Your messages are stored encrypted on the server and synced to '
             'this device. Full export is in development.',
-            style: TextStyle(color: context.textSecondary, fontSize: 12, height: 1.4),
+            style: TextStyle(
+              color: context.textSecondary,
+              fontSize: 12,
+              height: 1.4,
+            ),
           ),
         ),
         const SizedBox(height: 8),

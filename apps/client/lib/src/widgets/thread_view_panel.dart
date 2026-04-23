@@ -92,10 +92,7 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
         final notifier = ref.read(chatProvider.notifier);
         for (final json in data) {
           notifier.addMessage(
-            ChatMessage.fromServerJson(
-              json as Map<String, dynamic>,
-              myUserId,
-            ),
+            ChatMessage.fromServerJson(json as Map<String, dynamic>, myUserId),
           );
         }
         if (mounted) {
@@ -140,9 +137,7 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
         (s) => s.messagesForConversation(parent.conversationId),
       ),
     );
-    final replies = allMessages
-        .where((m) => m.replyToId == parent.id)
-        .toList();
+    final replies = allMessages.where((m) => m.replyToId == parent.id).toList();
 
     // Scroll to bottom when a new reply arrives while the panel is open.
     if (!_isLoading && replies.length > _previousReplyCount) {

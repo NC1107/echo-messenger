@@ -54,10 +54,12 @@ For every new interactive widget:
 
 ## Phase 5: Pipeline Check
 
+**CRITICAL**: Subagents cannot hand-format Dart code reliably. After ANY agent edits .dart files, you MUST run `dart format` on those files before committing. Never trust "format clean" claims without running the tool.
+
 Before committing, verify:
+- [ ] `dart format` run on ALL changed .dart files (not optional — agents get this wrong)
 - [ ] `cargo fmt --all -- --check` passes (max_width=100)
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
-- [ ] `dart format --set-exit-if-changed .` passes
 - [ ] `flutter analyze --fatal-infos` passes
 - [ ] All tests pass
 

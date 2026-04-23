@@ -114,7 +114,19 @@ flutter analyze --fatal-infos       # Lint (zero infos)
 flutter test                        # Tests pass
 ```
 
-**Common gotchas**:
+**CRITICAL — Dart formatting**:
+Subagents CANNOT reliably hand-format Dart code. The `dart format` tool makes opinionated choices about line breaks, trailing commas, argument grouping, and expression nesting that are impossible to replicate manually. **After ANY subagent writes or edits .dart files, you MUST run `dart format` on those files before committing.** Never trust an agent that claims "format clean" without evidence of actually running the tool. This is the #1 cause of CI failures.
+
+Post-agent formatting step (run after every agent that touches .dart files):
+```bash
+dart format apps/client/lib/src/path/to/changed_file.dart
+```
+Or to format all changed files at once:
+```bash
+cd apps/client && dart format --set-exit-if-changed .
+```
+
+**Other gotchas**:
 - Unused imports are fatal (`flutter analyze --fatal-infos`)
 - New providers need `biometricOverride()` in tests if PrivacySection is involved
 - `pumpAndSettle` timeouts if loading indicators are animating — mock the provider

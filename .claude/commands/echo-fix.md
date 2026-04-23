@@ -43,9 +43,9 @@ You are fixing a bug in Echo Messenger. The reproduction test comes FIRST.
 2. Run the full suite for the affected layer:
    - `cargo test --workspace` for Rust
    - `cd apps/client && flutter test` for Flutter
-3. Check formatting:
+3. **Run formatters on changed files** (agents cannot hand-format reliably):
    - Rust: lines under 100 chars, `(a..=b).contains(&x)` pattern
-   - Dart: `dart format` clean, no unused imports
+   - Dart: **MUST run `dart format` on every changed .dart file** — never skip this
 
 ## Phase 5: Commit
 

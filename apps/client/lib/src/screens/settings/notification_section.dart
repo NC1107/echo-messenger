@@ -583,8 +583,6 @@ Future<bool> shouldSuppressNotification() async {
   final start = _parseTime(
     prefs.getString(_kQuietHoursStart) ?? _kDefaultQuietStart,
   );
-  final end = _parseTime(
-    prefs.getString(_kQuietHoursEnd) ?? _kDefaultQuietEnd,
-  );
+  final end = _parseTime(prefs.getString(_kQuietHoursEnd) ?? _kDefaultQuietEnd);
   return _isWithinQuietHours(TimeOfDay.now(), start, end);
 }
