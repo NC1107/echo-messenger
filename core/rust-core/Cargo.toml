@@ -17,7 +17,7 @@ tracing.workspace = true
 chrono.workspace = true
 
 # Networking
-tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
 futures-util = "0.3"
 reqwest = { version = "0.12", features = ["json"] }
 
