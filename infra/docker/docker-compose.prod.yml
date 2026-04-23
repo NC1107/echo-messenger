@@ -10,6 +10,10 @@ services:
       SERVER_PORT: 8080
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      APNS_KEY_ID: ${APNS_KEY_ID}
+      APNS_TEAM_ID: ${APNS_TEAM_ID}
+      APNS_AUTH_KEY_BASE64: ${APNS_AUTH_KEY_BASE64}
+      APNS_TOPIC: ${APNS_TOPIC:-us.echomessenger.app}
     volumes:
       - uploads:/app/uploads
     depends_on:
