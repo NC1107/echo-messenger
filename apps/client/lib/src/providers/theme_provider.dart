@@ -60,7 +60,7 @@ final themeProvider = StateNotifierProvider<ThemeNotifier, AppThemeSelection>((
 });
 
 // ---------------------------------------------------------------------------
-// Message layout: bubbles (default) or compact (Discord-style)
+// Message layout: compact (Discord-style, default) or bubbles
 // ---------------------------------------------------------------------------
 
 enum MessageLayout { bubbles, compact }
@@ -68,7 +68,7 @@ enum MessageLayout { bubbles, compact }
 class MessageLayoutNotifier extends StateNotifier<MessageLayout> {
   static const _key = 'echo_message_layout';
 
-  MessageLayoutNotifier() : super(MessageLayout.bubbles) {
+  MessageLayoutNotifier() : super(MessageLayout.compact) {
     _load();
   }
 
@@ -76,8 +76,9 @@ class MessageLayoutNotifier extends StateNotifier<MessageLayout> {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getString(_key);
     state = switch (value) {
+      'bubbles' => MessageLayout.bubbles,
       'compact' => MessageLayout.compact,
-      _ => MessageLayout.bubbles,
+      _ => MessageLayout.compact,
     };
   }
 

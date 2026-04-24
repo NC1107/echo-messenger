@@ -9,6 +9,7 @@ import '../providers/media_ticket_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
+import 'image_gallery_viewer.dart';
 import 'message/media_content.dart';
 
 /// Extracts all shared media (images, videos, files) from a conversation's
@@ -151,6 +152,20 @@ class _MediaGrid extends StatelessWidget {
       );
     }
 
+    // Pre-resolve the full list of image URLs once so every tile knows its
+    // index within the gallery, and can hand the full ordered list to the
+    // multi-image viewer for swipe navigation.
+    final resolvedUrls = [
+      for (final item in items)
+        resolveMediaUrl(
+          item.rawUrl,
+          serverUrl: serverUrl,
+          authToken: authToken,
+          mediaTicket: mediaTicket,
+        ),
+    ];
+    final headers = mediaHeaders(authToken: authToken);
+
     return GridView.builder(
       padding: const EdgeInsets.all(4),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -160,20 +175,18 @@ class _MediaGrid extends StatelessWidget {
       ),
       itemCount: items.length,
       itemBuilder: (context, index) {
-        final item = items[index];
-        final resolvedUrl = resolveMediaUrl(
-          item.rawUrl,
-          serverUrl: serverUrl,
-          authToken: authToken,
-          mediaTicket: mediaTicket,
-        );
-        final headers = mediaHeaders(authToken: authToken);
+        final resolvedUrl = resolvedUrls[index];
 
         return Semantics(
           label: 'view media',
           button: true,
           child: GestureDetector(
-            onTap: () => _showFullImage(context, resolvedUrl, headers),
+            onTap: () => showImageGallery(
+              context: context,
+              imageUrls: resolvedUrls,
+              initialIndex: index,
+              headers: headers,
+            ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(2),
               child: resolvedUrl.endsWith('.gif')
@@ -202,66 +215,6 @@ class _MediaGrid extends StatelessWidget {
     return Container(
       color: context.surface,
       child: Icon(Icons.image_outlined, color: context.textMuted, size: 24),
-    );
-  }
-
-  void _showFullImage(
-    BuildContext context,
-    String imageUrl,
-    Map<String, String> headers,
-  ) {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierColor: Colors.black.withValues(alpha: 0.9),
-      builder: (dialogContext) => Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: () => Navigator.of(dialogContext).pop(),
-              behavior: HitTestBehavior.opaque,
-              child: const SizedBox.expand(),
-            ),
-          ),
-          Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(dialogContext).size.width * 0.85,
-                maxHeight: MediaQuery.of(dialogContext).size.height * 0.85,
-              ),
-              child: InteractiveViewer(
-                minScale: 0.8,
-                maxScale: 4,
-                child: CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  httpHeaders: headers,
-                  fit: BoxFit.contain,
-                  placeholder: (_, _) => const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-                  errorWidget: (_, _, _) => const Center(
-                    child: Icon(
-                      Icons.broken_image_outlined,
-                      color: Colors.white54,
-                      size: 48,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 16,
-            right: 16,
-            child: IconButton(
-              icon: const Icon(Icons.close),
-              color: Colors.white,
-              tooltip: 'Close',
-              onPressed: () => Navigator.of(dialogContext).pop(),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

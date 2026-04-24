@@ -11,6 +11,7 @@ import '../providers/crypto_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../services/message_cache.dart';
 import '../services/push_token_service.dart';
 import '../services/update_service.dart' as update_svc;
 import '../router/app_router.dart' show pendingDeepLink;
@@ -32,6 +33,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   late final Animation<double> _fadeAnimation;
   bool _showUpdatePrompt = false;
   bool _loggedIn = false;
+  String _statusText = 'Connecting…';
+
+  void _setStatus(String text) {
+    if (!mounted) return;
+    setState(() => _statusText = text);
+  }
 
   @override
   void initState() {
@@ -59,10 +66,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _init() async {
     final stopwatch = Stopwatch()..start();
 
+    _setStatus('Checking session…');
     final loggedIn = await _attemptAutoLogin();
 
     // Pre-load conversations so home screen doesn't flash empty state
     if (loggedIn) {
+      _setStatus('Loading messages…');
       try {
         await ref
             .read(conversationsProvider.notifier)
@@ -183,7 +192,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     context.go('/home');
 
     final cryptoState = ref.read(cryptoProvider);
-    if (cryptoState.keysWereRegenerated && mounted) {
+    // Only warn about regenerated keys when the user had prior messages on
+    // this device. Fresh logins on a new device would otherwise see a
+    // scary "history unavailable" banner that doesn't apply to them.
+    final hadPriorMessages = MessageCache.entryCount() > 0;
+    if (cryptoState.keysWereRegenerated && hadPriorMessages && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -355,6 +368,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                   strokeWidth: 2.5,
                   color: context.accent.withValues(alpha: 0.6),
                 ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _statusText,
+                style: TextStyle(fontSize: 13, color: context.textMuted),
               ),
             ],
           ),

@@ -15,6 +15,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../utils/friendly_error.dart';
 import '../widgets/echo_logo_icon.dart';
 
 /// Shared preferences key that gates whether onboarding has been completed.
@@ -205,8 +206,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         );
       }
     } catch (e) {
+      debugPrint('[Onboarding] avatar upload failed: $e');
       if (mounted) {
-        ToastService.show(context, 'Upload error: $e', type: ToastType.error);
+        ToastService.show(context, friendlyError(e), type: ToastType.error);
       }
     } finally {
       if (mounted) setState(() => _uploadingAvatar = false);

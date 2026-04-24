@@ -63,6 +63,10 @@ class MessageItem extends StatefulWidget {
   final void Function(ChatMessage message)? onForward;
   final void Function(String replyToId)? onTapReplyQuote;
 
+  /// Called when the tiny lock icon on a received message is tapped.
+  /// When null, the lock icon is non-interactive.
+  final void Function(ChatMessage message)? onVerifyIdentity;
+
   /// Whether this message is currently bookmarked.
   final bool isSaved;
 
@@ -106,6 +110,7 @@ class MessageItem extends StatefulWidget {
     this.onUnsave,
     this.onForward,
     this.onTapReplyQuote,
+    this.onVerifyIdentity,
     this.isSaved = false,
     this.serverUrl,
     this.authToken,
@@ -1347,6 +1352,29 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
+  /// Build the tiny green lock icon shown next to the timestamp on encrypted
+  /// messages. Received-message lock is tappable to open the safety-number
+  /// verification screen; my own lock icon is non-interactive.
+  Widget _buildLockIcon({required ChatMessage msg, required bool isMine}) {
+    const icon = Padding(
+      padding: EdgeInsets.only(left: 3),
+      child: Icon(Icons.lock, size: 10, color: EchoTheme.online),
+    );
+
+    if (isMine || widget.onVerifyIdentity == null) {
+      return icon;
+    }
+
+    return Tooltip(
+      message: 'End-to-end encrypted. Tap to verify.',
+      child: InkWell(
+        onTap: () => widget.onVerifyIdentity!(msg),
+        borderRadius: BorderRadius.circular(6),
+        child: icon,
+      ),
+    );
+  }
+
   /// Build the timestamp row shown below the last message in a group.
   Widget _buildTimestampRow({required ChatMessage msg, required bool isMine}) {
     return Padding(
@@ -1361,11 +1389,7 @@ class _MessageItemState extends State<MessageItem>
             formatMessageTimestamp(msg.timestamp),
             style: TextStyle(fontSize: 11, color: context.textMuted),
           ),
-          if (msg.isEncrypted)
-            const Padding(
-              padding: EdgeInsets.only(left: 3),
-              child: Icon(Icons.lock, size: 10, color: EchoTheme.online),
-            ),
+          if (msg.isEncrypted) _buildLockIcon(msg: msg, isMine: isMine),
           if (msg.pinnedAt != null)
             Padding(
               padding: const EdgeInsets.only(left: 4),
