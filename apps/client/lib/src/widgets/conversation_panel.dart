@@ -13,6 +13,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../utils/fuzzy_score.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart';
 import 'conversation_item.dart';
@@ -504,14 +505,23 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         break;
     }
 
-    // Apply search filter.
+    // Apply search filter using fuzzy scoring so typos/abbreviations still
+    // match and the best match appears first.
     if (_searchQuery.isNotEmpty) {
-      final query = _searchQuery.toLowerCase();
-      result = result.where((conv) {
-        final name = conv.displayName(myUserId).toLowerCase();
-        final lastMsg = (conv.lastMessage ?? '').toLowerCase();
-        return name.contains(query) || lastMsg.contains(query);
-      }).toList();
+      final query = _searchQuery;
+      final scored = <({Conversation conv, double score})>[];
+      for (final conv in result) {
+        final name = conv.displayName(myUserId);
+        final lastMsg = conv.lastMessage ?? '';
+        final nameScore = fuzzyScore(query, name);
+        final msgScore = fuzzyScore(query, lastMsg);
+        final score = nameScore * 2 + msgScore; // name matches weigh more
+        if (score > 0.3) {
+          scored.add((conv: conv, score: score));
+        }
+      }
+      scored.sort((a, b) => b.score.compareTo(a.score));
+      result = scored.map((e) => e.conv).toList();
     }
 
     return result;
@@ -1323,6 +1333,17 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ? null
         : conv.members.where((m) => m.userId != myUserId).firstOrNull;
     final isPeerOnline = peer != null && wsOnlineUsers.contains(peer.userId);
+
+    // For groups, count how many members (excluding me) are currently online.
+    // The count is shown as a small pill next to the group name.
+    final onlineMemberCount = conv.isGroup
+        ? conv.members
+              .where(
+                (m) => m.userId != myUserId && wsOnlineUsers.contains(m.userId),
+              )
+              .length
+        : 0;
+
     return ConversationItem(
       conversation: conv,
       myUserId: myUserId,
@@ -1335,6 +1356,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       onTap: () => widget.onConversationTap(conv),
       onContextMenu: (position) =>
           _showConversationContextMenu(context, conv, position),
+      onlineMemberCount: onlineMemberCount,
     );
   }
 }

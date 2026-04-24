@@ -11,6 +11,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
+import '../utils/fuzzy_score.dart';
 
 /// Global message search overlay (Ctrl+Shift+F or search icon).
 ///
@@ -83,20 +84,34 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
         final list = jsonDecode(response.body) as List;
         final conversations = ref.read(conversationsProvider).conversations;
         final myUserId = ref.read(authProvider).userId ?? '';
+        final parsed = list.map((item) {
+          final e = item as Map<String, dynamic>;
+          final convId = (e['conversation_id'] ?? '').toString();
+          final conv = conversations.where((c) => c.id == convId).firstOrNull;
+          return _SearchResult(
+            messageId: (e['message_id'] ?? '').toString(),
+            conversationId: convId,
+            conversationName: conv?.displayName(myUserId) ?? 'Unknown',
+            senderUsername: (e['sender_username'] ?? '').toString(),
+            content: (e['content'] ?? '').toString(),
+            timestamp: (e['created_at'] ?? '').toString(),
+          );
+        }).toList();
+        // Re-rank server results by fuzzy score so the best match bubbles
+        // to the top. Score against content + conversation + sender.
+        parsed.sort((a, b) {
+          final sa =
+              fuzzyScore(query, a.content) +
+              0.5 * fuzzyScore(query, a.conversationName) +
+              0.25 * fuzzyScore(query, a.senderUsername);
+          final sb =
+              fuzzyScore(query, b.content) +
+              0.5 * fuzzyScore(query, b.conversationName) +
+              0.25 * fuzzyScore(query, b.senderUsername);
+          return sb.compareTo(sa);
+        });
         setState(() {
-          _results = list.map((item) {
-            final e = item as Map<String, dynamic>;
-            final convId = (e['conversation_id'] ?? '').toString();
-            final conv = conversations.where((c) => c.id == convId).firstOrNull;
-            return _SearchResult(
-              messageId: (e['message_id'] ?? '').toString(),
-              conversationId: convId,
-              conversationName: conv?.displayName(myUserId) ?? 'Unknown',
-              senderUsername: (e['sender_username'] ?? '').toString(),
-              content: (e['content'] ?? '').toString(),
-              timestamp: (e['created_at'] ?? '').toString(),
-            );
-          }).toList();
+          _results = parsed;
           _loading = false;
         });
       } else {

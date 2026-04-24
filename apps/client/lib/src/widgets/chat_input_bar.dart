@@ -79,6 +79,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   bool _isTextEmpty = true;
   bool _showMediaPicker = false;
 
+  /// True when the composer has wrapped to 2+ visible lines (either by
+  /// explicit newlines or by soft-wrapping long text). When true, the
+  /// attach "+" and emoji toggle are stacked vertically to reclaim
+  /// horizontal space for the text field.
+  bool _isMultiline = false;
+
   /// Inline picker visible on mobile (replaces keyboard).
   bool _showInlinePicker = false;
 
@@ -293,8 +299,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   void _onTextChanged() {
     final text = _messageController.text;
     final empty = text.trim().isEmpty;
-    if (empty != _isTextEmpty) {
-      setState(() => _isTextEmpty = empty);
+    // Detect multiline either via explicit newlines or long content that
+    // is likely to soft-wrap at typical widths (~40 chars at fontSize 14).
+    final multiline = text.contains('\n') || text.length > 40;
+    if (empty != _isTextEmpty || multiline != _isMultiline) {
+      setState(() {
+        _isTextEmpty = empty;
+        _isMultiline = multiline;
+      });
     }
     // Schedule draft save when not in edit mode and not suppressed
     if (!_isEditing && !_suppressDraftSave) {
@@ -1664,6 +1676,40 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       return _buildRecordingRow();
     }
 
+    // When composing multi-line content, stack the attach "+" and the
+    // emoji / GIF toggle vertically on the left so the text field can
+    // use the full remaining horizontal space.
+    final Widget leading;
+    if (_isEditing) {
+      leading = const SizedBox(width: 12);
+    } else if (_isMultiline) {
+      leading = Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildAttachFileButton(),
+            const SizedBox(height: 2),
+            _buildMediaPickerToggle(
+              showMediaPicker: showMediaPicker,
+              isMobileLayout: isMobileLayout,
+            ),
+          ],
+        ),
+      );
+    } else {
+      leading = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildAttachFileButton(),
+          _buildMediaPickerToggle(
+            showMediaPicker: showMediaPicker,
+            isMobileLayout: isMobileLayout,
+          ),
+        ],
+      );
+    }
+
     return Container(
       constraints: const BoxConstraints(minHeight: 44),
       decoration: BoxDecoration(
@@ -1677,14 +1723,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Attach file + media picker toggle (hidden in edit mode)
-          if (!_isEditing) _buildAttachFileButton(),
-          if (!_isEditing)
-            _buildMediaPickerToggle(
-              showMediaPicker: showMediaPicker,
-              isMobileLayout: isMobileLayout,
-            ),
-          if (_isEditing) const SizedBox(width: 12),
+          leading,
           // Text field
           _buildTextField(
             showMediaPicker: showMediaPicker,

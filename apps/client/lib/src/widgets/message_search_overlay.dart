@@ -10,6 +10,7 @@ import '../models/chat_message.dart';
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
+import '../utils/fuzzy_score.dart';
 
 /// Overlay widget for searching messages within a conversation.
 ///
@@ -80,16 +81,25 @@ class _MessageSearchOverlayState extends ConsumerState<MessageSearchOverlay> {
 
       if (response.statusCode == 200) {
         final list = jsonDecode(response.body) as List;
+        final parsed = list
+            .map(
+              (e) => ChatMessage.fromServerJson(
+                e as Map<String, dynamic>,
+                myUserId,
+              ),
+            )
+            .toList();
+        // Re-rank by fuzzy-score of the message content so the most
+        // likely match appears first, not just whatever order the
+        // server returned them in.
+        parsed.sort((a, b) {
+          final sa = fuzzyScore(query, a.content);
+          final sb = fuzzyScore(query, b.content);
+          return sb.compareTo(sa);
+        });
         setState(() {
           _searchQuery = query;
-          _searchResults = list
-              .map(
-                (e) => ChatMessage.fromServerJson(
-                  e as Map<String, dynamic>,
-                  myUserId,
-                ),
-              )
-              .toList();
+          _searchResults = parsed;
         });
       } else {
         setState(() {

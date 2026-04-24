@@ -5,6 +5,7 @@ import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../theme/echo_theme.dart';
+import '../utils/fuzzy_score.dart';
 import 'avatar_utils.dart' show buildAvatar, avatarColor;
 
 /// Shows a modal dialog that lets the user pick a conversation to forward a
@@ -40,13 +41,20 @@ class _ForwardMessageDialogState extends ConsumerState<_ForwardMessageDialog> {
   }
 
   List<Conversation> _filtered(List<Conversation> all, String myUserId) {
-    final q = _query.trim().toLowerCase();
+    final q = _query.trim();
     if (q.isEmpty) return all;
-    return all.where((conv) {
-      final name = conv.displayName(myUserId).toLowerCase();
-      if (name.contains(q)) return true;
-      return conv.members.any((m) => m.username.toLowerCase().contains(q));
-    }).toList();
+    final scored = <({Conversation conv, double score})>[];
+    for (final conv in all) {
+      final name = conv.displayName(myUserId);
+      double best = fuzzyScore(q, name);
+      for (final m in conv.members) {
+        final s = fuzzyScore(q, m.username);
+        if (s > best) best = s;
+      }
+      if (best > 0.3) scored.add((conv: conv, score: best));
+    }
+    scored.sort((a, b) => b.score.compareTo(a.score));
+    return scored.map((e) => e.conv).toList();
   }
 
   @override
