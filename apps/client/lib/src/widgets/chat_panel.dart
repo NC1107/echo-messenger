@@ -22,6 +22,7 @@ import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../screens/safety_number_screen.dart';
 import '../screens/user_profile_screen.dart';
 import '../services/message_cache.dart';
 import '../services/saved_messages_service.dart';
@@ -1627,6 +1628,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
 
   Widget _buildMessageAtIndex({
     required int i,
+    required Conversation conv,
     required List<ChatMessage> messages,
     required Map<String, String?> memberAvatars,
     required String myUserId,
@@ -1712,6 +1714,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             onAvatarTap: (userId) {
               UserProfileScreen.show(context, ref, userId);
             },
+            onVerifyIdentity: conv.isGroup
+                ? null
+                : (message) {
+                    final myName = ref.read(authProvider).username ?? 'You';
+                    SafetyNumberScreen.show(
+                      context,
+                      ref,
+                      peerUserId: message.fromUserId,
+                      peerUsername: message.fromUsername,
+                      myUsername: myName,
+                    );
+                  },
             onImageTap: (resolvedUrl) => _openImageGallery(
               tappedUrl: resolvedUrl,
               messages: messages,
@@ -1761,6 +1775,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           }
           return _buildMessageAtIndex(
             i: index - 1,
+            conv: conv,
             messages: messages,
             memberAvatars: memberAvatars,
             myUserId: myUserId,

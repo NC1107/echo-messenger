@@ -90,30 +90,30 @@ void main() {
       SharedPreferences.setMockInitialValues({});
     });
 
-    test('default layout is bubbles', () async {
-      final notifier = MessageLayoutNotifier();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(notifier.state, MessageLayout.bubbles);
-      notifier.dispose();
-    });
-
-    test('loads persisted layout', () async {
-      SharedPreferences.setMockInitialValues({
-        'echo_message_layout': 'compact',
-      });
+    test('default layout is compact (Discord-style)', () async {
       final notifier = MessageLayoutNotifier();
       await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(notifier.state, MessageLayout.compact);
       notifier.dispose();
     });
 
-    test('unknown layout value falls back to bubbles', () async {
+    test('loads persisted bubbles layout', () async {
+      SharedPreferences.setMockInitialValues({
+        'echo_message_layout': 'bubbles',
+      });
+      final notifier = MessageLayoutNotifier();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(notifier.state, MessageLayout.bubbles);
+      notifier.dispose();
+    });
+
+    test('unknown layout value falls back to compact default', () async {
       SharedPreferences.setMockInitialValues({
         'echo_message_layout': 'unknown',
       });
       final notifier = MessageLayoutNotifier();
       await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(notifier.state, MessageLayout.bubbles);
+      expect(notifier.state, MessageLayout.compact);
       notifier.dispose();
     });
 
@@ -121,11 +121,11 @@ void main() {
       final notifier = MessageLayoutNotifier();
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
-      await notifier.setLayout(MessageLayout.compact);
-      expect(notifier.state, MessageLayout.compact);
+      await notifier.setLayout(MessageLayout.bubbles);
+      expect(notifier.state, MessageLayout.bubbles);
 
       final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getString('echo_message_layout'), 'compact');
+      expect(prefs.getString('echo_message_layout'), 'bubbles');
       notifier.dispose();
     });
   });
