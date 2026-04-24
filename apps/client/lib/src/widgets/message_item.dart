@@ -620,9 +620,13 @@ class _MessageItemState extends State<MessageItem>
                     httpHeaders: headers,
                     cacheManager: chatImageCacheManager,
                     fit: BoxFit.contain,
-                    placeholder: (_, _) => Center(
-                      child: CircularProgressIndicator(
-                        color: Theme.of(context).colorScheme.onPrimary,
+                    placeholder: (_, _) => SizedBox(
+                      width: 320,
+                      height: 240,
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
                       ),
                     ),
                     errorWidget: (_, _, _) => Center(
@@ -907,19 +911,43 @@ class _MessageItemState extends State<MessageItem>
   }
 
   /// Build the sender name label shown above the message bubble.
+  ///
+  /// In compact layout the sender name and timestamp share a single inline
+  /// row ("Username 12:34 PM") to save vertical space. Everywhere else the
+  /// name stands alone on its own line above the bubble.
   Widget _buildSenderNameLabel({
     required ChatMessage msg,
     required bool hasMedia,
   }) {
+    final nameText = Text(
+      msg.fromUsername,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: _getUserColor(msg.fromUserId),
+      ),
+    );
+
+    final padding = EdgeInsets.only(bottom: 4, left: hasMedia ? 8 : 0);
+
+    if (!widget.compactLayout) {
+      return Padding(padding: padding, child: nameText);
+    }
+
     return Padding(
-      padding: EdgeInsets.only(bottom: 4, left: hasMedia ? 8 : 0),
-      child: Text(
-        msg.fromUsername,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: _getUserColor(msg.fromUserId),
-        ),
+      padding: padding,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          nameText,
+          const SizedBox(width: 6),
+          Text(
+            formatMessageTimestamp(msg.timestamp),
+            style: TextStyle(fontSize: 10, color: context.textMuted),
+          ),
+        ],
       ),
     );
   }
@@ -1112,7 +1140,10 @@ class _MessageItemState extends State<MessageItem>
                   ? widget.onImageTap!(imgUrl)
                   : _showImageViewer(imageUrl: imgUrl),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
+                constraints: const BoxConstraints(
+                  maxWidth: 400,
+                  maxHeight: 320,
+                ),
                 child: imgUrl.endsWith('.gif')
                     ? Image.network(
                         imgUrl,
@@ -1127,16 +1158,20 @@ class _MessageItemState extends State<MessageItem>
                         httpHeaders: headers,
                         cacheManager: chatImageCacheManager,
                         errorWidget: (_, _, _) => const SizedBox.shrink(),
-                        placeholder: (_, _) => SizedBox(
-                          height: 60,
-                          child: Center(
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: context.textMuted,
-                              ),
+                        // Reserve the expected image area while loading so
+                        // the scroll position does not jump when the image
+                        // finally decodes.
+                        placeholder: (_, _) => Container(
+                          height: 200,
+                          width: 300,
+                          color: context.surface,
+                          alignment: Alignment.center,
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: context.textMuted,
                             ),
                           ),
                         ),
@@ -1234,11 +1269,18 @@ class _MessageItemState extends State<MessageItem>
     required bool isFailed,
     required bool hasMedia,
   }) {
+    final EdgeInsets padding;
+    if (hasMedia) {
+      padding = const EdgeInsets.all(4);
+    } else if (widget.compactLayout) {
+      padding = const EdgeInsets.symmetric(horizontal: 8, vertical: 4);
+    } else {
+      padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 8);
+    }
+
     return Container(
       constraints: const BoxConstraints(maxWidth: 520),
-      padding: hasMedia
-          ? const EdgeInsets.all(4)
-          : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: padding,
       decoration: BoxDecoration(
         color: _bubbleColor(isMine: isMine, isFailed: isFailed),
         borderRadius: _bubbleBorderRadius(isMine: isMine),
@@ -1366,7 +1408,6 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  /// Build the "N replies" link shown below messages that have thread replies.
   Widget _buildReplyCountBadge({
     required ChatMessage msg,
     required bool isMine,
@@ -1375,28 +1416,39 @@ class _MessageItemState extends State<MessageItem>
     final label = count == 1 ? '1 reply' : '$count replies';
     return Padding(
       padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
-      child: Semantics(
-        label: 'View $label',
-        button: true,
-        child: GestureDetector(
-          onTap: () => widget.onViewThread?.call(msg),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: isMine
-                ? MainAxisAlignment.end
-                : MainAxisAlignment.start,
-            children: [
-              Icon(Icons.forum_outlined, size: 12, color: context.accent),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: context.accent,
-                  fontWeight: FontWeight.w500,
+      child: Align(
+        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+        child: Semantics(
+          label: 'View $label',
+          button: true,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => widget.onViewThread?.call(msg),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: context.accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.forum_outlined, size: 12, color: context.accent),
+                    const SizedBox(width: 4),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: context.accent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1465,11 +1517,20 @@ class _MessageItemState extends State<MessageItem>
     required bool isMine,
     required Widget bubbleWithReactions,
   }) {
+    final needsAvatarColumn = !isMine || widget.compactLayout;
+    if (!needsAvatarColumn) {
+      return [Flexible(child: bubbleWithReactions)];
+    }
+
+    // Compact follow-up: reserve the avatar column with whitespace instead
+    // of re-drawing the avatar.  28 (avatar) + 8 (gap) = 36.
+    if (widget.compactLayout && !widget.showHeader) {
+      return [const SizedBox(width: 36), Flexible(child: bubbleWithReactions)];
+    }
+
     return [
-      if (!isMine || widget.compactLayout) ...[
-        _buildAvatarSection(msg: msg),
-        const SizedBox(width: 8),
-      ],
+      _buildAvatarSection(msg: msg),
+      const SizedBox(width: 8),
       Flexible(child: bubbleWithReactions),
     ];
   }
@@ -1609,11 +1670,20 @@ class _MessageItemState extends State<MessageItem>
     final canSwipeToReply =
         _isMobileTouch && widget.onReply != null && !msg.isSystemEvent;
 
+    // In compact mode, the gap between bubbles from the same sender is
+    // reduced so the conversation reads as a single stream.
+    final double topPad;
+    if (widget.showHeader) {
+      topPad = widget.compactLayout ? 4 : 8;
+    } else {
+      topPad = widget.compactLayout ? 1 : 2;
+    }
+
     final messageWidget = Container(
       padding: EdgeInsets.only(
         left: 24,
         right: 24,
-        top: widget.showHeader ? 8 : 2,
+        top: topPad,
         bottom: hasReactions ? 4 : 2,
       ),
       child: Stack(

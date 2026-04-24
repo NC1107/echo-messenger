@@ -559,8 +559,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(avatarUrl: url);
   }
 
+  /// Set of presence status values accepted by the server. Keeping the
+  /// client honest here avoids sending garbage that the server would just
+  /// reject with a 400 -- and protects callers that build the string from
+  /// user input or enum conversions.
+  static const _validPresenceStatuses = <String>{
+    'online',
+    'away',
+    'dnd',
+    'invisible',
+  };
+
   /// Update the user's presence status locally and on the server.
   Future<void> setPresenceStatus(String status) async {
+    if (!_validPresenceStatuses.contains(status)) return;
     if (!state.isLoggedIn) return;
     // Optimistically update local state immediately.
     state = state.copyWith(presenceStatus: status);

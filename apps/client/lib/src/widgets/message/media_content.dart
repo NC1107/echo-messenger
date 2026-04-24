@@ -339,9 +339,13 @@ class MediaContentState extends State<MediaContent> {
                           imageUrl: imageUrl,
                           httpHeaders: headers,
                           fit: BoxFit.contain,
-                          placeholder: (_, _) => const Center(
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
+                          placeholder: (_, _) => const SizedBox(
+                            width: 320,
+                            height: 240,
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                              ),
                             ),
                           ),
                           errorWidget: (_, _, _) => const Center(
@@ -460,9 +464,12 @@ class MediaContentState extends State<MediaContent> {
                             ),
                           ),
                         ),
+                        // Reserve the typical image area while loading so
+                        // the bubble height is stable and scroll position
+                        // does not jump once the bytes arrive.
                         placeholder: (_, _) => Container(
                           width: 300,
-                          height: 80,
+                          height: 200,
                           decoration: BoxDecoration(
                             color: context.surface,
                             borderRadius: BorderRadius.circular(12),

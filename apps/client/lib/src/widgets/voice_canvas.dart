@@ -19,7 +19,7 @@ import '../utils/canvas_utils.dart';
 // Constants
 // ---------------------------------------------------------------------------
 
-const double _kAvatarSize = 72.0;
+const double _kAvatarSize = 48.0;
 const double _kAvatarHalfSize = _kAvatarSize / 2;
 
 // ---------------------------------------------------------------------------
@@ -616,6 +616,10 @@ class _DraggableAvatar extends StatefulWidget {
 }
 
 class _DraggableAvatarState extends State<_DraggableAvatar> {
+  /// Tracks the live drag position so `onPanEnd` commits the latest value
+  /// instead of the stale `widget.currentPos` prop from before the drag.
+  CanvasPoint? _localPos;
+
   @override
   Widget build(BuildContext context) {
     final info = widget.participant;
@@ -631,6 +635,45 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
 
     final hasVideo = info.videoTrack != null;
 
+    final innerContent = hasVideo
+        ? lk.VideoTrackRenderer(
+            info.videoTrack!,
+            fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+            mirrorMode: info.mirror
+                ? lk.VideoViewMirrorMode.mirror
+                : lk.VideoViewMirrorMode.off,
+          )
+        : info.avatarUrl != null
+        ? CachedNetworkImage(
+            imageUrl: info.avatarUrl!,
+            httpHeaders: widget.httpHeaders,
+            fit: BoxFit.cover,
+            placeholder: (_, _) => _initialsWidget(initial),
+            errorWidget: (_, _, _) => _initialsWidget(initial),
+          )
+        : _initialsWidget(initial);
+
+    Widget tile = Container(
+      width: _kAvatarSize,
+      height: _kAvatarSize,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: hasVideo ? Colors.black : Colors.black.withValues(alpha: 0.45),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: hasVideo
+          ? innerContent
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                // Solid semi-transparent fill instead of a per-tile
+                // BackdropFilter -- avoids N GPU blur passes per frame.
+                Container(color: avatarColor.withValues(alpha: 0.55)),
+                innerContent,
+              ],
+            ),
+    );
+
     Widget avatar = AnimatedScale(
       scale: scale,
       duration: const Duration(milliseconds: 150),
@@ -639,7 +682,6 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
         height: _kAvatarSize,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: hasVideo ? Colors.black : avatarColor,
           border: Border.all(color: speakRingColor, width: ringWidth),
           boxShadow: [
             BoxShadow(
@@ -649,24 +691,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
             ),
           ],
         ),
-        clipBehavior: Clip.antiAlias,
-        child: hasVideo
-            ? lk.VideoTrackRenderer(
-                info.videoTrack!,
-                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                mirrorMode: info.mirror
-                    ? lk.VideoViewMirrorMode.mirror
-                    : lk.VideoViewMirrorMode.off,
-              )
-            : info.avatarUrl != null
-            ? CachedNetworkImage(
-                imageUrl: info.avatarUrl!,
-                httpHeaders: widget.httpHeaders,
-                fit: BoxFit.cover,
-                placeholder: (_, _) => _initialsWidget(initial),
-                errorWidget: (_, _, _) => _initialsWidget(initial),
-              )
-            : _initialsWidget(initial),
+        child: tile,
       ),
     );
 
@@ -706,14 +731,17 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
           if (s.width <= 0 || s.height <= 0) return;
           final dx = details.delta.dx / s.width;
           final dy = details.delta.dy / s.height;
+          final base = _localPos ?? widget.currentPos;
           final newPos = CanvasPoint(
-            x: (widget.currentPos.x + dx).clamp(0.0, 1.0),
-            y: (widget.currentPos.y + dy).clamp(0.0, 1.0),
+            x: (base.x + dx).clamp(0.0, 1.0),
+            y: (base.y + dy).clamp(0.0, 1.0),
           );
+          _localPos = newPos;
           widget.onDrag(newPos);
         },
         onPanEnd: (_) {
-          widget.onDragEnd(widget.currentPos);
+          widget.onDragEnd(_localPos ?? widget.currentPos);
+          _localPos = null;
         },
         child: content,
       ),
@@ -725,7 +753,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
       initial,
       style: const TextStyle(
         color: Colors.white,
-        fontSize: 26,
+        fontSize: 18,
         fontWeight: FontWeight.bold,
       ),
     ),

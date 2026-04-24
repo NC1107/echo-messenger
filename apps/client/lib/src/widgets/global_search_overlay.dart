@@ -11,6 +11,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
+import '../utils/fuzzy_score.dart';
 
 /// Global message search overlay (Ctrl+Shift+F or search icon).
 ///
@@ -29,6 +30,7 @@ class GlobalSearchOverlay extends ConsumerStatefulWidget {
 class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
+  final _keyboardFocusNode = FocusNode();
   Timer? _debounce;
   List<_SearchResult> _results = [];
   bool _loading = false;
@@ -44,6 +46,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
+    _keyboardFocusNode.dispose();
     _debounce?.cancel();
     super.dispose();
   }
@@ -83,20 +86,32 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
         final list = jsonDecode(response.body) as List;
         final conversations = ref.read(conversationsProvider).conversations;
         final myUserId = ref.read(authProvider).userId ?? '';
+        final parsed = list.map((item) {
+          final e = item as Map<String, dynamic>;
+          final convId = (e['conversation_id'] ?? '').toString();
+          final conv = conversations.where((c) => c.id == convId).firstOrNull;
+          return _SearchResult(
+            messageId: (e['message_id'] ?? '').toString(),
+            conversationId: convId,
+            conversationName: conv?.displayName(myUserId) ?? 'Unknown',
+            senderUsername: (e['sender_username'] ?? '').toString(),
+            content: (e['content'] ?? '').toString(),
+            timestamp: (e['created_at'] ?? '').toString(),
+          );
+        }).toList();
+        parsed.sort((a, b) {
+          final sa =
+              fuzzyScore(query, a.content) +
+              0.5 * fuzzyScore(query, a.conversationName) +
+              0.25 * fuzzyScore(query, a.senderUsername);
+          final sb =
+              fuzzyScore(query, b.content) +
+              0.5 * fuzzyScore(query, b.conversationName) +
+              0.25 * fuzzyScore(query, b.senderUsername);
+          return sb.compareTo(sa);
+        });
         setState(() {
-          _results = list.map((item) {
-            final e = item as Map<String, dynamic>;
-            final convId = (e['conversation_id'] ?? '').toString();
-            final conv = conversations.where((c) => c.id == convId).firstOrNull;
-            return _SearchResult(
-              messageId: (e['message_id'] ?? '').toString(),
-              conversationId: convId,
-              conversationName: conv?.displayName(myUserId) ?? 'Unknown',
-              senderUsername: (e['sender_username'] ?? '').toString(),
-              content: (e['content'] ?? '').toString(),
-              timestamp: (e['created_at'] ?? '').toString(),
-            );
-          }).toList();
+          _results = parsed;
           _loading = false;
         });
       } else {
@@ -120,7 +135,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     final width = isMobile ? MediaQuery.of(context).size.width - 32 : 560.0;
 
     return KeyboardListener(
-      focusNode: FocusNode(),
+      focusNode: _keyboardFocusNode,
       onKeyEvent: (event) {
         if (event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.escape) {

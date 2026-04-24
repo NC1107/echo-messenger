@@ -17,6 +17,7 @@ Color presenceStatusDotColor(
     'online' => EchoTheme.online,
     'away' => EchoTheme.warning,
     'dnd' => EchoTheme.danger,
+    'invisible' => const Color(0xFF6B6B6F),
     _ => const Color(0xFF6B6B6F),
   };
 }
@@ -38,6 +39,10 @@ class ConversationItem extends StatefulWidget {
   final VoidCallback onTap;
   final void Function(Offset position)? onContextMenu;
 
+  /// Number of group members (other than the current user) currently online.
+  /// Only consulted when [Conversation.isGroup] is true.
+  final int onlineMemberCount;
+
   const ConversationItem({
     super.key,
     required this.conversation,
@@ -51,6 +56,7 @@ class ConversationItem extends StatefulWidget {
     required this.timestamp,
     required this.onTap,
     this.onContextMenu,
+    this.onlineMemberCount = 0,
   });
 
   @override
@@ -305,6 +311,9 @@ class _ConversationItemState extends State<ConversationItem> {
         defaultTargetPlatform != TargetPlatform.android &&
         defaultTargetPlatform != TargetPlatform.iOS;
 
+    final conv = widget.conversation;
+    final showGroupOnline = conv.isGroup && widget.onlineMemberCount > 0;
+
     return Row(
       children: [
         if (widget.isPinned)
@@ -312,7 +321,7 @@ class _ConversationItemState extends State<ConversationItem> {
             padding: const EdgeInsets.only(right: 4),
             child: Icon(Icons.push_pin, size: 12, color: context.textMuted),
           ),
-        Expanded(
+        Flexible(
           child: Text(
             displayName,
             overflow: TextOverflow.ellipsis,
@@ -323,6 +332,41 @@ class _ConversationItemState extends State<ConversationItem> {
             ),
           ),
         ),
+        if (showGroupOnline)
+          Padding(
+            padding: const EdgeInsets.only(left: 6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: EchoTheme.online.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: EchoTheme.online,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    '${widget.onlineMemberCount}',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: EchoTheme.online,
+                      height: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        const Spacer(),
         if (showMoreButton)
           Semantics(
             label: 'More options for $displayName',
