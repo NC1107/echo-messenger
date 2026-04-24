@@ -4,9 +4,10 @@
 //! WebSocket connection (Android uses a foreground service to stay alive).
 //!
 //! **iOS**: Apple requires APNs to wake suspended apps. This module sends
-//! visible notifications with sender info. For encrypted DMs, only the
-//! sender name is shown ("Alice: Encrypted message"). For plaintext groups,
-//! the actual message preview is included.
+//! visible notifications. For encrypted DMs, both the title and body are
+//! redacted to "New message" so the lock screen leaks neither sender nor
+//! content. For plaintext groups, the sender name and a truncated preview
+//! of the message are included.
 //!
 //! ## Configuration (all optional — push is disabled if not set)
 //!
@@ -193,6 +194,20 @@ struct ApnsPushParams<'a> {
     message_id: Uuid,
 }
 
+/// Build the notification title.
+///
+/// For encrypted messages the sender username is redacted to a neutral
+/// "New message" so a glanced-at lock screen does not leak who is messaging
+/// whom. For plaintext (groups, unencrypted DMs) the sender name is shown
+/// as-is.
+fn format_push_title(sender_username: &str, is_encrypted: bool) -> String {
+    if is_encrypted {
+        "New message".to_string()
+    } else {
+        sender_username.to_string()
+    }
+}
+
 /// Build the notification body text.
 ///
 /// - Encrypted messages get a fixed placeholder (server can't read ciphertext).
@@ -213,9 +228,11 @@ fn format_push_body(content: &str, is_encrypted: bool) -> String {
 
 /// Send an APNs push notification to an iOS device.
 ///
-/// - **Encrypted DMs**: Shows "New message" as the body (server can't
-///   read the ciphertext). The sender name is always visible.
-/// - **Plaintext messages**: Shows a truncated preview of the actual content.
+/// - **Encrypted DMs**: Shows "New message" as both the title and body. The
+///   sender name is redacted so lock-screen glances do not leak who is
+///   messaging whom.
+/// - **Plaintext messages**: Shows the sender name as the title and a
+///   truncated preview of the actual content as the body.
 ///
 /// Uses `mutable-content: 1` so a Notification Service Extension can modify
 /// the payload before display.  Also includes `content-available: 1` to wake
@@ -242,11 +259,12 @@ async fn send_apns_push(p: ApnsPushParams<'_>) {
     let url = format!("https://{host}/3/device/{}", p.device_token);
 
     let body = format_push_body(p.content, p.is_encrypted);
+    let title = format_push_title(p.sender_username, p.is_encrypted);
 
     let payload = serde_json::json!({
         "aps": {
             "alert": {
-                "title": p.sender_username,
+                "title": title,
                 "body": body,
             },
             "sound": "default",
@@ -366,5 +384,21 @@ mod tests {
     #[test]
     fn encrypted_with_long_content_still_returns_placeholder() {
         assert_eq!(format_push_body(&"x".repeat(200), true), "New message");
+    }
+
+    #[test]
+    fn encrypted_title_redacts_sender() {
+        assert_eq!(format_push_title("alice", true), "New message");
+    }
+
+    #[test]
+    fn plaintext_title_shows_sender() {
+        assert_eq!(format_push_title("alice", false), "alice");
+    }
+
+    #[test]
+    fn encrypted_title_redacts_even_long_sender() {
+        let long_name = "a".repeat(200);
+        assert_eq!(format_push_title(&long_name, true), "New message");
     }
 }
