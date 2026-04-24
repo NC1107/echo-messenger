@@ -58,6 +58,9 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
 
+  /// Current playback speed. Cycles 1.0 -> 1.5 -> 2.0 -> 1.0 on tap.
+  double _playbackRate = 1.0;
+
   /// Visual-only progress fraction during a drag gesture ([0, 1]).
   /// null means no drag is in progress — use [_progress] instead.
   double? _dragProgress;
@@ -182,6 +185,27 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
   // Helpers
   // ---------------------------------------------------------------------------
 
+  /// Cycle playback rate 1x -> 1.5x -> 2x -> 1x.
+  Future<void> _cyclePlaybackRate() async {
+    final next = switch (_playbackRate) {
+      1.0 => 1.5,
+      1.5 => 2.0,
+      _ => 1.0,
+    };
+    setState(() => _playbackRate = next);
+    try {
+      await _player.setPlaybackRate(next);
+    } catch (e) {
+      debugPrint('[VoiceMsg] setPlaybackRate failed: $e');
+    }
+  }
+
+  String _formatRateLabel(double rate) {
+    // Show "1x" / "2x" without decimal, "1.5x" with one decimal.
+    final isInt = rate == rate.truncateToDouble();
+    return isInt ? '${rate.toInt()}x' : '${rate.toStringAsFixed(1)}x';
+  }
+
   String _formatDuration(Duration d) {
     final m = d.inMinutes.remainder(60);
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
@@ -232,7 +256,7 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
         : (showDuration ? _formatDuration(_duration) : '0:00');
 
     return SizedBox(
-      width: 240,
+      width: 272,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -264,6 +288,33 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
                       ),
                     ),
                   ),
+          ),
+          const SizedBox(width: 4),
+          // Playback speed toggle
+          Tooltip(
+            message: 'Playback speed',
+            child: InkWell(
+              onTap: _cyclePlaybackRate,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: 32,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  _formatRateLabel(_playbackRate),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: accentColor,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            ),
           ),
           const SizedBox(width: 8),
           // Waveform + duration label

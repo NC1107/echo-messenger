@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
@@ -62,6 +63,17 @@ class _IdentityKeyChangedBannerState
     final changed = await ref
         .read(cryptoProvider.notifier)
         .hasPeerIdentityKeyChanged(peer.userId);
+
+    if (changed) {
+      // Reset any prior safety-number verification for this peer -- a new
+      // identity key means the old verification no longer applies.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('echo_safety_verified_${peer.userId}');
+      } catch (_) {
+        // Best-effort; verification state is cosmetic.
+      }
+    }
 
     if (mounted) {
       setState(() {

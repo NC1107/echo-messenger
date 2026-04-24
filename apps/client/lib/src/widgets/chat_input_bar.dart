@@ -1452,9 +1452,58 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       return _handleCopyCutShortcut(false);
     }
     if (event.logicalKey == LogicalKeyboardKey.keyX) {
+      // Ctrl+Shift+X = strikethrough; plain Ctrl+X = cut.
+      if (HardwareKeyboard.instance.isShiftPressed) {
+        return _applyMarkdownWrap(open: '~~', close: '~~');
+      }
       return _handleCopyCutShortcut(true);
     }
+    if (event.logicalKey == LogicalKeyboardKey.keyB &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      return _applyMarkdownWrap(open: '**', close: '**');
+    }
+    if (event.logicalKey == LogicalKeyboardKey.keyI &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      return _applyMarkdownWrap(open: '*', close: '*');
+    }
     return KeyEventResult.ignored;
+  }
+
+  /// Wrap the current selection with [open]/[close] markers. When nothing is
+  /// selected, insert both markers at the cursor and leave the caret between
+  /// them so the user can immediately type. Returns [KeyEventResult.handled]
+  /// so the key does not also reach the underlying TextField.
+  KeyEventResult _applyMarkdownWrap({
+    required String open,
+    required String close,
+  }) {
+    final text = _messageController.text;
+    final sel = _messageController.selection;
+    if (!sel.isValid) return KeyEventResult.ignored;
+
+    if (sel.isCollapsed) {
+      final cursor = sel.start;
+      final newText =
+          text.substring(0, cursor) + open + close + text.substring(cursor);
+      _messageController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: cursor + open.length),
+      );
+      return KeyEventResult.handled;
+    }
+
+    final before = text.substring(0, sel.start);
+    final selected = text.substring(sel.start, sel.end);
+    final after = text.substring(sel.end);
+    final newText = '$before$open$selected$close$after';
+    _messageController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection(
+        baseOffset: sel.start + open.length,
+        extentOffset: sel.end + open.length,
+      ),
+    );
+    return KeyEventResult.handled;
   }
 
   /// Up arrow with empty input: edit last own message (Discord behavior).
