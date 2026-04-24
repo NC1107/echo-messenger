@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
@@ -19,7 +20,7 @@ import '../utils/canvas_utils.dart';
 // Constants
 // ---------------------------------------------------------------------------
 
-const double _kAvatarSize = 72.0;
+const double _kAvatarSize = 48.0;
 const double _kAvatarHalfSize = _kAvatarSize / 2;
 
 // ---------------------------------------------------------------------------
@@ -631,6 +632,54 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
 
     final hasVideo = info.videoTrack != null;
 
+    // Frosted-glass tile that lets the vertex-mesh background show through.
+    // For video tiles skip the blur so the video feed stays crisp.  The
+    // speaking ring is drawn on the outer container so it sits OVER the
+    // blur and remains visible at all times.
+    final innerContent = hasVideo
+        ? lk.VideoTrackRenderer(
+            info.videoTrack!,
+            fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+            mirrorMode: info.mirror
+                ? lk.VideoViewMirrorMode.mirror
+                : lk.VideoViewMirrorMode.off,
+          )
+        : info.avatarUrl != null
+        ? CachedNetworkImage(
+            imageUrl: info.avatarUrl!,
+            httpHeaders: widget.httpHeaders,
+            fit: BoxFit.cover,
+            placeholder: (_, _) => _initialsWidget(initial),
+            errorWidget: (_, _, _) => _initialsWidget(initial),
+          )
+        : _initialsWidget(initial);
+
+    Widget tile = Container(
+      width: _kAvatarSize,
+      height: _kAvatarSize,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: hasVideo ? Colors.black : Colors.black.withValues(alpha: 0.35),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: hasVideo
+          ? innerContent
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                // Frosted-glass blur layer lets the canvas background
+                // bleed through as a soft wash.
+                BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                  child: Container(color: avatarColor.withValues(alpha: 0.55)),
+                ),
+                innerContent,
+              ],
+            ),
+    );
+
+    // Outer container draws the speaking ring outside the blur so it
+    // stays crisp and never gets washed out by the BackdropFilter.
     Widget avatar = AnimatedScale(
       scale: scale,
       duration: const Duration(milliseconds: 150),
@@ -639,7 +688,6 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
         height: _kAvatarSize,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: hasVideo ? Colors.black : avatarColor,
           border: Border.all(color: speakRingColor, width: ringWidth),
           boxShadow: [
             BoxShadow(
@@ -649,24 +697,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
             ),
           ],
         ),
-        clipBehavior: Clip.antiAlias,
-        child: hasVideo
-            ? lk.VideoTrackRenderer(
-                info.videoTrack!,
-                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
-                mirrorMode: info.mirror
-                    ? lk.VideoViewMirrorMode.mirror
-                    : lk.VideoViewMirrorMode.off,
-              )
-            : info.avatarUrl != null
-            ? CachedNetworkImage(
-                imageUrl: info.avatarUrl!,
-                httpHeaders: widget.httpHeaders,
-                fit: BoxFit.cover,
-                placeholder: (_, _) => _initialsWidget(initial),
-                errorWidget: (_, _, _) => _initialsWidget(initial),
-              )
-            : _initialsWidget(initial),
+        child: ClipOval(child: tile),
       ),
     );
 
@@ -725,7 +756,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
       initial,
       style: const TextStyle(
         color: Colors.white,
-        fontSize: 26,
+        fontSize: 18,
         fontWeight: FontWeight.bold,
       ),
     ),
