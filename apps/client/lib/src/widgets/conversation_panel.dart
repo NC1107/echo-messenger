@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
@@ -13,6 +15,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../utils/fuzzy_score.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart';
 import 'conversation_item.dart';
@@ -78,6 +81,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   /// Pinned conversation IDs
   Set<String> _pinnedIds = {};
 
+  /// Debounce timer for the search field. Delays the fuzzy-score recompute
+  /// so we don't run it on every keystroke.
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -108,7 +115,19 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _keyboardListenerFocusNode.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
+  }
+
+  /// Debounced search handler (150ms). Avoids running fuzzyScore over every
+  /// conversation on every keystroke.
+  void _onSearchChanged(String value) {
+    final trimmed = value.trim();
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      setState(() => _searchQuery = trimmed);
+    });
   }
 
   // Pending contacts refresh is handled by HomeScreen's timer -- no duplicate here.
@@ -186,6 +205,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   void _clearSearch() {
+    _searchDebounce?.cancel();
     setState(() {
       _searchQuery = '';
       _isSearching = false;
@@ -504,14 +524,25 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         break;
     }
 
-    // Apply search filter.
+    // Apply search filter using fuzzy scoring so typos/abbreviations still
+    // match and the best match appears first.
     if (_searchQuery.isNotEmpty) {
-      final query = _searchQuery.toLowerCase();
-      result = result.where((conv) {
-        final name = conv.displayName(myUserId).toLowerCase();
-        final lastMsg = (conv.lastMessage ?? '').toLowerCase();
-        return name.contains(query) || lastMsg.contains(query);
-      }).toList();
+      final query = _searchQuery;
+      final scored = <({Conversation conv, double score})>[];
+      for (final conv in result) {
+        final name = conv.displayName(myUserId);
+        final lastMsg = conv.lastMessage ?? '';
+        final nameScore = fuzzyScore(query, name);
+        final msgScore = fuzzyScore(query, lastMsg);
+        // Weighted sum normalised back into [0, 1] so the threshold is
+        // meaningful. Raw weights were nameScore*2 + msgScore (max 3).
+        final score = (nameScore * 2 + msgScore) / 3;
+        if (score > 0.2) {
+          scored.add((conv: conv, score: score));
+        }
+      }
+      scored.sort((a, b) => b.score.compareTo(a.score));
+      result = scored.map((e) => e.conv).toList();
     }
 
     return result;
@@ -762,11 +793,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
                 isDense: true,
               ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value.trim();
-                });
-              },
+              onChanged: _onSearchChanged,
             ),
           ),
           if (_searchQuery.isNotEmpty)
@@ -1323,6 +1350,15 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ? null
         : conv.members.where((m) => m.userId != myUserId).firstOrNull;
     final isPeerOnline = peer != null && wsOnlineUsers.contains(peer.userId);
+
+    final onlineMemberCount = conv.isGroup
+        ? conv.members
+              .where(
+                (m) => m.userId != myUserId && wsOnlineUsers.contains(m.userId),
+              )
+              .length
+        : 0;
+
     return ConversationItem(
       conversation: conv,
       myUserId: myUserId,
@@ -1335,6 +1371,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       onTap: () => widget.onConversationTap(conv),
       onContextMenu: (position) =>
           _showConversationContextMenu(context, conv, position),
+      onlineMemberCount: onlineMemberCount,
     );
   }
 }

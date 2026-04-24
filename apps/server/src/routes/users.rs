@@ -366,13 +366,29 @@ async fn broadcast_presence_with_status(
         }
     };
 
-    let presence = serde_json::json!({
-        "type": "presence",
-        "user_id": user_id,
-        "username": username,
-        "status": broadcast_status,
-        "presence_status": presence_status,
-    });
+    // Privacy: when the user's stored status is "invisible", the contact-
+    // visible payload is "offline". Do NOT leak the raw "invisible" value in
+    // the `presence_status` field -- a patched client could otherwise observe
+    // it and defeat the invisibility. The user's own session keeps the raw
+    // value via the PATCH response, which is separate from this broadcast.
+    let hide_presence_status = presence_status == "invisible" && broadcast_status == "offline";
+
+    let presence = if hide_presence_status {
+        serde_json::json!({
+            "type": "presence",
+            "user_id": user_id,
+            "username": username,
+            "status": broadcast_status,
+        })
+    } else {
+        serde_json::json!({
+            "type": "presence",
+            "user_id": user_id,
+            "username": username,
+            "status": broadcast_status,
+            "presence_status": presence_status,
+        })
+    };
     if let Ok(json) = serde_json::to_string(&presence) {
         for cid in &contact_ids {
             state.hub.send_to(cid, WsMessage::Text(json.clone().into()));

@@ -204,29 +204,32 @@ pub(super) async fn broadcast_presence(
     // When coming online, look up stored presence_status so we broadcast
     // the right status (e.g. "away" or "dnd") rather than always "online".
     // For "offline" (disconnect), always broadcast "offline" regardless of
-    // stored status. Invisible users also appear offline.
+    // stored status. Invisible users also appear offline -- and we omit
+    // the presence_status field entirely so observers cannot distinguish
+    // invisible from truly offline.
     let (broadcast_status, presence_status) = if status == "offline" {
-        ("offline".to_string(), "offline".to_string())
+        ("offline".to_string(), None)
     } else {
         let stored = db::users::get_presence_status(&state.pool, user_id)
             .await
             .unwrap_or(None)
             .unwrap_or_else(|| "online".to_string());
-        let visible_status = if stored == "invisible" {
-            "offline".to_string()
+        if stored == "invisible" {
+            ("offline".to_string(), None)
         } else {
-            stored.clone()
-        };
-        (visible_status, stored)
+            (stored.clone(), Some(stored))
+        }
     };
 
-    let presence = serde_json::json!({
+    let mut presence = serde_json::json!({
         "type": "presence",
         "user_id": user_id,
         "username": username,
         "status": broadcast_status,
-        "presence_status": presence_status,
     });
+    if let Some(ps) = presence_status {
+        presence["presence_status"] = serde_json::Value::String(ps);
+    }
     let json = match serde_json::to_string(&presence) {
         Ok(j) => j,
         Err(_) => return,
