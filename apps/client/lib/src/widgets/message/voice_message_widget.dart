@@ -185,7 +185,6 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
   // Helpers
   // ---------------------------------------------------------------------------
 
-  /// Cycle playback rate 1x -> 1.5x -> 2x -> 1x.
   Future<void> _cyclePlaybackRate() async {
     final next = switch (_playbackRate) {
       1.0 => 1.5,
@@ -195,13 +194,12 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
     setState(() => _playbackRate = next);
     try {
       await _player.setPlaybackRate(next);
-    } catch (e) {
-      debugPrint('[VoiceMsg] setPlaybackRate failed: $e');
+    } catch (_) {
+      // Best-effort; platform may not support playback rate.
     }
   }
 
   String _formatRateLabel(double rate) {
-    // Show "1x" / "2x" without decimal, "1.5x" with one decimal.
     final isInt = rate == rate.truncateToDouble();
     return isInt ? '${rate.toInt()}x' : '${rate.toStringAsFixed(1)}x';
   }
@@ -290,7 +288,6 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
                   ),
           ),
           const SizedBox(width: 4),
-          // Playback speed toggle
           Tooltip(
             message: 'Playback speed',
             child: InkWell(
