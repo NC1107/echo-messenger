@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
@@ -79,6 +81,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   /// Pinned conversation IDs
   Set<String> _pinnedIds = {};
 
+  /// Debounce timer for the search field. Delays the fuzzy-score recompute
+  /// so we don't run it on every keystroke.
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
@@ -109,7 +115,19 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _keyboardListenerFocusNode.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
+  }
+
+  /// Debounced search handler (150ms). Avoids running fuzzyScore over every
+  /// conversation on every keystroke.
+  void _onSearchChanged(String value) {
+    final trimmed = value.trim();
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      setState(() => _searchQuery = trimmed);
+    });
   }
 
   // Pending contacts refresh is handled by HomeScreen's timer -- no duplicate here.
@@ -187,6 +205,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   void _clearSearch() {
+    _searchDebounce?.cancel();
     setState(() {
       _searchQuery = '';
       _isSearching = false;
@@ -515,8 +534,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         final lastMsg = conv.lastMessage ?? '';
         final nameScore = fuzzyScore(query, name);
         final msgScore = fuzzyScore(query, lastMsg);
-        final score = nameScore * 2 + msgScore; // name matches weigh more
-        if (score > 0.3) {
+        // Weighted sum normalised back into [0, 1] so the threshold is
+        // meaningful. Raw weights were nameScore*2 + msgScore (max 3).
+        final score = (nameScore * 2 + msgScore) / 3;
+        if (score > 0.2) {
           scored.add((conv: conv, score: score));
         }
       }
@@ -772,11 +793,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
                 isDense: true,
               ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value.trim();
-                });
-              },
+              onChanged: _onSearchChanged,
             ),
           ),
           if (_searchQuery.isNotEmpty)

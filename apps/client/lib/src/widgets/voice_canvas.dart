@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
@@ -617,6 +616,10 @@ class _DraggableAvatar extends StatefulWidget {
 }
 
 class _DraggableAvatarState extends State<_DraggableAvatar> {
+  /// Tracks the live drag position so `onPanEnd` commits the latest value
+  /// instead of the stale `widget.currentPos` prop from before the drag.
+  CanvasPoint? _localPos;
+
   @override
   Widget build(BuildContext context) {
     final info = widget.participant;
@@ -655,7 +658,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
       height: _kAvatarSize,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: hasVideo ? Colors.black : Colors.black.withValues(alpha: 0.35),
+        color: hasVideo ? Colors.black : Colors.black.withValues(alpha: 0.45),
       ),
       clipBehavior: Clip.antiAlias,
       child: hasVideo
@@ -663,10 +666,9 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
           : Stack(
               fit: StackFit.expand,
               children: [
-                BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                  child: Container(color: avatarColor.withValues(alpha: 0.55)),
-                ),
+                // Solid semi-transparent fill instead of a per-tile
+                // BackdropFilter -- avoids N GPU blur passes per frame.
+                Container(color: avatarColor.withValues(alpha: 0.55)),
                 innerContent,
               ],
             ),
@@ -689,7 +691,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
             ),
           ],
         ),
-        child: ClipOval(child: tile),
+        child: tile,
       ),
     );
 
@@ -729,14 +731,17 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
           if (s.width <= 0 || s.height <= 0) return;
           final dx = details.delta.dx / s.width;
           final dy = details.delta.dy / s.height;
+          final base = _localPos ?? widget.currentPos;
           final newPos = CanvasPoint(
-            x: (widget.currentPos.x + dx).clamp(0.0, 1.0),
-            y: (widget.currentPos.y + dy).clamp(0.0, 1.0),
+            x: (base.x + dx).clamp(0.0, 1.0),
+            y: (base.y + dy).clamp(0.0, 1.0),
           );
+          _localPos = newPos;
           widget.onDrag(newPos);
         },
         onPanEnd: (_) {
-          widget.onDragEnd(widget.currentPos);
+          widget.onDragEnd(_localPos ?? widget.currentPos);
+          _localPos = null;
         },
         child: content,
       ),

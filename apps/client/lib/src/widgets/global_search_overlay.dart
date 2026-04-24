@@ -30,6 +30,7 @@ class GlobalSearchOverlay extends ConsumerStatefulWidget {
 class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
+  final _keyboardFocusNode = FocusNode();
   Timer? _debounce;
   List<_SearchResult> _results = [];
   bool _loading = false;
@@ -45,6 +46,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
+    _keyboardFocusNode.dispose();
     _debounce?.cancel();
     super.dispose();
   }
@@ -133,7 +135,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     final width = isMobile ? MediaQuery.of(context).size.width - 32 : 560.0;
 
     return KeyboardListener(
-      focusNode: FocusNode(),
+      focusNode: _keyboardFocusNode,
       onKeyEvent: (event) {
         if (event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.escape) {
