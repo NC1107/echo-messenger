@@ -312,6 +312,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     try {
       await _sendAvatarWithRetry(serverUrl, file);
     } catch (e) {
+      debugPrint('[Account] avatar upload failed: $e');
       if (mounted) {
         ToastService.show(context, friendlyError(e), type: ToastType.error);
       }

@@ -206,6 +206,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         );
       }
     } catch (e) {
+      debugPrint('[Onboarding] avatar upload failed: $e');
       if (mounted) {
         ToastService.show(context, friendlyError(e), type: ToastType.error);
       }
