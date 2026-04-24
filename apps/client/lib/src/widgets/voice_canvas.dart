@@ -632,10 +632,6 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
 
     final hasVideo = info.videoTrack != null;
 
-    // Frosted-glass tile that lets the vertex-mesh background show through.
-    // For video tiles skip the blur so the video feed stays crisp.  The
-    // speaking ring is drawn on the outer container so it sits OVER the
-    // blur and remains visible at all times.
     final innerContent = hasVideo
         ? lk.VideoTrackRenderer(
             info.videoTrack!,
@@ -667,8 +663,6 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
           : Stack(
               fit: StackFit.expand,
               children: [
-                // Frosted-glass blur layer lets the canvas background
-                // bleed through as a soft wash.
                 BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                   child: Container(color: avatarColor.withValues(alpha: 0.55)),
@@ -678,8 +672,6 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
             ),
     );
 
-    // Outer container draws the speaking ring outside the blur so it
-    // stays crisp and never gets washed out by the BackdropFilter.
     Widget avatar = AnimatedScale(
       scale: scale,
       duration: const Duration(milliseconds: 150),

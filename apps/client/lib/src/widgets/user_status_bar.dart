@@ -84,7 +84,6 @@ class UserStatusBar extends ConsumerWidget {
                   .toList(),
               child: Row(
                 children: [
-                  // Avatar with status indicator dot
                   Stack(
                     children: [
                       CircleAvatar(
@@ -115,7 +114,6 @@ class UserStatusBar extends ConsumerWidget {
                     ],
                   ),
                   const SizedBox(width: 10),
-                  // Username and status
                   Expanded(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,

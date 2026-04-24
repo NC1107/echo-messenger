@@ -1334,8 +1334,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         : conv.members.where((m) => m.userId != myUserId).firstOrNull;
     final isPeerOnline = peer != null && wsOnlineUsers.contains(peer.userId);
 
-    // For groups, count how many members (excluding me) are currently online.
-    // The count is shown as a small pill next to the group name.
     final onlineMemberCount = conv.isGroup
         ? conv.members
               .where(

@@ -89,9 +89,6 @@ class _MessageSearchOverlayState extends ConsumerState<MessageSearchOverlay> {
               ),
             )
             .toList();
-        // Re-rank by fuzzy-score of the message content so the most
-        // likely match appears first, not just whatever order the
-        // server returned them in.
         parsed.sort((a, b) {
           final sa = fuzzyScore(query, a.content);
           final sb = fuzzyScore(query, b.content);

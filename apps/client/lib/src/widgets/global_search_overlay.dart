@@ -97,8 +97,6 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
             timestamp: (e['created_at'] ?? '').toString(),
           );
         }).toList();
-        // Re-rank server results by fuzzy score so the best match bubbles
-        // to the top. Score against content + conversation + sender.
         parsed.sort((a, b) {
           final sa =
               fuzzyScore(query, a.content) +

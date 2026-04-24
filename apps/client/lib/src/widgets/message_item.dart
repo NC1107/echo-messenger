@@ -1140,9 +1140,6 @@ class _MessageItemState extends State<MessageItem>
                   ? widget.onImageTap!(imgUrl)
                   : _showImageViewer(imageUrl: imgUrl),
               child: ConstrainedBox(
-                // Constrain both dimensions so a tall image doesn't
-                // swallow the scroll viewport. Width bound keeps
-                // portrait crops from stretching wider than the bubble.
                 constraints: const BoxConstraints(
                   maxWidth: 400,
                   maxHeight: 320,
@@ -1272,8 +1269,6 @@ class _MessageItemState extends State<MessageItem>
     required bool isFailed,
     required bool hasMedia,
   }) {
-    // Tighter padding in compact mode so consecutive rows read more like
-    // a single continuous stream and less like separate messages.
     final EdgeInsets padding;
     if (hasMedia) {
       padding = const EdgeInsets.all(4);
@@ -1413,11 +1408,6 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  /// Build the "N replies" link shown below messages that have thread replies.
-  ///
-  /// Rendered as a rounded accent pill with an `InkWell` tap target so the
-  /// affordance is visually distinct from regular timestamps and has a
-  /// proper touch/hover highlight.
   Widget _buildReplyCountBadge({
     required ChatMessage msg,
     required bool isMine,
@@ -1522,10 +1512,6 @@ class _MessageItemState extends State<MessageItem>
   }
 
   /// Build the main message row containing the avatar and bubble.
-  ///
-  /// In compact mode follow-up messages (showHeader=false) drop the avatar
-  /// and instead indent by the avatar column width so the bubble stacks
-  /// directly under the previous bubble -- no repeated avatar, no jog.
   List<Widget> _buildMessageRowChildren({
     required ChatMessage msg,
     required bool isMine,
