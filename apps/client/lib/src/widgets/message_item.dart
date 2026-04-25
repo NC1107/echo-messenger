@@ -50,6 +50,10 @@ class MessageItem extends StatefulWidget {
   final void Function(ChatMessage message, Offset globalPosition)?
   onReactionTap;
   final void Function(ChatMessage message, String emoji)? onReactionSelect;
+
+  /// Called when user taps "More emojis…" in the mobile action sheet
+  /// to open the full Unicode emoji picker.
+  final void Function(ChatMessage message)? onMoreReactions;
   final void Function(ChatMessage message)? onDelete;
   final void Function(ChatMessage message)? onEdit;
   final void Function(ChatMessage message)? onReply;
@@ -98,6 +102,7 @@ class MessageItem extends StatefulWidget {
     required this.myUserId,
     this.onReactionTap,
     this.onReactionSelect,
+    this.onMoreReactions,
     this.onDelete,
     this.onEdit,
     this.onReply,
@@ -413,42 +418,72 @@ class _MessageItemState extends State<MessageItem>
 
   /// Quick reaction emoji row for the mobile action sheet.
   Widget _buildQuickReactionRow(BuildContext sheetContext, ChatMessage msg) {
-    return Padding(
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: reactionEmojis.map((emoji) {
-          final alreadyReacted = msg.reactions.any(
-            (r) => r.emoji == emoji && r.userId == widget.myUserId,
-          );
-          return GestureDetector(
-            onTap: () {
-              Navigator.pop(sheetContext);
-              widget.onReactionSelect?.call(msg, emoji);
-            },
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: alreadyReacted
-                    ? context.accent.withValues(alpha: 0.2)
-                    : null,
-                borderRadius: BorderRadius.circular(8),
-                border: alreadyReacted
-                    ? Border.all(color: context.accent, width: 2)
-                    : null,
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                emoji,
-                style: const TextStyle(
-                  fontSize: 24,
-                  decoration: TextDecoration.none,
+        children: [
+          for (final emoji in reactionEmojis) ...[
+            Builder(
+              builder: (_) {
+                final alreadyReacted = msg.reactions.any(
+                  (r) => r.emoji == emoji && r.userId == widget.myUserId,
+                );
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    widget.onReactionSelect?.call(msg, emoji);
+                  },
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: alreadyReacted
+                          ? context.accent.withValues(alpha: 0.2)
+                          : null,
+                      borderRadius: BorderRadius.circular(8),
+                      border: alreadyReacted
+                          ? Border.all(color: context.accent, width: 2)
+                          : null,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      emoji,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 4),
+          ],
+          Semantics(
+            button: true,
+            label: 'More emojis',
+            child: GestureDetector(
+              onTap: () {
+                Navigator.pop(sheetContext);
+                widget.onMoreReactions?.call(msg);
+              },
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  Icons.add_reaction_outlined,
+                  size: 24,
+                  color: context.accent,
                 ),
               ),
             ),
-          );
-        }).toList(),
+          ),
+        ],
       ),
     );
   }

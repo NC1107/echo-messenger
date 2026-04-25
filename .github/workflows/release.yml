@@ -19,8 +19,26 @@ env:
   FLUTTER_VERSION: '3.41.x'
 
 jobs:
+  security-pre-release:
+    name: Security pre-release scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: security-gate
+      - run: cargo install cargo-audit --locked
+      # Mirrors .github/workflows/security.yml ignore set:
+      # RUSTSEC-2023-0071: transitive rsa advisory via jsonwebtoken (no upstream patch).
+      # RUSTSEC-2026-0097: rand 0.8.5 unsound advisory, pinned by sqlx 0.8.6 transitively.
+      # RUSTSEC-2026-0104: rustls-webpki CRL parsing panic, fix via cargo update (>=0.103.13).
+      - run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097 --ignore RUSTSEC-2026-0104
+      - uses: EmbarkStudios/cargo-deny-action@175dc7fd4fb85ec8f46948fb98f44db001149081 # v2.0.16
+
   lint-test:
     name: Lint + Test Gate
+    needs: [security-pre-release]
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -241,8 +259,16 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+      - name: Verify signing secrets present
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEY_PROPERTIES" ]; then
+            echo "::error::Android signing secrets missing. Refusing to ship unsigned APK."
+            exit 1
+          fi
       - name: Set up signing
-        if: env.ANDROID_KEYSTORE_BASE64 != ''
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
@@ -283,6 +309,16 @@ jobs:
           xcodebuild -version
       - name: Install CocoaPods
         run: gem install cocoapods
+      - name: Verify iOS signing secrets present
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          if [ -z "$IOS_CERTIFICATE_BASE64" ] || [ -z "$IOS_CERTIFICATE_PASSWORD" ] || [ -z "$IOS_PROVISIONING_PROFILE_BASE64" ]; then
+            echo "::error::iOS signing secrets missing. Refusing to ship unsigned IPA."
+            exit 1
+          fi
       - name: Set up code signing
         env:
           IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
