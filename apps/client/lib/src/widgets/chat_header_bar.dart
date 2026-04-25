@@ -913,30 +913,42 @@ class _TimerChip extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(10),
             onTap: onTap,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: context.accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: context.accent.withValues(alpha: 0.35),
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.timer_outlined, size: 12, color: context.accent),
-                  const SizedBox(width: 3),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: context.accent,
-                      height: 1,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: context.accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: context.accent.withValues(alpha: 0.35),
                     ),
                   ),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 12,
+                        color: context.accent,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: context.accent,
+                          height: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),

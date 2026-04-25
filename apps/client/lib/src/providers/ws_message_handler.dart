@@ -693,16 +693,19 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     final fromUserId = json['from_user_id'] as String? ?? '';
     if (fromUserId == myUserId) return;
 
-    SoundService().playMessageReceived();
     final conversations = ref.read(conversationsProvider).conversations;
     final conv = conversations.where((c) => c.id == conversationId).firstOrNull;
+    final isMuted = conv?.isMuted ?? false;
+    if (!isMuted) {
+      SoundService().playMessageReceived();
+    }
     NotificationService().showMessageNotification(
       senderUsername: '@$fromUsername',
       body: content.length > 100 ? '${content.substring(0, 100)}...' : content,
       conversationId: conversationId,
       conversationName: conv?.displayName(myUserId),
       isGroup: true, // Mentions are always in group contexts
-      isMuted: conv?.isMuted ?? false,
+      isMuted: isMuted,
     );
 
     // Bump unread count for the conversation

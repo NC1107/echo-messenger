@@ -142,31 +142,44 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   ),
                 ),
                 Divider(color: context.border, height: 8),
-                SwitchListTile(
-                  value: conv.isMuted,
-                  onChanged: (value) async {
-                    Navigator.of(sheetContext).pop();
-                    final success = await ref
-                        .read(conversationsProvider.notifier)
-                        .setMuted(conv.id, value);
-                    if (!success && mounted) {
-                      ToastService.show(
-                        context,
-                        'Failed to update mute settings',
-                        type: ToastType.error,
-                      );
-                    }
+                Consumer(
+                  builder: (ctx, sheetRef, _) {
+                    final live = sheetRef
+                        .watch(conversationsProvider)
+                        .conversations
+                        .where((c) => c.id == conv.id)
+                        .firstOrNull;
+                    final currentMuted = live?.isMuted ?? conv.isMuted;
+                    return SwitchListTile(
+                      value: currentMuted,
+                      onChanged: (value) async {
+                        Navigator.of(sheetContext).pop();
+                        final success = await ref
+                            .read(conversationsProvider.notifier)
+                            .setMuted(conv.id, value);
+                        if (!success && mounted) {
+                          ToastService.show(
+                            context,
+                            'Failed to update mute settings',
+                            type: ToastType.error,
+                          );
+                        }
+                      },
+                      title: Text(
+                        'Mute notifications',
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 14,
+                        ),
+                      ),
+                      secondary: Icon(
+                        currentMuted
+                            ? Icons.notifications_off_outlined
+                            : Icons.notifications_outlined,
+                        color: context.textSecondary,
+                      ),
+                    );
                   },
-                  title: Text(
-                    'Mute notifications',
-                    style: TextStyle(color: context.textPrimary, fontSize: 14),
-                  ),
-                  secondary: Icon(
-                    conv.isMuted
-                        ? Icons.notifications_off_outlined
-                        : Icons.notifications_outlined,
-                    color: context.textSecondary,
-                  ),
                 ),
               ],
             ),

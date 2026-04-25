@@ -1,3 +1,7 @@
+/// Sentinel value used in [Conversation.copyWith] to distinguish between
+/// "not provided" and "explicitly set to null" for nullable fields.
+const _sentinel = Object();
+
 class Conversation {
   final String id;
   final String? name;
@@ -106,7 +110,7 @@ class Conversation {
     String? lastMessageSender,
     int? unreadCount,
     bool? isMuted,
-    int? ttlSeconds,
+    Object? ttlSeconds = _sentinel,
     List<ConversationMember>? members,
   }) {
     return Conversation(
@@ -121,7 +125,9 @@ class Conversation {
       lastMessageSender: lastMessageSender ?? this.lastMessageSender,
       unreadCount: unreadCount ?? this.unreadCount,
       isMuted: isMuted ?? this.isMuted,
-      ttlSeconds: ttlSeconds ?? this.ttlSeconds,
+      ttlSeconds: ttlSeconds == _sentinel
+          ? this.ttlSeconds
+          : ttlSeconds as int?,
       members: members ?? this.members,
     );
   }
