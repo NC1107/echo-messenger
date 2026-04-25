@@ -60,6 +60,10 @@ pub struct ConversationListItem {
     pub icon_url: Option<String>,
     pub is_encrypted: bool,
     pub is_muted: bool,
+    /// Disappearing-messages TTL in seconds, or null if disabled. Lets the
+    /// client render the timer chip in the chat header without a separate
+    /// fetch.
+    pub disappearing_ttl_seconds: Option<i32>,
     pub members: Vec<MemberInfo>,
     pub last_message: Option<LastMessageInfo>,
     pub unread_count: i64,
@@ -89,6 +93,7 @@ struct ConversationFullRow {
     icon_url: Option<String>,
     is_encrypted: bool,
     is_muted: bool,
+    disappearing_ttl_seconds: Option<i32>,
     members_json: Option<serde_json::Value>,
     last_message_json: Option<serde_json::Value>,
     unread_count: i64,
@@ -151,6 +156,7 @@ pub async fn list_conversations(
             c.icon_url, \
             c.is_encrypted, \
             uc.is_muted, \
+            c.disappearing_ttl_seconds, \
             mc.members_json, \
             CASE WHEN lm.conversation_id IS NOT NULL \
                  THEN json_build_object( \
@@ -198,6 +204,7 @@ pub async fn list_conversations(
             icon_url: row.icon_url,
             is_encrypted: row.is_encrypted,
             is_muted: row.is_muted,
+            disappearing_ttl_seconds: row.disappearing_ttl_seconds,
             members,
             last_message,
             unread_count: row.unread_count,

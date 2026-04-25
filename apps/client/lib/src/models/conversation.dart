@@ -10,6 +10,10 @@ class Conversation {
   final String? lastMessageSender;
   final int unreadCount;
   final bool isMuted;
+
+  /// Disappearing-messages TTL in seconds, or null if disabled.
+  /// Drives the timer chip in the chat header.
+  final int? ttlSeconds;
   final List<ConversationMember> members;
 
   const Conversation({
@@ -24,6 +28,7 @@ class Conversation {
     this.lastMessageSender,
     this.unreadCount = 0,
     this.isMuted = false,
+    this.ttlSeconds,
     this.members = const [],
   });
 
@@ -75,6 +80,8 @@ class Conversation {
       lastMessageSender: lastMsgSender,
       unreadCount: json['unread_count'] as int? ?? 0,
       isMuted: json['is_muted'] as bool? ?? false,
+      ttlSeconds:
+          (json['disappearing_ttl_seconds'] ?? json['ttl_seconds']) as int?,
       members: membersList,
     );
   }
@@ -99,6 +106,7 @@ class Conversation {
     String? lastMessageSender,
     int? unreadCount,
     bool? isMuted,
+    int? ttlSeconds,
     List<ConversationMember>? members,
   }) {
     return Conversation(
@@ -113,6 +121,7 @@ class Conversation {
       lastMessageSender: lastMessageSender ?? this.lastMessageSender,
       unreadCount: unreadCount ?? this.unreadCount,
       isMuted: isMuted ?? this.isMuted,
+      ttlSeconds: ttlSeconds ?? this.ttlSeconds,
       members: members ?? this.members,
     );
   }
@@ -132,6 +141,7 @@ class Conversation {
             lastMessageSender == other.lastMessageSender &&
             unreadCount == other.unreadCount &&
             isMuted == other.isMuted &&
+            ttlSeconds == other.ttlSeconds &&
             _membersEqual(members, other.members);
   }
 
@@ -148,6 +158,7 @@ class Conversation {
     lastMessageSender,
     unreadCount,
     isMuted,
+    ttlSeconds,
     Object.hashAll(members),
   );
 }
