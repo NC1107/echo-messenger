@@ -42,7 +42,7 @@ async fn alice_sends_bob_receives() {
         .expect("Alice send failed");
 
     // -- Alice should receive `message_sent` ----------------------------------
-    let alice_event = read_text_with_timeout(&mut alice_ws).await;
+    let alice_event = read_text_skipping_presence(&mut alice_ws).await;
     let alice_msg: Value = serde_json::from_str(&alice_event).expect("Alice JSON parse failed");
     assert_eq!(
         alice_msg["type"], "message_sent",
@@ -50,7 +50,7 @@ async fn alice_sends_bob_receives() {
     );
 
     // -- Bob should receive `new_message` -------------------------------------
-    let bob_event = read_text_with_timeout(&mut bob_ws).await;
+    let bob_event = read_text_skipping_presence(&mut bob_ws).await;
     let bob_msg: Value = serde_json::from_str(&bob_event).expect("Bob JSON parse failed");
     assert_eq!(bob_msg["type"], "new_message", "Bob should get new_message");
     assert_eq!(
@@ -560,4 +560,22 @@ async fn drain_pending(ws: &mut WsStream) {
     while let Ok(Some(Ok(_))) =
         tokio::time::timeout(std::time::Duration::from_millis(100), ws.next()).await
     {}
+}
+
+/// Read frames from the socket, skipping any `presence` events, until a
+/// non-presence text frame arrives. Presence events can race in late under
+/// slower runtimes (tarpaulin coverage instrumentation, CI pressure) and
+/// should not cause flakes in tests that assert other event types.
+async fn read_text_skipping_presence(ws: &mut WsStream) -> String {
+    loop {
+        let text = read_text_with_timeout(ws).await;
+        let parsed: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(v) => v,
+            Err(_) => return text,
+        };
+        if parsed["type"] == "presence" {
+            continue;
+        }
+        return text;
+    }
 }
