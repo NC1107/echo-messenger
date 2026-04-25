@@ -154,7 +154,7 @@ class ChatHeaderBar extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildNameRow(context, conv, displayName),
+              _buildNameRow(context, ref, conv, displayName),
               _buildStatusLine(context, ref, conv),
             ],
           ),
@@ -165,9 +165,11 @@ class ChatHeaderBar extends ConsumerWidget {
 
   /// Name row — shows the display name and, for 1:1 conversations, a small
   /// green "verified" check next to the name when the user has previously
-  /// confirmed the peer's safety number on this device.
+  /// confirmed the peer's safety number on this device. Also shows a small
+  /// timer chip when disappearing messages are enabled.
   Widget _buildNameRow(
     BuildContext context,
+    WidgetRef ref,
     Conversation conv,
     String displayName,
   ) {
@@ -180,7 +182,23 @@ class ChatHeaderBar extends ConsumerWidget {
       ),
     );
 
-    if (conv.isGroup) return nameText;
+    final ttl = conv.ttlSeconds ?? 0;
+    final showTimer = ttl > 0;
+
+    final timerChip = showTimer
+        ? _TimerChip(
+            seconds: ttl,
+            onTap: () => _showDisappearingDialog(context, ref, conv),
+          )
+        : null;
+
+    if (conv.isGroup) {
+      if (timerChip == null) return nameText;
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [nameText, timerChip],
+      );
+    }
 
     final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
     if (peer == null) return nameText;
@@ -190,6 +208,7 @@ class ChatHeaderBar extends ConsumerWidget {
       children: [
         nameText,
         _VerifiedBadge(peerUserId: peer.userId),
+        ?timerChip,
       ],
     );
   }
@@ -635,14 +654,27 @@ class ChatHeaderBar extends ConsumerWidget {
     WidgetRef ref,
     Conversation conv,
   ) async {
+    final currentTtl = conv.ttlSeconds;
     final selected = await showDialog<int?>(
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Disappearing messages'),
         children: _kTtlOptions.map((opt) {
+          final isCurrent = opt.seconds == currentTtl;
           return SimpleDialogOption(
             onPressed: () => Navigator.of(ctx).pop(opt.seconds ?? -1),
-            child: Text(opt.label),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  child: isCurrent
+                      ? Icon(Icons.check, size: 16, color: ctx.accent)
+                      : null,
+                ),
+                const SizedBox(width: 8),
+                Text(opt.label),
+              ],
+            ),
           );
         }).toList(),
       ),
@@ -841,6 +873,86 @@ class _VerifiedBadgeState extends State<_VerifiedBadge> {
       child: Tooltip(
         message: 'Safety number verified',
         child: Icon(Icons.verified, size: 14, color: EchoTheme.online),
+      ),
+    );
+  }
+}
+
+/// Returns a short, human-readable label for a disappearing-messages TTL.
+/// Matches the presets in `_kTtlOptions` so the chip and the dialog stay
+/// visually consistent.
+String _humanizeTtl(int seconds) {
+  return switch (seconds) {
+    30 => '30s',
+    300 => '5m',
+    3600 => '1h',
+    86400 => '1d',
+    604800 => '1w',
+    _ => '${seconds}s',
+  };
+}
+
+/// Small chip rendered next to a conversation's name in the chat header
+/// when disappearing messages are enabled. Tapping opens the same dialog
+/// that the overflow menu's "Disappearing messages" entry shows.
+class _TimerChip extends StatelessWidget {
+  final int seconds;
+  final VoidCallback onTap;
+
+  const _TimerChip({required this.seconds, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = _humanizeTtl(seconds);
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: Tooltip(
+        message: 'Disappearing messages',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: onTap,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: context.accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: context.accent.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 12,
+                        color: context.accent,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: context.accent,
+                          height: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

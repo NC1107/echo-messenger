@@ -165,8 +165,12 @@ class _NativeNotificationService implements NotificationService {
     String? conversationId,
     String? conversationName,
     bool isGroup = false,
+    bool isMuted = false,
     bool forceShow = false,
   }) {
+    // Per-conversation mute always wins, even over forceShow.
+    if (isMuted) return;
+
     // Suppress when the app is focused, but allow a 5-second grace period
     // after foregrounding so WS-reconnect messages still trigger notifications.
     if (_appFocused && !forceShow) {

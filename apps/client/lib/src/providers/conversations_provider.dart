@@ -406,41 +406,66 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     return false;
   }
 
-  Future<void> toggleMute(String conversationId) async {
+  Future<bool> toggleMute(String conversationId) async {
+    final conv = state.conversations
+        .where((c) => c.id == conversationId)
+        .firstOrNull;
+    if (conv == null) return false;
+    return setMuted(conversationId, !conv.isMuted);
+  }
+
+  /// Set the explicit mute state for a conversation. Optimistically updates
+  /// local state, then PUTs `/api/conversations/:id/mute`. Returns true on
+  /// success; on failure the optimistic update is reverted and false is
+  /// returned so the caller can surface a toast.
+  Future<bool> setMuted(String conversationId, bool isMuted) async {
     final index = state.conversations.indexWhere((c) => c.id == conversationId);
-    if (index < 0) return;
+    if (index < 0) return false;
 
     final conv = state.conversations[index];
-    final newMuted = !conv.isMuted;
+    if (conv.isMuted == isMuted) return true; // no-op success
+    final previousMuted = conv.isMuted;
 
-    // Optimistically update local state
+    // Optimistically update local state.
     final updated = List<Conversation>.from(state.conversations);
-    updated[index] = conv.copyWith(isMuted: newMuted);
+    updated[index] = conv.copyWith(isMuted: isMuted);
     state = state.copyWith(conversations: updated);
 
+    bool success = false;
     try {
-      await _authenticatedRequest(
+      final response = await _authenticatedRequest(
         (token) => http.put(
           Uri.parse('$_serverUrl/api/conversations/$conversationId/mute'),
           headers: _headersWithToken(token),
-          body: jsonEncode({'is_muted': newMuted}),
+          body: jsonEncode({'is_muted': isMuted}),
         ),
       );
-    } catch (e) {
-      // Revert on failure
-      final reverted = List<Conversation>.from(state.conversations);
-      final idx = reverted.indexWhere((c) => c.id == conversationId);
-      if (idx >= 0) {
-        reverted[idx] = reverted[idx].copyWith(isMuted: !newMuted);
-        state = state.copyWith(conversations: reverted);
+      success = response.statusCode == 200;
+      if (!success) {
+        debugPrint(
+          '[Conversations] setMuted got HTTP ${response.statusCode} '
+          'for $conversationId',
+        );
       }
-      debugPrint('[Conversations] toggleMute failed for $conversationId: $e');
+    } catch (e) {
+      debugPrint('[Conversations] setMuted failed for $conversationId: $e');
       DebugLogService.instance.log(
         LogLevel.error,
         'Conversations',
-        'toggleMute error for $conversationId: $e',
+        'setMuted error for $conversationId: $e',
       );
     }
+
+    if (!success) {
+      // Revert the optimistic update.
+      final reverted = List<Conversation>.from(state.conversations);
+      final idx = reverted.indexWhere((c) => c.id == conversationId);
+      if (idx >= 0) {
+        reverted[idx] = reverted[idx].copyWith(isMuted: previousMuted);
+        state = state.copyWith(conversations: reverted);
+      }
+    }
+    return success;
   }
 
   /// Leave a group conversation and remove it from local state.
