@@ -71,8 +71,11 @@ class _WebNotificationService implements NotificationService {
     String? conversationId,
     String? conversationName,
     bool isGroup = false,
+    bool isMuted = false,
     bool forceShow = false,
   }) {
+    // Per-conversation mute always wins, even over forceShow.
+    if (isMuted) return;
     if (!_permissionGranted) return;
 
     // Check Do Not Disturb and Quiet Hours (async, suppress if active).

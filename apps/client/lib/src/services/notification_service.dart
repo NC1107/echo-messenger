@@ -37,6 +37,11 @@ abstract class NotificationService {
   ///
   /// [isGroup] selects the appropriate notification channel (DM vs group).
   ///
+  /// [isMuted] suppresses the notification when the conversation is muted by
+  /// the user. Caller is responsible for looking up the per-conversation
+  /// preference. When true the call returns early without showing anything,
+  /// even if [forceShow] is set.
+  ///
   /// Suppressed when the app is focused unless [forceShow] is true.
   void showMessageNotification({
     required String senderUsername,
@@ -44,6 +49,7 @@ abstract class NotificationService {
     String? conversationId,
     String? conversationName,
     bool isGroup = false,
+    bool isMuted = false,
     bool forceShow = false,
   });
 

@@ -298,11 +298,20 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ),
           ),
       ],
-    ).then((value) {
+    ).then((value) async {
       if (value == 'pin') {
         _togglePin(conv.id);
       } else if (value == 'mute') {
-        ref.read(conversationsProvider.notifier).toggleMute(conv.id);
+        final ok = await ref
+            .read(conversationsProvider.notifier)
+            .toggleMute(conv.id);
+        if (!ok && context.mounted) {
+          ToastService.show(
+            context,
+            'Failed to update mute settings',
+            type: ToastType.error,
+          );
+        }
       } else if (value == 'leave_group') {
         _leaveGroup(conv);
       } else if (value == 'delete_dm') {

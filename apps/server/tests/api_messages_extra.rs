@@ -369,6 +369,51 @@ async fn toggle_mute_unmute_succeeds() {
     assert_eq!(body["is_muted"], false);
 }
 
+/// Asserts that `get_unmuted_user_ids` excludes a member who muted the
+/// conversation. This is the helper the push-notification path uses to drop
+/// muted recipients before sending APNs alerts.
+#[tokio::test]
+async fn get_unmuted_user_ids_excludes_muted_member() {
+    use uuid::Uuid;
+
+    let base = common::spawn_server().await;
+    let (client, alice_token, alice_id, _, bob_id, conv_id, _) = setup_dm_with_message(&base).await;
+
+    // Alice mutes the conversation; Bob does not.
+    let resp = client
+        .put(format!("{base}/api/conversations/{conv_id}/mute"))
+        .header("Authorization", format!("Bearer {alice_token}"))
+        .json(&serde_json::json!({ "is_muted": true }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+
+    // Open a direct DB connection to invoke the helper under test.
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("TEST_DATABASE_URL or DATABASE_URL must be set");
+    let pool = echo_server::db::create_pool(&database_url).await;
+
+    let conv_uuid = Uuid::parse_str(&conv_id).unwrap();
+    let alice_uuid = Uuid::parse_str(&alice_id).unwrap();
+    let bob_uuid = Uuid::parse_str(&bob_id).unwrap();
+
+    let unmuted =
+        echo_server::db::messages::get_unmuted_user_ids(&pool, conv_uuid, &[alice_uuid, bob_uuid])
+            .await
+            .expect("get_unmuted_user_ids should succeed");
+
+    assert!(
+        !unmuted.contains(&alice_uuid),
+        "muted user (alice) should be excluded"
+    );
+    assert!(
+        unmuted.contains(&bob_uuid),
+        "unmuted user (bob) should be included"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Search messages
 // ---------------------------------------------------------------------------

@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation.dart';
+import '../providers/conversations_provider.dart';
+import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import 'avatar_utils.dart';
 
@@ -22,7 +25,7 @@ Color presenceStatusDotColor(
   };
 }
 
-class ConversationItem extends StatefulWidget {
+class ConversationItem extends ConsumerStatefulWidget {
   final Conversation conversation;
   final String myUserId;
   final bool isSelected;
@@ -60,10 +63,10 @@ class ConversationItem extends StatefulWidget {
   });
 
   @override
-  State<ConversationItem> createState() => _ConversationItemState();
+  ConsumerState<ConversationItem> createState() => _ConversationItemState();
 }
 
-class _ConversationItemState extends State<ConversationItem> {
+class _ConversationItemState extends ConsumerState<ConversationItem> {
   bool _isHovered = false;
   String? _draft;
 
@@ -105,6 +108,85 @@ class _ConversationItemState extends State<ConversationItem> {
       TargetPlatform.iOS => true,
       _ => false,
     };
+  }
+
+  /// Long-press bottom sheet with the per-conversation mute toggle.
+  /// Mobile-only — desktop users get the right-click popup menu instead.
+  void _showMuteSheet() {
+    final conv = widget.conversation;
+    final displayName = conv.displayName(widget.myUserId);
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+                  child: Text(
+                    displayName,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: context.textPrimary,
+                    ),
+                  ),
+                ),
+                Divider(color: context.border, height: 8),
+                Consumer(
+                  builder: (ctx, sheetRef, _) {
+                    final live = sheetRef
+                        .watch(conversationsProvider)
+                        .conversations
+                        .where((c) => c.id == conv.id)
+                        .firstOrNull;
+                    final currentMuted = live?.isMuted ?? conv.isMuted;
+                    return SwitchListTile(
+                      value: currentMuted,
+                      onChanged: (value) async {
+                        Navigator.of(sheetContext).pop();
+                        final success = await ref
+                            .read(conversationsProvider.notifier)
+                            .setMuted(conv.id, value);
+                        if (!success && mounted) {
+                          ToastService.show(
+                            context,
+                            'Failed to update mute settings',
+                            type: ToastType.error,
+                          );
+                        }
+                      },
+                      title: Text(
+                        'Mute notifications',
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 14,
+                        ),
+                      ),
+                      secondary: Icon(
+                        currentMuted
+                            ? Icons.notifications_off_outlined
+                            : Icons.notifications_outlined,
+                        color: context.textSecondary,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   /// Resolve the display snippet from the last message, applying
@@ -190,19 +272,7 @@ class _ConversationItemState extends State<ConversationItem> {
           onSecondaryTapUp: (details) {
             widget.onContextMenu?.call(details.globalPosition);
           },
-          onLongPress: _enableLongPressMenu
-              ? () {
-                  // globalPosition not available on InkWell.onLongPress;
-                  // fall back to the widget's own render box center.
-                  final box = context.findRenderObject() as RenderBox?;
-                  if (box != null) {
-                    final center = box.localToGlobal(
-                      Offset(box.size.width / 2, box.size.height / 2),
-                    );
-                    widget.onContextMenu?.call(center);
-                  }
-                }
-              : null,
+          onLongPress: _enableLongPressMenu ? _showMuteSheet : null,
           child: Container(
             height: 68,
             margin: const EdgeInsets.symmetric(vertical: 1),

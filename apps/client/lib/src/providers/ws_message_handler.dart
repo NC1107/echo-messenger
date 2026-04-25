@@ -251,6 +251,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       body: 'Started a voice call',
       conversationId: conversationId,
       conversationName: conv?.displayName(myUserId),
+      isMuted: conv?.isMuted ?? false,
     );
   }
 
@@ -559,7 +560,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   ) {
     final conversations = ref.read(conversationsProvider).conversations;
     final conv = conversations.where((c) => c.id == conversationId).firstOrNull;
-    if (conv?.isMuted ?? false) return;
+    final isMuted = conv?.isMuted ?? false;
+    if (isMuted) return;
 
     SoundService().playMessageReceived();
     final body = displayContent.length > 100
@@ -572,6 +574,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       conversationId: conversationId,
       conversationName: conv?.displayName(myUserId),
       isGroup: conv?.isGroup ?? false,
+      isMuted: isMuted,
     );
   }
 
@@ -690,15 +693,19 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     final fromUserId = json['from_user_id'] as String? ?? '';
     if (fromUserId == myUserId) return;
 
-    SoundService().playMessageReceived();
     final conversations = ref.read(conversationsProvider).conversations;
     final conv = conversations.where((c) => c.id == conversationId).firstOrNull;
+    final isMuted = conv?.isMuted ?? false;
+    if (!isMuted) {
+      SoundService().playMessageReceived();
+    }
     NotificationService().showMessageNotification(
       senderUsername: '@$fromUsername',
       body: content.length > 100 ? '${content.substring(0, 100)}...' : content,
       conversationId: conversationId,
       conversationName: conv?.displayName(myUserId),
       isGroup: true, // Mentions are always in group contexts
+      isMuted: isMuted,
     );
 
     // Bump unread count for the conversation

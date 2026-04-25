@@ -386,6 +386,31 @@ pub async fn set_mute_status(
     Ok(result.rows_affected() > 0)
 }
 
+/// Filter the given user IDs down to those who have NOT muted this
+/// conversation. Used by the push-notification path so muted recipients are
+/// not woken with an APNs alert for messages they would not see locally.
+pub async fn get_unmuted_user_ids(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    user_ids: &[Uuid],
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    if user_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT user_id FROM conversation_members \
+         WHERE conversation_id = $1 \
+           AND user_id = ANY($2) \
+           AND is_muted = false \
+           AND is_removed = false",
+    )
+    .bind(conversation_id)
+    .bind(user_ids)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
 // ---------------------------------------------------------------------------
 // Message pinning
 // ---------------------------------------------------------------------------
