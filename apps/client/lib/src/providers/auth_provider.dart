@@ -11,6 +11,7 @@ import '../services/debug_log_service.dart';
 import '../services/message_cache.dart';
 import '../services/secure_key_store.dart';
 import '../services/user_data_dir.dart';
+import '../utils/friendly_error.dart';
 import 'server_url_provider.dart';
 
 const _kJsonHeaders = {'Content-Type': 'application/json'};
@@ -483,17 +484,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
           errorMsg = data['error'] as String? ?? errorMsg;
         } catch (e) {
           debugPrint('[Auth] register response parse failed: $e');
-          errorMsg = 'Server error (${response.statusCode})';
+          errorMsg = friendlyError(
+            Exception('Server error ${response.statusCode}'),
+          );
         }
         state = state.copyWith(isLoading: false, error: errorMsg);
       }
     } catch (e) {
-      final msg = e is TimeoutException
-          ? 'Cannot reach server. Check your connection.'
-          : e.toString().contains('FormatException')
-          ? 'Cannot reach server. Check your connection.'
-          : e.toString();
-      state = state.copyWith(isLoading: false, error: msg);
+      state = state.copyWith(isLoading: false, error: friendlyError(e));
     }
   }
 
@@ -541,17 +539,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
           errorMsg = data['error'] as String? ?? errorMsg;
         } catch (e) {
           debugPrint('[Auth] login response parse failed: $e');
-          errorMsg = 'Server error (${response.statusCode})';
+          errorMsg = friendlyError(
+            Exception('Server error ${response.statusCode}'),
+          );
         }
         state = state.copyWith(isLoading: false, error: errorMsg);
       }
     } catch (e) {
-      final msg = e is TimeoutException
-          ? 'Cannot reach server. Check your connection.'
-          : e.toString().contains('FormatException')
-          ? 'Cannot reach server. Check your connection.'
-          : e.toString();
-      state = state.copyWith(isLoading: false, error: msg);
+      state = state.copyWith(isLoading: false, error: friendlyError(e));
     }
   }
 

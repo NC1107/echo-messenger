@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
@@ -153,19 +154,43 @@ class ChatHeaderBar extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                displayName,
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              _buildNameRow(context, conv, displayName),
               _buildStatusLine(context, ref, conv),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// Name row — shows the display name and, for 1:1 conversations, a small
+  /// green "verified" check next to the name when the user has previously
+  /// confirmed the peer's safety number on this device.
+  Widget _buildNameRow(
+    BuildContext context,
+    Conversation conv,
+    String displayName,
+  ) {
+    final nameText = Text(
+      displayName,
+      style: TextStyle(
+        color: context.textPrimary,
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+
+    if (conv.isGroup) return nameText;
+
+    final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
+    if (peer == null) return nameText;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        nameText,
+        _VerifiedBadge(peerUserId: peer.userId),
+      ],
     );
   }
 
@@ -766,6 +791,58 @@ class ChatHeaderBar extends ConsumerWidget {
         );
       }
     }
+  }
+}
+
+/// Tiny green check shown next to a DM peer's name when the user has
+/// previously verified their safety number. Reads `echo_safety_verified_<id>`
+/// from SharedPreferences. Clears itself if the pref changes between rebuilds
+/// (see IdentityKeyChangedBanner which removes the pref on TOFU).
+class _VerifiedBadge extends StatefulWidget {
+  final String peerUserId;
+
+  const _VerifiedBadge({required this.peerUserId});
+
+  @override
+  State<_VerifiedBadge> createState() => _VerifiedBadgeState();
+}
+
+class _VerifiedBadgeState extends State<_VerifiedBadge> {
+  bool _verified = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVerified();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VerifiedBadge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.peerUserId != widget.peerUserId) {
+      setState(() => _verified = false);
+      _loadVerified();
+    }
+  }
+
+  Future<void> _loadVerified() async {
+    final prefs = await SharedPreferences.getInstance();
+    final flag =
+        prefs.getBool('echo_safety_verified_${widget.peerUserId}') ?? false;
+    if (!mounted) return;
+    if (flag != _verified) setState(() => _verified = flag);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_verified) return const SizedBox.shrink();
+    return const Padding(
+      padding: EdgeInsets.only(left: 4),
+      child: Tooltip(
+        message: 'Safety number verified',
+        child: Icon(Icons.verified, size: 14, color: EchoTheme.online),
+      ),
+    );
   }
 }
 

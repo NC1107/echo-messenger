@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+import '../../utils/friendly_error.dart';
 import '../../widgets/avatar_utils.dart' show resolveAvatarUrl;
 
 class _CountryCode {
@@ -311,8 +312,9 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     try {
       await _sendAvatarWithRetry(serverUrl, file);
     } catch (e) {
+      debugPrint('[Account] avatar upload failed: $e');
       if (mounted) {
-        ToastService.show(context, 'Upload error: $e', type: ToastType.error);
+        ToastService.show(context, friendlyError(e), type: ToastType.error);
       }
     }
   }
@@ -342,7 +344,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     } else {
       ToastService.show(
         context,
-        'Failed to upload avatar ($statusCode)',
+        friendlyError(Exception('Avatar upload failed $statusCode')),
         type: ToastType.error,
       );
     }
