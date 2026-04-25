@@ -206,6 +206,63 @@ void main() {
       cache.dispose();
     });
 
+    test('evictExpired keeps entries just below TTL', () async {
+      final cache = SessionCache(
+        clock: nowFn,
+        ttl: const Duration(hours: 1),
+        enablePeriodicEviction: false,
+      );
+      cache.put('a', await makeSession());
+      // Advance to TTL minus 1 second -- should still be fresh.
+      now = now.add(const Duration(hours: 1) - const Duration(seconds: 1));
+      cache.evictExpired();
+      expect(cache.containsKey('a'), isTrue);
+      cache.dispose();
+    });
+
+    test('isFresh returns true for non-expired entry', () async {
+      final cache = SessionCache(clock: nowFn, enablePeriodicEviction: false);
+      cache.put('a', await makeSession());
+      expect(cache.isFresh('a'), isTrue);
+      cache.dispose();
+    });
+
+    test('isFresh returns false for expired entry without evicting', () async {
+      final cache = SessionCache(
+        clock: nowFn,
+        ttl: const Duration(hours: 1),
+        enablePeriodicEviction: false,
+      );
+      cache.put('a', await makeSession());
+      now = now.add(const Duration(hours: 2));
+      expect(cache.isFresh('a'), isFalse);
+      // Entry is still in the underlying map (containsKey true) until evicted.
+      expect(cache.containsKey('a'), isTrue);
+      cache.dispose();
+    });
+
+    test('isFresh returns false for missing entry', () {
+      final cache = SessionCache(clock: nowFn, enablePeriodicEviction: false);
+      expect(cache.isFresh('nope'), isFalse);
+      cache.dispose();
+    });
+
+    test('isFresh does not refresh LRU ordering', () async {
+      final cache = SessionCache(
+        clock: nowFn,
+        maxEntries: 3,
+        enablePeriodicEviction: false,
+      );
+      cache.put('a', await makeSession());
+      cache.put('b', await makeSession());
+      cache.put('c', await makeSession());
+      cache.isFresh('a'); // should not refresh
+      cache.put('d', await makeSession()); // should still evict 'a'
+      expect(cache.containsKey('a'), isFalse);
+      expect(cache.containsKey('d'), isTrue);
+      cache.dispose();
+    });
+
     test('dispose cancels timer and clears entries', () async {
       final cache = SessionCache(
         clock: nowFn,

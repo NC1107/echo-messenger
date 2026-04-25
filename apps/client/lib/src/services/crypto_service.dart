@@ -78,9 +78,8 @@ class CryptoService {
   SimpleKeyPair? _signedPrekeyPair;
   SimpleKeyPair? _signingKeyPair;
 
-  /// In-memory Signal session cache with TTL + LRU + zeroing (#343).
   /// Sessions persist on disk via [_saveSession]; eviction is non-destructive
-  /// and the cache reloads from secure storage on miss.
+  /// and the cache reloads from secure storage on miss (#343).
   final SessionCache _sessions = SessionCache();
   X3dhInitResult? _lastX3dhResult;
   int? _lastOtpKeyId;
@@ -990,6 +989,9 @@ class CryptoService {
     String peerUserId,
     String plaintext,
   ) async {
+    // Defensive: clear any stale result from a prior aborted call so the
+    // isNewSession derivation below reflects only this call's X3DH outcome.
+    _lastX3dhResult = null;
     var session = await getOrCreateSession(peerUserId);
     // "New" means X3DH just ran (initial message will need the X3DH prefix).
     // A session reloaded from secure storage after cache eviction is NOT new.
@@ -1049,9 +1051,9 @@ class CryptoService {
   String _sessionKeyFor(String peerUserId, int? deviceId) {
     if (deviceId != null) {
       final key = '$peerUserId:$deviceId';
-      if (_sessions.containsKey(key)) return key;
+      if (_sessions.isFresh(key)) return key;
       // Fall back to legacy key if device-specific doesn't exist yet
-      if (_sessions.containsKey(peerUserId)) return peerUserId;
+      if (_sessions.isFresh(peerUserId)) return peerUserId;
       return key; // Will create with device-specific key
     }
     return peerUserId;
@@ -1148,6 +1150,7 @@ class CryptoService {
     String peerUserId,
     int? fromDeviceId,
   ) async {
+    // containsKey (not isFresh) intentional: drop any in-map entry, expired or not.
     if (_sessions.containsKey(sessionKey)) {
       debugPrint(
         '[Crypto] Replacing stale session for $sessionKey '
@@ -1157,6 +1160,7 @@ class CryptoService {
       final store = SecureKeyStore.instance;
       await store.delete('$_sessionPrefix$sessionKey');
     }
+    // containsKey (not isFresh) intentional: drop any in-map entry, expired or not.
     if (fromDeviceId != null && _sessions.containsKey(peerUserId)) {
       _sessions.remove(peerUserId);
       final store = SecureKeyStore.instance;
@@ -1305,7 +1309,7 @@ class CryptoService {
   /// the server for the peer's key bundle and returns true when one is
   /// available.
   Future<bool> canEstablishSession(String peerUserId) async {
-    if (_sessions.containsKey(peerUserId)) return true;
+    if (_sessions.isFresh(peerUserId)) return true;
     try {
       final response = await http.get(
         Uri.parse('$serverUrl/api/keys/bundle/$peerUserId'),
@@ -1319,7 +1323,7 @@ class CryptoService {
 
   /// Check if we have a session for a peer (no network call needed).
   bool hasSessionKey(String peerUserId) {
-    return _sessions.containsKey(peerUserId);
+    return _sessions.isFresh(peerUserId);
   }
 
   /// Invalidate the cached session for a peer so the next call to

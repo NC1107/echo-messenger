@@ -15,7 +15,6 @@ import 'dart:collection';
 
 import 'signal_session.dart';
 
-/// LRU + TTL cache for [SignalSession] instances.
 class SessionCache {
   /// Default idle TTL: 24 hours.
   static const Duration defaultTtl = Duration(hours: 24);
@@ -42,7 +41,9 @@ class SessionCache {
     Duration sweepInterval = defaultSweepInterval,
   }) : _now = clock ?? DateTime.now,
        _sweepInterval = sweepInterval,
-       _enablePeriodicEviction = enablePeriodicEviction;
+       _enablePeriodicEviction = enablePeriodicEviction {
+    assert(maxEntries > 0, 'SessionCache.maxEntries must be positive');
+  }
 
   /// Lazily start the periodic sweep on first insertion. Avoids leaking
   /// timers in widget tests that construct a [CryptoService] but never
@@ -73,11 +74,12 @@ class SessionCache {
   SignalSession? get(String key) {
     final entry = _entries.remove(key);
     if (entry == null) return null;
-    if (_now().difference(entry.lastAccessed) >= ttl) {
+    final now = _now();
+    if (now.difference(entry.lastAccessed) >= ttl) {
       _zeroAndDrop(entry);
       return null;
     }
-    entry.lastAccessed = _now();
+    entry.lastAccessed = now;
     _entries[key] = entry; // re-insert at end -> most recent
     return entry.session;
   }
@@ -115,6 +117,15 @@ class SessionCache {
   /// True when [key] is present (does not refresh LRU order).
   bool containsKey(String key) => _entries.containsKey(key);
 
+  /// Returns whether [key] has a non-expired entry without refreshing LRU
+  /// ordering or evicting on miss.  Use for "is the session usable?" checks
+  /// where mutating state is undesired.
+  bool isFresh(String key) {
+    final entry = _entries[key];
+    if (entry == null) return false;
+    return _now().difference(entry.lastAccessed) < ttl;
+  }
+
   /// Drop all expired entries. Called periodically by the sweep timer and
   /// exposed for tests.
   void evictExpired() {
@@ -136,6 +147,10 @@ class SessionCache {
       _zeroAndDrop(entry);
     }
     _entries.clear();
+    // Cancel the sweep timer; the next put() re-arms it via
+    // _ensureSweepTimer.
+    _sweepTimer?.cancel();
+    _sweepTimer = null;
   }
 
   /// Cancel the periodic sweep and clear all entries. Safe to call multiple
