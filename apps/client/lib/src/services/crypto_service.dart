@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'debug_log_service.dart';
 import 'secure_key_store.dart';
+import 'session_cache.dart';
 import 'signal_session.dart';
 import 'signal_x3dh.dart';
 
@@ -76,7 +77,10 @@ class CryptoService {
   SimpleKeyPair? _identityKeyPair;
   SimpleKeyPair? _signedPrekeyPair;
   SimpleKeyPair? _signingKeyPair;
-  final Map<String, SignalSession> _sessions = {};
+
+  /// Sessions persist on disk via [_saveSession]; eviction is non-destructive
+  /// and the cache reloads from secure storage on miss (#343).
+  final SessionCache _sessions = SessionCache();
   X3dhInitResult? _lastX3dhResult;
   int? _lastOtpKeyId;
   bool _keysAreFresh = false;
@@ -569,7 +573,7 @@ class CryptoService {
         final peerId = entry.key.substring(_sessionPrefix.length);
         try {
           final json = jsonDecode(entry.value) as Map<String, dynamic>;
-          _sessions[peerId] = SignalSession.fromJson(json);
+          _sessions.put(peerId, SignalSession.fromJson(json));
         } catch (e) {
           debugPrint('[Crypto] Quarantining corrupted session for $peerId: $e');
           // Quarantine instead of deleting — preserve data for potential
@@ -606,6 +610,24 @@ class CryptoService {
     final store = SecureKeyStore.instance;
     final json = await session.toJson();
     await store.write('$_sessionPrefix$peerId', jsonEncode(json));
+  }
+
+  /// On cache miss, attempt to reload a single session from secure storage
+  /// before falling back to X3DH (#343 -- non-destructive eviction).
+  /// Returns null if no persisted session exists or it cannot be parsed.
+  Future<SignalSession?> _reloadSession(String key) async {
+    try {
+      final store = SecureKeyStore.instance;
+      final raw = await store.read('$_sessionPrefix$key');
+      if (raw == null || raw.isEmpty) return null;
+      final json = jsonDecode(raw) as Map<String, dynamic>;
+      final session = SignalSession.fromJson(json);
+      _sessions.put(key, session);
+      return session;
+    } catch (e) {
+      debugPrint('[Crypto] Failed to reload session for $key: $e');
+      return null;
+    }
   }
 
   /// Human-readable label for the current platform, sent to the server as part
@@ -805,9 +827,13 @@ class CryptoService {
   /// Otherwise, fetches the peer's prekey bundle from the server, performs X3DH
   /// to establish a shared secret, and initializes a new Double Ratchet session.
   Future<SignalSession> getOrCreateSession(String peerUserId) async {
-    if (_sessions.containsKey(peerUserId)) {
-      return _sessions[peerUserId]!;
-    }
+    final cached = _sessions.get(peerUserId);
+    if (cached != null) return cached;
+
+    // Cache miss may be due to TTL/LRU eviction -- attempt non-destructive
+    // reload from secure storage before falling back to a fresh X3DH.
+    final reloaded = await _reloadSession(peerUserId);
+    if (reloaded != null) return reloaded;
 
     if (_identityKeyPair == null) await init();
 
@@ -904,7 +930,7 @@ class CryptoService {
       bobSignedPrekey,
     );
 
-    _sessions[peerUserId] = session;
+    _sessions.put(peerUserId, session);
     _lastX3dhResult = x3dhResult; // Save for initial message prefix
     await _saveSession(peerUserId, session);
 
@@ -963,8 +989,13 @@ class CryptoService {
     String peerUserId,
     String plaintext,
   ) async {
-    var isNewSession = !_sessions.containsKey(peerUserId);
+    // Defensive: clear any stale result from a prior aborted call so the
+    // isNewSession derivation below reflects only this call's X3DH outcome.
+    _lastX3dhResult = null;
     var session = await getOrCreateSession(peerUserId);
+    // "New" means X3DH just ran (initial message will need the X3DH prefix).
+    // A session reloaded from secure storage after cache eviction is NOT new.
+    var isNewSession = _lastX3dhResult != null;
     final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
 
     Uint8List wire;
@@ -991,6 +1022,8 @@ class CryptoService {
     final finalWire = await _buildInitialWire(wire);
 
     await _saveSession(peerUserId, session);
+    // Refresh LRU ordering after in-place mutation.
+    _sessions.put(peerUserId, session);
     return base64Encode(finalWire);
   }
 
@@ -1018,9 +1051,9 @@ class CryptoService {
   String _sessionKeyFor(String peerUserId, int? deviceId) {
     if (deviceId != null) {
       final key = '$peerUserId:$deviceId';
-      if (_sessions.containsKey(key)) return key;
+      if (_sessions.isFresh(key)) return key;
       // Fall back to legacy key if device-specific doesn't exist yet
-      if (_sessions.containsKey(peerUserId)) return peerUserId;
+      if (_sessions.isFresh(peerUserId)) return peerUserId;
       return key; // Will create with device-specific key
     }
     return peerUserId;
@@ -1097,7 +1130,7 @@ class CryptoService {
 
     final session = await SignalSession.initBob(sharedSecret, prekeyToUse);
     final plainBytes = await session.decrypt(sessionWire);
-    _sessions[sessionKey] = session;
+    _sessions.put(sessionKey, session);
     await _saveSession(sessionKey, session);
 
     // Consume the OTP -- delete after successful use (one-time)
@@ -1117,6 +1150,7 @@ class CryptoService {
     String peerUserId,
     int? fromDeviceId,
   ) async {
+    // containsKey (not isFresh) intentional: drop any in-map entry, expired or not.
     if (_sessions.containsKey(sessionKey)) {
       debugPrint(
         '[Crypto] Replacing stale session for $sessionKey '
@@ -1126,6 +1160,7 @@ class CryptoService {
       final store = SecureKeyStore.instance;
       await store.delete('$_sessionPrefix$sessionKey');
     }
+    // containsKey (not isFresh) intentional: drop any in-map entry, expired or not.
     if (fromDeviceId != null && _sessions.containsKey(peerUserId)) {
       _sessions.remove(peerUserId);
       final store = SecureKeyStore.instance;
@@ -1191,7 +1226,9 @@ class CryptoService {
     required Uint8List fullWire,
     required String sessionKey,
   }) async {
-    final session = _sessions[sessionKey];
+    // Cache miss may be a TTL/LRU eviction -- try to reload from disk first.
+    var session = _sessions.get(sessionKey);
+    session ??= await _reloadSession(sessionKey);
     if (session == null) {
       throw Exception(
         'No session for $sessionKey — cannot decrypt normal message. '
@@ -1203,6 +1240,8 @@ class CryptoService {
     try {
       final plainBytes = await session.decrypt(fullWire);
       await _saveSession(sessionKey, session);
+      // Refresh LRU ordering after in-place mutation.
+      _sessions.put(sessionKey, session);
       return utf8.decode(plainBytes);
     } catch (e) {
       // Session is stale/corrupted — clear it. The next incoming initial
@@ -1250,11 +1289,14 @@ class CryptoService {
         return null;
       }
 
-      final session = _sessions[peerUserId];
+      var session = _sessions.get(peerUserId);
+      session ??= await _reloadSession(peerUserId);
       if (session == null) return null;
 
       final plainBytes = await session.decrypt(fullWire);
       await _saveSession(peerUserId, session);
+      // Refresh LRU ordering after in-place mutation.
+      _sessions.put(peerUserId, session);
       return utf8.decode(plainBytes);
     } catch (_) {
       return null;
@@ -1267,7 +1309,7 @@ class CryptoService {
   /// the server for the peer's key bundle and returns true when one is
   /// available.
   Future<bool> canEstablishSession(String peerUserId) async {
-    if (_sessions.containsKey(peerUserId)) return true;
+    if (_sessions.isFresh(peerUserId)) return true;
     try {
       final response = await http.get(
         Uri.parse('$serverUrl/api/keys/bundle/$peerUserId'),
@@ -1281,7 +1323,7 @@ class CryptoService {
 
   /// Check if we have a session for a peer (no network call needed).
   bool hasSessionKey(String peerUserId) {
-    return _sessions.containsKey(peerUserId);
+    return _sessions.isFresh(peerUserId);
   }
 
   /// Invalidate the cached session for a peer so the next call to
@@ -1475,13 +1517,18 @@ class CryptoService {
     Map<String, dynamic> bundleData,
   ) async {
     final sessionKey = '$peerUserId:$deviceId';
-    if (_sessions.containsKey(sessionKey)) {
-      return _sessions[sessionKey]!;
-    }
+    final cached = _sessions.get(sessionKey);
+    if (cached != null) return cached;
+
+    // Cache miss may be due to TTL/LRU eviction -- try non-destructive reload.
+    final reloaded = await _reloadSession(sessionKey);
+    if (reloaded != null) return reloaded;
+
     // Fall back to legacy session if it exists (pre-multi-device)
-    if (_sessions.containsKey(peerUserId)) {
-      return _sessions[peerUserId]!;
-    }
+    final legacy = _sessions.get(peerUserId);
+    if (legacy != null) return legacy;
+    final legacyReloaded = await _reloadSession(peerUserId);
+    if (legacyReloaded != null) return legacyReloaded;
 
     if (_identityKeyPair == null) await init();
 
@@ -1555,7 +1602,7 @@ class CryptoService {
       bobSignedPrekey,
     );
 
-    _sessions[sessionKey] = session;
+    _sessions.put(sessionKey, session);
     await _saveSession(sessionKey, session);
     return session;
   }
@@ -1597,6 +1644,8 @@ class CryptoService {
           final finalWire = await _buildInitialWire(wire);
 
           await _saveSession(sessionKey, session);
+          // Refresh LRU ordering after in-place mutation.
+          _sessions.put(sessionKey, session);
           return base64Encode(finalWire);
         });
         results[deviceId.toString()] = ct;
@@ -1636,6 +1685,8 @@ class CryptoService {
             final finalWire = await _buildInitialWire(wire);
 
             await _saveSession(sessionKey, session);
+            // Refresh LRU ordering after in-place mutation.
+            _sessions.put(sessionKey, session);
             return base64Encode(finalWire);
           });
           results[deviceId.toString()] = ct;
