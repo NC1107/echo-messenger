@@ -152,7 +152,7 @@ Three compose files in `infra/docker/`:
 
 ## Known Limitations
 
-1. Session keys cached forever in memory (no TTL)
+1. Session keys cached in memory with 24h idle TTL + 200-entry LRU cap; evicted entries have key material zeroed and reload from secure storage on demand.
 2. Multi-device: key-level revoke + last_seen + platform metadata work end-to-end; refresh tokens are not yet bound per device, so "logout all others" only kicks connected sessions via WS and truly offline sessions get blocked at next key operation.
 3. `core/rust-core/src/api.rs` has `todo!()` stubs (FFI bridge not integrated)
 4. Rate limiting is in-memory only (resets on server restart)
