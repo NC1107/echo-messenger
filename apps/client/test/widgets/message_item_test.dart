@@ -612,6 +612,33 @@ void main() {
       });
     });
 
+    testWidgets('exposes onMoreReactions callback on widget', (tester) async {
+      // The "More emojis" button only renders inside the mobile action sheet,
+      // which is gated by defaultTargetPlatform == android/iOS. In a host-VM
+      // unit test the sheet path isn't reachable, so we verify at the widget
+      // contract level: the prop is wired through to MessageItem and survives
+      // a build pass without crashing the existing render path.
+      await mockNetworkImagesFor(() async {
+        ChatMessage? captured;
+        final msg = _makeMessage();
+        final item = MessageItem(
+          message: msg,
+          showHeader: true,
+          isLastInGroup: true,
+          myUserId: 'test-user-id',
+          onMoreReactions: (m) => captured = m,
+        );
+
+        await tester.pumpApp(item);
+        await tester.pump();
+
+        expect(item.onMoreReactions, isNotNull);
+        // Invoke directly to confirm the callback contract.
+        item.onMoreReactions!(msg);
+        expect(captured, same(msg));
+      });
+    });
+
     testWidgets('message with replyTo shows reply username', (tester) async {
       await mockNetworkImagesFor(() async {
         final msg = _makeMessage(

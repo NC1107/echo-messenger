@@ -66,7 +66,9 @@ cd apps/client && flutter analyze --fatal-infos   # Dart lint
 
 Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warnings` on .rs files, dart format + flutter analyze on .dart files, commitlint on commit messages. Conventional commits enforced.
 
-**Security CI** (runs on push): cargo audit (RUSTSEC-2023-0071 ignored -- jsonwebtoken timing sidechannel, no patch), cargo-deny (license + ban checks), trufflehog (secret detection).
+**Security CI** (runs on push): cargo audit (RUSTSEC-2023-0071 ignored -- jsonwebtoken timing sidechannel, no patch), cargo-deny (license + ban checks), trufflehog (secret detection). The release workflow also runs a `security-pre-release` gate (cargo audit + cargo-deny) before any artifact-producing job.
+
+**CI secrets**: `CODECOV_TOKEN` (recommended) lets the Flutter CI codecov upload authenticate; without it the action falls back to OIDC. `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEY_PROPERTIES` are required by the release workflow's Android job and fail-fast if missing.
 
 ## Architecture
 

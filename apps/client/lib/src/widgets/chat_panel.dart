@@ -1690,6 +1690,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               );
               _toggleReaction(message, emoji, alreadyReacted);
             },
+            onMoreReactions: (message) =>
+                _showFullReactionPicker(message, myUserId),
             onDelete: msg.status == MessageStatus.failed
                 ? _deleteFailed
                 : _confirmDelete,
