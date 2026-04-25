@@ -251,6 +251,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       body: 'Started a voice call',
       conversationId: conversationId,
       conversationName: conv?.displayName(myUserId),
+      isMuted: conv?.isMuted ?? false,
     );
   }
 
@@ -559,7 +560,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   ) {
     final conversations = ref.read(conversationsProvider).conversations;
     final conv = conversations.where((c) => c.id == conversationId).firstOrNull;
-    if (conv?.isMuted ?? false) return;
+    final isMuted = conv?.isMuted ?? false;
+    if (isMuted) return;
 
     SoundService().playMessageReceived();
     final body = displayContent.length > 100
@@ -572,6 +574,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       conversationId: conversationId,
       conversationName: conv?.displayName(myUserId),
       isGroup: conv?.isGroup ?? false,
+      isMuted: isMuted,
     );
   }
 
@@ -699,6 +702,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       conversationId: conversationId,
       conversationName: conv?.displayName(myUserId),
       isGroup: true, // Mentions are always in group contexts
+      isMuted: conv?.isMuted ?? false,
     );
 
     // Bump unread count for the conversation

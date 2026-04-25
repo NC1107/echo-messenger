@@ -153,7 +153,23 @@ pub async fn notify_offline_users(
         return;
     }
 
-    let tokens = match db::push_tokens::get_tokens_for_users(pool, offline_user_ids).await {
+    // Drop recipients who muted this conversation so they don't get an APNs
+    // alert for messages they would not be notified about locally either.
+    // Fail open on database errors -- it is better to over-notify than to
+    // silently drop legitimate notifications.
+    let unmuted =
+        match db::messages::get_unmuted_user_ids(pool, conversation_id, offline_user_ids).await {
+            Ok(u) => u,
+            Err(e) => {
+                tracing::warn!("Failed to filter muted users: {e}");
+                offline_user_ids.to_vec()
+            }
+        };
+    if unmuted.is_empty() {
+        return;
+    }
+
+    let tokens = match db::push_tokens::get_tokens_for_users(pool, &unmuted).await {
         Ok(t) => t,
         Err(e) => {
             tracing::warn!("Failed to fetch push tokens: {e}");
