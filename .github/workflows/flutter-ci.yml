@@ -46,3 +46,4 @@ jobs:
           files: apps/client/coverage/lcov.info
           flags: flutter
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}

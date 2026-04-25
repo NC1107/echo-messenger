@@ -24,8 +24,18 @@ allow = [
     "BSL-1.0",
     "OpenSSL",
     "CC0-1.0",
-    "AGPL-3.0-or-later",
 ]
+
+# AGPL-3.0-or-later is the project's own license and must not leak in via
+# transitive deps. Narrow exceptions below cover only first-party workspace
+# crates so a future AGPL dependency won't silently slip through.
+[[licenses.exceptions]]
+name = "echo-core"
+allow = ["AGPL-3.0-or-later"]
+
+[[licenses.exceptions]]
+name = "echo-server"
+allow = ["AGPL-3.0-or-later"]
 
 [bans]
 multiple-versions = "warn"
