@@ -418,44 +418,48 @@ class _MessageItemState extends State<MessageItem>
 
   /// Quick reaction emoji row for the mobile action sheet.
   Widget _buildQuickReactionRow(BuildContext sheetContext, ChatMessage msg) {
-    return Padding(
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          ...reactionEmojis.map((emoji) {
-            final alreadyReacted = msg.reactions.any(
-              (r) => r.emoji == emoji && r.userId == widget.myUserId,
-            );
-            return GestureDetector(
-              onTap: () {
-                Navigator.pop(sheetContext);
-                widget.onReactionSelect?.call(msg, emoji);
-              },
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: alreadyReacted
-                      ? context.accent.withValues(alpha: 0.2)
-                      : null,
-                  borderRadius: BorderRadius.circular(8),
-                  border: alreadyReacted
-                      ? Border.all(color: context.accent, width: 2)
-                      : null,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  emoji,
-                  style: const TextStyle(
-                    fontSize: 24,
-                    decoration: TextDecoration.none,
+          for (final emoji in reactionEmojis) ...[
+            Builder(
+              builder: (_) {
+                final alreadyReacted = msg.reactions.any(
+                  (r) => r.emoji == emoji && r.userId == widget.myUserId,
+                );
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    widget.onReactionSelect?.call(msg, emoji);
+                  },
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: alreadyReacted
+                          ? context.accent.withValues(alpha: 0.2)
+                          : null,
+                      borderRadius: BorderRadius.circular(8),
+                      border: alreadyReacted
+                          ? Border.all(color: context.accent, width: 2)
+                          : null,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      emoji,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-            );
-          }),
-          // "More emojis" entry point — opens the full Unicode picker.
+                );
+              },
+            ),
+            const SizedBox(width: 4),
+          ],
           Semantics(
             button: true,
             label: 'More emojis',

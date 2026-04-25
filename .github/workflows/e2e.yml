@@ -2,8 +2,24 @@ name: E2E Tests
 
 on:
   pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'research/**'
+      - 'context/**'
+      - 'architecture/**'
+      - 'meta/**'
+      - 'CLAUDE.md'
   push:
     branches: [main, dev]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'research/**'
+      - 'context/**'
+      - 'architecture/**'
+      - 'meta/**'
+      - 'CLAUDE.md'
 
 permissions:
   contents: read
