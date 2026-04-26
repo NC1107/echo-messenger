@@ -19,6 +19,12 @@ import 'src/services/user_data_dir.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Cap Flutter's in-memory decoded-image cache: 500 images / 100 MB.
+  // The default (1000 images, no byte cap) is too generous for a chat app
+  // that can display hundreds of unique images in one session.
+  PaintingBinding.instance.imageCache.maximumSize = 500;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 100 * 1024 * 1024;
+
   // Global error boundary: catch unhandled Flutter framework errors so that
   // the red error screen is never shown in production.
   FlutterError.onError = (details) {
