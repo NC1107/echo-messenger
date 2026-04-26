@@ -1,14 +1,19 @@
-import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../utils/version_utils.dart';
-import '../version.dart';
 import '../theme/echo_theme.dart';
+import '../utils/version_utils.dart';
+import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/echo_logo_icon.dart';
+
+/// Larger bottom padding in debug builds leaves room for the multi-line
+/// version footer (server reachability + web bundle), which would otherwise
+/// overlap the form when the keyboard is open on small screens.
+const double _bottomPad = kDebugMode ? 96.0 : 56.0;
 
 /// Computes password strength as a value from 0.0 to 1.0.
 /// Returns a record of (double value, String label, Color color).
@@ -142,33 +147,16 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // Subtle radial gradient fills the otherwise-empty scaffold so the
-          // register form does not float in a flat black void.
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment.topCenter,
-                  radius: 1.4,
-                  colors: [
-                    context.accent.withValues(alpha: 0.06),
-                    context.mainBg,
-                  ],
-                  stops: const [0.0, 0.6],
-                ),
-              ),
-            ),
-          ),
+          const AuthBackground(),
           SafeArea(
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 400),
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 56),
+                  padding: EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
                   child: Form(
                     key: _formKey,
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         _buildHeader(context),
@@ -200,7 +188,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             left: 0,
             right: 0,
             bottom: 16,
-            child: SafeArea(top: false, child: _buildVersionFooter(context)),
+            child: SafeArea(
+              top: false,
+              child: AuthVersionFooter(versionFuture: _versionFuture),
+            ),
           ),
         ],
       ),
@@ -357,65 +348,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               )
             : const Text('Create Account'),
       ),
-    );
-  }
-
-  Widget _buildVersionFooter(BuildContext context) {
-    final appLine = Text(
-      'Echo v$appVersion',
-      textAlign: TextAlign.center,
-      style: TextStyle(color: context.textMuted, fontSize: 11),
-    );
-    if (!kDebugMode) return appLine;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        appLine,
-        FutureBuilder<Map<String, String?>>(
-          future: _versionFuture,
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return const SizedBox.shrink();
-            }
-            return _buildServerVersionInfo(context, snapshot.data!);
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildServerVersionInfo(
-    BuildContext context,
-    Map<String, String?> info,
-  ) {
-    final serverVersion = info['serverVersion'];
-    final serverHost = info['serverHost'];
-    final webVersion = info['webVersion'];
-
-    final serverText = serverVersion != null
-        ? 'Server: $serverHost v$serverVersion'
-        : 'Server: unreachable';
-    final serverColor = serverVersion != null
-        ? context.textMuted
-        : EchoTheme.warning;
-
-    return Column(
-      children: [
-        const SizedBox(height: 2),
-        Text(
-          serverText,
-          textAlign: TextAlign.center,
-          style: TextStyle(color: serverColor, fontSize: 11),
-        ),
-        if (kIsWeb && webVersion != null) ...[
-          const SizedBox(height: 2),
-          Text(
-            'Web: v$webVersion',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: context.textMuted, fontSize: 11),
-          ),
-        ],
-      ],
     );
   }
 }

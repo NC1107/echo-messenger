@@ -1,7 +1,7 @@
 /// Format a timestamp string for display in the conversation list sidebar.
 ///
 /// Shows "HH:MM" for today, "Yesterday" for yesterday, abbreviated weekday
-/// for the last 7 days, and an unambiguous "MMM d" (e.g. "Apr 17") for
+/// for the last 6 days, and an unambiguous "MMM d" (e.g. "Apr 17") for
 /// anything older. The previous "d/m/yyyy" format was ambiguous between US
 /// (M/D) and EU (D/M) readers; "Apr 17" is unambiguous in English without
 /// pulling in a locale dependency.

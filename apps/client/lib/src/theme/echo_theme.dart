@@ -92,11 +92,14 @@ class EchoTheme {
     );
   }
 
-  static FilledButtonThemeData _buildFilledButtonTheme(Color accentColor) {
+  static FilledButtonThemeData _buildFilledButtonTheme(
+    Color accentColor, {
+    Color foregroundColor = Colors.white,
+  }) {
     return FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: accentColor,
-        foregroundColor: Colors.white,
+        foregroundColor: foregroundColor,
         textStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -257,6 +260,9 @@ class EchoTheme {
   static const lightAccentLight = Color(0x1A5B5EE6);
 
   // Graphite theme colors (high-contrast dark with teal accent)
+  // Dark onPrimary used because the high-luminance teal accent fails WCAG AA
+  // against white. Near-black on teal gives ~12:1, well above 4.5:1.
+  static const graphiteOnAccent = Color(0xFF0A1114);
   static const graphiteMainBg = Color(0xFF0B1114);
   static const graphiteSidebarBg = Color(0xFF101A1F);
   static const graphiteChatBg = Color(0xFF142026);
@@ -274,6 +280,9 @@ class EchoTheme {
   static const graphiteBorder = Color(0xFF2C434D);
 
   // Ember theme colors (warm dark with amber accent)
+  // Dark onPrimary used because the high-luminance amber accent fails WCAG AA
+  // against white. Near-black on amber gives ~11:1, well above 4.5:1.
+  static const emberOnAccent = Color(0xFF110E0A);
   static const emberMainBg = Color(0xFF110E0A);
   static const emberSidebarBg = Color(0xFF171310);
   static const emberChatBg = Color(0xFF1C1814);
@@ -286,7 +295,9 @@ class EchoTheme {
   static const emberTextPrimary = Color(0xFFF5F0E8);
   static const emberTextSecondary = Color(0xFFA89F91);
   static const emberTextMuted = Color(0xFF8F8478);
-  static const emberSentBubble = Color(0xFFB45309);
+  // sentBubble matches the accent so dark-on-accent text passes WCAG AA;
+  // the previous darker brown was unreadable with dark onPrimary text.
+  static const emberSentBubble = Color(0xFFE9960A);
   static const emberRecvBubble = Color(0xFF252019);
   static const emberBorder = Color(0xFF332D24);
 
@@ -465,8 +476,8 @@ class EchoTheme {
         surface: graphiteSurface,
         onSurfaceVariant: graphiteTextSecondary,
         error: danger,
-        onPrimary: Colors.white,
-        onSecondary: Colors.white,
+        onPrimary: graphiteOnAccent,
+        onSecondary: graphiteOnAccent,
         onSurface: graphiteTextPrimary,
         onError: Colors.white,
       ),
@@ -494,7 +505,10 @@ class EchoTheme {
         hintColor: graphiteTextMuted,
         labelColor: graphiteTextSecondary,
       ),
-      filledButtonTheme: _buildFilledButtonTheme(graphiteAccent),
+      filledButtonTheme: _buildFilledButtonTheme(
+        graphiteAccent,
+        foregroundColor: graphiteOnAccent,
+      ),
       textButtonTheme: _buildTextButtonTheme(graphiteAccent),
       outlinedButtonTheme: _buildOutlinedButtonTheme(
         graphiteTextPrimary,
@@ -559,8 +573,8 @@ class EchoTheme {
         surface: emberSurface,
         onSurfaceVariant: emberTextSecondary,
         error: danger,
-        onPrimary: Colors.white,
-        onSecondary: Colors.white,
+        onPrimary: emberOnAccent,
+        onSecondary: emberOnAccent,
         onSurface: emberTextPrimary,
         onError: Colors.white,
       ),
@@ -588,7 +602,10 @@ class EchoTheme {
         hintColor: emberTextMuted,
         labelColor: emberTextSecondary,
       ),
-      filledButtonTheme: _buildFilledButtonTheme(emberAccent),
+      filledButtonTheme: _buildFilledButtonTheme(
+        emberAccent,
+        foregroundColor: emberOnAccent,
+      ),
       textButtonTheme: _buildTextButtonTheme(emberAccent),
       outlinedButtonTheme: _buildOutlinedButtonTheme(
         emberTextPrimary,
