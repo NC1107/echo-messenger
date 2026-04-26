@@ -1058,11 +1058,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       ) async {
         // Add optimistic message so the sender sees it locally immediately.
         String peerUserId = '';
+        String? channelId;
         if (!target.isGroup) {
           final peer = target.members
               .where((m) => m.userId != myUserId)
               .firstOrNull;
           peerUserId = peer?.userId ?? '';
+        } else {
+          // Look up the default text channel so the optimistic message has the
+          // same channelId that the server will return in message_sent.
+          // Without this, _replacePendingMessage's channelId filter never
+          // matches and the pending message times out to failed.
+          final channels = ref.read(channelsProvider).channelsFor(target.id);
+          channelId = channels.where((c) => c.isText).firstOrNull?.id;
         }
         ref
             .read(chatProvider.notifier)
@@ -1071,10 +1079,15 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               forwardedContent,
               myUserId,
               conversationId: target.id,
+              channelId: channelId,
             );
 
         if (target.isGroup) {
-          await ws.sendGroupMessage(target.id, forwardedContent);
+          await ws.sendGroupMessage(
+            target.id,
+            forwardedContent,
+            channelId: channelId,
+          );
         } else {
           final peer = target.members
               .where((m) => m.userId != myUserId)
