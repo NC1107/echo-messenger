@@ -1547,7 +1547,7 @@ class _MessageItemState extends State<MessageItem>
     required String? mediaUrl,
   }) {
     return Positioned(
-      top: widget.compactLayout ? -28 : (widget.showHeader ? 0 : -12),
+      top: -28,
       left: isMine ? null : 36,
       right: isMine ? 0 : 8,
       child: ExcludeSemantics(

@@ -310,6 +310,10 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     final conversationId = json['conversation_id'] as String;
     final channelId = json['channel_id'] as String?;
     final timestamp = json['timestamp'] as String;
+    final expiresAtRaw = json['expires_at'];
+    final expiresAt = expiresAtRaw is String
+        ? DateTime.tryParse(expiresAtRaw)
+        : null;
     ref
         .read(chatProvider.notifier)
         .confirmSent(
@@ -317,6 +321,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
           conversationId,
           timestamp,
           channelId: channelId,
+          expiresAt: expiresAt,
         );
     // Update status to sent
     ref

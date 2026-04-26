@@ -439,33 +439,45 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
             ),
           ),
         const Spacer(),
-        if (showMoreButton)
-          Semantics(
-            label: 'More options for $displayName',
-            button: true,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(4),
-              onTapDown: (details) {
-                widget.onContextMenu?.call(details.globalPosition);
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Icon(
-                  Icons.more_horiz,
-                  size: 16,
-                  color: context.textMuted,
-                ),
-              ),
-            ),
-          )
-        else if (widget.timestamp.isNotEmpty)
-          Text(
-            widget.timestamp,
-            style: TextStyle(
-              fontSize: 11,
-              color: hasUnread ? context.accent : context.textMuted,
-            ),
+        SizedBox(
+          width: 56,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: showMoreButton
+                ? Semantics(
+                    label: 'More options for $displayName',
+                    button: true,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(4),
+                      onTapDown: (details) {
+                        widget.onContextMenu?.call(details.globalPosition);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Icon(
+                          Icons.more_horiz,
+                          size: 16,
+                          color: context.textMuted,
+                        ),
+                      ),
+                    ),
+                  )
+                : (widget.timestamp.isNotEmpty
+                      ? Text(
+                          widget.timestamp,
+                          maxLines: 1,
+                          overflow: TextOverflow.clip,
+                          textAlign: TextAlign.end,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: hasUnread
+                                ? context.accent
+                                : context.textMuted,
+                          ),
+                        )
+                      : const SizedBox.shrink()),
           ),
+        ),
       ],
     );
   }
