@@ -175,7 +175,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             _obscurePassword ? Icons.visibility_off : Icons.visibility,
           ),
           onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-          // 44x44 minimum tap target for accessibility.
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           padding: EdgeInsets.zero,
           visualDensity: VisualDensity.compact,
@@ -221,8 +220,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   }
 
   Widget _buildVersionInfo() {
-    // Customer-facing footer is a single line: just the app version.
-    // Debug builds keep the full server/web detail for developers.
     final appLine = Text(
       'Echo v$appVersion',
       textAlign: TextAlign.center,

@@ -558,8 +558,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Widget _buildLogoHeader(BuildContext context, int pendingCount) {
-    // Connection state is shown in the bottom user-status bar via the avatar
-    // dot; the duplicate header dot was removed for clarity.
     return Container(
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -744,7 +742,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           }
         },
         child: Container(
-          // 44px minimum tap target for accessibility.
           height: 44,
           decoration: BoxDecoration(
             color: context.surface,
