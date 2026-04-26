@@ -121,8 +121,14 @@ void main() {
       expect(find.text('Invalid credentials'), findsOneWidget);
     });
 
-    testWidgets('shows password hint text', (tester) async {
+    testWidgets('shows password hint text after focusing password field', (tester) async {
       await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      // Hint is hidden on resting form — only shown after focus or submit attempt.
+      expect(find.text('8-128 characters required'), findsNothing);
+
+      await tester.tap(find.widgetWithText(TextField, 'Password'));
       await tester.pumpAndSettle();
 
       expect(find.text('8-128 characters required'), findsOneWidget);

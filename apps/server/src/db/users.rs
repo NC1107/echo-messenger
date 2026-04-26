@@ -400,10 +400,7 @@ pub async fn update_status_text(
 }
 
 /// Fetch the status_text for a user.
-pub async fn get_status_text(
-    pool: &PgPool,
-    user_id: Uuid,
-) -> Result<Option<String>, sqlx::Error> {
+pub async fn get_status_text(pool: &PgPool, user_id: Uuid) -> Result<Option<String>, sqlx::Error> {
     let row: Option<(Option<String>,)> =
         sqlx::query_as("SELECT status_text FROM users WHERE id = $1")
             .bind(user_id)
@@ -434,13 +431,11 @@ pub async fn unpin_conversation(
     user_id: Uuid,
     conversation_id: Uuid,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "DELETE FROM pinned_conversations WHERE user_id = $1 AND conversation_id = $2",
-    )
-    .bind(user_id)
-    .bind(conversation_id)
-    .execute(pool)
-    .await?;
+    sqlx::query("DELETE FROM pinned_conversations WHERE user_id = $1 AND conversation_id = $2")
+        .bind(user_id)
+        .bind(conversation_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -448,11 +443,10 @@ pub async fn get_pinned_conversations(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<Vec<Uuid>, sqlx::Error> {
-    let rows: Vec<(Uuid,)> = sqlx::query_as(
-        "SELECT conversation_id FROM pinned_conversations WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
+    let rows: Vec<(Uuid,)> =
+        sqlx::query_as("SELECT conversation_id FROM pinned_conversations WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_all(pool)
+            .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
