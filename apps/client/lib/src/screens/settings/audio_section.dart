@@ -501,6 +501,31 @@ class _AudioSectionState extends ConsumerState<AudioSection> {
           value: voice.autoGainControl,
           onChanged: (v) => notifier.setAutoGainControl(v),
         ),
+        const SizedBox(height: 16),
+        Divider(color: context.border),
+        const SizedBox(height: 16),
+        Text(
+          'Channel Behaviour',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Confirm before joining voice channel',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Show a confirmation dialog before connecting to a voice channel.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: voice.confirmBeforeJoinVoice,
+          onChanged: notifier.setConfirmBeforeJoinVoice,
+        ),
       ],
     );
   }

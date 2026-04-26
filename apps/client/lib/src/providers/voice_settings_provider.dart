@@ -16,6 +16,7 @@ class VoiceSettingsState {
   final bool noiseSuppression;
   final bool echoCancellation;
   final bool autoGainControl;
+  final bool confirmBeforeJoinVoice;
 
   const VoiceSettingsState({
     this.inputDeviceId = 'default',
@@ -31,6 +32,7 @@ class VoiceSettingsState {
     this.noiseSuppression = true,
     this.echoCancellation = true,
     this.autoGainControl = true,
+    this.confirmBeforeJoinVoice = false,
   });
 
   VoiceSettingsState copyWith({
@@ -47,6 +49,7 @@ class VoiceSettingsState {
     bool? noiseSuppression,
     bool? echoCancellation,
     bool? autoGainControl,
+    bool? confirmBeforeJoinVoice,
   }) {
     return VoiceSettingsState(
       inputDeviceId: inputDeviceId ?? this.inputDeviceId,
@@ -62,6 +65,8 @@ class VoiceSettingsState {
       noiseSuppression: noiseSuppression ?? this.noiseSuppression,
       echoCancellation: echoCancellation ?? this.echoCancellation,
       autoGainControl: autoGainControl ?? this.autoGainControl,
+      confirmBeforeJoinVoice:
+          confirmBeforeJoinVoice ?? this.confirmBeforeJoinVoice,
     );
   }
 }
@@ -84,6 +89,7 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
   static const _keyNoiseSuppression = 'voice_noise_suppression';
   static const _keyEchoCancellation = 'voice_echo_cancellation';
   static const _keyAutoGainControl = 'voice_auto_gain_control';
+  static const _keyConfirmBeforeJoin = 'confirm_before_join_voice';
 
   Future<void> _load() async {
     try {
@@ -102,6 +108,7 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
         noiseSuppression: prefs.getBool(_keyNoiseSuppression) ?? true,
         echoCancellation: prefs.getBool(_keyEchoCancellation) ?? true,
         autoGainControl: prefs.getBool(_keyAutoGainControl) ?? true,
+        confirmBeforeJoinVoice: prefs.getBool(_keyConfirmBeforeJoin) ?? false,
       );
     } catch (e) {
       debugPrint('[VoiceSettings] load failed: $e');
@@ -124,6 +131,7 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
       await prefs.setBool(_keyNoiseSuppression, next.noiseSuppression);
       await prefs.setBool(_keyEchoCancellation, next.echoCancellation);
       await prefs.setBool(_keyAutoGainControl, next.autoGainControl);
+      await prefs.setBool(_keyConfirmBeforeJoin, next.confirmBeforeJoinVoice);
     } catch (e) {
       debugPrint('[VoiceSettings] persist failed: $e');
     }
@@ -203,6 +211,12 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
 
   Future<void> setAutoGainControl(bool value) async {
     final next = state.copyWith(autoGainControl: value);
+    state = next;
+    await _persist(next);
+  }
+
+  Future<void> setConfirmBeforeJoinVoice(bool value) async {
+    final next = state.copyWith(confirmBeforeJoinVoice: value);
     state = next;
     await _persist(next);
   }

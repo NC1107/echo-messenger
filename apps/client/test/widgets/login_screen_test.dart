@@ -71,7 +71,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Echo'), findsOneWidget);
-      expect(find.text('Encrypted messaging'), findsOneWidget);
+      expect(
+        find.text('End-to-end encrypted. Zero telemetry.'),
+        findsOneWidget,
+      );
       expect(find.widgetWithText(TextField, 'Username'), findsOneWidget);
       expect(find.widgetWithText(TextField, 'Password'), findsOneWidget);
     });
@@ -92,7 +95,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.widgetWithText(FilledButton, 'Login'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Log in'), findsOneWidget);
     });
 
     testWidgets('renders "Create an account" link', (tester) async {
@@ -283,7 +286,7 @@ void main() {
         'wrong-password',
       );
 
-      await tester.tap(find.widgetWithText(FilledButton, 'Login'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Log in'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 60));
 

@@ -43,8 +43,13 @@ import 'settings_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final String? initialConversationId;
+  final String? initialMessageId;
 
-  const HomeScreen({super.key, this.initialConversationId});
+  const HomeScreen({
+    super.key,
+    this.initialConversationId,
+    this.initialMessageId,
+  });
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -53,6 +58,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with WidgetsBindingObserver {
   Conversation? _selectedConversation;
+  String? _pendingMessageId;
   bool _showMembers = false;
   Timer? _pendingRefreshTimer;
   late final LiveKitVoiceNotifier _voiceRtcNotifier;
@@ -158,7 +164,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           .where((c) => c.id == widget.initialConversationId)
           .firstOrNull;
       if (conv != null) {
-        _selectConversation(conv);
+        _selectConversation(conv, messageId: widget.initialMessageId);
       }
     }
 
@@ -235,9 +241,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     await prefs.setBool('seen_server_notice', true);
   }
 
-  void _selectConversation(Conversation conv) {
+  void _selectConversation(Conversation conv, {String? messageId}) {
     setState(() {
       _selectedConversation = conv;
+      _pendingMessageId = messageId;
       _narrowPanelIndex = 1;
       _showSettings = false;
       // Dismiss the voice lounge so the selected chat is visible.
@@ -444,7 +451,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: SavedMessagesScreen(
-                onNavigateToConversation: (convId) {
+                onNavigateToConversation: (convId, messageId) {
                   Navigator.pop(dialogContext);
                   final conversations = ref
                       .read(conversationsProvider)
@@ -452,7 +459,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   final conv = conversations
                       .where((c) => c.id == convId)
                       .firstOrNull;
-                  if (conv != null) _selectConversation(conv);
+                  if (conv != null) {
+                    _selectConversation(conv, messageId: messageId);
+                  }
                 },
               ),
             ),
@@ -908,6 +917,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ? _toggleMembers
             : null,
         hideVoiceDock: true,
+        initialMessageId: _pendingMessageId,
         onShowLounge: () => setState(() {
           _showingLounge = true;
           _userDismissedLounge = false;
@@ -1043,6 +1053,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       rightPanel = ChatPanel(
         conversation: _selectedConversation,
         onGroupInfo: _showGroupInfo,
+        initialMessageId: _pendingMessageId,
         onShowLounge: () => setState(() {
           _showingLounge = true;
           _userDismissedLounge = false;
@@ -1096,6 +1107,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       conversation: _selectedConversation,
       onGroupInfo: _showGroupInfo,
       onBack: () => setState(() => _narrowPanelIndex = 0),
+      initialMessageId: _pendingMessageId,
       onShowLounge: () => setState(() {
         _showingLounge = true;
         _userDismissedLounge = false;

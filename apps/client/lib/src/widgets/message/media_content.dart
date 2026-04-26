@@ -210,6 +210,8 @@ class MediaContent extends StatefulWidget {
 }
 
 class MediaContentState extends State<MediaContent> {
+  static final Map<String, Size> _imageSizeCache = {};
+
   String _resolveUrl(String url) => resolveMediaUrl(
     url,
     serverUrl: widget.serverUrl,
@@ -447,6 +449,25 @@ class MediaContentState extends State<MediaContent> {
                         width: 300,
                         fit: BoxFit.cover,
                         httpHeaders: headers,
+                        imageBuilder: (ctx, imageProvider) {
+                          if (!_imageSizeCache.containsKey(fullUrl)) {
+                            imageProvider
+                                .resolve(const ImageConfiguration())
+                                .addListener(
+                                  ImageStreamListener((info, _) {
+                                    _imageSizeCache[fullUrl] = Size(
+                                      info.image.width.toDouble(),
+                                      info.image.height.toDouble(),
+                                    );
+                                  }),
+                                );
+                          }
+                          return Image(
+                            image: imageProvider,
+                            fit: BoxFit.cover,
+                            width: 300,
+                          );
+                        },
                         errorWidget: (_, e, st) => Container(
                           width: 300,
                           height: 80,
@@ -464,27 +485,33 @@ class MediaContentState extends State<MediaContent> {
                             ),
                           ),
                         ),
-                        // Reserve the typical image area while loading so
-                        // the bubble height is stable and scroll position
-                        // does not jump once the bytes arrive.
-                        placeholder: (_, _) => Container(
-                          width: 300,
-                          height: 200,
-                          decoration: BoxDecoration(
-                            color: context.surface,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Center(
-                            child: SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: context.textMuted,
+                        placeholder: (_, _) {
+                          final cached = _imageSizeCache[fullUrl];
+                          final h = cached != null
+                              ? (300 * cached.height / cached.width).clamp(
+                                  80.0,
+                                  400.0,
+                                )
+                              : 200.0;
+                          return Container(
+                            width: 300,
+                            height: h,
+                            decoration: BoxDecoration(
+                              color: context.surface,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Center(
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: context.textMuted,
+                                ),
                               ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       ),
                 Positioned(
                   right: 8,

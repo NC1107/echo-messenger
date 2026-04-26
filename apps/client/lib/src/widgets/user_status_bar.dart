@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import 'conversation_item.dart' show presenceStatusDotColor;
@@ -30,6 +31,9 @@ class UserStatusBar extends ConsumerWidget {
     final initial = username.isNotEmpty ? username[0].toUpperCase() : '?';
     final status = authState.presenceStatus;
     final dotColor = presenceStatusDotColor(context, status, true);
+    final wsConnected = ref.watch(
+      websocketProvider.select((s) => s.isConnected),
+    );
 
     return Container(
       height: 60,
@@ -131,7 +135,9 @@ class UserStatusBar extends ConsumerWidget {
                         Text(
                           presenceStatusLabel(status),
                           style: TextStyle(
-                            color: context.textMuted,
+                            color: wsConnected
+                                ? EchoTheme.online
+                                : EchoTheme.warning,
                             fontSize: 11,
                           ),
                         ),

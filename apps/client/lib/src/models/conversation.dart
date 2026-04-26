@@ -14,6 +14,7 @@ class Conversation {
   final String? lastMessageSender;
   final int unreadCount;
   final bool isMuted;
+  final bool isPinned;
 
   /// Disappearing-messages TTL in seconds, or null if disabled.
   /// Drives the timer chip in the chat header.
@@ -32,6 +33,7 @@ class Conversation {
     this.lastMessageSender,
     this.unreadCount = 0,
     this.isMuted = false,
+    this.isPinned = false,
     this.ttlSeconds,
     this.members = const [],
   });
@@ -84,6 +86,7 @@ class Conversation {
       lastMessageSender: lastMsgSender,
       unreadCount: json['unread_count'] as int? ?? 0,
       isMuted: json['is_muted'] as bool? ?? false,
+      isPinned: json['is_pinned'] as bool? ?? false,
       ttlSeconds:
           (json['disappearing_ttl_seconds'] ?? json['ttl_seconds']) as int?,
       members: membersList,
@@ -110,6 +113,7 @@ class Conversation {
     String? lastMessageSender,
     int? unreadCount,
     bool? isMuted,
+    bool? isPinned,
     Object? ttlSeconds = _sentinel,
     List<ConversationMember>? members,
   }) {
@@ -125,6 +129,7 @@ class Conversation {
       lastMessageSender: lastMessageSender ?? this.lastMessageSender,
       unreadCount: unreadCount ?? this.unreadCount,
       isMuted: isMuted ?? this.isMuted,
+      isPinned: isPinned ?? this.isPinned,
       ttlSeconds: ttlSeconds == _sentinel
           ? this.ttlSeconds
           : ttlSeconds as int?,
@@ -147,6 +152,7 @@ class Conversation {
             lastMessageSender == other.lastMessageSender &&
             unreadCount == other.unreadCount &&
             isMuted == other.isMuted &&
+            isPinned == other.isPinned &&
             ttlSeconds == other.ttlSeconds &&
             _membersEqual(members, other.members);
   }
@@ -164,6 +170,7 @@ class Conversation {
     lastMessageSender,
     unreadCount,
     isMuted,
+    isPinned,
     ttlSeconds,
     Object.hashAll(members),
   );
@@ -186,12 +193,14 @@ class ConversationMember {
   final String username;
   final String? role;
   final String? avatarUrl;
+  final String? statusText;
 
   const ConversationMember({
     required this.userId,
     required this.username,
     this.role,
     this.avatarUrl,
+    this.statusText,
   });
 
   factory ConversationMember.fromJson(Map<String, dynamic> json) {
@@ -200,6 +209,7 @@ class ConversationMember {
       username: json['username'] as String,
       role: json['role'] as String?,
       avatarUrl: json['avatar_url'] as String?,
+      statusText: json['status_text'] as String?,
     );
   }
 
@@ -210,9 +220,11 @@ class ConversationMember {
             userId == other.userId &&
             username == other.username &&
             role == other.role &&
-            avatarUrl == other.avatarUrl;
+            avatarUrl == other.avatarUrl &&
+            statusText == other.statusText;
   }
 
   @override
-  int get hashCode => Object.hash(userId, username, role, avatarUrl);
+  int get hashCode =>
+      Object.hash(userId, username, role, avatarUrl, statusText);
 }

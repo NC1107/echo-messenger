@@ -183,9 +183,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: _routeHome,
         pageBuilder: (context, state) {
           final conversationId = state.uri.queryParameters['conversation'];
+          final messageId = state.uri.queryParameters['messageId'];
           return _fadePage(
             key: state.pageKey,
-            child: HomeScreen(initialConversationId: conversationId),
+            child: HomeScreen(
+              initialConversationId: conversationId,
+              initialMessageId: messageId,
+            ),
           );
         },
       ),

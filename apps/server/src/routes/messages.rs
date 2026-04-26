@@ -67,6 +67,7 @@ pub struct ConversationListItem {
     pub members: Vec<MemberInfo>,
     pub last_message: Option<LastMessageInfo>,
     pub unread_count: i64,
+    pub is_pinned: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -75,6 +76,7 @@ pub struct MemberInfo {
     pub username: String,
     pub role: Option<String>,
     pub avatar_url: Option<String>,
+    pub status_text: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -97,6 +99,7 @@ struct ConversationFullRow {
     members_json: Option<serde_json::Value>,
     last_message_json: Option<serde_json::Value>,
     unread_count: i64,
+    is_pinned: bool,
 }
 
 pub async fn list_conversations(
@@ -115,7 +118,8 @@ pub async fn list_conversations(
             SELECT cm2.conversation_id, \
                    json_agg(json_build_object( \
                        'user_id', u.id, 'username', u.username, \
-                       'role', cm2.role, 'avatar_url', u.avatar_url \
+                       'role', cm2.role, 'avatar_url', u.avatar_url, \
+                       'status_text', u.status_text \
                    )) AS members_json \
             FROM conversation_members cm2 \
             JOIN users u ON cm2.user_id = u.id \
@@ -166,7 +170,11 @@ pub async fn list_conversations(
                  ) \
                  ELSE NULL \
             END AS last_message_json, \
-            COALESCE(urc.unread_count, 0) AS unread_count \
+            COALESCE(urc.unread_count, 0) AS unread_count, \
+            EXISTS( \
+                SELECT 1 FROM pinned_conversations pc \
+                WHERE pc.user_id = $1 AND pc.conversation_id = c.id \
+            ) AS is_pinned \
         FROM conversations c \
         JOIN user_convs uc ON uc.conversation_id = c.id \
         LEFT JOIN members_cte mc ON mc.conversation_id = c.id \
@@ -208,6 +216,7 @@ pub async fn list_conversations(
             members,
             last_message,
             unread_count: row.unread_count,
+            is_pinned: row.is_pinned,
         });
     }
 
@@ -878,4 +887,40 @@ pub async fn get_pinned_messages(
         })?;
 
     Ok(Json(pinned))
+}
+
+// ---------------------------------------------------------------------------
+// PUT /api/conversations/:id/pin
+// ---------------------------------------------------------------------------
+
+pub async fn pin_conversation(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(conversation_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    db::users::pin_conversation(&state.pool, auth.user_id, conversation_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in pin_conversation: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/conversations/:id/pin
+// ---------------------------------------------------------------------------
+
+pub async fn unpin_conversation(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(conversation_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    db::users::unpin_conversation(&state.pool, auth.user_id, conversation_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in unpin_conversation: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    Ok(StatusCode::NO_CONTENT)
 }

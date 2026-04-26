@@ -11,8 +11,10 @@ import '../utils/time_utils.dart';
 /// navigation stack.
 class SavedMessagesScreen extends StatefulWidget {
   /// Optional callback invoked when the user taps a saved message.
-  /// Receives [conversationId] so the caller can navigate to the chat.
-  final void Function(String conversationId)? onNavigateToConversation;
+  /// Receives [conversationId] and [messageId] so the caller can navigate
+  /// to the chat and scroll to the specific message.
+  final void Function(String conversationId, String messageId)?
+  onNavigateToConversation;
 
   const SavedMessagesScreen({super.key, this.onNavigateToConversation});
 
@@ -111,7 +113,8 @@ class _SavedMessagesScreenState extends State<SavedMessagesScreen> {
         return _SavedMessageTile(
           saved: saved,
           onTap: widget.onNavigateToConversation != null
-              ? () => widget.onNavigateToConversation!(msg.conversationId)
+              ? () =>
+                    widget.onNavigateToConversation!(msg.conversationId, msg.id)
               : null,
           onUnsave: () => _unsave(msg.id),
         );
