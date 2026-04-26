@@ -468,6 +468,55 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     return success;
   }
 
+  /// Toggle pin state for a conversation, syncing with the server.
+  /// Returns true on success. On failure the optimistic update is reverted.
+  Future<bool> setPinned(String conversationId, bool pinned) async {
+    final index = state.conversations.indexWhere((c) => c.id == conversationId);
+    if (index < 0) return false;
+
+    final conv = state.conversations[index];
+    if (conv.isPinned == pinned) return true;
+    final previousPinned = conv.isPinned;
+
+    final updated = List<Conversation>.from(state.conversations);
+    updated[index] = conv.copyWith(isPinned: pinned);
+    state = state.copyWith(conversations: updated);
+
+    bool success = false;
+    try {
+      final response = await _authenticatedRequest(
+        (token) => pinned
+            ? http.put(
+                Uri.parse('$_serverUrl/api/conversations/$conversationId/pin'),
+                headers: _headersWithToken(token),
+              )
+            : http.delete(
+                Uri.parse('$_serverUrl/api/conversations/$conversationId/pin'),
+                headers: _headersWithToken(token),
+              ),
+      );
+      success = response.statusCode == 204 || response.statusCode == 200;
+      if (!success) {
+        debugPrint(
+          '[Conversations] setPinned got HTTP ${response.statusCode} '
+          'for $conversationId',
+        );
+      }
+    } catch (e) {
+      debugPrint('[Conversations] setPinned failed for $conversationId: $e');
+    }
+
+    if (!success) {
+      final reverted = List<Conversation>.from(state.conversations);
+      final idx = reverted.indexWhere((c) => c.id == conversationId);
+      if (idx >= 0) {
+        reverted[idx] = reverted[idx].copyWith(isPinned: previousPinned);
+        state = state.copyWith(conversations: reverted);
+      }
+    }
+    return success;
+  }
+
   /// Leave a group conversation and remove it from local state.
   /// Returns true on success, false on failure.
   Future<bool> leaveGroup(String groupId) async {

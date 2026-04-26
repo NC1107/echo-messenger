@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation.dart';
@@ -158,10 +159,18 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Future<void> _loadPinnedIds() async {
+    // Seed from SharedPreferences for immediate rendering before server load.
     final prefs = await SharedPreferences.getInstance();
     final pinned = prefs.getStringList('pinned_conversation_ids') ?? [];
     if (mounted) {
-      setState(() => _pinnedIds = pinned.toSet());
+      // Merge SharedPrefs IDs with any server-known pinned conversations.
+      final serverPinned = ref
+          .read(conversationsProvider)
+          .conversations
+          .where((c) => c.isPinned)
+          .map((c) => c.id)
+          .toSet();
+      setState(() => _pinnedIds = {...pinned.toSet(), ...serverPinned});
     }
   }
 
@@ -171,14 +180,18 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   void _togglePin(String conversationId) {
+    final isPinned = _pinnedIds.contains(conversationId);
     setState(() {
-      if (_pinnedIds.contains(conversationId)) {
+      if (isPinned) {
         _pinnedIds.remove(conversationId);
       } else {
         _pinnedIds.add(conversationId);
       }
     });
     _savePinnedIds();
+    ref
+        .read(conversationsProvider.notifier)
+        .setPinned(conversationId, !isPinned);
   }
 
   /// Sort conversations: pinned first, then by last message timestamp.
@@ -1324,7 +1337,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           // Use fixed itemExtent when no section headers/dividers for faster layout.
-          itemExtent: extraItems == 0 ? 70 : null,
+          itemExtent: extraItems == 0 ? kConversationItemHeight : null,
           itemCount: sorted.length + extraItems,
           itemBuilder: (context, index) => _buildListItem(
             index: index,
@@ -1359,7 +1372,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               .length
         : 0;
 
-    return ConversationItem(
+    final item = ConversationItem(
       conversation: conv,
       myUserId: myUserId,
       isSelected: conv.id == widget.selectedConversationId,
@@ -1372,6 +1385,53 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       onContextMenu: (position) =>
           _showConversationContextMenu(context, conv, position),
       onlineMemberCount: onlineMemberCount,
+    );
+
+    final isMobile =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+
+    if (!isMobile) return item;
+
+    return Slidable(
+      key: ValueKey(conv.id),
+      endActionPane: ActionPane(
+        motion: const DrawerMotion(),
+        extentRatio: 0.6,
+        children: [
+          SlidableAction(
+            onPressed: (_) async {
+              final ok = await ref
+                  .read(conversationsProvider.notifier)
+                  .toggleMute(conv.id);
+              if (!ok && mounted) {
+                ToastService.show(
+                  context,
+                  'Failed to update mute settings',
+                  type: ToastType.error,
+                );
+              }
+            },
+            icon: conv.isMuted ? Icons.volume_up : Icons.volume_off,
+            backgroundColor: Colors.blueGrey,
+            label: conv.isMuted ? 'Unmute' : 'Mute',
+          ),
+          SlidableAction(
+            onPressed: (_) => _togglePin(conv.id),
+            icon: Icons.push_pin,
+            backgroundColor: Colors.orange,
+            label: isPinned ? 'Unpin' : 'Pin',
+          ),
+          SlidableAction(
+            onPressed: (_) =>
+                conv.isGroup ? _leaveGroup(conv) : _deleteDm(conv),
+            icon: Icons.delete_outline,
+            backgroundColor: EchoTheme.danger,
+            label: conv.isGroup ? 'Leave' : 'Delete',
+          ),
+        ],
+      ),
+      child: item,
     );
   }
 }

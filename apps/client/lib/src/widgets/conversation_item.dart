@@ -9,6 +9,9 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import 'avatar_utils.dart';
 
+/// Fixed height of a single conversation list item (excluding margin).
+const double kConversationItemHeight = 68.0;
+
 /// Return the dot color for a peer presence status.
 Color presenceStatusDotColor(
   BuildContext context,
@@ -223,7 +226,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
             snippet.startsWith('[Encrypted'))) {
       // The DM context already implies encryption; saying "encrypted" here
       // looks like an error state. Use a neutral placeholder instead.
-      return 'Message';
+      return '[E2E] Message';
     }
     return snippet;
   }
@@ -276,7 +279,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
           },
           onLongPress: _enableLongPressMenu ? _showMuteSheet : null,
           child: Container(
-            height: 68,
+            height: kConversationItemHeight,
             margin: const EdgeInsets.symmetric(vertical: 1),
             decoration: BoxDecoration(
               color: _resolveBackgroundColor(context),
@@ -354,13 +357,26 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     required bool hasUnread,
     required Conversation conv,
   }) {
+    final peer = conv.isGroup
+        ? null
+        : conv.members.where((m) => m.userId != widget.myUserId).firstOrNull;
+    final statusText = peer?.statusText;
+
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           _buildNameRow(context, displayName, hasUnread),
-          if (snippet != null) ...[
+          if (statusText != null && statusText.isNotEmpty) ...[
+            const SizedBox(height: 1),
+            Text(
+              statusText,
+              style: TextStyle(fontSize: 11, color: context.textMuted),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ] else if (snippet != null) ...[
             const SizedBox(height: 4),
             _buildSnippetRow(context, snippet, hasUnread, conv),
           ],

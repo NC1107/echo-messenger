@@ -750,3 +750,30 @@ pub async fn get_avatar(
         message: "Avatar file not found on disk".to_string(),
     })
 }
+
+#[derive(Deserialize)]
+pub struct UpdateStatusTextRequest {
+    pub status_text: Option<String>,
+}
+
+/// PUT /api/users/me/status-text
+pub async fn update_status_text(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<UpdateStatusTextRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let text = body.status_text.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
+    // Enforce max length at the route boundary.
+    if let Some(t) = text {
+        if t.len() > 64 {
+            return Err(AppError::bad_request("status_text must be 64 characters or fewer"));
+        }
+    }
+    db::users::update_status_text(&state.pool, auth.user_id, text)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error in update_status_text: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    Ok(StatusCode::NO_CONTENT)
+}
