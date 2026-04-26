@@ -62,11 +62,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
+  bool _passwordFocused = false;
+  bool _hasAttemptedSubmit = false;
+
+  final FocusNode _passwordFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _passwordController.addListener(_onPasswordChanged);
+    _passwordFocusNode.addListener(() {
+      setState(() {
+        _passwordFocused = _passwordFocusNode.hasFocus;
+      });
+    });
   }
 
   @override
@@ -75,6 +84,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _usernameController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -85,6 +95,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }
 
   Future<void> _register() async {
+    setState(() {
+      _hasAttemptedSubmit = true;
+    });
     if (!_formKey.currentState!.validate()) return;
 
     final auth = ref.read(authProvider.notifier);
@@ -164,9 +177,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         _buildUsernameField(),
                         const SizedBox(height: 16),
                         _buildPasswordField(),
+                        if (_passwordText.isNotEmpty ||
+                            _passwordFocused ||
+                            _hasAttemptedSubmit)
+                          _buildPasswordHint(context)
+                        else
+                          const SizedBox.shrink(),
                         _buildStrengthIndicator(context, strength),
-                        const SizedBox(height: 4),
-                        _buildPasswordHint(context),
                         const SizedBox(height: 12),
                         _buildConfirmPasswordField(),
                         _buildErrorMessage(context, authState),
@@ -175,7 +192,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                         const SizedBox(height: 12),
                         TextButton(
                           onPressed: () => context.go('/login'),
-                          child: const Text('Already have an account? Login'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: context.textSecondary,
+                          ),
+                          child: const Text('Already have an account? Log in'),
                         ),
                       ],
                     ),
@@ -249,6 +269,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
           visualDensity: VisualDensity.compact,
         ),
       ),
+      focusNode: _passwordFocusNode,
       textInputAction: TextInputAction.next,
       validator: _validatePassword,
     );
@@ -346,7 +367,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 width: 20,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : const Text('Create Account'),
+            : const Text('Create account'),
       ),
     );
   }
