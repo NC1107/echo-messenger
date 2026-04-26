@@ -8,9 +8,11 @@ class EchoTheme {
   static const chatBg = Color(0xFF141415);
   static const surface = Color(0xFF1C1C1E);
   static const surfaceHover = Color(0xFF232326);
-  static const accent = Color(0xFF6366F1);
+  // Darkened from 0xFF6366F1 -> 0xFF5557E0 for WCAG AA contrast
+  // (white-on-accent ~4.7:1 on this darker indigo).
+  static const accent = Color(0xFF5557E0);
   static const accentHover = Color(0xFF818CF8);
-  static const accentLight = Color(0x1A6366F1);
+  static const accentLight = Color(0x1A5557E0);
   static const textPrimary = Color(0xFFEDEDEF);
   static const textSecondary = Color(0xFFABABB0);
   static const textMuted = Color(0xFF848490);
@@ -90,11 +92,14 @@ class EchoTheme {
     );
   }
 
-  static FilledButtonThemeData _buildFilledButtonTheme(Color accentColor) {
+  static FilledButtonThemeData _buildFilledButtonTheme(
+    Color accentColor, {
+    Color foregroundColor = Colors.white,
+  }) {
     return FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: accentColor,
-        foregroundColor: Colors.white,
+        foregroundColor: foregroundColor,
         textStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -255,14 +260,18 @@ class EchoTheme {
   static const lightAccentLight = Color(0x1A5B5EE6);
 
   // Graphite theme colors (high-contrast dark with teal accent)
+  // Dark onPrimary used because the high-luminance teal accent fails WCAG AA
+  // against white. Near-black on teal gives ~12:1, well above 4.5:1.
+  static const graphiteOnAccent = Color(0xFF0A1114);
   static const graphiteMainBg = Color(0xFF0B1114);
   static const graphiteSidebarBg = Color(0xFF101A1F);
   static const graphiteChatBg = Color(0xFF142026);
   static const graphiteSurface = Color(0xFF1A2A32);
   static const graphiteSurfaceHover = Color(0xFF22363F);
-  static const graphiteAccent = Color(0xFF14B8A6);
+  // Darkened ~5% from 0xFF14B8A6 for stronger white-on-accent contrast.
+  static const graphiteAccent = Color(0xFF13AF9D);
   static const graphiteAccentHover = Color(0xFF2DD4BF);
-  static const graphiteAccentLight = Color(0x1A14B8A6);
+  static const graphiteAccentLight = Color(0x1A13AF9D);
   static const graphiteTextPrimary = Color(0xFFE7F4F8);
   static const graphiteTextSecondary = Color(0xFFA3BAC2);
   static const graphiteTextMuted = Color(0xFF8FA8B2);
@@ -271,18 +280,24 @@ class EchoTheme {
   static const graphiteBorder = Color(0xFF2C434D);
 
   // Ember theme colors (warm dark with amber accent)
+  // Dark onPrimary used because the high-luminance amber accent fails WCAG AA
+  // against white. Near-black on amber gives ~11:1, well above 4.5:1.
+  static const emberOnAccent = Color(0xFF110E0A);
   static const emberMainBg = Color(0xFF110E0A);
   static const emberSidebarBg = Color(0xFF171310);
   static const emberChatBg = Color(0xFF1C1814);
   static const emberSurface = Color(0xFF252019);
   static const emberSurfaceHover = Color(0xFF2F2920);
-  static const emberAccent = Color(0xFFF59E0B);
+  // Darkened ~5% from 0xFFF59E0B for stronger white-on-accent contrast.
+  static const emberAccent = Color(0xFFE9960A);
   static const emberAccentHover = Color(0xFFFBBF24);
-  static const emberAccentLight = Color(0x1AF59E0B);
+  static const emberAccentLight = Color(0x1AE9960A);
   static const emberTextPrimary = Color(0xFFF5F0E8);
   static const emberTextSecondary = Color(0xFFA89F91);
   static const emberTextMuted = Color(0xFF8F8478);
-  static const emberSentBubble = Color(0xFFB45309);
+  // sentBubble matches the accent so dark-on-accent text passes WCAG AA;
+  // the previous darker brown was unreadable with dark onPrimary text.
+  static const emberSentBubble = Color(0xFFE9960A);
   static const emberRecvBubble = Color(0xFF252019);
   static const emberBorder = Color(0xFF332D24);
 
@@ -309,9 +324,10 @@ class EchoTheme {
   static const auroraChatBgEnd = Color(0xFF0B0F1A);
   static const auroraSurface = Color(0xFF1A1628);
   static const auroraSurfaceHover = Color(0xFF231E34);
-  static const auroraAccent = Color(0xFF8B5CF6);
+  // Darkened ~5% from 0xFF8B5CF6 for stronger white-on-accent contrast.
+  static const auroraAccent = Color(0xFF8458E9);
   static const auroraAccentHover = Color(0xFFA78BFA);
-  static const auroraAccentLight = Color(0x1A8B5CF6);
+  static const auroraAccentLight = Color(0x1A8458E9);
   static const auroraTextPrimary = Color(0xFFEDE9F6);
   static const auroraTextSecondary = Color(0xFFABA4BE);
   static const auroraTextMuted = Color(0xFF8780A0);
@@ -325,13 +341,14 @@ class EchoTheme {
   static const sakuraChatBg = Color(0xFFFFF8FA);
   static const sakuraSurface = Color(0xFFFFFAFC);
   static const sakuraSurfaceHover = Color(0xFFFFE8EE);
-  static const sakuraAccent = Color(0xFFE91E8C);
+  // Darkened ~5% from 0xFFE91E8C for stronger white-on-accent contrast.
+  static const sakuraAccent = Color(0xFFDD1C85);
   static const sakuraAccentHover = Color(0xFFFF45A8);
-  static const sakuraAccentLight = Color(0x1AE91E8C);
+  static const sakuraAccentLight = Color(0x1ADD1C85);
   static const sakuraTextPrimary = Color(0xFF2D1B2E);
   static const sakuraTextSecondary = Color(0xFF7B5A7E);
   static const sakuraTextMuted = Color(0xFFB898BB);
-  static const sakuraSentBubble = Color(0xFFE91E8C);
+  static const sakuraSentBubble = Color(0xFFDD1C85);
   static const sakuraRecvBubble = Color(0xFFFFE8EE);
   static const sakuraBorder = Color(0xFFF0D4DC);
 
@@ -459,8 +476,8 @@ class EchoTheme {
         surface: graphiteSurface,
         onSurfaceVariant: graphiteTextSecondary,
         error: danger,
-        onPrimary: Colors.white,
-        onSecondary: Colors.white,
+        onPrimary: graphiteOnAccent,
+        onSecondary: graphiteOnAccent,
         onSurface: graphiteTextPrimary,
         onError: Colors.white,
       ),
@@ -488,7 +505,10 @@ class EchoTheme {
         hintColor: graphiteTextMuted,
         labelColor: graphiteTextSecondary,
       ),
-      filledButtonTheme: _buildFilledButtonTheme(graphiteAccent),
+      filledButtonTheme: _buildFilledButtonTheme(
+        graphiteAccent,
+        foregroundColor: graphiteOnAccent,
+      ),
       textButtonTheme: _buildTextButtonTheme(graphiteAccent),
       outlinedButtonTheme: _buildOutlinedButtonTheme(
         graphiteTextPrimary,
@@ -553,8 +573,8 @@ class EchoTheme {
         surface: emberSurface,
         onSurfaceVariant: emberTextSecondary,
         error: danger,
-        onPrimary: Colors.white,
-        onSecondary: Colors.white,
+        onPrimary: emberOnAccent,
+        onSecondary: emberOnAccent,
         onSurface: emberTextPrimary,
         onError: Colors.white,
       ),
@@ -582,7 +602,10 @@ class EchoTheme {
         hintColor: emberTextMuted,
         labelColor: emberTextSecondary,
       ),
-      filledButtonTheme: _buildFilledButtonTheme(emberAccent),
+      filledButtonTheme: _buildFilledButtonTheme(
+        emberAccent,
+        foregroundColor: emberOnAccent,
+      ),
       textButtonTheme: _buildTextButtonTheme(emberAccent),
       outlinedButtonTheme: _buildOutlinedButtonTheme(
         emberTextPrimary,

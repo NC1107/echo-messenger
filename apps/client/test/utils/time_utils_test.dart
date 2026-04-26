@@ -51,19 +51,38 @@ void main() {
       expect(weekdays, contains(result));
     });
 
-    test('returns d/m/yyyy for timestamps older than 7 days', () {
-      final old = DateTime.now().subtract(const Duration(days: 10));
+    test(
+      'returns "Mmm d" for timestamps older than 7 days in the same year',
+      () {
+        final old = DateTime.now().subtract(const Duration(days: 10));
+        final iso = DateTime(
+          old.year,
+          old.month,
+          old.day,
+          8,
+          0,
+        ).toUtc().toIso8601String();
+
+        final result = formatConversationTimestamp(iso);
+        // Should match pattern like "Apr 17" or "Dec 3" -- unambiguous month
+        // abbreviation followed by the day of month.
+        expect(result, matches(RegExp(r'^[A-Z][a-z]{2} \d{1,2}$')));
+      },
+    );
+
+    test('appends year for timestamps from a previous calendar year', () {
+      final last = DateTime.now().subtract(const Duration(days: 400));
       final iso = DateTime(
-        old.year,
-        old.month,
-        old.day,
+        last.year,
+        last.month,
+        last.day,
         8,
         0,
       ).toUtc().toIso8601String();
 
       final result = formatConversationTimestamp(iso);
-      // Should match pattern like 3/4/2026 or 12/1/2026
-      expect(result, matches(RegExp(r'^\d+/\d+/\d{4}$')));
+      // Pattern: "Apr 17, 2024"
+      expect(result, matches(RegExp(r'^[A-Z][a-z]{2} \d{1,2}, \d{4}$')));
     });
   });
 
