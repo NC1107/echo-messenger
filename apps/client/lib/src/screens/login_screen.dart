@@ -149,6 +149,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             _obscurePassword ? Icons.visibility_off : Icons.visibility,
           ),
           onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+          // 44x44 minimum tap target for accessibility.
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
         ),
       ),
       onFieldSubmitted: (_) => _login(),

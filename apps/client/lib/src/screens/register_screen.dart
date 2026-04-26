@@ -227,6 +227,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             _obscurePassword ? Icons.visibility_off : Icons.visibility,
           ),
           onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+          // 44x44 minimum tap target for accessibility.
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
         ),
       ),
       textInputAction: TextInputAction.next,
@@ -282,13 +286,20 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     return TextFormField(
       controller: _confirmController,
       obscureText: _obscureConfirm,
-      autofillHints: const [AutofillHints.newPassword],
+      // No autofill hint here: when both password fields advertise
+      // newPassword, password managers fill both with the same generated
+      // value and silently mask mismatches.
+      autofillHints: const [],
       decoration: InputDecoration(
         labelText: 'Confirm password',
         border: const OutlineInputBorder(),
         suffixIcon: IconButton(
           icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility),
           onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+          // 44x44 minimum tap target for accessibility.
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
         ),
       ),
       onFieldSubmitted: (_) => _register(),

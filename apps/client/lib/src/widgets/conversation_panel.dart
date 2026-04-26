@@ -759,7 +759,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           }
         },
         child: Container(
-          height: 36,
+          // 44px minimum tap target for accessibility.
+          height: 44,
           decoration: BoxDecoration(
             color: context.surface,
             borderRadius: BorderRadius.circular(10),
@@ -872,29 +873,37 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final chipWeight = isSelected ? FontWeight.w600 : FontWeight.w500;
     return GestureDetector(
       onTap: () => _onFilterChanged(filter),
+      // Opaque so taps in the transparent vertical padding still register.
+      behavior: HitTestBehavior.opaque,
       child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? context.accent : context.surface,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: 14, color: chipColor),
-              const SizedBox(width: 4),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                color: chipColor,
-                fontSize: 12,
-                fontWeight: chipWeight,
+        // Outer wrapper provides the 44x44 tap target without enlarging the
+        // visual pill -- the inner Container keeps the compact 28px chip.
+        constraints: const BoxConstraints(minHeight: 44),
+        alignment: Alignment.center,
+        child: Container(
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? context.accent : context.surface,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 14, color: chipColor),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  color: chipColor,
+                  fontSize: 12,
+                  fontWeight: chipWeight,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
