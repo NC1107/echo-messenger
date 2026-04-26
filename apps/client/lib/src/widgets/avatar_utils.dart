@@ -1,6 +1,8 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../services/media_cache_service.dart';
+
 /// Resolves a relative avatar path (e.g. `/api/users/123/avatar`) into a full
 /// URL by prepending the [serverUrl].  Returns `null` when [relativeUrl] is
 /// null or empty so callers can use it directly as the `imageUrl` parameter of
@@ -46,6 +48,8 @@ Widget buildAvatar({
         height: radius * 2,
         child: CachedNetworkImage(
           imageUrl: imageUrl,
+          cacheKey: stableMediaCacheKey(imageUrl),
+          cacheManager: chatMediaCacheManager,
           fit: BoxFit.cover,
           fadeInDuration: Duration.zero,
           fadeOutDuration: Duration.zero,

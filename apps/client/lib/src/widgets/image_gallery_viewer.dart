@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import '../services/media_cache_service.dart';
 import '../services/toast_service.dart';
 import '../utils/download_helper.dart';
 
@@ -454,6 +455,8 @@ class _GalleryPageState extends State<_GalleryPage> {
 
     return CachedNetworkImage(
       imageUrl: url,
+      cacheKey: stableMediaCacheKey(url),
+      cacheManager: chatMediaCacheManager,
       httpHeaders: widget.headers,
       fit: BoxFit.contain,
       placeholder: (_, _) => const _LoadingSpinner(),

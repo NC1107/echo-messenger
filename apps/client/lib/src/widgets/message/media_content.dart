@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../services/media_cache_service.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../utils/download_helper.dart';
@@ -339,6 +340,8 @@ class MediaContentState extends State<MediaContent> {
                         )
                       : CachedNetworkImage(
                           imageUrl: imageUrl,
+                          cacheKey: stableMediaCacheKey(imageUrl),
+                          cacheManager: chatMediaCacheManager,
                           httpHeaders: headers,
                           fit: BoxFit.contain,
                           placeholder: (_, _) => const SizedBox(
@@ -444,8 +447,8 @@ class MediaContentState extends State<MediaContent> {
                       )
                     : CachedNetworkImage(
                         imageUrl: fullUrl,
-                        cacheKey:
-                            '${fullUrl}_${widget.authToken != null ? 'auth' : 'noauth'}',
+                        cacheKey: stableMediaCacheKey(fullUrl),
+                        cacheManager: chatMediaCacheManager,
                         width: 300,
                         fit: BoxFit.cover,
                         httpHeaders: headers,
