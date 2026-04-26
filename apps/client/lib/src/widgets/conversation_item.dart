@@ -221,7 +221,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     if (snippet != null &&
         (snippet.startsWith('[Could not decrypt]') ||
             snippet.startsWith('[Encrypted'))) {
-      return '\u{1F512} Encrypted message';
+      // The DM context already implies encryption; saying "encrypted" here
+      // looks like an error state. Use a neutral placeholder instead.
+      return 'Message';
     }
     return snippet;
   }

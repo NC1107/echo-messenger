@@ -1,14 +1,19 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../utils/version_utils.dart';
-import '../version.dart';
 import '../theme/echo_theme.dart';
+import '../utils/version_utils.dart';
+import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/echo_logo_icon.dart';
+
+/// Larger bottom padding in debug builds leaves room for the multi-line
+/// version footer (server reachability + web bundle), which would otherwise
+/// overlap the form when the keyboard is open on small screens.
+const double _bottomPad = kDebugMode ? 96.0 : 56.0;
 
 /// Computes password strength as a value from 0.0 to 1.0.
 /// Returns a record of (double value, String label, Color color).
@@ -140,43 +145,55 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _versionFuture ??= fetchVersionInfo(serverUrl);
 
     return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Form(
-              key: _formKey,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildHeader(context),
-                    const SizedBox(height: 32),
-                    _buildUsernameField(),
-                    const SizedBox(height: 16),
-                    _buildPasswordField(),
-                    _buildStrengthIndicator(context, strength),
-                    const SizedBox(height: 4),
-                    _buildPasswordHint(context),
-                    const SizedBox(height: 12),
-                    _buildConfirmPasswordField(),
-                    _buildErrorMessage(context, authState),
-                    const SizedBox(height: 24),
-                    _buildSubmitButton(authState),
-                    const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: () => context.go('/login'),
-                      child: const Text('Already have an account? Login'),
+      body: Stack(
+        children: [
+          const AuthBackground(),
+          SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildHeader(context),
+                        const SizedBox(height: 32),
+                        _buildUsernameField(),
+                        const SizedBox(height: 16),
+                        _buildPasswordField(),
+                        _buildStrengthIndicator(context, strength),
+                        const SizedBox(height: 4),
+                        _buildPasswordHint(context),
+                        const SizedBox(height: 12),
+                        _buildConfirmPasswordField(),
+                        _buildErrorMessage(context, authState),
+                        const SizedBox(height: 24),
+                        _buildSubmitButton(authState),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () => context.go('/login'),
+                          child: const Text('Already have an account? Login'),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 16),
-                    _buildVersionFooter(context),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 16,
+            child: SafeArea(
+              top: false,
+              child: AuthVersionFooter(versionFuture: _versionFuture),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -227,6 +244,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             _obscurePassword ? Icons.visibility_off : Icons.visibility,
           ),
           onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
         ),
       ),
       textInputAction: TextInputAction.next,
@@ -282,13 +302,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     return TextFormField(
       controller: _confirmController,
       obscureText: _obscureConfirm,
-      autofillHints: const [AutofillHints.newPassword],
+      // No autofill hint here: when both password fields advertise
+      // newPassword, password managers fill both with the same generated
+      // value and silently mask mismatches.
+      autofillHints: const [],
       decoration: InputDecoration(
         labelText: 'Confirm password',
         border: const OutlineInputBorder(),
         suffixIcon: IconButton(
           icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility),
           onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
         ),
       ),
       onFieldSubmitted: (_) => _register(),
@@ -322,62 +348,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               )
             : const Text('Create Account'),
       ),
-    );
-  }
-
-  Widget _buildVersionFooter(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          'Echo v$appVersion',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: context.textMuted, fontSize: 11),
-        ),
-        FutureBuilder<Map<String, String?>>(
-          future: _versionFuture,
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return const SizedBox.shrink();
-            }
-            return _buildServerVersionInfo(context, snapshot.data!);
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildServerVersionInfo(
-    BuildContext context,
-    Map<String, String?> info,
-  ) {
-    final serverVersion = info['serverVersion'];
-    final serverHost = info['serverHost'];
-    final webVersion = info['webVersion'];
-
-    final serverText = serverVersion != null
-        ? 'Server: $serverHost v$serverVersion'
-        : 'Server: unreachable';
-    final serverColor = serverVersion != null
-        ? context.textMuted
-        : EchoTheme.warning;
-
-    return Column(
-      children: [
-        const SizedBox(height: 2),
-        Text(
-          serverText,
-          textAlign: TextAlign.center,
-          style: TextStyle(color: serverColor, fontSize: 11),
-        ),
-        if (kIsWeb && webVersion != null) ...[
-          const SizedBox(height: 2),
-          Text(
-            'Web: v$webVersion',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: context.textMuted, fontSize: 11),
-          ),
-        ],
-      ],
     );
   }
 }

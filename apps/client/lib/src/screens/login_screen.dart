@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,9 +6,13 @@ import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../utils/version_utils.dart';
-import '../version.dart';
-import '../theme/echo_theme.dart';
+import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/echo_logo_icon.dart';
+
+/// Larger bottom padding in debug builds leaves room for the multi-line
+/// version footer (server reachability + web bundle), which would otherwise
+/// overlap the form when the keyboard is open on small screens.
+const double _bottomPad = kDebugMode ? 96.0 : 56.0;
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -57,43 +61,55 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     _versionFuture ??= fetchVersionInfo(serverUrl);
 
     return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Form(
-              key: _formKey,
-              child: SingleChildScrollView(
-                child: AutofillGroup(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildHeader(),
-                      const SizedBox(height: 32),
-                      _buildUsernameField(),
-                      const SizedBox(height: 16),
-                      _buildPasswordField(),
-                      _buildErrorMessage(authState),
-                      const SizedBox(height: 24),
-                      _buildLoginButton(authState),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        height: 44,
-                        child: TextButton(
-                          onPressed: () => context.go('/register'),
-                          child: const Text('Create an account'),
-                        ),
+      body: Stack(
+        children: [
+          const AuthBackground(),
+          SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
+                  child: Form(
+                    key: _formKey,
+                    child: AutofillGroup(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildHeader(),
+                          const SizedBox(height: 32),
+                          _buildUsernameField(),
+                          const SizedBox(height: 16),
+                          _buildPasswordField(),
+                          _buildErrorMessage(authState),
+                          const SizedBox(height: 24),
+                          _buildLoginButton(authState),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 44,
+                            child: TextButton(
+                              onPressed: () => context.go('/register'),
+                              child: const Text('Create an account'),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      _buildVersionInfo(),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 16,
+            child: SafeArea(
+              top: false,
+              child: AuthVersionFooter(versionFuture: _versionFuture),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -149,6 +165,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
             _obscurePassword ? Icons.visibility_off : Icons.visibility,
           ),
           onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
         ),
       ),
       onFieldSubmitted: (_) => _login(),
@@ -187,57 +206,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               )
             : const Text('Login'),
       ),
-    );
-  }
-
-  Widget _buildVersionInfo() {
-    return Column(
-      children: [
-        Text(
-          'Echo v$appVersion',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: context.textMuted, fontSize: 11),
-        ),
-        FutureBuilder<Map<String, String?>>(
-          future: _versionFuture,
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) return const SizedBox.shrink();
-            return _buildServerVersionDetails(snapshot.data!);
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildServerVersionDetails(Map<String, String?> info) {
-    final serverVersion = info['serverVersion'];
-    final serverHost = info['serverHost'];
-    final webVersion = info['webVersion'];
-
-    final serverText = serverVersion != null
-        ? 'Server: $serverHost v$serverVersion'
-        : 'Server: unreachable';
-    final serverColor = serverVersion != null
-        ? context.textMuted
-        : EchoTheme.warning;
-
-    return Column(
-      children: [
-        const SizedBox(height: 2),
-        Text(
-          serverText,
-          textAlign: TextAlign.center,
-          style: TextStyle(color: serverColor, fontSize: 11),
-        ),
-        if (kIsWeb && webVersion != null) ...[
-          const SizedBox(height: 2),
-          Text(
-            'Web: v$webVersion',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: context.textMuted, fontSize: 11),
-          ),
-        ],
-      ],
     );
   }
 }

@@ -152,15 +152,17 @@ void main() {
       expect(find.text('No conversations yet'), findsOneWidget);
     });
 
-    testWidgets('connection indicator dot is present', (tester) async {
+    testWidgets('header renders without a duplicate connection dot', (
+      tester,
+    ) async {
       await tester.pumpApp(
         ConversationPanel(onConversationTap: (_) {}),
         overrides: standardOverrides(),
       );
       await tester.pump();
 
-      // The connection indicator is an 8x8 Container with BoxShape.circle
-      // near the Echo text. We verify via the header text being present.
+      // Connection state is now shown only on the bottom user-status bar
+      // via the avatar dot. The header just shows the Echo wordmark.
       expect(find.text('Echo'), findsOneWidget);
     });
 
