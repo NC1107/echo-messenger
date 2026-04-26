@@ -48,6 +48,7 @@ class _BiometricLockGuardState extends ConsumerState<BiometricLockGuard>
     final auth = ref.read(authProvider);
     if (!biometric.enabled || !auth.isLoggedIn || biometric.isLoading) return;
     if (_locked || _promptInFlight) return;
+    if (ref.read(biometricProvider.notifier).isSessionValid) return;
 
     setState(() => _locked = true);
     _promptUnlock();
