@@ -253,7 +253,7 @@ class EchoTheme {
   static const lightSurfaceHover = Color(0xFFEEEEF1);
   static const lightTextPrimary = Color(0xFF1A1A1E);
   static const lightTextSecondary = Color(0xFF5C5C66);
-  static const lightTextMuted = Color(0xFF9494A0);
+  static const lightTextMuted = Color(0xFF72727E);
   static const lightSentBubble = Color(0xFF5B5EE6);
   static const lightRecvBubble = Color(0xFFE8E8EC);
   static const lightBorder = Color(0xFFDFDFE5);
@@ -294,7 +294,7 @@ class EchoTheme {
   static const emberAccentLight = Color(0x1AE9960A);
   static const emberTextPrimary = Color(0xFFF5F0E8);
   static const emberTextSecondary = Color(0xFFA89F91);
-  static const emberTextMuted = Color(0xFF8F8478);
+  static const emberTextMuted = Color(0xFF91867A);
   // sentBubble matches the accent so dark-on-accent text passes WCAG AA;
   // the previous darker brown was unreadable with dark onPrimary text.
   static const emberSentBubble = Color(0xFFE9960A);
@@ -312,7 +312,7 @@ class EchoTheme {
   static const neonAccentLight = Color(0x1A00FF88);
   static const neonTextPrimary = Color(0xFFE0E0E8);
   static const neonTextSecondary = Color(0xFFA0A0B8);
-  static const neonTextMuted = Color(0xFF737390);
+  static const neonTextMuted = Color(0xFF7C7C99);
   static const neonSentBubble = Color(0xFF00CC6A);
   static const neonRecvBubble = Color(0xFF1A1A28);
   static const neonBorder = Color(0xFF222235);
@@ -347,7 +347,7 @@ class EchoTheme {
   static const sakuraAccentLight = Color(0x1ADD1C85);
   static const sakuraTextPrimary = Color(0xFF2D1B2E);
   static const sakuraTextSecondary = Color(0xFF7B5A7E);
-  static const sakuraTextMuted = Color(0xFFB898BB);
+  static const sakuraTextMuted = Color(0xFF89698C);
   static const sakuraSentBubble = Color(0xFFDD1C85);
   static const sakuraRecvBubble = Color(0xFFFFE8EE);
   static const sakuraBorder = Color(0xFFF0D4DC);
