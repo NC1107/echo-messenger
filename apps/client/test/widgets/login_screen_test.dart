@@ -71,7 +71,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Echo'), findsOneWidget);
-      expect(find.text('End-to-end encrypted. Zero telemetry.'), findsOneWidget);
+      expect(
+        find.text('End-to-end encrypted. Zero telemetry.'),
+        findsOneWidget,
+      );
       expect(find.widgetWithText(TextField, 'Username'), findsOneWidget);
       expect(find.widgetWithText(TextField, 'Password'), findsOneWidget);
     });

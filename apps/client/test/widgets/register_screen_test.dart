@@ -121,7 +121,9 @@ void main() {
       expect(find.text('Invalid credentials'), findsOneWidget);
     });
 
-    testWidgets('shows password hint text after focusing password field', (tester) async {
+    testWidgets('shows password hint text after focusing password field', (
+      tester,
+    ) async {
       await tester.pumpWidget(_buildApp());
       await tester.pumpAndSettle();
 

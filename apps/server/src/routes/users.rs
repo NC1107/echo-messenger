@@ -768,12 +768,12 @@ pub async fn update_status_text(
         .map(|s| s.trim())
         .filter(|s| !s.is_empty());
     // Enforce max length at the route boundary.
-    if let Some(t) = text {
-        if t.len() > 64 {
-            return Err(AppError::bad_request(
-                "status_text must be 64 characters or fewer",
-            ));
-        }
+    if let Some(t) = text
+        && t.len() > 64
+    {
+        return Err(AppError::bad_request(
+            "status_text must be 64 characters or fewer",
+        ));
     }
     db::users::update_status_text(&state.pool, auth.user_id, text)
         .await
