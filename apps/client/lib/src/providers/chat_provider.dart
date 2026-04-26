@@ -296,6 +296,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String conversationId,
     String timestamp, {
     String? channelId,
+    DateTime? expiresAt,
   }) {
     // Replace the most recent pending/sending message in this conversation
     // with the server-assigned ID so that delivery receipts can match it.
@@ -311,6 +312,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
         messageId,
         timestamp,
         channelId,
+        expiresAt,
       );
       // Cancel only the timer for the specific pending message that was
       // confirmed — not all pending timers in the conversation.
@@ -352,6 +354,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String messageId,
     String timestamp,
     String? channelId,
+    DateTime? expiresAt,
   ) {
     for (var i = 0; i < messages.length; i++) {
       final msg = messages[i];
@@ -366,6 +369,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
           timestamp: timestamp,
           status: MessageStatus.sent,
           channelId: channelId ?? msg.channelId,
+          expiresAt: expiresAt ?? msg.expiresAt,
         );
         updatedConv[conversationId] = updatedMessages;
         return pendingId;
