@@ -489,7 +489,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       color: context.sidebarBg,
       child: Column(
         children: [
-          _buildLogoHeader(context, wsConnected, pendingCount),
+          _buildLogoHeader(context, pendingCount),
           _buildSearchBar(context),
           _buildFilterChips(),
           _buildReplacedBanner(context, wsReplaced),
@@ -557,11 +557,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     return result;
   }
 
-  Widget _buildLogoHeader(
-    BuildContext context,
-    bool wsConnected,
-    int pendingCount,
-  ) {
+  Widget _buildLogoHeader(BuildContext context, int pendingCount) {
+    // Connection state is shown in the bottom user-status bar via the avatar
+    // dot; the duplicate header dot was removed for clarity.
     return Container(
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -580,8 +578,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(width: 6),
-          _buildConnectionDot(context, wsConnected),
           const Spacer(),
           _buildNewActionMenu(context, pendingCount),
           if (widget.onGlobalSearch != null)
@@ -603,17 +599,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildConnectionDot(BuildContext context, bool wsConnected) {
-    return Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(
-        color: wsConnected ? EchoTheme.online : context.textMuted,
-        shape: BoxShape.circle,
       ),
     );
   }

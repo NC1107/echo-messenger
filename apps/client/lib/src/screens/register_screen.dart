@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -140,43 +140,69 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     _versionFuture ??= fetchVersionInfo(serverUrl);
 
     return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 400),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Form(
-              key: _formKey,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildHeader(context),
-                    const SizedBox(height: 32),
-                    _buildUsernameField(),
-                    const SizedBox(height: 16),
-                    _buildPasswordField(),
-                    _buildStrengthIndicator(context, strength),
-                    const SizedBox(height: 4),
-                    _buildPasswordHint(context),
-                    const SizedBox(height: 12),
-                    _buildConfirmPasswordField(),
-                    _buildErrorMessage(context, authState),
-                    const SizedBox(height: 24),
-                    _buildSubmitButton(authState),
-                    const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: () => context.go('/login'),
-                      child: const Text('Already have an account? Login'),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildVersionFooter(context),
+      body: Stack(
+        children: [
+          // Subtle radial gradient fills the otherwise-empty scaffold so the
+          // register form does not float in a flat black void.
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment.topCenter,
+                  radius: 1.4,
+                  colors: [
+                    context.accent.withValues(alpha: 0.06),
+                    context.mainBg,
                   ],
+                  stops: const [0.0, 0.6],
                 ),
               ),
             ),
           ),
-        ),
+          SafeArea(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 56),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildHeader(context),
+                        const SizedBox(height: 32),
+                        _buildUsernameField(),
+                        const SizedBox(height: 16),
+                        _buildPasswordField(),
+                        _buildStrengthIndicator(context, strength),
+                        const SizedBox(height: 4),
+                        _buildPasswordHint(context),
+                        const SizedBox(height: 12),
+                        _buildConfirmPasswordField(),
+                        _buildErrorMessage(context, authState),
+                        const SizedBox(height: 24),
+                        _buildSubmitButton(authState),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () => context.go('/login'),
+                          child: const Text('Already have an account? Login'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 16,
+            child: SafeArea(top: false, child: _buildVersionFooter(context)),
+          ),
+        ],
       ),
     );
   }
@@ -337,13 +363,18 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }
 
   Widget _buildVersionFooter(BuildContext context) {
+    // Customer-facing footer is a single line: just the app version.
+    // Debug builds keep the full server/web detail for developers.
+    final appLine = Text(
+      'Echo v$appVersion',
+      textAlign: TextAlign.center,
+      style: TextStyle(color: context.textMuted, fontSize: 11),
+    );
+    if (!kDebugMode) return appLine;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          'Echo v$appVersion',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: context.textMuted, fontSize: 11),
-        ),
+        appLine,
         FutureBuilder<Map<String, String?>>(
           future: _versionFuture,
           builder: (context, snapshot) {
