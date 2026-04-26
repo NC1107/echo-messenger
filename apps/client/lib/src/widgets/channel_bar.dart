@@ -269,8 +269,10 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
       widget.onShowLounge?.call();
       return;
     }
-    final shouldJoin = await _confirmVoiceJoin(channel.name);
-    if (!shouldJoin) return;
+    if (voiceSettings.confirmBeforeJoinVoice) {
+      final shouldJoin = await _confirmVoiceJoin(channel.name);
+      if (!shouldJoin) return;
+    }
     final success = await ref
         .read(channelsProvider.notifier)
         .joinVoiceChannel(widget.conversationId, channel.id);
@@ -282,7 +284,11 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
             channelId: channel.id,
             startMuted: voiceSettings.selfMuted || voiceSettings.selfDeafened,
           );
-      if (mounted) widget.onVoiceChannelChanged(channel.id);
+      if (!mounted) return;
+      widget.onVoiceChannelChanged(channel.id);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Joined ${channel.name}')));
     }
   }
 
