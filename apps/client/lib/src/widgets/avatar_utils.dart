@@ -40,12 +40,15 @@ Widget buildAvatar({
 
   if (imageUrl != null && imageUrl.isNotEmpty) {
     return ClipOval(
+      key: ValueKey(imageUrl),
       child: SizedBox(
         width: radius * 2,
         height: radius * 2,
         child: CachedNetworkImage(
           imageUrl: imageUrl,
           fit: BoxFit.cover,
+          fadeInDuration: Duration.zero,
+          fadeOutDuration: Duration.zero,
           placeholder: (_, _) => fallback,
           errorWidget: (_, _, _) => fallback,
         ),

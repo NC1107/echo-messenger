@@ -795,6 +795,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }).toList();
 
     state = state.copyWith(messagesByConversation: updatedConv);
+
+    // Persist the edit to the local Hive cache so it survives app restart.
+    final edited = updatedConv[conversationId]
+        ?.where((m) => m.id == messageId)
+        .toList();
+    if (edited != null && edited.isNotEmpty) {
+      MessageCache.cacheMessages(conversationId, edited);
+    }
   }
 
   /// Update a message's pin state in local state.
