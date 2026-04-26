@@ -1124,21 +1124,26 @@ class _MessageItemState extends State<MessageItem>
       return _buildDecryptionFailure();
     }
 
+    final displayContent = msg.content.startsWith('[Forwarded] ')
+        ? msg.content.substring('[Forwarded] '.length)
+        : msg.content;
+
     final textColor = _contentTextColor(isMine: isMine, isFailed: isFailed);
     final textWidget = RichTextContent(
-      text: msg.content,
+      text: displayContent,
       textColor: textColor,
       accentHoverColor: context.accentHover,
       textSecondaryColor: context.textSecondary,
     );
 
-    final embeddedImages = extractEmbeddedImageUrls(msg.content);
+    final embeddedImages = extractEmbeddedImageUrls(displayContent);
 
     // Link preview for the first URL (skip attachment-only messages and
     // internal server links).
     Widget? linkPreview;
-    if (!msg.content.startsWith('[img:') && !msg.content.startsWith('[file:')) {
-      final urlMatch = urlRegex.firstMatch(msg.content);
+    if (!displayContent.startsWith('[img:') &&
+        !displayContent.startsWith('[file:')) {
+      final urlMatch = urlRegex.firstMatch(displayContent);
       if (urlMatch != null) {
         final previewUrl = urlMatch.group(0)!;
         final serverHost = Uri.tryParse(widget.serverUrl ?? '')?.host;
@@ -1261,6 +1266,37 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
+  Widget _buildForwardedBadge({required bool isMine}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.forward,
+            size: 12,
+            color: isMine
+                ? Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7)
+                : context.textMuted,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Forwarded',
+            style: TextStyle(
+              fontSize: 11,
+              fontStyle: FontStyle.italic,
+              color: isMine
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.onPrimary.withValues(alpha: 0.7)
+                  : context.textMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Assemble the children of the bubble Column.
   List<Widget> _bubbleChildren({
     required ChatMessage msg,
@@ -1281,6 +1317,8 @@ class _MessageItemState extends State<MessageItem>
               ? () => widget.onTapReplyQuote!(msg.replyToId!)
               : null,
         ),
+      if (msg.content.startsWith('[Forwarded] '))
+        _buildForwardedBadge(isMine: isMine),
       _buildBubbleContent(
         msg: msg,
         isMine: isMine,
