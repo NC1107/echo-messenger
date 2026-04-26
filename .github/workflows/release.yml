@@ -259,16 +259,20 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-      - name: Verify signing secrets present
+      - name: Check signing secrets
+        id: signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
         run: |
           if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEY_PROPERTIES" ]; then
-            echo "::error::Android signing secrets missing. Refusing to ship unsigned APK."
-            exit 1
+            echo "::warning::Android signing secrets missing. Skipping Android build (no unsigned APKs will be produced)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Set up signing
+        if: steps.signing.outputs.skip != 'true'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
@@ -276,13 +280,16 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > apps/client/android/echo-release.jks
           echo "$ANDROID_KEY_PROPERTIES" > apps/client/android/key.properties
       - name: Build APK
+        if: steps.signing.outputs.skip != 'true'
         working-directory: apps/client
         run: flutter build apk --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
       - name: Rename APK
+        if: steps.signing.outputs.skip != 'true'
         run: |
           cp apps/client/build/app/outputs/flutter-apk/app-release.apk \
              echo-android-${{ needs.version.outputs.version }}.apk
       - name: Upload Android artifact
+        if: steps.signing.outputs.skip != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-android
