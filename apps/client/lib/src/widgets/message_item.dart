@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:http/http.dart' as http;
 import 'package:photo_manager/photo_manager.dart' show PhotoManager;
 
@@ -17,6 +16,7 @@ import '../utils/download_helper.dart';
 import '../utils/clipboard_image_helper.dart' show writeImageToClipboard;
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, avatarColor;
+import '../services/media_cache_service.dart';
 import 'message/media_content.dart';
 import 'message/message_status_icon.dart';
 import 'message/reaction_bar.dart';
@@ -32,15 +32,6 @@ bool get _isMobilePlatform =>
     !kIsWeb &&
     (defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS);
-
-/// Bounded cache manager for chat images to prevent unbounded disk usage.
-final chatImageCacheManager = CacheManager(
-  Config(
-    'chatImages',
-    maxNrOfCacheObjects: 200,
-    stalePeriod: const Duration(days: 30),
-  ),
-);
 
 class MessageItem extends StatefulWidget {
   final ChatMessage message;
@@ -657,8 +648,9 @@ class _MessageItemState extends State<MessageItem>
                   maxScale: 4,
                   child: CachedNetworkImage(
                     imageUrl: imageUrl,
+                    cacheKey: stableMediaCacheKey(imageUrl),
                     httpHeaders: headers,
-                    cacheManager: chatImageCacheManager,
+                    cacheManager: chatMediaCacheManager,
                     fit: BoxFit.contain,
                     placeholder: (_, _) => SizedBox(
                       width: 320,
@@ -1199,9 +1191,10 @@ class _MessageItemState extends State<MessageItem>
                       )
                     : CachedNetworkImage(
                         imageUrl: imgUrl,
+                        cacheKey: stableMediaCacheKey(imgUrl),
                         fit: BoxFit.cover,
                         httpHeaders: headers,
-                        cacheManager: chatImageCacheManager,
+                        cacheManager: chatMediaCacheManager,
                         errorWidget: (_, _, _) => const SizedBox.shrink(),
                         // Reserve the expected image area while loading so
                         // the scroll position does not jump when the image

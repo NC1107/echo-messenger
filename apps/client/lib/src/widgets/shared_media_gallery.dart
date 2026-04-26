@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/media_ticket_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../services/media_cache_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
 import 'image_gallery_viewer.dart';
@@ -199,6 +200,8 @@ class _MediaGrid extends StatelessWidget {
                     )
                   : CachedNetworkImage(
                       imageUrl: resolvedUrl,
+                      cacheKey: stableMediaCacheKey(resolvedUrl),
+                      cacheManager: chatMediaCacheManager,
                       httpHeaders: headers,
                       fit: BoxFit.cover,
                       placeholder: (_, _) => _placeholder(context),
