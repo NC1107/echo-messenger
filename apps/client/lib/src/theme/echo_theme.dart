@@ -699,7 +699,10 @@ class EchoTheme {
         hintColor: neonTextMuted,
         labelColor: neonTextSecondary,
       ),
-      filledButtonTheme: _buildFilledButtonTheme(neonAccent),
+      filledButtonTheme: _buildFilledButtonTheme(
+        neonAccent,
+        foregroundColor: const Color(0xFF0A0A0F),
+      ),
       textButtonTheme: _buildTextButtonTheme(neonAccent),
       outlinedButtonTheme: _buildOutlinedButtonTheme(
         neonTextPrimary,

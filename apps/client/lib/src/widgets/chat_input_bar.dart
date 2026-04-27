@@ -1770,7 +1770,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         ),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        // Center-align icons and text on single-line; bottom-align when the
+        // field has grown to multiple lines so action icons stay near the
+        // cursor line rather than floating in the middle of the tall textarea.
+        crossAxisAlignment: _isMultiline
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.center,
         children: [
           leading,
           // Text field
