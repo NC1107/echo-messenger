@@ -20,7 +20,7 @@ use crate::error::AppError;
 use super::AppState;
 
 /// Maximum upload size: 10 MB.
-const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
+pub const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
 
 /// Allowed MIME types for upload.
 const ALLOWED_MIME_TYPES: &[&str] = &[

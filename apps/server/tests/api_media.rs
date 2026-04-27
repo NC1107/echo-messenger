@@ -6,6 +6,24 @@ use reqwest::Client;
 use reqwest::multipart::{Form, Part};
 use serde_json::Value;
 
+/// 3 MB synthetic MP4 -- valid `ftyp` header that `infer` detects as video/mp4,
+/// padded to exceed Axum's default 2 MB body limit.
+const SYNTHETIC_MP4_SIZE: usize = 3 * 1024 * 1024;
+
+fn make_minimal_mp4(size: usize) -> Vec<u8> {
+    // Minimal ISO Base Media (ftyp) box: size(4) + "ftyp"(4) + "isom"(4)
+    // + minor_version(4) + compatible_brand(4) = 20 bytes total.
+    let mut data = vec![
+        0x00, 0x00, 0x00, 0x14, // box size = 20
+        b'f', b't', b'y', b'p', // box type = "ftyp"
+        b'i', b's', b'o', b'm', // major brand  = "isom"
+        0x00, 0x00, 0x00, 0x00, // minor version = 0
+        b'i', b's', b'o', b'm', // compatible brand = "isom"
+    ];
+    data.resize(size, 0);
+    data
+}
+
 /// 1x1 pixel PNG -- enough for `infer::get` to detect image/png.
 const MINIMAL_PNG: &[u8] = &[
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
@@ -280,4 +298,36 @@ async fn legacy_token_param_works() {
     assert_eq!(resp.status().as_u16(), 200);
     let bytes = resp.bytes().await.unwrap();
     assert_eq!(bytes.as_ref(), MINIMAL_PNG);
+}
+
+#[tokio::test]
+async fn upload_video_larger_than_2mb_returns_201() {
+    // Regression test: Axum's default body limit is 2 MB, but the server's
+    // own MAX_FILE_SIZE is 10 MB.  Without an explicit DefaultBodyLimit
+    // override on the upload route, any video > 2 MB was rejected (413).
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _, _) = common::register_and_login(&client, &base, "media_vid").await;
+
+    let video_bytes = make_minimal_mp4(SYNTHETIC_MP4_SIZE);
+    let part = Part::bytes(video_bytes)
+        .file_name("test.mp4")
+        .mime_str("video/mp4")
+        .unwrap();
+    let form = Form::new().part("file", part);
+
+    let resp = client
+        .post(format!("{base}/api/media/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status().as_u16(),
+        201,
+        "video upload should succeed: body = {}",
+        resp.text().await.unwrap_or_default()
+    );
 }
