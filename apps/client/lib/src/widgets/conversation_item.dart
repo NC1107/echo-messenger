@@ -234,13 +234,16 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
   String? _applyMediaLabel(String? snippet) {
     if (snippet == null) return null;
     if (RegExp(r'^\[img:.+\]$').hasMatch(snippet)) {
-      return '\u{1F5BC} Image';
+      return '\u{1F4F7} Photo';
     }
     if (RegExp(r'^\[video:.+\]$').hasMatch(snippet)) {
       return '\u{1F3AC} Video';
     }
     if (RegExp(r'^\[file:.+\]$').hasMatch(snippet)) {
       return '\u{1F4CE} File';
+    }
+    if (RegExp(r'^\[voice:.+\]$').hasMatch(snippet)) {
+      return '\u{1F3A4} Voice message';
     }
     return snippet;
   }

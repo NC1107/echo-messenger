@@ -1021,6 +1021,11 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
   final Color sentBubble;
   final Color recvBubble;
 
+  /// Surface color for grouped card rows in settings / sectioned lists.
+  /// Slightly raised vs the page background so cards visually pop.
+  /// Falls back to [surfaceHover] when null (see [resolvedCardRowBg]).
+  final Color? cardRowBg;
+
   /// Optional gradient for the chat background. Null means use flat [chatBg].
   final Gradient? chatBgGradient;
 
@@ -1032,8 +1037,13 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     required this.textMuted,
     required this.sentBubble,
     required this.recvBubble,
+    this.cardRowBg,
     this.chatBgGradient,
   });
+
+  /// Resolved card row surface color. Defaults to [surfaceHover] when no
+  /// theme-specific override was supplied.
+  Color get resolvedCardRowBg => cardRowBg ?? surfaceHover;
 
   /// Dark theme colors
   static const dark = EchoColorExtension(
@@ -1126,6 +1136,7 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     Color? textMuted,
     Color? sentBubble,
     Color? recvBubble,
+    Color? cardRowBg,
     Gradient? chatBgGradient,
   }) {
     return EchoColorExtension(
@@ -1136,6 +1147,7 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
       textMuted: textMuted ?? this.textMuted,
       sentBubble: sentBubble ?? this.sentBubble,
       recvBubble: recvBubble ?? this.recvBubble,
+      cardRowBg: cardRowBg ?? this.cardRowBg,
       chatBgGradient: chatBgGradient ?? this.chatBgGradient,
     );
   }
@@ -1143,6 +1155,18 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
   @override
   EchoColorExtension lerp(EchoColorExtension? other, double t) {
     if (other is! EchoColorExtension) return this;
+    final selfCard = cardRowBg;
+    final otherCard = other.cardRowBg;
+    final Color? lerpedCardRowBg;
+    if (selfCard == null && otherCard == null) {
+      lerpedCardRowBg = null;
+    } else {
+      lerpedCardRowBg = Color.lerp(
+        selfCard ?? surfaceHover,
+        otherCard ?? other.surfaceHover,
+        t,
+      );
+    }
     return EchoColorExtension(
       sidebarBg: Color.lerp(sidebarBg, other.sidebarBg, t)!,
       chatBg: Color.lerp(chatBg, other.chatBg, t)!,
@@ -1151,6 +1175,7 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
       textMuted: Color.lerp(textMuted, other.textMuted, t)!,
       sentBubble: Color.lerp(sentBubble, other.sentBubble, t)!,
       recvBubble: Color.lerp(recvBubble, other.recvBubble, t)!,
+      cardRowBg: lerpedCardRowBg,
       chatBgGradient: t < 0.5 ? chatBgGradient : other.chatBgGradient,
     );
   }
@@ -1180,5 +1205,27 @@ extension EchoColors on BuildContext {
   Color get textMuted => echo.textMuted;
   Color get sentBubble => echo.sentBubble;
   Color get recvBubble => echo.recvBubble;
+  Color get cardRowBg => echo.resolvedCardRowBg;
   Gradient? get chatBgGradient => echo.chatBgGradient;
+}
+
+/// Shared layout tokens for sectioned card lists (e.g. Settings).
+class EchoSectionTokens {
+  EchoSectionTokens._();
+
+  /// Vertical gap between separate card groups.
+  static const double groupGap = 16;
+
+  /// Vertical gap above a [SectionHeader] label.
+  static const double headerTopGap = 24;
+
+  /// All-caps muted section label text style.
+  static TextStyle sectionLabelStyle(BuildContext context) {
+    return TextStyle(
+      color: context.textMuted,
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1.2,
+    );
+  }
 }

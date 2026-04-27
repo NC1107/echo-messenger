@@ -393,8 +393,8 @@ void main() {
       );
       await tester.pump();
 
-      // Should show the image media label, not the raw marker
-      expect(find.textContaining('Image'), findsOneWidget);
+      // Should show the photo media label, not the raw marker
+      expect(find.textContaining('Photo'), findsOneWidget);
       expect(find.textContaining('[img:'), findsNothing);
     });
 
