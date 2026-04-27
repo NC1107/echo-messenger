@@ -65,14 +65,16 @@ void main() {
   // analysis step will surface "undefined_named_parameter" and
   // "undefined_identifier" errors for AudioPreset.
   group('livekit_client v2.7 AudioPublishOptions API', () {
-    test('AudioPublishOptions accepts encoding with AudioEncoding.presetMusic',
-        () {
-      const opts = AudioPublishOptions(
-        encoding: AudioEncoding.presetMusic,
-        dtx: true,
-      );
-      expect(opts.dtx, isTrue);
-      expect(opts.encoding, AudioEncoding.presetMusic);
-    });
+    test(
+      'AudioPublishOptions accepts encoding with AudioEncoding.presetMusic',
+      () {
+        const opts = AudioPublishOptions(
+          encoding: AudioEncoding.presetMusic,
+          dtx: true,
+        );
+        expect(opts.dtx, isTrue);
+        expect(opts.encoding, AudioEncoding.presetMusic);
+      },
+    );
   });
 }
