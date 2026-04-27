@@ -179,7 +179,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                     setState(() => _focusedTileKey = 'screenshare-$sid'),
                 child: lk.VideoTrackRenderer(
                   track,
-                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                  fit: lk.VideoViewFit.contain,
                 ),
               ),
             ),
@@ -363,7 +363,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               if (track != null)
                 lk.VideoTrackRenderer(
                   track,
-                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                  fit: lk.VideoViewFit.contain,
                   mirrorMode: mirror
                       ? lk.VideoViewMirrorMode.mirror
                       : lk.VideoViewMirrorMode.off,
@@ -924,7 +924,7 @@ class _ParticipantTile extends StatelessWidget {
               if (hasVideo && videoTrack != null)
                 lk.VideoTrackRenderer(
                   videoTrack!,
-                  fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                  fit: lk.VideoViewFit.cover,
                   mirrorMode: mirror
                       ? lk.VideoViewMirrorMode.mirror
                       : lk.VideoViewMirrorMode.off,
@@ -1176,10 +1176,7 @@ class _LocalScreenShareTrackState extends State<_LocalScreenShareTrack> {
         ),
       );
     }
-    return lk.VideoTrackRenderer(
-      _track!,
-      fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
-    );
+    return lk.VideoTrackRenderer(_track!, fit: lk.VideoViewFit.contain);
   }
 }
 
@@ -1226,7 +1223,7 @@ class _ScreenShareViewer extends ConsumerWidget {
               aspectRatio: 16 / 9,
               child: lk.VideoTrackRenderer(
                 screenTrack,
-                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                fit: lk.VideoViewFit.contain,
               ),
             ),
           ),
@@ -2286,7 +2283,7 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
     final serverUrl = ref.read(serverUrlProvider);
     final token = ref.read(authProvider).token;
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.image,
         allowMultiple: false,
         withData: true,
@@ -2657,7 +2654,7 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
               onTap: () => Navigator.of(context).pop(),
               child: lk.VideoTrackRenderer(
                 widget.track,
-                fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                fit: lk.VideoViewFit.contain,
                 mirrorMode: widget.mirror
                     ? lk.VideoViewMirrorMode.mirror
                     : lk.VideoViewMirrorMode.off,

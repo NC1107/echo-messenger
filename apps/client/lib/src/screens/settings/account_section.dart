@@ -298,7 +298,7 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
   }
 
   Future<void> _uploadAvatar() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.image,
       withData: true,
     );

@@ -87,7 +87,7 @@ class _NativeNotificationService implements NotificationService {
         linux: linux,
       );
       await _plugin.initialize(
-        initSettings,
+        settings: initSettings,
         onDidReceiveNotificationResponse: _onNotificationTap,
       );
       _initialized = true;
@@ -233,10 +233,10 @@ class _NativeNotificationService implements NotificationService {
       );
 
       _plugin.show(
-        notificationId,
-        senderUsername,
-        body,
-        NotificationDetails(
+        id: notificationId,
+        title: senderUsername,
+        body: body,
+        notificationDetails: NotificationDetails(
           android: androidDetails,
           iOS: iosDetails,
           linux: _linuxDetails,
@@ -249,7 +249,7 @@ class _NativeNotificationService implements NotificationService {
   @override
   void cancelConversationNotifications(String conversationId) {
     if (!_initialized) return;
-    _plugin.cancel(_idForConversation(conversationId));
+    _plugin.cancel(id: _idForConversation(conversationId));
   }
 
   @override

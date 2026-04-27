@@ -3,7 +3,7 @@
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use rand::RngCore;
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -61,8 +61,7 @@ pub fn validate_token(token: &str, secret: &str) -> Result<Claims, AppError> {
 
 /// Generate a cryptographically random 64-byte refresh token, returned as base64url.
 pub fn create_refresh_token() -> String {
-    let mut bytes = [0u8; 64];
-    rand::rng().fill_bytes(&mut bytes);
+    let bytes = rand::random::<[u8; 64]>();
     URL_SAFE_NO_PAD.encode(bytes)
 }
 

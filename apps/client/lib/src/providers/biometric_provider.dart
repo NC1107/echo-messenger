@@ -91,13 +91,7 @@ class BiometricNotifier extends StateNotifier<BiometricState> {
     if (!state.isAvailable) return true;
     if (isSessionValid) return true;
     try {
-      final ok = await _auth.authenticate(
-        localizedReason: 'Unlock Echo',
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: false,
-        ),
-      );
+      final ok = await _auth.authenticate(localizedReason: 'Unlock Echo');
       if (ok) {
         _authenticatedThisSession = true;
         _lastAuthTime = DateTime.now();

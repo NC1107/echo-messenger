@@ -5,7 +5,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
 import '../models/canvas_models.dart';
@@ -638,7 +637,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
     final innerContent = hasVideo
         ? lk.VideoTrackRenderer(
             info.videoTrack!,
-            fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+            fit: lk.VideoViewFit.cover,
             mirrorMode: info.mirror
                 ? lk.VideoViewMirrorMode.mirror
                 : lk.VideoViewMirrorMode.off,
