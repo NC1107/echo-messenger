@@ -26,7 +26,7 @@ dependencies:
   web: ^1.1.0
   flutter_webrtc: ^1.4.1
   dart_webrtc: ^1.8.1
-  livekit_client: ^2.3.2
+  livekit_client: ^2.7.0
   video_player: ^2.9.2
   cached_network_image: ^3.4.1
   flutter_cache_manager: ^3.4.1
