@@ -60,6 +60,10 @@ class ChatPanel extends ConsumerStatefulWidget {
   final VoidCallback? onShowLounge;
   final bool hideVoiceDock;
 
+  /// When set, the panel scrolls to and briefly highlights this message
+  /// after the conversation finishes loading.
+  final String? initialMessageId;
+
   const ChatPanel({
     super.key,
     this.conversation,
@@ -68,6 +72,7 @@ class ChatPanel extends ConsumerStatefulWidget {
     this.onBack,
     this.onShowLounge,
     this.hideVoiceDock = false,
+    this.initialMessageId,
   });
 
   @override
@@ -129,6 +134,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   bool _showSearch = false;
   ChatMessage? _threadParent;
   String? _highlightedMessageId;
+  String? _pendingInitialMessageId;
   Timer? _highlightTimer;
   double _lastKeyboardInset = 0;
 
@@ -198,6 +204,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     WidgetsBinding.instance.addObserver(this);
     _loadDismissedBanners();
     _loadDeletedForMe();
+    _pendingInitialMessageId = widget.initialMessageId;
   }
 
   @override
@@ -219,6 +226,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       _showSearch = false;
       _threadParent = null;
       _highlightedMessageId = null;
+      _pendingInitialMessageId = widget.initialMessageId;
       _hasNewMessagesBelow = false;
       _newMessagesBelowCount = 0;
       _unreadBoundaryMessageId = null;
@@ -2125,7 +2133,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         // Capture unread boundary before marking as read (which resets count)
         _captureUnreadBoundary();
         _markAsRead();
-        if (_unreadBoundaryMessageId != null) {
+        final pendingMsg = _pendingInitialMessageId;
+        if (pendingMsg != null) {
+          _pendingInitialMessageId = null;
+          // Wait for next frame so message widgets are rendered and keys registered.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _highlightMessage(pendingMsg);
+          });
+        } else if (_unreadBoundaryMessageId != null) {
           _scrollToUnreadBoundary();
         } else {
           _scrollToBottom(settleRetries: 3);

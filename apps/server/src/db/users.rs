@@ -17,6 +17,8 @@ pub struct UserRow {
     pub bio: Option<String>,
     #[allow(dead_code)]
     pub status_message: Option<String>,
+    #[allow(dead_code)]
+    pub status_text: Option<String>,
 }
 
 pub async fn create_user(
@@ -39,7 +41,7 @@ pub async fn find_by_username(
     username: &str,
 ) -> Result<Option<UserRow>, sqlx::Error> {
     sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash, avatar_url, display_name, bio, status_message FROM users WHERE username = $1",
+        "SELECT id, username, password_hash, avatar_url, display_name, bio, status_message, status_text FROM users WHERE username = $1",
     )
     .bind(username)
     .fetch_optional(pool)
@@ -48,7 +50,7 @@ pub async fn find_by_username(
 
 pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<UserRow>, sqlx::Error> {
     sqlx::query_as::<_, UserRow>(
-        "SELECT id, username, password_hash, avatar_url, display_name, bio, status_message FROM users WHERE id = $1",
+        "SELECT id, username, password_hash, avatar_url, display_name, bio, status_message, status_text FROM users WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -381,4 +383,70 @@ pub async fn update_privacy_preferences(
     .bind(user_id)
     .fetch_one(pool)
     .await
+}
+
+/// Set the user's custom status text (max 64 chars, NULL to clear).
+pub async fn update_status_text(
+    pool: &PgPool,
+    user_id: Uuid,
+    status_text: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE users SET status_text = $1 WHERE id = $2")
+        .bind(status_text)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Fetch the status_text for a user.
+pub async fn get_status_text(pool: &PgPool, user_id: Uuid) -> Result<Option<String>, sqlx::Error> {
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT status_text FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.and_then(|(t,)| t))
+}
+
+/// Add or remove a conversation pin for a user.
+pub async fn pin_conversation(
+    pool: &PgPool,
+    user_id: Uuid,
+    conversation_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO pinned_conversations (user_id, conversation_id) \
+         VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    )
+    .bind(user_id)
+    .bind(conversation_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn unpin_conversation(
+    pool: &PgPool,
+    user_id: Uuid,
+    conversation_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM pinned_conversations WHERE user_id = $1 AND conversation_id = $2")
+        .bind(user_id)
+        .bind(conversation_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn get_pinned_conversations(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> =
+        sqlx::query_as("SELECT conversation_id FROM pinned_conversations WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_all(pool)
+            .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
 }

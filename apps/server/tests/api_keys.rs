@@ -267,6 +267,202 @@ async fn otp_count_reflects_remaining() {
 }
 
 // ---------------------------------------------------------------------------
+// Key length validation (X25519 keys must be exactly 32 bytes)
+// ---------------------------------------------------------------------------
+
+/// Build a valid signing key + signature pair over `signed_prekey_bytes` so we
+/// can isolate identity_key / OTP length failures without the signature check
+/// interfering.
+fn make_valid_signing_pair(signed_prekey_bytes: &[u8]) -> (SigningKey, Vec<u8>, Vec<u8>) {
+    let mut secret = [0u8; 32];
+    rand::rng().fill_bytes(&mut secret);
+    let sk = SigningKey::from_bytes(&secret);
+    let sig = sk.sign(signed_prekey_bytes).to_bytes().to_vec();
+    let vk = sk.verifying_key().to_bytes().to_vec();
+    (sk, vk, sig)
+}
+
+#[tokio::test]
+async fn upload_bundle_short_identity_key_returns_400() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keyshortid").await;
+
+    let mut signed_prekey = [0u8; 32];
+    rand::rng().fill_bytes(&mut signed_prekey);
+    let (_sk, vk, sig) = make_valid_signing_pair(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode([0u8; 16]),  // 16 bytes -- too short
+        "signed_prekey": BASE64.encode(signed_prekey),
+        "signed_prekey_signature": BASE64.encode(&sig),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [],
+        "device_id": 0,
+        "signing_key": BASE64.encode(&vk),
+    });
+
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn upload_bundle_oversized_identity_key_returns_400() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keyoverId").await;
+
+    let mut signed_prekey = [0u8; 32];
+    rand::rng().fill_bytes(&mut signed_prekey);
+    let (_sk, vk, sig) = make_valid_signing_pair(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode([0u8; 64]),  // 64 bytes -- too long
+        "signed_prekey": BASE64.encode(signed_prekey),
+        "signed_prekey_signature": BASE64.encode(&sig),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [],
+        "device_id": 0,
+        "signing_key": BASE64.encode(&vk),
+    });
+
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn upload_bundle_short_signed_prekey_returns_400() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keyshortspk").await;
+
+    // Sign the short prekey so the only failing check is the length guard.
+    let short_spk = [0u8; 16];
+    let (_sk, vk, sig) = make_valid_signing_pair(&short_spk);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode([0u8; 32]),
+        "signed_prekey": BASE64.encode(short_spk),  // 16 bytes -- too short
+        "signed_prekey_signature": BASE64.encode(&sig),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [],
+        "device_id": 0,
+        "signing_key": BASE64.encode(&vk),
+    });
+
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn upload_bundle_oversized_signed_prekey_returns_400() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keyoverspk").await;
+
+    // Sign the oversized prekey so the only failing check is the length guard.
+    let big_spk = [0u8; 64];
+    let (_sk, vk, sig) = make_valid_signing_pair(&big_spk);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode([0u8; 32]),
+        "signed_prekey": BASE64.encode(big_spk),  // 64 bytes -- too long
+        "signed_prekey_signature": BASE64.encode(&sig),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [],
+        "device_id": 0,
+        "signing_key": BASE64.encode(&vk),
+    });
+
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn upload_bundle_short_otp_returns_400() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keyshortotp").await;
+
+    let mut signed_prekey = [0u8; 32];
+    rand::rng().fill_bytes(&mut signed_prekey);
+    let (_sk, vk, sig) = make_valid_signing_pair(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode([0u8; 32]),
+        "signed_prekey": BASE64.encode(signed_prekey),
+        "signed_prekey_signature": BASE64.encode(&sig),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [{"key_id": 1, "public_key": BASE64.encode([0u8; 16])}],  // 16 bytes
+        "device_id": 0,
+        "signing_key": BASE64.encode(&vk),
+    });
+
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn upload_bundle_oversized_otp_returns_400() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keyoverotp").await;
+
+    let mut signed_prekey = [0u8; 32];
+    rand::rng().fill_bytes(&mut signed_prekey);
+    let (_sk, vk, sig) = make_valid_signing_pair(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode([0u8; 32]),
+        "signed_prekey": BASE64.encode(signed_prekey),
+        "signed_prekey_signature": BASE64.encode(&sig),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [{"key_id": 1, "public_key": BASE64.encode([0u8; 64])}],  // 64 bytes
+        "device_id": 0,
+        "signing_key": BASE64.encode(&vk),
+    });
+
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400);
+}
+
+// ---------------------------------------------------------------------------
 // Identity key binding
 // ---------------------------------------------------------------------------
 

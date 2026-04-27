@@ -6,13 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../providers/accessibility_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../providers/theme_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/friendly_error.dart';
@@ -37,12 +37,11 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   PlatformFile? _pickedAvatar;
   bool _uploadingAvatar = false;
 
-  // Page 2 -- About you
+  // TODO: move to Settings > Profile (bio, pronouns, timezone)
   final _pronounsController = TextEditingController();
   final _bioController = TextEditingController();
   final _statusController = TextEditingController();
   final _timezoneController = TextEditingController();
-  bool _customPronoun = false;
 
   // Page 3 -- Add contact
   final _contactUsernameController = TextEditingController();
@@ -82,7 +81,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   }
 
   void _next() {
-    if (_currentPage < 4) {
+    if (_currentPage < 2) {
       _goToPage(_currentPage + 1);
     } else {
       _finish();
@@ -137,6 +136,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   Future<void> _markOnboardingComplete() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(kOnboardingCompletedKey, true);
+    // Home screen should check 'profile_nudge_shown' to prompt the user
+    // to complete their profile (bio, pronouns, timezone) in Settings > Profile.
+    await prefs.setBool('profile_nudge_shown', false);
   }
 
   // ---------------------------------------------------------------------------
@@ -276,8 +278,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                       onPageChanged: (i) => setState(() => _currentPage = i),
                       children: [
                         _buildWelcomePage(context),
-                        _buildAboutYouPage(context),
-                        _buildAppearancePage(context),
                         _buildEncryptionPage(context),
                         _buildContactPage(context),
                       ],
@@ -429,466 +429,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   }
 
   // ---------------------------------------------------------------------------
-  // Page 2 -- About
-  // ---------------------------------------------------------------------------
-
-  // Common pronoun options
-  static const _pronounOptions = [
-    'he/him',
-    'she/her',
-    'they/them',
-    'he/they',
-    'she/they',
-    'any pronouns',
-  ];
-
-  // Common IANA timezones
-  static const _timezones = [
-    'America/New_York',
-    'America/Chicago',
-    'America/Denver',
-    'America/Los_Angeles',
-    'America/Anchorage',
-    'Pacific/Honolulu',
-    'America/Toronto',
-    'America/Vancouver',
-    'America/Mexico_City',
-    'America/Sao_Paulo',
-    'America/Argentina/Buenos_Aires',
-    'Europe/London',
-    'Europe/Paris',
-    'Europe/Berlin',
-    'Europe/Madrid',
-    'Europe/Rome',
-    'Europe/Amsterdam',
-    'Europe/Stockholm',
-    'Europe/Moscow',
-    'Europe/Istanbul',
-    'Africa/Cairo',
-    'Africa/Lagos',
-    'Africa/Johannesburg',
-    'Asia/Dubai',
-    'Asia/Kolkata',
-    'Asia/Bangkok',
-    'Asia/Shanghai',
-    'Asia/Tokyo',
-    'Asia/Seoul',
-    'Asia/Singapore',
-    'Australia/Sydney',
-    'Australia/Melbourne',
-    'Australia/Perth',
-    'Pacific/Auckland',
-  ];
-
-  Widget _buildPronounsField() {
-    final currentValue = _pronounsController.text;
-    final isOther =
-        _customPronoun ||
-        (currentValue.isNotEmpty && !_pronounOptions.contains(currentValue));
-
-    final String? dropdownInitial;
-    if (isOther) {
-      dropdownInitial = 'other';
-    } else if (currentValue.isEmpty) {
-      dropdownInitial = null;
-    } else {
-      dropdownInitial = currentValue;
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        DropdownButtonFormField<String>(
-          initialValue: dropdownInitial,
-          decoration: InputDecoration(
-            labelText: 'Pronouns',
-            labelStyle: TextStyle(color: context.textSecondary),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: context.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: context.accent),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 10,
-            ),
-          ),
-          dropdownColor: context.surface,
-          style: TextStyle(color: context.textPrimary, fontSize: 14),
-          items: [
-            ..._pronounOptions.map(
-              (p) => DropdownMenuItem(value: p, child: Text(p)),
-            ),
-            const DropdownMenuItem(value: 'other', child: Text('Other...')),
-          ],
-          onChanged: (value) {
-            setState(() {
-              if (value == 'other') {
-                _customPronoun = true;
-                _pronounsController.text = '';
-              } else {
-                _customPronoun = false;
-                _pronounsController.text = value ?? '';
-              }
-            });
-          },
-        ),
-        if (isOther) ...[
-          const SizedBox(height: 8),
-          _buildField(
-            controller: _pronounsController,
-            label: 'Custom pronouns',
-            hint: 'Enter your pronouns',
-            maxLength: 30,
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildTimezoneDropdown() {
-    final current = _timezoneController.text;
-    final isInList = _timezones.contains(current);
-
-    return DropdownButtonFormField<String>(
-      initialValue: isInList ? current : null,
-      decoration: InputDecoration(
-        labelText: 'Timezone',
-        hintText: current.isNotEmpty && !isInList ? current : 'Select timezone',
-        hintStyle: TextStyle(color: context.textMuted),
-        labelStyle: TextStyle(color: context.textSecondary),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: context.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: context.accent),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 10,
-        ),
-      ),
-      dropdownColor: context.surface,
-      style: TextStyle(color: context.textPrimary, fontSize: 14),
-      isExpanded: true,
-      menuMaxHeight: 300,
-      items: _timezones
-          .map((tz) => DropdownMenuItem(value: tz, child: Text(tz)))
-          .toList(),
-      onChanged: (value) {
-        setState(() => _timezoneController.text = value ?? '');
-      },
-    );
-  }
-
-  // -------------------------------------------------------------------------
-  // Theme picker data for onboarding
-  // -------------------------------------------------------------------------
-
-  static const _onboardingThemes =
-      <({AppThemeSelection selection, String label, Color accent, Color bg})>[
-        (
-          selection: AppThemeSelection.dark,
-          label: 'Dark',
-          accent: EchoTheme.accent,
-          bg: EchoTheme.mainBg,
-        ),
-        (
-          selection: AppThemeSelection.light,
-          label: 'Light',
-          accent: EchoTheme.accent,
-          bg: EchoTheme.lightMainBg,
-        ),
-        (
-          selection: AppThemeSelection.graphite,
-          label: 'Graphite',
-          accent: EchoTheme.graphiteAccent,
-          bg: EchoTheme.graphiteMainBg,
-        ),
-        (
-          selection: AppThemeSelection.ember,
-          label: 'Ember',
-          accent: EchoTheme.emberAccent,
-          bg: EchoTheme.emberMainBg,
-        ),
-        (
-          selection: AppThemeSelection.neon,
-          label: 'Neon',
-          accent: EchoTheme.neonAccent,
-          bg: EchoTheme.neonMainBg,
-        ),
-        (
-          selection: AppThemeSelection.sakura,
-          label: 'Sakura',
-          accent: EchoTheme.sakuraAccent,
-          bg: EchoTheme.sakuraMainBg,
-        ),
-        (
-          selection: AppThemeSelection.aurora,
-          label: 'Aurora',
-          accent: EchoTheme.auroraAccent,
-          bg: EchoTheme.auroraMainBg,
-        ),
-      ];
-
-  Widget _buildAppearancePage(BuildContext context) {
-    final currentTheme = ref.watch(themeProvider);
-
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          Text(
-            'Make it yours',
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Pick a theme and layout.',
-            style: TextStyle(color: context.textSecondary, fontSize: 14),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-
-          // Theme picker -- horizontal scrollable row
-          SizedBox(
-            height: 72,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              itemCount: _onboardingThemes.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (context, index) {
-                final t = _onboardingThemes[index];
-                final isSelected = currentTheme == t.selection;
-                return Semantics(
-                  label: '${t.label} theme',
-                  button: true,
-                  selected: isSelected,
-                  child: GestureDetector(
-                    onTap: () =>
-                        ref.read(themeProvider.notifier).setTheme(t.selection),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: t.bg,
-                            border: Border.all(
-                              color: isSelected ? t.accent : context.border,
-                              width: isSelected ? 2.5 : 1.5,
-                            ),
-                          ),
-                          child: Center(
-                            child: Container(
-                              width: 18,
-                              height: 18,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: t.accent,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          t.label,
-                          style: TextStyle(
-                            color: isSelected
-                                ? context.accent
-                                : context.textSecondary,
-                            fontSize: 11,
-                            fontWeight: isSelected
-                                ? FontWeight.w600
-                                : FontWeight.w400,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Message layout chips
-          _buildMessageLayoutChips(),
-          const SizedBox(height: 18),
-
-          // Font size slider
-          _buildFontSizeSlider(),
-          const SizedBox(height: 10),
-
-          // Accessibility toggles
-          _buildAccessibilityToggles(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAboutYouPage(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          Text(
-            'About you',
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Optional — you can always change these later in Settings.',
-            style: TextStyle(color: context.textSecondary, fontSize: 14),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          _buildField(
-            controller: _bioController,
-            label: 'Bio',
-            hint: 'Tell others about yourself',
-            maxLength: 300,
-            maxLines: 3,
-          ),
-          const SizedBox(height: 14),
-          _buildTimezoneDropdown(),
-          const SizedBox(height: 14),
-          _buildPronounsField(),
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Accessibility & layout widgets for page 2
-  // ---------------------------------------------------------------------------
-
-  Widget _buildMessageLayoutChips() {
-    final layout = ref.watch(messageLayoutProvider);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Message Layout',
-          style: TextStyle(color: context.textSecondary, fontSize: 13),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            ChoiceChip(
-              label: const Text('Bubbles'),
-              selected: layout == MessageLayout.bubbles,
-              onSelected: (_) => ref
-                  .read(messageLayoutProvider.notifier)
-                  .setLayout(MessageLayout.bubbles),
-              selectedColor: context.accent,
-              labelStyle: TextStyle(
-                color: layout == MessageLayout.bubbles
-                    ? Colors.white
-                    : context.textPrimary,
-                fontSize: 13,
-              ),
-              backgroundColor: context.surface,
-              side: BorderSide(color: context.border),
-            ),
-            const SizedBox(width: 10),
-            ChoiceChip(
-              label: const Text('Compact'),
-              selected: layout == MessageLayout.compact,
-              onSelected: (_) => ref
-                  .read(messageLayoutProvider.notifier)
-                  .setLayout(MessageLayout.compact),
-              selectedColor: context.accent,
-              labelStyle: TextStyle(
-                color: layout == MessageLayout.compact
-                    ? Colors.white
-                    : context.textPrimary,
-                fontSize: 13,
-              ),
-              backgroundColor: context.surface,
-              side: BorderSide(color: context.border),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFontSizeSlider() {
-    final a11y = ref.watch(accessibilityProvider);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Font Size',
-          style: TextStyle(color: context.textSecondary, fontSize: 13),
-        ),
-        Slider(
-          value: a11y.fontScale,
-          min: 0.8,
-          max: 1.5,
-          divisions: 7,
-          label: '${(a11y.fontScale * 100).round()}%',
-          activeColor: context.accent,
-          inactiveColor: context.border,
-          onChanged: (v) =>
-              ref.read(accessibilityProvider.notifier).setFontScale(v),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAccessibilityToggles() {
-    final a11y = ref.watch(accessibilityProvider);
-    return Column(
-      children: [
-        SwitchListTile(
-          title: Text(
-            'Reduced Motion',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          value: a11y.reducedMotion,
-          activeTrackColor: context.accent,
-          contentPadding: EdgeInsets.zero,
-          dense: true,
-          onChanged: (v) =>
-              ref.read(accessibilityProvider.notifier).setReducedMotion(v),
-        ),
-        SwitchListTile(
-          title: Text(
-            'High Contrast',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          value: a11y.highContrast,
-          activeTrackColor: context.accent,
-          contentPadding: EdgeInsets.zero,
-          dense: true,
-          onChanged: (v) =>
-              ref.read(accessibilityProvider.notifier).setHighContrast(v),
-        ),
-      ],
-    );
-  }
-
-  // ---------------------------------------------------------------------------
   // Encryption explanation page
   // ---------------------------------------------------------------------------
 
@@ -967,6 +507,49 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           ),
           const SizedBox(height: 32),
 
+          Card(
+            color: context.surface,
+            margin: EdgeInsets.zero,
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.share),
+                  title: const Text('Share invite link'),
+                  onTap: () {
+                    final username = ref.read(authProvider).username ?? '';
+                    final url = 'https://echo-messenger.us/invite/$username';
+                    Clipboard.setData(ClipboardData(text: url));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Invite link copied')),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.qr_code),
+                  title: const Text('Show QR code'),
+                  onTap: () {
+                    final username = ref.read(authProvider).username ?? '';
+                    final url = 'https://echo-messenger.us/invite/$username';
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Your invite QR'),
+                        content: QrImageView(data: url, size: 200),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
           _buildField(
             controller: _contactUsernameController,
             label: 'Username',
@@ -1005,11 +588,11 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             ),
           ],
           const SizedBox(height: 24),
-          TextButton(
-            onPressed: _saving ? null : _skip,
-            child: Text(
-              'Skip for now',
-              style: TextStyle(color: context.textMuted, fontSize: 13),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: _saving ? null : _skip,
+              child: const Text('Skip for now'),
             ),
           ),
         ],
@@ -1027,7 +610,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         // Dot indicators
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(5, (i) {
+          children: List.generate(3, (i) {
             final isActive = i == _currentPage;
             return AnimatedContainer(
               duration: const Duration(milliseconds: 250),
@@ -1048,7 +631,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         // Buttons
         Builder(
           builder: (_) {
-            final buttonLabel = _currentPage == 4 ? 'Get Started' : 'Next';
+            final buttonLabel = _currentPage == 2 ? 'Get Started' : 'Next';
             return Row(
               children: [
                 // Back button (hidden on first page)
@@ -1063,7 +646,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                     ),
                   ),
                 // Skip button (hidden on last page -- "Skip for now" is inline)
-                if (_currentPage < 4)
+                if (_currentPage < 2)
                   TextButton(
                     onPressed: _saving ? null : _skip,
                     child: Text(

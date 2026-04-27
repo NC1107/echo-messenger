@@ -130,9 +130,19 @@ pub async fn upload_bundle(
     let identity_key = BASE64
         .decode(&body.identity_key)
         .map_err(|_| AppError::bad_request("Invalid base64 for identity_key"))?;
+    if identity_key.len() != 32 {
+        return Err(AppError::bad_request(
+            "identity_key must be exactly 32 bytes (X25519)",
+        ));
+    }
     let signed_prekey = BASE64
         .decode(&body.signed_prekey)
         .map_err(|_| AppError::bad_request("Invalid base64 for signed_prekey"))?;
+    if signed_prekey.len() != 32 {
+        return Err(AppError::bad_request(
+            "signed_prekey must be exactly 32 bytes (X25519)",
+        ));
+    }
     let signed_prekey_signature = BASE64
         .decode(&body.signed_prekey_signature)
         .map_err(|_| AppError::bad_request("Invalid base64 for signed_prekey_signature"))?;
@@ -193,6 +203,11 @@ pub async fn upload_bundle(
             let pk = BASE64
                 .decode(&otk.public_key)
                 .map_err(|_| AppError::bad_request("Invalid base64 for one_time_prekey"))?;
+            if pk.len() != 32 {
+                return Err(AppError::bad_request(
+                    "one_time_prekey must be exactly 32 bytes (X25519)",
+                ));
+            }
             Ok((otk.key_id, pk))
         })
         .collect::<Result<Vec<_>, AppError>>()?;

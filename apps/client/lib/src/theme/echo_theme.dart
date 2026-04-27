@@ -303,7 +303,7 @@ class EchoTheme {
   static const emberAccentLight = Color(0x1AE9960A);
   static const emberTextPrimary = Color(0xFFF5F0E8);
   static const emberTextSecondary = Color(0xFFA89F91);
-  static const emberTextMuted = Color(0xFF8F8478);
+  static const emberTextMuted = Color(0xFF91867A);
   // sentBubble matches the accent so dark-on-accent text passes WCAG AA;
   // the previous darker brown was unreadable with dark onPrimary text.
   static const emberSentBubble = Color(0xFFE9960A);
@@ -356,7 +356,7 @@ class EchoTheme {
   static const sakuraAccentLight = Color(0x1ADD1C85);
   static const sakuraTextPrimary = Color(0xFF2D1B2E);
   static const sakuraTextSecondary = Color(0xFF7B5A7E);
-  static const sakuraTextMuted = Color(0xFFB898BB);
+  static const sakuraTextMuted = Color(0xFF89698C);
   static const sakuraSentBubble = Color(0xFFDD1C85);
   static const sakuraRecvBubble = Color(0xFFFFE8EE);
   static const sakuraBorder = Color(0xFFF0D4DC);

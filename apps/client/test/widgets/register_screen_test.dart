@@ -43,11 +43,11 @@ Widget _buildApp({AuthState authState = const AuthState()}) {
 
 void main() {
   group('RegisterScreen', () {
-    testWidgets('renders Create Account header', (tester) async {
+    testWidgets('renders Create account header', (tester) async {
       await tester.pumpWidget(_buildApp());
       await tester.pumpAndSettle();
 
-      expect(find.text('Create Account'), findsOneWidget);
+      expect(find.text('Create account'), findsOneWidget);
     });
 
     testWidgets('renders username and password form fields', (tester) async {
@@ -73,7 +73,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.widgetWithText(FilledButton, 'Create Account'),
+        find.widgetWithText(FilledButton, 'Create account'),
         findsOneWidget,
       );
     });
@@ -82,14 +82,14 @@ void main() {
       await tester.pumpWidget(_buildApp());
       await tester.pumpAndSettle();
 
-      expect(find.text('Already have an account? Login'), findsOneWidget);
+      expect(find.text('Already have an account? Log in'), findsOneWidget);
     });
 
     testWidgets('tapping login link navigates to /login', (tester) async {
       await tester.pumpWidget(_buildApp());
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Already have an account? Login'));
+      await tester.tap(find.text('Already have an account? Log in'));
       await tester.pumpAndSettle();
 
       expect(find.text('LOGIN_SCREEN'), findsOneWidget);
@@ -121,8 +121,16 @@ void main() {
       expect(find.text('Invalid credentials'), findsOneWidget);
     });
 
-    testWidgets('shows password hint text', (tester) async {
+    testWidgets('shows password hint text after focusing password field', (
+      tester,
+    ) async {
       await tester.pumpWidget(_buildApp());
+      await tester.pumpAndSettle();
+
+      // Hint is hidden on resting form — only shown after focus or submit attempt.
+      expect(find.text('8-128 characters required'), findsNothing);
+
+      await tester.tap(find.widgetWithText(TextField, 'Password'));
       await tester.pumpAndSettle();
 
       expect(find.text('8-128 characters required'), findsOneWidget);
@@ -134,9 +142,9 @@ void main() {
 
       // Scroll down to make Register button visible if needed
       await tester.ensureVisible(
-        find.widgetWithText(FilledButton, 'Create Account'),
+        find.widgetWithText(FilledButton, 'Create account'),
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
       await tester.pumpAndSettle();
 
       expect(find.text('Username is required'), findsOneWidget);
@@ -159,9 +167,9 @@ void main() {
         'short',
       );
       await tester.ensureVisible(
-        find.widgetWithText(FilledButton, 'Create Account'),
+        find.widgetWithText(FilledButton, 'Create account'),
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
       await tester.pumpAndSettle();
 
       expect(find.text('Must be at least 8 characters'), findsOneWidget);
@@ -184,9 +192,9 @@ void main() {
         'different123',
       );
       await tester.ensureVisible(
-        find.widgetWithText(FilledButton, 'Create Account'),
+        find.widgetWithText(FilledButton, 'Create account'),
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
       await tester.pumpAndSettle();
 
       expect(find.text('Passwords do not match'), findsOneWidget);
@@ -201,9 +209,9 @@ void main() {
         'user@name!',
       );
       await tester.ensureVisible(
-        find.widgetWithText(FilledButton, 'Create Account'),
+        find.widgetWithText(FilledButton, 'Create account'),
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
       await tester.pumpAndSettle();
 
       expect(
@@ -221,9 +229,9 @@ void main() {
         'ab',
       );
       await tester.ensureVisible(
-        find.widgetWithText(FilledButton, 'Create Account'),
+        find.widgetWithText(FilledButton, 'Create account'),
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Create Account'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
       await tester.pumpAndSettle();
 
       expect(find.text('Must be 3-32 characters'), findsOneWidget);

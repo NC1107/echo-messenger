@@ -88,6 +88,10 @@ Future<void> _initAndRun() async {
   await NotificationService().requestPermission();
 
   // Auto-login + crypto init is handled by SplashScreen
+  // Issue #481: Linux GTK resize triangle (bottom-right corner) bleeds
+  // through Flutter canvas on some compositors. This is a Flutter Linux
+  // platform limitation with no clean Dart-side fix. Unaffected on web,
+  // macOS, Windows. Track: https://github.com/flutter/flutter/issues/...
   runApp(
     UncontrolledProviderScope(container: container, child: const EchoApp()),
   );

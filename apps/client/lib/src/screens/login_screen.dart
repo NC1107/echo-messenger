@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../theme/echo_theme.dart';
 import '../utils/version_utils.dart';
 import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/echo_logo_icon.dart';
@@ -90,6 +91,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             height: 44,
                             child: TextButton(
                               onPressed: () => context.go('/register'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: context.textSecondary,
+                              ),
                               child: const Text('Create an account'),
                             ),
                           ),
@@ -136,7 +140,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         ),
         const SizedBox(height: 8),
         Text(
-          'Encrypted messaging',
+          'End-to-end encrypted. Zero telemetry.',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 16),
         ),
       ],
@@ -213,7 +217,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 width: 20,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : const Text('Login'),
+            : const Text('Log in'),
       ),
     );
   }

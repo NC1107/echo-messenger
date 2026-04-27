@@ -16,6 +16,7 @@ pub mod ws;
 
 use axum::Json;
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 use axum::http::{HeaderValue, Method, header};
 use axum::middleware;
 use axum::response::IntoResponse;
@@ -150,6 +151,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/conversations/{conversation_id}/messages/{message_id}/pin",
             post(messages::pin_message).delete(messages::unpin_message),
         )
+        .route(
+            "/conversations/{conversation_id}/pin",
+            put(messages::pin_conversation).delete(messages::unpin_conversation),
+        )
         .route("/messages/search", get(messages::search_messages_global))
         .route(
             "/messages/{id}",
@@ -192,7 +197,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             post(media::upload).layer(middleware::from_fn(media_upload_limit)),
         )
         .route("/ticket", post(media::request_media_ticket))
-        .route("/{id}", get(media::download));
+        .route("/{id}", get(media::download))
+        .layer(DefaultBodyLimit::max(media::MAX_FILE_SIZE));
 
     let group_routes = Router::new()
         .route("/", post(groups::create_group))
@@ -262,6 +268,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             get(users::get_my_privacy).patch(users::update_my_privacy),
         )
         .route("/me/status", patch(users::update_presence_status))
+        .route("/me/status-text", put(users::update_status_text))
         .route("/me/avatar", put(users::upload_avatar))
         .route("/online", get(users::online_users))
         .route("/search", get(users::search_users))

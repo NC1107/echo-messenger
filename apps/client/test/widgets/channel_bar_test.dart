@@ -102,6 +102,13 @@ class _FakeVoiceSettingsNotifier extends VoiceSettingsNotifier {
   _FakeVoiceSettingsNotifier();
 }
 
+/// Fake that has confirmBeforeJoinVoice = true so confirmation-dialog tests work.
+class _FakeVoiceSettingsNotifierConfirm extends VoiceSettingsNotifier {
+  _FakeVoiceSettingsNotifierConfirm() {
+    state = state.copyWith(confirmBeforeJoinVoice: true);
+  }
+}
+
 void main() {
   group('ChannelBar voice join confirmation', () {
     testWidgets('asks for confirmation before joining voice', (tester) async {
@@ -126,7 +133,7 @@ void main() {
             return fakeVoiceRtc;
           }),
           voiceSettingsProvider.overrideWith(
-            (ref) => _FakeVoiceSettingsNotifier(),
+            (ref) => _FakeVoiceSettingsNotifierConfirm(),
           ),
         ],
       );
@@ -170,7 +177,7 @@ void main() {
             return fakeVoiceRtc;
           }),
           voiceSettingsProvider.overrideWith(
-            (ref) => _FakeVoiceSettingsNotifier(),
+            (ref) => _FakeVoiceSettingsNotifierConfirm(),
           ),
         ],
       );
@@ -222,10 +229,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Join first.
+      // Default is instant-join (confirmBeforeJoinVoice = false).
       await tester.tap(find.text('lounge').first);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Join'));
       await tester.pumpAndSettle();
 
       expect(fakeChannels.joinCalls, 1);
