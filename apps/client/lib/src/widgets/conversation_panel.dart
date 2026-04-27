@@ -41,6 +41,10 @@ class ConversationPanel extends ConsumerStatefulWidget {
   final VoidCallback? onGlobalSearch;
   final VoidCallback? onSavedMessages;
 
+  /// Opens a QR-scan flow to add a contact. When null, the QR icon in the
+  /// header is hidden.
+  final VoidCallback? onScanQr;
+
   /// Called when the user taps "Message" on a contact in the Contacts tab.
   /// Should call getOrCreateDm and then select the conversation.
   final void Function(String userId, String username)? onMessageContact;
@@ -60,6 +64,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
     this.onShowContacts,
     this.onGlobalSearch,
     this.onSavedMessages,
+    this.onScanQr,
     this.onMessageContact,
     this.externalSearchFocusNode,
   });
@@ -500,32 +505,66 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
     return Container(
       color: context.sidebarBg,
-      child: Column(
+      child: Stack(
         children: [
-          _buildLogoHeader(context, pendingCount),
-          _buildSearchBar(context),
-          _buildFilterChips(),
-          _buildReplacedBanner(context, wsReplaced),
-          if (pendingCount > 0) _buildPendingBanner(pendingCount),
-          Expanded(
-            child: _buildChatsTab(
-              convState,
-              conversations,
-              allConversations,
-              userId,
-              serverUrl,
-              wsOnlineUsers,
+          Column(
+            children: [
+              _buildLogoHeader(context, pendingCount),
+              _buildSearchBar(context),
+              _buildFilterChips(),
+              _buildReplacedBanner(context, wsReplaced),
+              if (pendingCount > 0) _buildPendingBanner(pendingCount),
+              Expanded(
+                child: _buildChatsTab(
+                  convState,
+                  conversations,
+                  allConversations,
+                  userId,
+                  serverUrl,
+                  wsOnlineUsers,
+                ),
+              ),
+              _buildUserStatusBar(
+                context,
+                myUsername: username,
+                serverUrl: serverUrl,
+                avatarUrl: myAvatarUrl,
+                wsConnected: wsConnected,
+                wsReplaced: wsReplaced,
+              ),
+            ],
+          ),
+          if (widget.onNewChat != null) _buildComposeFab(context),
+        ],
+      ),
+    );
+  }
+
+  /// Square accent FAB anchored bottom-right of the conversation panel.
+  /// Mirrors the action-menu "Chat" entry but exposes it as a one-tap
+  /// affordance. Hidden when [onNewChat] is null.
+  Widget _buildComposeFab(BuildContext context) {
+    return Positioned(
+      right: 16,
+      // Keep clear of the user-status bar (~60px tall) at the column's bottom.
+      bottom: 76,
+      child: Semantics(
+        label: 'New chat',
+        button: true,
+        child: Material(
+          color: context.accent,
+          borderRadius: BorderRadius.circular(16),
+          elevation: 4,
+          child: InkWell(
+            onTap: widget.onNewChat,
+            borderRadius: BorderRadius.circular(16),
+            child: const SizedBox(
+              width: 56,
+              height: 56,
+              child: Icon(Icons.edit_outlined, color: Colors.white, size: 22),
             ),
           ),
-          _buildUserStatusBar(
-            context,
-            myUsername: username,
-            serverUrl: serverUrl,
-            avatarUrl: myAvatarUrl,
-            wsConnected: wsConnected,
-            wsReplaced: wsReplaced,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -571,30 +610,50 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Widget _buildLogoHeader(BuildContext context, int pendingCount) {
+    // Use the larger title style on mobile (full-screen), smaller on desktop
+    // sidebar where horizontal real-estate is tight.
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
+    final titleSize = isMobile ? 28.0 : 17.0;
+    final titleWeight = isMobile ? FontWeight.w700 : FontWeight.w700;
+    final headerHeight = isMobile ? 64.0 : 56.0;
+
     return Container(
-      height: 56,
+      height: headerHeight,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
       child: Row(
         children: [
-          const EchoLogoIcon(size: 22),
-          const SizedBox(width: 8),
+          if (!isMobile) ...[
+            const EchoLogoIcon(size: 22),
+            const SizedBox(width: 8),
+          ],
           Text(
-            'Echo',
+            isMobile ? 'Chats' : 'Echo',
             style: TextStyle(
               color: context.textPrimary,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
+              fontSize: titleSize,
+              fontWeight: titleWeight,
+              letterSpacing: isMobile ? -0.5 : 0,
             ),
           ),
           const Spacer(),
           // All action icons at 18px with uniform 32x32 tap targets and
           // consistent color so they read as a cohesive action group.
-          _buildNewActionMenu(context, pendingCount),
+          if (widget.onScanQr != null)
+            IconButton(
+              icon: const Icon(Icons.qr_code_scanner, size: 18),
+              color: context.textSecondary,
+              tooltip: 'Scan QR to add contact',
+              onPressed: widget.onScanQr,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
           const SizedBox(width: 2),
-          if (widget.onGlobalSearch != null)
+          _buildNewActionMenu(context, pendingCount),
+          if (!isMobile && widget.onGlobalSearch != null) ...[
+            const SizedBox(width: 2),
             IconButton(
               icon: const Icon(Icons.search_outlined, size: 18),
               color: context.textSecondary,
@@ -603,6 +662,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
+          ],
           if (widget.onCollapseSidebar != null) ...[
             const SizedBox(width: 2),
             IconButton(

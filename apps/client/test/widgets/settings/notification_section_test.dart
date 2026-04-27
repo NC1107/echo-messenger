@@ -39,8 +39,9 @@ void main() {
       await tester.pumpWidget(buildSection());
       await tester.pumpAndSettle();
 
-      // Sound toggle was replaced by a dropdown selector in sprint 4.
-      expect(find.text('Message Sound'), findsOneWidget);
+      // Voice & Video subpage entry was added at top, pushing the message
+      // sound selector off-screen. Use skipOffstage: false to find it.
+      expect(find.text('Message Sound', skipOffstage: false), findsOneWidget);
     });
 
     testWidgets('shows sub-toggles when notifications enabled', (tester) async {
