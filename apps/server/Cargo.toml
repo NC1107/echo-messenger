@@ -15,7 +15,7 @@ chrono.workspace = true
 
 # Web framework
 axum = { version = "0.8", features = ["ws", "multipart"] }
-axum-extra = { version = "0.10", features = ["typed-header"] }
+axum-extra = { version = "0.12", features = ["typed-header"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "set-header"] }
 
@@ -23,7 +23,7 @@ tower-http = { version = "0.6", features = ["cors", "trace", "set-header"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json", "migrate"] }
 
 # Auth
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 argon2 = "0.5"
 
 # WebSocket / async
@@ -40,7 +40,7 @@ base64 = "0.22"
 
 # Crypto (refresh tokens)
 sha2 = "0.10"
-rand = "0.9"
+rand = "0.10"
 
 # Signal Protocol signature verification
 ed25519-dalek = { version = "2", features = ["std"] }
@@ -49,15 +49,15 @@ ed25519-dalek = { version = "2", features = ["std"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # HTTP client (link previews)
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 
 # File type detection (magic bytes)
 infer = "0.19"
 
 [dev-dependencies]
-tokio-tungstenite = "0.26"
-reqwest = { version = "0.12", features = ["json", "multipart"] }
-criterion = { version = "0.5", features = ["html_reports"] }
+tokio-tungstenite = "0.28"
+reqwest = { version = "0.13", features = ["json", "multipart"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]
 name = "hub"
