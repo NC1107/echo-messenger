@@ -23,7 +23,7 @@ tower-http = { version = "0.6", features = ["cors", "trace", "set-header"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json", "migrate"] }
 
 # Auth
-jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 argon2 = "0.5"
 
 # WebSocket / async
