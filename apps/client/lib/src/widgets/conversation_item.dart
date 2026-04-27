@@ -269,6 +269,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
         type: MaterialType.transparency,
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
+          focusColor: context.accentLight,
           onHover: (hovered) => setState(() => _isHovered = hovered),
           onTap: widget.onTap,
           onSecondaryTapUp: (details) {
@@ -386,17 +387,53 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     final conv = widget.conversation;
     final showGroupOnline = conv.isGroup && widget.onlineMemberCount > 0;
 
+    // Right side: timestamp or hover-action button. Natural width (no fixed
+    // SizedBox) so the expanded name fills exactly the remaining space and
+    // the timestamp sits flush at the right edge without a "floating" gap.
+    final Widget rightSlot;
+    if (showMoreButton) {
+      rightSlot = Semantics(
+        label: 'More options for $displayName',
+        button: true,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(4),
+          onTapDown: (details) {
+            widget.onContextMenu?.call(details.globalPosition);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Icon(Icons.more_horiz, size: 16, color: context.textMuted),
+          ),
+        ),
+      );
+    } else if (widget.timestamp.isNotEmpty) {
+      rightSlot = Text(
+        widget.timestamp,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          color: hasUnread ? context.accent : context.textMuted,
+        ),
+      );
+    } else {
+      rightSlot = const SizedBox.shrink();
+    }
+
     return Row(
       children: [
         if (widget.isPinned)
           Padding(
             padding: const EdgeInsets.only(right: 4),
-            child: Icon(Icons.push_pin, size: 12, color: context.textMuted),
+            child: Icon(Icons.push_pin, size: 16, color: context.textMuted),
           ),
-        Flexible(
+        // Expanded forces the name to fill all remaining space so the right
+        // side (badge + timestamp) is naturally anchored at the row edge.
+        Expanded(
           child: Text(
             displayName,
             overflow: TextOverflow.ellipsis,
+            maxLines: 1,
             style: TextStyle(
               fontSize: 14,
               fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w500,
@@ -406,9 +443,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
         ),
         if (showGroupOnline)
           Padding(
-            padding: const EdgeInsets.only(left: 6),
+            padding: const EdgeInsets.only(left: 4),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
               decoration: BoxDecoration(
                 color: EchoTheme.online.withValues(alpha: 0.18),
                 borderRadius: BorderRadius.circular(8),
@@ -438,46 +475,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
               ),
             ),
           ),
-        const Spacer(),
-        SizedBox(
-          width: 56,
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: showMoreButton
-                ? Semantics(
-                    label: 'More options for $displayName',
-                    button: true,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(4),
-                      onTapDown: (details) {
-                        widget.onContextMenu?.call(details.globalPosition);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Icon(
-                          Icons.more_horiz,
-                          size: 16,
-                          color: context.textMuted,
-                        ),
-                      ),
-                    ),
-                  )
-                : (widget.timestamp.isNotEmpty
-                      ? Text(
-                          widget.timestamp,
-                          maxLines: 1,
-                          overflow: TextOverflow.clip,
-                          textAlign: TextAlign.end,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: hasUnread
-                                ? context.accent
-                                : context.textMuted,
-                          ),
-                        )
-                      : const SizedBox.shrink()),
-          ),
-        ),
+        Padding(padding: const EdgeInsets.only(left: 6), child: rightSlot),
       ],
     );
   }
@@ -503,7 +501,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                         text: 'Draft: ',
                         style: TextStyle(
                           fontSize: 13,
-                          color: EchoTheme.danger,
+                          color: EchoTheme.warning,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -554,8 +552,8 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   widget.conversation.unreadCount > 99
                       ? '99+'
                       : '${widget.conversation.unreadCount}',
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onPrimary,
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                     height: 1,

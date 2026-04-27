@@ -220,8 +220,15 @@ class ChatHeaderBar extends ConsumerWidget {
   ) {
     if (conv.isGroup) {
       final memberCount = conv.members.length;
+      // On narrow screens show "N" only (no "members" label) so the
+      // header subtitle never overflows into the action buttons.
+      final isNarrow = MediaQuery.of(context).size.width < 500;
       return Text(
-        '$memberCount member${memberCount == 1 ? '' : 's'}',
+        isNarrow
+            ? '$memberCount m'
+            : '$memberCount member${memberCount == 1 ? '' : 's'}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(color: context.textMuted, fontSize: 12),
       );
     }
