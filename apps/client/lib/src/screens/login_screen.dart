@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -126,7 +127,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           children: [
             const EchoLogoIcon(size: 30),
             const SizedBox(width: 10),
-            Text('Echo', style: Theme.of(context).textTheme.headlineLarge),
+            Text(
+              'Echo',
+              style: GoogleFonts.inter(
+                fontSize: 30,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.5,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),

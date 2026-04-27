@@ -238,6 +238,8 @@ void main() {
               emoji: '\u{1F44D}',
             ),
           ],
+          isMine: false,
+          chatBgColor: const Color(0xFF141415),
         ),
       );
       await tester.pump();
@@ -264,6 +266,8 @@ void main() {
               emoji: '\u{2764}',
             ),
           ],
+          isMine: false,
+          chatBgColor: const Color(0xFF141415),
         ),
       );
       await tester.pump();
@@ -282,6 +286,8 @@ void main() {
               emoji: '\u{1F44D}',
             ),
           ],
+          isMine: false,
+          chatBgColor: const Color(0xFF141415),
         ),
       );
       await tester.pump();

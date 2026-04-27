@@ -579,18 +579,21 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       ),
       child: Row(
         children: [
-          const EchoLogoIcon(size: 24),
+          const EchoLogoIcon(size: 22),
           const SizedBox(width: 8),
           Text(
             'Echo',
             style: TextStyle(
               color: context.textPrimary,
-              fontSize: 18,
+              fontSize: 17,
               fontWeight: FontWeight.w700,
             ),
           ),
           const Spacer(),
+          // All action icons at 18px with uniform 32x32 tap targets and
+          // consistent color so they read as a cohesive action group.
           _buildNewActionMenu(context, pendingCount),
+          const SizedBox(width: 2),
           if (widget.onGlobalSearch != null)
             IconButton(
               icon: const Icon(Icons.search_outlined, size: 18),
@@ -600,15 +603,17 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
-          if (widget.onCollapseSidebar != null)
+          if (widget.onCollapseSidebar != null) ...[
+            const SizedBox(width: 2),
             IconButton(
-              icon: const Icon(Icons.chevron_left, size: 16),
-              color: context.textMuted,
-              tooltip: 'Collapse',
+              icon: const Icon(Icons.chevron_left, size: 18),
+              color: context.textSecondary,
+              tooltip: 'Collapse sidebar',
               onPressed: widget.onCollapseSidebar,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
+          ],
         ],
       ),
     );
@@ -619,7 +624,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       clipBehavior: Clip.none,
       children: [
         PopupMenuButton<String>(
-          icon: Icon(Icons.add, size: 20, color: context.textSecondary),
+          icon: Icon(Icons.add, size: 18, color: context.textSecondary),
           tooltip: 'New',
           padding: EdgeInsets.zero,
           // Button tap target size
@@ -730,7 +735,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                     pendingCount > 9 ? '9+' : '$pendingCount',
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 8,
+                      fontSize: 10,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -991,7 +996,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     required bool wsReplaced,
   }) {
     return Container(
-      height: 60,
+      height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: context.mainBg,

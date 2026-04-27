@@ -935,10 +935,10 @@ class _MessageItemState extends State<MessageItem>
   BorderRadius _bubbleBorderRadius({required bool isMine}) {
     final isRight = isMine && !widget.compactLayout;
     return BorderRadius.only(
-      topLeft: const Radius.circular(16),
-      topRight: const Radius.circular(16),
-      bottomLeft: Radius.circular(isRight ? 16 : 4),
-      bottomRight: Radius.circular(isRight ? 4 : 16),
+      topLeft: const Radius.circular(12),
+      topRight: const Radius.circular(12),
+      bottomLeft: Radius.circular(isRight ? 12 : 4),
+      bottomRight: Radius.circular(isRight ? 4 : 12),
     );
   }
 
@@ -954,7 +954,7 @@ class _MessageItemState extends State<MessageItem>
     final nameText = Text(
       msg.fromUsername,
       style: TextStyle(
-        fontSize: 12,
+        fontSize: 13,
         fontWeight: FontWeight.w600,
         color: _getUserColor(msg.fromUserId),
       ),
@@ -977,7 +977,7 @@ class _MessageItemState extends State<MessageItem>
           const SizedBox(width: 6),
           Text(
             formatMessageTimestamp(msg.timestamp),
-            style: TextStyle(fontSize: 10, color: context.textMuted),
+            style: TextStyle(fontSize: 11, color: context.textMuted),
           ),
         ],
       ),
@@ -1382,8 +1382,8 @@ class _MessageItemState extends State<MessageItem>
         Padding(padding: const EdgeInsets.only(bottom: 14), child: bubble),
         Positioned(
           bottom: 0,
-          left: isMine ? null : 8,
-          right: isMine ? 8 : null,
+          left: isMine ? 8 : null,
+          right: isMine ? null : 8,
           child: reactionPill,
         ),
       ],
@@ -1391,10 +1391,16 @@ class _MessageItemState extends State<MessageItem>
   }
 
   /// Build the avatar section shown to the left of received messages.
-  Widget _buildAvatarSection({required ChatMessage msg}) {
+  /// [forceShow] overrides the showHeader check — used in compact mode to
+  /// display a small avatar next to every message (Discord/Slack style).
+  Widget _buildAvatarSection({
+    required ChatMessage msg,
+    bool forceShow = false,
+  }) {
     final avatarImageUrl = widget.senderAvatarUrl != null
         ? '${widget.serverUrl ?? ""}${widget.senderAvatarUrl}'
         : null;
+    final showAvatar = widget.showHeader || forceShow;
 
     return Semantics(
       label: 'View profile of ${msg.fromUsername}',
@@ -1405,7 +1411,7 @@ class _MessageItemState extends State<MessageItem>
             : null,
         child: SizedBox(
           width: 28,
-          child: widget.showHeader
+          child: showAvatar
               ? buildAvatar(
                   name: msg.fromUsername,
                   radius: 14,
@@ -1612,10 +1618,15 @@ class _MessageItemState extends State<MessageItem>
       return [Flexible(child: bubbleWithReactions)];
     }
 
-    // Compact follow-up: reserve the avatar column with whitespace instead
-    // of re-drawing the avatar.  28 (avatar) + 8 (gap) = 36.
+    // In compact mode, show a small avatar for every follow-up message too
+    // (Discord / Slack compact style). The avatar is visually smaller than the
+    // header avatar and has no name row — it just anchors the bubble spatially.
     if (widget.compactLayout && !widget.showHeader) {
-      return [const SizedBox(width: 36), Flexible(child: bubbleWithReactions)];
+      return [
+        _buildAvatarSection(msg: msg, forceShow: true),
+        const SizedBox(width: 8),
+        Flexible(child: bubbleWithReactions),
+      ];
     }
 
     return [
@@ -1634,7 +1645,7 @@ class _MessageItemState extends State<MessageItem>
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: context.surface,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(color: context.border),
           ),
           child: Row(
@@ -1642,18 +1653,14 @@ class _MessageItemState extends State<MessageItem>
             children: [
               Icon(
                 _systemEventIcon(msg.content),
-                size: 14,
+                size: 13,
                 color: context.textMuted,
               ),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
                   msg.content,
-                  style: TextStyle(
-                    color: context.textMuted,
-                    fontSize: 12,
-                    fontStyle: FontStyle.italic,
-                  ),
+                  style: TextStyle(color: context.textMuted, fontSize: 11),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -1739,6 +1746,8 @@ class _MessageItemState extends State<MessageItem>
     final reactionPill = ReactionBar(
       reactions: msg.reactions,
       currentUserId: widget.myUserId,
+      isMine: isMine,
+      chatBgColor: context.chatBg,
       onTap: (pos) => widget.onReactionTap?.call(msg, pos),
     );
 
