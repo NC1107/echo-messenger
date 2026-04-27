@@ -79,13 +79,7 @@ class BiometricNotifier extends StateNotifier<BiometricState> {
   Future<bool> authenticate() async {
     if (!state.isAvailable) return true;
     try {
-      return await _auth.authenticate(
-        localizedReason: 'Unlock Echo',
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: false,
-        ),
-      );
+      return await _auth.authenticate(localizedReason: 'Unlock Echo');
     } catch (e) {
       debugPrint('[Biometric] authenticate failed: $e');
       return false;

@@ -844,7 +844,7 @@ class _LiveKitVideoTile extends StatelessWidget {
           children: [
             lk.VideoTrackRenderer(
               track,
-              fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+              fit: VideoViewFit.contain,
               mirrorMode: mirror
                   ? lk.VideoViewMirrorMode.mirror
                   : lk.VideoViewMirrorMode.off,

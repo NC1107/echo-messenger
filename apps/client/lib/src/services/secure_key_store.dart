@@ -54,7 +54,7 @@ class SecureKeyStore {
   SecureKeyStore._()
     : _storage = const FlutterSecureStorage(
         aOptions: AndroidOptions(encryptedSharedPreferences: true),
-        mOptions: MacOsOptions(useDataProtectionKeyChain: true),
+        mOptions: MacOsOptions(),
         lOptions: LinuxOptions(),
         wOptions: WindowsOptions(),
         webOptions: WebOptions(),
