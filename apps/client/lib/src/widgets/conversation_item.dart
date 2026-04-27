@@ -543,7 +543,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
               constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
               padding: const EdgeInsets.symmetric(horizontal: 5),
               decoration: BoxDecoration(
-                color: context.accent,
+                color: conv.isMuted ? context.surfaceHover : context.accent,
                 borderRadius: BorderRadius.circular(9),
               ),
               alignment: Alignment.center,
@@ -553,7 +553,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                       ? '99+'
                       : '${widget.conversation.unreadCount}',
                   style: TextStyle(
-                    color: Theme.of(context).colorScheme.onPrimary,
+                    color: conv.isMuted
+                        ? context.textMuted
+                        : Theme.of(context).colorScheme.onPrimary,
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                     height: 1,

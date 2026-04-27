@@ -285,12 +285,12 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
 
     switch (role) {
       case 'owner':
-        bgColor = context.accent.withValues(alpha: 0.15);
-        textColor = context.accent;
-        label = 'Owner';
-      case 'admin':
         bgColor = EchoTheme.warning.withValues(alpha: 0.15);
         textColor = EchoTheme.warning;
+        label = 'Owner';
+      case 'admin':
+        bgColor = context.accent.withValues(alpha: 0.15);
+        textColor = context.accentHover;
         label = 'Admin';
       default:
         return const SizedBox.shrink();
@@ -298,7 +298,7 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
 
     return Container(
       margin: const EdgeInsets.only(left: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(4),
@@ -309,6 +309,7 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
           color: textColor,
           fontSize: 10,
           fontWeight: FontWeight.w600,
+          letterSpacing: 0.3,
         ),
       ),
     );

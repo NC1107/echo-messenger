@@ -4,16 +4,28 @@ import '../../models/reaction.dart';
 import '../../theme/echo_theme.dart';
 
 /// Displays per-emoji reaction pills, each showing the emoji and its count.
-/// Pills where the current user has reacted are highlighted with accent color.
+/// The chip background matches the parent bubble color (sent or received) with
+/// a halo border in the chat background color to visually separate it from
+/// the bubble edge.
 class ReactionBar extends StatelessWidget {
   final List<Reaction> reactions;
   final String? currentUserId;
+
+  /// Whether the message belongs to the current user. Controls which bubble
+  /// color is used as the chip background.
+  final bool isMine;
+
+  /// The chat panel background color, used as the halo border on each chip.
+  final Color chatBgColor;
+
   final void Function(Offset globalPosition)? onTap;
 
   const ReactionBar({
     super.key,
     required this.reactions,
     this.currentUserId,
+    required this.isMine,
+    required this.chatBgColor,
     this.onTap,
   });
 
@@ -47,9 +59,8 @@ class ReactionBar extends StatelessWidget {
               _ReactionPill(
                 emoji: entry.key,
                 count: entry.value.length,
-                isHighlighted:
-                    currentUserId != null &&
-                    entry.value.any((r) => r.userId == currentUserId),
+                isMine: isMine,
+                chatBgColor: chatBgColor,
                 onTap: onTap,
               ),
           ],
@@ -62,32 +73,32 @@ class ReactionBar extends StatelessWidget {
 class _ReactionPill extends StatelessWidget {
   final String emoji;
   final int count;
-  final bool isHighlighted;
+  final bool isMine;
+  final Color chatBgColor;
   final void Function(Offset globalPosition)? onTap;
 
   const _ReactionPill({
     required this.emoji,
     required this.count,
-    required this.isHighlighted,
+    required this.isMine,
+    required this.chatBgColor,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final bgColor = isMine ? context.sentBubble : context.recvBubble;
+    final textColor = isMine ? Colors.white : context.textPrimary;
+
     return GestureDetector(
       onTapUp: (details) => onTap?.call(details.globalPosition),
       child: Container(
-        height: 24,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
+        height: 22,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          color: isHighlighted
-              ? context.accent.withValues(alpha: 0.15)
-              : context.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isHighlighted ? context.accent : context.border,
-            width: 1,
-          ),
+          color: bgColor,
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: chatBgColor, width: 1.5),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -95,7 +106,7 @@ class _ReactionPill extends StatelessWidget {
             Text(
               emoji,
               style: const TextStyle(
-                fontSize: 14,
+                fontSize: 13,
                 decoration: TextDecoration.none,
               ),
             ),
@@ -103,8 +114,10 @@ class _ReactionPill extends StatelessWidget {
             Text(
               '$count',
               style: TextStyle(
-                fontSize: 12,
-                color: isHighlighted ? context.accent : context.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: textColor.withValues(alpha: 0.75),
+                decoration: TextDecoration.none,
               ),
             ),
           ],

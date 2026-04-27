@@ -74,8 +74,13 @@ class _RichTextContentState extends State<RichTextContent> {
   }
 
   /// Base text style used throughout message rendering.
-  TextStyle _baseStyle() =>
-      TextStyle(fontSize: 15, color: widget.textColor, height: 1.47);
+  /// Ligatures are disabled ("calt" 0) so user text reads without code ligatures.
+  TextStyle _baseStyle() => TextStyle(
+    fontSize: 15,
+    color: widget.textColor,
+    height: 1.47,
+    fontFeatures: const [FontFeature.disable('calt')],
+  );
 
   TapGestureRecognizer _createLinkRecognizer(String url) {
     final recognizer = TapGestureRecognizer()

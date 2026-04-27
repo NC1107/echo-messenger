@@ -935,10 +935,10 @@ class _MessageItemState extends State<MessageItem>
   BorderRadius _bubbleBorderRadius({required bool isMine}) {
     final isRight = isMine && !widget.compactLayout;
     return BorderRadius.only(
-      topLeft: const Radius.circular(16),
-      topRight: const Radius.circular(16),
-      bottomLeft: Radius.circular(isRight ? 16 : 4),
-      bottomRight: Radius.circular(isRight ? 4 : 16),
+      topLeft: const Radius.circular(12),
+      topRight: const Radius.circular(12),
+      bottomLeft: Radius.circular(isRight ? 12 : 4),
+      bottomRight: Radius.circular(isRight ? 4 : 12),
     );
   }
 
@@ -1382,8 +1382,8 @@ class _MessageItemState extends State<MessageItem>
         Padding(padding: const EdgeInsets.only(bottom: 14), child: bubble),
         Positioned(
           bottom: 0,
-          left: isMine ? null : 8,
-          right: isMine ? 8 : null,
+          left: isMine ? 8 : null,
+          right: isMine ? null : 8,
           child: reactionPill,
         ),
       ],
@@ -1645,7 +1645,7 @@ class _MessageItemState extends State<MessageItem>
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: context.surface,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(color: context.border),
           ),
           child: Row(
@@ -1653,18 +1653,14 @@ class _MessageItemState extends State<MessageItem>
             children: [
               Icon(
                 _systemEventIcon(msg.content),
-                size: 14,
+                size: 13,
                 color: context.textMuted,
               ),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
                   msg.content,
-                  style: TextStyle(
-                    color: context.textMuted,
-                    fontSize: 12,
-                    fontStyle: FontStyle.italic,
-                  ),
+                  style: TextStyle(color: context.textMuted, fontSize: 11),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -1750,6 +1746,8 @@ class _MessageItemState extends State<MessageItem>
     final reactionPill = ReactionBar(
       reactions: msg.reactions,
       currentUserId: widget.myUserId,
+      isMine: isMine,
+      chatBgColor: context.chatBg,
       onTap: (pos) => widget.onReactionTap?.call(msg, pos),
     );
 
