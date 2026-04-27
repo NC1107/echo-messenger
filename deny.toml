@@ -11,6 +11,10 @@ ignore = [
     # rustls-webpki CRL parsing panic. Pulled in transitively via reqwest 0.13 -> rustls.
     # Echo does not use CRL verification, so this code path is unreachable.
     "RUSTSEC-2026-0104",
+    # Marvin Attack timing sidechannel in rsa crate. Pulled in via jsonwebtoken 10
+    # (rust_crypto feature) -> rsa 0.9.10. No safe upgrade available; Echo uses
+    # HS256 (HMAC-SHA256) for JWT, not RSA, so the affected RSA code path is unused.
+    "RUSTSEC-2023-0071",
 ]
 
 [licenses]
