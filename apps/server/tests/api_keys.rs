@@ -5,7 +5,6 @@ mod common;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use ed25519_dalek::{Signer, SigningKey};
-use rand::RngCore;
 use reqwest::Client;
 use serde_json::Value;
 
@@ -55,24 +54,14 @@ async fn upload_bundle_bad_signature_returns_400() {
     // Generate two different signing keys: one to produce the signature,
     // another for the `signing_key` field. The server should reject the
     // mismatch.
-    let mut rng = rand::rng();
-
-    let mut secret_a = [0u8; 32];
-    rng.fill_bytes(&mut secret_a);
-    let signing_key_a = SigningKey::from_bytes(&secret_a);
-
-    let mut secret_b = [0u8; 32];
-    rng.fill_bytes(&mut secret_b);
-    let signing_key_b = SigningKey::from_bytes(&secret_b);
-
-    let mut signed_prekey = vec![0u8; 32];
-    rng.fill_bytes(&mut signed_prekey);
+    let signing_key_a = SigningKey::from_bytes(&rand::random::<[u8; 32]>());
+    let signing_key_b = SigningKey::from_bytes(&rand::random::<[u8; 32]>());
+    let signed_prekey = rand::random::<[u8; 32]>().to_vec();
 
     // Sign with key A but upload key B's public key
     let signature = signing_key_a.sign(&signed_prekey);
 
-    let mut identity_key = vec![0u8; 32];
-    rng.fill_bytes(&mut identity_key);
+    let identity_key = rand::random::<[u8; 32]>().to_vec();
 
     let body = serde_json::json!({
         "identity_key": BASE64.encode(&identity_key),
@@ -274,9 +263,7 @@ async fn otp_count_reflects_remaining() {
 /// can isolate identity_key / OTP length failures without the signature check
 /// interfering.
 fn make_valid_signing_pair(signed_prekey_bytes: &[u8]) -> (SigningKey, Vec<u8>, Vec<u8>) {
-    let mut secret = [0u8; 32];
-    rand::rng().fill_bytes(&mut secret);
-    let sk = SigningKey::from_bytes(&secret);
+    let sk = SigningKey::from_bytes(&rand::random::<[u8; 32]>());
     let sig = sk.sign(signed_prekey_bytes).to_bytes().to_vec();
     let vk = sk.verifying_key().to_bytes().to_vec();
     (sk, vk, sig)
@@ -288,8 +275,7 @@ async fn upload_bundle_short_identity_key_returns_400() {
     let client = Client::new();
     let (token, _uid, _) = common::register_and_login(&client, &base, "keyshortid").await;
 
-    let mut signed_prekey = [0u8; 32];
-    rand::rng().fill_bytes(&mut signed_prekey);
+    let signed_prekey = rand::random::<[u8; 32]>();
     let (_sk, vk, sig) = make_valid_signing_pair(&signed_prekey);
 
     let body = serde_json::json!({
@@ -318,8 +304,7 @@ async fn upload_bundle_oversized_identity_key_returns_400() {
     let client = Client::new();
     let (token, _uid, _) = common::register_and_login(&client, &base, "keyoverId").await;
 
-    let mut signed_prekey = [0u8; 32];
-    rand::rng().fill_bytes(&mut signed_prekey);
+    let signed_prekey = rand::random::<[u8; 32]>();
     let (_sk, vk, sig) = make_valid_signing_pair(&signed_prekey);
 
     let body = serde_json::json!({
@@ -408,8 +393,7 @@ async fn upload_bundle_short_otp_returns_400() {
     let client = Client::new();
     let (token, _uid, _) = common::register_and_login(&client, &base, "keyshortotp").await;
 
-    let mut signed_prekey = [0u8; 32];
-    rand::rng().fill_bytes(&mut signed_prekey);
+    let signed_prekey = rand::random::<[u8; 32]>();
     let (_sk, vk, sig) = make_valid_signing_pair(&signed_prekey);
 
     let body = serde_json::json!({
@@ -438,8 +422,7 @@ async fn upload_bundle_oversized_otp_returns_400() {
     let client = Client::new();
     let (token, _uid, _) = common::register_and_login(&client, &base, "keyoverotp").await;
 
-    let mut signed_prekey = [0u8; 32];
-    rand::rng().fill_bytes(&mut signed_prekey);
+    let signed_prekey = rand::random::<[u8; 32]>();
     let (_sk, vk, sig) = make_valid_signing_pair(&signed_prekey);
 
     let body = serde_json::json!({
@@ -476,18 +459,11 @@ async fn identity_key_mismatch_returns_409() {
     common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
 
     // Second upload with DIFFERENT identity key
-    let mut rng = rand::rng();
-
-    let mut secret = [0u8; 32];
-    rng.fill_bytes(&mut secret);
-    let signing_key = SigningKey::from_bytes(&secret);
+    let signing_key = SigningKey::from_bytes(&rand::random::<[u8; 32]>());
     let signing_key_pub = signing_key.verifying_key().to_bytes();
 
-    let mut new_identity_key = vec![0u8; 32];
-    rng.fill_bytes(&mut new_identity_key);
-
-    let mut signed_prekey = vec![0u8; 32];
-    rng.fill_bytes(&mut signed_prekey);
+    let new_identity_key = rand::random::<[u8; 32]>().to_vec();
+    let signed_prekey = rand::random::<[u8; 32]>().to_vec();
     let signature = signing_key.sign(&signed_prekey);
 
     let body = serde_json::json!({
@@ -519,8 +495,7 @@ async fn identity_key_same_allows_reupload() {
     let bundle = common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
 
     // Re-upload with SAME identity key but fresh signed prekey
-    let mut signed_prekey = vec![0u8; 32];
-    rand::rng().fill_bytes(&mut signed_prekey);
+    let signed_prekey = rand::random::<[u8; 32]>().to_vec();
     let signature = bundle.signing_key.sign(&signed_prekey);
 
     let body = serde_json::json!({

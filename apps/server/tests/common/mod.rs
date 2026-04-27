@@ -12,7 +12,6 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use echo_server::{db, routes, ws};
 use ed25519_dalek::{Signer, SigningKey};
-use rand::RngCore;
 use reqwest::Client;
 use serde_json::Value;
 use tokio::sync::OnceCell;
@@ -298,18 +297,12 @@ pub async fn upload_prekey_bundle(
     device_id: i32,
     num_otps: usize,
 ) -> PreKeyBundleData {
-    let mut rng = rand::rng();
-
-    let mut secret = [0u8; 32];
-    rng.fill_bytes(&mut secret);
+    let secret = rand::random::<[u8; 32]>();
     let signing_key = SigningKey::from_bytes(&secret);
     let signing_key_pub = signing_key.verifying_key().to_bytes();
 
-    let mut identity_key = vec![0u8; 32];
-    rng.fill_bytes(&mut identity_key);
-
-    let mut signed_prekey = vec![0u8; 32];
-    rng.fill_bytes(&mut signed_prekey);
+    let identity_key = rand::random::<[u8; 32]>().to_vec();
+    let signed_prekey = rand::random::<[u8; 32]>().to_vec();
 
     let signature = signing_key.sign(&signed_prekey);
 
@@ -317,8 +310,7 @@ pub async fn upload_prekey_bundle(
     let mut otps = Vec::new();
     let mut otp_key_ids = Vec::new();
     for i in 0..num_otps {
-        let mut otp_key = vec![0u8; 32];
-        rng.fill_bytes(&mut otp_key);
+        let otp_key = rand::random::<[u8; 32]>().to_vec();
         let key_id = (i + 1) as i32;
         otp_key_ids.push(key_id);
         otps.push(serde_json::json!({
@@ -368,9 +360,7 @@ pub async fn upload_additional_device(
     bundle0: &PreKeyBundleData,
     device_id: i32,
 ) {
-    let mut rng = rand::rng();
-    let mut signed_prekey = vec![0u8; 32];
-    rng.fill_bytes(&mut signed_prekey);
+    let signed_prekey = rand::random::<[u8; 32]>().to_vec();
     let signature = bundle0.signing_key.sign(&signed_prekey);
 
     let body = serde_json::json!({
