@@ -16,6 +16,7 @@ pub mod ws;
 
 use axum::Json;
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 use axum::http::{HeaderValue, Method, header};
 use axum::middleware;
 use axum::response::IntoResponse;
@@ -196,7 +197,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             post(media::upload).layer(middleware::from_fn(media_upload_limit)),
         )
         .route("/ticket", post(media::request_media_ticket))
-        .route("/{id}", get(media::download));
+        .route("/{id}", get(media::download))
+        .layer(DefaultBodyLimit::max(media::MAX_FILE_SIZE));
 
     let group_routes = Router::new()
         .route("/", post(groups::create_group))
