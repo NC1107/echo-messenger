@@ -796,7 +796,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     if (_isPickingFile) return;
     _isPickingFile = true;
     try {
-      final result = await FilePicker().pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.any,
         allowMultiple: true,
         withData: true,
@@ -1218,7 +1218,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     if (_isPickingFile) return;
     _isPickingFile = true;
     try {
-      final result = await FilePicker().pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.media,
         allowMultiple: true,
         withData: true,
@@ -1278,7 +1278,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     if (_isPickingFile) return;
     _isPickingFile = true;
     try {
-      final result = await FilePicker().pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.image,
         allowMultiple: false,
         withData: true,

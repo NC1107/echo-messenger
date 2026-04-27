@@ -8,6 +8,9 @@ ignore = [
     # via sqlx-postgres and sqlx-mysql. No sqlx 0.9 available yet.
     # Advisory conditions (custom logger + rand::rng() reseed) don't apply to sqlx usage.
     "RUSTSEC-2026-0097",
+    # rustls-webpki CRL parsing panic. Pulled in transitively via reqwest 0.13 -> rustls.
+    # Echo does not use CRL verification, so this code path is unreachable.
+    "RUSTSEC-2026-0104",
 ]
 
 [licenses]

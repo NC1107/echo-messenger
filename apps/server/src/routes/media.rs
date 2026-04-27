@@ -259,11 +259,7 @@ pub async fn request_media_ticket(
 ) -> Result<impl IntoResponse, AppError> {
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use rand::RngCore;
-
-    let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
-    let ticket = URL_SAFE_NO_PAD.encode(bytes);
+    let ticket = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
 
     const TICKET_TTL: Duration = Duration::from_secs(300); // 5 minutes
     const MAX_TICKETS: usize = 100_000;

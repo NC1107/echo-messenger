@@ -263,14 +263,11 @@ pub async fn ws_ticket(
 ) -> Result<impl IntoResponse, AppError> {
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use rand::RngCore;
     use std::time::{Duration, Instant};
 
     let device_id = body.map(|b| b.device_id).unwrap_or(0);
 
-    let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
-    let ticket = URL_SAFE_NO_PAD.encode(bytes);
+    let ticket = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
 
     const TICKET_TTL: Duration = Duration::from_secs(30);
     const MAX_TICKETS: usize = 10_000;

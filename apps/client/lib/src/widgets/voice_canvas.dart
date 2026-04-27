@@ -638,7 +638,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
     final innerContent = hasVideo
         ? lk.VideoTrackRenderer(
             info.videoTrack!,
-            fit: VideoViewFit.cover,
+            fit: lk.VideoViewFit.cover,
             mirrorMode: info.mirror
                 ? lk.VideoViewMirrorMode.mirror
                 : lk.VideoViewMirrorMode.off,
