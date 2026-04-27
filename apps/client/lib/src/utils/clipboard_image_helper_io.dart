@@ -34,6 +34,13 @@ Future<ClipboardImageData?> readImageFromClipboard() async {
   return null;
 }
 
+/// Returns true when the current Linux session is a Wayland session.
+///
+/// Checks two standard environment variables:
+/// - `WAYLAND_DISPLAY` – set by the Wayland compositor (e.g. `wayland-0`).
+/// - `XDG_SESSION_TYPE` – set to `"wayland"` by login managers / PAM.
+/// Either variable being present is sufficient to switch from xclip to
+/// the wl-clipboard tools (`wl-paste` / `wl-copy`).
 bool _isWaylandSession() {
   final waylandDisplay = Platform.environment['WAYLAND_DISPLAY'];
   final xdgSessionType = Platform.environment['XDG_SESSION_TYPE'];
@@ -144,8 +151,9 @@ Future<ClipboardImageData?> _readWaylandClipboard() async {
 }
 
 Future<ClipboardImageData?> _readIOSClipboard() async {
-  // The Flutter built-in Clipboard API only handles plain text.
-  // Reading image data from the iOS pasteboard requires a native plugin.
+  // TODO(iOS): integrate a native pasteboard plugin (e.g. pasteboard) to
+  // support reading image data from the iOS clipboard. The Flutter built-in
+  // Clipboard API only handles plain text.
   debugPrint(
     '[Clipboard] iOS image paste is not supported without a native pasteboard plugin',
   );
@@ -243,6 +251,8 @@ Future<bool> writeImageToClipboard(Uint8List bytes, String mimeType) async {
     } else if (Platform.isMacOS) {
       return _writeMacOSClipboard(bytes);
     } else if (Platform.isIOS) {
+      // TODO(iOS): integrate a native pasteboard plugin (e.g. pasteboard) to
+      // support writing image data to the iOS clipboard.
       debugPrint(
         '[Clipboard] iOS image copy is not supported without a native pasteboard plugin',
       );
