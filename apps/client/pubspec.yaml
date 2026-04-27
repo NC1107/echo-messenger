@@ -67,3 +67,7 @@ dependency_overrides:
   # Stub out broken record_linux — voice recording is mobile/web only.
   record_linux:
     path: record_linux_stub
+  # connectivity_plus 7.1.1 uses NWPath.isUltraConstrained which requires
+  # the macOS 26 SDK (Xcode 26). GitHub macOS-15 runners ship Xcode 16.4
+  # with macOS 15.5 SDK, so cap below 7.1.1 until runners upgrade.
+  connectivity_plus: '>=6.0.0 <7.1.1'
