@@ -5,240 +5,73 @@ import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
+import '../providers/theme_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
+import '../version.dart';
+import '../widgets/settings/card_row.dart';
+import '../widgets/settings/section_header.dart';
+import '../widgets/settings/user_header_card.dart';
 import 'settings/about_section.dart';
-import 'settings/accessibility_section.dart';
 import 'settings/account_section.dart';
 import 'settings/appearance_section.dart';
-import 'settings/audio_section.dart';
 import 'settings/data_storage_section.dart';
-import 'settings/debug_section.dart';
 import 'settings/devices_section.dart';
 import 'settings/notification_section.dart';
 import 'settings/privacy_section.dart';
 
-/// Section identifiers for the settings navigation.
+/// Section identifiers for the redesigned 3-group settings layout.
+///
+/// Groups (visual):
+///   ACCOUNT      → profile, encryptionKeys, devices
+///   PREFERENCES  → appearance, notifications, privacy, dataStorage
+///   ECHO         → about (+ Log out, handled separately)
 enum SettingsSection {
-  account,
+  profile,
+  encryptionKeys,
   devices,
-  privacy,
-  notifications,
-  audio,
   appearance,
-  accessibility,
-  about,
+  notifications,
+  privacy,
   dataStorage,
-  debug,
+  about,
 }
 
 /// Returns a human-readable label for a settings section.
 String settingsSectionLabel(SettingsSection section) {
   switch (section) {
-    case SettingsSection.account:
-      return 'Account';
+    case SettingsSection.profile:
+      return 'Profile';
+    case SettingsSection.encryptionKeys:
+      return 'Encryption keys';
     case SettingsSection.devices:
-      return 'My Devices';
-    case SettingsSection.privacy:
-      return 'Privacy & Safety';
-    case SettingsSection.notifications:
-      return 'Notifications';
-    case SettingsSection.audio:
-      return 'Voice & Video';
+      return 'Devices';
     case SettingsSection.appearance:
       return 'Appearance';
-    case SettingsSection.accessibility:
-      return 'Accessibility';
+    case SettingsSection.notifications:
+      return 'Notifications';
+    case SettingsSection.privacy:
+      return 'Privacy';
+    case SettingsSection.dataStorage:
+      return 'Storage';
     case SettingsSection.about:
       return 'About';
-    case SettingsSection.dataStorage:
-      return 'Data & Storage';
-    case SettingsSection.debug:
-      return 'Debug Logs';
   }
 }
 
-/// Shared label used in the nav list, dialog title, and dialog button.
-const _logOutLabel = 'Log Out';
-
-// ---------------------------------------------------------------------------
-// Settings nav list widget (reusable)
-// ---------------------------------------------------------------------------
-
-class SettingsNavList extends StatelessWidget {
-  final SettingsSection? selected;
-  final void Function(SettingsSection) onTap;
-  final VoidCallback onLogout;
-
-  const SettingsNavList({
-    super.key,
-    this.selected,
-    required this.onTap,
-    required this.onLogout,
-  });
-
-  Widget _categoryHeader(BuildContext context, String label) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 16, top: 16, bottom: 4),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: context.textMuted,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          const SizedBox(height: 8),
-          _categoryHeader(context, 'USER SETTINGS'),
-          _navItem(
-            context: context,
-            icon: Icons.person_outlined,
-            label: 'Account',
-            section: SettingsSection.account,
-          ),
-          _navItem(
-            context: context,
-            icon: Icons.devices_outlined,
-            label: 'My Devices',
-            section: SettingsSection.devices,
-          ),
-          _navItem(
-            context: context,
-            icon: Icons.lock_outline,
-            label: 'Privacy & Safety',
-            section: SettingsSection.privacy,
-          ),
-          _navItem(
-            context: context,
-            icon: Icons.notifications_outlined,
-            label: 'Notifications',
-            section: SettingsSection.notifications,
-          ),
-          _navItem(
-            context: context,
-            icon: Icons.graphic_eq,
-            label: 'Voice & Video',
-            section: SettingsSection.audio,
-          ),
-          _categoryHeader(context, 'APP SETTINGS'),
-          _navItem(
-            context: context,
-            icon: Icons.palette_outlined,
-            label: 'Appearance',
-            section: SettingsSection.appearance,
-          ),
-          _navItem(
-            context: context,
-            icon: Icons.accessibility_new,
-            label: 'Accessibility',
-            section: SettingsSection.accessibility,
-          ),
-          _navItem(
-            context: context,
-            icon: Icons.storage_outlined,
-            label: 'Data & Storage',
-            section: SettingsSection.dataStorage,
-          ),
-          _categoryHeader(context, 'ADVANCED'),
-          _navItem(
-            context: context,
-            icon: Icons.info_outline,
-            label: 'About',
-            section: SettingsSection.about,
-          ),
-          _navItem(
-            context: context,
-            icon: Icons.bug_report_outlined,
-            label: 'Debug Logs',
-            section: SettingsSection.debug,
-          ),
-          Divider(color: context.border, thickness: 1, height: 1),
-          _navItem(
-            context: context,
-            icon: Icons.logout,
-            label: _logOutLabel,
-            section: null,
-            isLogout: true,
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-
-  Widget _navItem({
-    required BuildContext context,
-    required IconData icon,
-    required String label,
-    required SettingsSection? section,
-    bool isLogout = false,
-  }) {
-    final isSelected = !isLogout && selected == section;
-
-    final Color iconColor;
-    if (isLogout) {
-      iconColor = EchoTheme.danger;
-    } else if (isSelected) {
-      iconColor = context.accent;
-    } else {
-      iconColor = context.textSecondary;
-    }
-
-    final Color labelColor;
-    if (isLogout) {
-      labelColor = EchoTheme.danger;
-    } else if (isSelected) {
-      labelColor = context.accent;
-    } else {
-      labelColor = context.textPrimary;
-    }
-
-    return Semantics(
-      label: isLogout ? 'log out' : '$label settings',
-      button: true,
-      selected: isSelected,
-      child: Material(
-        color: isSelected ? context.accentLight : Colors.transparent,
-        child: InkWell(
-          onTap: isLogout ? onLogout : () => onTap(section!),
-          hoverColor: context.surfaceHover,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                Icon(icon, size: 20, color: iconColor),
-                const SizedBox(width: 12),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: labelColor,
-                    fontSize: 14,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
+/// Shared label used in the dialog title and confirm button.
+const _logOutLabel = 'Log out';
 
 // ---------------------------------------------------------------------------
 // Settings content widget (reusable)
 // ---------------------------------------------------------------------------
 
+/// Maps a [SettingsSection] to the screen widget that renders its detail.
+///
+/// Encryption keys and Privacy share the same underlying [PrivacySection]
+/// for now — both rows route there. Splitting into separate screens is
+/// tracked as future work.
 class SettingsContent extends StatelessWidget {
   final SettingsSection section;
 
@@ -247,27 +80,216 @@ class SettingsContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     switch (section) {
-      case SettingsSection.account:
+      case SettingsSection.profile:
         return const AccountSection();
+      case SettingsSection.encryptionKeys:
+        return const PrivacySection();
       case SettingsSection.devices:
         return const DevicesSection();
-      case SettingsSection.privacy:
-        return const PrivacySection();
-      case SettingsSection.notifications:
-        return const NotificationSection();
-      case SettingsSection.audio:
-        return const AudioSection();
       case SettingsSection.appearance:
         return const AppearanceSection();
-      case SettingsSection.accessibility:
-        return const AccessibilitySection();
-      case SettingsSection.about:
-        return const AboutSection();
+      case SettingsSection.notifications:
+        return const NotificationSection();
+      case SettingsSection.privacy:
+        return const PrivacySection();
       case SettingsSection.dataStorage:
         return const DataStorageSection();
-      case SettingsSection.debug:
-        return const DebugSection();
+      case SettingsSection.about:
+        return const AboutSection();
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Settings root view (shared by mobile + desktop)
+// ---------------------------------------------------------------------------
+
+/// Sectioned card list rendered as the entry point of the Settings screen.
+/// Used as the body on mobile (full screen) and as the left pane on desktop.
+class SettingsRootView extends ConsumerWidget {
+  final SettingsSection? selected;
+  final void Function(SettingsSection) onTap;
+  final VoidCallback onLogout;
+
+  const SettingsRootView({
+    super.key,
+    this.selected,
+    required this.onTap,
+    required this.onLogout,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeSelection = ref.watch(themeProvider);
+    final auth = ref.watch(authProvider);
+
+    final profileTrailing = auth.username ?? '';
+    final appearanceTrailing = _themeLabel(themeSelection);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          UserHeaderCard(onTap: () => onTap(SettingsSection.profile)),
+          const SectionHeader('Account'),
+          _CardGroup(
+            children: [
+              _row(
+                context,
+                icon: Icons.person_outline,
+                iconColor: const Color(0xFF8B5CF6),
+                section: SettingsSection.profile,
+                trailing: profileTrailing.isEmpty ? null : profileTrailing,
+              ),
+              _row(
+                context,
+                icon: Icons.vpn_key_outlined,
+                iconColor: const Color(0xFF14B8A6),
+                section: SettingsSection.encryptionKeys,
+                trailing: 'Verified',
+              ),
+              _row(
+                context,
+                icon: Icons.devices_outlined,
+                iconColor: const Color(0xFFF59E0B),
+                section: SettingsSection.devices,
+              ),
+            ],
+          ),
+          const SectionHeader('Preferences'),
+          _CardGroup(
+            children: [
+              _row(
+                context,
+                icon: Icons.palette_outlined,
+                iconColor: const Color(0xFF8B5CF6),
+                section: SettingsSection.appearance,
+                trailing: appearanceTrailing,
+              ),
+              _row(
+                context,
+                icon: Icons.notifications_outlined,
+                iconColor: const Color(0xFFEF4444),
+                section: SettingsSection.notifications,
+              ),
+              _row(
+                context,
+                icon: Icons.lock_outline,
+                iconColor: const Color(0xFF14B8A6),
+                section: SettingsSection.privacy,
+              ),
+              _row(
+                context,
+                icon: Icons.folder_outlined,
+                iconColor: context.textPrimary,
+                section: SettingsSection.dataStorage,
+              ),
+            ],
+          ),
+          const SectionHeader('Echo'),
+          _CardGroup(
+            children: [
+              _row(
+                context,
+                icon: Icons.info_outline,
+                iconColor: const Color(0xFF8B5CF6),
+                section: SettingsSection.about,
+                trailing: 'v$appVersion',
+              ),
+              CardRow(
+                icon: Icons.logout,
+                iconColor: EchoTheme.danger,
+                label: 'Log out',
+                destructive: true,
+                onTap: onLogout,
+              ),
+            ],
+          ),
+          const SizedBox(height: EchoSectionTokens.groupGap),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(
+    BuildContext context, {
+    required IconData icon,
+    required Color iconColor,
+    required SettingsSection section,
+    String? trailing,
+  }) {
+    final isSelected = selected == section;
+    return Container(
+      color: isSelected ? context.accentLight : null,
+      child: CardRow(
+        icon: icon,
+        iconColor: iconColor,
+        label: settingsSectionLabel(section),
+        trailingValue: trailing,
+        onTap: () => onTap(section),
+      ),
+    );
+  }
+
+  String _themeLabel(AppThemeSelection selection) {
+    switch (selection) {
+      case AppThemeSelection.system:
+        return 'System';
+      case AppThemeSelection.dark:
+        return 'Dark';
+      case AppThemeSelection.light:
+        return 'Light';
+      case AppThemeSelection.graphite:
+        return 'Graphite';
+      case AppThemeSelection.ember:
+        return 'Ember';
+      case AppThemeSelection.neon:
+        return 'Neon';
+      case AppThemeSelection.sakura:
+        return 'Sakura';
+      case AppThemeSelection.aurora:
+        return 'Aurora';
+    }
+  }
+}
+
+class _CardGroup extends StatelessWidget {
+  final List<Widget> children;
+
+  const _CardGroup({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Material(
+          color: context.cardRowBg,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: _separated(context, children),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _separated(BuildContext context, List<Widget> rows) {
+    final out = <Widget>[];
+    for (var i = 0; i < rows.length; i++) {
+      out.add(rows[i]);
+      if (i < rows.length - 1) {
+        out.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 60),
+            child: Divider(height: 1, thickness: 0.5, color: context.border),
+          ),
+        );
+      }
+    }
+    return out;
   }
 }
 
@@ -286,7 +308,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  SettingsSection _selectedSection = SettingsSection.account;
+  SettingsSection _selectedSection = SettingsSection.profile;
   SettingsSection? _mobileDetailSection;
 
   Future<void> _logout() async {
@@ -368,7 +390,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return Scaffold(
         backgroundColor: context.mainBg,
         appBar: AppBar(
-          backgroundColor: context.sidebarBg,
+          backgroundColor: context.mainBg,
           title: Text(
             settingsSectionLabel(_mobileDetailSection!),
             style: TextStyle(
@@ -391,30 +413,52 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     return Scaffold(
       backgroundColor: context.mainBg,
-      appBar: AppBar(
-        backgroundColor: context.sidebarBg,
-        title: Text(
-          'Settings',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  if (widget.onBack != null || Navigator.of(context).canPop())
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.arrow_back,
+                          color: context.textSecondary,
+                        ),
+                        onPressed: () {
+                          if (widget.onBack != null) {
+                            widget.onBack!();
+                          } else {
+                            context.pop();
+                          }
+                        },
+                      ),
+                    ),
+                  Text(
+                    'Settings',
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SettingsRootView(
+                onTap: (section) =>
+                    setState(() => _mobileDetailSection = section),
+                onLogout: _logout,
+              ),
+            ),
+          ],
         ),
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: context.textSecondary),
-          onPressed: () {
-            if (widget.onBack != null) {
-              widget.onBack!();
-            } else {
-              context.pop();
-            }
-          },
-        ),
-      ),
-      body: SettingsNavList(
-        onTap: (section) => setState(() => _mobileDetailSection = section),
-        onLogout: _logout,
       ),
     );
   }
@@ -426,7 +470,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         children: [
           // Nav sidebar -- flush left, matches conversation sidebar
           Container(
-            width: 250,
+            width: 320,
             color: context.sidebarBg,
             child: Column(
               children: [
@@ -457,7 +501,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 Container(height: 1, color: context.border),
                 Expanded(
-                  child: SettingsNavList(
+                  child: SettingsRootView(
                     selected: _selectedSection,
                     onTap: (section) =>
                         setState(() => _selectedSection = section),

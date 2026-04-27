@@ -77,7 +77,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   // Settings inline state
   bool _showSettings = false;
-  SettingsSection _settingsSection = SettingsSection.account;
+  SettingsSection _settingsSection = SettingsSection.profile;
 
   // Collapsible sidebar state
   bool _sidebarCollapsed = false;
@@ -475,7 +475,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (_isDesktop || !Responsive.isMobile(context)) {
       setState(() {
         _showSettings = true;
-        _settingsSection = SettingsSection.account;
+        _settingsSection = SettingsSection.profile;
       });
     } else {
       context.push('/settings');
@@ -715,7 +715,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
           // Settings nav list
           Expanded(
-            child: SettingsNavList(
+            child: SettingsRootView(
               selected: _settingsSection,
               onTap: (section) => setState(() => _settingsSection = section),
               onLogout: _logout,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../providers/accessibility_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
 
@@ -140,6 +141,8 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
   @override
   Widget build(BuildContext context) {
     final currentTheme = ref.watch(themeProvider);
+    final accessibilityState = ref.watch(accessibilityProvider);
+    final accessibilityNotifier = ref.read(accessibilityProvider.notifier);
 
     const themeOptions = <_ThemeCardData>[
       _ThemeCardData(
@@ -277,6 +280,100 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
               ),
               value: _gifAutoplay,
               onChanged: _setGifAutoplay,
+            ),
+
+            // ---- Accessibility (absorbed from former Accessibility section) ----
+            const SizedBox(height: 32),
+            Text(
+              'Accessibility',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Adjust the app to your needs.',
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Font Size',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Scale text across the app. Default is 100%.',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  '80%',
+                  style: TextStyle(color: context.textMuted, fontSize: 12),
+                ),
+                Expanded(
+                  child: Semantics(
+                    label: 'font size',
+                    slider: true,
+                    value: '${(accessibilityState.fontScale * 100).round()}%',
+                    child: Slider(
+                      value: accessibilityState.fontScale,
+                      min: 0.8,
+                      max: 1.5,
+                      divisions: 7,
+                      label: '${(accessibilityState.fontScale * 100).round()}%',
+                      onChanged: accessibilityNotifier.setFontScale,
+                    ),
+                  ),
+                ),
+                Text(
+                  '150%',
+                  style: TextStyle(color: context.textMuted, fontSize: 12),
+                ),
+              ],
+            ),
+            Text(
+              'Current: ${(accessibilityState.fontScale * 100).round()}%',
+              style: TextStyle(color: context.textSecondary, fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'Reduce Motion',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Disable animated transitions and effects.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: accessibilityState.reducedMotion,
+              onChanged: accessibilityNotifier.setReducedMotion,
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'High Contrast',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Increase contrast for better readability.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: accessibilityState.highContrast,
+              onChanged: accessibilityNotifier.setHighContrast,
             ),
           ],
         ),

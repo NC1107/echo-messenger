@@ -1,8 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 
 import '../../providers/auth_provider.dart';
@@ -11,6 +13,7 @@ import '../../providers/crypto_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../providers/update_provider.dart';
 import '../../providers/websocket_provider.dart';
+import '../../services/debug_log_service.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../version.dart';
@@ -419,6 +422,38 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
         const SizedBox(height: 16),
         Divider(color: context.border),
         const SizedBox(height: 16),
+        // Debug logs entry (absorbed from former Debug section).
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Icon(
+            Icons.bug_report_outlined,
+            color: context.textSecondary,
+            size: 22,
+          ),
+          title: Text(
+            'Debug Logs',
+            style: TextStyle(color: context.textPrimary, fontSize: 15),
+          ),
+          subtitle: Text(
+            'View recent in-app log entries.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          trailing: Icon(
+            Icons.chevron_right,
+            color: context.textMuted,
+            size: 20,
+          ),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const _DebugLogsSubpage(),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 16),
+        Divider(color: context.border),
+        const SizedBox(height: 16),
         Text(
           'Open source',
           style: TextStyle(
@@ -457,6 +492,274 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Debug Logs subpage (absorbed from former DebugSection).
+// Pushed from the About row above. Shows the in-memory log buffer with
+// copy-all and clear actions.
+// ---------------------------------------------------------------------------
+
+class _DebugLogsSubpage extends StatefulWidget {
+  const _DebugLogsSubpage();
+
+  @override
+  State<_DebugLogsSubpage> createState() => _DebugLogsSubpageState();
+}
+
+class _DebugLogsSubpageState extends State<_DebugLogsSubpage> {
+  final _scrollController = ScrollController();
+  final _logService = DebugLogService.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _logService.addListener(_onLogsChanged);
+  }
+
+  @override
+  void dispose() {
+    _logService.removeListener(_onLogsChanged);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _copyAllLogs(List<DebugLogEntry> entries) {
+    final buffer = StringBuffer();
+    for (final e in entries) {
+      final h = e.timestamp.hour.toString().padLeft(2, '0');
+      final m = e.timestamp.minute.toString().padLeft(2, '0');
+      final s = e.timestamp.second.toString().padLeft(2, '0');
+      final level = switch (e.level) {
+        LogLevel.info => 'INF',
+        LogLevel.warning => 'WRN',
+        LogLevel.error => 'ERR',
+      };
+      buffer.writeln('$h:$m:$s [$level] ${e.source}: ${e.message}');
+    }
+    Clipboard.setData(ClipboardData(text: buffer.toString()));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${entries.length} log entries copied to clipboard'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _onLogsChanged() {
+    if (!mounted) return;
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = _logService.entries;
+
+    return Scaffold(
+      backgroundColor: context.mainBg,
+      appBar: AppBar(
+        backgroundColor: context.sidebarBg,
+        title: Text(
+          'Debug Logs',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back, color: context.textSecondary),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            child: Row(
+              children: [
+                const Spacer(),
+                OutlinedButton.icon(
+                  onPressed: entries.isEmpty
+                      ? null
+                      : () => _copyAllLogs(entries),
+                  icon: const Icon(Icons.copy_outlined, size: 16),
+                  label: const Text('Copy All'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: context.textSecondary,
+                    disabledForegroundColor: context.textMuted,
+                    side: BorderSide(color: context.border),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    textStyle: const TextStyle(fontSize: 13),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: entries.isEmpty ? null : _logService.clear,
+                  icon: const Icon(Icons.delete_sweep_outlined, size: 16),
+                  label: const Text('Clear Logs'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: context.textSecondary,
+                    disabledForegroundColor: context.textMuted,
+                    side: BorderSide(color: context.border),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    textStyle: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              '${entries.length} entries (max ${DebugLogService.maxEntries})',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: entries.isEmpty
+                ? Center(
+                    child: Text(
+                      'No debug logs yet.',
+                      style: TextStyle(color: context.textMuted, fontSize: 14),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                    itemCount: entries.length,
+                    itemBuilder: (context, index) =>
+                        _DebugLogEntryTile(entry: entries[index]),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DebugLogEntryTile extends StatelessWidget {
+  final DebugLogEntry entry;
+
+  const _DebugLogEntryTile({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(
+              _formatTime(entry.timestamp),
+              style: GoogleFonts.jetBrainsMono(
+                color: context.textMuted,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          _DebugLevelBadge(level: entry.level),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: context.surfaceHover,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              entry.source,
+              style: GoogleFonts.jetBrainsMono(
+                color: context.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              entry.message,
+              style: GoogleFonts.jetBrainsMono(
+                color: context.textPrimary,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatTime(DateTime dt) {
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    final s = dt.second.toString().padLeft(2, '0');
+    return '$h:$m:$s';
+  }
+}
+
+class _DebugLevelBadge extends StatelessWidget {
+  final LogLevel level;
+
+  const _DebugLevelBadge({required this.level});
+
+  @override
+  Widget build(BuildContext context) {
+    final (String label, Color color) = switch (level) {
+      LogLevel.info => ('INF', EchoTheme.online),
+      LogLevel.warning => ('WRN', EchoTheme.warning),
+      LogLevel.error => ('ERR', EchoTheme.danger),
+    };
+
+    return Container(
+      width: 32,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.jetBrainsMono(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 }
