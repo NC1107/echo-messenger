@@ -27,6 +27,7 @@ allow = [
     "BSL-1.0",
     "OpenSSL",
     "CC0-1.0",
+    "CDLA-Permissive-2.0",
 ]
 
 # AGPL-3.0-or-later is the project's own license and must not leak in via
