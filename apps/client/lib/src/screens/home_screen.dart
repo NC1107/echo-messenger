@@ -35,6 +35,7 @@ import '../widgets/global_search_overlay.dart';
 import '../widgets/quick_switcher_overlay.dart';
 import '../widgets/voice_dock.dart';
 import 'contacts_screen.dart';
+import 'new_message_screen.dart';
 import 'saved_messages_screen.dart';
 import 'voice_lounge_screen.dart';
 import 'create_group_screen.dart';
@@ -312,6 +313,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
+  /// Opens the dedicated "New message" composer. Tapping a contact starts
+  /// a DM and selects the resulting conversation. On desktop the composer
+  /// is shown as a centered dialog; on mobile it pushes as a full screen.
+  Future<void> _openNewMessage() async {
+    if (_isDesktop) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          final size = MediaQuery.of(dialogContext).size;
+          return Dialog(
+            backgroundColor: context.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: context.border),
+            ),
+            child: SizedBox(
+              width: (size.width * 0.4).clamp(360, 520).toDouble(),
+              height: (size.height * 0.7).clamp(440, 720).toDouble(),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: NewMessageScreen(
+                  onStartConversation: (conv) {
+                    Navigator.pop(dialogContext);
+                    _selectConversation(conv);
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } else {
+      final result = await Navigator.of(context).push<Conversation>(
+        MaterialPageRoute(
+          builder: (_) => NewMessageScreen(
+            onStartConversation: (conv) => Navigator.of(context).pop(conv),
+          ),
+          fullscreenDialog: true,
+        ),
+      );
+      if (result != null && mounted) {
+        _selectConversation(result);
+      }
+    }
+  }
+
   void _openCreateGroup() {
     if (_isDesktop) {
       _showCreateGroupDialog();
@@ -538,7 +585,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return ConversationPanel(
       selectedConversationId: _selectedConversation?.id,
       onConversationTap: _selectConversation,
-      onNewChat: _openContacts,
+      onNewChat: _openNewMessage,
       onNewGroup: _openCreateGroup,
       onDiscover: _openDiscoverGroups,
       onSavedMessages: _openSavedMessages,

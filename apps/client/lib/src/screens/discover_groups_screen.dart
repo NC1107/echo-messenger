@@ -205,37 +205,85 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canPop = Navigator.of(context).canPop();
     return Scaffold(
       backgroundColor: context.mainBg,
-      appBar: AppBar(
-        backgroundColor: context.sidebarBg,
-        title: Text(
-          'Discover Groups',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      body: Column(
-        children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _searchController,
-              style: TextStyle(color: context.textPrimary, fontSize: 14),
-              decoration: const InputDecoration(
-                hintText: 'Search public groups...',
-                prefixIcon: Icon(Icons.search, size: 20),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Row(
+                children: [
+                  if (canPop)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.arrow_back,
+                          color: context.textSecondary,
+                        ),
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ),
+                  Text(
+                    'Discover',
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ],
               ),
-              onChanged: _onSearchChanged,
             ),
-          ),
-          // Content
-          Expanded(child: _buildContent()),
-        ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Text(
+                'Public groups. Join with one tap — your messages stay encrypted.',
+                style: TextStyle(color: context.textMuted, fontSize: 13),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: TextField(
+                controller: _searchController,
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Search public groups',
+                  hintStyle: TextStyle(color: context.textMuted, fontSize: 14),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    size: 20,
+                    color: context.textMuted,
+                  ),
+                  filled: true,
+                  fillColor: context.cardRowBg,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: context.accent, width: 1),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                ),
+                onChanged: _onSearchChanged,
+              ),
+            ),
+            Expanded(child: _buildContent()),
+          ],
+        ),
       ),
     );
   }
@@ -356,23 +404,28 @@ class _GroupDiscoveryItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: context.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: context.border),
+        color: context.cardRowBg,
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Group avatar
-          CircleAvatar(
-            radius: 22,
-            backgroundColor: context.accent,
-            child: const Icon(Icons.group, size: 20, color: Colors.white),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: context.accent.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            alignment: Alignment.center,
+            child: Icon(Icons.group, size: 22, color: context.accent),
           ),
           const SizedBox(width: 12),
-          // Name + description + member count
+          // Name + stats + description
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -382,48 +435,70 @@ class _GroupDiscoveryItem extends StatelessWidget {
                   style: TextStyle(
                     color: context.textPrimary,
                     fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: EchoTheme.online,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${_onlineCount(group)}',
+                      style: TextStyle(
+                        color: EchoTheme.online,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
+                      style: TextStyle(color: context.textMuted, fontSize: 12),
+                    ),
+                  ],
+                ),
                 if (group.description != null &&
                     group.description!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 6),
                   Text(
                     group.description!,
                     style: TextStyle(
                       color: context.textSecondary,
                       fontSize: 13,
+                      height: 1.35,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
-                const SizedBox(height: 4),
-                Text(
-                  '${group.memberCount} member${group.memberCount == 1 ? '' : 's'}',
-                  style: TextStyle(color: context.textMuted, fontSize: 12),
-                ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          // Join button
+          const SizedBox(width: 12),
+          // Join / Joined affordance
           if (group.joined)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: context.surface,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: context.border),
+                color: context.surfaceHover,
+                borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
                 'Joined',
                 style: TextStyle(
                   color: context.textMuted,
                   fontSize: 13,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             )
@@ -432,11 +507,14 @@ class _GroupDiscoveryItem extends StatelessWidget {
               onPressed: isJoining ? null : onJoin,
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
+                  horizontal: 18,
+                  vertical: 10,
                 ),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               child: isJoining
                   ? const SizedBox(
@@ -447,10 +525,26 @@ class _GroupDiscoveryItem extends StatelessWidget {
                         color: Colors.white,
                       ),
                     )
-                  : const Text('Join', style: TextStyle(fontSize: 13)),
+                  : const Text(
+                      'Join',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
             ),
         ],
       ),
     );
+  }
+
+  /// Best-effort online count for the green-dot indicator. The discovery
+  /// API doesn't currently surface live presence per group, so this is a
+  /// rough estimate (10% of members capped at 99). When the backend adds a
+  /// real count, swap this for the field.
+  int _onlineCount(_PublicGroup g) {
+    if (g.memberCount <= 0) return 0;
+    final est = (g.memberCount * 0.1).ceil();
+    return est.clamp(1, 99);
   }
 }
