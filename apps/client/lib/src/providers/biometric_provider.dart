@@ -36,6 +36,16 @@ class BiometricNotifier extends StateNotifier<BiometricState> {
 
   final _auth = LocalAuthentication();
 
+  bool _authenticatedThisSession = false;
+  DateTime? _lastAuthTime;
+  static const _lockTimeout = Duration(minutes: 5);
+
+  /// True when the user authenticated recently and the lock timeout has not expired.
+  bool get isSessionValid {
+    if (!_authenticatedThisSession || _lastAuthTime == null) return false;
+    return DateTime.now().difference(_lastAuthTime!) < _lockTimeout;
+  }
+
   Future<void> _init() async {
     // local_auth has no web implementation -- skip entirely on web.
     if (kIsWeb) {
@@ -76,10 +86,17 @@ class BiometricNotifier extends StateNotifier<BiometricState> {
   }
 
   /// Prompts the user to authenticate. Returns true on success.
+  /// Skips the prompt when called within [_lockTimeout] of the last successful auth.
   Future<bool> authenticate() async {
     if (!state.isAvailable) return true;
+    if (isSessionValid) return true;
     try {
-      return await _auth.authenticate(localizedReason: 'Unlock Echo');
+      final ok = await _auth.authenticate(localizedReason: 'Unlock Echo');
+      if (ok) {
+        _authenticatedThisSession = true;
+        _lastAuthTime = DateTime.now();
+      }
+      return ok;
     } catch (e) {
       debugPrint('[Biometric] authenticate failed: $e');
       return false;
