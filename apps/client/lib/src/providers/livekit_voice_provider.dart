@@ -181,7 +181,7 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
             autoGainControl: voiceSettings.autoGainControl,
           ),
           defaultAudioPublishOptions: const AudioPublishOptions(
-            audioBitrate: AudioPreset.music,
+            encoding: AudioEncoding.presetMusic,
             dtx: true,
           ),
           defaultCameraCaptureOptions: const CameraCaptureOptions(
