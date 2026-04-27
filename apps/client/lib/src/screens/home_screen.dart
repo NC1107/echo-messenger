@@ -79,6 +79,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   bool _showSettings = false;
   SettingsSection _settingsSection = SettingsSection.profile;
 
+  /// Bottom tab index on mobile narrow viewport.
+  /// 0 = Chats, 1 = Discover, 2 = Contacts, 3 = Settings.
+  int _mobileTabIndex = 0;
+
   // Collapsible sidebar state
   bool _sidebarCollapsed = false;
   double _sidebarWidth = 350;
@@ -1155,18 +1159,77 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final voiceRtc = ref.watch(voiceRtcProvider);
     final voiceActive = voiceRtc.isActive && voiceRtc.channelId != null;
 
-    if (_narrowPanelIndex == 1 && _selectedConversation != null) {
+    // When on the Chats tab AND a conversation is open, render the chat
+    // full-screen with no bottom tab bar. Pressing back returns to the
+    // conversation list with the tab bar visible.
+    if (_mobileTabIndex == 0 &&
+        _narrowPanelIndex == 1 &&
+        _selectedConversation != null) {
       return _buildNarrowChatPanel(voiceRtc, voiceActive);
     }
 
-    return Scaffold(
-      body: SafeArea(
-        child: _showSettings
-            ? SettingsScreen(
-                onBack: () => setState(() => _showSettings = false),
-              )
-            : _buildConversationPanel(),
-      ),
+    final Widget body;
+    switch (_mobileTabIndex) {
+      case 1:
+        body = const DiscoverGroupsScreen();
+      case 2:
+        body = const ContactsScreen();
+      case 3:
+        body = const SettingsScreen();
+      case 0:
+      default:
+        body = SafeArea(child: _buildConversationPanel());
+    }
+
+    return Scaffold(body: body, bottomNavigationBar: _buildMobileTabBar());
+  }
+
+  /// Bottom tab bar shown on the mobile narrow viewport. Switching tabs
+  /// preserves each tab's local state via the parent state holder, and
+  /// resets the chat-detail navigation when switching away from Chats.
+  Widget _buildMobileTabBar() {
+    return BottomNavigationBar(
+      currentIndex: _mobileTabIndex,
+      onTap: (index) {
+        if (index == _mobileTabIndex) return;
+        setState(() {
+          _mobileTabIndex = index;
+          // Switching tabs collapses any open chat back to the list so
+          // returning to Chats lands on the conversation list, not a stale
+          // chat view from before the tab switch.
+          if (index != 0) {
+            _narrowPanelIndex = 0;
+          }
+        });
+      },
+      type: BottomNavigationBarType.fixed,
+      backgroundColor: context.sidebarBg,
+      selectedItemColor: context.accent,
+      unselectedItemColor: context.textMuted,
+      selectedFontSize: 11,
+      unselectedFontSize: 11,
+      items: const [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.chat_bubble_outline),
+          activeIcon: Icon(Icons.chat_bubble),
+          label: 'Chats',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.explore_outlined),
+          activeIcon: Icon(Icons.explore),
+          label: 'Discover',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.people_outline),
+          activeIcon: Icon(Icons.people),
+          label: 'Contacts',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.settings_outlined),
+          activeIcon: Icon(Icons.settings),
+          label: 'Settings',
+        ),
+      ],
     );
   }
 
