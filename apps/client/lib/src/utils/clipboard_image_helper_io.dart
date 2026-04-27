@@ -25,12 +25,37 @@ Future<ClipboardImageData?> readImageFromClipboard() async {
       return _readWindowsClipboard();
     } else if (Platform.isMacOS) {
       return _readMacOSClipboard();
+    } else if (Platform.isIOS) {
+      return _readIOSClipboard();
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[Clipboard] readImageFromClipboard failed: $e');
+  }
   return null;
 }
 
+/// Returns true when the current Linux session is a Wayland session.
+///
+/// Checks two standard environment variables:
+/// - `WAYLAND_DISPLAY` – set by the Wayland compositor (e.g. `wayland-0`).
+/// - `XDG_SESSION_TYPE` – set to `"wayland"` by login managers / PAM.
+/// Either variable being present is sufficient to switch from xclip to
+/// the wl-clipboard tools (`wl-paste` / `wl-copy`).
+bool _isWaylandSession() {
+  final waylandDisplay = Platform.environment['WAYLAND_DISPLAY'];
+  final xdgSessionType = Platform.environment['XDG_SESSION_TYPE'];
+  return (waylandDisplay != null && waylandDisplay.isNotEmpty) ||
+      xdgSessionType == 'wayland';
+}
+
 Future<ClipboardImageData?> _readLinuxClipboard() async {
+  if (_isWaylandSession()) {
+    return _readWaylandClipboard();
+  }
+  return _readX11Clipboard();
+}
+
+Future<ClipboardImageData?> _readX11Clipboard() async {
   // Check if xclip is available and clipboard has image data
   final targets = await Process.run('xclip', [
     '-selection',
@@ -40,7 +65,10 @@ Future<ClipboardImageData?> _readLinuxClipboard() async {
     '-o',
   ]);
 
-  if (targets.exitCode != 0) return null;
+  if (targets.exitCode != 0) {
+    debugPrint('[Clipboard] xclip TARGETS failed: ${targets.stderr}');
+    return null;
+  }
 
   final targetList = (targets.stdout as String).split('\n');
   String? imageType;
@@ -62,7 +90,10 @@ Future<ClipboardImageData?> _readLinuxClipboard() async {
     stdoutEncoding: null, // raw bytes
   );
 
-  if (result.exitCode != 0) return null;
+  if (result.exitCode != 0) {
+    debugPrint('[Clipboard] xclip read failed: ${result.stderr}');
+    return null;
+  }
 
   final bytes = result.stdout as List<int>;
   if (bytes.isEmpty) return null;
@@ -73,6 +104,60 @@ Future<ClipboardImageData?> _readLinuxClipboard() async {
     mimeType: imageType,
     fileName: 'clipboard_image.$ext',
   );
+}
+
+Future<ClipboardImageData?> _readWaylandClipboard() async {
+  // List MIME types available on the Wayland clipboard
+  final targets = await Process.run('wl-paste', ['--list-types']);
+  if (targets.exitCode != 0) {
+    debugPrint('[Clipboard] wl-paste --list-types failed: ${targets.stderr}');
+    return null;
+  }
+
+  final targetList = (targets.stdout as String).split('\n');
+  String? imageType;
+  for (final t in targetList) {
+    final trimmed = t.trim();
+    if (trimmed == _mimeImagePng) {
+      imageType = _mimeImagePng;
+      break;
+    } else if (trimmed.startsWith('image/')) {
+      imageType = trimmed;
+    }
+  }
+
+  if (imageType == null) return null;
+
+  final result = await Process.run(
+    'wl-paste',
+    ['--type', imageType, '--no-newline'],
+    stdoutEncoding: null, // raw bytes
+  );
+
+  if (result.exitCode != 0) {
+    debugPrint('[Clipboard] wl-paste read failed: ${result.stderr}');
+    return null;
+  }
+
+  final bytes = result.stdout as List<int>;
+  if (bytes.isEmpty) return null;
+
+  final ext = imageType == _mimeImagePng ? 'png' : 'jpg';
+  return ClipboardImageData(
+    bytes: Uint8List.fromList(bytes),
+    mimeType: imageType,
+    fileName: 'clipboard_image.$ext',
+  );
+}
+
+Future<ClipboardImageData?> _readIOSClipboard() async {
+  // TODO(iOS): integrate a native pasteboard plugin (e.g. pasteboard) to
+  // support reading image data from the iOS clipboard. The Flutter built-in
+  // Clipboard API only handles plain text.
+  debugPrint(
+    '[Clipboard] iOS image paste is not supported without a native pasteboard plugin',
+  );
+  return null;
 }
 
 Future<ClipboardImageData?> _readWindowsClipboard() async {
@@ -165,6 +250,12 @@ Future<bool> writeImageToClipboard(Uint8List bytes, String mimeType) async {
       return _writeWindowsClipboard(bytes);
     } else if (Platform.isMacOS) {
       return _writeMacOSClipboard(bytes);
+    } else if (Platform.isIOS) {
+      // TODO(iOS): integrate a native pasteboard plugin (e.g. pasteboard) to
+      // support writing image data to the iOS clipboard.
+      debugPrint(
+        '[Clipboard] iOS image copy is not supported without a native pasteboard plugin',
+      );
     }
   } catch (e) {
     debugPrint('[Clipboard] writeImageToClipboard failed: $e');
@@ -173,6 +264,13 @@ Future<bool> writeImageToClipboard(Uint8List bytes, String mimeType) async {
 }
 
 Future<bool> _writeLinuxClipboard(Uint8List bytes, String mimeType) async {
+  if (_isWaylandSession()) {
+    return _writeWaylandClipboard(bytes, mimeType);
+  }
+  return _writeX11Clipboard(bytes, mimeType);
+}
+
+Future<bool> _writeX11Clipboard(Uint8List bytes, String mimeType) async {
   final process = await Process.start('xclip', [
     '-selection',
     'clipboard',
@@ -182,6 +280,20 @@ Future<bool> _writeLinuxClipboard(Uint8List bytes, String mimeType) async {
   process.stdin.add(bytes);
   await process.stdin.close();
   final exitCode = await process.exitCode;
+  if (exitCode != 0) {
+    debugPrint('[Clipboard] xclip write failed with exit code $exitCode');
+  }
+  return exitCode == 0;
+}
+
+Future<bool> _writeWaylandClipboard(Uint8List bytes, String mimeType) async {
+  final process = await Process.start('wl-copy', ['--type', mimeType]);
+  process.stdin.add(bytes);
+  await process.stdin.close();
+  final exitCode = await process.exitCode;
+  if (exitCode != 0) {
+    debugPrint('[Clipboard] wl-copy write failed with exit code $exitCode');
+  }
   return exitCode == 0;
 }
 
