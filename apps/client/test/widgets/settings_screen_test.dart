@@ -33,34 +33,31 @@ void main() {
   group('settingsSectionLabel', () {
     test('returns correct label for each section', () {
       expect(settingsSectionLabel(SettingsSection.profile), 'Profile');
-      expect(
-        settingsSectionLabel(SettingsSection.encryptionKeys),
-        'Encryption keys',
-      );
-      expect(settingsSectionLabel(SettingsSection.devices), 'Devices');
       expect(settingsSectionLabel(SettingsSection.appearance), 'Appearance');
       expect(
         settingsSectionLabel(SettingsSection.notifications),
         'Notifications',
       );
+      expect(settingsSectionLabel(SettingsSection.voiceVideo), 'Voice & Video');
       expect(settingsSectionLabel(SettingsSection.privacy), 'Privacy');
+      expect(settingsSectionLabel(SettingsSection.devices), 'Devices');
       expect(settingsSectionLabel(SettingsSection.dataStorage), 'Storage');
       expect(settingsSectionLabel(SettingsSection.about), 'About');
     });
   });
 
   group('SettingsSection enum', () {
-    test('contains expected 8 sections', () {
+    test('contains expected sections', () {
       expect(SettingsSection.values, hasLength(8));
       expect(
         SettingsSection.values,
         containsAll([
           SettingsSection.profile,
-          SettingsSection.encryptionKeys,
-          SettingsSection.devices,
           SettingsSection.appearance,
           SettingsSection.notifications,
+          SettingsSection.voiceVideo,
           SettingsSection.privacy,
+          SettingsSection.devices,
           SettingsSection.dataStorage,
           SettingsSection.about,
         ]),
@@ -82,18 +79,18 @@ void main() {
       await tester.pumpWidget(_rootApp(selected: SettingsSection.profile));
       await tester.pumpAndSettle();
 
-      // Profile is reached via the UserHeaderCard at the top, not a duplicate
-      // row in the Account group.
-      expect(find.text('Encryption keys'), findsOneWidget);
-      expect(find.text('Devices'), findsOneWidget);
+      // Profile is reached via the UserHeaderCard at the top, not a row.
+      // Encryption keys is gone (was redundant with Privacy).
       expect(find.text('Appearance'), findsOneWidget);
       expect(find.text('Notifications'), findsOneWidget);
+      expect(find.text('Voice & Video'), findsOneWidget);
       expect(find.text('Privacy'), findsOneWidget);
+      expect(find.text('Devices'), findsOneWidget);
       expect(find.text('Storage'), findsOneWidget);
       expect(find.text('About'), findsOneWidget);
     });
 
-    testWidgets('renders the 3 group headers', (tester) async {
+    testWidgets('renders group headers', (tester) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -102,8 +99,7 @@ void main() {
       await tester.pumpWidget(_rootApp());
       await tester.pumpAndSettle();
 
-      expect(find.text('ACCOUNT'), findsOneWidget);
-      expect(find.text('PREFERENCES'), findsOneWidget);
+      expect(find.text('ACCOUNT PREFERENCES'), findsOneWidget);
       expect(find.text('ECHO'), findsOneWidget);
     });
 

@@ -168,12 +168,6 @@ class _NotificationSectionState extends State<NotificationSection> {
     }
   }
 
-  void _openVoiceVideoSubpage() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const _VoiceVideoSubpage()));
-  }
-
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -197,27 +191,6 @@ class _NotificationSectionState extends State<NotificationSection> {
           ),
         ),
         const SizedBox(height: 12),
-
-        // ---- Voice & Video subpage entry (absorbed from former Audio section) ----
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(Icons.graphic_eq, color: context.accent, size: 22),
-          title: Text(
-            'Voice & Video',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'Devices, push-to-talk, audio processing.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          trailing: Icon(
-            Icons.chevron_right,
-            color: context.textMuted,
-            size: 20,
-          ),
-          onTap: _openVoiceVideoSubpage,
-        ),
-        const Divider(height: 32),
 
         // ---- DND active banner -------------------------------------------
         if (_dndEnabled) ...[
@@ -625,14 +598,14 @@ Future<bool> shouldSuppressNotification() async {
 // 3-group settings layout. Public flow: tap "Voice & Video" row above to push.
 // ---------------------------------------------------------------------------
 
-class _VoiceVideoSubpage extends ConsumerStatefulWidget {
-  const _VoiceVideoSubpage();
+class VoiceVideoSection extends ConsumerStatefulWidget {
+  const VoiceVideoSection({super.key});
 
   @override
-  ConsumerState<_VoiceVideoSubpage> createState() => _VoiceVideoSubpageState();
+  ConsumerState<VoiceVideoSection> createState() => _VoiceVideoSectionState();
 }
 
-class _VoiceVideoSubpageState extends ConsumerState<_VoiceVideoSubpage> {
+class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
   List<Map<String, String>> _audioInputDevices = [
     {'id': 'default', 'name': 'Default Microphone'},
   ];
@@ -909,249 +882,238 @@ class _VoiceVideoSubpageState extends ConsumerState<_VoiceVideoSubpage> {
     final outputDevices = _audioOutputDevices;
     final cameraDevices = _videoInputDevices;
 
-    return Scaffold(
-      backgroundColor: context.mainBg,
-      appBar: AppBar(
-        backgroundColor: context.sidebarBg,
-        title: Text(
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        Text(
           'Voice & Video',
           style: TextStyle(
             color: context.textPrimary,
             fontSize: 18,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
         ),
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: context.textSecondary),
-          onPressed: () => Navigator.of(context).pop(),
+        const SizedBox(height: 8),
+        Text(
+          'Configure voice device preferences and push-to-talk behavior.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.5,
+          ),
         ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          Text(
-            'Configure voice device preferences and push-to-talk behavior.',
-            style: TextStyle(
-              color: context.textSecondary,
-              fontSize: 13,
-              height: 1.5,
+        const SizedBox(height: 18),
+        _buildDevicePicker(
+          label: 'Input Device',
+          devices: inputDevices,
+          currentId: voice.inputDeviceId,
+          onChanged: notifier.setInputDevice,
+        ),
+        const SizedBox(height: 12),
+        _buildDevicePicker(
+          label: 'Output Device',
+          devices: outputDevices,
+          currentId: voice.outputDeviceId,
+          onChanged: notifier.setOutputDevice,
+        ),
+        const SizedBox(height: 12),
+        _buildDevicePicker(
+          label: 'Camera',
+          devices: cameraDevices,
+          currentId: voice.cameraDeviceId,
+          onChanged: notifier.setCameraDevice,
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Input Sensitivity',
+          style: TextStyle(color: context.textPrimary, fontSize: 13),
+        ),
+        Slider(
+          value: voice.inputGain,
+          min: 0,
+          max: 2,
+          divisions: 20,
+          label: voice.inputGain.toStringAsFixed(1),
+          onChanged: notifier.setInputGain,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Output Volume',
+          style: TextStyle(color: context.textPrimary, fontSize: 13),
+        ),
+        Slider(
+          value: voice.outputVolume,
+          min: 0,
+          max: 1,
+          divisions: 20,
+          label: (voice.outputVolume * 100).round().toString(),
+          onChanged: notifier.setOutputVolume,
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            OutlinedButton.icon(
+              onPressed: _isPlayingTestSound ? null : _playTestSound,
+              icon: Icon(
+                _isPlayingTestSound ? Icons.volume_up : Icons.play_arrow,
+                size: 18,
+              ),
+              label: Text(_isPlayingTestSound ? 'Playing...' : 'Test Sound'),
             ),
-          ),
-          const SizedBox(height: 18),
-          _buildDevicePicker(
-            label: 'Input Device',
-            devices: inputDevices,
-            currentId: voice.inputDeviceId,
-            onChanged: notifier.setInputDevice,
-          ),
-          const SizedBox(height: 12),
-          _buildDevicePicker(
-            label: 'Output Device',
-            devices: outputDevices,
-            currentId: voice.outputDeviceId,
-            onChanged: notifier.setOutputDevice,
-          ),
-          const SizedBox(height: 12),
-          _buildDevicePicker(
-            label: 'Camera',
-            devices: cameraDevices,
-            currentId: voice.cameraDeviceId,
-            onChanged: notifier.setCameraDevice,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Input Sensitivity',
-            style: TextStyle(color: context.textPrimary, fontSize: 13),
-          ),
-          Slider(
-            value: voice.inputGain,
-            min: 0,
-            max: 2,
-            divisions: 20,
-            label: voice.inputGain.toStringAsFixed(1),
-            onChanged: notifier.setInputGain,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Output Volume',
-            style: TextStyle(color: context.textPrimary, fontSize: 13),
-          ),
-          Slider(
-            value: voice.outputVolume,
-            min: 0,
-            max: 1,
-            divisions: 20,
-            label: (voice.outputVolume * 100).round().toString(),
-            onChanged: notifier.setOutputVolume,
-          ),
-          const SizedBox(height: 16),
+            const SizedBox(width: 12),
+            OutlinedButton.icon(
+              onPressed: _isMicTesting ? _stopMicTest : _startMicTest,
+              icon: Icon(_isMicTesting ? Icons.stop : Icons.mic, size: 18),
+              label: Text(_isMicTesting ? 'Stop' : 'Test Microphone'),
+            ),
+          ],
+        ),
+        if (_isMicTesting) ...[
+          const SizedBox(height: 10),
           Row(
             children: [
-              OutlinedButton.icon(
-                onPressed: _isPlayingTestSound ? null : _playTestSound,
-                icon: Icon(
-                  _isPlayingTestSound ? Icons.volume_up : Icons.play_arrow,
-                  size: 18,
+              Icon(Icons.mic, size: 16, color: context.textSecondary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: _micLevel,
+                    minHeight: 8,
+                    backgroundColor: context.surface,
+                    valueColor: AlwaysStoppedAnimation<Color>(_micLevelColor()),
+                  ),
                 ),
-                label: Text(_isPlayingTestSound ? 'Playing...' : 'Test Sound'),
               ),
-              const SizedBox(width: 12),
-              OutlinedButton.icon(
-                onPressed: _isMicTesting ? _stopMicTest : _startMicTest,
-                icon: Icon(_isMicTesting ? Icons.stop : Icons.mic, size: 18),
-                label: Text(_isMicTesting ? 'Stop' : 'Test Microphone'),
+              const SizedBox(width: 8),
+              Text(
+                '${(_micLevel * 100).round()}%',
+                style: TextStyle(color: context.textSecondary, fontSize: 12),
               ),
             ],
           ),
-          if (_isMicTesting) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Icon(Icons.mic, size: 16, color: context.textSecondary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: _micLevel,
-                      minHeight: 8,
-                      backgroundColor: context.surface,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        _micLevelColor(),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${(_micLevel * 100).round()}%',
-                  style: TextStyle(color: context.textSecondary, fontSize: 12),
-                ),
-              ],
-            ),
-          ],
-          const SizedBox(height: 10),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              'Push-to-Talk',
-              style: TextStyle(color: context.textPrimary, fontSize: 14),
-            ),
-            subtitle: Text(
-              'When enabled, your mic transmits only while push-to-talk is active.',
-              style: TextStyle(color: context.textMuted, fontSize: 12),
-            ),
-            value: voice.pushToTalkEnabled,
-            onChanged: notifier.setPushToTalkEnabled,
+        ],
+        const SizedBox(height: 10),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Push-to-Talk',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
           ),
-          AnimatedOpacity(
-            opacity: voice.pushToTalkEnabled ? 1.0 : 0.4,
-            duration: const Duration(milliseconds: 200),
-            child: IgnorePointer(
-              ignoring: !voice.pushToTalkEnabled,
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  'Push-to-Talk Key',
-                  style: TextStyle(color: context.textPrimary, fontSize: 14),
-                ),
-                subtitle: Text(
-                  voice.pushToTalkKeyLabel,
-                  style: TextStyle(color: context.textMuted, fontSize: 12),
-                ),
-                trailing: OutlinedButton(
-                  onPressed: () => _capturePushToTalkKey(notifier),
-                  child: const Text('Set Key'),
-                ),
+          subtitle: Text(
+            'When enabled, your mic transmits only while push-to-talk is active.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: voice.pushToTalkEnabled,
+          onChanged: notifier.setPushToTalkEnabled,
+        ),
+        AnimatedOpacity(
+          opacity: voice.pushToTalkEnabled ? 1.0 : 0.4,
+          duration: const Duration(milliseconds: 200),
+          child: IgnorePointer(
+            ignoring: !voice.pushToTalkEnabled,
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'Push-to-Talk Key',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                voice.pushToTalkKeyLabel,
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              trailing: OutlinedButton(
+                onPressed: () => _capturePushToTalkKey(notifier),
+                child: const Text('Set Key'),
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          Divider(color: context.border),
-          const SizedBox(height: 16),
-          Text(
-            'Audio Processing',
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
+        ),
+        const SizedBox(height: 16),
+        Divider(color: context.border),
+        const SizedBox(height: 16),
+        Text(
+          'Audio Processing',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: 4),
-          Text(
-            'These settings apply the next time you join a voice channel.',
-            style: TextStyle(
-              color: context.textSecondary,
-              fontSize: 12,
-              height: 1.5,
-            ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'These settings apply the next time you join a voice channel.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 12,
+            height: 1.5,
           ),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              'Noise Suppression',
-              style: TextStyle(color: context.textPrimary, fontSize: 14),
-            ),
-            subtitle: Text(
-              'Reduce background noise like fans, typing, and ambient sounds.',
-              style: TextStyle(color: context.textMuted, fontSize: 12),
-            ),
-            value: voice.noiseSuppression,
-            onChanged: (v) => notifier.setNoiseSuppression(v),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Noise Suppression',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
           ),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              'Echo Cancellation',
-              style: TextStyle(color: context.textPrimary, fontSize: 14),
-            ),
-            subtitle: Text(
-              'Prevent your speakers from feeding back into your microphone.',
-              style: TextStyle(color: context.textMuted, fontSize: 12),
-            ),
-            value: voice.echoCancellation,
-            onChanged: (v) => notifier.setEchoCancellation(v),
+          subtitle: Text(
+            'Reduce background noise like fans, typing, and ambient sounds.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
           ),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              'Auto Gain Control',
-              style: TextStyle(color: context.textPrimary, fontSize: 14),
-            ),
-            subtitle: Text(
-              'Automatically adjust microphone volume for consistent levels.',
-              style: TextStyle(color: context.textMuted, fontSize: 12),
-            ),
-            value: voice.autoGainControl,
-            onChanged: (v) => notifier.setAutoGainControl(v),
+          value: voice.noiseSuppression,
+          onChanged: (v) => notifier.setNoiseSuppression(v),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Echo Cancellation',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
           ),
-          const SizedBox(height: 16),
-          Divider(color: context.border),
-          const SizedBox(height: 16),
-          Text(
-            'Channel Behaviour',
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
+          subtitle: Text(
+            'Prevent your speakers from feeding back into your microphone.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
           ),
-          const SizedBox(height: 4),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              'Confirm before joining voice channel',
-              style: TextStyle(color: context.textPrimary, fontSize: 14),
-            ),
-            subtitle: Text(
-              'Show a confirmation dialog before connecting to a voice channel.',
-              style: TextStyle(color: context.textMuted, fontSize: 12),
-            ),
-            value: voice.confirmBeforeJoinVoice,
-            onChanged: notifier.setConfirmBeforeJoinVoice,
+          value: voice.echoCancellation,
+          onChanged: (v) => notifier.setEchoCancellation(v),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Auto Gain Control',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
           ),
-        ],
-      ),
+          subtitle: Text(
+            'Automatically adjust microphone volume for consistent levels.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: voice.autoGainControl,
+          onChanged: (v) => notifier.setAutoGainControl(v),
+        ),
+        const SizedBox(height: 16),
+        Divider(color: context.border),
+        const SizedBox(height: 16),
+        Text(
+          'Channel Behaviour',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Confirm before joining voice channel',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Show a confirmation dialog before connecting to a voice channel.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: voice.confirmBeforeJoinVoice,
+          onChanged: notifier.setConfirmBeforeJoinVoice,
+        ),
+      ],
     );
   }
 }

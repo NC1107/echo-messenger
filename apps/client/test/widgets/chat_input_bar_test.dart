@@ -189,7 +189,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.textContaining('is typing...'), findsOneWidget);
+      expect(find.textContaining('is typing'), findsOneWidget);
     });
 
     testWidgets('group typing indicator shows multiple users', (tester) async {
@@ -203,7 +203,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.textContaining('are typing...'), findsOneWidget);
+      expect(find.textContaining('are typing'), findsOneWidget);
     });
 
     testWidgets('escape key clears reply when reply is active', (tester) async {
@@ -249,8 +249,8 @@ void main() {
         find.byIcon(Icons.sentiment_satisfied_alt_outlined),
         findsOneWidget,
       );
-      // File attach button
-      expect(find.byIcon(Icons.add_circle_outline), findsOneWidget);
+      // File attach button (now a bordered round circle with a plain plus glyph)
+      expect(find.byIcon(Icons.add), findsOneWidget);
     });
   });
 }

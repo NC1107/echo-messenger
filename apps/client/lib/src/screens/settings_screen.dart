@@ -21,19 +21,22 @@ import 'settings/devices_section.dart';
 import 'settings/notification_section.dart';
 import 'settings/privacy_section.dart';
 
-/// Section identifiers for the redesigned 3-group settings layout.
+/// Section identifiers for the redesigned settings layout.
 ///
 /// Groups (visual):
-///   ACCOUNT      → profile, encryptionKeys, devices
-///   PREFERENCES  → appearance, notifications, privacy, dataStorage
-///   ECHO         → about (+ Log out, handled separately)
+///   ACCOUNT PREFERENCES → appearance, notifications, voiceVideo, privacy,
+///                         devices, dataStorage
+///   ECHO                → about (+ Log out, handled separately)
+///
+/// `profile` has no row in the list — it's reached only via the
+/// [UserHeaderCard] tap target at the top of [SettingsRootView].
 enum SettingsSection {
   profile,
-  encryptionKeys,
-  devices,
   appearance,
   notifications,
+  voiceVideo,
   privacy,
+  devices,
   dataStorage,
   about,
 }
@@ -43,16 +46,16 @@ String settingsSectionLabel(SettingsSection section) {
   switch (section) {
     case SettingsSection.profile:
       return 'Profile';
-    case SettingsSection.encryptionKeys:
-      return 'Encryption keys';
-    case SettingsSection.devices:
-      return 'Devices';
     case SettingsSection.appearance:
       return 'Appearance';
     case SettingsSection.notifications:
       return 'Notifications';
+    case SettingsSection.voiceVideo:
+      return 'Voice & Video';
     case SettingsSection.privacy:
       return 'Privacy';
+    case SettingsSection.devices:
+      return 'Devices';
     case SettingsSection.dataStorage:
       return 'Storage';
     case SettingsSection.about:
@@ -68,10 +71,6 @@ const _logOutLabel = 'Log out';
 // ---------------------------------------------------------------------------
 
 /// Maps a [SettingsSection] to the screen widget that renders its detail.
-///
-/// Encryption keys and Privacy share the same underlying [PrivacySection]
-/// for now — both rows route there. Splitting into separate screens is
-/// tracked as future work.
 class SettingsContent extends StatelessWidget {
   final SettingsSection section;
 
@@ -82,16 +81,16 @@ class SettingsContent extends StatelessWidget {
     switch (section) {
       case SettingsSection.profile:
         return const AccountSection();
-      case SettingsSection.encryptionKeys:
-        return const PrivacySection();
-      case SettingsSection.devices:
-        return const DevicesSection();
       case SettingsSection.appearance:
         return const AppearanceSection();
       case SettingsSection.notifications:
         return const NotificationSection();
+      case SettingsSection.voiceVideo:
+        return const VoiceVideoSection();
       case SettingsSection.privacy:
         return const PrivacySection();
+      case SettingsSection.devices:
+        return const DevicesSection();
       case SettingsSection.dataStorage:
         return const DataStorageSection();
       case SettingsSection.about:
@@ -129,25 +128,7 @@ class SettingsRootView extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           UserHeaderCard(onTap: () => onTap(SettingsSection.profile)),
-          const SectionHeader('Account'),
-          _CardGroup(
-            children: [
-              _row(
-                context,
-                icon: Icons.vpn_key_outlined,
-                iconColor: const Color(0xFF14B8A6),
-                section: SettingsSection.encryptionKeys,
-                trailing: 'Verified',
-              ),
-              _row(
-                context,
-                icon: Icons.devices_outlined,
-                iconColor: const Color(0xFFF59E0B),
-                section: SettingsSection.devices,
-              ),
-            ],
-          ),
-          const SectionHeader('Preferences'),
+          const SectionHeader('Account preferences'),
           _CardGroup(
             children: [
               _row(
@@ -165,9 +146,21 @@ class SettingsRootView extends ConsumerWidget {
               ),
               _row(
                 context,
+                icon: Icons.graphic_eq,
+                iconColor: const Color(0xFF22C55E),
+                section: SettingsSection.voiceVideo,
+              ),
+              _row(
+                context,
                 icon: Icons.lock_outline,
                 iconColor: const Color(0xFF14B8A6),
                 section: SettingsSection.privacy,
+              ),
+              _row(
+                context,
+                icon: Icons.devices_outlined,
+                iconColor: const Color(0xFFF59E0B),
+                section: SettingsSection.devices,
               ),
               _row(
                 context,
