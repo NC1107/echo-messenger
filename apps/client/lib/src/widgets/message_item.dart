@@ -22,6 +22,7 @@ import 'message/message_status_icon.dart';
 import 'message/reaction_bar.dart';
 import 'message/reply_quote.dart';
 import 'message/link_preview_card.dart';
+import 'message/youtube_embed.dart';
 import 'message/rich_text_content.dart';
 
 /// Common emojis for the reaction picker.
@@ -1147,7 +1148,8 @@ class _MessageItemState extends State<MessageItem>
     final embeddedImages = extractEmbeddedImageUrls(displayContent);
 
     // Link preview for the first URL (skip attachment-only messages and
-    // internal server links).
+    // internal server links). YouTube URLs short-circuit to an embed card
+    // with thumbnail + red play button.
     Widget? linkPreview;
     if (!displayContent.startsWith('[img:') &&
         !displayContent.startsWith('[file:')) {
@@ -1159,11 +1161,16 @@ class _MessageItemState extends State<MessageItem>
         if (serverHost == null ||
             previewHost == null ||
             previewHost != serverHost) {
-          linkPreview = LinkPreviewCard(
-            url: previewUrl,
-            serverUrl: widget.serverUrl ?? '',
-            token: widget.authToken ?? '',
-          );
+          final ytId = YouTubeEmbed.extractId(previewUrl);
+          if (ytId != null) {
+            linkPreview = YouTubeEmbed(videoId: ytId);
+          } else {
+            linkPreview = LinkPreviewCard(
+              url: previewUrl,
+              serverUrl: widget.serverUrl ?? '',
+              token: widget.authToken ?? '',
+            );
+          }
         }
       }
     }
