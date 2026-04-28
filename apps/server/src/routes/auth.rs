@@ -240,6 +240,9 @@ pub async fn refresh(
     }
 
     if row.expires_at < chrono::Utc::now() {
+        // Release the FOR UPDATE row lock immediately rather than waiting for
+        // tx Drop to do an implicit rollback.
+        let _ = tx.rollback().await;
         return Err(AppError::unauthorized("Refresh token has expired"));
     }
 
