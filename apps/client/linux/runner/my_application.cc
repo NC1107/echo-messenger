@@ -22,6 +22,16 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+
+  // If we already have a window (i.e. this is a secondary launch routed back
+  // to the primary instance over D-Bus), raise it instead of creating a new
+  // one. Fixes the Linux taskbar piling up duplicate Echo icons.
+  GList* existing = gtk_application_get_windows(GTK_APPLICATION(application));
+  if (existing != nullptr) {
+    gtk_window_present(GTK_WINDOW(existing->data));
+    return;
+  }
+
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
@@ -142,7 +152,10 @@ MyApplication* my_application_new() {
   // the application to be recognized beyond its binary name.
   g_set_prgname(APPLICATION_ID);
 
+  // Use default flags (NOT G_APPLICATION_NON_UNIQUE) so GApplication's
+  // built-in single-instance behavior kicks in. A second `echo_app`
+  // process exits early and forwards `activate` to the running primary.
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_NON_UNIQUE, nullptr));
+                                     G_APPLICATION_DEFAULT_FLAGS, nullptr));
 }
