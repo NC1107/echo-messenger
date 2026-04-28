@@ -371,8 +371,8 @@ async fn message_to_noncontact_returns_error() {
 // Offline delivery with per-device ciphertext
 // ---------------------------------------------------------------------------
 
-/// When a sender includes `device_contents`, offline devices should receive
-/// their own ciphertext on reconnect rather than the canonical fallback.
+/// When a sender includes `recipient_device_contents`, offline devices should
+/// receive their own ciphertext on reconnect rather than the canonical fallback.
 #[tokio::test]
 async fn offline_delivery_uses_per_device_ciphertext() {
     let base = common::spawn_server().await;
@@ -402,8 +402,10 @@ async fn offline_delivery_uses_per_device_ciphertext() {
         "type": "send_message",
         "to_user_id": bob_id,
         "content": canonical_ct,
-        "device_contents": {
-            bob_device_id.to_string(): device_ct,
+        "recipient_device_contents": {
+            bob_id.to_string(): {
+                bob_device_id.to_string(): device_ct,
+            },
         },
     });
     alice_ws
@@ -468,7 +470,7 @@ async fn device_content_db_roundtrip() {
         .expect("TEST_DATABASE_URL or DATABASE_URL must be set");
     let pool = echo_server::db::create_pool(&database_url).await;
 
-    let (alice_token, _alice_id, _alice_name) =
+    let (alice_token, alice_id, _alice_name) =
         common::register_and_login(&client, &base, "dbrtalice").await;
     let (bob_token, bob_id, bob_name) = common::register_and_login(&client, &base, "dbrtbob").await;
     common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
@@ -479,16 +481,20 @@ async fn device_content_db_roundtrip() {
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
-    let device_id: i32 = 99;
-    let device_ct = "DEVICE_99_SPECIFIC_CIPHERTEXT";
+    // Both alice and bob use device_id=1 — this is the exact collision case
+    // that the recipient-scoped storage fix (#522) must resolve.
+    let device_id: i32 = 1;
+    let bob_device_ct = "BOB_DEVICE_1_CIPHERTEXT";
+    let alice_device_ct = "ALICE_DEVICE_1_CIPHERTEXT";
     let canonical = "CANONICAL";
 
     let send_msg = serde_json::json!({
         "type": "send_message",
         "to_user_id": bob_id,
         "content": canonical,
-        "device_contents": {
-            device_id.to_string(): device_ct,
+        "recipient_device_contents": {
+            bob_id.to_string(): { device_id.to_string(): bob_device_ct },
+            alice_id.to_string(): { device_id.to_string(): alice_device_ct },
         },
     });
     alice_ws
@@ -496,28 +502,43 @@ async fn device_content_db_roundtrip() {
         .await
         .unwrap();
 
-    let ack: Value = serde_json::from_str(&read_text_with_timeout(&mut alice_ws).await).unwrap();
-    assert_eq!(ack["type"], "message_sent");
+    let raw = read_text_with_timeout(&mut alice_ws).await;
+    let ack: Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(ack["type"], "message_sent", "send failed: {raw}");
     let message_id = uuid::Uuid::parse_str(ack["message_id"].as_str().unwrap()).unwrap();
 
-    // Verify the device-specific row was persisted.
-    let stored = echo_server::db::messages::get_device_content(&pool, message_id, device_id)
-        .await
-        .expect("db query failed");
+    let bob_uuid = uuid::Uuid::parse_str(&bob_id).unwrap();
+    let alice_uuid = uuid::Uuid::parse_str(&alice_id).unwrap();
+
+    // Both rows must be present — the legacy schema would have dropped one of
+    // them via ON CONFLICT (message_id, device_id) DO NOTHING.
+    let bob_stored =
+        echo_server::db::messages::get_device_content(&pool, message_id, bob_uuid, device_id)
+            .await
+            .expect("db query failed");
     assert_eq!(
-        stored,
-        Some(device_ct.to_string()),
-        "device-specific ciphertext must be stored"
+        bob_stored,
+        Some(bob_device_ct.to_string()),
+        "Bob's device-1 ciphertext must be stored"
     );
 
-    // Unknown device should return None (fall back to canonical at delivery).
-    let missing = echo_server::db::messages::get_device_content(&pool, message_id, 999)
+    let alice_stored =
+        echo_server::db::messages::get_device_content(&pool, message_id, alice_uuid, device_id)
+            .await
+            .expect("db query failed");
+    assert_eq!(
+        alice_stored,
+        Some(alice_device_ct.to_string()),
+        "Alice's device-1 ciphertext must coexist with Bob's despite same device_id"
+    );
+
+    // Unknown user/device should return None.
+    let missing = echo_server::db::messages::get_device_content(&pool, message_id, bob_uuid, 999)
         .await
         .expect("db query failed");
     assert_eq!(missing, None, "unknown device should return None");
 
     let _ = alice_ws.close(None).await;
-    let _ = bob_token; // suppress unused warning
 }
 
 // ---------------------------------------------------------------------------

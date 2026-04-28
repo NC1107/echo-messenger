@@ -523,61 +523,74 @@ pub async fn get_pinned_messages(
 // ---------------------------------------------------------------------------
 
 /// Store per-device ciphertexts for a message (multi-device encrypted delivery).
+///
+/// Entries are `(recipient_user_id, device_id, ciphertext)`. Per-user device IDs
+/// collide across users (every user starts at device_id=1), so the storage key
+/// is scoped by recipient (#522).
 pub async fn store_device_contents(
     pool: &PgPool,
     message_id: Uuid,
-    entries: &[(i32, &str)],
+    entries: &[(Uuid, i32, &str)],
 ) -> Result<(), sqlx::Error> {
     if entries.is_empty() {
         return Ok(());
     }
-    // Build a batch insert: INSERT INTO ... VALUES ($1,$2,$3), ($1,$4,$5), ...
     let mut query = String::from(
-        "INSERT INTO message_device_contents (message_id, device_id, content) VALUES ",
+        "INSERT INTO message_device_contents \
+         (message_id, recipient_user_id, device_id, content) VALUES ",
     );
     let mut param_idx = 2; // $1 = message_id
     for (i, _) in entries.iter().enumerate() {
         if i > 0 {
             query.push_str(", ");
         }
-        query.push_str(&format!("($1, ${}, ${})", param_idx, param_idx + 1));
-        param_idx += 2;
+        query.push_str(&format!(
+            "($1, ${}, ${}, ${})",
+            param_idx,
+            param_idx + 1,
+            param_idx + 2
+        ));
+        param_idx += 3;
     }
-    query.push_str(" ON CONFLICT (message_id, device_id) DO NOTHING");
+    query.push_str(" ON CONFLICT (message_id, recipient_user_id, device_id) DO NOTHING");
 
     let mut q = sqlx::query(&query).bind(message_id);
-    for (device_id, content) in entries {
-        q = q.bind(device_id).bind(*content);
+    for (recipient_user_id, device_id, content) in entries {
+        q = q.bind(recipient_user_id).bind(device_id).bind(*content);
     }
     q.execute(pool).await?;
     Ok(())
 }
 
-/// Fetch the per-device ciphertext for a specific device.
+/// Fetch the per-device ciphertext for a specific recipient device.
 pub async fn get_device_content(
     pool: &PgPool,
     message_id: Uuid,
+    recipient_user_id: Uuid,
     device_id: i32,
 ) -> Result<Option<String>, sqlx::Error> {
     let row: Option<(String,)> = sqlx::query_as(
         "SELECT content FROM message_device_contents \
-         WHERE message_id = $1 AND device_id = $2",
+         WHERE message_id = $1 AND recipient_user_id = $2 AND device_id = $3",
     )
     .bind(message_id)
+    .bind(recipient_user_id)
     .bind(device_id)
     .fetch_optional(pool)
     .await?;
     Ok(row.map(|(c,)| c))
 }
 
-/// Fetch per-device ciphertexts for a batch of messages for a specific device
-/// in a single query.  Returns a map from message_id to device-specific content.
+/// Fetch per-device ciphertexts for a batch of messages for a specific
+/// recipient device in a single query.  Returns a map from message_id to
+/// device-specific content.
 ///
 /// Used by `deliver_undelivered_messages` to avoid N+1 queries when replaying
 /// the offline queue.
 pub async fn get_device_contents_batch(
     pool: &PgPool,
     message_ids: &[Uuid],
+    recipient_user_id: Uuid,
     device_id: i32,
 ) -> Result<std::collections::HashMap<Uuid, String>, sqlx::Error> {
     if message_ids.is_empty() {
@@ -585,9 +598,10 @@ pub async fn get_device_contents_batch(
     }
     let rows: Vec<(Uuid, String)> = sqlx::query_as(
         "SELECT message_id, content FROM message_device_contents \
-         WHERE message_id = ANY($1) AND device_id = $2",
+         WHERE message_id = ANY($1) AND recipient_user_id = $2 AND device_id = $3",
     )
     .bind(message_ids)
+    .bind(recipient_user_id)
     .bind(device_id)
     .fetch_all(pool)
     .await?;
