@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/conversation.dart';
@@ -137,7 +138,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
                   child: Text(
                     displayName,
-                    style: TextStyle(
+                    style: GoogleFonts.inter(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                       color: context.textPrimary,
@@ -170,7 +171,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                       },
                       title: Text(
                         'Mute notifications',
-                        style: TextStyle(
+                        style: GoogleFonts.inter(
                           color: context.textPrimary,
                           fontSize: 14,
                         ),
@@ -376,7 +377,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
             const SizedBox(height: 1),
             Text(
               statusText,
-              style: TextStyle(fontSize: 11, color: context.textMuted),
+              style: GoogleFonts.inter(fontSize: 11, color: context.textMuted),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -430,7 +431,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
         widget.timestamp,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
+        style: GoogleFonts.inter(
           fontSize: 12,
           color: hasUnread ? context.accent : context.textMuted,
         ),
@@ -453,7 +454,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
             displayName,
             overflow: TextOverflow.ellipsis,
             maxLines: 1,
-            style: TextStyle(
+            style: GoogleFonts.inter(
               fontSize: 14,
               fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w500,
               color: context.textPrimary,
@@ -516,9 +517,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   overflow: TextOverflow.ellipsis,
                   text: TextSpan(
                     children: [
-                      const TextSpan(
+                      TextSpan(
                         text: 'Draft: ',
-                        style: TextStyle(
+                        style: GoogleFonts.inter(
                           fontSize: 13,
                           color: EchoTheme.warning,
                           fontWeight: FontWeight.w600,
@@ -526,7 +527,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                       ),
                       TextSpan(
                         text: _draft,
-                        style: TextStyle(
+                        style: GoogleFonts.inter(
                           fontSize: 13,
                           color: context.textMuted,
                         ),
@@ -538,7 +539,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   snippet,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  style: GoogleFonts.inter(
                     fontSize: 13,
                     color: context.textMuted,
                     fontWeight: snippetWeight,
@@ -571,7 +572,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   widget.conversation.unreadCount > 99
                       ? '99+'
                       : '${widget.conversation.unreadCount}',
-                  style: TextStyle(
+                  style: GoogleFonts.inter(
                     color: conv.isMuted
                         ? context.textMuted
                         : Theme.of(context).colorScheme.onPrimary,
