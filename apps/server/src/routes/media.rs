@@ -4,13 +4,17 @@ use axum::Json;
 use axum::body::Body;
 use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
-use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
+use axum::http::header::{
+    ACCEPT_RANGES, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, RANGE,
+};
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::io::SeekFrom;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::fs;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use uuid::Uuid;
 
 use crate::auth::{jwt, middleware::AuthUser};
@@ -348,13 +352,18 @@ pub async fn download(
     let ext = extension_for_mime(&row.mime_type);
     let disk_path = format!("./uploads/{id}.{ext}");
 
-    let data = fs::read(&disk_path).await.map_err(|e| {
-        tracing::error!("Failed to read media file {}: {}", disk_path, e);
+    // Stat the file once so we can advertise Content-Length and serve byte
+    // ranges. iOS AVFoundation refuses to play video URLs that don't
+    // properly support `Range:` requests ("the server is not correctly
+    // configured" — the symptom the user hit on their iPhone).
+    let metadata = fs::metadata(&disk_path).await.map_err(|e| {
+        tracing::error!("Failed to stat media file {}: {}", disk_path, e);
         AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media file not found on disk".to_string(),
         }
     })?;
+    let total_size = metadata.len();
 
     // Sanitize filename: strip characters that could break Content-Disposition header
     let safe_filename: String = row
@@ -367,18 +376,120 @@ pub async fn download(
     } else {
         safe_filename
     };
+    let disposition = format!("inline; filename=\"{}\"", safe_filename);
+
+    // Honor a Range request if present. We support a single open or closed
+    // range; the multi-range form is rare in practice and AVFoundation
+    // doesn't issue it.
+    if let Some(range_header) = headers.get(RANGE).and_then(|v| v.to_str().ok()) {
+        match parse_byte_range(range_header, total_size) {
+            Ok((start, end)) => {
+                let slice_len = end - start + 1;
+                let mut file = fs::File::open(&disk_path).await.map_err(|e| {
+                    tracing::error!("Failed to open media file for range: {e}");
+                    AppError::internal("Failed to read media")
+                })?;
+                file.seek(SeekFrom::Start(start)).await.map_err(|e| {
+                    tracing::error!("Failed to seek media file: {e}");
+                    AppError::internal("Failed to read media")
+                })?;
+                let mut buf = vec![0u8; slice_len as usize];
+                file.read_exact(&mut buf).await.map_err(|e| {
+                    tracing::error!("Failed to read media slice: {e}");
+                    AppError::internal("Failed to read media")
+                })?;
+
+                return Response::builder()
+                    .status(StatusCode::PARTIAL_CONTENT)
+                    .header(CONTENT_TYPE, &row.mime_type)
+                    .header(CONTENT_DISPOSITION, &disposition)
+                    .header(ACCEPT_RANGES, "bytes")
+                    .header(CONTENT_LENGTH, slice_len)
+                    .header(
+                        CONTENT_RANGE,
+                        format!("bytes {start}-{end}/{total_size}"),
+                    )
+                    .body(Body::from(buf))
+                    .map_err(|e| AppError::internal(format!("Failed to build response: {e}")));
+            }
+            Err(_) => {
+                // Unsatisfiable range — RFC 7233 says respond with 416.
+                return Response::builder()
+                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                    .header(CONTENT_RANGE, format!("bytes */{total_size}"))
+                    .body(Body::empty())
+                    .map_err(|e| AppError::internal(format!("Failed to build response: {e}")));
+            }
+        }
+    }
+
+    // No Range header — return the full body but advertise that we'd serve
+    // a partial response on demand. AVFoundation uses the presence of
+    // `Accept-Ranges: bytes` to decide whether to attempt streaming.
+    let data = fs::read(&disk_path).await.map_err(|e| {
+        tracing::error!("Failed to read media file {}: {}", disk_path, e);
+        AppError {
+            status: StatusCode::NOT_FOUND,
+            message: "Media file not found on disk".to_string(),
+        }
+    })?;
 
     let response = Response::builder()
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, &row.mime_type)
-        .header(
-            CONTENT_DISPOSITION,
-            format!("inline; filename=\"{}\"", safe_filename),
-        )
+        .header(CONTENT_DISPOSITION, &disposition)
+        .header(ACCEPT_RANGES, "bytes")
+        .header(CONTENT_LENGTH, total_size)
         .body(Body::from(data))
         .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))?;
 
     Ok(response)
+}
+
+/// Parse an HTTP `Range: bytes=<start>-<end>` header against a known total
+/// size. Returns the inclusive `(start, end)` byte offsets.
+///
+/// Supports:
+///   - `bytes=0-499` → first 500 bytes
+///   - `bytes=500-` → from 500 to EOF
+///   - `bytes=-500` → last 500 bytes
+///
+/// Returns `Err(())` for malformed input or ranges past EOF.
+fn parse_byte_range(header: &str, total_size: u64) -> Result<(u64, u64), ()> {
+    let spec = header.strip_prefix("bytes=").ok_or(())?;
+    // Reject multi-range requests (rare in practice; AVFoundation doesn't
+    // issue them).
+    if spec.contains(',') {
+        return Err(());
+    }
+    let (s, e) = spec.split_once('-').ok_or(())?;
+    if total_size == 0 {
+        return Err(());
+    }
+    let last = total_size - 1;
+
+    let (start, end) = if s.is_empty() {
+        // Suffix range: bytes=-N — last N bytes.
+        let n: u64 = e.parse().map_err(|_| ())?;
+        if n == 0 {
+            return Err(());
+        }
+        let n = n.min(total_size);
+        (total_size - n, last)
+    } else {
+        let s: u64 = s.parse().map_err(|_| ())?;
+        if e.is_empty() {
+            (s, last)
+        } else {
+            let e: u64 = e.parse().map_err(|_| ())?;
+            (s, e.min(last))
+        }
+    };
+
+    if start > last || end < start {
+        return Err(());
+    }
+    Ok((start, end))
 }
 
 /// Validate a media ticket.  Tickets are reusable within their 5-minute TTL
@@ -477,5 +588,55 @@ mod tests {
     #[test]
     fn octet_stream_is_not_in_allowed_list() {
         assert!(!ALLOWED_MIME_TYPES.contains(&"application/octet-stream"));
+    }
+
+    #[test]
+    fn parse_byte_range_first_n() {
+        assert_eq!(parse_byte_range("bytes=0-499", 1000), Ok((0, 499)));
+    }
+
+    #[test]
+    fn parse_byte_range_open_ended() {
+        assert_eq!(parse_byte_range("bytes=500-", 1000), Ok((500, 999)));
+    }
+
+    #[test]
+    fn parse_byte_range_suffix() {
+        assert_eq!(parse_byte_range("bytes=-200", 1000), Ok((800, 999)));
+    }
+
+    #[test]
+    fn parse_byte_range_suffix_clamped_to_total() {
+        assert_eq!(parse_byte_range("bytes=-2000", 1000), Ok((0, 999)));
+    }
+
+    #[test]
+    fn parse_byte_range_end_clamped_to_last() {
+        assert_eq!(parse_byte_range("bytes=0-9999", 1000), Ok((0, 999)));
+    }
+
+    #[test]
+    fn parse_byte_range_rejects_multi_range() {
+        assert!(parse_byte_range("bytes=0-100,200-300", 1000).is_err());
+    }
+
+    #[test]
+    fn parse_byte_range_rejects_start_past_eof() {
+        assert!(parse_byte_range("bytes=2000-3000", 1000).is_err());
+    }
+
+    #[test]
+    fn parse_byte_range_rejects_zero_total() {
+        assert!(parse_byte_range("bytes=0-100", 0).is_err());
+    }
+
+    #[test]
+    fn parse_byte_range_rejects_zero_suffix() {
+        assert!(parse_byte_range("bytes=-0", 1000).is_err());
+    }
+
+    #[test]
+    fn parse_byte_range_rejects_missing_prefix() {
+        assert!(parse_byte_range("0-100", 1000).is_err());
     }
 }

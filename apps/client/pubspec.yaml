@@ -47,6 +47,10 @@ dependencies:
   # support is limited, the YouTubeEmbed widget falls back to the static
   # thumbnail card.
   youtube_player_iframe: ^5.2.0
+  # On web the YouTube iframe sits below the Flutter pointer-capture layer,
+  # so taps don't reach it. PointerInterceptor lets pointer events pass
+  # through to the underlying iframe element. No-op on native platforms.
+  pointer_interceptor: ^0.10.1+2
 
 dev_dependencies:
   flutter_test:
