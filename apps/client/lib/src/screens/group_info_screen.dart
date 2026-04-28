@@ -810,12 +810,25 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   }
 
   Widget _buildMemberCount(int count) {
+    final isEncrypted = _conversation?.isEncrypted ?? false;
+    final memberLabel = '$count member${count == 1 ? '' : 's'}';
     return Center(
-      child: Text(
-        '$count member${count == 1 ? '' : 's'}',
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isEncrypted) ...[
+            Icon(Icons.lock, size: 12, color: context.textMuted),
+            const SizedBox(width: 6),
+            Text(
+              'End-to-end encrypted · $memberLabel',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+          ] else
+            Text(
+              memberLabel,
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+        ],
       ),
     );
   }

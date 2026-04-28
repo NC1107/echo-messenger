@@ -31,8 +31,8 @@ class MessageStatusIcon extends StatelessWidget {
         color = context.textMuted;
         tooltip = 'Delivered';
       case MessageStatus.read:
-        icon = Icons.done_all_outlined;
-        color = EchoTheme.online;
+        icon = Icons.done_all;
+        color = context.accent;
         tooltip = 'Read';
       case MessageStatus.failed:
         icon = Icons.error_outline;

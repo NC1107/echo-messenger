@@ -377,6 +377,13 @@ class _MessageItemState extends State<MessageItem>
               color: context.surface,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: context.border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  blurRadius: 40,
+                  offset: const Offset(0, 16),
+                ),
+              ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -599,17 +606,19 @@ class _MessageItemState extends State<MessageItem>
         Navigator.pop(sheetContext);
         onTap();
       },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Container(
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: color ?? context.textSecondary),
+            Icon(icon, size: 18, color: color ?? context.textPrimary),
             const SizedBox(width: 14),
             Text(
               label,
               style: TextStyle(
                 color: color ?? context.textPrimary,
-                fontSize: 15,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -935,10 +944,10 @@ class _MessageItemState extends State<MessageItem>
   BorderRadius _bubbleBorderRadius({required bool isMine}) {
     final isRight = isMine && !widget.compactLayout;
     return BorderRadius.only(
-      topLeft: const Radius.circular(12),
-      topRight: const Radius.circular(12),
-      bottomLeft: Radius.circular(isRight ? 12 : 4),
-      bottomRight: Radius.circular(isRight ? 4 : 12),
+      topLeft: const Radius.circular(14),
+      topRight: const Radius.circular(14),
+      bottomLeft: Radius.circular(isRight ? 14 : 4),
+      bottomRight: Radius.circular(isRight ? 4 : 14),
     );
   }
 

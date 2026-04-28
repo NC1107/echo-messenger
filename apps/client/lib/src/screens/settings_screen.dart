@@ -121,9 +121,6 @@ class SettingsRootView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeSelection = ref.watch(themeProvider);
-    final auth = ref.watch(authProvider);
-
-    final profileTrailing = auth.username ?? '';
     final appearanceTrailing = _themeLabel(themeSelection);
 
     return SingleChildScrollView(
@@ -135,13 +132,6 @@ class SettingsRootView extends ConsumerWidget {
           const SectionHeader('Account'),
           _CardGroup(
             children: [
-              _row(
-                context,
-                icon: Icons.person_outline,
-                iconColor: const Color(0xFF8B5CF6),
-                section: SettingsSection.profile,
-                trailing: profileTrailing.isEmpty ? null : profileTrailing,
-              ),
               _row(
                 context,
                 icon: Icons.vpn_key_outlined,
