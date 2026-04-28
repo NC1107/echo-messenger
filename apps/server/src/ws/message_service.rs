@@ -404,10 +404,9 @@ pub(super) async fn resolve_default_text_channel(
 }
 
 /// Look up reply context (content and username) for a given reply_to_id,
-/// scoped to the conversation the new message will live in.  When the parent
-/// is missing, deleted, or in a different conversation the lookup returns
-/// `None` and emits a `warn!`; the subsequent INSERT in `store_message` will
-/// reject the row anyway so this is purely informational. #519
+/// scoped to the conversation the new message will live in. #519
+/// Returns `None` (with a `warn!`) when the parent is missing, deleted,
+/// or belongs to a different conversation.
 pub(super) async fn lookup_reply_context(
     pool: &sqlx::PgPool,
     reply_to_id: Option<Uuid>,
