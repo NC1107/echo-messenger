@@ -78,9 +78,14 @@ Future<void> _initAndRun() async {
   // Load persisted sound preference
   await SoundService().init();
 
-  // Pre-load the Inter font family so CanvasKit has it ready before first
-  // frame, reducing "Could not find a set of Noto fonts" warnings on web.
-  await GoogleFonts.pendingFonts([GoogleFonts.inter()]);
+  // Pre-load the Inter font family (all UI weights) before first frame so
+  // text never renders in the platform fallback while a weight downloads.
+  await GoogleFonts.pendingFonts([
+    GoogleFonts.inter(fontWeight: FontWeight.w400),
+    GoogleFonts.inter(fontWeight: FontWeight.w500),
+    GoogleFonts.inter(fontWeight: FontWeight.w600),
+    GoogleFonts.inter(fontWeight: FontWeight.w700),
+  ]);
 
   // Sync browser notification permission state (granted/denied) without
   // prompting. The actual permission dialog is shown later from a user

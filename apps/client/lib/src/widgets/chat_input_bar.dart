@@ -1144,29 +1144,28 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
   Widget _buildAttachFileButton() {
     final isMobile = Responsive.isMobile(context);
-    if (isMobile) {
-      return IconButton(
-        icon: Icon(
-          Icons.add_circle_outline,
-          size: 22,
-          color: context.textSecondary,
+    final onTap = isMobile ? _showMobileAttachMenu : _pickFile;
+    return Tooltip(
+      message: isMobile ? 'Attach' : 'Attach file',
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: context.surface,
+              shape: BoxShape.circle,
+              border: Border.all(color: context.border, width: 1),
+            ),
+            alignment: Alignment.center,
+            child: Icon(Icons.add, size: 20, color: context.textSecondary),
+          ),
         ),
-        tooltip: 'Attach',
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-        onPressed: _showMobileAttachMenu,
-      );
-    }
-    return IconButton(
-      icon: Icon(
-        Icons.add_circle_outline,
-        size: 22,
-        color: context.textSecondary,
       ),
-      tooltip: 'Attach file',
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-      onPressed: _pickFile,
     );
   }
 
@@ -1631,33 +1630,33 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final isDm = !widget.conversation.isGroup;
     final canSend = hasContent && (cryptoReady || !isDm);
 
-    // When there's no content and not editing, show mic button on non-web.
+    // When there's no content and not editing, show a bordered mic button
+    // (mirrors the design's RoundIcon). It transitions to the filled accent
+    // send button below as soon as content is present.
     final showMic = !hasContent && !_isEditing && !kIsWeb;
     if (showMic) {
-      return Padding(
-        padding: const EdgeInsets.only(right: 4),
-        child: Semantics(
-          label: 'Record voice message',
-          button: true,
-          child: GestureDetector(
+      return Semantics(
+        label: 'Record voice message',
+        button: true,
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
             onTap: _startRecording,
-            child: SizedBox(
-              width: 44,
-              height: 44,
-              child: Center(
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: context.textMuted.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.mic_outlined,
-                    size: 18,
-                    color: context.textSecondary,
-                  ),
-                ),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: context.surface,
+                shape: BoxShape.circle,
+                border: Border.all(color: context.border, width: 1),
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.mic_outlined,
+                size: 20,
+                color: context.textSecondary,
               ),
             ),
           ),
@@ -1665,42 +1664,44 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       );
     }
 
-    final Color buttonColor;
+    final Color fillColor;
     if (!canSend) {
-      buttonColor = context.textMuted;
+      fillColor = context.surface;
     } else if (_isEditing) {
-      buttonColor = EchoTheme.online;
+      fillColor = EchoTheme.online;
     } else {
-      buttonColor = context.accent;
+      fillColor = context.accent;
     }
+    final iconColor = canSend ? Colors.white : context.textMuted;
+    final showBorder = !canSend;
 
     final cryptoBlocked = isDm && !cryptoReady;
 
-    Widget button = Padding(
-      padding: const EdgeInsets.only(right: 4),
-      child: Semantics(
-        label: _isEditing ? 'Confirm edit' : 'Send message',
-        button: true,
-        enabled: canSend,
-        child: GestureDetector(
+    Widget button = Semantics(
+      label: _isEditing ? 'Confirm edit' : 'Send message',
+      button: true,
+      enabled: canSend,
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
           onTap: canSend ? _resolvedSendAction() : null,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Center(
-              child: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: buttonColor,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _isEditing ? Icons.check_rounded : Icons.arrow_upward_rounded,
-                  size: 18,
-                  color: Colors.white,
-                ),
-              ),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: fillColor,
+              shape: BoxShape.circle,
+              border: showBorder
+                  ? Border.all(color: context.border, width: 1)
+                  : null,
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              _isEditing ? Icons.check_rounded : Icons.arrow_upward_rounded,
+              size: 20,
+              color: iconColor,
             ),
           ),
         ),
@@ -1725,69 +1726,48 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       return _buildRecordingRow();
     }
 
-    // When composing multi-line content, stack the attach "+" and the
-    // emoji / GIF toggle vertically on the left so the text field can
-    // use the full remaining horizontal space.
-    final Widget leading;
-    if (_isEditing) {
-      leading = const SizedBox(width: 12);
-    } else if (_isMultiline) {
-      leading = Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildAttachFileButton(),
-            const SizedBox(height: 2),
-            _buildMediaPickerToggle(
-              showMediaPicker: showMediaPicker,
-              isMobileLayout: isMobileLayout,
-            ),
-          ],
-        ),
-      );
-    } else {
-      leading = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildAttachFileButton(),
-          _buildMediaPickerToggle(
-            showMediaPicker: showMediaPicker,
-            isMobileLayout: isMobileLayout,
-          ),
-        ],
-      );
-    }
+    // Three-element design: bordered round + button on the left, pill input
+    // (with emoji glyph inside on the right), bordered round mic/send on
+    // the right. Edit mode tints the pill border accent.
+    final pillBorderColor = _isEditing ? context.accent : context.border;
 
-    return Container(
-      constraints: const BoxConstraints(minHeight: 44),
-      decoration: BoxDecoration(
-        color: context.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: _isEditing ? context.accent : context.border,
-          width: 1,
-        ),
-      ),
-      child: Row(
-        // Center-align icons and text on single-line; bottom-align when the
-        // field has grown to multiple lines so action icons stay near the
-        // cursor line rather than floating in the middle of the tall textarea.
-        crossAxisAlignment: _isMultiline
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.center,
-        children: [
-          leading,
-          // Text field
-          _buildTextField(
-            showMediaPicker: showMediaPicker,
-            voiceSettings: voiceSettings,
-            effectiveActiveVoiceChannelId: effectiveActiveVoiceChannelId,
+    return Row(
+      crossAxisAlignment: _isMultiline
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.center,
+      children: [
+        if (!_isEditing) _buildAttachFileButton(),
+        if (!_isEditing) const SizedBox(width: 8),
+        Expanded(
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 40),
+            padding: const EdgeInsets.only(left: 12, right: 4),
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: pillBorderColor, width: 1),
+            ),
+            child: Row(
+              crossAxisAlignment: _isMultiline
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.center,
+              children: [
+                _buildTextField(
+                  showMediaPicker: showMediaPicker,
+                  voiceSettings: voiceSettings,
+                  effectiveActiveVoiceChannelId: effectiveActiveVoiceChannelId,
+                ),
+                _buildMediaPickerToggle(
+                  showMediaPicker: showMediaPicker,
+                  isMobileLayout: isMobileLayout,
+                ),
+              ],
+            ),
           ),
-          // Send / confirm edit button
-          _buildSendButton(),
-        ],
-      ),
+        ),
+        const SizedBox(width: 8),
+        _buildSendButton(),
+      ],
     );
   }
 

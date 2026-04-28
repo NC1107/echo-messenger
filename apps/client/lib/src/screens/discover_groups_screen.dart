@@ -10,6 +10,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../widgets/avatar_utils.dart' show groupAvatarColor;
 
 /// A public group returned by the discovery endpoint.
 class _PublicGroup {
@@ -413,16 +414,17 @@ class _GroupDiscoveryItem extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Group avatar
+          // Group avatar — bright solid background with white glyph,
+          // deterministically picked from the group palette.
           Container(
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: context.accent.withValues(alpha: 0.18),
+              color: groupAvatarColor(group.name),
               borderRadius: BorderRadius.circular(22),
             ),
             alignment: Alignment.center,
-            child: Icon(Icons.group, size: 22, color: context.accent),
+            child: const Icon(Icons.group, size: 22, color: Colors.white),
           ),
           const SizedBox(width: 12),
           // Name + stats + description

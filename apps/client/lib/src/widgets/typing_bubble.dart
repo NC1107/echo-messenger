@@ -39,8 +39,8 @@ class _TypingDotsState extends State<TypingDots>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: context.surface,
-        borderRadius: BorderRadius.circular(16),
+        color: context.recvBubble,
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
