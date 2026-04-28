@@ -16,7 +16,7 @@ import '../theme/responsive.dart';
 import '../utils/download_helper.dart';
 import '../utils/clipboard_image_helper.dart' show writeImageToClipboard;
 import '../utils/time_utils.dart';
-import 'avatar_utils.dart' show buildAvatar, avatarColor;
+import 'avatar_utils.dart' show buildAvatar, avatarColor, senderLabelColor;
 import '../services/media_cache_service.dart';
 import 'message/media_content.dart';
 import 'message/message_status_icon.dart';
@@ -201,8 +201,16 @@ class _MessageItemState extends State<MessageItem>
     return '${left.inDays}d';
   }
 
-  /// Consistent color for a username -- matches sidebar avatar colors.
-  Color _getUserColor(String userId) {
+  /// Sender-name label color for group messages. Uses a contrast-safe palette
+  /// against the dark recv bubble (#500); the sidebar avatar background still
+  /// uses `avatarColor`, where contrast rules differ.
+  Color _getSenderLabelColor(String userId) {
+    final name = widget.message.fromUsername;
+    return senderLabelColor(name);
+  }
+
+  /// Avatar background color (contrast for the avatar's white initial glyph).
+  Color _getAvatarColor(String userId) {
     final name = widget.message.fromUsername;
     return avatarColor(name);
   }
@@ -975,7 +983,7 @@ class _MessageItemState extends State<MessageItem>
       style: GoogleFonts.inter(
         fontSize: 13,
         fontWeight: FontWeight.w600,
-        color: _getUserColor(msg.fromUserId),
+        color: _getSenderLabelColor(msg.fromUserId),
       ),
     );
 
@@ -1440,7 +1448,7 @@ class _MessageItemState extends State<MessageItem>
               ? buildAvatar(
                   name: msg.fromUsername,
                   radius: 14,
-                  bgColor: _getUserColor(msg.fromUserId),
+                  bgColor: _getAvatarColor(msg.fromUserId),
                   imageUrl: avatarImageUrl,
                 )
               : const SizedBox.shrink(),

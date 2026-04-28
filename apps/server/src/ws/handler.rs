@@ -27,10 +27,13 @@ enum ClientMessage {
         to_user_id: Option<Uuid>,
         content: String,
         reply_to_id: Option<Uuid>,
-        /// Per-device ciphertexts: device_id (as string) -> base64 ciphertext.
-        /// When present, enables multi-device delivery.
+        /// Recipient-scoped per-device ciphertexts:
+        /// `recipient_user_id (UUID string) -> { device_id (i32 string) -> base64 ciphertext }`.
+        /// JSON object keys are strings on the wire; conversion to typed
+        /// `(Uuid, i32)` happens at the storage and fanout boundaries. Recipient
+        /// scoping is required because per-user device IDs collide across users (#522).
         #[serde(default)]
-        device_contents: Option<HashMap<String, String>>,
+        recipient_device_contents: Option<HashMap<String, HashMap<String, String>>>,
         /// Optional TTL in seconds. When Some, overrides the conversation-level
         /// disappearing-messages setting for this specific message.
         #[serde(default)]
@@ -464,7 +467,7 @@ async fn handle_text_message(
             to_user_id,
             content,
             reply_to_id,
-            device_contents,
+            recipient_device_contents,
             ttl_seconds,
         } => {
             message_service::handle_send_message(
@@ -477,7 +480,7 @@ async fn handle_text_message(
                 to_user_id,
                 content,
                 reply_to_id,
-                device_contents,
+                recipient_device_contents,
                 ttl_seconds,
             )
             .await;
