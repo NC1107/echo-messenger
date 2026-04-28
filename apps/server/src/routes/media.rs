@@ -405,10 +405,7 @@ pub async fn download(
                     .header(CONTENT_DISPOSITION, &disposition)
                     .header(ACCEPT_RANGES, "bytes")
                     .header(CONTENT_LENGTH, slice_len)
-                    .header(
-                        CONTENT_RANGE,
-                        format!("bytes {start}-{end}/{total_size}"),
-                    )
+                    .header(CONTENT_RANGE, format!("bytes {start}-{end}/{total_size}"))
                     .body(Body::from(buf))
                     .map_err(|e| AppError::internal(format!("Failed to build response: {e}")));
             }
