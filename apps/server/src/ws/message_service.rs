@@ -80,6 +80,14 @@ pub(super) async fn validate_conversation_security(
     Some((conv_security, conv_kind, resolved_channel_id))
 }
 
+/// Recipient-scoped per-device ciphertexts as carried on the wire:
+/// `recipient_user_id (UUID string) -> { device_id (i32 string) -> ciphertext }`.
+/// Per-user device IDs collide across users, so the storage and fanout
+/// addressing must include the recipient (#522). Conversion to typed
+/// `(Uuid, i32)` happens at the storage/fanout boundaries; rows that fail to
+/// parse are logged and skipped.
+pub(super) type RecipientDeviceContents = HashMap<String, HashMap<String, String>>;
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_send_message(
     state: &AppState,
@@ -91,7 +99,7 @@ pub(super) async fn handle_send_message(
     to_user_id: Option<Uuid>,
     content: String,
     reply_to_id: Option<Uuid>,
-    device_contents: Option<HashMap<String, String>>,
+    recipient_device_contents: Option<RecipientDeviceContents>,
     ttl_seconds: Option<i64>,
 ) {
     if !validate_message_length(state, sender_id, &content) {
@@ -121,7 +129,7 @@ pub(super) async fn handle_send_message(
         resolved_channel_id,
         &content,
         reply_to_id,
-        &device_contents,
+        &recipient_device_contents,
         ttl_seconds,
     )
     .await
@@ -152,7 +160,7 @@ pub(super) async fn handle_send_message(
         &deliver,
         stored.id,
         conv_security.is_encrypted,
-        device_contents,
+        recipient_device_contents,
     )
     .await;
 }
@@ -170,7 +178,7 @@ pub(super) async fn store_and_confirm(
     resolved_channel_id: Option<Uuid>,
     content: &str,
     reply_to_id: Option<Uuid>,
-    device_contents: &Option<HashMap<String, String>>,
+    recipient_device_contents: &Option<RecipientDeviceContents>,
     ttl_seconds: Option<i64>,
 ) -> Option<db::messages::MessageRow> {
     // Resolve TTL: use per-message override first, then fall back to conversation setting.
@@ -220,11 +228,20 @@ pub(super) async fn store_and_confirm(
         }
     };
 
-    // Store per-device ciphertexts if present
-    if let Some(dc) = device_contents {
-        let entries: Vec<(i32, &str)> = dc
+    // Store per-device ciphertexts if present, scoped by recipient (#522).
+    if let Some(rdc) = recipient_device_contents {
+        let entries: Vec<(Uuid, i32, &str)> = rdc
             .iter()
-            .filter_map(|(k, v)| k.parse::<i32>().ok().map(|id| (id, v.as_str())))
+            .filter_map(|(uid_str, devices)| {
+                let recipient_id = Uuid::parse_str(uid_str).ok()?;
+                Some((recipient_id, devices))
+            })
+            .flat_map(|(recipient_id, devices)| {
+                devices.iter().filter_map(move |(did_str, ct)| {
+                    let did = did_str.parse::<i32>().ok()?;
+                    Some((recipient_id, did, ct.as_str()))
+                })
+            })
             .collect();
         if !entries.is_empty()
             && let Err(e) =
@@ -248,27 +265,31 @@ pub(super) async fn store_and_confirm(
             .send_to_device(&sender_id, sender_device_id, WsMessage::Text(json.into()));
     }
 
-    // Self-device delivery: notify sender's OTHER devices about outgoing message
-    if let Some(dc) = device_contents {
-        for (device_id_str, ciphertext) in dc {
-            if let Ok(did) = device_id_str.parse::<i32>() {
-                if did == sender_device_id {
-                    continue; // Don't send to the originating device
-                }
-                let self_msg = ServerMessage::SelfMessage {
-                    message_id: stored.id,
-                    from_device_id: sender_device_id,
-                    conversation_id: conv_id,
-                    channel_id: stored.channel_id,
-                    content: ciphertext.clone(),
-                    timestamp: stored.created_at,
-                    reply_to_id,
-                };
-                if let Ok(json) = serde_json::to_string(&self_msg) {
-                    state
-                        .hub
-                        .send_to_device(&sender_id, did, WsMessage::Text(json.into()));
-                }
+    // Self-device delivery: notify sender's OTHER devices about outgoing message.
+    // Only the sender's own slice of recipient_device_contents is relevant here.
+    if let Some(rdc) = recipient_device_contents
+        && let Some(self_devices) = rdc.get(&sender_id.to_string())
+    {
+        for (did_str, ciphertext) in self_devices {
+            let Ok(did) = did_str.parse::<i32>() else {
+                continue;
+            };
+            if did == sender_device_id {
+                continue; // Don't send to the originating device
+            }
+            let self_msg = ServerMessage::SelfMessage {
+                message_id: stored.id,
+                from_device_id: sender_device_id,
+                conversation_id: conv_id,
+                channel_id: stored.channel_id,
+                content: ciphertext.clone(),
+                timestamp: stored.created_at,
+                reply_to_id,
+            };
+            if let Ok(json) = serde_json::to_string(&self_msg) {
+                state
+                    .hub
+                    .send_to_device(&sender_id, did, WsMessage::Text(json.into()));
             }
         }
     }
@@ -491,32 +512,40 @@ impl NewMessageFields {
     }
 }
 
-/// Pre-serialize per-device JSON messages once (keyed by device_id) to avoid
+/// Pre-serialize per-device JSON messages once for each recipient to avoid
 /// re-serializing the same message for every member in the fanout loop.
+/// Outer key is `recipient_user_id`, inner is `device_id -> JSON` (#522).
 pub(super) fn build_per_device_json(
     fields: &NewMessageFields,
-    device_contents: &HashMap<String, String>,
-) -> Vec<(i32, String)> {
-    device_contents
+    recipient_device_contents: &RecipientDeviceContents,
+) -> HashMap<Uuid, Vec<(i32, String)>> {
+    recipient_device_contents
         .iter()
-        .filter_map(|(device_id_str, ciphertext)| {
-            let did = device_id_str.parse::<i32>().ok()?;
-            let per_device_msg = ServerMessage::NewMessage {
-                message_id: fields.message_id,
-                from_user_id: fields.from_user_id,
-                from_device_id: fields.from_device_id,
-                from_username: fields.from_username.clone(),
-                conversation_id: fields.conversation_id,
-                channel_id: fields.channel_id,
-                content: ciphertext.clone(),
-                timestamp: fields.timestamp,
-                reply_to_id: fields.reply_to_id,
-                reply_to_content: fields.reply_to_content.clone(),
-                reply_to_username: fields.reply_to_username.clone(),
-                expires_at: fields.expires_at,
-            };
-            let json = serde_json::to_string(&per_device_msg).ok()?;
-            Some((did, json))
+        .filter_map(|(uid_str, devices)| {
+            let recipient_id = Uuid::parse_str(uid_str).ok()?;
+            let entries: Vec<(i32, String)> = devices
+                .iter()
+                .filter_map(|(did_str, ciphertext)| {
+                    let did = did_str.parse::<i32>().ok()?;
+                    let per_device_msg = ServerMessage::NewMessage {
+                        message_id: fields.message_id,
+                        from_user_id: fields.from_user_id,
+                        from_device_id: fields.from_device_id,
+                        from_username: fields.from_username.clone(),
+                        conversation_id: fields.conversation_id,
+                        channel_id: fields.channel_id,
+                        content: ciphertext.clone(),
+                        timestamp: fields.timestamp,
+                        reply_to_id: fields.reply_to_id,
+                        reply_to_content: fields.reply_to_content.clone(),
+                        reply_to_username: fields.reply_to_username.clone(),
+                        expires_at: fields.expires_at,
+                    };
+                    let json = serde_json::to_string(&per_device_msg).ok()?;
+                    Some((did, json))
+                })
+                .collect();
+            Some((recipient_id, entries))
         })
         .collect()
 }
@@ -526,14 +555,17 @@ pub(super) fn build_per_device_json(
 pub(super) fn deliver_to_member(
     hub: &crate::ws::hub::Hub,
     member_id: &Uuid,
-    per_device_json: Option<&[(i32, String)]>,
+    per_recipient_json: Option<&HashMap<Uuid, Vec<(i32, String)>>>,
     legacy_json: Option<&str>,
 ) -> bool {
-    if let Some(device_jsons) = per_device_json {
-        device_jsons.iter().any(|(did, json)| {
+    if let Some(by_recipient) = per_recipient_json
+        && let Some(device_jsons) = by_recipient.get(member_id)
+    {
+        return device_jsons.iter().any(|(did, json)| {
             hub.send_to_device(member_id, *did, WsMessage::Text(json.clone().into()))
-        })
-    } else if let Some(json) = legacy_json {
+        });
+    }
+    if let Some(json) = legacy_json {
         hub.send_to_user(member_id, WsMessage::Text(json.to_owned().into()))
     } else {
         false
@@ -605,7 +637,7 @@ pub(super) async fn fanout_message(
     message: &ServerMessage,
     stored_id: Uuid,
     is_encrypted: bool,
-    device_contents: Option<HashMap<String, String>>,
+    recipient_device_contents: Option<RecipientDeviceContents>,
 ) {
     let Some(fields) = NewMessageFields::extract(message) else {
         tracing::error!("fanout_message called with non-NewMessage variant");
@@ -625,10 +657,10 @@ pub(super) async fn fanout_message(
         .await
         .unwrap_or_default();
 
-    // Pre-serialize per-device JSON messages and legacy fallback
-    let per_device_json = device_contents
+    // Pre-serialize per-recipient device JSON messages and legacy fallback
+    let per_recipient_json = recipient_device_contents
         .as_ref()
-        .map(|dc| build_per_device_json(&fields, dc));
+        .map(|rdc| build_per_device_json(&fields, rdc));
     let legacy_json = serde_json::to_string(message).ok();
 
     let mut any_delivered = false;
@@ -642,7 +674,7 @@ pub(super) async fn fanout_message(
         let delivered = deliver_to_member(
             &state.hub,
             member_id,
-            per_device_json.as_deref(),
+            per_recipient_json.as_ref(),
             legacy_json.as_deref(),
         );
         if delivered {
@@ -690,9 +722,10 @@ pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid
     let all_ids: Vec<Uuid> = undelivered.iter().map(|m| m.id).collect();
 
     // Batch-fetch all per-device ciphertexts in a single query to avoid N+1.
-    let device_ct_map = db::messages::get_device_contents_batch(&state.pool, &all_ids, device_id)
-        .await
-        .unwrap_or_default();
+    let device_ct_map =
+        db::messages::get_device_contents_batch(&state.pool, &all_ids, user_id, device_id)
+            .await
+            .unwrap_or_default();
 
     // Track only IDs that the hub actually accepted into the recipient's
     // outbound queue. Marking a message delivered without confirmed enqueue

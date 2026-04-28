@@ -280,35 +280,46 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       await ref.read(cryptoProvider.notifier).retryKeyUpload();
     }
 
-    Map<String, String>? deviceContents;
+    // Per-user device IDs collide across users (sender device 1 vs recipient
+    // device 1), so per-recipient maps are kept separate end-to-end (#522).
+    Map<String, Map<String, String>>? recipientDeviceContents;
     String fallbackPayload;
     try {
       final crypto = ref.read(cryptoServiceProvider);
       final token = ref.read(authProvider).token ?? '';
       crypto.setToken(token);
 
-      // Multi-device: encrypt per-device for the recipient
-      deviceContents = await crypto.encryptForAllDevices(toUserId, content);
+      final recipientContents = await crypto.encryptForAllDevices(
+        toUserId,
+        content,
+      );
 
-      // Also encrypt for sender's own other devices (self-delivery)
       final myUserId = ref.read(authProvider).userId;
+      Map<String, String> selfContents = const {};
       if (myUserId != null && myUserId.isNotEmpty) {
-        final selfContents = await crypto.encryptForOwnDevices(
-          myUserId,
-          content,
-        );
-        deviceContents.addAll(selfContents);
+        selfContents = await crypto.encryptForOwnDevices(myUserId, content);
       }
 
-      // Use first ciphertext as the fallback for legacy storage
-      fallbackPayload = deviceContents.values.firstOrNull ?? '';
+      recipientDeviceContents = <String, Map<String, String>>{};
+      if (recipientContents.isNotEmpty) {
+        recipientDeviceContents[toUserId] = recipientContents;
+      }
+      if (selfContents.isNotEmpty && myUserId != null && myUserId.isNotEmpty) {
+        recipientDeviceContents[myUserId] = selfContents;
+      }
+
+      // Legacy fallback: prefer the recipient's first ciphertext over self.
+      fallbackPayload =
+          recipientContents.values.firstOrNull ??
+          selfContents.values.firstOrNull ??
+          '';
     } catch (e) {
       debugLog('Multi-device encryption failed: $e', 'WS');
       // Fall back to single-device encrypt with session reset retry
       try {
         final crypto = ref.read(cryptoServiceProvider);
         fallbackPayload = await crypto.encryptMessage(toUserId, content);
-        deviceContents = null;
+        recipientDeviceContents = null;
       } catch (e2) {
         debugLog('Fallback encryption failed, resetting session: $e2', 'WS');
         // Reset session and retry once before giving up
@@ -316,7 +327,7 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
           final crypto = ref.read(cryptoServiceProvider);
           await crypto.invalidateSessionKey(toUserId);
           fallbackPayload = await crypto.encryptMessage(toUserId, content);
-          deviceContents = null;
+          recipientDeviceContents = null;
         } catch (e3) {
           debugLog('Encryption retry after reset also failed: $e3', 'WS');
           _addFailedMessage(
@@ -335,8 +346,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       'to_user_id': toUserId,
       'content': fallbackPayload,
     };
-    if (deviceContents != null && deviceContents.isNotEmpty) {
-      msg['device_contents'] = deviceContents;
+    if (recipientDeviceContents != null && recipientDeviceContents.isNotEmpty) {
+      msg['recipient_device_contents'] = recipientDeviceContents;
     }
     if (conversationId != null && conversationId.isNotEmpty) {
       msg['conversation_id'] = conversationId;

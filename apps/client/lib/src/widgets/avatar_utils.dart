@@ -76,6 +76,27 @@ Color avatarColor(String name) {
   return colors[index];
 }
 
+/// Palette for sender-name labels above receive bubbles. Tailwind-300 hues,
+/// pre-validated to clear WCAG AA 4.5:1 contrast against the dark recv bubble
+/// surface (~#1F2937). Use this for *text* color; `avatarColor` is for the
+/// avatar's background fill, where contrast against text-on-color matters
+/// instead. Re-validate if the recv bubble color changes (#500).
+const _senderLabelColors = [
+  Color(0xFFFCA5A5), // red-300
+  Color(0xFFFCD34D), // amber-300
+  Color(0xFF6EE7B7), // emerald-300
+  Color(0xFF93C5FD), // blue-300
+  Color(0xFFC4B5FD), // violet-300
+  Color(0xFFFDBA74), // orange-300
+  Color(0xFFF9A8D4), // pink-300
+  Color(0xFF67E8F9), // cyan-300
+];
+
+/// Deterministic, contrast-safe color for a sender-name label.
+Color senderLabelColor(String name) {
+  return _senderLabelColors[name.hashCode.abs() % _senderLabelColors.length];
+}
+
 /// Wider palette for group avatars, derived from group name hash.
 const _groupColors = [
   Color(0xFF22C55E), // green
