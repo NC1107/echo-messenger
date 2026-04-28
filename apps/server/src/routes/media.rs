@@ -19,8 +19,10 @@ use crate::error::AppError;
 
 use super::AppState;
 
-/// Maximum upload size: 10 MB.
-pub const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
+/// Maximum upload size: 100 MB. Sized for modern phone videos and reasonable
+/// chat media; raise cautiously — both this constant and `DefaultBodyLimit`
+/// in `routes/mod.rs` cap the multipart payload at this value.
+pub const MAX_FILE_SIZE: usize = 100 * 1024 * 1024;
 
 /// Allowed MIME types for upload.
 const ALLOWED_MIME_TYPES: &[&str] = &[

@@ -804,8 +804,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       if (result == null || result.files.isEmpty) return;
       if (!mounted) return;
 
-      // Show toast for multi-file selections so the user knows all are queued.
-      if (result.files.length > 1) {
+      // Single pick → preview flow (caption + send). Multi pick → send all
+      // immediately as separate messages; mixing the two creates races where
+      // the user may interact with the pending preview while the rest are
+      // still uploading in the background.
+      final isMulti = result.files.length > 1;
+      if (isMulti) {
         ToastService.show(
           context,
           'Sending ${result.files.length} files...',
@@ -813,8 +817,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         );
       }
 
-      bool firstAttached = false;
-
+      var sentCount = 0;
       for (final file in result.files) {
         // On mobile, withData:true may still yield null bytes for larger files
         // or certain content URIs. Fall back to reading from the file path.
@@ -842,24 +845,41 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         final mime = _kMimeTypes[ext] ?? ['application', _kOctetStream];
         final mimeType = '${mime[0]}/${mime[1]}';
 
-        if (!firstAttached) {
-          // First file goes through the normal preview flow.
-          firstAttached = true;
+        if (isMulti) {
+          try {
+            await _sendFileImmediately(
+              bytes: bytes,
+              fileName: file.name,
+              mimeType: mimeType,
+              ext: ext,
+            );
+            sentCount++;
+          } catch (e) {
+            debugPrint('[ChatInput] Send failed for ${file.name}: $e');
+            if (mounted) {
+              ToastService.show(
+                context,
+                'Failed to send ${file.name}',
+                type: ToastType.error,
+              );
+            }
+          }
+        } else {
           _setPendingAttachment(
             bytes: bytes,
             fileName: file.name,
             mimeType: mimeType,
             ext: ext,
           );
-        } else {
-          // Additional files are uploaded and sent immediately.
-          await _sendFileImmediately(
-            bytes: bytes,
-            fileName: file.name,
-            mimeType: mimeType,
-            ext: ext,
-          );
         }
+      }
+      if (isMulti && mounted && sentCount < result.files.length) {
+        final failed = result.files.length - sentCount;
+        ToastService.show(
+          context,
+          '$failed of ${result.files.length} failed to send',
+          type: ToastType.error,
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -1225,7 +1245,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       if (result == null || result.files.isEmpty) return;
       if (!mounted) return;
 
-      if (result.files.length > 1) {
+      final isMulti = result.files.length > 1;
+      if (isMulti) {
         ToastService.show(
           context,
           'Sending ${result.files.length} files...',
@@ -1233,8 +1254,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         );
       }
 
-      bool firstAttached = false;
-
+      var sentCount = 0;
       for (final file in result.files) {
         Uint8List? bytes = file.bytes;
         if (bytes == null && file.path != null && !kIsWeb) {
@@ -1248,22 +1268,41 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         final mime = _kMimeTypes[ext] ?? ['application', _kOctetStream];
         final mimeType = '${mime[0]}/${mime[1]}';
 
-        if (!firstAttached) {
-          firstAttached = true;
+        if (isMulti) {
+          try {
+            await _sendFileImmediately(
+              bytes: bytes,
+              fileName: file.name,
+              mimeType: mimeType,
+              ext: ext,
+            );
+            sentCount++;
+          } catch (e) {
+            debugPrint('[ChatInput] Send failed for ${file.name}: $e');
+            if (mounted) {
+              ToastService.show(
+                context,
+                'Failed to send ${file.name}',
+                type: ToastType.error,
+              );
+            }
+          }
+        } else {
           _setPendingAttachment(
             bytes: bytes,
             fileName: file.name,
             mimeType: mimeType,
             ext: ext,
           );
-        } else {
-          await _sendFileImmediately(
-            bytes: bytes,
-            fileName: file.name,
-            mimeType: mimeType,
-            ext: ext,
-          );
         }
+      }
+      if (isMulti && mounted && sentCount < result.files.length) {
+        final failed = result.files.length - sentCount;
+        ToastService.show(
+          context,
+          '$failed of ${result.files.length} failed to send',
+          type: ToastType.error,
+        );
       }
     } catch (e) {
       if (!mounted) return;
