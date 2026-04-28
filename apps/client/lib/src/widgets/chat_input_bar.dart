@@ -1154,15 +1154,31 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final path =
         '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
 
-    await _recorder.start(
-      const RecordConfig(
-        encoder: AudioEncoder.aacLc,
-        sampleRate: 44100,
-        bitRate: 64000,
-        numChannels: 1,
-      ),
-      path: path,
-    );
+    try {
+      await _recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          sampleRate: 44100,
+          bitRate: 64000,
+          numChannels: 1,
+        ),
+        path: path,
+      );
+    } catch (e) {
+      // record's iOS / Android backends can throw on session-init failures
+      // (audio session in use by another app, codec unavailable, etc.).
+      // Without surfacing this, the user just saw nothing happen when they
+      // tried to record (#554).
+      debugPrint('[ChatInput] _recorder.start failed: $e');
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Could not start recording: $e',
+          type: ToastType.error,
+        );
+      }
+      return;
+    }
 
     setState(() {
       _isRecording = true;
@@ -1211,9 +1227,32 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     // Read the recorded bytes and attach as a pending voice message.
     try {
       final file = File(path);
-      if (!file.existsSync()) return;
+      if (!file.existsSync()) {
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Recording was lost — no audio file produced',
+            type: ToastType.error,
+          );
+        }
+        return;
+      }
       final bytes = await file.readAsBytes();
       _recordingAmplitudes.clear();
+
+      // Reject empty / near-empty recordings rather than uploading a
+      // 0-byte file that the server will reject anyway. The threshold is
+      // generous — even a 100ms aac frame is hundreds of bytes (#554).
+      if (bytes.length < 256) {
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Recording was too short or silent (${bytes.length}B)',
+            type: ToastType.error,
+          );
+        }
+        return;
+      }
 
       _setPendingVoiceAttachment(bytes: bytes);
     } catch (e) {
