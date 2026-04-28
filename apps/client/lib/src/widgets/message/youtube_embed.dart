@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
@@ -39,6 +41,7 @@ class YouTubeEmbed extends StatefulWidget {
 
 class _YouTubeEmbedState extends State<YouTubeEmbed> {
   YoutubePlayerController? _controller;
+  StreamSubscription<YoutubePlayerValue>? _subscription;
   bool _useFallback = !youtubeIframeSupported;
 
   @override
@@ -46,7 +49,7 @@ class _YouTubeEmbedState extends State<YouTubeEmbed> {
     super.initState();
     if (youtubeIframeSupported) {
       try {
-        _controller = YoutubePlayerController.fromVideoId(
+        final controller = YoutubePlayerController.fromVideoId(
           videoId: widget.videoId,
           autoPlay: false,
           params: const YoutubePlayerParams(
@@ -56,6 +59,22 @@ class _YouTubeEmbedState extends State<YouTubeEmbed> {
             strictRelatedVideos: true,
           ),
         );
+        // Listen for runtime errors (video unavailable, embedding disabled,
+        // owner removed, etc. — codes 100/101/105/150 plus the catch-all
+        // `unknown` for other YouTube IFrame API errors). When YouTube
+        // reports any non-`none` error, swap to the static fallback card so
+        // the user gets a clean "tap to watch on YouTube" affordance
+        // instead of YouTube's branded inline error UI.
+        _subscription = controller.listen((value) {
+          if (!mounted || _useFallback) return;
+          if (value.error != YoutubeError.none) {
+            debugPrint(
+              '[YouTubeEmbed] runtime error ${value.error}, falling back',
+            );
+            setState(() => _useFallback = true);
+          }
+        });
+        _controller = controller;
       } catch (e) {
         debugPrint('[YouTubeEmbed] iframe init failed: $e');
         _useFallback = true;
@@ -65,6 +84,7 @@ class _YouTubeEmbedState extends State<YouTubeEmbed> {
 
   @override
   void dispose() {
+    _subscription?.cancel();
     _controller?.close();
     super.dispose();
   }

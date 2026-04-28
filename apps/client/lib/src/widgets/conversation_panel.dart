@@ -544,16 +544,16 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   /// Square accent FAB anchored bottom-right of the conversation panel.
-  /// Mirrors the action-menu "Chat" entry but exposes it as a one-tap
-  /// affordance. Hidden when [onNewChat] is null.
+  /// Mobile-only: on wide layouts the top-bar "+" dropdown already exposes
+  /// New Chat / New Group / Discover / Saved Messages, so this FAB would
+  /// be redundant. We keep it on narrow layouts where the top "+" can be
+  /// a stretch for one-thumb reach.
   Widget _buildComposeFab(BuildContext context) {
-    // On mobile the status bar is hidden, so the FAB hugs the bottom edge
-    // (parent provides any tab-bar inset). On desktop sidebar the status
-    // bar is ~60px tall and we keep clear of it.
     final isMobile = MediaQuery.sizeOf(context).width < 600;
+    if (!isMobile) return const SizedBox.shrink();
     return Positioned(
       right: 16,
-      bottom: isMobile ? 16 : 76,
+      bottom: 16,
       child: Semantics(
         label: 'New chat',
         button: true,

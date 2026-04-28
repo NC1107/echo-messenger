@@ -773,10 +773,35 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
           height: 170,
           color: widget.mainBg,
           child: Center(
-            child: Icon(
-              Icons.play_circle_outline,
-              size: 44,
-              color: widget.textMuted,
+            child: Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.black.withValues(alpha: 0.55),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: const Padding(
+                // Optical centering: the play triangle's mass sits left of
+                // its bounding box, so nudge it right by 2px.
+                padding: EdgeInsets.only(left: 2),
+                child: Icon(
+                  Icons.play_arrow_rounded,
+                  color: Colors.white,
+                  size: 32,
+                ),
+              ),
             ),
           ),
         ),
