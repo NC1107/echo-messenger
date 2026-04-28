@@ -78,16 +78,30 @@ void main() {
       await tester.pumpWidget(buildSection());
       await tester.pumpAndSettle();
 
-      expect(find.text('Show Email on Profile'), findsOneWidget);
-      expect(find.text('Show Phone on Profile'), findsOneWidget);
+      // Use skipOffstage:false because the new "Preserve Original Filenames"
+      // toggle pushes these rows below the test viewport's lazy-build window.
+      expect(
+        find.text('Show Email on Profile', skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Show Phone on Profile', skipOffstage: false),
+        findsOneWidget,
+      );
     });
 
     testWidgets('renders discoverable toggles', (tester) async {
+      // Bump the test viewport tall enough that ListView lazy-builds the
+      // discoverable toggles into the tree (they sit far down the section,
+      // and the new "Preserve Original Filenames" row pushed them further).
+      tester.view.physicalSize = const Size(800, 3000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
       await tester.pumpWidget(buildSection());
       await tester.pumpAndSettle();
 
-      // Discoverable toggles may be far down due to blocked users / safety
-      // number sections. Use skipOffstage to find them even if off-screen.
       expect(
         find.text('Discoverable by Email', skipOffstage: false),
         findsOneWidget,

@@ -655,28 +655,35 @@ class _MessageItemState extends State<MessageItem>
                 child: InteractiveViewer(
                   minScale: 0.8,
                   maxScale: 4,
-                  child: CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    cacheKey: stableMediaCacheKey(imageUrl),
-                    httpHeaders: headers,
-                    cacheManager: chatMediaCacheManager,
-                    fit: BoxFit.contain,
-                    placeholder: (_, _) => SizedBox(
-                      width: 320,
-                      height: 240,
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          color: Theme.of(context).colorScheme.onPrimary,
+                  child: GestureDetector(
+                    // Tap on the image / letterbox padding dismisses; pinch
+                    // and pan are different gesture kinds and still reach
+                    // InteractiveViewer.
+                    onTap: () => Navigator.of(dialogContext).pop(),
+                    behavior: HitTestBehavior.opaque,
+                    child: CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      cacheKey: stableMediaCacheKey(imageUrl),
+                      httpHeaders: headers,
+                      cacheManager: chatMediaCacheManager,
+                      fit: BoxFit.contain,
+                      placeholder: (_, _) => SizedBox(
+                        width: 320,
+                        height: 240,
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: Theme.of(context).colorScheme.onPrimary,
+                          ),
                         ),
                       ),
-                    ),
-                    errorWidget: (_, _, _) => Center(
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onPrimary.withValues(alpha: 0.54),
-                        size: 48,
+                      errorWidget: (_, _, _) => Center(
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimary.withValues(alpha: 0.54),
+                          size: 48,
+                        ),
                       ),
                     ),
                   ),

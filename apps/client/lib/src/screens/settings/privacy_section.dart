@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/biometric_provider.dart';
 import '../../providers/contacts_provider.dart';
@@ -7,6 +8,17 @@ import '../../providers/crypto_provider.dart';
 import '../../providers/privacy_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
+
+/// SharedPreferences key + reader for the "preserve original filenames"
+/// toggle. Default `true` (preserve). When `false`, uploads are sent with a
+/// generic `media.{ext}` filename so recipients see no clues about the
+/// original file's name on download.
+const String kPreserveOriginalFilenamesKey = 'preserve_original_filenames';
+
+Future<bool> readPreserveOriginalFilenames() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getBool(kPreserveOriginalFilenamesKey) ?? true;
+}
 
 class PrivacySection extends ConsumerStatefulWidget {
   const PrivacySection({super.key});
@@ -16,6 +28,8 @@ class PrivacySection extends ConsumerStatefulWidget {
 }
 
 class _PrivacySectionState extends ConsumerState<PrivacySection> {
+  bool _preserveFilenames = true;
+
   @override
   void initState() {
     super.initState();
@@ -23,6 +37,18 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
       ref.read(privacyProvider.notifier).load();
       ref.read(contactsProvider.notifier).loadBlockedUsers();
     });
+    _loadFilenamePref();
+  }
+
+  Future<void> _loadFilenamePref() async {
+    final value = await readPreserveOriginalFilenames();
+    if (mounted) setState(() => _preserveFilenames = value);
+  }
+
+  Future<void> _setPreserveFilenames(bool value) async {
+    setState(() => _preserveFilenames = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kPreserveOriginalFilenamesKey, value);
   }
 
   Future<void> _toggleBiometric(bool value) async {
@@ -361,6 +387,20 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
               : (value) => ref
                     .read(privacyProvider.notifier)
                     .setShowOnlineStatus(value),
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Preserve Original Filenames',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'When off, uploads are sent as media.{ext} so recipients see a '
+            'generic filename on download. File contents are unchanged.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: _preserveFilenames,
+          onChanged: _setPreserveFilenames,
         ),
         const SizedBox(height: 24),
         Text(

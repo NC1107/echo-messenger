@@ -24,6 +24,8 @@ import '../providers/server_url_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../screens/settings/privacy_section.dart'
+    show readPreserveOriginalFilenames;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
@@ -36,6 +38,35 @@ import 'media_picker_panel.dart';
 import 'mobile_media_picker_panel.dart';
 
 const _kOctetStream = 'octet-stream';
+
+/// Mirror of `MAX_FILE_SIZE` in `apps/server/src/routes/media.rs`. Both must
+/// be bumped together. Cloudflare Free also caps request bodies at 100 MB,
+/// so going higher than this without proxy work will 502 on prod.
+const _kMaxUploadBytes = 100 * 1024 * 1024;
+
+/// Strip the original name and return `media.{ext}` (or just `media` if the
+/// filename had no extension). Used by the "preserve original filenames"
+/// privacy toggle.
+String _genericFilename(String original) {
+  final dot = original.lastIndexOf('.');
+  if (dot <= 0 || dot == original.length - 1) return 'media';
+  final ext = original.substring(dot + 1).toLowerCase();
+  return 'media.$ext';
+}
+
+/// Format a byte count as a human-readable string (1024-based, 1 decimal).
+String _formatBytes(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  const units = ['KB', 'MB', 'GB'];
+  var v = bytes / 1024.0;
+  var i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return '${v.toStringAsFixed(1)} ${units[i]}';
+}
+
 const _kImageGif = 'image/gif';
 
 /// Extracted chat input bar from ChatPanel (~850 lines).
@@ -656,6 +687,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     required String fileName,
     required String mimeType,
   }) async {
+    // If the user has the "preserve original filenames" privacy toggle off,
+    // upload the file under a generic name keyed off the extension. The file
+    // contents are unchanged.
+    final preserve = await readPreserveOriginalFilenames();
+    final uploadFileName = preserve ? fileName : _genericFilename(fileName);
+
     for (var attempt = 0; attempt < 2; attempt++) {
       final token = ref.read(authProvider).token;
       if (token == null) return null;
@@ -664,7 +701,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         serverUrl: serverUrl,
         token: token,
         bytes: bytes,
-        fileName: fileName,
+        fileName: uploadFileName,
         mimeType: mimeType,
       );
 
@@ -819,6 +856,18 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
       var sentCount = 0;
       for (final file in result.files) {
+        if (file.size > _kMaxUploadBytes) {
+          if (mounted) {
+            ToastService.show(
+              context,
+              '${file.name} is ${_formatBytes(file.size)} — limit is '
+              '${_formatBytes(_kMaxUploadBytes)}',
+              type: ToastType.error,
+            );
+          }
+          continue;
+        }
+
         // On mobile, withData:true may still yield null bytes for larger files
         // or certain content URIs. Fall back to reading from the file path.
         Uint8List? bytes = file.bytes;
@@ -1256,6 +1305,18 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
       var sentCount = 0;
       for (final file in result.files) {
+        if (file.size > _kMaxUploadBytes) {
+          if (mounted) {
+            ToastService.show(
+              context,
+              '${file.name} is ${_formatBytes(file.size)} — limit is '
+              '${_formatBytes(_kMaxUploadBytes)}',
+              type: ToastType.error,
+            );
+          }
+          continue;
+        }
+
         Uint8List? bytes = file.bytes;
         if (bytes == null && file.path != null && !kIsWeb) {
           try {
