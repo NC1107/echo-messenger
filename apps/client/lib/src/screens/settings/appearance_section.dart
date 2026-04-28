@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/accessibility_provider.dart';
+import '../../providers/gif_playback_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
 
@@ -117,25 +117,8 @@ class AppearanceSection extends ConsumerStatefulWidget {
 }
 
 class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
-  bool _gifAutoplay = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadGifPref();
-  }
-
-  Future<void> _loadGifPref() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() => _gifAutoplay = prefs.getBool(kGifAutoplayKey) ?? true);
-    }
-  }
-
   Future<void> _setGifAutoplay(bool value) async {
-    setState(() => _gifAutoplay = value);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(kGifAutoplayKey, value);
+    await ref.read(gifPlaybackProvider.notifier).setAutoplay(value);
   }
 
   @override
@@ -278,7 +261,7 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
                 'When off, GIFs show as static thumbnails with a play button.',
                 style: TextStyle(color: context.textMuted, fontSize: 12),
               ),
-              value: _gifAutoplay,
+              value: ref.watch(gifPlaybackProvider).autoplayEnabled,
               onChanged: _setGifAutoplay,
             ),
 

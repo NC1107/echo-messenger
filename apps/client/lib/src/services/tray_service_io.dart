@@ -34,17 +34,38 @@ class TrayService with TrayListener, WindowListener {
     await windowManager.setPreventClose(true);
     windowManager.addListener(this);
 
+    // Each step is guarded so a failure later in the sequence (notably
+    // setContextMenu, which is flaky on some Linux compositors) doesn't
+    // leave the icon unresponsive: the click listener still attaches even
+    // if the menu can't be installed, so right-click might be inert but
+    // left-click toggles the window.
+    var iconShown = false;
     try {
       await trayManager.setIcon(_iconPath());
-      await trayManager.setToolTip('Echo');
-      await _setContextMenu();
-      trayManager.addListener(this);
-      _initialised = true;
+      iconShown = true;
     } catch (e) {
-      // Tray plugin may be unavailable (e.g. MissingPluginException on some
-      // Linux configurations). Swallow the error so the app continues without
-      // system tray support -- updateBadge becomes a no-op.
-      debugPrint('[TrayService] init failed (tray unavailable): $e');
+      debugPrint('[TrayService] setIcon failed: $e');
+    }
+
+    try {
+      await trayManager.setToolTip('Echo');
+    } catch (e) {
+      debugPrint('[TrayService] setToolTip failed: $e');
+    }
+
+    // Attach listener before menu so taps work even if menu install fails.
+    trayManager.addListener(this);
+
+    try {
+      await _setContextMenu();
+    } catch (e) {
+      debugPrint('[TrayService] setContextMenu failed: $e');
+    }
+
+    if (iconShown) {
+      _initialised = true;
+    } else {
+      trayManager.removeListener(this);
     }
   }
 

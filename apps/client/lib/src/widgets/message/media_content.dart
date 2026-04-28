@@ -2,10 +2,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../providers/gif_playback_provider.dart';
 import '../../services/media_cache_service.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
@@ -421,29 +423,29 @@ class MediaContentState extends State<MediaContent> {
             child: Stack(
               children: [
                 fullUrl.startsWith('http') && urlExtension(rawUrl) == 'gif'
-                    ? Image.network(
-                        fullUrl,
-                        headers: _headers(),
-                        width: 300,
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                        errorBuilder: (_, e, st) => Container(
-                          width: 300,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: context.surface,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Center(
-                            child: Text(
-                              '[GIF failed to load]',
-                              style: TextStyle(
-                                color: context.textMuted,
-                                fontSize: 13,
+                    ? Consumer(
+                        builder: (ctx, ref, _) {
+                          final gif = ref.watch(gifPlaybackProvider);
+                          if (gif.isAnimating) {
+                            return Image.network(
+                              fullUrl,
+                              headers: _headers(),
+                              width: 300,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                              errorBuilder: (_, e, st) => _gifErrorPlaceholder(
+                                context,
+                                'GIF failed to load',
                               ),
-                            ),
-                          ),
-                        ),
+                            );
+                          }
+                          return _PausedGifPlaceholder(
+                            width: 300,
+                            onTap: () => widget.onImageTap != null
+                                ? widget.onImageTap!(fullUrl)
+                                : showImageViewer(imageUrl: fullUrl),
+                          );
+                        },
                       )
                     : CachedNetworkImage(
                         imageUrl: fullUrl,
@@ -1146,6 +1148,103 @@ class _FullscreenVideoDialogState extends State<_FullscreenVideoDialog> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Centered error card shown when a GIF fails to load. Mirrors the look of
+/// the "image failed to load" placeholder so failures don't visually jar.
+Widget _gifErrorPlaceholder(BuildContext context, String label) {
+  return Container(
+    width: 300,
+    height: 80,
+    decoration: BoxDecoration(
+      color: context.surface,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Center(
+      child: Text(
+        '[$label]',
+        style: TextStyle(color: context.textMuted, fontSize: 13),
+      ),
+    ),
+  );
+}
+
+/// Static placeholder shown in place of an animated GIF when autoplay is
+/// off (or the app has lost focus). Tapping opens the fullscreen viewer
+/// where the GIF is always allowed to animate.
+class _PausedGifPlaceholder extends StatelessWidget {
+  final double width;
+  final VoidCallback onTap;
+
+  const _PausedGifPlaceholder({required this.width, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: width,
+        height: 160,
+        decoration: BoxDecoration(
+          color: context.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.border, width: 1),
+        ),
+        child: Stack(
+          children: [
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: context.accentLight,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: context.accent, width: 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.play_arrow, size: 16, color: context.accent),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Tap to play',
+                      style: TextStyle(
+                        color: context.accent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              left: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'GIF',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
