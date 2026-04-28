@@ -159,6 +159,8 @@ jobs:
           Icon=echo
           Type=Application
           Categories=Network;InstantMessaging;
+          StartupNotify=true
+          StartupWMClass=com.echo.echo_app
           EOF
           cp Echo.AppDir/echo.desktop Echo.AppDir/usr/share/applications/
           # Placeholder icon
