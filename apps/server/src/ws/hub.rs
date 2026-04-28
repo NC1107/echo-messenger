@@ -6,6 +6,7 @@
 use axum::extract::ws::Message as WsMessage;
 use dashmap::DashMap;
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TrySendError;
 use uuid::Uuid;
 
 pub type WsTx = mpsc::Sender<WsMessage>;
@@ -54,11 +55,14 @@ impl Hub {
     }
 
     /// Send a message to ALL connected devices of a user.
+    /// Returns true if at least one device's outbound queue accepted the
+    /// message. Full/closed queues are logged separately so beta-test
+    /// telemetry distinguishes saturation from disconnect cleanup.
     pub fn send_to_user(&self, user_id: &Uuid, msg: WsMessage) -> bool {
         if let Some(devices) = self.connections.get(user_id) {
             let mut any_sent = false;
             for entry in devices.iter() {
-                if entry.value().try_send(msg.clone()).is_ok() {
+                if try_send_logged(entry.value(), msg.clone(), user_id, *entry.key()) {
                     any_sent = true;
                 }
             }
@@ -68,12 +72,14 @@ impl Hub {
         }
     }
 
-    /// Send a message to a specific device of a user.
+    /// Send a message to a specific device of a user. Returns true only when
+    /// the message was actually enqueued — callers in the replay path rely
+    /// on this to avoid prematurely marking messages as delivered (#523).
     pub fn send_to_device(&self, user_id: &Uuid, device_id: i32, msg: WsMessage) -> bool {
         if let Some(devices) = self.connections.get(user_id)
             && let Some(tx) = devices.get(&device_id)
         {
-            return tx.try_send(msg).is_ok();
+            return try_send_logged(tx.value(), msg, user_id, device_id);
         }
         false
     }
@@ -96,6 +102,28 @@ impl Hub {
                 continue;
             }
             self.send_to_user(member_id, msg.clone());
+        }
+    }
+}
+
+fn try_send_logged(tx: &WsTx, msg: WsMessage, user_id: &Uuid, device_id: i32) -> bool {
+    match tx.try_send(msg) {
+        Ok(()) => true,
+        Err(TrySendError::Full(_)) => {
+            tracing::warn!(
+                user_id = %user_id,
+                device_id = device_id,
+                "WS outbound queue full — message not delivered"
+            );
+            false
+        }
+        Err(TrySendError::Closed(_)) => {
+            tracing::debug!(
+                user_id = %user_id,
+                device_id = device_id,
+                "WS outbound queue closed — recipient disconnected"
+            );
+            false
         }
     }
 }
@@ -239,6 +267,62 @@ mod tests {
 
         match rx2.recv().await.unwrap() {
             WsMessage::Text(t) => assert_eq!(t.as_str(), "still here"),
+            _ => panic!("Expected Text"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_send_returns_false_when_queue_full() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        // Capacity 1, no receiver consumption: second send must fail.
+        let (tx, _rx) = mpsc::channel(1);
+        hub.register(user_id, 1, tx);
+
+        let first = hub.send_to_device(&user_id, 1, WsMessage::Text("first".into()));
+        assert!(first, "first send should fit in capacity-1 queue");
+
+        let second = hub.send_to_device(&user_id, 1, WsMessage::Text("second".into()));
+        assert!(
+            !second,
+            "second send must report failure when queue is full"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_send_returns_false_when_queue_closed() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        let (tx, rx) = mpsc::channel(4);
+        hub.register(user_id, 1, tx);
+        drop(rx);
+
+        let sent = hub.send_to_device(&user_id, 1, WsMessage::Text("dropped".into()));
+        assert!(!sent, "send must report failure once receiver is dropped");
+    }
+
+    #[tokio::test]
+    async fn test_send_to_user_partial_success_with_one_full_queue() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        let (tx_full, _rx_full) = mpsc::channel(1);
+        let (tx_ok, mut rx_ok) = mpsc::channel(8);
+
+        hub.register(user_id, 1, tx_full.clone());
+        hub.register(user_id, 2, tx_ok);
+
+        // Pre-fill device 1's queue.
+        tx_full.try_send(WsMessage::Text("filler".into())).unwrap();
+
+        let any_sent = hub.send_to_user(&user_id, WsMessage::Text("payload".into()));
+        assert!(
+            any_sent,
+            "send_to_user should report true when at least one device accepts"
+        );
+
+        // Device 2 should still receive it.
+        match rx_ok.recv().await.unwrap() {
+            WsMessage::Text(t) => assert_eq!(t.as_str(), "payload"),
             _ => panic!("Expected Text"),
         }
     }
