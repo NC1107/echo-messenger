@@ -73,7 +73,7 @@ void main() {
       TestWidgetsFlutterBinding.ensureInitialized();
     });
 
-    testWidgets('renders all 8 navigation rows', (tester) async {
+    testWidgets('renders all navigation rows', (tester) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -82,7 +82,8 @@ void main() {
       await tester.pumpWidget(_rootApp(selected: SettingsSection.profile));
       await tester.pumpAndSettle();
 
-      expect(find.text('Profile'), findsOneWidget);
+      // Profile is reached via the UserHeaderCard at the top, not a duplicate
+      // row in the Account group.
       expect(find.text('Encryption keys'), findsOneWidget);
       expect(find.text('Devices'), findsOneWidget);
       expect(find.text('Appearance'), findsOneWidget);

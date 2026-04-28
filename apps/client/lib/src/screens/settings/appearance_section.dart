@@ -211,7 +211,7 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Choose a theme and message layout.',
+              'Choose a theme. All themes are tuned for WCAG AA contrast.',
               style: TextStyle(
                 color: context.textSecondary,
                 fontSize: 13,
@@ -237,7 +237,7 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
             ),
             const SizedBox(height: 32),
             Text(
-              'Message Layout',
+              'Message layout',
               style: TextStyle(
                 color: context.textPrimary,
                 fontSize: 16,
