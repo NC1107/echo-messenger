@@ -695,89 +695,25 @@ class InlineVideoPlayer extends StatefulWidget {
 }
 
 class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
-  VideoPlayerController? _controller;
-  bool _initFailed = false;
-  bool _userTappedPlay = false;
-
-  @override
-  void dispose() {
-    _controller?.removeListener(_onControllerUpdate);
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  void _onControllerUpdate() {
-    if (mounted) setState(() {});
-  }
-
-  String _formatDuration(Duration d) =>
-      '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
-
-  /// Initialize video only when the user taps play. This avoids creating
-  /// VideoPlayerControllers for every video message in the list, which
-  /// would leak memory as the user scrolls through history.
-  Future<void> _initAndPlay() async {
-    if (_controller != null) {
-      _togglePlayPause();
-      return;
-    }
-    setState(() => _userTappedPlay = true);
-    try {
-      final controller = VideoPlayerController.networkUrl(
-        Uri.parse(widget.videoUrl),
-        httpHeaders: widget.headers,
-      );
-      await controller.initialize();
-      if (!mounted) {
-        controller.dispose();
-        return;
-      }
-      controller.addListener(_onControllerUpdate);
-      setState(() => _controller = controller);
-      controller.play();
-    } catch (e) {
-      debugPrint('[InlineVideoPlayer] init failed for ${widget.rawUrl}: $e');
-      if (mounted) setState(() => _initFailed = true);
-    }
-  }
-
-  void _togglePlayPause() {
-    final c = _controller;
-    if (c == null) return;
-    c.value.isPlaying ? c.pause() : c.play();
-  }
-
-  void _openFullscreen() {
-    final c = _controller;
-    if (c == null) return;
+  /// Open the fullscreen player. Routes through a self-contained dialog
+  /// that owns its own [VideoPlayerController] — so a failure here doesn't
+  /// silently fall back to the external browser the way the inline path
+  /// used to. The dialog renders its own loading + error states and only
+  /// offers a "Open externally" affordance after init has actually failed.
+  void _openInApp() {
     showDialog<void>(
       context: context,
       barrierColor: Colors.black,
-      builder: (dialogContext) => _FullscreenVideoDialog(
-        controller: c,
-        formatDuration: _formatDuration,
+      useSafeArea: false,
+      builder: (dialogContext) => FullscreenVideoPlayer(
+        videoUrl: widget.videoUrl,
+        rawUrl: widget.rawUrl,
+        headers: widget.headers,
         accent: context.accent,
-        textPrimary: context.textPrimary,
         textMuted: context.textMuted,
+        onLaunchExternal: widget.onOpen,
       ),
     );
-  }
-
-  /// Initialize the controller (if needed) then open fullscreen. Wired to the
-  /// "Open" button and to the bubble thumbnail tap so users get an in-app
-  /// player without needing to first tap-to-play and then tap fullscreen.
-  Future<void> _openInApp() async {
-    if (_controller == null) {
-      await _initAndPlay();
-    }
-    if (!mounted) return;
-    if (_controller != null && !_initFailed) {
-      _openFullscreen();
-    } else {
-      // Init failed (codec unsupported, network down, etc.) — fall back to
-      // launching externally so the user isn't stuck.
-      widget.onOpen();
-    }
   }
 
   @override
@@ -822,223 +758,104 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     );
   }
 
+  /// Static play-thumbnail. Tapping always opens the self-contained
+  /// fullscreen player. We deliberately don't init a controller inline
+  /// anymore — it created a confusing "inline mini-player vs fullscreen
+  /// player" duality and quietly fell through to the system browser when
+  /// init failed.
   Widget _buildVideoArea() {
-    final c = _controller;
-
-    // Not yet tapped — show play button thumbnail (no controller allocated).
-    if (!_userTappedPlay && c == null) {
-      return Semantics(
-        label: 'play video',
-        button: true,
-        child: GestureDetector(
-          onTap: _initAndPlay,
-          child: Container(
-            height: 170,
-            color: widget.mainBg,
-            child: Center(
-              child: Icon(
-                Icons.play_circle_outline,
-                size: 44,
-                color: widget.textMuted,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // User tapped play, still loading
-    if (c == null && !_initFailed) {
-      return Container(
-        height: 170,
-        color: widget.mainBg,
-        child: Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
+    return Semantics(
+      label: 'play video',
+      button: true,
+      child: GestureDetector(
+        onTap: _openInApp,
+        child: Container(
+          height: 170,
+          color: widget.mainBg,
+          child: Center(
+            child: Icon(
+              Icons.play_circle_outline,
+              size: 44,
               color: widget.textMuted,
             ),
           ),
         ),
-      );
-    }
-
-    // Init failed -- show static placeholder
-    if (_initFailed || c == null) {
-      return Semantics(
-        label: 'open video externally',
-        button: true,
-        child: GestureDetector(
-          onTap: widget.onOpen,
-          // Init failed permanently — fall back to external open. The
-          // placeholder before the user taps play is handled above and
-          // routes through _openInApp via _initAndPlay → _openFullscreen.
-          child: Container(
-            height: 170,
-            color: widget.mainBg,
-            child: Center(
-              child: Icon(
-                Icons.play_circle_outline,
-                size: 44,
-                color: widget.textMuted,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Initialised -- show player with controls
-    final position = c.value.position;
-    final duration = c.value.duration;
-    final progress = (duration.inMilliseconds > 0)
-        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
-        : 0.0;
-
-    return GestureDetector(
-      onTap: _togglePlayPause,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          AspectRatio(
-            aspectRatio: c.value.aspectRatio.clamp(0.5, 3.0),
-            child: VideoPlayer(c),
-          ),
-          // Play/pause icon overlay
-          if (!c.value.isPlaying)
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.play_arrow,
-                size: 32,
-                color: Colors.white,
-              ),
-            ),
-          // Bottom controls: gradient scrim + seek bar + duration + fullscreen
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [Colors.black87, Colors.transparent],
-                ),
-              ),
-              padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Seek bar
-                  SizedBox(
-                    height: 20,
-                    child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 2,
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 5,
-                        ),
-                        overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 12,
-                        ),
-                        activeTrackColor: context.accent,
-                        inactiveTrackColor: context.textMuted.withValues(
-                          alpha: 0.3,
-                        ),
-                        thumbColor: context.accent,
-                      ),
-                      child: Slider(
-                        value: progress,
-                        onChanged: (v) {
-                          final ms = (v * duration.inMilliseconds).round();
-                          c.seekTo(Duration(milliseconds: ms));
-                        },
-                      ),
-                    ),
-                  ),
-                  // Duration row
-                  Padding(
-                    padding: const EdgeInsets.only(
-                      left: 8,
-                      right: 4,
-                      bottom: 4,
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          '${_formatDuration(position)} / ${_formatDuration(duration)}',
-                          style: TextStyle(
-                            color: context.textPrimary,
-                            fontSize: 11,
-                          ),
-                        ),
-                        const Spacer(),
-                        // Fullscreen button — 44px touch target
-                        SizedBox(
-                          width: 44,
-                          height: 44,
-                          child: IconButton(
-                            padding: EdgeInsets.zero,
-                            icon: const Icon(
-                              Icons.fullscreen,
-                              size: 20,
-                              color: Colors.white,
-                            ),
-                            tooltip: 'Fullscreen',
-                            onPressed: _openFullscreen,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
 }
 
-/// Fullscreen video dialog that reuses the already-initialised controller.
-class _FullscreenVideoDialog extends StatefulWidget {
-  final VideoPlayerController controller;
-  final String Function(Duration) formatDuration;
+/// Self-contained fullscreen video player. Owns its own
+/// [VideoPlayerController] so it doesn't depend on the inline bubble's init
+/// succeeding first. Renders three states: loading, playing, and error
+/// (with a clear "Open externally" affordance for codec / auth failures).
+class FullscreenVideoPlayer extends StatefulWidget {
+  final String videoUrl;
+  final String rawUrl;
+  final Map<String, String> headers;
   final Color accent;
-  final Color textPrimary;
   final Color textMuted;
 
-  const _FullscreenVideoDialog({
-    required this.controller,
-    required this.formatDuration,
+  /// Called from the error state's "Open externally" button. Typically
+  /// wired to the same launcher the bubble's Download button uses.
+  final VoidCallback onLaunchExternal;
+
+  const FullscreenVideoPlayer({
+    super.key,
+    required this.videoUrl,
+    required this.rawUrl,
+    required this.headers,
     required this.accent,
-    required this.textPrimary,
     required this.textMuted,
+    required this.onLaunchExternal,
   });
 
   @override
-  State<_FullscreenVideoDialog> createState() => _FullscreenVideoDialogState();
+  State<FullscreenVideoPlayer> createState() => _FullscreenVideoPlayerState();
 }
 
-class _FullscreenVideoDialogState extends State<_FullscreenVideoDialog> {
+class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
+  VideoPlayerController? _controller;
+  bool _initFailed = false;
+  String? _errorMessage;
+
   @override
   void initState() {
     super.initState();
-    widget.controller.addListener(_onUpdate);
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(widget.videoUrl),
+        httpHeaders: widget.headers,
+      );
+      await controller.initialize();
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      controller.addListener(_onUpdate);
+      setState(() => _controller = controller);
+      controller.play();
+    } catch (e) {
+      debugPrint(
+        '[FullscreenVideoPlayer] init failed for ${widget.rawUrl}: $e',
+      );
+      if (mounted) {
+        setState(() {
+          _initFailed = true;
+          _errorMessage = e.toString();
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
-    widget.controller.removeListener(_onUpdate);
+    _controller?.removeListener(_onUpdate);
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -1047,34 +864,32 @@ class _FullscreenVideoDialogState extends State<_FullscreenVideoDialog> {
   }
 
   void _togglePlayPause() {
-    final c = widget.controller;
+    final c = _controller;
+    if (c == null) return;
     c.value.isPlaying ? c.pause() : c.play();
   }
 
+  String _formatDuration(Duration d) =>
+      '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
   @override
   Widget build(BuildContext context) {
-    final c = widget.controller;
-    final position = c.value.position;
-    final duration = c.value.duration;
-    final progress = (duration.inMilliseconds > 0)
-        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
-        : 0.0;
+    final c = _controller;
+
+    Widget body;
+    if (_initFailed) {
+      body = _buildErrorState();
+    } else if (c == null) {
+      body = _buildLoadingState();
+    } else {
+      body = _buildPlayer(c);
+    }
 
     return Dialog.fullscreen(
       backgroundColor: Colors.black,
       child: Stack(
         children: [
-          // Video fills screen
-          Center(
-            child: GestureDetector(
-              onTap: _togglePlayPause,
-              child: AspectRatio(
-                aspectRatio: c.value.aspectRatio.clamp(0.3, 5.0),
-                child: VideoPlayer(c),
-              ),
-            ),
-          ),
-          // Top bar — close button
+          body,
           Positioned(
             top: 0,
             left: 0,
@@ -1095,87 +910,169 @@ class _FullscreenVideoDialogState extends State<_FullscreenVideoDialog> {
               ),
             ),
           ),
-          // Bottom controls
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: SafeArea(
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [Colors.black87, Colors.transparent],
-                  ),
-                ),
-                padding: const EdgeInsets.fromLTRB(4, 16, 4, 4),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Play/pause + seek row
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 44,
-                          height: 44,
-                          child: IconButton(
-                            padding: EdgeInsets.zero,
-                            icon: Icon(
-                              c.value.isPlaying
-                                  ? Icons.pause
-                                  : Icons.play_arrow,
-                              color: Colors.white,
-                              size: 28,
-                            ),
-                            onPressed: _togglePlayPause,
-                          ),
-                        ),
-                        Expanded(
-                          child: SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              trackHeight: 2,
-                              thumbShape: const RoundSliderThumbShape(
-                                enabledThumbRadius: 6,
-                              ),
-                              overlayShape: const RoundSliderOverlayShape(
-                                overlayRadius: 14,
-                              ),
-                              activeTrackColor: widget.accent,
-                              inactiveTrackColor: widget.textMuted.withValues(
-                                alpha: 0.3,
-                              ),
-                              thumbColor: widget.accent,
-                            ),
-                            child: Slider(
-                              value: progress,
-                              onChanged: (v) {
-                                final ms = (v * duration.inMilliseconds)
-                                    .round();
-                                c.seekTo(Duration(milliseconds: ms));
-                              },
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(right: 12),
-                          child: Text(
-                            '${widget.formatDuration(position)} / ${widget.formatDuration(duration)}',
-                            style: TextStyle(
-                              color: widget.textPrimary,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 32,
+            height: 32,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: widget.accent,
             ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Loading video…',
+            style: TextStyle(color: Colors.white70, fontSize: 13),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.videocam_off_outlined,
+              color: Colors.white54,
+              size: 48,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              "Couldn't play this video in app",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage ?? 'Unknown player error',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                widget.onLaunchExternal();
+              },
+              icon: const Icon(Icons.open_in_new, size: 16),
+              label: const Text('Open externally'),
+              style: FilledButton.styleFrom(
+                backgroundColor: widget.accent,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlayer(VideoPlayerController c) {
+    final position = c.value.position;
+    final duration = c.value.duration;
+    final progress = (duration.inMilliseconds > 0)
+        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+
+    return Stack(
+      children: [
+        Center(
+          child: GestureDetector(
+            onTap: _togglePlayPause,
+            child: AspectRatio(
+              aspectRatio: c.value.aspectRatio.clamp(0.3, 5.0),
+              child: VideoPlayer(c),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: SafeArea(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Colors.black87, Colors.transparent],
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(4, 16, 4, 4),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                        c.value.isPlaying ? Icons.pause : Icons.play_arrow,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                      onPressed: _togglePlayPause,
+                    ),
+                  ),
+                  Expanded(
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 2,
+                        thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 6,
+                        ),
+                        overlayShape: const RoundSliderOverlayShape(
+                          overlayRadius: 14,
+                        ),
+                        activeTrackColor: widget.accent,
+                        inactiveTrackColor: widget.textMuted.withValues(
+                          alpha: 0.3,
+                        ),
+                        thumbColor: widget.accent,
+                      ),
+                      child: Slider(
+                        value: progress,
+                        onChanged: (v) {
+                          final ms = (v * duration.inMilliseconds).round();
+                          c.seekTo(Duration(milliseconds: ms));
+                        },
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: Text(
+                      '${_formatDuration(position)} / ${_formatDuration(duration)}',
+                      style: const TextStyle(color: Colors.white, fontSize: 11),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

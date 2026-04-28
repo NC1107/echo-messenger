@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import '../../theme/echo_theme.dart';
+import 'youtube_platform_support.dart';
 
-/// 16:9 YouTube embed card. Renders the video thumbnail with a red play
-/// button overlay and the video title (best-effort) below. Tapping the card
-/// tries to launch the YouTube app via `youtube://` deep-link, falling back
-/// to the watch URL in the system browser.
+/// 16:9 YouTube embed.
 ///
-/// True inline iframe playback would require a webview package — deferred
-/// because the desktop targets this app supports (Linux, Windows) lack
-/// reliable webview implementations and would need per-platform gating.
-class YouTubeEmbed extends StatelessWidget {
+/// On platforms where `youtube_player_iframe` (and its underlying webview
+/// implementation) is supported — iOS, Android, Web, macOS — this renders
+/// the inline iframe player. On Linux + Windows desktop, or when iframe
+/// init fails for any reason (network, ad-blocker, etc.), it falls back to
+/// a static thumbnail card with a red play button overlay; tapping the
+/// fallback launches YouTube via deep link or the system browser.
+class YouTubeEmbed extends StatefulWidget {
   final String videoId;
   final String? title;
 
@@ -28,6 +30,105 @@ class YouTubeEmbed extends StatelessWidget {
     final match = _idRegex.firstMatch(url.trim());
     return match?.group(1);
   }
+
+  @override
+  State<YouTubeEmbed> createState() => _YouTubeEmbedState();
+}
+
+class _YouTubeEmbedState extends State<YouTubeEmbed> {
+  YoutubePlayerController? _controller;
+  bool _useFallback = !youtubeIframeSupported;
+
+  @override
+  void initState() {
+    super.initState();
+    if (youtubeIframeSupported) {
+      try {
+        _controller = YoutubePlayerController.fromVideoId(
+          videoId: widget.videoId,
+          autoPlay: false,
+          params: const YoutubePlayerParams(
+            mute: false,
+            showControls: true,
+            showFullscreenButton: true,
+            strictRelatedVideos: true,
+          ),
+        );
+      } catch (e) {
+        debugPrint('[YouTubeEmbed] iframe init failed: $e');
+        _useFallback = true;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    if (_useFallback || controller == null) {
+      return _YouTubeFallbackCard(videoId: widget.videoId, title: widget.title);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          decoration: BoxDecoration(
+            color: context.surface,
+            border: Border.all(color: context.border, width: 1),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: YoutubePlayer(
+                  controller: controller,
+                  aspectRatio: 16 / 9,
+                  // If the player itself surfaces a runtime error, swap to
+                  // the static fallback so the user always has *something*.
+                  enableFullScreenOnVerticalDrag: false,
+                ),
+              ),
+              if (widget.title != null && widget.title!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                  child: Text(
+                    widget.title!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Static thumbnail card. Used directly on Linux/Windows desktop where the
+/// iframe player isn't supported, and as a fallback when iframe init fails
+/// at runtime on supported platforms.
+class _YouTubeFallbackCard extends StatelessWidget {
+  final String videoId;
+  final String? title;
+
+  const _YouTubeFallbackCard({required this.videoId, this.title});
 
   static Future<void> _launchVideo(String videoId) async {
     final appUri = Uri.parse('youtube://watch?v=$videoId');
