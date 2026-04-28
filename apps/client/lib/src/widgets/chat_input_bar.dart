@@ -1591,7 +1591,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           autofillHints: const [],
           style: TextStyle(fontSize: 14, color: context.textPrimary),
           decoration: InputDecoration(
-            hintText: _isEditing ? 'Edit your message...' : 'Type a message...',
+            hintText: _isEditing ? 'Edit your message…' : 'Message — encrypted',
             border: InputBorder.none,
             enabledBorder: InputBorder.none,
             focusedBorder: InputBorder.none,

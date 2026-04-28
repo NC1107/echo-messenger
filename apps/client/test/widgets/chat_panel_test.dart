@@ -246,7 +246,7 @@ void main() {
 
       // The ChatInputBar contains a TextField
       expect(find.byType(TextField), findsOneWidget);
-      expect(find.text('Type a message...'), findsOneWidget);
+      expect(find.text('Message — encrypted'), findsOneWidget);
     });
 
     testWidgets('placeholder is not shown when conversation is provided', (
