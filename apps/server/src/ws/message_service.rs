@@ -683,12 +683,23 @@ pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid
         Err(_) => return,
     };
 
-    let ids: Vec<Uuid> = undelivered.iter().map(|m| m.id).collect();
+    if undelivered.is_empty() {
+        return;
+    }
+
+    let all_ids: Vec<Uuid> = undelivered.iter().map(|m| m.id).collect();
 
     // Batch-fetch all per-device ciphertexts in a single query to avoid N+1.
-    let device_ct_map = db::messages::get_device_contents_batch(&state.pool, &ids, device_id)
+    let device_ct_map = db::messages::get_device_contents_batch(&state.pool, &all_ids, device_id)
         .await
         .unwrap_or_default();
+
+    // Track only IDs that the hub actually accepted into the recipient's
+    // outbound queue. Marking a message delivered without confirmed enqueue
+    // loses it forever if the queue was full or the socket had just closed (#523).
+    let mut delivered_ids: Vec<Uuid> = Vec::with_capacity(undelivered.len());
+    let mut delivered_msgs: Vec<&db::messages::MessageWithSender> =
+        Vec::with_capacity(undelivered.len());
 
     for msg in &undelivered {
         // Prefer device-specific ciphertext; fall back to canonical content.
@@ -711,21 +722,33 @@ pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid
             reply_to_username: msg.reply_to_username.clone(),
             expires_at: None, // Offline delivery: expiry already passed if expired
         };
-        if let Ok(json) = serde_json::to_string(&server_msg) {
-            state
-                .hub
-                .send_to_device(&user_id, device_id, WsMessage::Text(json.into()));
+        let Ok(json) = serde_json::to_string(&server_msg) else {
+            continue;
+        };
+        let enqueued = state
+            .hub
+            .send_to_device(&user_id, device_id, WsMessage::Text(json.into()));
+        if enqueued {
+            delivered_ids.push(msg.id);
+            delivered_msgs.push(msg);
+        } else {
+            tracing::warn!(
+                message_id = %msg.id,
+                user_id = %user_id,
+                device_id = device_id,
+                "replay: hub rejected message — leaving as undelivered for next reconnect"
+            );
         }
     }
 
-    if ids.is_empty() {
+    if delivered_ids.is_empty() {
         return;
     }
 
-    let _ = db::messages::mark_delivered(&state.pool, &ids).await;
+    let _ = db::messages::mark_delivered(&state.pool, &delivered_ids).await;
 
     // Notify original senders that their messages were delivered
-    for msg in &undelivered {
+    for msg in delivered_msgs {
         let delivered_event = ServerMessage::Delivered {
             message_id: msg.id,
             conversation_id: msg.conversation_id,
