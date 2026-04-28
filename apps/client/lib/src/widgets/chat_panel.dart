@@ -496,8 +496,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     final conv = widget.conversation;
     if (conv == null) return;
     final chatState = ref.read(chatProvider);
-    if ((chatState.loadingHistory[conv.id] ?? false) ||
-        !(chatState.hasMore[conv.id] ?? true)) {
+    // Use the channel-aware helpers — the underlying maps key by
+    // `conversationId:channelId` (or `conversationId:` for the unchanneled
+    // group root), so a raw lookup by `conv.id` always missed in
+    // channelized groups, hiding active history loads and triggering
+    // duplicate paginate requests (#510).
+    if (chatState.isLoadingHistory(
+          conv.id,
+          channelId: _selectedTextChannelId,
+        ) ||
+        !chatState.conversationHasMore(
+          conv.id,
+          channelId: _selectedTextChannelId,
+        )) {
       return;
     }
 
@@ -1167,7 +1178,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           ),
         ],
       ),
-    ).then((choice) {
+    ).then((choice) async {
       if (choice == null) return;
       if (choice == _DeleteChoice.forMe) {
         ref.read(chatProvider.notifier).deleteMessage(conv.id, message.id);
@@ -1181,25 +1192,64 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           );
         }
       } else {
-        ref.read(chatProvider.notifier).deleteMessage(conv.id, message.id);
-        final serverUrl = ref.read(serverUrlProvider);
-        ref
-            .read(authProvider.notifier)
-            .authenticatedRequest(
-              (token) => http.delete(
-                Uri.parse('$serverUrl/api/messages/${message.id}'),
-                headers: {'Authorization': 'Bearer $token'},
-              ),
-            );
-        if (mounted) {
-          ToastService.show(
-            context,
-            'Message deleted for everyone',
-            type: ToastType.success,
-          );
-        }
+        await _deleteForEveryone(conv.id, message);
       }
     });
+  }
+
+  /// Delete a message for every recipient. Optimistically removes it from
+  /// local state for a responsive UI, awaits the server DELETE, and rolls
+  /// the message back into local state if the request fails (auth expired,
+  /// network drop, server error). Without the await/rollback the user was
+  /// being told the message had been deleted "for everyone" even when only
+  /// local state changed (#511).
+  Future<void> _deleteForEveryone(
+    String conversationId,
+    ChatMessage message,
+  ) async {
+    ref.read(chatProvider.notifier).deleteMessage(conversationId, message.id);
+
+    final serverUrl = ref.read(serverUrlProvider);
+    http.Response? response;
+    Object? networkError;
+    try {
+      response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.delete(
+              Uri.parse('$serverUrl/api/messages/${message.id}'),
+              headers: {'Authorization': 'Bearer $token'},
+            ),
+          );
+    } catch (e) {
+      networkError = e;
+    }
+
+    if (!mounted) return;
+
+    final ok =
+        response != null &&
+        response.statusCode >= 200 &&
+        response.statusCode < 300;
+    if (ok) {
+      ToastService.show(
+        context,
+        'Message deleted for everyone',
+        type: ToastType.success,
+      );
+    } else {
+      // Rollback: re-insert the message so the user sees their content
+      // wasn't actually removed remotely.
+      ref.read(chatProvider.notifier).addMessage(message);
+      final reason = networkError != null
+          ? 'Network error'
+          : 'Server returned ${response!.statusCode}';
+      ToastService.show(
+        context,
+        'Failed to delete: $reason',
+        type: ToastType.error,
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------
