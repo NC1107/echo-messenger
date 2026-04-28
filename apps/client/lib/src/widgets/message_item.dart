@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:photo_manager/photo_manager.dart' show PhotoManager;
 
@@ -616,7 +617,7 @@ class _MessageItemState extends State<MessageItem>
             const SizedBox(width: 14),
             Text(
               label,
-              style: TextStyle(
+              style: GoogleFonts.inter(
                 color: color ?? context.textPrimary,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
@@ -971,7 +972,7 @@ class _MessageItemState extends State<MessageItem>
   }) {
     final nameText = Text(
       msg.fromUsername,
-      style: TextStyle(
+      style: GoogleFonts.inter(
         fontSize: 13,
         fontWeight: FontWeight.w600,
         color: _getUserColor(msg.fromUserId),
@@ -995,7 +996,7 @@ class _MessageItemState extends State<MessageItem>
           const SizedBox(width: 6),
           Text(
             formatMessageTimestamp(msg.timestamp),
-            style: TextStyle(fontSize: 11, color: context.textMuted),
+            style: GoogleFonts.inter(fontSize: 11, color: context.textMuted),
           ),
         ],
       ),
@@ -1015,7 +1016,7 @@ class _MessageItemState extends State<MessageItem>
             Flexible(
               child: Text(
                 'Secured message',
-                style: TextStyle(
+                style: GoogleFonts.inter(
                   fontStyle: FontStyle.italic,
                   color: context.textMuted,
                   fontSize: 13,
@@ -1027,7 +1028,7 @@ class _MessageItemState extends State<MessageItem>
         const SizedBox(height: 4),
         Text(
           'Unable to decrypt this message.',
-          style: TextStyle(color: context.textMuted, fontSize: 12),
+          style: GoogleFonts.inter(color: context.textMuted, fontSize: 12),
         ),
       ],
     );
@@ -1074,9 +1075,9 @@ class _MessageItemState extends State<MessageItem>
                   color: context.accent,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Text(
+                child: Text(
                   'Retry',
-                  style: TextStyle(
+                  style: GoogleFonts.inter(
                     fontSize: 12,
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
@@ -1091,7 +1092,7 @@ class _MessageItemState extends State<MessageItem>
               onTap: () => widget.onDelete?.call(msg),
               child: Text(
                 'Delete',
-                style: TextStyle(
+                style: GoogleFonts.inter(
                   fontSize: 12,
                   color: EchoTheme.danger.withValues(alpha: 0.8),
                   fontWeight: FontWeight.w600,
@@ -1267,7 +1268,7 @@ class _MessageItemState extends State<MessageItem>
             const SizedBox(width: 3),
             Text(
               'Pinned',
-              style: TextStyle(
+              style: GoogleFonts.inter(
                 fontSize: 10,
                 fontWeight: FontWeight.w500,
                 color: isMine
@@ -1299,7 +1300,7 @@ class _MessageItemState extends State<MessageItem>
           const SizedBox(width: 4),
           Text(
             'Forwarded',
-            style: TextStyle(
+            style: GoogleFonts.inter(
               fontSize: 11,
               fontStyle: FontStyle.italic,
               color: isMine
@@ -1347,7 +1348,7 @@ class _MessageItemState extends State<MessageItem>
           padding: const EdgeInsets.only(top: 2),
           child: Text(
             '(edited)',
-            style: TextStyle(
+            style: GoogleFonts.inter(
               fontSize: 11,
               fontStyle: FontStyle.italic,
               color: context.textMuted,
@@ -1483,7 +1484,7 @@ class _MessageItemState extends State<MessageItem>
         children: [
           Text(
             formatMessageTimestamp(msg.timestamp),
-            style: TextStyle(fontSize: 11, color: context.textMuted),
+            style: GoogleFonts.inter(fontSize: 11, color: context.textMuted),
           ),
           if (msg.isEncrypted) _buildLockIcon(msg: msg, isMine: isMine),
           if (msg.pinnedAt != null)
@@ -1496,7 +1497,7 @@ class _MessageItemState extends State<MessageItem>
               padding: const EdgeInsets.only(left: 4),
               child: Text(
                 '(edited)',
-                style: TextStyle(
+                style: GoogleFonts.inter(
                   fontSize: 10,
                   fontStyle: FontStyle.italic,
                   color: context.textMuted,
@@ -1517,7 +1518,10 @@ class _MessageItemState extends State<MessageItem>
                   const SizedBox(width: 2),
                   Text(
                     _formatTimeLeft(msg.expiresAt!),
-                    style: TextStyle(fontSize: 10, color: context.textMuted),
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: context.textMuted,
+                    ),
                   ),
                 ],
               ),
@@ -1559,7 +1563,7 @@ class _MessageItemState extends State<MessageItem>
                     const SizedBox(width: 4),
                     Text(
                       label,
-                      style: TextStyle(
+                      style: GoogleFonts.inter(
                         fontSize: 12,
                         color: context.accent,
                         fontWeight: FontWeight.w600,
@@ -1590,7 +1594,7 @@ class _MessageItemState extends State<MessageItem>
           msg.editedAt != null
               ? '${formatMessageTimestamp(msg.timestamp)} (edited)'
               : formatMessageTimestamp(msg.timestamp),
-          style: TextStyle(fontSize: 11, color: context.textMuted),
+          style: GoogleFonts.inter(fontSize: 11, color: context.textMuted),
         ),
       ),
     );
@@ -1684,7 +1688,10 @@ class _MessageItemState extends State<MessageItem>
               Flexible(
                 child: Text(
                   msg.content,
-                  style: TextStyle(color: context.textMuted, fontSize: 11),
+                  style: GoogleFonts.inter(
+                    color: context.textMuted,
+                    fontSize: 11,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ),
