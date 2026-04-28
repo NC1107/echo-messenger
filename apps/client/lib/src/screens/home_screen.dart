@@ -1235,48 +1235,111 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// preserves each tab's local state via the parent state holder, and
   /// resets the chat-detail navigation when switching away from Chats.
   Widget _buildMobileTabBar() {
-    return BottomNavigationBar(
-      currentIndex: _mobileTabIndex,
-      onTap: (index) {
-        if (index == _mobileTabIndex) return;
-        setState(() {
-          _mobileTabIndex = index;
-          // Switching tabs collapses any open chat back to the list so
-          // returning to Chats lands on the conversation list, not a stale
-          // chat view from before the tab switch.
-          if (index != 0) {
-            _narrowPanelIndex = 0;
-          }
-        });
-      },
-      type: BottomNavigationBarType.fixed,
-      backgroundColor: context.sidebarBg,
-      selectedItemColor: context.accent,
-      unselectedItemColor: context.textMuted,
-      selectedFontSize: 11,
-      unselectedFontSize: 11,
-      items: const [
-        BottomNavigationBarItem(
-          icon: Icon(Icons.chat_bubble_outline),
-          activeIcon: Icon(Icons.chat_bubble),
-          label: 'Chats',
+    final unreadTotal = ref
+        .watch(conversationsProvider)
+        .conversations
+        .fold<int>(0, (s, c) => s + c.unreadCount);
+
+    final tabs = <_MobileTabSpec>[
+      _MobileTabSpec(
+        label: 'Chats',
+        outlinedIcon: Icons.chat_bubble_outline,
+        filledIcon: Icons.chat_bubble,
+        badge: unreadTotal,
+      ),
+      const _MobileTabSpec(
+        label: 'Discover',
+        outlinedIcon: Icons.explore_outlined,
+        filledIcon: Icons.explore,
+      ),
+      const _MobileTabSpec(
+        label: 'Contacts',
+        outlinedIcon: Icons.people_outline,
+        filledIcon: Icons.people,
+      ),
+      const _MobileTabSpec(
+        label: 'Settings',
+        outlinedIcon: Icons.settings_outlined,
+        filledIcon: Icons.settings,
+      ),
+    ];
+
+    return Material(
+      color: context.sidebarBg,
+      child: SafeArea(
+        top: false,
+        child: Container(
+          height: 64,
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: context.border, width: 1)),
+          ),
+          child: Row(
+            children: List.generate(tabs.length, (i) {
+              final isActive = i == _mobileTabIndex;
+              final tab = tabs[i];
+              return Expanded(
+                child: Semantics(
+                  selected: isActive,
+                  button: true,
+                  label: tab.label,
+                  child: InkWell(
+                    onTap: () {
+                      if (i == _mobileTabIndex) return;
+                      setState(() {
+                        _mobileTabIndex = i;
+                        if (i != 0) {
+                          _narrowPanelIndex = 0;
+                        }
+                      });
+                    },
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Icon(
+                              isActive ? tab.filledIcon : tab.outlinedIcon,
+                              size: 24,
+                              color: isActive
+                                  ? context.accent
+                                  : context.textMuted,
+                            ),
+                            if (tab.badge > 0)
+                              Positioned(
+                                top: -3,
+                                right: -8,
+                                child: _UnreadBadge(
+                                  count: tab.badge,
+                                  ringColor: context.sidebarBg,
+                                  bgColor: context.accent,
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          tab.label,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: isActive
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: isActive
+                                ? context.accent
+                                : context.textMuted,
+                            letterSpacing: 0.1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
         ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.explore_outlined),
-          activeIcon: Icon(Icons.explore),
-          label: 'Discover',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.people_outline),
-          activeIcon: Icon(Icons.people),
-          label: 'Contacts',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.settings_outlined),
-          activeIcon: Icon(Icons.settings),
-          label: 'Settings',
-        ),
-      ],
+      ),
     );
   }
 
@@ -1579,6 +1642,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileTabSpec {
+  final String label;
+  final IconData outlinedIcon;
+  final IconData filledIcon;
+  final int badge;
+  const _MobileTabSpec({
+    required this.label,
+    required this.outlinedIcon,
+    required this.filledIcon,
+    this.badge = 0,
+  });
+}
+
+class _UnreadBadge extends StatelessWidget {
+  final int count;
+  final Color ringColor;
+  final Color bgColor;
+  const _UnreadBadge({
+    required this.count,
+    required this.ringColor,
+    required this.bgColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count > 99 ? '99+' : '$count';
+    return Container(
+      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ringColor, width: 2),
+      ),
+      child: Center(
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            height: 1.0,
+          ),
         ),
       ),
     );

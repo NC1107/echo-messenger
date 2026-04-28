@@ -57,10 +57,10 @@ class ChatHeaderBar extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          height: 56,
+          height: 60,
           padding: const EdgeInsets.symmetric(horizontal: 20),
           decoration: BoxDecoration(
-            color: context.chatBg,
+            color: context.sidebarBg,
             border: Border(bottom: BorderSide(color: context.border, width: 1)),
           ),
           child: Row(
@@ -192,11 +192,20 @@ class ChatHeaderBar extends ConsumerWidget {
           )
         : null;
 
+    final lockGlyph = conv.isEncrypted
+        ? Padding(
+            padding: const EdgeInsets.only(left: 5),
+            child: Tooltip(
+              message: 'End-to-end encrypted',
+              child: Icon(Icons.lock, size: 12, color: context.textMuted),
+            ),
+          )
+        : null;
+
     if (conv.isGroup) {
-      if (timerChip == null) return nameText;
       return Row(
         mainAxisSize: MainAxisSize.min,
-        children: [nameText, timerChip],
+        children: [nameText, ?lockGlyph, ?timerChip],
       );
     }
 
@@ -207,6 +216,7 @@ class ChatHeaderBar extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         nameText,
+        ?lockGlyph,
         _VerifiedBadge(peerUserId: peer.userId),
         ?timerChip,
       ],
@@ -218,28 +228,30 @@ class ChatHeaderBar extends ConsumerWidget {
     WidgetRef ref,
     Conversation conv,
   ) {
+    final wsState = ref.watch(websocketProvider);
     if (conv.isGroup) {
       final memberCount = conv.members.length;
-      // On narrow screens show "N" only (no "members" label) so the
-      // header subtitle never overflows into the action buttons.
+      final onlineCount = conv.members
+          .where((m) => wsState.isUserOnline(m.userId))
+          .length;
       final isNarrow = MediaQuery.of(context).size.width < 500;
+      final memberLabel = isNarrow
+          ? '$memberCount'
+          : '$memberCount member${memberCount == 1 ? '' : 's'}';
       return Text(
-        isNarrow
-            ? '$memberCount m'
-            : '$memberCount member${memberCount == 1 ? '' : 's'}',
+        onlineCount > 0 ? '$memberLabel · $onlineCount online' : memberLabel,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: context.textMuted, fontSize: 12),
+        style: TextStyle(color: context.textMuted, fontSize: 11),
       );
     }
-    final wsState = ref.watch(websocketProvider);
     final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
     final peerOnline = peer != null && wsState.isUserOnline(peer.userId);
     return Text(
-      peerOnline ? 'Online' : 'Offline',
+      peerOnline ? 'online' : 'offline',
       style: TextStyle(
         color: peerOnline ? EchoTheme.online : context.textMuted,
-        fontSize: 12,
+        fontSize: 11,
       ),
     );
   }

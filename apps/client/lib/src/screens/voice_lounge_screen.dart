@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -1322,179 +1323,195 @@ class _FloatingDock extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-        decoration: BoxDecoration(
-          color: context.surface.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(32),
-          border: Border.all(color: context.border.withValues(alpha: 0.5)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 20,
-              offset: const Offset(0, 4),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(32),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xE01C1C1E),
+              borderRadius: BorderRadius.circular(32),
+              border: Border.all(color: context.border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  blurRadius: 40,
+                  offset: const Offset(0, 16),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // -- Mic + submenu (noise suppression) --
-            _DockButtonWithSubmenu(
-              icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
-              tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
-              isActive: voiceSettings.selfMuted,
-              activeColor: EchoTheme.danger,
-              onPressed: () async {
-                final notifier = ref.read(voiceSettingsProvider.notifier);
-                final nextMuted = !voiceSettings.selfMuted;
-                await notifier.setSelfMuted(nextMuted);
-                ref
-                    .read(livekitVoiceProvider.notifier)
-                    .setCaptureEnabled(
-                      !nextMuted && !voiceSettings.selfDeafened,
-                    );
-              },
-              onSubmenuTap: () => onToggleSubmenu(_DockSubmenu.mic),
-              submenuActive: activeSubmenu == _DockSubmenu.mic,
-              submenuLayerLink: micLayerLink,
-            ),
-            // -- Deafen (tap only) --
-            _buildDockItem(
-              context,
-              icon: voiceSettings.selfDeafened
-                  ? Icons.headset_off
-                  : Icons.headset,
-              tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
-              isActive: voiceSettings.selfDeafened,
-              activeColor: EchoTheme.danger,
-              onPressed: () async {
-                final notifier = ref.read(voiceSettingsProvider.notifier);
-                final nextDeafened = !voiceSettings.selfDeafened;
-                await notifier.setSelfDeafened(nextDeafened);
-                await ref
-                    .read(livekitVoiceProvider.notifier)
-                    .setDeafened(nextDeafened);
-              },
-            ),
-            // -- Camera + submenu (device picker) --
-            _DockButtonWithSubmenu(
-              icon: voiceState.isVideoEnabled
-                  ? Icons.videocam
-                  : Icons.videocam_off,
-              tooltip: voiceState.isVideoEnabled
-                  ? 'Turn off camera'
-                  : 'Turn on camera',
-              isActive: voiceState.isVideoEnabled,
-              activeColor: context.accent,
-              onPressed: () async {
-                await ref.read(livekitVoiceProvider.notifier).toggleVideo();
-              },
-              onSubmenuTap: () => onToggleSubmenu(_DockSubmenu.camera),
-              submenuActive: activeSubmenu == _DockSubmenu.camera,
-              submenuLayerLink: cameraLayerLink,
-            ),
-            // -- Screen Share + submenu (quality settings) --
-            if (VoiceLoungeScreen._supportsScreenShare)
-              _DockButtonWithSubmenu(
-                icon: screenShare.isScreenSharing
-                    ? Icons.stop_screen_share
-                    : Icons.screen_share,
-                tooltip: screenShare.isScreenSharing
-                    ? 'Stop sharing'
-                    : 'Share screen',
-                isActive: screenShare.isScreenSharing,
-                activeColor: EchoTheme.online,
-                onPressed: () async {
-                  final lkNotifier = ref.read(livekitVoiceProvider.notifier);
-                  final ssNotifier = ref.read(screenShareProvider.notifier);
-                  if (screenShare.isScreenSharing) {
-                    await lkNotifier.setScreenShareEnabled(false);
-                    ssNotifier.setLiveKitScreenShareActive(false);
-                  } else {
-                    if (lk.lkPlatformIsDesktop()) {
-                      try {
-                        final source = await showDialog<DesktopCapturerSource>(
-                          context: context,
-                          builder: (_) => lk.ScreenSelectDialog(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // -- Mic + submenu (noise suppression) --
+                _DockButtonWithSubmenu(
+                  icon: voiceSettings.selfMuted ? Icons.mic_off : Icons.mic,
+                  tooltip: voiceSettings.selfMuted ? 'Unmute' : 'Mute',
+                  isActive: voiceSettings.selfMuted,
+                  activeColor: EchoTheme.danger,
+                  onPressed: () async {
+                    final notifier = ref.read(voiceSettingsProvider.notifier);
+                    final nextMuted = !voiceSettings.selfMuted;
+                    await notifier.setSelfMuted(nextMuted);
+                    ref
+                        .read(livekitVoiceProvider.notifier)
+                        .setCaptureEnabled(
+                          !nextMuted && !voiceSettings.selfDeafened,
                         );
-                        if (source == null || !context.mounted) return;
-                        final track =
-                            await lk.LocalVideoTrack.createScreenShareTrack(
-                              lk.ScreenShareCaptureOptions(
-                                sourceId: source.id,
-                                maxFrameRate: 15.0,
-                              ),
+                  },
+                  onSubmenuTap: () => onToggleSubmenu(_DockSubmenu.mic),
+                  submenuActive: activeSubmenu == _DockSubmenu.mic,
+                  submenuLayerLink: micLayerLink,
+                ),
+                // -- Deafen (tap only) --
+                _buildDockItem(
+                  context,
+                  icon: voiceSettings.selfDeafened
+                      ? Icons.headset_off
+                      : Icons.headset,
+                  tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
+                  isActive: voiceSettings.selfDeafened,
+                  activeColor: EchoTheme.danger,
+                  onPressed: () async {
+                    final notifier = ref.read(voiceSettingsProvider.notifier);
+                    final nextDeafened = !voiceSettings.selfDeafened;
+                    await notifier.setSelfDeafened(nextDeafened);
+                    await ref
+                        .read(livekitVoiceProvider.notifier)
+                        .setDeafened(nextDeafened);
+                  },
+                ),
+                // -- Camera + submenu (device picker) --
+                _DockButtonWithSubmenu(
+                  icon: voiceState.isVideoEnabled
+                      ? Icons.videocam
+                      : Icons.videocam_off,
+                  tooltip: voiceState.isVideoEnabled
+                      ? 'Turn off camera'
+                      : 'Turn on camera',
+                  isActive: voiceState.isVideoEnabled,
+                  activeColor: context.accent,
+                  onPressed: () async {
+                    await ref.read(livekitVoiceProvider.notifier).toggleVideo();
+                  },
+                  onSubmenuTap: () => onToggleSubmenu(_DockSubmenu.camera),
+                  submenuActive: activeSubmenu == _DockSubmenu.camera,
+                  submenuLayerLink: cameraLayerLink,
+                ),
+                // -- Screen Share + submenu (quality settings) --
+                if (VoiceLoungeScreen._supportsScreenShare)
+                  _DockButtonWithSubmenu(
+                    icon: screenShare.isScreenSharing
+                        ? Icons.stop_screen_share
+                        : Icons.screen_share,
+                    tooltip: screenShare.isScreenSharing
+                        ? 'Stop sharing'
+                        : 'Share screen',
+                    isActive: screenShare.isScreenSharing,
+                    activeColor: EchoTheme.online,
+                    onPressed: () async {
+                      final lkNotifier = ref.read(
+                        livekitVoiceProvider.notifier,
+                      );
+                      final ssNotifier = ref.read(screenShareProvider.notifier);
+                      if (screenShare.isScreenSharing) {
+                        await lkNotifier.setScreenShareEnabled(false);
+                        ssNotifier.setLiveKitScreenShareActive(false);
+                      } else {
+                        if (lk.lkPlatformIsDesktop()) {
+                          try {
+                            final source =
+                                await showDialog<DesktopCapturerSource>(
+                                  context: context,
+                                  builder: (_) => lk.ScreenSelectDialog(),
+                                );
+                            if (source == null || !context.mounted) return;
+                            final track =
+                                await lk.LocalVideoTrack.createScreenShareTrack(
+                                  lk.ScreenShareCaptureOptions(
+                                    sourceId: source.id,
+                                    maxFrameRate: 15.0,
+                                  ),
+                                );
+                            final room = lkNotifier.room;
+                            if (room != null) {
+                              await room.localParticipant?.publishVideoTrack(
+                                track,
+                              );
+                              ssNotifier.setLiveKitScreenShareActive(true);
+                            }
+                          } catch (e) {
+                            debugPrint(
+                              '[VoiceLounge] Desktop screen share failed: $e',
                             );
-                        final room = lkNotifier.room;
-                        if (room != null) {
-                          await room.localParticipant?.publishVideoTrack(track);
-                          ssNotifier.setLiveKitScreenShareActive(true);
+                          }
+                        } else {
+                          final ok = await lkNotifier.setScreenShareEnabled(
+                            true,
+                          );
+                          if (ok) {
+                            ssNotifier.setLiveKitScreenShareActive(true);
+                          }
                         }
-                      } catch (e) {
-                        debugPrint(
-                          '[VoiceLounge] Desktop screen share failed: $e',
-                        );
                       }
-                    } else {
-                      final ok = await lkNotifier.setScreenShareEnabled(true);
-                      if (ok) {
-                        ssNotifier.setLiveKitScreenShareActive(true);
-                      }
+                    },
+                    onSubmenuTap: () =>
+                        onToggleSubmenu(_DockSubmenu.screenShare),
+                    submenuActive: activeSubmenu == _DockSubmenu.screenShare,
+                    submenuLayerLink: screenShareLayerLink,
+                  ),
+                // -- Draw toggle + submenu (tools) -- (hidden in spotlight mode)
+                if (!spotlightMode)
+                  _DockButtonWithSubmenu(
+                    icon: Icons.edit,
+                    tooltip: isDrawing ? 'Stop drawing' : 'Draw',
+                    isActive: isDrawing,
+                    activeColor: context.accent,
+                    onPressed: onToggleDrawing,
+                    onSubmenuTap: () => onToggleSubmenu(_DockSubmenu.draw),
+                    submenuActive: activeSubmenu == _DockSubmenu.draw,
+                    submenuLayerLink: drawingToolsLayerLink,
+                  ),
+                _dockDivider(context),
+                // -- Canvas/Spotlight toggle --
+                _buildDockItem(
+                  context,
+                  icon: spotlightMode ? Icons.grid_view : Icons.people,
+                  tooltip: spotlightMode ? 'Canvas view' : 'Spotlight view',
+                  isActive: spotlightMode,
+                  activeColor: context.accent,
+                  onPressed: onToggleSpotlight,
+                ),
+                _dockDivider(context),
+                // ── Leave ──
+                _buildDockItem(
+                  context,
+                  icon: Icons.call_end,
+                  tooltip: 'Leave',
+                  isActive: true,
+                  activeColor: EchoTheme.danger,
+                  isDestructive: true,
+                  onPressed: () async {
+                    if (screenShare.isScreenSharing) {
+                      await ref
+                          .read(livekitVoiceProvider.notifier)
+                          .setScreenShareEnabled(false);
+                      ref
+                          .read(screenShareProvider.notifier)
+                          .setLiveKitScreenShareActive(false);
                     }
-                  }
-                },
-                onSubmenuTap: () => onToggleSubmenu(_DockSubmenu.screenShare),
-                submenuActive: activeSubmenu == _DockSubmenu.screenShare,
-                submenuLayerLink: screenShareLayerLink,
-              ),
-            // -- Draw toggle + submenu (tools) -- (hidden in spotlight mode)
-            if (!spotlightMode)
-              _DockButtonWithSubmenu(
-                icon: Icons.edit,
-                tooltip: isDrawing ? 'Stop drawing' : 'Draw',
-                isActive: isDrawing,
-                activeColor: context.accent,
-                onPressed: onToggleDrawing,
-                onSubmenuTap: () => onToggleSubmenu(_DockSubmenu.draw),
-                submenuActive: activeSubmenu == _DockSubmenu.draw,
-                submenuLayerLink: drawingToolsLayerLink,
-              ),
-            _dockDivider(context),
-            // -- Canvas/Spotlight toggle --
-            _buildDockItem(
-              context,
-              icon: spotlightMode ? Icons.grid_view : Icons.people,
-              tooltip: spotlightMode ? 'Canvas view' : 'Spotlight view',
-              isActive: spotlightMode,
-              activeColor: context.accent,
-              onPressed: onToggleSpotlight,
+                    await ref
+                        .read(channelsProvider.notifier)
+                        .leaveVoiceChannel(conversationId, channelId);
+                    await ref
+                        .read(livekitVoiceProvider.notifier)
+                        .leaveChannel();
+                  },
+                ),
+              ],
             ),
-            _dockDivider(context),
-            // ── Leave ──
-            _buildDockItem(
-              context,
-              icon: Icons.call_end,
-              tooltip: 'Leave',
-              isActive: true,
-              activeColor: EchoTheme.danger,
-              isDestructive: true,
-              onPressed: () async {
-                if (screenShare.isScreenSharing) {
-                  await ref
-                      .read(livekitVoiceProvider.notifier)
-                      .setScreenShareEnabled(false);
-                  ref
-                      .read(screenShareProvider.notifier)
-                      .setLiveKitScreenShareActive(false);
-                }
-                await ref
-                    .read(channelsProvider.notifier)
-                    .leaveVoiceChannel(conversationId, channelId);
-                await ref.read(livekitVoiceProvider.notifier).leaveChannel();
-              },
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1518,22 +1535,17 @@ class _FloatingDock extends ConsumerWidget {
     bool isDestructive = false,
     required VoidCallback onPressed,
   }) {
+    final Color bgColor;
     final Color iconColor;
     if (isDestructive) {
-      iconColor = activeColor ?? EchoTheme.danger;
+      bgColor = activeColor ?? EchoTheme.danger;
+      iconColor = Colors.white;
     } else if (isActive) {
-      iconColor = activeColor ?? context.accent;
-    } else {
-      iconColor = context.textSecondary;
-    }
-
-    final Color bgColor;
-    if (isDestructive) {
-      bgColor = (activeColor ?? EchoTheme.danger).withValues(alpha: 0.15);
-    } else if (isActive) {
-      bgColor = (activeColor ?? context.accent).withValues(alpha: 0.12);
+      bgColor = activeColor ?? context.accent;
+      iconColor = Colors.white;
     } else {
       bgColor = Colors.transparent;
+      iconColor = context.textPrimary;
     }
 
     return Tooltip(
@@ -1545,13 +1557,13 @@ class _FloatingDock extends ConsumerWidget {
             HapticFeedback.lightImpact();
             onPressed();
           },
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(20),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
-            width: 44,
-            height: 44,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
-            child: Icon(icon, size: 20, color: iconColor),
+            child: Icon(icon, size: 18, color: iconColor),
           ),
         ),
       ),
@@ -1586,12 +1598,15 @@ class _DockButtonWithSubmenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color iconColor = isActive
-        ? (activeColor ?? context.accent)
-        : context.textSecondary;
-    final Color bgColor = isActive
-        ? (activeColor ?? context.accent).withValues(alpha: 0.12)
-        : Colors.transparent;
+    final Color bgColor;
+    final Color iconColor;
+    if (isActive) {
+      bgColor = activeColor ?? context.accent;
+      iconColor = Colors.white;
+    } else {
+      bgColor = Colors.transparent;
+      iconColor = context.textPrimary;
+    }
 
     Widget? buildSubmenuTrigger() {
       if (onSubmenuTap == null) return null;
@@ -1639,16 +1654,16 @@ class _DockButtonWithSubmenu extends StatelessWidget {
                 HapticFeedback.lightImpact();
                 onPressed();
               },
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(20),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                width: 44,
-                height: 44,
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
                   color: bgColor,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, size: 20, color: iconColor),
+                child: Icon(icon, size: 18, color: iconColor),
               ),
             ),
           ),

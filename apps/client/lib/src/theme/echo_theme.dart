@@ -32,6 +32,29 @@ class EchoTheme {
   static const divider = border;
 
   // ---------------------------------------------------------------------------
+  // Typography helpers
+  // ---------------------------------------------------------------------------
+
+  /// Monospace style for handles, key fingerprints, code blocks, and the
+  /// version line. UI text uses Inter (theme default); reach for this only
+  /// when monospace is meaningful.
+  static TextStyle mono({
+    double? fontSize,
+    FontWeight? fontWeight,
+    Color? color,
+    double? letterSpacing,
+    double? height,
+  }) {
+    return GoogleFonts.firaCode(
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      color: color,
+      letterSpacing: letterSpacing,
+      height: height,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Shared factory methods for theme construction
   // ---------------------------------------------------------------------------
 
@@ -44,7 +67,7 @@ class EchoTheme {
     final base = brightness == Brightness.dark
         ? ThemeData.dark().textTheme
         : ThemeData.light().textTheme;
-    final baseTextTheme = GoogleFonts.firaCodeTextTheme(base);
+    final baseTextTheme = GoogleFonts.interTextTheme(base);
     return baseTextTheme.copyWith(
       headlineLarge: baseTextTheme.headlineLarge?.copyWith(
         fontSize: 24,
@@ -100,10 +123,7 @@ class EchoTheme {
       style: FilledButton.styleFrom(
         backgroundColor: accentColor,
         foregroundColor: foregroundColor,
-        textStyle: GoogleFonts.firaCode(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-        ),
+        textStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       ),
@@ -114,10 +134,7 @@ class EchoTheme {
     return TextButtonThemeData(
       style: TextButton.styleFrom(
         foregroundColor: accentColor,
-        textStyle: GoogleFonts.firaCode(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-        ),
+        textStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w500),
       ),
     );
   }
@@ -158,8 +175,8 @@ class EchoTheme {
         borderSide: BorderSide(color: focusBorderColor, width: 1),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      hintStyle: GoogleFonts.firaCode(color: hintColor, fontSize: 13),
-      labelStyle: GoogleFonts.firaCode(color: labelColor, fontSize: 13),
+      hintStyle: GoogleFonts.inter(color: hintColor, fontSize: 13),
+      labelStyle: GoogleFonts.inter(color: labelColor, fontSize: 13),
     );
   }
 
@@ -196,7 +213,7 @@ class EchoTheme {
         foregroundColor: textPrimary,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        titleTextStyle: GoogleFonts.firaCode(
+        titleTextStyle: GoogleFonts.inter(
           fontSize: 16,
           fontWeight: FontWeight.w600,
           color: textPrimary,
@@ -225,7 +242,7 @@ class EchoTheme {
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: border, width: 1),
         ),
-        textStyle: GoogleFonts.firaCode(color: textPrimary, fontSize: 12),
+        textStyle: GoogleFonts.inter(color: textPrimary, fontSize: 12),
         waitDuration: const Duration(milliseconds: 500),
       ),
       dialogTheme: DialogThemeData(
@@ -243,10 +260,7 @@ class EchoTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: surface,
-        contentTextStyle: GoogleFonts.firaCode(
-          color: textPrimary,
-          fontSize: 13,
-        ),
+        contentTextStyle: GoogleFonts.inter(color: textPrimary, fontSize: 13),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         behavior: SnackBarBehavior.floating,
         insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
@@ -394,7 +408,7 @@ class EchoTheme {
         foregroundColor: lightTextPrimary,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        titleTextStyle: GoogleFonts.firaCode(
+        titleTextStyle: GoogleFonts.inter(
           fontSize: 16,
           fontWeight: FontWeight.w600,
           color: lightTextPrimary,
@@ -433,7 +447,7 @@ class EchoTheme {
             ),
           ],
         ),
-        textStyle: GoogleFonts.firaCode(color: lightTextPrimary, fontSize: 12),
+        textStyle: GoogleFonts.inter(color: lightTextPrimary, fontSize: 12),
         waitDuration: const Duration(milliseconds: 500),
       ),
       dialogTheme: DialogThemeData(
@@ -451,7 +465,7 @@ class EchoTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: lightSurface,
-        contentTextStyle: GoogleFonts.firaCode(
+        contentTextStyle: GoogleFonts.inter(
           color: lightTextPrimary,
           fontSize: 13,
         ),
@@ -495,7 +509,7 @@ class EchoTheme {
         foregroundColor: graphiteTextPrimary,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        titleTextStyle: GoogleFonts.firaCode(
+        titleTextStyle: GoogleFonts.inter(
           fontSize: 16,
           fontWeight: FontWeight.w600,
           color: graphiteTextPrimary,
@@ -530,10 +544,7 @@ class EchoTheme {
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: graphiteBorder, width: 1),
         ),
-        textStyle: GoogleFonts.firaCode(
-          color: graphiteTextPrimary,
-          fontSize: 12,
-        ),
+        textStyle: GoogleFonts.inter(color: graphiteTextPrimary, fontSize: 12),
         waitDuration: const Duration(milliseconds: 500),
       ),
       dialogTheme: DialogThemeData(
@@ -551,7 +562,7 @@ class EchoTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: graphiteSurface,
-        contentTextStyle: GoogleFonts.firaCode(
+        contentTextStyle: GoogleFonts.inter(
           color: graphiteTextPrimary,
           fontSize: 13,
         ),
@@ -595,7 +606,7 @@ class EchoTheme {
         foregroundColor: emberTextPrimary,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        titleTextStyle: GoogleFonts.firaCode(
+        titleTextStyle: GoogleFonts.inter(
           fontSize: 16,
           fontWeight: FontWeight.w600,
           color: emberTextPrimary,
@@ -630,7 +641,7 @@ class EchoTheme {
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: emberBorder, width: 1),
         ),
-        textStyle: GoogleFonts.firaCode(color: emberTextPrimary, fontSize: 12),
+        textStyle: GoogleFonts.inter(color: emberTextPrimary, fontSize: 12),
         waitDuration: const Duration(milliseconds: 500),
       ),
       dialogTheme: DialogThemeData(
@@ -648,7 +659,7 @@ class EchoTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: emberSurface,
-        contentTextStyle: GoogleFonts.firaCode(
+        contentTextStyle: GoogleFonts.inter(
           color: emberTextPrimary,
           fontSize: 13,
         ),
@@ -692,7 +703,7 @@ class EchoTheme {
         foregroundColor: neonTextPrimary,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        titleTextStyle: GoogleFonts.firaCode(
+        titleTextStyle: GoogleFonts.inter(
           fontSize: 16,
           fontWeight: FontWeight.w600,
           color: neonTextPrimary,
@@ -727,7 +738,7 @@ class EchoTheme {
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: neonBorder, width: 1),
         ),
-        textStyle: GoogleFonts.firaCode(color: neonTextPrimary, fontSize: 12),
+        textStyle: GoogleFonts.inter(color: neonTextPrimary, fontSize: 12),
         waitDuration: const Duration(milliseconds: 500),
       ),
       dialogTheme: DialogThemeData(
@@ -745,7 +756,7 @@ class EchoTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: neonSurface,
-        contentTextStyle: GoogleFonts.firaCode(
+        contentTextStyle: GoogleFonts.inter(
           color: neonTextPrimary,
           fontSize: 13,
         ),
@@ -789,7 +800,7 @@ class EchoTheme {
         foregroundColor: sakuraTextPrimary,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        titleTextStyle: GoogleFonts.firaCode(
+        titleTextStyle: GoogleFonts.inter(
           fontSize: 16,
           fontWeight: FontWeight.w600,
           color: sakuraTextPrimary,
@@ -828,7 +839,7 @@ class EchoTheme {
             ),
           ],
         ),
-        textStyle: GoogleFonts.firaCode(color: sakuraTextPrimary, fontSize: 12),
+        textStyle: GoogleFonts.inter(color: sakuraTextPrimary, fontSize: 12),
         waitDuration: const Duration(milliseconds: 500),
       ),
       dialogTheme: DialogThemeData(
@@ -846,7 +857,7 @@ class EchoTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: sakuraSurface,
-        contentTextStyle: GoogleFonts.firaCode(
+        contentTextStyle: GoogleFonts.inter(
           color: sakuraTextPrimary,
           fontSize: 13,
         ),
@@ -890,7 +901,7 @@ class EchoTheme {
         foregroundColor: auroraTextPrimary,
         elevation: 0,
         surfaceTintColor: Colors.transparent,
-        titleTextStyle: GoogleFonts.firaCode(
+        titleTextStyle: GoogleFonts.inter(
           fontSize: 16,
           fontWeight: FontWeight.w600,
           color: auroraTextPrimary,
@@ -922,7 +933,7 @@ class EchoTheme {
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: auroraBorder, width: 1),
         ),
-        textStyle: GoogleFonts.firaCode(color: auroraTextPrimary, fontSize: 12),
+        textStyle: GoogleFonts.inter(color: auroraTextPrimary, fontSize: 12),
         waitDuration: const Duration(milliseconds: 500),
       ),
       dialogTheme: DialogThemeData(
@@ -940,7 +951,7 @@ class EchoTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: auroraSurface,
-        contentTextStyle: GoogleFonts.firaCode(
+        contentTextStyle: GoogleFonts.inter(
           color: auroraTextPrimary,
           fontSize: 13,
         ),
