@@ -352,6 +352,21 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           'Client v$appVersion',
           style: TextStyle(color: context.textMuted, fontSize: 14),
         ),
+        SelectableText(
+          'Build $appCommit'
+          '${appBuildTime.isEmpty ? '' : ' · $appBuildTime'}',
+          style: TextStyle(
+            color: context.textMuted,
+            fontSize: 12,
+            fontFamily: 'monospace',
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Upload limit: 100 MB (Cloudflare cap; larger files need a chunked '
+          'upload — not yet implemented).',
+          style: TextStyle(color: context.textMuted, fontSize: 11, height: 1.4),
+        ),
         const SizedBox(height: 16),
         _buildCheckForUpdates(),
         const SizedBox(height: 24),

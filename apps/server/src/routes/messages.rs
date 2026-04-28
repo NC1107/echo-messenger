@@ -456,7 +456,9 @@ pub async fn get_thread_replies(
     }
 
     let limit = params.limit.unwrap_or(50).min(100);
-    let replies = db::messages::get_thread_replies(&state.pool, message_id, limit)
+    // #519: scope to the parent's conversation so historical cross-conversation
+    // replies (or any future regression) cannot leak content across DMs.
+    let replies = db::messages::get_thread_replies(&state.pool, message_id, conversation_id, limit)
         .await
         .map_err(|e| {
             tracing::error!("DB error in get_thread_replies/fetch: {e:?}");

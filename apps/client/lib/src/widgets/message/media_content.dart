@@ -326,43 +326,50 @@ class MediaContentState extends State<MediaContent> {
                 child: InteractiveViewer(
                   minScale: 0.8,
                   maxScale: 4,
-                  child: imageUrl.endsWith('.gif')
-                      ? Image.network(
-                          imageUrl,
-                          headers: headers,
-                          fit: BoxFit.contain,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, _, _) => const Center(
-                            child: Icon(
-                              Icons.broken_image_outlined,
-                              color: Colors.white54,
-                              size: 48,
+                  child: GestureDetector(
+                    // Tap on the image (or its letterbox padding) dismisses
+                    // the viewer. Pinch / pan are different gesture kinds
+                    // and still flow up to InteractiveViewer.
+                    onTap: () => Navigator.of(dialogContext).pop(),
+                    behavior: HitTestBehavior.opaque,
+                    child: imageUrl.endsWith('.gif')
+                        ? Image.network(
+                            imageUrl,
+                            headers: headers,
+                            fit: BoxFit.contain,
+                            gaplessPlayback: true,
+                            errorBuilder: (_, _, _) => const Center(
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                color: Colors.white54,
+                                size: 48,
+                              ),
                             ),
-                          ),
-                        )
-                      : CachedNetworkImage(
-                          imageUrl: imageUrl,
-                          cacheKey: stableMediaCacheKey(imageUrl),
-                          cacheManager: chatMediaCacheManager,
-                          httpHeaders: headers,
-                          fit: BoxFit.contain,
-                          placeholder: (_, _) => const SizedBox(
-                            width: 320,
-                            height: 240,
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
+                          )
+                        : CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            cacheKey: stableMediaCacheKey(imageUrl),
+                            cacheManager: chatMediaCacheManager,
+                            httpHeaders: headers,
+                            fit: BoxFit.contain,
+                            placeholder: (_, _) => const SizedBox(
+                              width: 320,
+                              height: 240,
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            errorWidget: (_, _, _) => const Center(
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                color: Colors.white54,
+                                size: 48,
                               ),
                             ),
                           ),
-                          errorWidget: (_, _, _) => const Center(
-                            child: Icon(
-                              Icons.broken_image_outlined,
-                              color: Colors.white54,
-                              size: 48,
-                            ),
-                          ),
-                        ),
+                  ),
                 ),
               ),
             ),
@@ -756,6 +763,23 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     );
   }
 
+  /// Initialize the controller (if needed) then open fullscreen. Wired to the
+  /// "Open" button and to the bubble thumbnail tap so users get an in-app
+  /// player without needing to first tap-to-play and then tap fullscreen.
+  Future<void> _openInApp() async {
+    if (_controller == null) {
+      await _initAndPlay();
+    }
+    if (!mounted) return;
+    if (_controller != null && !_initFailed) {
+      _openFullscreen();
+    } else {
+      // Init failed (codec unsupported, network down, etc.) — fall back to
+      // launching externally so the user isn't stuck.
+      widget.onOpen();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -780,9 +804,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
               spacing: 8,
               children: [
                 OutlinedButton.icon(
-                  onPressed: widget.onOpen,
-                  icon: const Icon(Icons.open_in_new, size: 14),
-                  label: const Text('Open'),
+                  onPressed: _openInApp,
+                  icon: const Icon(Icons.play_arrow, size: 14),
+                  label: const Text('Watch'),
                 ),
                 OutlinedButton.icon(
                   onPressed: widget.onDownload,
@@ -848,6 +872,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         button: true,
         child: GestureDetector(
           onTap: widget.onOpen,
+          // Init failed permanently — fall back to external open. The
+          // placeholder before the user taps play is handled above and
+          // routes through _openInApp via _initAndPlay → _openFullscreen.
           child: Container(
             height: 170,
             color: widget.mainBg,
