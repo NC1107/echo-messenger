@@ -116,6 +116,13 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   /// horizontal space for the text field.
   bool _isMultiline = false;
 
+  /// Soft threshold for switching the input row into multi-line layout when
+  /// the text gets long enough that it'd visually wrap. Derived from the
+  /// current viewport width in `build()` (Inter 14px ≈ 7px/char average,
+  /// minus padding/icons), clamped so a 4K screen still has a sane upper
+  /// bound and a tiny mobile one still triggers eventually.
+  int _multilineCharThreshold = 40;
+
   /// Inline picker visible on mobile (replaces keyboard).
   bool _showInlinePicker = false;
 
@@ -336,9 +343,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   void _onTextChanged() {
     final text = _messageController.text;
     final empty = text.trim().isEmpty;
-    // Detect multiline either via explicit newlines or long content that
-    // is likely to soft-wrap at typical widths (~40 chars at fontSize 14).
-    final multiline = text.contains('\n') || text.length > 40;
+    // Detect multiline either via explicit newlines or content long enough
+    // to soft-wrap at the current viewport width. The character threshold
+    // is recomputed in build() from MediaQuery so a 4K-wide input doesn't
+    // jump to multi-line halfway through a normal sentence.
+    final multiline =
+        text.contains('\n') || text.length > _multilineCharThreshold;
     if (empty != _isTextEmpty || multiline != _isMultiline) {
       setState(() {
         _isTextEmpty = empty;
@@ -2022,6 +2032,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final replyToMessage = ref.watch(
       chatProvider.select((s) => s.replyToMessage),
     );
+
+    // Recompute the multiline threshold from the viewport width so the
+    // input row only flips to multi-line when the message is long enough
+    // to actually wrap visually.  Inter 14px averages ~7-8px/char; we
+    // subtract a generous fixed budget for icons/padding (~120px), divide
+    // the remainder by 8, and clamp to a sane band.
+    final width = MediaQuery.sizeOf(context).width;
+    _multilineCharThreshold = ((width - 120) / 8).clamp(35, 120).round();
 
     final displayName = conv.displayName(myUserId);
     final typingText = computeTypingText(

@@ -504,8 +504,20 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       );
       if ((response.statusCode == 200) && mounted) {
         setState(() => _isEditingDescription = false);
-        await _loadGroupInfo();
+        // Re-fetch conversations from server (which now includes description)
+        // and re-sync our local _conversation field from the refreshed
+        // provider state — without this, the screen kept rendering the
+        // pre-save Conversation object even though the DB was up to date.
         await ref.read(conversationsProvider.notifier).loadConversations();
+        if (!mounted) return;
+        final refreshed = ref
+            .read(conversationsProvider)
+            .conversations
+            .where((c) => c.id == widget.conversationId)
+            .firstOrNull;
+        if (refreshed != null) {
+          setState(() => _conversation = refreshed);
+        }
       }
     } catch (e) {
       debugPrint('[GroupInfo] _saveDescription failed: $e');

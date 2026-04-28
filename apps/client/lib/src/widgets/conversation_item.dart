@@ -551,7 +551,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
             padding: const EdgeInsets.only(left: 6),
             child: Icon(
               Icons.notifications_off_outlined,
-              size: 14,
+              size: 16,
               color: context.textMuted,
             ),
           ),
