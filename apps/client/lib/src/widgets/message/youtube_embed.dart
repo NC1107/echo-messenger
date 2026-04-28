@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
@@ -90,13 +92,25 @@ class _YouTubeEmbedState extends State<YouTubeEmbed> {
             children: [
               AspectRatio(
                 aspectRatio: 16 / 9,
-                child: YoutubePlayer(
-                  controller: controller,
-                  aspectRatio: 16 / 9,
-                  // If the player itself surfaces a runtime error, swap to
-                  // the static fallback so the user always has *something*.
-                  enableFullScreenOnVerticalDrag: false,
-                ),
+                // On web the iframe sits inside an HtmlElementView and the
+                // outer GestureDetector on the chat bubble (long-press,
+                // swipe-to-reply) wins the gesture arena before the iframe
+                // sees the tap. PointerInterceptor draws a transparent HTML
+                // element that intercepts pointer events at the DOM layer
+                // so they reach the iframe's controls. No-op on native.
+                child: kIsWeb
+                    ? PointerInterceptor(
+                        child: YoutubePlayer(
+                          controller: controller,
+                          aspectRatio: 16 / 9,
+                          enableFullScreenOnVerticalDrag: false,
+                        ),
+                      )
+                    : YoutubePlayer(
+                        controller: controller,
+                        aspectRatio: 16 / 9,
+                        enableFullScreenOnVerticalDrag: false,
+                      ),
               ),
               if (widget.title != null && widget.title!.isNotEmpty)
                 Padding(
