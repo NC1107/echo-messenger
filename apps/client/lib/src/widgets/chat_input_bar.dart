@@ -30,7 +30,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../utils/clipboard_image_helper.dart';
-import 'input/attachment_preview.dart';
+import 'input/pending_attachments_strip.dart';
 import 'input/input_status_bar.dart';
 import 'input/mention_autocomplete.dart';
 import 'input/reply_preview_bar.dart';
@@ -134,13 +134,19 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   bool _showMentionPicker = false;
   String _mentionQuery = '';
 
-  // Pending attachment (Discord-style preview before send)
-  Uint8List? _pendingAttachmentBytes;
-  String? _pendingAttachmentFileName;
-  String? _pendingAttachmentMimeType;
-  String? _pendingAttachmentExt;
-  String? _pendingAttachmentUrl;
-  bool _isUploadingAttachment = false;
+  // Pending attachments staged for the current send. Single-pick uses one
+  // entry (with the caption-and-send flow); multi-pick stages all picked
+  // files here so the user can review, cancel individual files, and watch
+  // progress before sending. Each entry carries its own ValueNotifier for
+  // upload progress so chip rebuilds don't ripple through the whole bar.
+  final List<PendingAttachment> _pendingAttachments = [];
+
+  bool get _hasPendingAttachment => _pendingAttachments.isNotEmpty;
+  bool get _isAnyPendingAttachmentUploading =>
+      _pendingAttachments.any((a) => a.isUploading);
+  bool get _allPendingAttachmentsReady =>
+      _pendingAttachments.isNotEmpty &&
+      _pendingAttachments.every((a) => a.uploadedUrl != null);
 
   // Voice recording state
   final AudioRecorder _recorder = AudioRecorder();
@@ -352,27 +358,43 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   Future<void> _sendMessage() async {
     final caption = _messageController.text.trim();
 
-    // If there's an uploaded attachment, send it as a separate message
-    if (_pendingAttachmentUrl != null && _pendingAttachmentExt != null) {
-      final marker = _buildMediaMarker(
-        extension: _pendingAttachmentExt!,
-        url: _pendingAttachmentUrl!,
-      );
-      _clearPendingAttachment();
+    // Attachments still uploading -- don't send text-only and lose them.
+    if (_hasPendingAttachment && !_allPendingAttachmentsReady) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Attachments still uploading...',
+          type: ToastType.info,
+        );
+      }
+      return;
+    }
+
+    // If there are uploaded attachments, send them as separate messages.
+    // Caption goes on the FIRST attachment so it stays attached visually;
+    // the rest are bare media markers. Matches Discord / iMessage.
+    if (_hasPendingAttachment && _allPendingAttachmentsReady) {
+      final attachments = List<PendingAttachment>.from(_pendingAttachments);
+      _clearAllPendingAttachments();
       _messageController.clear();
       _saveDraftImmediate(widget.conversation.id, '');
-      await _doSend(marker);
-      // If user typed a caption, send it as a second message
-      if (caption.isNotEmpty) {
-        await _doSend(caption);
+      for (var i = 0; i < attachments.length; i++) {
+        final att = attachments[i];
+        final marker = _buildMediaMarker(
+          extension: att.ext,
+          url: att.uploadedUrl!,
+        );
+        await _doSend(marker);
+        if (i == 0 && caption.isNotEmpty) {
+          await _doSend(caption);
+        }
       }
       widget.onMessageSent();
       return;
     }
 
-    // Attachment is still uploading -- don't send text-only and lose it.
-    if (_isUploadingAttachment ||
-        (_pendingAttachmentBytes != null && _pendingAttachmentUrl == null)) {
+    // (legacy guard kept; the above already covers the in-flight case)
+    if (_isAnyPendingAttachmentUploading) {
       if (mounted) {
         ToastService.show(
           context,
@@ -582,67 +604,114 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // Pending attachment helpers (Discord-style preview before send)
   // ---------------------------------------------------------------------------
 
+  /// Stage [bytes] as a new pending attachment and kick off its upload.
+  /// Multiple calls accumulate — the strip shows N chips for N picks until
+  /// the user sends or cancels each.
   void _setPendingAttachment({
     required List<int> bytes,
     required String fileName,
     required String mimeType,
     required String ext,
   }) {
-    setState(() {
-      _pendingAttachmentBytes = Uint8List.fromList(bytes);
-      _pendingAttachmentFileName = fileName;
-      _pendingAttachmentMimeType = mimeType;
-      _pendingAttachmentExt = ext;
-      _pendingAttachmentUrl = null;
-      _isUploadingAttachment = false;
-    });
-    _startAttachmentUpload();
+    final attachment = PendingAttachment(
+      bytes: Uint8List.fromList(bytes),
+      fileName: fileName,
+      mimeType: mimeType,
+      ext: ext,
+      sizeBytes: bytes.length,
+    );
+    setState(() => _pendingAttachments.add(attachment));
+    _startAttachmentUploadFor(attachment);
   }
 
+  /// Cancel and remove a single staged attachment. Safe to call before the
+  /// upload completes — the [cancelled] flag short-circuits the
+  /// success-path setState in [_startAttachmentUploadFor].
+  void _removePendingAttachment(PendingAttachment attachment) {
+    if (!_pendingAttachments.contains(attachment)) return;
+    attachment.cancelled = true;
+    setState(() => _pendingAttachments.remove(attachment));
+    attachment.dispose();
+  }
+
+  /// Stage an external-URL attachment (e.g. picked from the GIF browser).
+  /// No upload is performed — the URL is used as-is on send.
+  void _setPendingExternalAttachment({
+    required String url,
+    required String fileName,
+    required String mimeType,
+    required String ext,
+  }) {
+    final attachment = PendingAttachment(
+      bytes: null,
+      fileName: fileName,
+      mimeType: mimeType,
+      ext: ext,
+      sizeBytes: 0,
+      uploadedUrl: url,
+    );
+    setState(() => _pendingAttachments.add(attachment));
+  }
+
+  /// Drop all staged attachments. Called after a successful send.
+  void _clearAllPendingAttachments() {
+    if (_pendingAttachments.isEmpty) return;
+    final toDispose = List<PendingAttachment>.from(_pendingAttachments);
+    setState(() => _pendingAttachments.clear());
+    for (final att in toDispose) {
+      att.dispose();
+    }
+  }
+
+  /// Backwards-compatible no-arg clear for legacy callers (the recorder /
+  /// outer error handling). Removes the most recently staged attachment.
   void _clearPendingAttachment() {
-    setState(() {
-      _pendingAttachmentBytes = null;
-      _pendingAttachmentFileName = null;
-      _pendingAttachmentMimeType = null;
-      _pendingAttachmentExt = null;
-      _pendingAttachmentUrl = null;
-      _isUploadingAttachment = false;
-    });
+    if (_pendingAttachments.isEmpty) return;
+    _removePendingAttachment(_pendingAttachments.last);
   }
 
-  Future<void> _startAttachmentUpload() async {
-    final bytes = _pendingAttachmentBytes;
-    final fileName = _pendingAttachmentFileName;
-    final mimeType = _pendingAttachmentMimeType;
-    if (bytes == null || fileName == null || mimeType == null) return;
-
-    setState(() => _isUploadingAttachment = true);
-
+  Future<void> _startAttachmentUploadFor(PendingAttachment att) async {
+    if (att.isExternalUrl) return; // already has a URL (e.g. GIF picker).
+    final bytes = att.bytes!;
     final serverUrl = ref.read(serverUrlProvider);
-
     try {
       final result = await _uploadWithAuthRetry(
         serverUrl: serverUrl,
         bytes: bytes,
-        fileName: fileName,
-        mimeType: mimeType,
+        fileName: att.fileName,
+        mimeType: att.mimeType,
+        onProgress: (sent, total) {
+          if (att.cancelled || total <= 0) return;
+          att.progress.value = (sent / total).clamp(0.0, 1.0);
+        },
       );
-      if (!mounted) return;
+      if (!mounted || att.cancelled) return;
 
       if (result != null) {
         setState(() {
-          _pendingAttachmentUrl = result;
-          _isUploadingAttachment = false;
+          att.uploadedUrl = result;
+          att.isUploading = false;
+          att.progress.value = 1.0;
         });
         _inputFocusNode.requestFocus();
       } else {
-        ToastService.show(context, 'Upload failed', type: ToastType.error);
-        _clearPendingAttachment();
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Upload failed: ${att.fileName}',
+            type: ToastType.error,
+          );
+        }
+        _removePendingAttachment(att);
       }
     } catch (e) {
-      if (!mounted) return;
-      ToastService.show(context, 'Upload failed: $e', type: ToastType.error);
-      _clearPendingAttachment();
+      if (!mounted || att.cancelled) return;
+      ToastService.show(
+        context,
+        'Upload failed: ${att.fileName}',
+        type: ToastType.error,
+      );
+      _removePendingAttachment(att);
     }
   }
 
@@ -657,6 +726,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     required List<int> bytes,
     required String fileName,
     required String mimeType,
+    void Function(int sent, int total)? onProgress,
   }) {
     final request = http.MultipartRequest(
       'POST',
@@ -670,14 +740,43 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         ? MediaType(parts[0], parts[1])
         : MediaType('application', _kOctetStream);
 
-    request.files.add(
-      http.MultipartFile.fromBytes(
-        'file',
-        bytes,
-        filename: fileName,
-        contentType: mediaType,
-      ),
-    );
+    if (onProgress == null) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          bytes,
+          filename: fileName,
+          contentType: mediaType,
+        ),
+      );
+    } else {
+      // Wrap the byte payload in a chunked async stream so we can report
+      // upload progress per chunk. The numbers reflect *stream emission*
+      // rather than wire-level progress (the OS socket buffers some bytes),
+      // but for files >1 MB the progress is reasonably accurate after the
+      // buffer fills.
+      const chunkSize = 64 * 1024;
+      final total = bytes.length;
+      Stream<List<int>> chunked() async* {
+        var offset = 0;
+        while (offset < total) {
+          final end = (offset + chunkSize).clamp(0, total);
+          yield bytes.sublist(offset, end);
+          offset = end;
+          onProgress(offset, total);
+        }
+      }
+
+      request.files.add(
+        http.MultipartFile(
+          'file',
+          chunked(),
+          total,
+          filename: fileName,
+          contentType: mediaType,
+        ),
+      );
+    }
     return request;
   }
 
@@ -686,6 +785,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     required List<int> bytes,
     required String fileName,
     required String mimeType,
+    void Function(int sent, int total)? onProgress,
   }) async {
     // If the user has the "preserve original filenames" privacy toggle off,
     // upload the file under a generic name keyed off the extension. The file
@@ -703,6 +803,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         bytes: bytes,
         fileName: uploadFileName,
         mimeType: mimeType,
+        onProgress: onProgress,
       );
 
       final response = await request.send();
@@ -1491,9 +1592,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     } else if (_showMediaPicker) {
       setState(() => _showMediaPicker = false);
       _inputFocusNode.requestFocus();
-    } else if (_pendingAttachmentBytes != null ||
-        _pendingAttachmentUrl != null) {
-      _clearPendingAttachment();
+    } else if (_hasPendingAttachment) {
+      _clearAllPendingAttachments();
     } else if (_isEditing) {
       _cancelEditMode();
     } else if (ref.read(chatProvider).replyToMessage != null) {
@@ -1718,9 +1818,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   Widget _buildSendButton() {
-    final hasContent =
-        !_isTextEmpty ||
-        (_pendingAttachmentUrl != null && !_isUploadingAttachment);
+    final hasContent = !_isTextEmpty || _allPendingAttachmentsReady;
 
     // For DMs, gate on crypto readiness so users can't send before encryption
     // is initialized (which would fail with a confusing error).
@@ -1896,16 +1994,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         );
       },
       onGifSelected: (gifUrl, slug) {
-        setState(() {
-          _showMediaPicker = false;
-          // GIF is external URL -- no upload needed, set directly
-          _pendingAttachmentUrl = gifUrl;
-          _pendingAttachmentExt = 'gif';
-          _pendingAttachmentFileName = 'gif';
-          _pendingAttachmentMimeType = _kImageGif;
-          _pendingAttachmentBytes = null; // no local bytes for GIFs
-          _isUploadingAttachment = false;
-        });
+        setState(() => _showMediaPicker = false);
+        // GIF is an external URL -- no upload needed.
+        _setPendingExternalAttachment(
+          url: gifUrl,
+          fileName: 'gif',
+          mimeType: _kImageGif,
+          ext: 'gif',
+        );
       },
       onClose: () {
         setState(() => _showMediaPicker = false);
@@ -1917,9 +2013,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
-
-  bool get _hasPendingAttachment =>
-      _pendingAttachmentBytes != null || _pendingAttachmentUrl != null;
 
   @override
   Widget build(BuildContext context) {
@@ -1991,15 +2084,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                       onDismiss: () =>
                           ref.read(chatProvider.notifier).clearReplyTo(),
                     ),
-                  // Attachment preview bar (Discord-style)
+                  // Pending-attachments strip — one chip per staged file
+                  // with thumbnail, name, size, progress, and cancel.
                   if (_hasPendingAttachment)
-                    AttachmentPreview(
-                      attachmentBytes: _pendingAttachmentBytes,
-                      fileName: _pendingAttachmentFileName,
-                      mimeType: _pendingAttachmentMimeType,
-                      uploadedUrl: _pendingAttachmentUrl,
-                      isUploading: _isUploadingAttachment,
-                      onClear: _clearPendingAttachment,
+                    PendingAttachmentsStrip(
+                      attachments: _pendingAttachments,
+                      onCancel: _removePendingAttachment,
                     ),
                   _buildInputRow(
                     showMediaPicker: showMediaPicker,
@@ -2040,15 +2130,13 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                             _onInputChanged(newText);
                           },
                           onGifSelected: (gifUrl, slug) {
-                            setState(() {
-                              _showInlinePicker = false;
-                              _pendingAttachmentUrl = gifUrl;
-                              _pendingAttachmentExt = 'gif';
-                              _pendingAttachmentFileName = 'gif';
-                              _pendingAttachmentMimeType = _kImageGif;
-                              _pendingAttachmentBytes = null;
-                              _isUploadingAttachment = false;
-                            });
+                            setState(() => _showInlinePicker = false);
+                            _setPendingExternalAttachment(
+                              url: gifUrl,
+                              fileName: 'gif',
+                              mimeType: _kImageGif,
+                              ext: 'gif',
+                            );
                           },
                           onPhotoSelected: _handlePhotoSelected,
                           onClose: () {
