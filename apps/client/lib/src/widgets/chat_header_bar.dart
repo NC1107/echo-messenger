@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -175,7 +176,7 @@ class ChatHeaderBar extends ConsumerWidget {
   ) {
     final nameText = Text(
       displayName,
-      style: TextStyle(
+      style: GoogleFonts.inter(
         color: context.textPrimary,
         fontSize: 15,
         fontWeight: FontWeight.w600,
@@ -242,14 +243,14 @@ class ChatHeaderBar extends ConsumerWidget {
         onlineCount > 0 ? '$memberLabel · $onlineCount online' : memberLabel,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: context.textMuted, fontSize: 11),
+        style: GoogleFonts.inter(color: context.textMuted, fontSize: 11),
       );
     }
     final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
     final peerOnline = peer != null && wsState.isUserOnline(peer.userId);
     return Text(
       peerOnline ? 'online' : 'offline',
-      style: TextStyle(
+      style: GoogleFonts.inter(
         color: peerOnline ? EchoTheme.online : context.textMuted,
         fontSize: 11,
       ),
@@ -479,7 +480,7 @@ class ChatHeaderBar extends ConsumerWidget {
       children: [
         Icon(icon, size: 18, color: itemColor),
         const SizedBox(width: 12),
-        Text(label, style: TextStyle(color: itemColor, fontSize: 13)),
+        Text(label, style: GoogleFonts.inter(color: itemColor, fontSize: 13)),
       ],
     );
   }
@@ -513,10 +514,10 @@ class ChatHeaderBar extends ConsumerWidget {
             color: EchoTheme.warning,
           ),
           const SizedBox(width: 8),
-          const Expanded(
+          Expanded(
             child: Text(
               label,
-              style: TextStyle(fontSize: 11, color: EchoTheme.warning),
+              style: GoogleFonts.inter(fontSize: 11, color: EchoTheme.warning),
             ),
           ),
           Semantics(
@@ -564,10 +565,10 @@ class ChatHeaderBar extends ConsumerWidget {
         children: [
           const Icon(Icons.warning_amber, size: 14, color: EchoTheme.warning),
           const SizedBox(width: 8),
-          const Expanded(
+          Expanded(
             child: Text(
               'Encryption issues detected',
-              style: TextStyle(fontSize: 11, color: EchoTheme.warning),
+              style: GoogleFonts.inter(fontSize: 11, color: EchoTheme.warning),
             ),
           ),
           Semantics(
@@ -584,9 +585,9 @@ class ChatHeaderBar extends ConsumerWidget {
                     color: EchoTheme.warning.withValues(alpha: 0.4),
                   ),
                 ),
-                child: const Text(
+                child: Text(
                   'Repair',
-                  style: TextStyle(
+                  style: GoogleFonts.inter(
                     fontSize: 11,
                     color: EchoTheme.warning,
                     fontWeight: FontWeight.w600,
@@ -783,7 +784,7 @@ class ChatHeaderBar extends ConsumerWidget {
         ),
         title: Text(
           'Reset encryption keys?',
-          style: TextStyle(
+          style: GoogleFonts.inter(
             color: context.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -792,7 +793,7 @@ class ChatHeaderBar extends ConsumerWidget {
         content: Text(
           'This will establish a fresh encrypted session. '
           'Messages encrypted with the old keys may become unreadable.',
-          style: TextStyle(color: context.textSecondary, fontSize: 14),
+          style: GoogleFonts.inter(color: context.textSecondary, fontSize: 14),
         ),
         actions: [
           TextButton(
@@ -958,7 +959,7 @@ class _TimerChip extends StatelessWidget {
                       const SizedBox(width: 3),
                       Text(
                         label,
-                        style: TextStyle(
+                        style: GoogleFonts.inter(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: context.accent,
@@ -1112,7 +1113,7 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
           const SizedBox(width: 8),
           Text(
             'Pinned Messages',
-            style: TextStyle(
+            style: GoogleFonts.inter(
               color: context.textPrimary,
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -1138,7 +1139,7 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
       return Center(
         child: Text(
           _error!,
-          style: TextStyle(color: context.textMuted, fontSize: 14),
+          style: GoogleFonts.inter(color: context.textMuted, fontSize: 14),
         ),
       );
     }
@@ -1152,7 +1153,7 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
             const SizedBox(height: 12),
             Text(
               'No pinned messages',
-              style: TextStyle(color: context.textMuted, fontSize: 14),
+              style: GoogleFonts.inter(color: context.textMuted, fontSize: 14),
             ),
           ],
         ),
@@ -1177,7 +1178,7 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
                   children: [
                     Text(
                       msg.fromUsername,
-                      style: TextStyle(
+                      style: GoogleFonts.inter(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: context.accent,
@@ -1188,7 +1189,7 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
                       preview,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: GoogleFonts.inter(
                         fontSize: 13,
                         color: context.textPrimary,
                       ),
@@ -1196,7 +1197,10 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
                     const SizedBox(height: 4),
                     Text(
                       formatMessageTimestamp(msg.timestamp),
-                      style: TextStyle(fontSize: 11, color: context.textMuted),
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: context.textMuted,
+                      ),
                     ),
                   ],
                 ),

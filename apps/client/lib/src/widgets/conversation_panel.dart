@@ -84,6 +84,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   /// Active conversation type filter.
   _ConversationFilter _filter = _ConversationFilter.all;
 
+  /// True after the user manually dismisses the "session replaced" banner.
+  /// Resets on next reconnect (the websocket clears `wasReplaced`, and we
+  /// re-show the banner if a future replacement happens).
+  bool _replacedBannerDismissed = false;
+
   /// Pinned conversation IDs
   Set<String> _pinnedIds = {};
 
@@ -933,9 +938,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     IconData? icon,
   }) {
     final isSelected = _filter == filter;
-    final chipColor = isSelected
-        ? Theme.of(context).colorScheme.onPrimary
-        : context.textSecondary;
+    // Selected chip bg is always `context.accent` (a saturated indigo across
+    // every theme variant), so white reads cleanly. The previous reliance on
+    // `colorScheme.onPrimary` broke on themes where onPrimary resolves dark
+    // (graphite/ember/neon).
+    final chipColor = isSelected ? Colors.white : context.textSecondary;
     final chipWeight = isSelected ? FontWeight.w600 : FontWeight.w500;
     return GestureDetector(
       onTap: () => _onFilterChanged(filter),
@@ -1008,7 +1015,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Widget _buildReplacedBanner(BuildContext context, bool wsReplaced) {
-    if (!wsReplaced) return const SizedBox.shrink();
+    if (!wsReplaced || _replacedBannerDismissed) return const SizedBox.shrink();
     return Column(
       children: [
         GestureDetector(
@@ -1024,7 +1031,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: EchoTheme.warning, width: 1),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.only(left: 12, right: 4),
             child: Row(
               children: [
                 const Icon(
@@ -1044,6 +1051,24 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                   ),
                 ),
                 const Icon(Icons.refresh, size: 18, color: EchoTheme.warning),
+                Semantics(
+                  label: 'Dismiss session banner',
+                  button: true,
+                  child: IconButton(
+                    icon: Icon(Icons.close, size: 16, color: context.textMuted),
+                    tooltip: 'Dismiss',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                    // Stop the parent GestureDetector from also firing a
+                    // reconnect when the user just wants to close the banner.
+                    onPressed: () {
+                      setState(() => _replacedBannerDismissed = true);
+                    },
+                  ),
+                ),
               ],
             ),
           ),
