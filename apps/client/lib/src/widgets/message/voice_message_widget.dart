@@ -55,6 +55,10 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
 
   bool _isPlaying = false;
   bool _isLoading = false;
+
+  /// Last playback / fetch error message. Surfaced inline below the
+  /// waveform so the user knows tapping play didn't silently fail.
+  String? _loadError;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
 
@@ -152,7 +156,10 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
     try {
       final bytes = widget.audioBytes;
       if (bytes != null) {
@@ -168,7 +175,14 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
           if (response.statusCode >= 200 && response.statusCode < 300) {
             await _player.play(BytesSource(response.bodyBytes));
           } else {
-            debugPrint('[VoiceMsg] fetch failed: ${response.statusCode}');
+            // Surface the failure to the user instead of silently no-op'ing.
+            // Without this, mobile users tapped the play button and saw
+            // nothing happen (#554).
+            final reason = 'fetch failed (${response.statusCode})';
+            debugPrint('[VoiceMsg] $reason');
+            if (mounted) {
+              setState(() => _loadError = reason);
+            }
           }
         } else {
           await _player.play(UrlSource(url));
@@ -176,6 +190,9 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
       }
     } catch (e) {
       debugPrint('[VoiceMsg] play error: $e');
+      if (mounted) {
+        setState(() => _loadError = e.toString());
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -354,12 +371,14 @@ class _VoiceMessageWidgetState extends State<VoiceMessageWidget> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  durationLabel,
+                  _loadError ?? durationLabel,
                   style: TextStyle(
                     fontSize: 10,
-                    color: mutedColor,
+                    color: _loadError != null ? EchoTheme.danger : mutedColor,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
