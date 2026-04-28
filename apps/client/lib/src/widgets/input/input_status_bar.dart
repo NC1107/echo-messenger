@@ -94,12 +94,29 @@ String computeInputStatusText({
 }
 
 /// Computes the typing indicator text from the list of typing users.
+///
+/// Phrasing scales gracefully past 2 names:
+/// - 1 user:   "Alice is typing"
+/// - 2 users:  "Alice and Bob are typing"
+/// - 3+ users: "Alice, Bob, and 2 others are typing"
 String computeTypingText({
   required List<String> typingUsers,
   required bool isGroup,
   required String displayName,
 }) {
   if (!isGroup) return '$displayName is typing';
-  if (typingUsers.length == 1) return '${typingUsers.first} is typing';
-  return '${typingUsers.join(", ")} are typing';
+  switch (typingUsers.length) {
+    case 0:
+      return '';
+    case 1:
+      return '${typingUsers[0]} is typing';
+    case 2:
+      return '${typingUsers[0]} and ${typingUsers[1]} are typing';
+    default:
+      // Show the first two names + "and N others" so the line stays readable
+      // even when a whole channel starts typing at once.
+      final others = typingUsers.length - 2;
+      return '${typingUsers[0]}, ${typingUsers[1]}, '
+          'and $others ${others == 1 ? 'other' : 'others'} are typing';
+  }
 }
