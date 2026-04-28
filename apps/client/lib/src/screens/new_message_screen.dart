@@ -195,45 +195,56 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
                   width: 1,
                 ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              // Lay out: pill chips (if any) on the left, then a flexible
+              // text field that fills the remaining row width. A bare Wrap
+              // with a minWidth-constrained TextField caused an empty pill
+              // shape to render before any recipient was selected.
+              child: Row(
                 children: [
-                  ..._selectedUserIds.map((uid) {
-                    final contact = ref
-                        .read(contactsProvider)
-                        .contacts
-                        .where((c) => c.userId == uid)
-                        .firstOrNull;
-                    final name =
-                        contact?.displayName ?? contact?.username ?? uid;
-                    return _RecipientChip(
-                      name: name,
-                      onRemove: () =>
-                          setState(() => _selectedUserIds.remove(uid)),
-                    );
-                  }),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 80),
-                    child: IntrinsicWidth(
-                      child: TextField(
-                        controller: _searchController,
-                        focusNode: _searchFocusNode,
-                        style: TextStyle(
-                          color: context.textPrimary,
+                  if (_selectedUserIds.isNotEmpty) ...[
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: _selectedUserIds.map((uid) {
+                        final contact = ref
+                            .read(contactsProvider)
+                            .contacts
+                            .where((c) => c.userId == uid)
+                            .firstOrNull;
+                        final name =
+                            contact?.displayName ?? contact?.username ?? uid;
+                        return _RecipientChip(
+                          name: name,
+                          onRemove: () =>
+                              setState(() => _selectedUserIds.remove(uid)),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 14,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: _selectedUserIds.isEmpty
+                            ? 'Type a name or @handle'
+                            : '',
+                        hintStyle: TextStyle(
+                          color: context.textMuted,
                           fontSize: 14,
                         ),
-                        decoration: const InputDecoration(
-                          hintText: '',
-                          isDense: true,
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(vertical: 6),
-                        ),
-                        onChanged: _onQueryChanged,
-                        onTap: () => setState(() {}),
+                        isDense: true,
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
                       ),
+                      onChanged: _onQueryChanged,
+                      onTap: () => setState(() {}),
                     ),
                   ),
                 ],
@@ -316,20 +327,23 @@ class _ContactRow extends StatelessWidget {
                     radius: 22,
                     imageUrl: resolvedAvatar,
                   ),
-                  if (isOnline)
-                    Positioned(
-                      right: -1,
-                      bottom: -1,
-                      child: Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: EchoTheme.online,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: context.mainBg, width: 2),
-                        ),
+                  // Presence dot — green when online, muted grey otherwise.
+                  // Always visible so the row weight is consistent.
+                  Positioned(
+                    right: -1,
+                    bottom: -1,
+                    child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: isOnline
+                            ? EchoTheme.online
+                            : const Color(0xFF6B6B6F),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: context.mainBg, width: 2),
                       ),
                     ),
+                  ),
                 ],
               ),
               const SizedBox(width: 12),

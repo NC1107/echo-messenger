@@ -1054,6 +1054,10 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     textMuted: EchoTheme.textMuted,
     sentBubble: EchoTheme.sentBubble,
     recvBubble: EchoTheme.recvBubble,
+    // Slightly brighter than surfaceHover so grouped cards stand out from
+    // the page background on the new sectioned-card layouts (Settings,
+    // Discover, etc.) per the v0.3 mockups.
+    cardRowBg: Color(0xFF26262A),
   );
 
   /// Light theme colors

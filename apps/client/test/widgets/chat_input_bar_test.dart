@@ -98,7 +98,7 @@ void main() {
       await tester.pump();
 
       expect(find.byType(TextField), findsOneWidget);
-      expect(find.text('Type a message...'), findsOneWidget);
+      expect(find.text('Message — encrypted'), findsOneWidget);
     });
 
     testWidgets('mic button shown when text is empty (no send button)', (

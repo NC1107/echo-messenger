@@ -524,14 +524,17 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                   wsOnlineUsers,
                 ),
               ),
-              _buildUserStatusBar(
-                context,
-                myUsername: username,
-                serverUrl: serverUrl,
-                avatarUrl: myAvatarUrl,
-                wsConnected: wsConnected,
-                wsReplaced: wsReplaced,
-              ),
+              // Hide the status bar on mobile narrow — redundant with the
+              // bottom tab bar that already exposes Settings + identity.
+              if (MediaQuery.sizeOf(context).width >= 600)
+                _buildUserStatusBar(
+                  context,
+                  myUsername: username,
+                  serverUrl: serverUrl,
+                  avatarUrl: myAvatarUrl,
+                  wsConnected: wsConnected,
+                  wsReplaced: wsReplaced,
+                ),
             ],
           ),
           if (widget.onNewChat != null) _buildComposeFab(context),
@@ -544,10 +547,13 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   /// Mirrors the action-menu "Chat" entry but exposes it as a one-tap
   /// affordance. Hidden when [onNewChat] is null.
   Widget _buildComposeFab(BuildContext context) {
+    // On mobile the status bar is hidden, so the FAB hugs the bottom edge
+    // (parent provides any tab-bar inset). On desktop sidebar the status
+    // bar is ~60px tall and we keep clear of it.
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
     return Positioned(
       right: 16,
-      // Keep clear of the user-status bar (~60px tall) at the column's bottom.
-      bottom: 76,
+      bottom: isMobile ? 16 : 76,
       child: Semantics(
         label: 'New chat',
         button: true,
