@@ -109,7 +109,8 @@ pub(super) async fn handle_send_message(
         return;
     };
 
-    let (reply_content, reply_username) = lookup_reply_context(&state.pool, reply_to_id).await;
+    let (reply_content, reply_username) =
+        lookup_reply_context(&state.pool, reply_to_id, conv_id).await;
 
     // Store message, send confirmation, and deliver to sender's other devices.
     let Some(stored) = store_and_confirm(
@@ -183,7 +184,10 @@ pub(super) async fn store_and_confirm(
             .unwrap_or(None)
     };
 
-    // Store message in DB
+    // Store message in DB. `RowNotFound` from `store_message` means the
+    // requested `reply_to_id` does not refer to a message in this conversation
+    // (cross-conversation reply, deleted parent, or non-existent id). Surface
+    // a targeted error to the sender instead of a generic store failure. #519
     let stored = match db::messages::store_message(
         &state.pool,
         conv_id,
@@ -196,6 +200,20 @@ pub(super) async fn store_and_confirm(
     .await
     {
         Ok(row) => row,
+        Err(sqlx::Error::RowNotFound) if reply_to_id.is_some() => {
+            tracing::warn!(
+                user_id = %sender_id,
+                conversation_id = %conv_id,
+                reply_to_id = ?reply_to_id,
+                "rejected cross-conversation reply"
+            );
+            send_error(
+                state,
+                sender_id,
+                "reply_to message not found in this conversation",
+            );
+            return None;
+        }
         Err(_) => {
             send_error(state, sender_id, "Failed to store message");
             return None;
@@ -385,15 +403,36 @@ pub(super) async fn resolve_default_text_channel(
     }
 }
 
-/// Look up reply context (content and username) for a given reply_to_id.
+/// Look up reply context (content and username) for a given reply_to_id,
+/// scoped to the conversation the new message will live in.  When the parent
+/// is missing, deleted, or in a different conversation the lookup returns
+/// `None` and emits a `warn!`; the subsequent INSERT in `store_message` will
+/// reject the row anyway so this is purely informational. #519
 pub(super) async fn lookup_reply_context(
     pool: &sqlx::PgPool,
     reply_to_id: Option<Uuid>,
+    conversation_id: Uuid,
 ) -> (Option<String>, Option<String>) {
     if let Some(rid) = reply_to_id {
-        match db::messages::lookup_reply_context(pool, rid).await {
+        match db::messages::lookup_reply_context(pool, rid, conversation_id).await {
             Ok(Some((c, u))) => (Some(c), Some(u)),
-            _ => (None, None),
+            Ok(None) => {
+                tracing::warn!(
+                    conversation_id = %conversation_id,
+                    reply_to_id = %rid,
+                    "reply_to parent not found in conversation; suppressing reply context"
+                );
+                (None, None)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    conversation_id = %conversation_id,
+                    reply_to_id = %rid,
+                    error = ?e,
+                    "lookup_reply_context db error"
+                );
+                (None, None)
+            }
         }
     } else {
         (None, None)
