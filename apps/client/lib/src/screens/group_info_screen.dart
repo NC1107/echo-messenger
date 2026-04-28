@@ -1331,38 +1331,137 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text(_kGroupInfoTitle)),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600),
-          child: ListView(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // Wide (split-pane / desktop): 2-column layout — avatar+identity
+          // on the left, content (description, members, admin) on the right.
+          // Narrow (mobile / collapsed sidebar): keep the single mobile-style
+          // stacked column inside a 600px-max content well.
+          final isWide = constraints.maxWidth >= 800;
+          if (isWide) {
+            return _buildWideLayout(
+              conv: conv,
+              displayName: displayName,
+              myUserId: myUserId,
+              myRole: myRole,
+              isOwnerOrAdmin: isOwnerOrAdmin,
+            );
+          }
+          return _buildNarrowLayout(
+            conv: conv,
+            displayName: displayName,
+            myUserId: myUserId,
+            myRole: myRole,
+            isOwnerOrAdmin: isOwnerOrAdmin,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildNarrowLayout({
+    required Conversation conv,
+    required String displayName,
+    required String myUserId,
+    required String myRole,
+    required bool isOwnerOrAdmin,
+  }) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 600),
+        child: ListView(
+          children: [
+            const SizedBox(height: 24),
+            _buildGroupAvatar(
+              isOwnerOrAdmin: isOwnerOrAdmin,
+              iconUrl: conv.iconUrl,
+            ),
+            const SizedBox(height: 16),
+            _buildGroupNameSection(
+              displayName: displayName,
+              isOwnerOrAdmin: isOwnerOrAdmin,
+            ),
+            _buildMemberCount(conv.members.length),
+            const SizedBox(height: 16),
+            const Divider(),
+            _buildDescriptionSection(
+              conv: conv,
+              isOwnerOrAdmin: isOwnerOrAdmin,
+            ),
+            const SizedBox(height: 8),
+            const Divider(),
+            ..._buildMembersSection(
+              conv: conv,
+              myUserId: myUserId,
+              isOwnerOrAdmin: isOwnerOrAdmin,
+            ),
+            if (isOwnerOrAdmin) ..._buildChannelsSection(),
+            if (isOwnerOrAdmin) _buildDisappearingSection(),
+            ..._buildActionButtons(myRole: myRole),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWideLayout({
+    required Conversation conv,
+    required String displayName,
+    required String myUserId,
+    required String myRole,
+    required bool isOwnerOrAdmin,
+  }) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1100),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 24),
-              _buildGroupAvatar(
-                isOwnerOrAdmin: isOwnerOrAdmin,
-                iconUrl: conv.iconUrl,
+              // Left column: identity + member count + action buttons.
+              SizedBox(
+                width: 320,
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      _buildGroupAvatar(
+                        isOwnerOrAdmin: isOwnerOrAdmin,
+                        iconUrl: conv.iconUrl,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildGroupNameSection(
+                        displayName: displayName,
+                        isOwnerOrAdmin: isOwnerOrAdmin,
+                      ),
+                      _buildMemberCount(conv.members.length),
+                      const SizedBox(height: 24),
+                      ..._buildActionButtons(myRole: myRole),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 16),
-              _buildGroupNameSection(
-                displayName: displayName,
-                isOwnerOrAdmin: isOwnerOrAdmin,
+              const SizedBox(width: 32),
+              // Right column: description + members + admin sections.
+              Expanded(
+                child: ListView(
+                  children: [
+                    _buildDescriptionSection(
+                      conv: conv,
+                      isOwnerOrAdmin: isOwnerOrAdmin,
+                    ),
+                    const SizedBox(height: 8),
+                    const Divider(),
+                    ..._buildMembersSection(
+                      conv: conv,
+                      myUserId: myUserId,
+                      isOwnerOrAdmin: isOwnerOrAdmin,
+                    ),
+                    if (isOwnerOrAdmin) ..._buildChannelsSection(),
+                    if (isOwnerOrAdmin) _buildDisappearingSection(),
+                  ],
+                ),
               ),
-              _buildMemberCount(conv.members.length),
-              const SizedBox(height: 16),
-              const Divider(),
-              _buildDescriptionSection(
-                conv: conv,
-                isOwnerOrAdmin: isOwnerOrAdmin,
-              ),
-              const SizedBox(height: 8),
-              const Divider(),
-              ..._buildMembersSection(
-                conv: conv,
-                myUserId: myUserId,
-                isOwnerOrAdmin: isOwnerOrAdmin,
-              ),
-              if (isOwnerOrAdmin) ..._buildChannelsSection(),
-              if (isOwnerOrAdmin) _buildDisappearingSection(),
-              ..._buildActionButtons(myRole: myRole),
             ],
           ),
         ),
