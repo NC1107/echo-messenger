@@ -330,8 +330,9 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('[video:/api/media/clip.mp4]'), findsNothing);
-        // Fallback shows play icon when video init fails in test env.
-        expect(find.byIcon(Icons.play_circle_outline), findsOneWidget);
+        // Static play-thumbnail uses a rounded play arrow inside a dark
+        // circle (the inline init flow was removed last round).
+        expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
       });
     });
 

@@ -769,7 +769,8 @@ class _MessageItemState extends State<MessageItem>
         message: 'More',
         child: PopupMenuButton<String>(
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          iconSize: 14,
           icon: Opacity(
             opacity: 0.75,
             child: Icon(
@@ -1921,17 +1922,21 @@ class _HoverActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Hover bar is mouse-only (gated behind `_isHovered`), so the 44×44
+    // minimum touch target doesn't apply — Discord/Slack-style 28×28
+    // chips read as more refined.
     return Semantics(
       label: tooltip,
       button: true,
       child: Tooltip(
         message: tooltip,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        child: SizedBox(
+          width: 28,
+          height: 28,
           child: InkWell(
             onTap: onPressed,
-            child: Padding(
-              padding: const EdgeInsets.all(6),
+            borderRadius: BorderRadius.circular(6),
+            child: Center(
               child: Opacity(
                 opacity: 0.75,
                 child: Icon(icon, size: 14, color: context.textSecondary),
