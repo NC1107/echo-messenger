@@ -6,7 +6,7 @@ import 'package:network_image_mock/network_image_mock.dart';
 
 import 'package:echo_app/src/models/chat_message.dart';
 import 'package:echo_app/src/models/reaction.dart';
-import 'package:echo_app/src/widgets/input/attachment_preview.dart';
+import 'package:echo_app/src/widgets/input/pending_attachments_strip.dart';
 import 'package:echo_app/src/widgets/input/reply_preview_bar.dart';
 import 'package:echo_app/src/widgets/message/reaction_bar.dart';
 import 'package:echo_app/src/widgets/message/reply_quote.dart';
@@ -396,50 +396,40 @@ void main() {
     });
   });
 
-  group('Semantic labels - AttachmentPreview', () {
-    testWidgets('shows "Attached file: filename" label', (tester) async {
+  group('Semantic labels - PendingAttachmentsStrip', () {
+    PendingAttachment makeAttachment({
+      String fileName = 'photo.png',
+      String mimeType = 'image/png',
+      String ext = 'png',
+    }) {
+      return PendingAttachment(
+        bytes: Uint8List(0),
+        fileName: fileName,
+        mimeType: mimeType,
+        ext: ext,
+        sizeBytes: 0,
+      );
+    }
+
+    testWidgets('chip shows "Attached file: filename" label', (tester) async {
+      final att = makeAttachment();
       await tester.pumpApp(
-        AttachmentPreview(
-          attachmentBytes: Uint8List(0),
-          fileName: 'photo.png',
-          onClear: () {},
-        ),
+        PendingAttachmentsStrip(attachments: [att], onCancel: (_) {}),
       );
       await tester.pump();
-
       expect(
         _findSemanticsWithLabel('Attached file: photo.png'),
         findsOneWidget,
       );
     });
 
-    testWidgets('uses "Attachment" when fileName is null', (tester) async {
+    testWidgets('cancel button has per-file semantic label', (tester) async {
+      final att = makeAttachment(fileName: 'doc.pdf');
       await tester.pumpApp(
-        AttachmentPreview(
-          attachmentBytes: Uint8List(0),
-          fileName: null,
-          onClear: () {},
-        ),
+        PendingAttachmentsStrip(attachments: [att], onCancel: (_) {}),
       );
       await tester.pump();
-
-      expect(
-        _findSemanticsWithLabel('Attached file: Attachment'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('remove button has semantic label', (tester) async {
-      await tester.pumpApp(
-        AttachmentPreview(
-          attachmentBytes: Uint8List(0),
-          fileName: 'doc.pdf',
-          onClear: () {},
-        ),
-      );
-      await tester.pump();
-
-      expect(_findSemanticsWithLabel('remove attachment'), findsOneWidget);
+      expect(_findSemanticsWithLabel('remove doc.pdf'), findsOneWidget);
     });
   });
 }
