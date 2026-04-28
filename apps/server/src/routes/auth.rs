@@ -99,20 +99,6 @@ async fn issue_refresh_token(
     Ok((raw_token, family_id))
 }
 
-/// Issue a refresh token that inherits an existing family (used on rotation).
-async fn rotate_refresh_token(
-    pool: &sqlx::PgPool,
-    user_id: uuid::Uuid,
-    family_id: uuid::Uuid,
-) -> Result<String, AppError> {
-    let raw_token = jwt::create_refresh_token();
-    let token_hash = jwt::hash_refresh_token(&raw_token);
-    let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
-    db::tokens::store_refresh_token_in_family(pool, user_id, &token_hash, expires_at, family_id)
-        .await?;
-    Ok(raw_token)
-}
-
 // ---------------------------------------------------------------------------
 // POST /api/auth/register
 // ---------------------------------------------------------------------------
@@ -191,45 +177,136 @@ pub async fn login(
 // POST /api/auth/refresh
 // ---------------------------------------------------------------------------
 
+/// Atomically validate and rotate a refresh token. #520
+///
+/// The whole flow — SELECT (with row lock), revoke-old, INSERT-new — runs in a
+/// single transaction so two concurrent requests presenting the same refresh
+/// token cannot both succeed.  The first to reach the sentinel UPDATE wins;
+/// the second gets `None` from the conditional UPDATE, treats it as
+/// concurrent reuse, family-revokes, and returns 401.  This prevents the race
+/// where both callers observed `revoked = false` in the old non-transactional
+/// code path.
 pub async fn refresh(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RefreshRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let token_hash = jwt::hash_refresh_token(&body.refresh_token);
 
-    let row = db::tokens::find_refresh_token(&state.pool, &token_hash)
-        .await?
-        .ok_or_else(|| AppError::unauthorized("Invalid refresh token"))?;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
+    // Lock the refresh-token row for the duration of the transaction so a
+    // concurrent rotation request must wait until we commit (or rolls back).
+    let row: Option<db::tokens::RefreshTokenRow> =
+        sqlx::query_as::<_, db::tokens::RefreshTokenRow>(
+            "SELECT id, user_id, token_hash, expires_at, created_at, revoked, family_id \
+         FROM refresh_tokens WHERE token_hash = $1 FOR UPDATE",
+        )
+        .bind(&token_hash)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
+    let Some(row) = row else {
+        // Drop the (read-only) tx implicitly.
+        return Err(AppError::unauthorized("Invalid refresh token"));
+    };
 
     if row.revoked {
-        // TOKEN THEFT DETECTED: a revoked token was reused.  The attacker
-        // (or the legitimate user) still holds a token from this family.
-        // Revoke the entire family to force re-authentication for everyone.
+        // TOKEN THEFT DETECTED: a revoked token was reused.  Revoke the rest
+        // of the family inside the same tx so the response is consistent.
         if let Some(family_id) = row.family_id {
             tracing::warn!(
                 "Refresh token theft detected for user {} (family {})",
                 row.user_id,
                 family_id
             );
-            db::tokens::revoke_token_family(&state.pool, family_id).await?;
+            sqlx::query(
+                "UPDATE refresh_tokens SET revoked = true \
+                 WHERE family_id = $1 AND revoked = false",
+            )
+            .bind(family_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| AppError::internal("Database error"))?;
         }
+        tx.commit()
+            .await
+            .map_err(|_| AppError::internal("Database error"))?;
         return Err(AppError::unauthorized("Refresh token has been revoked"));
     }
 
     if row.expires_at < chrono::Utc::now() {
+        // Release the FOR UPDATE row lock immediately rather than waiting for
+        // tx Drop to do an implicit rollback.
+        let _ = tx.rollback().await;
         return Err(AppError::unauthorized("Refresh token has expired"));
     }
 
-    // Rotate: revoke old, issue new in the same family
-    db::tokens::revoke_refresh_token(&state.pool, row.id).await?;
+    // Sentinel revoke: only one transaction can flip `revoked` from false to
+    // true.  If `fetch_optional` returns `None`, another request beat us to
+    // it — treat as concurrent reuse and revoke the family.
+    let revoked: Option<(uuid::Uuid,)> = sqlx::query_as::<_, (uuid::Uuid,)>(
+        "UPDATE refresh_tokens SET revoked = true \
+         WHERE id = $1 AND revoked = false RETURNING id",
+    )
+    .bind(row.id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|_| AppError::internal("Database error"))?;
 
+    if revoked.is_none() {
+        if let Some(family_id) = row.family_id {
+            tracing::warn!(
+                "Concurrent refresh-token rotation detected for user {} (family {})",
+                row.user_id,
+                family_id
+            );
+            sqlx::query(
+                "UPDATE refresh_tokens SET revoked = true \
+                 WHERE family_id = $1 AND revoked = false",
+            )
+            .bind(family_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| AppError::internal("Database error"))?;
+        }
+        tx.commit()
+            .await
+            .map_err(|_| AppError::internal("Database error"))?;
+        return Err(AppError::unauthorized("Refresh token has been revoked"));
+    }
+
+    // Issue the rotated token in the same family.
     let family_id = row.family_id.unwrap_or_else(uuid::Uuid::new_v4);
+    let new_raw_token = jwt::create_refresh_token();
+    let new_token_hash = jwt::hash_refresh_token(&new_raw_token);
+    let new_expires_at = chrono::Utc::now() + chrono::Duration::days(7);
+
+    sqlx::query(
+        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, family_id) \
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(row.user_id)
+    .bind(&new_token_hash)
+    .bind(new_expires_at)
+    .bind(family_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| AppError::internal("Database error"))?;
+
+    tx.commit()
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
     let access_token = jwt::create_token(row.user_id, &state.jwt_secret)?;
-    let new_refresh = rotate_refresh_token(&state.pool, row.user_id, family_id).await?;
 
     Ok(Json(RefreshResponse {
         access_token,
-        refresh_token: new_refresh,
+        refresh_token: new_raw_token,
     }))
 }
 

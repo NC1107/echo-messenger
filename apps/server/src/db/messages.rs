@@ -102,6 +102,14 @@ pub async fn find_or_create_dm_conversation(
     Ok(conv_id)
 }
 
+/// Insert a new message, optionally linked to a parent via `reply_to_id`.
+///
+/// Contract for `reply_to_id` (#519): when `Some`, the parent message must
+/// exist in the same conversation **and** not be soft-deleted.  When the
+/// parent is missing, deleted, or belongs to a different conversation, the
+/// INSERT is suppressed and `sqlx::Error::RowNotFound` is returned so the
+/// caller can translate that into a 404 / WS error frame instead of leaking
+/// content across conversations.
 pub async fn store_message(
     pool: &PgPool,
     conversation_id: Uuid,
@@ -114,8 +122,16 @@ pub async fn store_message(
     let expires_at: Option<DateTime<Utc>> =
         ttl_seconds.map(|s| Utc::now() + chrono::Duration::seconds(s));
     sqlx::query_as::<_, MessageRow>(
-        "INSERT INTO messages (conversation_id, channel_id, sender_id, content, reply_to_id, expires_at) \
-         VALUES ($1, $2, $3, $4, $5, $6) \
+        "WITH parent AS ( \
+             SELECT id FROM messages \
+             WHERE id = $5 AND conversation_id = $1 AND deleted_at IS NULL \
+         ) \
+         INSERT INTO messages (conversation_id, channel_id, sender_id, content, reply_to_id, expires_at) \
+         SELECT $1, $2, $3, $4, \
+                CASE WHEN $5::uuid IS NULL THEN NULL \
+                     ELSE (SELECT id FROM parent) END, \
+                $6 \
+         WHERE $5::uuid IS NULL OR EXISTS (SELECT 1 FROM parent) \
          RETURNING id, conversation_id, channel_id, sender_id, content, created_at, delivered, \
                    reply_to_id, expires_at",
     )
@@ -147,7 +163,7 @@ pub async fn get_messages(
                  WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
-         LEFT JOIN messages rm ON rm.id = m.reply_to_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          WHERE m.conversation_id = $1 \
            AND ($2::uuid IS NULL OR m.channel_id = $2) \
@@ -178,7 +194,7 @@ pub async fn get_undelivered(
                  WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
-         LEFT JOIN messages rm ON rm.id = m.reply_to_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
                   AND cm.is_removed = false \
@@ -285,7 +301,7 @@ pub async fn search_messages(
                 COALESCE(rc.cnt, 0) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
-         LEFT JOIN messages rm ON rm.id = m.reply_to_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          LEFT JOIN LATERAL ( \
              SELECT COUNT(*) AS cnt FROM messages r \
@@ -341,17 +357,22 @@ pub async fn search_messages_global(
     .await
 }
 
-/// Look up reply context (content and username) for a given reply_to message ID.
+/// Look up reply context (content and username) for a given reply_to message ID,
+/// scoped to the supplied `conversation_id`.  Soft-deleted parents return `None`.
+/// Cross-conversation lookups also return `None` so a sender cannot peek at
+/// the content of a message in a different conversation. #519
 pub async fn lookup_reply_context(
     pool: &PgPool,
     reply_to_id: Uuid,
+    conversation_id: Uuid,
 ) -> Result<Option<(String, String)>, sqlx::Error> {
     sqlx::query_as::<_, (String, String)>(
         "SELECT m.content, u.username \
          FROM messages m JOIN users u ON u.id = m.sender_id \
-         WHERE m.id = $1",
+         WHERE m.id = $1 AND m.conversation_id = $2 AND m.deleted_at IS NULL",
     )
     .bind(reply_to_id)
+    .bind(conversation_id)
     .fetch_optional(pool)
     .await
 }
@@ -580,9 +601,15 @@ pub async fn get_device_contents_batch(
 /// Fetch all replies to a given parent message, ordered chronologically.
 /// Each reply includes its own reply_count so the client can show nested thread
 /// indicators.
+///
+/// Scoped to `conversation_id` (#519): even though `reply_to_id` should already
+/// only point at messages in the same conversation after the `store_message`
+/// fix, this query enforces it defensively so historical bad data cannot leak
+/// across conversations on read.
 pub async fn get_thread_replies(
     pool: &PgPool,
     parent_message_id: Uuid,
+    conversation_id: Uuid,
     limit: i64,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
@@ -594,18 +621,20 @@ pub async fn get_thread_replies(
                 COALESCE(rc.cnt, 0) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
-         LEFT JOIN messages rm ON rm.id = m.reply_to_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          LEFT JOIN LATERAL ( \
              SELECT COUNT(*) AS cnt FROM messages r \
              WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
          ) rc ON true \
          WHERE m.reply_to_id = $1 \
+           AND m.conversation_id = $2 \
            AND m.deleted_at IS NULL \
          ORDER BY m.created_at ASC \
-         LIMIT $2",
+         LIMIT $3",
     )
     .bind(parent_message_id)
+    .bind(conversation_id)
     .bind(limit)
     .fetch_all(pool)
     .await
