@@ -46,11 +46,10 @@ import 'message/media_content.dart'
         isStandaloneMediaUrl,
         mediaHeaders,
         resolveMediaUrl;
+import '../utils/semantics_preview.dart';
 import 'message_item.dart';
 import 'message_search_overlay.dart';
 import 'thread_view_panel.dart';
-
-// reactionEmojis imported from message_item.dart
 
 class ChatPanel extends ConsumerStatefulWidget {
   final Conversation? conversation;
@@ -158,6 +157,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   bool _hasNewMessagesBelow = false;
   int _newMessagesBelowCount = 0;
 
+  /// Hidden Semantics live-region label for screen-reader announcements
+  /// when peer messages arrive (#495). Empty until the first announcement,
+  /// then cleared again ~3s after each announcement so a window-focus event
+  /// doesn't make the screen reader replay the stale label.
+  String _liveRegionAnnouncement = '';
+
+  /// Last announced peer message id; prevents duplicate announcements when
+  /// the chat state notifier fires back-to-back updates with the same tail.
+  String? _lastAnnouncedMessageId;
+
+  /// Clears [_liveRegionAnnouncement] a short time after each announcement.
+  Timer? _liveRegionClearTimer;
+
   OverlayEntry? _reactionOverlay;
 
   bool get _hideEncryptionBanner {
@@ -236,6 +248,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       _floatingDateTimer?.cancel();
       _highlightTimer?.cancel();
       _messageKeys.clear();
+      _liveRegionAnnouncement = '';
+      _lastAnnouncedMessageId = null;
+      _liveRegionClearTimer?.cancel();
       _dismissReactionPicker();
 
       // Restore cached scroll position for the new conversation, or scroll
@@ -284,6 +299,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     _dismissReactionPicker();
     _highlightTimer?.cancel();
     _floatingDateTimer?.cancel();
+    _liveRegionClearTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
@@ -1968,6 +1984,30 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       }
 
       if (nextCount > prevCount) {
+        // Live-region announcement for assistive tech (#495). Skip the
+        // initial history load (prevCount == 0), own messages, system
+        // events, and duplicates of the last announced id.
+        final myUserId = ref.read(authProvider.select((s) => s.userId)) ?? '';
+        final newest = next.messagesForConversation(conv.id).lastOrNull;
+        if (newest != null &&
+            newest.id != _lastAnnouncedMessageId &&
+            newest.fromUserId != myUserId &&
+            !newest.isSystemEvent &&
+            prevCount > 0) {
+          _lastAnnouncedMessageId = newest.id;
+          final preview = previewForSemantics(newest.content);
+          setState(() {
+            _liveRegionAnnouncement = preview.isEmpty
+                ? 'New message from ${newest.fromUsername}'
+                : 'New message from ${newest.fromUsername}: $preview';
+          });
+          _liveRegionClearTimer?.cancel();
+          _liveRegionClearTimer = Timer(const Duration(seconds: 3), () {
+            if (!mounted) return;
+            setState(() => _liveRegionAnnouncement = '');
+          });
+        }
+
         if (_isNearBottom()) {
           _scrollToBottom(settleRetries: 3);
         } else {
@@ -2329,6 +2369,15 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                       ),
                       if (_floatingDate != null) _buildFloatingDatePill(),
                       if (_hasNewMessagesBelow) _buildNewMessagesPill(),
+                      // Hidden live region for screen-reader announcements
+                      // when peer messages arrive (#495). Renders zero-size
+                      // and is updated via setState in the chatProvider
+                      // listener inside _setupAutoScroll.
+                      Semantics(
+                        liveRegion: true,
+                        label: _liveRegionAnnouncement,
+                        child: const SizedBox.shrink(),
+                      ),
                     ],
                   ),
                 ),

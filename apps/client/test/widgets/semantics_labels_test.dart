@@ -83,14 +83,15 @@ void main() {
         );
         await tester.pump();
 
-        // Find the Semantics widget with the message label and verify
-        // button: true is set.
+        // Composite label uses 'You' for own messages and includes the
+        // long-press affordance.
         final semanticsFinder = find.byWidgetPredicate(
           (widget) =>
               widget is Semantics &&
-              widget.properties.label ==
-                  'Message from alice. Long press for actions.' &&
-              widget.properties.button == true,
+              widget.properties.button == true &&
+              widget.properties.label != null &&
+              widget.properties.label!.contains('From You') &&
+              widget.properties.label!.contains('Long press for actions'),
         );
         expect(semanticsFinder, findsOneWidget);
       });
@@ -112,9 +113,10 @@ void main() {
         final semanticsFinder = find.byWidgetPredicate(
           (widget) =>
               widget is Semantics &&
-              widget.properties.label ==
-                  'Message from alice. Long press for actions.' &&
-              widget.properties.button == true,
+              widget.properties.button == true &&
+              widget.properties.label != null &&
+              widget.properties.label!.contains('From alice') &&
+              widget.properties.label!.contains('Long press for actions'),
         );
         expect(semanticsFinder, findsOneWidget);
       });
@@ -222,6 +224,282 @@ void main() {
         await tester.pump();
 
         expect(_findSemanticsContaining('Image attachment'), findsOneWidget);
+      });
+    });
+  });
+
+  group('Composite message label', () {
+    String? findMessageLabel(WidgetTester tester) {
+      final widget = tester
+          .widgetList<Semantics>(find.byType(Semantics))
+          .where(
+            (s) =>
+                s.properties.button == true &&
+                (s.properties.label ?? '').contains('Long press for actions'),
+          )
+          .firstOrNull;
+      return widget?.properties.label;
+    }
+
+    testWidgets('includes formatted time string', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(
+          content: 'hello',
+          timestamp: '2026-01-15T10:30:00Z',
+        );
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'me',
+          ),
+        );
+        await tester.pump();
+
+        final label = findMessageLabel(tester);
+        expect(label, isNotNull);
+        // Format is locale-dependent but always contains a digit + colon.
+        expect(label!, contains(' at '));
+        expect(RegExp(r'\d{1,2}:\d{2}').hasMatch(label), isTrue);
+      });
+    });
+
+    testWidgets('plain-text body preview present in label', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(content: 'Howdy partner');
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'me',
+          ),
+        );
+        await tester.pump();
+
+        expect(findMessageLabel(tester), contains('Howdy partner'));
+      });
+    });
+
+    testWidgets('img token substituted with Image', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(content: '[img:abc]');
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'me',
+            serverUrl: 'http://localhost:8080',
+          ),
+        );
+        await tester.pump();
+
+        final label = findMessageLabel(tester);
+        expect(label, contains('Image'));
+        expect(label, isNot(contains('[img:')));
+      });
+    });
+
+    testWidgets('file token substituted with File', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(content: '[file:doc.pdf]');
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'me',
+            serverUrl: 'http://localhost:8080',
+          ),
+        );
+        await tester.pump();
+
+        final label = findMessageLabel(tester);
+        expect(label, contains('File'));
+        expect(label, isNot(contains('[file:')));
+      });
+    });
+
+    testWidgets('voice token substituted with Voice message', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(content: '[voice:msg]');
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'me',
+            serverUrl: 'http://localhost:8080',
+          ),
+        );
+        await tester.pump();
+
+        final label = findMessageLabel(tester);
+        expect(label, contains('Voice message'));
+        expect(label, isNot(contains('[voice:')));
+      });
+    });
+
+    testWidgets('body truncates to 80 chars with ellipsis', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final long = 'A' * 200;
+        final msg = _makeMessage(content: long);
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'me',
+          ),
+        );
+        await tester.pump();
+
+        final label = findMessageLabel(tester);
+        expect(label, contains('${'A' * 80}…'));
+        expect(label, isNot(contains('A' * 81)));
+      });
+    });
+
+    testWidgets('reaction count appears with correct pluralization', (
+      tester,
+    ) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(
+          reactions: const [
+            Reaction(
+              messageId: 'msg-1',
+              userId: 'u1',
+              username: 'alice',
+              emoji: '👍',
+            ),
+            Reaction(
+              messageId: 'msg-1',
+              userId: 'u2',
+              username: 'bob',
+              emoji: '❤️',
+            ),
+          ],
+        );
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'me',
+          ),
+        );
+        await tester.pump();
+
+        expect(findMessageLabel(tester), contains('2 reactions'));
+      });
+    });
+
+    testWidgets('singular reaction uses singular form', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(
+          reactions: const [
+            Reaction(
+              messageId: 'msg-1',
+              userId: 'u1',
+              username: 'alice',
+              emoji: '👍',
+            ),
+          ],
+        );
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'me',
+          ),
+        );
+        await tester.pump();
+
+        final label = findMessageLabel(tester);
+        expect(label, contains('1 reaction'));
+        expect(label, isNot(contains('1 reactions')));
+      });
+    });
+
+    testWidgets('Pinned segment present when pinnedAt set', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage().copyWith(
+          pinnedById: 'admin',
+          pinnedAt: DateTime.parse('2026-01-15T12:00:00Z'),
+        );
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'me',
+          ),
+        );
+        await tester.pump();
+
+        expect(findMessageLabel(tester), contains('Pinned'));
+      });
+    });
+
+    testWidgets('Edited segment present when editedAt set', (tester) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(editedAt: '2026-01-15T11:00:00Z');
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'me',
+          ),
+        );
+        await tester.pump();
+
+        expect(findMessageLabel(tester), contains('Edited'));
+      });
+    });
+
+    testWidgets('End-to-end encrypted segment present when isEncrypted', (
+      tester,
+    ) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(isEncrypted: true);
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'me',
+          ),
+        );
+        await tester.pump();
+
+        expect(findMessageLabel(tester), contains('End-to-end encrypted'));
+      });
+    });
+
+    testWidgets('all optional segments omitted when none apply', (
+      tester,
+    ) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(content: 'plain text');
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: true,
+            isLastInGroup: true,
+            myUserId: 'me',
+          ),
+        );
+        await tester.pump();
+
+        final label = findMessageLabel(tester)!;
+        expect(label, isNot(contains('Pinned')));
+        expect(label, isNot(contains('Edited')));
+        expect(label, isNot(contains('End-to-end encrypted')));
+        expect(label, isNot(contains('reaction')));
       });
     });
   });

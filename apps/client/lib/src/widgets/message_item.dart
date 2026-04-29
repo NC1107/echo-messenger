@@ -16,6 +16,7 @@ import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../utils/download_helper.dart';
 import '../utils/clipboard_image_helper.dart' show writeImageToClipboard;
+import '../utils/semantics_preview.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, avatarColor, senderLabelColor;
 import '../services/media_cache_service.dart';
@@ -757,6 +758,9 @@ class _MessageItemState extends State<MessageItem>
   Widget _buildHoverActions(ChatMessage msg, bool isMine, {String? mediaUrl}) {
     final isImage = mediaUrl != null && _isImageMedia(msg.content, mediaUrl);
     return Container(
+      // Clip the InkWell ripples on the 44x44 chips so they don't bleed
+      // past the rounded card boundary into the adjacent message bubble.
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: context.surface.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(6),
@@ -804,7 +808,8 @@ class _MessageItemState extends State<MessageItem>
         message: 'More',
         child: PopupMenuButton<String>(
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          // 44×44 minimum tap target per WCAG 2.5.5; visual icon stays 14px.
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           iconSize: 14,
           icon: Opacity(
             opacity: 0.75,
@@ -1419,13 +1424,19 @@ class _MessageItemState extends State<MessageItem>
         color: _bubbleColor(isMine: isMine, isFailed: isFailed),
         borderRadius: _bubbleBorderRadius(isMine: isMine),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: _bubbleChildren(
-          msg: msg,
-          isMine: isMine,
-          isFailed: isFailed,
-          hasMedia: hasMedia,
+      // Merge semantics for the bubble's inner content so the screen reader
+      // announces a single composite label (handled in build()) instead of
+      // separate header/body/timestamp/lock fragments. Avatar and hover bar
+      // sit OUTSIDE this merge so their own semantics survive.
+      child: MergeSemantics(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: _bubbleChildren(
+            msg: msg,
+            isMine: isMine,
+            isFailed: isFailed,
+            hasMedia: hasMedia,
+          ),
         ),
       ),
     );
@@ -1799,6 +1810,27 @@ class _MessageItemState extends State<MessageItem>
     }
   }
 
+  /// Compose a single composite semantic label for the message bubble so
+  /// assistive tech announces sender, time, content, status, and metadata
+  /// in one continuous read instead of fragmented pieces (#496).
+  String _composeMessageSemanticsLabel(ChatMessage msg, bool isMine) {
+    final who = isMine ? 'You' : msg.fromUsername;
+    final time = formatMessageTimestamp(msg.timestamp);
+    final preview = previewForSemantics(msg.content);
+    final reactionCount = msg.reactions.length;
+    final parts = <String>[
+      'From $who at $time',
+      if (preview.isNotEmpty) preview,
+      if (reactionCount > 0)
+        '$reactionCount reaction${reactionCount == 1 ? '' : 's'}',
+      if (msg.pinnedAt != null) 'Pinned',
+      if (msg.editedAt != null) 'Edited',
+      if (msg.isEncrypted) 'End-to-end encrypted',
+      'Long press for actions',
+    ];
+    return '${parts.join('. ')}.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final msg = widget.message;
@@ -1895,7 +1927,7 @@ class _MessageItemState extends State<MessageItem>
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
         child: Semantics(
-          label: 'Message from ${msg.fromUsername}. Long press for actions.',
+          label: _composeMessageSemanticsLabel(msg, isMine),
           button: true,
           child: GestureDetector(
             onLongPressStart: (details) =>
@@ -1967,24 +1999,30 @@ class _HoverActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Hover bar is mouse-only (gated behind `_isHovered`), so the 44×44
-    // minimum touch target doesn't apply — Discord/Slack-style 28×28
-    // chips read as more refined.
+    // 44×44 hit target per WCAG 2.5.5 — keyboard, switch, and assistive
+    // pointer users can land on the button even though the visual chip
+    // remains a tight 28×28 to preserve the Discord/Slack-style hover bar.
     return Semantics(
       label: tooltip,
       button: true,
       child: Tooltip(
         message: tooltip,
         child: SizedBox(
-          width: 28,
-          height: 28,
+          width: 44,
+          height: 44,
           child: InkWell(
             onTap: onPressed,
             borderRadius: BorderRadius.circular(6),
             child: Center(
-              child: Opacity(
-                opacity: 0.75,
-                child: Icon(icon, size: 14, color: context.textSecondary),
+              child: SizedBox(
+                width: 28,
+                height: 28,
+                child: Center(
+                  child: Opacity(
+                    opacity: 0.75,
+                    child: Icon(icon, size: 14, color: context.textSecondary),
+                  ),
+                ),
               ),
             ),
           ),
