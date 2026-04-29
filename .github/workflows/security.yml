@@ -23,8 +23,7 @@ jobs:
       - run: cargo install cargo-audit --locked
       # RUSTSEC-2023-0071: transitive rsa advisory via jsonwebtoken (no upstream patch).
       # RUSTSEC-2026-0097: rand 0.8.5 unsound advisory, pinned by sqlx 0.8.6 transitively.
-      # RUSTSEC-2026-0104: rustls-webpki CRL parsing panic, fix via cargo update (>=0.103.13).
-      - run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097 --ignore RUSTSEC-2026-0104
+      - run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097
   deny:
     name: License + Ban Check
     runs-on: ubuntu-latest
