@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -290,6 +291,136 @@ void main() {
 
       expect(notifier.state.error, isNotNull);
       expect(notifier.state.isLoading, isFalse);
+    });
+
+    // -------------------------------------------------------------------
+    // #515: monotonic-generation guard against stale reload responses.
+    // Two concurrent reloads (e.g. WS reconnect racing pull-to-refresh)
+    // must NOT let the older response overwrite the newer one's state.
+    // -------------------------------------------------------------------
+    group('stale-guard (#515)', () {
+      Map<String, dynamic> convFixture(String id, String title) => {
+        'conversation_id': id,
+        'kind': 'group',
+        'title': title,
+        'last_message': 'msg-$id',
+        'last_message_timestamp': '2026-01-15T10:00:00Z',
+        'unread_count': 0,
+        'members': [],
+      };
+
+      test('late stale success does not overwrite fresh success', () async {
+        // Two completers control response ordering on the same URL.
+        final completers = <Completer<http.Response>>[
+          Completer<http.Response>(),
+          Completer<http.Response>(),
+        ];
+        var callIndex = 0;
+        when(
+          () => mockClient.get(
+            any(that: predicate<Uri>((u) => u.path == '/api/conversations')),
+            headers: any(named: 'headers'),
+          ),
+        ).thenAnswer((_) => completers[callIndex++].future);
+
+        final notifier = container.read(conversationsProvider.notifier);
+        await http.runWithClient(() async {
+          // Fire two reloads back-to-back without awaiting.
+          final a = notifier.loadConversations();
+          final b = notifier.loadConversations();
+
+          // Resolve B first with [convB], then A with [convA].
+          completers[1].complete(
+            http.Response(jsonEncode([convFixture('B', 'B')]), 200),
+          );
+          await b;
+          completers[0].complete(
+            http.Response(jsonEncode([convFixture('A', 'A')]), 200),
+          );
+          await a;
+
+          // Latest call (B) must win even though A finished after.
+          expect(notifier.state.conversations, hasLength(1));
+          expect(notifier.state.conversations.first.id, 'B');
+        }, () => mockClient);
+      });
+
+      test('late stale error does not clobber fresh success', () async {
+        final completers = <Completer<http.Response>>[
+          Completer<http.Response>(),
+          Completer<http.Response>(),
+        ];
+        var callIndex = 0;
+        when(
+          () => mockClient.get(
+            any(that: predicate<Uri>((u) => u.path == '/api/conversations')),
+            headers: any(named: 'headers'),
+          ),
+        ).thenAnswer((_) => completers[callIndex++].future);
+
+        final notifier = container.read(conversationsProvider.notifier);
+        await http.runWithClient(() async {
+          final a = notifier.loadConversations(); // will throw
+          final b = notifier.loadConversations(); // succeeds
+
+          completers[1].complete(
+            http.Response(jsonEncode([convFixture('B', 'B')]), 200),
+          );
+          await b;
+          completers[0].completeError(const SocketException('boom'));
+          await a;
+
+          // Stale error must NOT clobber fresh success state.
+          expect(notifier.state.conversations, hasLength(1));
+          expect(notifier.state.conversations.first.id, 'B');
+          expect(notifier.state.error, isNull);
+          expect(notifier.state.isLoading, isFalse);
+        }, () => mockClient);
+      });
+
+      test('isLoading stays true until latest call completes', () async {
+        final completers = <Completer<http.Response>>[
+          Completer<http.Response>(),
+          Completer<http.Response>(),
+        ];
+        var callIndex = 0;
+        when(
+          () => mockClient.get(
+            any(that: predicate<Uri>((u) => u.path == '/api/conversations')),
+            headers: any(named: 'headers'),
+          ),
+        ).thenAnswer((_) => completers[callIndex++].future);
+
+        final notifier = container.read(conversationsProvider.notifier);
+        await http.runWithClient(() async {
+          final a = notifier.loadConversations();
+          final b = notifier.loadConversations();
+
+          // Mid-flight: at least one response still pending.
+          expect(notifier.state.isLoading, isTrue);
+
+          // Resolve the older call first; isLoading must stay true since
+          // the latest is still in flight (and its response will be the
+          // one that flips loading=false).
+          completers[0].complete(
+            http.Response(jsonEncode([convFixture('A', 'A')]), 200),
+          );
+          await a;
+          expect(
+            notifier.state.isLoading,
+            isTrue,
+            reason: 'stale return must not flip loading=false',
+          );
+
+          // Now resolve the latest call -- THIS one is allowed to clear it.
+          completers[1].complete(
+            http.Response(jsonEncode([convFixture('B', 'B')]), 200),
+          );
+          await b;
+          expect(notifier.state.isLoading, isFalse);
+          expect(notifier.state.conversations.first.id, 'B');
+        }, () => mockClient);
+      });
     });
   });
 
