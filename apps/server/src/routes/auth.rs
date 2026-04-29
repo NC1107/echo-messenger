@@ -65,9 +65,10 @@ pub struct AuthResponse {
     pub avatar_url: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct RefreshRequest {
-    pub refresh_token: String,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -228,9 +229,24 @@ pub async fn login(
 /// code path.
 pub async fn refresh(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<RefreshRequest>,
+    jar: CookieJar,
+    body: Option<Json<RefreshRequest>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let token_hash = jwt::hash_refresh_token(&body.refresh_token);
+    // Cookie wins when both are present so the web client's HttpOnly cookie
+    // can never be silently overridden by a malicious JSON body. Mobile/desktop
+    // clients keep sending the token in the body and that path still works.
+    let cookie_token = jar
+        .get(REFRESH_COOKIE_NAME)
+        .map(|c| c.value().to_string())
+        .filter(|s| !s.is_empty());
+    let body_token = body
+        .and_then(|Json(b)| b.refresh_token)
+        .filter(|s| !s.is_empty());
+    let raw_token = cookie_token
+        .or(body_token)
+        .ok_or_else(|| AppError::unauthorized("Missing refresh token"))?;
+
+    let token_hash = jwt::hash_refresh_token(&raw_token);
 
     let mut tx = state
         .pool
@@ -344,10 +360,15 @@ pub async fn refresh(
 
     let access_token = jwt::create_token(row.user_id, &state.jwt_secret)?;
 
-    Ok(Json(RefreshResponse {
-        access_token,
-        refresh_token: new_raw_token,
-    }))
+    let jar = jar.add(build_refresh_cookie(new_raw_token.clone()));
+
+    Ok((
+        jar,
+        Json(RefreshResponse {
+            access_token,
+            refresh_token: new_raw_token,
+        }),
+    ))
 }
 
 // ---------------------------------------------------------------------------
