@@ -814,4 +814,39 @@ mod history_device_aware_557 {
             "no device_id param -> legacy canonical content (backward compat)"
         );
     }
+
+    /// Bug #557 — even though the route accepts `device_id`, the per-device
+    /// JOIN must be bound to the authenticated user's id, NOT the param,
+    /// so a non-member of the conversation cannot retrieve any per-device
+    /// ciphertext by guessing device ids.
+    #[tokio::test]
+    async fn test_get_messages_rejects_non_member_with_device_id() {
+        let base = common::spawn_server().await;
+        let client = Client::new();
+
+        let (alice_token, _alice_id, _alice_name) =
+            common::register_and_login(&client, &base, "auz_alice").await;
+        let (bob_token, bob_id, bob_name) =
+            common::register_and_login(&client, &base, "auz_bob").await;
+        let (carol_token, _carol_id, _carol_name) =
+            common::register_and_login(&client, &base, "auz_carol").await;
+
+        let conv_id =
+            common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name)
+                .await;
+
+        // Carol (not a member of Alice <-> Bob's DM) tries to read history
+        // with a guessed device_id.  Auth gate must reject regardless.
+        let status = client
+            .get(format!("{base}/api/messages/{conv_id}?device_id=11"))
+            .header("Authorization", format!("Bearer {carol_token}"))
+            .send()
+            .await
+            .unwrap()
+            .status();
+        assert!(
+            !status.is_success(),
+            "non-member must not access conversation history (got {status})"
+        );
+    }
 }

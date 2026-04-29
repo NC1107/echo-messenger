@@ -377,6 +377,31 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         .conversations
         .any((c) => c.id == conversationId);
 
+    // #557: server marks replay frames `undecryptable: true` when this device
+    // has no per-device ciphertext row.  Render an explicit placeholder
+    // instead of running decrypt over a foreign-device wire (which would
+    // poison the local ratchet state and produce a generic "out of sync"
+    // banner).  Skip the Hive cache write so a future fix-up can replace it.
+    if (json['undecryptable'] == true) {
+      final placeholder = ChatMessage.fromServerJson({
+        ...json,
+        'content': '[Encrypted for another device of this account]',
+      }, myUserId).copyWith(isEncrypted: true);
+      ref.read(chatProvider.notifier).addMessage(placeholder);
+      ref
+          .read(conversationsProvider.notifier)
+          .onNewMessage(
+            conversationId: conversationId,
+            content: 'Encrypted message',
+            timestamp: timestamp,
+            senderUsername: senderUsername,
+          );
+      if (!isKnownConversation) {
+        ref.read(conversationsProvider.notifier).loadConversations();
+      }
+      return;
+    }
+
     if (cryptoState.isInitialized) {
       final crypto = ref.read(cryptoServiceProvider);
       final token = ref.read(authProvider).token ?? '';

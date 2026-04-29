@@ -1294,24 +1294,25 @@ class CryptoService {
       // session (`peerUserId:fromDeviceId`) so multi-device DM history is
       // decrypted on the right ratchet. Falls through to the legacy
       // peer-only key when there's no device-specific session yet.
-      final sessionKey = _sessionKeyFor(peerUserId, fromDeviceId);
-      var session = _sessions.get(sessionKey);
-      session ??= await _reloadSession(sessionKey);
-      if (session == null && sessionKey != peerUserId) {
+      // Track the actual key the session was loaded from so we save the
+      // advanced ratchet state back to the same slot it came from -- using
+      // `_sessions.containsKey(...)` after the fact would mis-route under
+      // LRU TTL expiry and write a foreign session over a fresh slot.
+      final preferredKey = _sessionKeyFor(peerUserId, fromDeviceId);
+      var loadedKey = preferredKey;
+      var session = _sessions.get(preferredKey);
+      session ??= await _reloadSession(preferredKey);
+      if (session == null && preferredKey != peerUserId) {
+        loadedKey = peerUserId;
         session = _sessions.get(peerUserId);
         session ??= await _reloadSession(peerUserId);
       }
       if (session == null) return null;
 
       final plainBytes = await session.decrypt(fullWire);
-      // Save under the same key we loaded from so subsequent reads see the
-      // advanced ratchet state.
-      final savedKey = _sessions.containsKey(sessionKey)
-          ? sessionKey
-          : peerUserId;
-      await _saveSession(savedKey, session);
+      await _saveSession(loadedKey, session);
       // Refresh LRU ordering after in-place mutation.
-      _sessions.put(savedKey, session);
+      _sessions.put(loadedKey, session);
       return utf8.decode(plainBytes);
     } catch (_) {
       return null;
