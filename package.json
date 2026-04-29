@@ -1,0 +1,32 @@
+{
+  "name": "decentralized-chat-app",
+  "version": "1.0.0",
+  "description": "A lightweight, cross-platform messaging app with end-to-end encryption.",
+  "main": "commitlint.config.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NC1107/echo-messenger.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/NC1107/echo-messenger/issues"
+  },
+  "homepage": "https://github.com/NC1107/echo-messenger#readme",
+  "dependencies": {
+    "@playwright/test": "^1.58.2",
+    "playwright": "^1.58.2"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
+    "lefthook": "^2.1.4"
+  }
+}
