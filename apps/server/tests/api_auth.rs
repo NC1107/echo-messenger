@@ -453,3 +453,59 @@ async fn refresh_empty_cookie_falls_through_to_body() {
         "empty cookie must fall through to body token, not 401"
     );
 }
+
+/// A web client that refreshes via the cookie path must invalidate the body
+/// token issued at login as part of the same family rotation.  Without this
+/// guarantee, an XSS that captured the body token at login could keep using
+/// it after the cookie was rotated -- defeating the point of the cookie
+/// (#342).
+#[tokio::test]
+async fn refresh_cookie_rotation_invalidates_prior_body_token() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("mixedmode");
+
+    common::register(&client, &base, &username, "password123").await;
+    let login_resp = common::login_raw(&client, &base, &username, "password123").await;
+    assert_eq!(login_resp.status().as_u16(), 200);
+
+    let raw_cookie = find_set_cookie(&login_resp, "echo_refresh")
+        .expect("login Set-Cookie")
+        .to_string();
+    let cookie_header = raw_cookie
+        .split(';')
+        .next()
+        .expect("cookie name=value")
+        .trim()
+        .to_string();
+
+    let body: serde_json::Value = login_resp.json().await.unwrap();
+    let original_body_token = body["refresh_token"].as_str().unwrap().to_string();
+
+    // Rotate via the cookie path.
+    let resp = client
+        .post(format!("{base}/api/auth/refresh"))
+        .header(reqwest::header::COOKIE, &cookie_header)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .expect("cookie refresh failed");
+    assert_eq!(
+        resp.status().as_u16(),
+        200,
+        "cookie rotation should succeed"
+    );
+
+    // The body token from login is now superseded -- replaying it must 401.
+    let resp = client
+        .post(format!("{base}/api/auth/refresh"))
+        .json(&serde_json::json!({ "refresh_token": original_body_token }))
+        .send()
+        .await
+        .expect("body refresh request failed");
+    assert_eq!(
+        resp.status().as_u16(),
+        401,
+        "body token must be invalidated by cookie-path rotation"
+    );
+}

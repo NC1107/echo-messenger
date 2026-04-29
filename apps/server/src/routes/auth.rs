@@ -382,7 +382,8 @@ pub async fn logout(
 ) -> Result<impl IntoResponse, AppError> {
     db::tokens::revoke_all_user_tokens(&state.pool, auth_user.user_id).await?;
     let jar = jar.add(clear_refresh_cookie());
-    Ok((jar, StatusCode::NO_CONTENT))
+    // Convention: StatusCode first, then CookieJar, matching register/login.
+    Ok((StatusCode::NO_CONTENT, jar))
 }
 
 // ---------------------------------------------------------------------------
