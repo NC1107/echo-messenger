@@ -518,6 +518,16 @@ pub async fn download_thumb(
         return Err(AppError::unauthorized("Missing authentication"));
     };
 
+    // Fetch the media row first so we can derive the disk path from
+    // DB-validated state — this also acts as a CodeQL sanitizer for the
+    // path-traversal check on `id` (matching `download()`'s flow).
+    let row = db::media::get_media(&state.pool, id)
+        .await?
+        .ok_or_else(|| AppError {
+            status: StatusCode::NOT_FOUND,
+            message: "Media not found".to_string(),
+        })?;
+
     let allowed = db::media::can_user_access_media(&state.pool, id, user_id)
         .await
         .map_err(|e| {
@@ -531,7 +541,16 @@ pub async fn download_thumb(
         });
     }
 
-    let thumb_path = format!("./uploads/{id}.thumb.jpg");
+    // Only video uploads have thumbnails; serve a quick 404 otherwise so
+    // we don't read random `*.thumb.jpg` files that may have been planted.
+    if !row.mime_type.starts_with("video/") {
+        return Err(AppError {
+            status: StatusCode::NOT_FOUND,
+            message: "Thumbnail not available".to_string(),
+        });
+    }
+
+    let thumb_path = format!("./uploads/{}.thumb.jpg", row.id.simple());
     let data = fs::read(&thumb_path).await.map_err(|_| AppError {
         status: StatusCode::NOT_FOUND,
         message: "Thumbnail not available".to_string(),
