@@ -437,11 +437,12 @@ class _MessageItemState extends State<MessageItem>
   /// Wrapped in a horizontal-fade ShaderMask so the leading and trailing edges
   /// hint at off-screen reactions (#508).
   Widget _buildQuickReactionRow(BuildContext sheetContext, ChatMessage msg) {
+    final textDir = Directionality.of(sheetContext);
     return ShaderMask(
       blendMode: BlendMode.dstIn,
       shaderCallback: (bounds) => const LinearGradient(
-        begin: Alignment.centerLeft,
-        end: Alignment.centerRight,
+        begin: AlignmentDirectional.centerStart,
+        end: AlignmentDirectional.centerEnd,
         stops: [0.0, 0.04, 0.96, 1.0],
         colors: [
           Colors.transparent,
@@ -449,7 +450,7 @@ class _MessageItemState extends State<MessageItem>
           Colors.black,
           Colors.transparent,
         ],
-      ).createShader(bounds),
+      ).createShader(bounds, textDirection: textDir),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

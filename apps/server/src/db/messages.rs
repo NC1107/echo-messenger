@@ -10,6 +10,9 @@ pub struct MessageRow {
     pub conversation_id: Uuid,
     pub channel_id: Option<Uuid>,
     pub sender_id: Uuid,
+    /// Device that originated the message. `None` for legacy rows that
+    /// predate multi-device tracking (#557).
+    pub sender_device_id: Option<i32>,
     pub content: String,
     pub created_at: DateTime<Utc>,
     pub delivered: bool,
@@ -23,6 +26,9 @@ pub struct MessageWithSender {
     pub conversation_id: Uuid,
     pub channel_id: Option<Uuid>,
     pub sender_id: Uuid,
+    /// Device that originated the message. `None` for legacy rows that
+    /// predate multi-device tracking (#557).
+    pub sender_device_id: Option<i32>,
     pub sender_username: String,
     pub content: String,
     pub created_at: DateTime<Utc>,
@@ -110,11 +116,13 @@ pub async fn find_or_create_dm_conversation(
 /// INSERT is suppressed and `sqlx::Error::RowNotFound` is returned so the
 /// caller can translate that into a 404 / WS error frame instead of leaking
 /// content across conversations.
+#[allow(clippy::too_many_arguments)]
 pub async fn store_message(
     pool: &PgPool,
     conversation_id: Uuid,
     channel_id: Option<Uuid>,
     sender_id: Uuid,
+    sender_device_id: Option<i32>,
     content: &str,
     reply_to_id: Option<Uuid>,
     ttl_seconds: Option<i64>,
@@ -126,14 +134,14 @@ pub async fn store_message(
              SELECT id FROM messages \
              WHERE id = $5 AND conversation_id = $1 AND deleted_at IS NULL \
          ) \
-         INSERT INTO messages (conversation_id, channel_id, sender_id, content, reply_to_id, expires_at) \
+         INSERT INTO messages (conversation_id, channel_id, sender_id, content, reply_to_id, expires_at, sender_device_id) \
          SELECT $1, $2, $3, $4, \
                 CASE WHEN $5::uuid IS NULL THEN NULL \
                      ELSE (SELECT id FROM parent) END, \
-                $6 \
+                $6, $7 \
          WHERE $5::uuid IS NULL OR EXISTS (SELECT 1 FROM parent) \
-         RETURNING id, conversation_id, channel_id, sender_id, content, created_at, delivered, \
-                   reply_to_id, expires_at",
+         RETURNING id, conversation_id, channel_id, sender_id, sender_device_id, \
+                   content, created_at, delivered, reply_to_id, expires_at",
     )
     .bind(conversation_id)
     .bind(channel_id)
@@ -141,22 +149,32 @@ pub async fn store_message(
     .bind(content)
     .bind(reply_to_id)
     .bind(expires_at)
+    .bind(sender_device_id)
     .fetch_one(pool)
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn get_messages(
     pool: &PgPool,
     conversation_id: Uuid,
     channel_id: Option<Uuid>,
     before: Option<DateTime<Utc>>,
     limit: i64,
+    requesting_user_id: Uuid,
+    requesting_device_id: Option<i32>,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     // Single query handles both cursor and non-cursor cases via optional $3 param.
+    // #557: when the caller passes its own `device_id`, we LEFT JOIN
+    // `message_device_contents` and surface the device-specific ciphertext via
+    // COALESCE so multi-device DM history decrypts on the right ratchet.
+    // When no device_id is provided we preserve the legacy behaviour.
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                m.sender_device_id, \
                 u.username AS sender_username, \
-                m.content, m.created_at, m.edited_at, m.reply_to_id, \
+                COALESCE(mdc.content, m.content) AS content, \
+                m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
                 (SELECT COUNT(*) FROM messages r \
@@ -165,6 +183,11 @@ pub async fn get_messages(
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
+         LEFT JOIN message_device_contents mdc \
+                ON $5::int IS NOT NULL \
+               AND mdc.message_id = m.id \
+               AND mdc.recipient_user_id = $6 \
+               AND mdc.device_id = $5 \
          WHERE m.conversation_id = $1 \
            AND ($2::uuid IS NULL OR m.channel_id = $2) \
            AND ($3::timestamptz IS NULL OR m.created_at < $3) \
@@ -176,6 +199,8 @@ pub async fn get_messages(
     .bind(channel_id)
     .bind(before)
     .bind(limit)
+    .bind(requesting_device_id)
+    .bind(requesting_user_id)
     .fetch_all(pool)
     .await
 }
@@ -186,6 +211,7 @@ pub async fn get_undelivered(
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                m.sender_device_id, \
                 u.username AS sender_username, \
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
@@ -294,6 +320,7 @@ pub async fn search_messages(
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                m.sender_device_id, \
                 u.username AS sender_username, \
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
@@ -581,6 +608,31 @@ pub async fn get_device_content(
     Ok(row.map(|(c,)| c))
 }
 
+/// Return the subset of `message_ids` that have at least one per-device
+/// ciphertext row for `recipient_user_id` across *any* of the recipient's
+/// devices.  Used by offline replay to distinguish "no per-device fanout
+/// happened" (legacy/group/plaintext) from "fanout happened but missed this
+/// device", so the latter can be flagged as undecryptable instead of
+/// silently shipping the wrong device's wire (#557).
+pub async fn message_ids_with_any_device_content(
+    pool: &PgPool,
+    message_ids: &[Uuid],
+    recipient_user_id: Uuid,
+) -> Result<std::collections::HashSet<Uuid>, sqlx::Error> {
+    if message_ids.is_empty() {
+        return Ok(std::collections::HashSet::new());
+    }
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT DISTINCT message_id FROM message_device_contents \
+         WHERE message_id = ANY($1) AND recipient_user_id = $2",
+    )
+    .bind(message_ids)
+    .bind(recipient_user_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
 /// Fetch per-device ciphertexts for a batch of messages for a specific
 /// recipient device in a single query.  Returns a map from message_id to
 /// device-specific content.
@@ -628,6 +680,7 @@ pub async fn get_thread_replies(
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                m.sender_device_id, \
                 u.username AS sender_username, \
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \

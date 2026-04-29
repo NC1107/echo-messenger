@@ -375,6 +375,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     if (msg.contains('No session for')) {
       return 'Encryption session expired. Tap to retry.';
     }
+    // #344: surfaced when sendGroupMessage cannot fetch the group key.
+    if (msg.contains('No group session') || msg.contains('group key')) {
+      return 'Group encryption key not available yet. Tap to retry.';
+    }
     if (msg.contains('cannot decrypt') || msg.contains('Could not decrypt')) {
       return 'Message could not be decrypted.';
     }
@@ -414,18 +418,19 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
 
   /// Send a message to a group conversation.
   ///
-  /// If the conversation has encryption enabled and a group encryption key is
-  /// available, the message content is AES-256-GCM encrypted before being
-  /// sent. Otherwise the message is sent as plaintext (backward compatible).
+  /// When the conversation is marked `isEncrypted=true`, encryption MUST
+  /// succeed before the message goes on the wire.  If the group key is
+  /// unavailable or encryption raises, the message surfaces as a failed
+  /// `ChatMessage` (tap-to-retry via `_retryMessage`) and the WS frame is
+  /// NOT sent.  This closes the silent plaintext downgrade vector (#344).
+  /// Unencrypted groups (`isEncrypted=false`, the default) keep sending
+  /// plaintext as before -- that path is intentional, not a downgrade.
   Future<void> sendGroupMessage(
     String conversationId,
     String content, {
     String? channelId,
     String? replyToId,
   }) async {
-    String payload = content;
-
-    // Only attempt group encryption if the conversation is marked encrypted
     final conversation = ref
         .read(conversationsProvider)
         .conversations
@@ -433,22 +438,40 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
         .firstOrNull;
     final isEncrypted = conversation?.isEncrypted ?? false;
 
+    final String payload;
     if (isEncrypted) {
       try {
         final groupCrypto = ref.read(groupCryptoServiceProvider);
         final token = ref.read(authProvider).token ?? '';
         groupCrypto.setToken(token);
         final keyResult = await groupCrypto.getGroupKey(conversationId);
-        if (keyResult != null) {
-          final (_, keyBase64) = keyResult;
-          payload = await GroupCryptoService.encryptGroupMessage(
-            content,
-            keyBase64,
+        if (keyResult == null) {
+          // No group session yet -- hard fail rather than leak plaintext.
+          _addFailedMessage(
+            '',
+            _friendlyEncryptionError('No group session'),
+            conversationId: conversationId,
+            originalContent: content,
           );
+          return;
         }
+        final (_, keyBase64) = keyResult;
+        payload = await GroupCryptoService.encryptGroupMessage(
+          content,
+          keyBase64,
+        );
       } catch (e) {
-        debugLog('Group encryption failed, sending plaintext: $e', 'WebSocket');
+        debugLog('Group encryption failed: $e', 'WebSocket');
+        _addFailedMessage(
+          '',
+          _friendlyEncryptionError(e),
+          conversationId: conversationId,
+          originalContent: content,
+        );
+        return;
       }
+    } else {
+      payload = content;
     }
 
     final msg = <String, dynamic>{

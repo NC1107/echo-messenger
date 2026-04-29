@@ -4,6 +4,7 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -13,6 +14,38 @@ use crate::db;
 use crate::error::AppError;
 
 use super::AppState;
+
+// ---------------------------------------------------------------------------
+// Refresh token cookie helpers (#342)
+//
+// The web client stores the refresh token in an HttpOnly + Secure +
+// SameSite=Strict cookie scoped to `/api/auth`. Mobile/desktop continue to
+// receive the token in the JSON body for backward compatibility. `/refresh`
+// accepts either; cookie wins when both are present.
+// ---------------------------------------------------------------------------
+
+const REFRESH_COOKIE_NAME: &str = "echo_refresh";
+const REFRESH_COOKIE_MAX_AGE_SECS: i64 = 7 * 24 * 60 * 60;
+
+fn build_refresh_cookie(value: String) -> Cookie<'static> {
+    Cookie::build((REFRESH_COOKIE_NAME, value))
+        .http_only(true)
+        .secure(true)
+        .same_site(SameSite::Strict)
+        .path("/api/auth")
+        .max_age(time::Duration::seconds(REFRESH_COOKIE_MAX_AGE_SECS))
+        .build()
+}
+
+fn clear_refresh_cookie() -> Cookie<'static> {
+    Cookie::build((REFRESH_COOKIE_NAME, ""))
+        .http_only(true)
+        .secure(true)
+        .same_site(SameSite::Strict)
+        .path("/api/auth")
+        .max_age(time::Duration::ZERO)
+        .build()
+}
 
 // ---------------------------------------------------------------------------
 // Request / response types
@@ -32,9 +65,10 @@ pub struct AuthResponse {
     pub avatar_url: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct RefreshRequest {
-    pub refresh_token: String,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -105,6 +139,7 @@ async fn issue_refresh_token(
 
 pub async fn register(
     State(state): State<Arc<AppState>>,
+    jar: CookieJar,
     Json(body): Json<AuthRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     validate_username(&body.username)?;
@@ -118,6 +153,9 @@ pub async fn register(
     let access_token = jwt::create_token(user_id, &state.jwt_secret)?;
     let (refresh_token, _family_id) = issue_refresh_token(&state.pool, user_id).await?;
 
+    // Web clients consume the cookie; mobile/desktop still read the JSON body.
+    let jar = jar.add(build_refresh_cookie(refresh_token.clone()));
+
     let response = AuthResponse {
         user_id: user_id.to_string(),
         access_token,
@@ -125,7 +163,7 @@ pub async fn register(
         avatar_url: None,
     };
 
-    Ok((StatusCode::CREATED, Json(response)))
+    Ok((StatusCode::CREATED, jar, Json(response)))
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +172,7 @@ pub async fn register(
 
 pub async fn login(
     State(state): State<Arc<AppState>>,
+    jar: CookieJar,
     Json(body): Json<AuthRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     // Pre-computed Argon2id hash of a random string. Used when the requested
@@ -163,6 +202,8 @@ pub async fn login(
     let access_token = jwt::create_token(user.id, &state.jwt_secret)?;
     let (refresh_token, _family_id) = issue_refresh_token(&state.pool, user.id).await?;
 
+    let jar = jar.add(build_refresh_cookie(refresh_token.clone()));
+
     let response = AuthResponse {
         user_id: user.id.to_string(),
         access_token,
@@ -170,7 +211,7 @@ pub async fn login(
         avatar_url: user.avatar_url,
     };
 
-    Ok(Json(response))
+    Ok((jar, Json(response)))
 }
 
 // ---------------------------------------------------------------------------
@@ -188,9 +229,24 @@ pub async fn login(
 /// code path.
 pub async fn refresh(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<RefreshRequest>,
+    jar: CookieJar,
+    body: Option<Json<RefreshRequest>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let token_hash = jwt::hash_refresh_token(&body.refresh_token);
+    // Cookie wins when both are present so the web client's HttpOnly cookie
+    // can never be silently overridden by a malicious JSON body. Mobile/desktop
+    // clients keep sending the token in the body and that path still works.
+    let cookie_token = jar
+        .get(REFRESH_COOKIE_NAME)
+        .map(|c| c.value().to_string())
+        .filter(|s| !s.is_empty());
+    let body_token = body
+        .and_then(|Json(b)| b.refresh_token)
+        .filter(|s| !s.is_empty());
+    let raw_token = cookie_token
+        .or(body_token)
+        .ok_or_else(|| AppError::unauthorized("Missing refresh token"))?;
+
+    let token_hash = jwt::hash_refresh_token(&raw_token);
 
     let mut tx = state
         .pool
@@ -304,10 +360,15 @@ pub async fn refresh(
 
     let access_token = jwt::create_token(row.user_id, &state.jwt_secret)?;
 
-    Ok(Json(RefreshResponse {
-        access_token,
-        refresh_token: new_raw_token,
-    }))
+    let jar = jar.add(build_refresh_cookie(new_raw_token.clone()));
+
+    Ok((
+        jar,
+        Json(RefreshResponse {
+            access_token,
+            refresh_token: new_raw_token,
+        }),
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -316,10 +377,13 @@ pub async fn refresh(
 
 pub async fn logout(
     State(state): State<Arc<AppState>>,
+    jar: CookieJar,
     auth_user: AuthUser,
 ) -> Result<impl IntoResponse, AppError> {
     db::tokens::revoke_all_user_tokens(&state.pool, auth_user.user_id).await?;
-    Ok(StatusCode::NO_CONTENT)
+    let jar = jar.add(clear_refresh_cookie());
+    // Convention: StatusCode first, then CookieJar, matching register/login.
+    Ok((StatusCode::NO_CONTENT, jar))
 }
 
 // ---------------------------------------------------------------------------

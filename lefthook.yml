@@ -12,12 +12,22 @@ pre-commit:
       run: |
         FLUTTER_BIN=$(dirname "$(which flutter 2>/dev/null || echo "$HOME/.flutter/bin/flutter")")
         export PATH="$FLUTTER_BIN:$PATH"
+        # Hook env from `git commit` includes GIT_DIR pointing at the consumer
+        # worktree; flutter then resolves its own version against that and
+        # caches "0.0.0-unknown", which breaks pub solving.  Drop the git env
+        # so flutter runs `git rev-parse` inside its own SDK repo.
+        unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
         cd apps/client && dart format --set-exit-if-changed .
     flutter-analyze:
       glob: "*.dart"
       run: |
         FLUTTER_BIN=$(dirname "$(which flutter 2>/dev/null || echo "$HOME/.flutter/bin/flutter")")
         export PATH="$FLUTTER_BIN:$PATH"
+        # Hook env from `git commit` includes GIT_DIR pointing at the consumer
+        # worktree; flutter then resolves its own version against that and
+        # caches "0.0.0-unknown", which breaks pub solving.  Drop the git env
+        # so flutter runs `git rev-parse` inside its own SDK repo.
+        unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX
         cd apps/client && flutter analyze --fatal-infos
 
 commit-msg:

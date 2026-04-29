@@ -550,7 +550,7 @@ pub async fn download_thumb(
         });
     }
 
-    let thumb_path = format!("./uploads/{}.thumb.jpg", row.id.simple());
+    let thumb_path = format!("./uploads/{}.thumb.jpg", row.id);
     let data = fs::read(&thumb_path).await.map_err(|_| AppError {
         status: StatusCode::NOT_FOUND,
         message: "Thumbnail not available".to_string(),

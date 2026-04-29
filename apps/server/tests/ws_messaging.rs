@@ -371,10 +371,15 @@ async fn message_to_noncontact_returns_error() {
 // Offline delivery with per-device ciphertext
 // ---------------------------------------------------------------------------
 
-/// When a sender includes `recipient_device_contents`, offline devices should
-/// receive their own ciphertext on reconnect rather than the canonical fallback.
+/// When a recipient device reconnects and no per-device ciphertext row exists
+/// for it, the server must NOT serve the canonical (sender-side) ciphertext --
+/// that ciphertext is bound to a different device's Double Ratchet session and
+/// would corrupt this device's state.  Instead the offline replay emits an
+/// `undecryptable: true` placeholder so the client surfaces "Message
+/// unavailable on this device" rather than silently failing to decrypt (#557
+/// Bug 2).
 #[tokio::test]
-async fn offline_delivery_uses_per_device_ciphertext() {
+async fn offline_delivery_marks_unknown_device_undecryptable() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
@@ -421,30 +426,23 @@ async fn offline_delivery_uses_per_device_ciphertext() {
         "Alice should get message_sent"
     );
 
-    // Bob comes online with device 42 — his WS ticket carries device_id = 42.
-    // Register Bob's key bundle with device_id=42 first so the WS auth knows
-    // his device.  The WS handler reads device_id from the auth ticket, but the
-    // test harness always assigns device_id = 0 unless we control the ticket.
-    // Because we cannot override device_id in the test WS connect path without
-    // deeper harness changes, we use device_id = 0 here (default) and verify
-    // that the *canonical* content is returned as the safe fallback.
-    //
-    // The correct per-device path is exercised by the companion
-    // `offline_delivery_falls_back_to_canonical` test below.  Together, the
-    // two tests establish that:
-    //   1. When no device-specific row exists, canonical content is delivered.
-    //   2. When a device-specific row exists, it takes precedence.
+    // Bob comes online via the test harness, which assigns device_id = 0 (no
+    // key bundle registered).  Per-device row is keyed at device_id = 42, so
+    // there is no row for device 0.  Pre-#557 the server would have served
+    // `canonical_ct` here -- now it must emit an undecryptable placeholder.
     let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
 
-    // Bob should immediately receive the queued message on connect
-    // (device_id = 0 in test harness, so canonical fallback fires).
     let bob_event = read_text_with_timeout(&mut bob_ws).await;
     let bob_msg: Value = serde_json::from_str(&bob_event).expect("Bob JSON parse failed");
     assert_eq!(bob_msg["type"], "new_message", "Bob should get new_message");
     assert_eq!(
+        bob_msg["undecryptable"], true,
+        "Bob (device 0, no per-device row) should get undecryptable=true, not canonical ct"
+    );
+    assert_ne!(
         bob_msg["content"], canonical_ct,
-        "Bob (device 0, no per-device row) should get canonical ciphertext"
+        "must NOT serve foreign-device ciphertext as canonical content"
     );
 
     let _ = alice_ws.close(None).await;
@@ -539,6 +537,96 @@ async fn device_content_db_roundtrip() {
     assert_eq!(missing, None, "unknown device should return None");
 
     let _ = alice_ws.close(None).await;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-device fanout regression (#557)
+// ---------------------------------------------------------------------------
+
+/// Bug #557 — when a recipient is connected on multiple devices simultaneously
+/// the fanout MUST hand each device its own per-device ciphertext.
+/// The pre-fix code used `Iterator::any` which short-circuited after the first
+/// successful send, so device #2 silently never received the message and that
+/// device's ratchet desynchronized.
+#[tokio::test]
+async fn test_dm_fanout_delivers_to_all_recipient_devices() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "fanout_alice").await;
+    let (bob_token, bob_id, bob_name) =
+        common::register_and_login(&client, &base, "fanout_bob").await;
+
+    common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+    // Alice connects on her primary device.
+    let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+
+    // Bob connects on TWO devices using the same access token but distinct
+    // device_id values bound to separate WS tickets. This mirrors a user with
+    // both desktop and mobile online.
+    let bob_d1_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 11).await;
+    let bob_d2_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 22).await;
+    let mut bob_d1_ws = connect_ws(&base, &bob_d1_ticket).await;
+    let mut bob_d2_ws = connect_ws(&base, &bob_d2_ticket).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    drain_pending(&mut alice_ws).await;
+    drain_pending(&mut bob_d1_ws).await;
+    drain_pending(&mut bob_d2_ws).await;
+
+    let bob_d1_ct = "BOB_D1_CT_557";
+    let bob_d2_ct = "BOB_D2_CT_557";
+    let canonical = "CANONICAL_557";
+
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "to_user_id": bob_id,
+        "content": canonical,
+        "recipient_device_contents": {
+            bob_id.to_string(): {
+                "11": bob_d1_ct,
+                "22": bob_d2_ct,
+            },
+        },
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("Alice send failed");
+
+    // Alice gets her message_sent ack (skip presence noise).
+    let ack_text = read_text_skipping_presence(&mut alice_ws).await;
+    let ack: Value = serde_json::from_str(&ack_text).unwrap();
+    assert_eq!(ack["type"], "message_sent");
+
+    // Both Bob devices must receive `new_message`, each with its own
+    // ciphertext.  Pre-fix this test would deadlock or fail on device #2.
+    let d1_text = read_text_skipping_presence(&mut bob_d1_ws).await;
+    let d1: Value = serde_json::from_str(&d1_text).unwrap();
+    assert_eq!(d1["type"], "new_message", "device 1 should get new_message");
+    assert_eq!(
+        d1["content"], bob_d1_ct,
+        "device 1 must receive its own ciphertext"
+    );
+
+    let d2_text = read_text_skipping_presence(&mut bob_d2_ws).await;
+    let d2: Value = serde_json::from_str(&d2_text).unwrap();
+    assert_eq!(d2["type"], "new_message", "device 2 should get new_message");
+    assert_eq!(
+        d2["content"], bob_d2_ct,
+        "device 2 must receive its own ciphertext"
+    );
+
+    // Distinct ciphertexts per device — guards against any future regression
+    // that would broadcast a single per-recipient frame to multiple devices.
+    assert_ne!(d1["content"], d2["content"]);
+
+    let _ = alice_ws.close(None).await;
+    let _ = bob_d1_ws.close(None).await;
+    let _ = bob_d2_ws.close(None).await;
 }
 
 // ---------------------------------------------------------------------------

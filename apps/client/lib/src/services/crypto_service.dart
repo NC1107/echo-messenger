@@ -1269,8 +1269,9 @@ class CryptoService {
   /// Callers should check the Hive cache first before calling this method.
   Future<String?> decryptHistoryMessage(
     String peerUserId,
-    String ciphertextB64,
-  ) async {
+    String ciphertextB64, {
+    int? fromDeviceId,
+  }) async {
     try {
       final fullWire = Uint8List.fromList(base64Decode(ciphertextB64));
 
@@ -1289,14 +1290,29 @@ class CryptoService {
         return null;
       }
 
-      var session = _sessions.get(peerUserId);
-      session ??= await _reloadSession(peerUserId);
+      // #557: when the originating device is known, prefer the per-device
+      // session (`peerUserId:fromDeviceId`) so multi-device DM history is
+      // decrypted on the right ratchet. Falls through to the legacy
+      // peer-only key when there's no device-specific session yet.
+      // Track the actual key the session was loaded from so we save the
+      // advanced ratchet state back to the same slot it came from -- using
+      // `_sessions.containsKey(...)` after the fact would mis-route under
+      // LRU TTL expiry and write a foreign session over a fresh slot.
+      final preferredKey = _sessionKeyFor(peerUserId, fromDeviceId);
+      var loadedKey = preferredKey;
+      var session = _sessions.get(preferredKey);
+      session ??= await _reloadSession(preferredKey);
+      if (session == null && preferredKey != peerUserId) {
+        loadedKey = peerUserId;
+        session = _sessions.get(peerUserId);
+        session ??= await _reloadSession(peerUserId);
+      }
       if (session == null) return null;
 
       final plainBytes = await session.decrypt(fullWire);
-      await _saveSession(peerUserId, session);
+      await _saveSession(loadedKey, session);
       // Refresh LRU ordering after in-place mutation.
-      _sessions.put(peerUserId, session);
+      _sessions.put(loadedKey, session);
       return utf8.decode(plainBytes);
     } catch (_) {
       return null;

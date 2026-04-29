@@ -101,7 +101,7 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - Rust reference: `core/rust-core/src/signal/`
 - Dart production: `apps/client/lib/src/services/signal_protocol.dart`, `signal_x3dh.dart`, `signal_session.dart`
 - 1:1 messages: X3DH key exchange + Double Ratchet (end-to-end encrypted)
-- Group messages: group key envelopes infrastructure exists (`group_crypto_service.dart`, `routes/group_keys.rs`) but not fully wired
+- Group messages: group key envelopes infrastructure exists (`group_crypto_service.dart`, `routes/group_keys.rs`) but not fully wired. When `is_encrypted=true` is enabled on a group, `sendGroupMessage` hard-fails on encryption errors instead of falling back to plaintext (#344) — server-side ciphertext-only enforcement is tracked separately (#591)
 
 **Voice & Video** (LiveKit integration):
 - Server: `routes/voice.rs` handles call signaling and LiveKit token generation
@@ -114,10 +114,11 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - **Web renderer**: CanvasKit is the default (and only) renderer in Flutter 3.22+. The `--web-renderer` flag was removed.
 - **Rust edition 2024** used in both Cargo.toml and rustfmt.toml.
 - **rustfmt**: max_width=100, Unix newlines, field_init_shorthand + try_shorthand enabled.
-- **Server required env**: `DATABASE_URL` and `JWT_SECRET` (≥32 chars, panics without them). Optional: `HOST` (default `0.0.0.0`), `PORT` (default `8080`), `CORS_ORIGINS` for allowed origins, `RUST_LOG` for log filtering (e.g. `echo_server=debug`).
+- **Server required env**: `DATABASE_URL` and `JWT_SECRET` (≥32 chars, panics without them). Optional: `SERVER_HOST` (default `0.0.0.0`), `SERVER_PORT` (default `8080`), `CORS_ORIGINS` for allowed origins, `RUST_LOG` for log filtering (e.g. `echo_server=debug`). Legacy `HOST`/`PORT` are still accepted but emit a deprecation warning at startup (#532).
 - **Traefik routing**: API priority 100, Web priority 1 (API routes must take precedence).
 - **Message wire format**: Initial V2 (with OTP) = `[0xEC, 0x02] + identity_pub(32) + ephemeral_pub(32) + otp_id(4 LE) + ratchet_wire`; Initial V1 (no OTP) = `[0xEC, 0x01] + identity_pub(32) + ephemeral_pub(32) + ratchet_wire`; Normal = `header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`. All base64-wrapped over WebSocket.
 - **Soft deletes**: Messages use `is_deleted` flag, not hard deletes.
+- **Refresh tokens (web)**: HttpOnly + Secure + SameSite=Strict cookie scoped to `/api/auth`; mobile/desktop continue to use the JSON body. `/refresh` accepts either; cookie wins. CORS requires explicit origins (not `*`) when cookie auth is enabled.
 
 ## Commit Style
 
