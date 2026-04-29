@@ -382,6 +382,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     // instead of running decrypt over a foreign-device wire (which would
     // poison the local ratchet state and produce a generic "out of sync"
     // banner).  Skip the Hive cache write so a future fix-up can replace it.
+    // The literal '[Encrypted for another device of this account]' string is
+    // recognised by chat_provider.dart's `_placeholderContents` (#430).
     if (json['undecryptable'] == true) {
       final placeholder = ChatMessage.fromServerJson({
         ...json,
@@ -419,6 +421,9 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       );
     } else {
       // Crypto not ready yet — show a placeholder and queue for decryption.
+      // The literal 'Securing message...' string is recognised by
+      // chat_provider.dart's `_placeholderContents` so the decrypted
+      // version replaces it in place when the queue drains (#430).
       final placeholder = ChatMessage.fromServerJson({
         ...json,
         'content': 'Securing message...',

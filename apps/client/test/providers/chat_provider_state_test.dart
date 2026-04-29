@@ -146,6 +146,238 @@ void main() {
       expect(state2.messagesForConversation('conv-1'), hasLength(1));
     });
 
+    // ---------------------------------------------------------------------
+    // #430: forwarded / pre-crypto-init messages were stuck on the
+    // 'Securing message...' placeholder forever because dedup-by-id silently
+    // dropped the decrypted replacement.  withMessage now swaps the
+    // placeholder in place when the existing entry is isEncrypted=true and
+    // its content matches a known placeholder string.
+    // ---------------------------------------------------------------------
+    test('withMessage replaces a Securing-message placeholder in place '
+        '(#430)', () {
+      const placeholder = ChatMessage(
+        id: 'msg-1',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'Securing message...',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+      const decrypted = ChatMessage(
+        id: 'msg-1',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: '[Forwarded] hello world',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+
+      const state = ChatState();
+      final s1 = state.withMessage(placeholder);
+      final s2 = s1.withMessage(decrypted);
+
+      final msgs = s2.messagesForConversation('conv-1');
+      expect(msgs, hasLength(1), reason: 'no duplicate, no orphan');
+      expect(msgs.first.content, '[Forwarded] hello world');
+      expect(msgs.first.id, 'msg-1');
+    });
+
+    test('withMessage replaces an [Encrypted for another device] placeholder '
+        '(#430)', () {
+      const placeholder = ChatMessage(
+        id: 'msg-2',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: '[Encrypted for another device of this account]',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+      const decrypted = ChatMessage(
+        id: 'msg-2',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'real content',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+
+      const state = ChatState();
+      final result = state.withMessage(placeholder).withMessage(decrypted);
+      expect(
+        result.messagesForConversation('conv-1').single.content,
+        'real content',
+      );
+    });
+
+    test('withMessage replaces a [Could not decrypt - waiting for group key] '
+        'placeholder (#430)', () {
+      const placeholder = ChatMessage(
+        id: 'msg-grp-1',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: '[Could not decrypt - waiting for group key]',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+      const decrypted = ChatMessage(
+        id: 'msg-grp-1',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'group message recovered',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+
+      const state = ChatState();
+      final result = state.withMessage(placeholder).withMessage(decrypted);
+      expect(
+        result.messagesForConversation('conv-1').single.content,
+        'group message recovered',
+      );
+    });
+
+    test('withMessage replaces a [Could not decrypt group message] '
+        'placeholder (#430)', () {
+      const placeholder = ChatMessage(
+        id: 'msg-grp-2',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: '[Could not decrypt group message]',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+      const decrypted = ChatMessage(
+        id: 'msg-grp-2',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'second recovery',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+
+      const state = ChatState();
+      final result = state.withMessage(placeholder).withMessage(decrypted);
+      expect(
+        result.messagesForConversation('conv-1').single.content,
+        'second recovery',
+      );
+    });
+
+    test('withMessage replaces a [Could not decrypt ...] placeholder '
+        '(#430)', () {
+      const placeholder = ChatMessage(
+        id: 'msg-3',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: '[Could not decrypt - encryption keys may be out of sync]',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+      const decrypted = ChatMessage(
+        id: 'msg-3',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'recovered',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+
+      const state = ChatState();
+      final result = state.withMessage(placeholder).withMessage(decrypted);
+      expect(
+        result.messagesForConversation('conv-1').single.content,
+        'recovered',
+      );
+    });
+
+    test('withMessage does NOT replace when existing is not encrypted '
+        '(legitimate same-id duplicate; #430 dedup invariant)', () {
+      // Same id, but the existing entry is plaintext (isEncrypted=false) --
+      // this is a legit duplicate-send case and dedup must hold.
+      const original = ChatMessage(
+        id: 'msg-4',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'real plaintext',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: false,
+      );
+      const duplicate = ChatMessage(
+        id: 'msg-4',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'attacker-replaced text',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: false,
+      );
+
+      const state = ChatState();
+      final result = state.withMessage(original).withMessage(duplicate);
+      expect(
+        result.messagesForConversation('conv-1').single.content,
+        'real plaintext',
+        reason: 'dedup must drop the duplicate, not let it overwrite',
+      );
+    });
+
+    test('withMessage does NOT replace when content is not a placeholder '
+        '(#430 false-positive guard)', () {
+      // Encrypted=true but content is real plaintext that just happens to
+      // collide on id -- no replacement allowed.
+      const original = ChatMessage(
+        id: 'msg-5',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'real decrypted content',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+      const duplicate = ChatMessage(
+        id: 'msg-5',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'attacker-replaced text',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+
+      const state = ChatState();
+      final result = state.withMessage(original).withMessage(duplicate);
+      expect(
+        result.messagesForConversation('conv-1').single.content,
+        'real decrypted content',
+        reason: 'non-placeholder content is not a replacement target',
+      );
+    });
+
     test('copyWith preserves unchanged fields', () {
       const msg = ChatMessage(
         id: 'msg-1',

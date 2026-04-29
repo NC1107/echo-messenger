@@ -17,6 +17,20 @@ import 'auth_provider.dart';
 import 'conversations_provider.dart';
 import 'server_url_provider.dart';
 
+/// Placeholder content strings emitted by ws_message_handler.dart while a
+/// message is awaiting decryption.  When [ChatState.withMessage] sees an
+/// inbound message whose id collides with an existing entry that matches
+/// one of these (and is still flagged isEncrypted), the entry is replaced
+/// in place rather than dedup-dropped (#430).  Keep in sync with the emit
+/// sites in ws_message_handler.dart.
+const _placeholderContents = <String>{
+  'Securing message...',
+  '[Encrypted for another device of this account]',
+};
+
+bool _isPlaceholderContent(String c) =>
+    _placeholderContents.contains(c) || c.startsWith('[Could not decrypt');
+
 class ChatState {
   /// Messages keyed by conversation ID.
   final Map<String, List<ChatMessage>> messagesByConversation;
@@ -99,6 +113,19 @@ class ChatState {
         ids.add(msg.id);
         // Rebuild index from trimmed list to stay consistent.
         updatedIndex[msg.conversationId] = updated.map((m) => m.id).toSet();
+      } else {
+        // Id collision: existing entry might be a decrypt-pending
+        // placeholder (#430).  Replace it in place when isEncrypted
+        // and the content matches a known placeholder string.  The
+        // index already contains msg.id so no map mutation is needed.
+        final existing = updatedConv[msg.conversationId] ?? const [];
+        final idx = existing.indexWhere((m) => m.id == msg.id);
+        if (idx >= 0 &&
+            existing[idx].isEncrypted &&
+            _isPlaceholderContent(existing[idx].content)) {
+          final replaced = [...existing]..[idx] = msg;
+          updatedConv[msg.conversationId] = replaced;
+        }
       }
     }
 
