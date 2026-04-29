@@ -122,7 +122,9 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
       );
       // Drop a stale response (a newer call has been issued) before any
       // state mutation so we don't clobber fresh data with an old payload.
-      if (gen != _loadGen) return;
+      // Also bail if the notifier was disposed while we were awaiting --
+      // writing to `state` after dispose throws StateError.
+      if (gen != _loadGen || !mounted) return;
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
@@ -164,8 +166,9 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         );
       }
     } catch (e) {
-      // Stale errors must not clobber a fresh success either.
-      if (gen != _loadGen) return;
+      // Stale errors must not clobber a fresh success, and writing to
+      // `state` on a disposed notifier throws.
+      if (gen != _loadGen || !mounted) return;
       state = state.copyWith(isLoading: false, error: _friendlyError(e));
     }
   }
