@@ -46,6 +46,26 @@ void main() {
       expect(find.textContaining('Connected'), findsNothing);
     });
 
+    testWidgets('shows reconnecting label without counter on first attempt', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap((ref) {
+          final n = _TestWsNotifier(ref);
+          n.setStateForTest(
+            const WebSocketState(isConnected: false, reconnectAttempts: 0),
+          );
+          return n;
+        }),
+      );
+
+      // The most common transient state: just disconnected, attempt count
+      // still zero -- banner shows the bare "Reconnecting..." label without
+      // the (N) suffix.
+      expect(find.text('Reconnecting...'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
     testWidgets('shows reconnecting state with attempt counter', (
       tester,
     ) async {
@@ -121,6 +141,10 @@ void main() {
       notifier.setStateForTest(
         const WebSocketState(isConnected: true, reconnectAttempts: 0),
       );
+      // Two pumps are required: the first runs the Riverpod rebuild which
+      // schedules a postFrameCallback inside _trackConnectionTransition;
+      // the second drains that callback so _showConnectedFlash is true
+      // before the next assertion.
       await tester.pump();
       await tester.pump();
       expect(find.text('Connected'), findsOneWidget);
