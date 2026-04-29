@@ -217,6 +217,68 @@ void main() {
       );
     });
 
+    test('withMessage replaces a [Could not decrypt - waiting for group key] '
+        'placeholder (#430)', () {
+      const placeholder = ChatMessage(
+        id: 'msg-grp-1',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: '[Could not decrypt - waiting for group key]',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+      const decrypted = ChatMessage(
+        id: 'msg-grp-1',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'group message recovered',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+
+      const state = ChatState();
+      final result = state.withMessage(placeholder).withMessage(decrypted);
+      expect(
+        result.messagesForConversation('conv-1').single.content,
+        'group message recovered',
+      );
+    });
+
+    test('withMessage replaces a [Could not decrypt group message] '
+        'placeholder (#430)', () {
+      const placeholder = ChatMessage(
+        id: 'msg-grp-2',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: '[Could not decrypt group message]',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+      const decrypted = ChatMessage(
+        id: 'msg-grp-2',
+        fromUserId: 'user-1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'second recovery',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+        isEncrypted: true,
+      );
+
+      const state = ChatState();
+      final result = state.withMessage(placeholder).withMessage(decrypted);
+      expect(
+        result.messagesForConversation('conv-1').single.content,
+        'second recovery',
+      );
+    });
+
     test('withMessage replaces a [Could not decrypt ...] placeholder '
         '(#430)', () {
       const placeholder = ChatMessage(
