@@ -593,6 +593,31 @@ pub async fn get_device_content(
     Ok(row.map(|(c,)| c))
 }
 
+/// Return the subset of `message_ids` that have at least one per-device
+/// ciphertext row for `recipient_user_id` across *any* of the recipient's
+/// devices.  Used by offline replay to distinguish "no per-device fanout
+/// happened" (legacy/group/plaintext) from "fanout happened but missed this
+/// device", so the latter can be flagged as undecryptable instead of
+/// silently shipping the wrong device's wire (#557).
+pub async fn message_ids_with_any_device_content(
+    pool: &PgPool,
+    message_ids: &[Uuid],
+    recipient_user_id: Uuid,
+) -> Result<std::collections::HashSet<Uuid>, sqlx::Error> {
+    if message_ids.is_empty() {
+        return Ok(std::collections::HashSet::new());
+    }
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT DISTINCT message_id FROM message_device_contents \
+         WHERE message_id = ANY($1) AND recipient_user_id = $2",
+    )
+    .bind(message_ids)
+    .bind(recipient_user_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
+
 /// Fetch per-device ciphertexts for a batch of messages for a specific
 /// recipient device in a single query.  Returns a map from message_id to
 /// device-specific content.
