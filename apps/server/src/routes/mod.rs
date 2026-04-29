@@ -62,9 +62,14 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let allowed_headers = [header::CONTENT_TYPE, header::AUTHORIZATION];
 
     let cors = if cors_origins == "*" {
+        // Browsers reject `Access-Control-Allow-Credentials: true` paired with
+        // `Access-Control-Allow-Origin: *`, so the wildcard branch CANNOT enable
+        // credentials. The web client's HttpOnly refresh cookie (#342) requires
+        // explicit origins -- set `CORS_ORIGINS` to a comma-separated list.
         tracing::warn!(
-            "CORS_ORIGINS is set to '*' — allowing all origins. \
-             This is insecure for production. Set explicit origins."
+            "CORS_ORIGINS is set to '*' — allowing all origins WITHOUT credentials. \
+             This is insecure for production and disables cookie-based refresh. \
+             Set explicit origins to enable credentialed requests."
         );
         CorsLayer::new()
             .allow_origin(AllowOrigin::any())
@@ -79,6 +84,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             .allow_origin(AllowOrigin::list(origins))
             .allow_methods(allowed_methods)
             .allow_headers(allowed_headers)
+            // Required for the web client to send the HttpOnly refresh cookie
+            // back to /api/auth/refresh and /api/auth/logout (#342).
+            .allow_credentials(true)
     };
 
     let login_limit = rate_limit::make_rate_limit_layer(rate_limit::login_limiter());
