@@ -154,19 +154,27 @@ pub async fn store_message(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn get_messages(
     pool: &PgPool,
     conversation_id: Uuid,
     channel_id: Option<Uuid>,
     before: Option<DateTime<Utc>>,
     limit: i64,
+    requesting_user_id: Uuid,
+    requesting_device_id: Option<i32>,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     // Single query handles both cursor and non-cursor cases via optional $3 param.
+    // #557: when the caller passes its own `device_id`, we LEFT JOIN
+    // `message_device_contents` and surface the device-specific ciphertext via
+    // COALESCE so multi-device DM history decrypts on the right ratchet.
+    // When no device_id is provided we preserve the legacy behaviour.
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
                 u.username AS sender_username, \
-                m.content, m.created_at, m.edited_at, m.reply_to_id, \
+                COALESCE(mdc.content, m.content) AS content, \
+                m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
                 (SELECT COUNT(*) FROM messages r \
@@ -175,6 +183,11 @@ pub async fn get_messages(
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
+         LEFT JOIN message_device_contents mdc \
+                ON $5::int IS NOT NULL \
+               AND mdc.message_id = m.id \
+               AND mdc.recipient_user_id = $6 \
+               AND mdc.device_id = $5 \
          WHERE m.conversation_id = $1 \
            AND ($2::uuid IS NULL OR m.channel_id = $2) \
            AND ($3::timestamptz IS NULL OR m.created_at < $3) \
@@ -186,6 +199,8 @@ pub async fn get_messages(
     .bind(channel_id)
     .bind(before)
     .bind(limit)
+    .bind(requesting_device_id)
+    .bind(requesting_user_id)
     .fetch_all(pool)
     .await
 }
