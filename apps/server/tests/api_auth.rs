@@ -143,3 +143,202 @@ async fn refresh_token_revoked_returns_401() {
         "replaying a revoked refresh token should return 401"
     );
 }
+
+// ---------------------------------------------------------------------------
+// HttpOnly refresh-token cookie (#342)
+// ---------------------------------------------------------------------------
+
+/// Find the first `Set-Cookie` header whose value starts with `name=`.
+fn find_set_cookie<'a>(resp: &'a reqwest::Response, name: &str) -> Option<&'a str> {
+    let prefix = format!("{name}=");
+    resp.headers()
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find(|s| s.starts_with(&prefix))
+}
+
+/// Assert a Set-Cookie header has the expected security attributes.
+fn assert_refresh_cookie_attrs(set_cookie: &str, expect_max_age: &str) {
+    let lower = set_cookie.to_ascii_lowercase();
+    assert!(lower.contains("httponly"), "missing HttpOnly: {set_cookie}");
+    assert!(lower.contains("secure"), "missing Secure: {set_cookie}");
+    assert!(
+        lower.contains("samesite=strict"),
+        "missing SameSite=Strict: {set_cookie}"
+    );
+    assert!(
+        lower.contains("path=/api/auth"),
+        "missing Path=/api/auth: {set_cookie}"
+    );
+    assert!(
+        lower.contains(&format!("max-age={expect_max_age}")),
+        "expected Max-Age={expect_max_age}: {set_cookie}"
+    );
+}
+
+#[tokio::test]
+async fn login_sets_refresh_cookie() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("cookielogin");
+
+    common::register(&client, &base, &username, "password123").await;
+    let resp = common::login_raw(&client, &base, &username, "password123").await;
+    assert_eq!(resp.status().as_u16(), 200);
+
+    let set_cookie =
+        find_set_cookie(&resp, "echo_refresh").expect("login should set echo_refresh cookie");
+    assert_refresh_cookie_attrs(set_cookie, "604800");
+}
+
+#[tokio::test]
+async fn register_sets_refresh_cookie() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("cookiereg");
+
+    let resp = common::register_raw(&client, &base, &username, "password123").await;
+    assert_eq!(resp.status().as_u16(), 201);
+
+    let set_cookie =
+        find_set_cookie(&resp, "echo_refresh").expect("register should set echo_refresh cookie");
+    assert_refresh_cookie_attrs(set_cookie, "604800");
+}
+
+#[tokio::test]
+async fn logout_clears_refresh_cookie() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("cookielogout");
+
+    common::register(&client, &base, &username, "password123").await;
+    let (token, _user_id) = common::login(&client, &base, &username, "password123").await;
+
+    let resp = client
+        .post(format!("{base}/api/auth/logout"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .expect("logout request failed");
+    assert_eq!(resp.status().as_u16(), 204);
+
+    let set_cookie =
+        find_set_cookie(&resp, "echo_refresh").expect("logout should clear echo_refresh cookie");
+    assert_refresh_cookie_attrs(set_cookie, "0");
+}
+
+#[tokio::test]
+async fn refresh_via_cookie_only() {
+    let base = common::spawn_server().await;
+    // Echo's refresh cookie sets `Secure`, which reqwest's cookie_store would
+    // drop over plaintext HTTP. The test server is plain HTTP, so we attach
+    // the cookie header manually below instead of relying on the jar.
+    let client = Client::new();
+
+    let username = common::unique_username("refcookie");
+    common::register(&client, &base, &username, "password123").await;
+    let login_resp = common::login_raw(&client, &base, &username, "password123").await;
+    assert_eq!(login_resp.status().as_u16(), 200);
+
+    let raw_cookie = find_set_cookie(&login_resp, "echo_refresh")
+        .expect("login Set-Cookie")
+        .to_string();
+    let cookie_value = raw_cookie
+        .split(';')
+        .next()
+        .expect("cookie name=value")
+        .trim()
+        .to_string();
+
+    // Send /refresh with empty body and the cookie attached manually.
+    let resp = client
+        .post(format!("{base}/api/auth/refresh"))
+        .header(reqwest::header::COOKIE, &cookie_value)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .expect("refresh request failed");
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let new_set_cookie =
+        find_set_cookie(&resp, "echo_refresh").expect("refresh should rotate cookie");
+    assert_refresh_cookie_attrs(new_set_cookie, "604800");
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["access_token"].as_str().is_some());
+    assert!(body["refresh_token"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn refresh_via_body_still_works() {
+    // Backward-compatibility check: mobile/desktop clients have no cookie jar.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("refbody");
+
+    common::register(&client, &base, &username, "password123").await;
+    let login_body: serde_json::Value = client
+        .post(format!("{base}/api/auth/login"))
+        .json(&serde_json::json!({ "username": username, "password": "password123" }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let refresh_token = login_body["refresh_token"].as_str().unwrap();
+
+    let resp = client
+        .post(format!("{base}/api/auth/refresh"))
+        .json(&serde_json::json!({ "refresh_token": refresh_token }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status().as_u16(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["access_token"].as_str().is_some());
+    assert!(body["refresh_token"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn refresh_cookie_takes_precedence() {
+    // When both a valid cookie and a stale/invalid body token are present,
+    // the cookie wins -- the body cannot override the HttpOnly cookie.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("refprec");
+
+    common::register(&client, &base, &username, "password123").await;
+    let login_resp = common::login_raw(&client, &base, &username, "password123").await;
+    assert_eq!(login_resp.status().as_u16(), 200);
+
+    let raw_cookie = find_set_cookie(&login_resp, "echo_refresh")
+        .expect("login Set-Cookie")
+        .to_string();
+    let cookie_value = raw_cookie
+        .split(';')
+        .next()
+        .expect("cookie name=value")
+        .trim()
+        .to_string();
+
+    // Body carries a junk token. Cookie carries the real one. Cookie wins.
+    let resp = client
+        .post(format!("{base}/api/auth/refresh"))
+        .header(reqwest::header::COOKIE, &cookie_value)
+        .json(&serde_json::json!({ "refresh_token": "deadbeef-not-a-real-token" }))
+        .send()
+        .await
+        .expect("refresh request failed");
+
+    assert_eq!(
+        resp.status().as_u16(),
+        200,
+        "cookie should take precedence over body"
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["access_token"].as_str().is_some());
+    assert!(body["refresh_token"].as_str().is_some());
+}
