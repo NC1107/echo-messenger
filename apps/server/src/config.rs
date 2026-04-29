@@ -51,14 +51,40 @@ impl Config {
             database_url: env::var("DATABASE_URL")
                 .expect("DATABASE_URL environment variable must be set"),
             jwt_secret,
-            host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into()),
-            port: env::var("PORT")
-                .ok()
-                .and_then(|p| p.parse().ok())
-                .unwrap_or(8080),
+            host: resolve_host(|k| env::var(k).ok()),
+            port: resolve_port(|k| env::var(k).ok()),
             trusted_proxies,
         }
     }
+}
+
+/// Resolve the bind host, preferring `SERVER_HOST` and falling back to the
+/// legacy `HOST` (with a deprecation warning) so existing self-hosters using
+/// the bare `HOST=` form keep booting cleanly while new deployments adopt
+/// the namespaced env name (#532).
+fn resolve_host<F: Fn(&str) -> Option<String>>(get: F) -> String {
+    if let Some(v) = get("SERVER_HOST") {
+        return v;
+    }
+    if let Some(v) = get("HOST") {
+        tracing::warn!("HOST is deprecated; use SERVER_HOST instead (#532)");
+        return v;
+    }
+    "0.0.0.0".into()
+}
+
+/// Resolve the bind port, preferring `SERVER_PORT` and falling back to the
+/// legacy `PORT` (with a deprecation warning).  Unparseable values silently
+/// fall through to the default 8080, matching the prior behavior (#532).
+fn resolve_port<F: Fn(&str) -> Option<String>>(get: F) -> u16 {
+    if let Some(v) = get("SERVER_PORT") {
+        return v.parse().unwrap_or(8080);
+    }
+    if let Some(v) = get("PORT") {
+        tracing::warn!("PORT is deprecated; use SERVER_PORT instead (#532)");
+        return v.parse().unwrap_or(8080);
+    }
+    8080
 }
 
 #[cfg(test)]
@@ -109,5 +135,62 @@ mod tests {
             })
             .collect();
         assert_eq!(proxies.len(), 2);
+    }
+
+    // -----------------------------------------------------------------
+    // #532: SERVER_HOST/SERVER_PORT precedence + legacy HOST/PORT fallback.
+    // Closure-based fake env keeps these tests parallel-safe -- no
+    // std::env::set_var, which would race against the other test threads.
+    // -----------------------------------------------------------------
+    use std::collections::HashMap;
+
+    fn fake_env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        move |k: &str| map.get(k).cloned()
+    }
+
+    #[test]
+    fn resolve_host_prefers_server_host_over_legacy() {
+        let host = resolve_host(fake_env(&[("SERVER_HOST", "1.2.3.4"), ("HOST", "5.6.7.8")]));
+        assert_eq!(host, "1.2.3.4");
+    }
+
+    #[test]
+    fn resolve_host_falls_back_to_legacy_host() {
+        let host = resolve_host(fake_env(&[("HOST", "5.6.7.8")]));
+        assert_eq!(host, "5.6.7.8");
+    }
+
+    #[test]
+    fn resolve_host_defaults_when_neither_set() {
+        let host = resolve_host(fake_env(&[]));
+        assert_eq!(host, "0.0.0.0");
+    }
+
+    #[test]
+    fn resolve_port_prefers_server_port_over_legacy() {
+        let port = resolve_port(fake_env(&[("SERVER_PORT", "9090"), ("PORT", "1234")]));
+        assert_eq!(port, 9090);
+    }
+
+    #[test]
+    fn resolve_port_falls_back_to_legacy_port() {
+        let port = resolve_port(fake_env(&[("PORT", "1234")]));
+        assert_eq!(port, 1234);
+    }
+
+    #[test]
+    fn resolve_port_defaults_when_neither_set() {
+        let port = resolve_port(fake_env(&[]));
+        assert_eq!(port, 8080);
+    }
+
+    #[test]
+    fn resolve_port_defaults_on_unparseable_value() {
+        let port = resolve_port(fake_env(&[("SERVER_PORT", "not-a-number")]));
+        assert_eq!(port, 8080);
     }
 }
