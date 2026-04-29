@@ -8,9 +8,19 @@ import 'package:window_manager/window_manager.dart';
 ///
 /// Initialise once after login with [TrayService.init]. Updates the tray
 /// tooltip to reflect the current unread message count via [updateBadge].
-/// The context menu provides "Show Echo" and "Quit" actions. Clicking the
-/// tray icon toggles the main window visibility. The close button minimises
-/// the app to the tray instead of quitting.
+/// The context menu provides Show / Hide / Quit actions; the close button
+/// minimises the app to the tray instead of quitting.
+///
+/// **Platform behavior**:
+/// - **Windows / macOS**: left-click toggles the window directly via
+///   [onTrayIconMouseDown]; right-click opens the context menu.
+/// - **Linux** (libappindicator / StatusNotifierItem): the D-Bus protocol
+///   that GNOME/KDE shells implement does NOT deliver MouseDown events
+///   when a context menu is attached — any click opens the menu. The menu
+///   items therefore ARE the interaction surface on Linux. Show / Hide /
+///   Quit are first-class entries so users can toggle visibility in two
+///   clicks. Switching tray packages does not help: `system_tray` has the
+///   same SNI limitation; `tray_icon` uses deprecated GtkStatusIcon (#558).
 ///
 /// Safe to call on all platforms — all methods are no-ops on web and mobile.
 class TrayService with TrayListener, WindowListener {
@@ -36,9 +46,11 @@ class TrayService with TrayListener, WindowListener {
 
     // Each step is guarded so a failure later in the sequence (notably
     // setContextMenu, which is flaky on some Linux compositors) doesn't
-    // leave the icon unresponsive: the click listener still attaches even
-    // if the menu can't be installed, so right-click might be inert but
-    // left-click toggles the window.
+    // leave the icon unresponsive: the click listener still attaches
+    // even if the menu can't be installed, which keeps Windows/macOS
+    // left-click usable.  On Linux the menu IS the interaction surface
+    // (see class docstring), so install failure here means tray is
+    // effectively dead until next login.
     var iconShown = false;
     try {
       await trayManager.setIcon(_iconPath());
@@ -99,6 +111,10 @@ class TrayService with TrayListener, WindowListener {
 
   @override
   void onTrayIconMouseDown() {
+    // Windows + macOS path: the OS delivers a real MouseDown, so we toggle
+    // the window directly.  Linux/libappindicator never fires this when a
+    // context menu is attached -- any click opens the menu instead, and
+    // the user toggles via the Show/Hide menu entries (#558).
     _toggleWindow();
   }
 
@@ -113,6 +129,8 @@ class TrayService with TrayListener, WindowListener {
       case 'show':
         windowManager.show();
         windowManager.focus();
+      case 'hide':
+        windowManager.hide();
       case 'quit':
         windowManager.setPreventClose(false);
         windowManager.close();
@@ -126,10 +144,15 @@ class TrayService with TrayListener, WindowListener {
   }
 
   Future<void> _setContextMenu() async {
+    // Show / Hide are first-class menu items because on Linux any click on
+    // the icon opens this menu (libappindicator/SNI does not deliver
+    // MouseDown when a menu is attached) -- they are the only path to
+    // toggle window visibility on that platform (#558).
     await trayManager.setContextMenu(
       Menu(
         items: [
           MenuItem(key: 'show', label: 'Show Echo'),
+          MenuItem(key: 'hide', label: 'Hide Echo'),
           MenuItem.separator(),
           MenuItem(key: 'quit', label: 'Quit'),
         ],
