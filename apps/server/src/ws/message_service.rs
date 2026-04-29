@@ -201,6 +201,7 @@ pub(super) async fn store_and_confirm(
         conv_id,
         resolved_channel_id,
         sender_id,
+        Some(sender_device_id),
         content,
         reply_to_id,
         effective_ttl,

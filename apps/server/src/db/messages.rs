@@ -10,6 +10,9 @@ pub struct MessageRow {
     pub conversation_id: Uuid,
     pub channel_id: Option<Uuid>,
     pub sender_id: Uuid,
+    /// Device that originated the message. `None` for legacy rows that
+    /// predate multi-device tracking (#557).
+    pub sender_device_id: Option<i32>,
     pub content: String,
     pub created_at: DateTime<Utc>,
     pub delivered: bool,
@@ -23,6 +26,9 @@ pub struct MessageWithSender {
     pub conversation_id: Uuid,
     pub channel_id: Option<Uuid>,
     pub sender_id: Uuid,
+    /// Device that originated the message. `None` for legacy rows that
+    /// predate multi-device tracking (#557).
+    pub sender_device_id: Option<i32>,
     pub sender_username: String,
     pub content: String,
     pub created_at: DateTime<Utc>,
@@ -110,11 +116,13 @@ pub async fn find_or_create_dm_conversation(
 /// INSERT is suppressed and `sqlx::Error::RowNotFound` is returned so the
 /// caller can translate that into a 404 / WS error frame instead of leaking
 /// content across conversations.
+#[allow(clippy::too_many_arguments)]
 pub async fn store_message(
     pool: &PgPool,
     conversation_id: Uuid,
     channel_id: Option<Uuid>,
     sender_id: Uuid,
+    sender_device_id: Option<i32>,
     content: &str,
     reply_to_id: Option<Uuid>,
     ttl_seconds: Option<i64>,
@@ -126,14 +134,14 @@ pub async fn store_message(
              SELECT id FROM messages \
              WHERE id = $5 AND conversation_id = $1 AND deleted_at IS NULL \
          ) \
-         INSERT INTO messages (conversation_id, channel_id, sender_id, content, reply_to_id, expires_at) \
+         INSERT INTO messages (conversation_id, channel_id, sender_id, content, reply_to_id, expires_at, sender_device_id) \
          SELECT $1, $2, $3, $4, \
                 CASE WHEN $5::uuid IS NULL THEN NULL \
                      ELSE (SELECT id FROM parent) END, \
-                $6 \
+                $6, $7 \
          WHERE $5::uuid IS NULL OR EXISTS (SELECT 1 FROM parent) \
-         RETURNING id, conversation_id, channel_id, sender_id, content, created_at, delivered, \
-                   reply_to_id, expires_at",
+         RETURNING id, conversation_id, channel_id, sender_id, sender_device_id, \
+                   content, created_at, delivered, reply_to_id, expires_at",
     )
     .bind(conversation_id)
     .bind(channel_id)
@@ -141,6 +149,7 @@ pub async fn store_message(
     .bind(content)
     .bind(reply_to_id)
     .bind(expires_at)
+    .bind(sender_device_id)
     .fetch_one(pool)
     .await
 }
@@ -155,6 +164,7 @@ pub async fn get_messages(
     // Single query handles both cursor and non-cursor cases via optional $3 param.
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                m.sender_device_id, \
                 u.username AS sender_username, \
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
@@ -186,6 +196,7 @@ pub async fn get_undelivered(
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                m.sender_device_id, \
                 u.username AS sender_username, \
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
@@ -294,6 +305,7 @@ pub async fn search_messages(
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                m.sender_device_id, \
                 u.username AS sender_username, \
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
@@ -628,6 +640,7 @@ pub async fn get_thread_replies(
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
+                m.sender_device_id, \
                 u.username AS sender_username, \
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
