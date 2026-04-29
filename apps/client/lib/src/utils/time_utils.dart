@@ -83,3 +83,20 @@ String formatMessageTimestamp(String timestamp) {
     return '';
   }
 }
+
+/// Build the chat-header status line for a 1:1 peer (#503).
+///
+/// - `online` → returns `'online'`.
+/// - `offline` with a known [lastSeen] timestamp → returns
+///   `'last seen <relative>'` where relative is from [formatMessageTimestamp].
+/// - `offline` with no [lastSeen] → returns `'offline'`.
+String formatPeerStatusLabel({
+  required bool isOnline,
+  required DateTime? lastSeen,
+}) {
+  if (isOnline) return 'online';
+  if (lastSeen != null) {
+    return 'last seen ${formatMessageTimestamp(lastSeen.toIso8601String())}';
+  }
+  return 'offline';
+}

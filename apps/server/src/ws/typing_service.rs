@@ -230,6 +230,13 @@ pub(super) async fn broadcast_presence(
     if let Some(ps) = presence_status {
         presence["presence_status"] = serde_json::Value::String(ps);
     }
+    // Stamp last_seen_at on offline transitions so peers can render
+    // "last seen <relative>" in chat headers (#503).
+    if broadcast_status == "offline" {
+        presence["last_seen_at"] = serde_json::Value::String(
+            chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        );
+    }
     let json = match serde_json::to_string(&presence) {
         Ok(j) => j,
         Err(_) => return,

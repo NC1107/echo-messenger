@@ -28,6 +28,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     tini \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 echo \
     && useradd --uid 1000 --gid echo --shell /bin/sh echo

@@ -170,4 +170,42 @@ void main() {
       expect(result, matches(RegExp(r'^\d{1,2}:\d{2} (AM|PM)$')));
     });
   });
+
+  group('formatPeerStatusLabel (#503)', () {
+    test('online returns "online" regardless of lastSeen', () {
+      expect(formatPeerStatusLabel(isOnline: true, lastSeen: null), 'online');
+      expect(
+        formatPeerStatusLabel(isOnline: true, lastSeen: DateTime.now()),
+        'online',
+      );
+    });
+
+    test('offline with no lastSeen returns "offline"', () {
+      expect(formatPeerStatusLabel(isOnline: false, lastSeen: null), 'offline');
+    });
+
+    test('offline with recent lastSeen renders "last seen just now"', () {
+      final ts = DateTime.now().subtract(const Duration(seconds: 30)).toUtc();
+      expect(
+        formatPeerStatusLabel(isOnline: false, lastSeen: ts),
+        'last seen just now',
+      );
+    });
+
+    test('offline with minutes-ago lastSeen renders "last seen Nm ago"', () {
+      final ts = DateTime.now().subtract(const Duration(minutes: 5)).toUtc();
+      expect(
+        formatPeerStatusLabel(isOnline: false, lastSeen: ts),
+        'last seen 5m ago',
+      );
+    });
+
+    test('offline with hours-ago lastSeen falls back to absolute time', () {
+      final ts = DateTime.now().subtract(const Duration(hours: 3)).toUtc();
+      expect(
+        formatPeerStatusLabel(isOnline: false, lastSeen: ts),
+        matches(RegExp(r'^last seen \d{1,2}:\d{2} (AM|PM)$')),
+      );
+    });
+  });
 }

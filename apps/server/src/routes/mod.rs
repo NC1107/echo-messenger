@@ -198,6 +198,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         )
         .route("/ticket", post(media::request_media_ticket))
         .route("/{id}", get(media::download))
+        .route("/{id}/thumb", get(media::download_thumb))
         .layer(DefaultBodyLimit::max(media::MAX_FILE_SIZE));
 
     let group_routes = Router::new()

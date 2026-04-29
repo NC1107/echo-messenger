@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/chat_message.dart' show MessageStatus;
 import '../models/conversation.dart';
+import '../providers/chat_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
@@ -427,14 +429,24 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
         ),
       );
     } else if (widget.timestamp.isNotEmpty) {
-      rightSlot = Text(
-        widget.timestamp,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: GoogleFonts.inter(
-          fontSize: 12,
-          color: hasUnread ? context.accent : context.textMuted,
-        ),
+      // If the conversation's latest message is one we sent, show a Signal-
+      // style status tick next to the timestamp (#507). Falls back silently
+      // when local chat state hasn't loaded the conversation yet.
+      final tick = _buildOwnStatusTick(context);
+      rightSlot = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (tick != null) ...[tick, const SizedBox(width: 4)],
+          Text(
+            widget.timestamp,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: hasUnread ? context.accent : context.textMuted,
+            ),
+          ),
+        ],
       );
     } else {
       rightSlot = const SizedBox.shrink();
@@ -498,6 +510,28 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
         Padding(padding: const EdgeInsets.only(left: 6), child: rightSlot),
       ],
     );
+  }
+
+  /// Signal-style read indicator for the last message in this conversation,
+  /// shown only when *we* sent that message (#507).
+  ///
+  /// Returns null when there is no local chat state for this conversation
+  /// (cold start before chat is opened) — the conv list falls back to its
+  /// pre-existing layout in that case.
+  Widget? _buildOwnStatusTick(BuildContext context) {
+    final conv = widget.conversation;
+    final messages = ref.watch(chatProvider).messagesForConversation(conv.id);
+    final last = messages.isEmpty ? null : messages.last;
+    if (last == null || last.fromUserId != widget.myUserId) return null;
+
+    final (icon, color) = switch (last.status) {
+      MessageStatus.sending ||
+      MessageStatus.sent => (Icons.done, context.textMuted),
+      MessageStatus.delivered => (Icons.done_all, context.textMuted),
+      MessageStatus.read => (Icons.done_all, context.accent),
+      MessageStatus.failed => (Icons.error_outline, EchoTheme.danger),
+    };
+    return Icon(icon, size: 14, color: color);
   }
 
   Widget _buildSnippetRow(

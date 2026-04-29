@@ -249,6 +249,17 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
                   .read(messageLayoutProvider.notifier)
                   .setLayout(MessageLayout.compact),
             ),
+            const SizedBox(height: 8),
+            _LayoutOption(
+              label: 'Plain',
+              subtitle: 'Slack-style, no bubble background',
+              icon: Icons.notes_outlined,
+              isSelected:
+                  ref.watch(messageLayoutProvider) == MessageLayout.plain,
+              onTap: () => ref
+                  .read(messageLayoutProvider.notifier)
+                  .setLayout(MessageLayout.plain),
+            ),
             const SizedBox(height: 24),
             // GIF autoplay
             SwitchListTile.adaptive(

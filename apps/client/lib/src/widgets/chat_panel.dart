@@ -255,14 +255,26 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               .firstOrNull;
           if (convData != null && convData.unreadCount > 0) return;
           if (cached != null) {
-            _scrollController.jumpTo(
-              cached.clamp(0, _scrollController.position.maxScrollExtent),
-            );
+            _restoreCachedOffsetWithRetry(cached);
           } else {
             _scrollToBottom(animated: false, settleRetries: 3);
           }
         });
       }
+    }
+  }
+
+  /// Re-jump to the cached offset across a few frames so we don't land at the
+  /// bottom of an empty list while message history is still loading async (#563).
+  /// Stops retrying once `maxScrollExtent >= cached`, or after 3 frames.
+  void _restoreCachedOffsetWithRetry(double cached, {int retries = 3}) {
+    if (!_scrollController.hasClients) return;
+    final max = _scrollController.position.maxScrollExtent;
+    _scrollController.jumpTo(cached.clamp(0, max));
+    if (max < cached && retries > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreCachedOffsetWithRetry(cached, retries: retries - 1);
+      });
     }
   }
 
@@ -1752,8 +1764,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             authToken: authToken,
             mediaTicket: mediaTicket,
             senderAvatarUrl: senderAvatarUrl,
-            compactLayout:
-                ref.watch(messageLayoutProvider) == MessageLayout.compact,
+            layout: ref.watch(messageLayoutProvider),
             onReactionTap: _showReactionPicker,
             onReactionSelect: (message, emoji) {
               final alreadyReacted = message.reactions.any(

@@ -34,6 +34,12 @@ class WebSocketState {
   /// Updated from presence events that include the presence_status field.
   final Map<String, String> presenceStatuses;
 
+  /// Map of userId -> last seen timestamp. Populated from offline presence
+  /// events that include `last_seen_at`. Only peers we observe transition
+  /// online → offline during this session have an entry; truly long-offline
+  /// peers stay null and the header falls back to "offline" (#503).
+  final Map<String, DateTime> lastSeenAt;
+
   /// True when the server sent a `session_replaced` event, meaning another
   /// device/tab took over this user's WebSocket session.
   final bool wasReplaced;
@@ -44,6 +50,7 @@ class WebSocketState {
     this.typingUsers = const {},
     this.onlineUsers = const {},
     this.presenceStatuses = const {},
+    this.lastSeenAt = const {},
     this.wasReplaced = false,
   });
 
@@ -53,6 +60,7 @@ class WebSocketState {
     Map<String, Map<String, DateTime>>? typingUsers,
     Set<String>? onlineUsers,
     Map<String, String>? presenceStatuses,
+    Map<String, DateTime>? lastSeenAt,
     bool? wasReplaced,
   }) {
     return WebSocketState(
@@ -61,12 +69,17 @@ class WebSocketState {
       typingUsers: typingUsers ?? this.typingUsers,
       onlineUsers: onlineUsers ?? this.onlineUsers,
       presenceStatuses: presenceStatuses ?? this.presenceStatuses,
+      lastSeenAt: lastSeenAt ?? this.lastSeenAt,
       wasReplaced: wasReplaced ?? this.wasReplaced,
     );
   }
 
   /// Check if a specific user is online.
   bool isUserOnline(String userId) => onlineUsers.contains(userId);
+
+  /// Return the last seen timestamp for an offline user, or null if we
+  /// haven't observed them go offline this session.
+  DateTime? lastSeenFor(String userId) => lastSeenAt[userId];
 
   /// Return the presence status for a given user ID.
   /// Returns "offline" when the user is not in the online set.
@@ -751,17 +764,27 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
 
     final updatedOnline = Set<String>.from(state.onlineUsers);
     final updatedStatuses = Map<String, String>.from(state.presenceStatuses);
+    final updatedLastSeen = Map<String, DateTime>.from(state.lastSeenAt);
 
     if (status == 'offline') {
       updatedOnline.remove(userId);
       updatedStatuses.remove(userId);
+      // Stamp last_seen_at so the chat header can render "last seen <ago>"
+      // for this peer (#503). Server provides RFC3339; fall back to now if
+      // the field is absent (older server).
+      final raw = json['last_seen_at'] as String?;
+      final ts = raw != null ? DateTime.tryParse(raw) : null;
+      updatedLastSeen[userId] = ts ?? DateTime.now().toUtc();
     } else {
       updatedOnline.add(userId);
       updatedStatuses[userId] = presenceStatus;
+      // Don't clear lastSeenAt — preserve the previous value so a brief
+      // online flash doesn't lose the historical timestamp on next offline.
     }
     state = state.copyWith(
       onlineUsers: updatedOnline,
       presenceStatuses: updatedStatuses,
+      lastSeenAt: updatedLastSeen,
     );
   }
 

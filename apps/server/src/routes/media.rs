@@ -239,12 +239,62 @@ pub async fn upload(
     )
     .await?;
 
-    let body = json!({
+    // Generate a first-frame thumbnail for video uploads (#561). Best-effort:
+    // we still return success even if ffmpeg is missing or fails — the client
+    // falls back to a black tile when /thumb returns 404.
+    let mut thumb_url: Option<String> = None;
+    if mime_type.starts_with("video/") {
+        let thumb_path = format!("./uploads/{file_uuid}.thumb.jpg");
+        match generate_video_thumbnail(&disk_path, &thumb_path).await {
+            Ok(()) => {
+                thumb_url = Some(format!("/api/media/{}/thumb", row.id));
+            }
+            Err(e) => tracing::warn!(
+                media_id = %row.id,
+                "video thumbnail generation skipped: {e}"
+            ),
+        }
+    }
+
+    let mut body = json!({
         "id": row.id.to_string(),
         "url": format!("/api/media/{}", row.id),
     });
+    if let Some(url) = thumb_url {
+        body["thumb_url"] = json!(url);
+    }
 
     Ok((StatusCode::CREATED, axum::Json(body)))
+}
+
+/// Run ffmpeg to extract the first frame of a video as a JPEG thumbnail.
+/// Returns `Err` if ffmpeg isn't installed or exits non-zero — the caller
+/// logs a warning and continues without a thumbnail (#561).
+async fn generate_video_thumbnail(input: &str, output: &str) -> Result<(), String> {
+    let result = tokio::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-i",
+            input,
+            "-vf",
+            "select=eq(n\\,0)",
+            "-vframes",
+            "1",
+            "-q:v",
+            "3",
+            output,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("ffmpeg spawn failed: {e}"))?;
+    if !result.status.success() {
+        return Err(format!(
+            "ffmpeg exit {}: {}",
+            result.status,
+            String::from_utf8_lossy(&result.stderr)
+        ));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +491,77 @@ pub async fn download(
         .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))?;
 
     Ok(response)
+}
+
+/// GET /api/media/:id/thumb
+///
+/// Serve the JPEG first-frame thumbnail generated at upload time for
+/// `video/*` media (#561). Same auth gate as `download()`. Returns 404 when
+/// no thumbnail exists (non-video, or ffmpeg unavailable at upload time).
+pub async fn download_thumb(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<MediaDownloadQuery>,
+    headers: axum::http::HeaderMap,
+) -> Result<Response, AppError> {
+    let user_id = if let Some(token_str) = headers
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+    {
+        let claims = jwt::validate_token(token_str, &state.jwt_secret)?;
+        Uuid::parse_str(&claims.sub)
+            .map_err(|_| AppError::unauthorized("Invalid user ID in token"))?
+    } else if let Some(ticket_str) = query.ticket.or(query.token) {
+        validate_media_ticket(&state, &ticket_str)?
+    } else {
+        return Err(AppError::unauthorized("Missing authentication"));
+    };
+
+    // Fetch the media row first so we can derive the disk path from
+    // DB-validated state — this also acts as a CodeQL sanitizer for the
+    // path-traversal check on `id` (matching `download()`'s flow).
+    let row = db::media::get_media(&state.pool, id)
+        .await?
+        .ok_or_else(|| AppError {
+            status: StatusCode::NOT_FOUND,
+            message: "Media not found".to_string(),
+        })?;
+
+    let allowed = db::media::can_user_access_media(&state.pool, id, user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Media ACL check failed: {e}");
+            AppError::internal("Database error")
+        })?;
+    if !allowed {
+        return Err(AppError {
+            status: StatusCode::NOT_FOUND,
+            message: "Media not found".to_string(),
+        });
+    }
+
+    // Only video uploads have thumbnails; serve a quick 404 otherwise so
+    // we don't read random `*.thumb.jpg` files that may have been planted.
+    if !row.mime_type.starts_with("video/") {
+        return Err(AppError {
+            status: StatusCode::NOT_FOUND,
+            message: "Thumbnail not available".to_string(),
+        });
+    }
+
+    let thumb_path = format!("./uploads/{}.thumb.jpg", row.id.simple());
+    let data = fs::read(&thumb_path).await.map_err(|_| AppError {
+        status: StatusCode::NOT_FOUND,
+        message: "Thumbnail not available".to_string(),
+    })?;
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, "image/jpeg")
+        .header(CONTENT_LENGTH, data.len() as u64)
+        .body(Body::from(data))
+        .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))
 }
 
 /// Parse an HTTP `Range: bytes=<start>-<end>` header against a known total
