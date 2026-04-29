@@ -150,6 +150,7 @@ pub(super) async fn handle_send_message(
         reply_to_content: reply_content,
         reply_to_username: reply_username,
         expires_at: stored.expires_at,
+        undecryptable: None,
     };
 
     fanout_message(
@@ -201,6 +202,7 @@ pub(super) async fn store_and_confirm(
         conv_id,
         resolved_channel_id,
         sender_id,
+        Some(sender_device_id),
         content,
         reply_to_id,
         effective_ttl,
@@ -493,6 +495,7 @@ impl NewMessageFields {
                 reply_to_content,
                 reply_to_username,
                 expires_at,
+                undecryptable: _,
             } => Some(Self {
                 message_id: *message_id,
                 from_user_id: *from_user_id,
@@ -540,6 +543,7 @@ pub(super) fn build_per_device_json(
                         reply_to_content: fields.reply_to_content.clone(),
                         reply_to_username: fields.reply_to_username.clone(),
                         expires_at: fields.expires_at,
+                        undecryptable: None,
                     };
                     let json = serde_json::to_string(&per_device_msg).ok()?;
                     Some((did, json))
@@ -561,9 +565,16 @@ pub(super) fn deliver_to_member(
     if let Some(by_recipient) = per_recipient_json
         && let Some(device_jsons) = by_recipient.get(member_id)
     {
-        return device_jsons.iter().any(|(did, json)| {
-            hub.send_to_device(member_id, *did, WsMessage::Text(json.clone().into()))
-        });
+        // #557: deliver to ALL recipient devices. `Iterator::any` short-circuits
+        // on the first `true`, so a successful send to device #1 would skip
+        // device #2 entirely. Walk every device and OR-accumulate instead.
+        let mut any_sent = false;
+        for (did, json) in device_jsons {
+            if hub.send_to_device(member_id, *did, WsMessage::Text(json.clone().into())) {
+                any_sent = true;
+            }
+        }
+        return any_sent;
     }
     if let Some(json) = legacy_json {
         hub.send_to_user(member_id, WsMessage::Text(json.to_owned().into()))
@@ -727,6 +738,16 @@ pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid
             .await
             .unwrap_or_default();
 
+    // #557: messages that have a per-device row for SOME device of this user
+    // but not for the connecting device are undecryptable on this device.
+    // Distinguishing this from "no per-device fanout at all" (groups,
+    // plaintext, legacy rows) prevents us from shipping the wrong wire and
+    // losing the message permanently.
+    let has_any_device_row =
+        db::messages::message_ids_with_any_device_content(&state.pool, &all_ids, user_id)
+            .await
+            .unwrap_or_default();
+
     // Track only IDs that the hub actually accepted into the recipient's
     // outbound queue. Marking a message delivered without confirmed enqueue
     // loses it forever if the queue was full or the socket had just closed (#523).
@@ -735,16 +756,28 @@ pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid
         Vec::with_capacity(undelivered.len());
 
     for msg in &undelivered {
-        // Prefer device-specific ciphertext; fall back to canonical content.
-        let content = device_ct_map
-            .get(&msg.id)
-            .cloned()
-            .unwrap_or_else(|| msg.content.clone());
+        // #557: encrypted DMs MUST be replayed using the per-device ciphertext.
+        // Falling back to `msg.content` (the originating device's wire) ships
+        // the wrong ratchet's ciphertext and the recipient device cannot
+        // decrypt it. When no per-device row exists we instead emit an
+        // explicit `undecryptable` marker so the client can render a
+        // placeholder, and we leave the message as `delivered = false` so a
+        // future reconnect (e.g. on a device that does have a row) still gets
+        // a shot at it.
+        let device_content = device_ct_map.get(&msg.id);
+        let needs_per_device = has_any_device_row.contains(&msg.id);
+        let (content, undecryptable) = match device_content {
+            Some(c) => (c.clone(), None),
+            None if needs_per_device => (String::new(), Some(true)),
+            None => (msg.content.clone(), None),
+        };
 
         let server_msg = ServerMessage::NewMessage {
             message_id: msg.id,
             from_user_id: msg.sender_id,
-            from_device_id: None, // Offline delivery doesn't track sender device
+            // #557: propagate the originating device so the client can pick
+            // the correct per-device ratchet on decrypt.
+            from_device_id: msg.sender_device_id,
             from_username: msg.sender_username.clone(),
             conversation_id: msg.conversation_id,
             channel_id: msg.channel_id,
@@ -754,6 +787,7 @@ pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid
             reply_to_content: msg.reply_to_content.clone(),
             reply_to_username: msg.reply_to_username.clone(),
             expires_at: None, // Offline delivery: expiry already passed if expired
+            undecryptable,
         };
         let Ok(json) = serde_json::to_string(&server_msg) else {
             continue;
@@ -761,17 +795,28 @@ pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid
         let enqueued = state
             .hub
             .send_to_device(&user_id, device_id, WsMessage::Text(json.into()));
-        if enqueued {
-            delivered_ids.push(msg.id);
-            delivered_msgs.push(msg);
-        } else {
+        if !enqueued {
             tracing::warn!(
                 message_id = %msg.id,
                 user_id = %user_id,
                 device_id = device_id,
                 "replay: hub rejected message — leaving as undelivered for next reconnect"
             );
+            continue;
         }
+        if undecryptable.unwrap_or(false) {
+            // Don't mark as delivered: another device of the same user may
+            // still have a per-device row and should be able to replay it.
+            tracing::warn!(
+                message_id = %msg.id,
+                user_id = %user_id,
+                device_id = device_id,
+                "replay: no per-device ciphertext, sent undecryptable marker (not marking delivered)"
+            );
+            continue;
+        }
+        delivered_ids.push(msg.id);
+        delivered_msgs.push(msg);
     }
 
     if delivered_ids.is_empty() {

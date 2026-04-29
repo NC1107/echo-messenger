@@ -93,6 +93,13 @@ pub enum ServerMessage {
         reply_to_username: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         expires_at: Option<DateTime<Utc>>,
+        /// Set to `true` when the server cannot deliver per-device ciphertext
+        /// for this recipient (e.g. offline-replay where the message predates
+        /// multi-device fanout, or no row exists for this device). The client
+        /// should render an undecryptable placeholder rather than attempting
+        /// to decrypt foreign ciphertext (#557).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        undecryptable: Option<bool>,
     },
     /// Sent to the sender's OTHER devices so they see outgoing messages.
     #[serde(rename = "self_message")]

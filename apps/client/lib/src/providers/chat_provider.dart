@@ -399,7 +399,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _setLoadingHistory(historyKey, true);
 
     try {
-      final url = _buildHistoryUrl(conversationId, channelId, before);
+      // #557: pass our local device_id so the server can return device-aware
+      // ciphertexts via `message_device_contents`. Without this the server
+      // returns the canonical (originating-device) wire and secondary
+      // devices fail to decrypt their own DM history.
+      final localDeviceId = crypto?.deviceId;
+      final url = _buildHistoryUrl(
+        conversationId,
+        channelId,
+        before,
+        deviceId: localDeviceId,
+      );
       final response = await _fetchHistory(url);
 
       if (response.statusCode == 200) {
@@ -433,14 +443,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
   String _buildHistoryUrl(
     String conversationId,
     String? channelId,
-    String? before,
-  ) {
+    String? before, {
+    int? deviceId,
+  }) {
     var url = '$_serverUrl/api/messages/$conversationId?limit=50';
     if (channelId != null && channelId.isNotEmpty) {
       url += '&channel_id=${Uri.encodeComponent(channelId)}';
     }
     if (before != null) {
       url += '&before=${Uri.encodeComponent(before)}';
+    }
+    // #557: device_id lets the server LEFT JOIN
+    // `message_device_contents` and return the row scoped to this device's
+    // ratchet rather than the originating device's wire.
+    if (deviceId != null && deviceId > 0) {
+      url += '&device_id=$deviceId';
     }
     return url;
   }
@@ -474,7 +491,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }) async {
     final newMessages = <ChatMessage>[];
     for (final e in messagesList) {
-      var msg = ChatMessage.fromServerJson(e as Map<String, dynamic>, myUserId);
+      final json = e as Map<String, dynamic>;
+      var msg = ChatMessage.fromServerJson(json, myUserId);
+      // #557: pull the originating device id off the row so we route to the
+      // right per-device ratchet. Null = legacy row (single-device era).
+      final fromDeviceId = json['from_device_id'] as int?;
       msg = await _decryptIfNeeded(
         msg,
         myUserId: myUserId,
@@ -482,6 +503,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
         crypto: crypto,
         groupCrypto: groupCrypto,
         conversationId: conversationId,
+        fromDeviceId: fromDeviceId,
       );
       newMessages.add(msg);
     }
@@ -546,6 +568,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     CryptoService? crypto,
     GroupCryptoService? groupCrypto,
     String? conversationId,
+    int? fromDeviceId,
   }) async {
     // Group-encrypted messages (prefixed with GRP1:)
     if (msg.content.startsWith(groupEncryptedPrefix)) {
@@ -575,9 +598,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     // Use decryptHistoryMessage which never creates new sessions and returns
     // null on failure instead of throwing.
+    // #557: pass the originating device so the right per-device ratchet is
+    // selected; null falls back to the legacy peer-only session key.
     final decrypted = await crypto.decryptHistoryMessage(
       msg.fromUserId,
       msg.content,
+      fromDeviceId: fromDeviceId,
     );
     if (decrypted != null) {
       return msg.copyWith(content: decrypted, isEncrypted: true);

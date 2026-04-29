@@ -50,6 +50,10 @@ pub struct MessageQuery {
     pub before: Option<DateTime<Utc>>,
     pub limit: Option<i64>,
     pub channel_id: Option<Uuid>,
+    /// Caller's local device id (#557). When supplied, history rows are
+    /// returned with the device-specific ciphertext joined in, so each
+    /// device decrypts its own ratchet wire instead of a sibling's.
+    pub device_id: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -288,6 +292,8 @@ pub async fn get_messages(
         params.channel_id,
         params.before,
         limit,
+        auth.user_id,
+        params.device_id,
     )
     .await
     .map_err(|e| {
@@ -295,7 +301,34 @@ pub async fn get_messages(
         AppError::internal("Database error")
     })?;
 
-    Ok(Json(messages))
+    // Re-shape the response to expose `from_user_id` / `from_username` /
+    // `from_device_id` keys the client expects on history (#557). Doing it
+    // here avoids changing every other consumer of `MessageWithSender`.
+    let body: Vec<serde_json::Value> = messages
+        .into_iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id,
+                "message_id": m.id,
+                "conversation_id": m.conversation_id,
+                "channel_id": m.channel_id,
+                "sender_id": m.sender_id,
+                "from_user_id": m.sender_id,
+                "from_device_id": m.sender_device_id,
+                "sender_username": m.sender_username,
+                "from_username": m.sender_username,
+                "content": m.content,
+                "created_at": m.created_at,
+                "edited_at": m.edited_at,
+                "reply_to_id": m.reply_to_id,
+                "reply_to_content": m.reply_to_content,
+                "reply_to_username": m.reply_to_username,
+                "reply_count": m.reply_count,
+            })
+        })
+        .collect();
+
+    Ok(Json(body))
 }
 
 #[derive(Debug, Deserialize)]

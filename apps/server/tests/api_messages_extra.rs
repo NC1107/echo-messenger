@@ -488,6 +488,176 @@ async fn create_dm_idempotent() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Offline replay regression for #557
+// ---------------------------------------------------------------------------
+
+mod offline_replay_557 {
+    use super::*;
+    use tokio_tungstenite::tungstenite::Message as WsMsg;
+
+    type WsStream = tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >;
+
+    async fn connect_ws_with_ticket(base: &str, ticket: &str) -> WsStream {
+        let ws_base = base.replace("http://", "ws://");
+        let (ws, _) = tokio_tungstenite::connect_async(format!("{ws_base}/ws?ticket={ticket}"))
+            .await
+            .expect("WS connect failed");
+        ws
+    }
+
+    /// Read up to N text frames from the socket within a small budget,
+    /// skipping presence noise, returning all decoded JSON values.
+    async fn collect_text_frames(ws: &mut WsStream, max: usize) -> Vec<Value> {
+        let timeout = Duration::from_millis(1500);
+        let mut out = Vec::new();
+        for _ in 0..max {
+            match tokio::time::timeout(timeout, ws.next()).await {
+                Ok(Some(Ok(WsMsg::Text(text)))) => {
+                    if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                        if v["type"] == "presence" {
+                            continue;
+                        }
+                        out.push(v);
+                    }
+                }
+                Ok(Some(Ok(WsMsg::Ping(_)))) | Ok(Some(Ok(WsMsg::Pong(_)))) => continue,
+                _ => break,
+            }
+        }
+        out
+    }
+
+    /// Bug #557 — when the offline queue holds a per-device fanout message but
+    /// the reconnecting device has no row in `message_device_contents`, the
+    /// pre-fix code returned the canonical (sender's) ciphertext, which the
+    /// secondary device cannot decrypt.  After the fix the server emits an
+    /// explicit `undecryptable: true` marker and leaves the message
+    /// undelivered for a future reconnect.
+    #[tokio::test]
+    async fn test_offline_replay_skips_when_no_device_ciphertext() {
+        let base = common::spawn_server().await;
+        let client = Client::new();
+
+        let (alice_token, _alice_id, _alice_name) =
+            common::register_and_login(&client, &base, "rs1_alice").await;
+        let (bob_token, bob_id, bob_name) =
+            common::register_and_login(&client, &base, "rs1_bob").await;
+
+        common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+        // Alice connects on device 1 and sends a message with a per-device
+        // ciphertext for Bob's device 11 ONLY.  Bob's device 22 is offline
+        // and has no per-device row.
+        let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
+        let mut alice_ws = connect_ws_with_ticket(&base, &alice_ticket).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let _ = collect_text_frames(&mut alice_ws, 4).await; // drain presence
+
+        let send = serde_json::json!({
+            "type": "send_message",
+            "to_user_id": bob_id,
+            "content": "ALICE_WIRE",
+            "recipient_device_contents": {
+                bob_id.to_string(): { "11": "BOB_D11_CT" },
+            },
+        });
+        alice_ws
+            .send(WsMsg::Text(send.to_string().into()))
+            .await
+            .unwrap();
+        let _ = collect_text_frames(&mut alice_ws, 2).await;
+
+        // Bob comes online on device 22 — this device has NO per-device row.
+        let bob_d22_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 22).await;
+        let mut bob_d22 = connect_ws_with_ticket(&base, &bob_d22_ticket).await;
+
+        let frames = collect_text_frames(&mut bob_d22, 4).await;
+        let new_msgs: Vec<&Value> = frames
+            .iter()
+            .filter(|v| v["type"] == "new_message")
+            .collect();
+        assert_eq!(
+            new_msgs.len(),
+            1,
+            "Bob should receive exactly one replay frame, got: {frames:?}"
+        );
+        let m = new_msgs[0];
+        assert_eq!(
+            m["undecryptable"], true,
+            "device 22 has no per-device row -> must be marked undecryptable"
+        );
+        // Pre-fix bug shipped Alice's ciphertext here. The fix MUST NOT leak it.
+        assert_ne!(
+            m["content"], "ALICE_WIRE",
+            "must not return canonical sender ciphertext to wrong device"
+        );
+
+        let _ = alice_ws.close(None).await;
+        let _ = bob_d22.close(None).await;
+    }
+
+    /// Bug #557 — replay frames must propagate the originating device id so
+    /// the recipient can decrypt with the correct per-device ratchet.
+    #[tokio::test]
+    async fn test_offline_replay_includes_from_device_id() {
+        let base = common::spawn_server().await;
+        let client = Client::new();
+
+        let (alice_token, _alice_id, _alice_name) =
+            common::register_and_login(&client, &base, "rs2_alice").await;
+        let (bob_token, bob_id, bob_name) =
+            common::register_and_login(&client, &base, "rs2_bob").await;
+
+        common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+        let alice_device_id: i32 = 7;
+        let bob_device_id: i32 = 11;
+
+        // Alice (device 7) sends a per-device frame for Bob's device 11.
+        let alice_ticket =
+            common::get_ws_ticket_for_device(&client, &base, &alice_token, alice_device_id).await;
+        let mut alice_ws = connect_ws_with_ticket(&base, &alice_ticket).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let _ = collect_text_frames(&mut alice_ws, 4).await;
+
+        let send = serde_json::json!({
+            "type": "send_message",
+            "to_user_id": bob_id,
+            "content": "CANON",
+            "recipient_device_contents": {
+                bob_id.to_string(): { bob_device_id.to_string(): "BOB_REPLAY_CT" },
+            },
+        });
+        alice_ws
+            .send(WsMsg::Text(send.to_string().into()))
+            .await
+            .unwrap();
+        let _ = collect_text_frames(&mut alice_ws, 2).await;
+
+        // Bob comes online on device 11.
+        let bob_ticket =
+            common::get_ws_ticket_for_device(&client, &base, &bob_token, bob_device_id).await;
+        let mut bob_ws = connect_ws_with_ticket(&base, &bob_ticket).await;
+        let frames = collect_text_frames(&mut bob_ws, 4).await;
+        let m = frames
+            .iter()
+            .find(|v| v["type"] == "new_message")
+            .expect("expected a replay new_message");
+        assert_eq!(m["content"], "BOB_REPLAY_CT");
+        assert_eq!(
+            m["from_device_id"].as_i64(),
+            Some(alice_device_id as i64),
+            "replay frame must surface sender device id (#557)"
+        );
+
+        let _ = alice_ws.close(None).await;
+        let _ = bob_ws.close(None).await;
+    }
+}
+
 #[tokio::test]
 async fn create_dm_with_non_contact_returns_400() {
     let base = common::spawn_server().await;
@@ -511,4 +681,172 @@ async fn create_dm_with_non_contact_returns_400() {
         .unwrap();
 
     assert_eq!(resp.status().as_u16(), 400);
+}
+
+// ---------------------------------------------------------------------------
+// Device-aware history regression for #557 (Bug 3)
+// ---------------------------------------------------------------------------
+
+mod history_device_aware_557 {
+    use super::*;
+    use tokio_tungstenite::tungstenite::Message as WsMsg;
+
+    /// Bug #557 — `GET /api/messages/:conv_id?device_id=N` must LEFT JOIN
+    /// `message_device_contents` and return the per-device ciphertext for the
+    /// requesting (recipient_user, device_id) pair.  Without `device_id` the
+    /// legacy canonical content is preserved for backward compat.
+    #[tokio::test]
+    async fn test_get_messages_returns_device_specific_ciphertext() {
+        let base = common::spawn_server().await;
+        let client = Client::new();
+
+        let (alice_token, _alice_id, _alice_name) =
+            common::register_and_login(&client, &base, "hda_alice").await;
+        let (bob_token, bob_id, bob_name) =
+            common::register_and_login(&client, &base, "hda_bob").await;
+
+        let conv_id =
+            common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name)
+                .await;
+
+        let alice_device_id: i32 = 7;
+        let alice_ticket =
+            common::get_ws_ticket_for_device(&client, &base, &alice_token, alice_device_id).await;
+        let ws_url = base.replace("http://", "ws://");
+        let (mut alice_ws, _) =
+            tokio_tungstenite::connect_async(format!("{ws_url}/ws?ticket={alice_ticket}"))
+                .await
+                .expect("WS connect failed");
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        while let Ok(Some(Ok(_))) =
+            tokio::time::timeout(Duration::from_millis(100), alice_ws.next()).await
+        {}
+
+        alice_ws
+            .send(WsMsg::Text(
+                serde_json::json!({
+                    "type": "send_message",
+                    "to_user_id": bob_id,
+                    "conversation_id": conv_id,
+                    "content": "CANON_CT",
+                    "recipient_device_contents": {
+                        bob_id.to_string(): {
+                            "11": "CT_D11",
+                            "22": "CT_D22",
+                        },
+                    },
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .unwrap();
+
+        // Wait for message_sent ack so the row is committed before history reads.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        while let Ok(Some(Ok(WsMsg::Text(text)))) =
+            tokio::time::timeout_at(deadline, alice_ws.next()).await
+        {
+            if let Ok(json) = serde_json::from_str::<Value>(&text)
+                && json["type"] == "message_sent"
+            {
+                break;
+            }
+        }
+        let _ = alice_ws.close(None).await;
+
+        // Device 11 -> CT_D11 + from_device_id == alice_device_id
+        let resp_d11: Value = client
+            .get(format!("{base}/api/messages/{conv_id}?device_id=11"))
+            .header("Authorization", format!("Bearer {bob_token}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let last_d11 = resp_d11
+            .as_array()
+            .expect("history is an array")
+            .last()
+            .expect("at least one message")
+            .clone();
+        assert_eq!(
+            last_d11["content"], "CT_D11",
+            "device 11 should receive its per-device ciphertext"
+        );
+        assert_eq!(
+            last_d11["from_device_id"].as_i64(),
+            Some(alice_device_id as i64),
+            "history rows must surface sender device id"
+        );
+
+        // Device 22 -> CT_D22 (different ciphertext, same message)
+        let resp_d22: Value = client
+            .get(format!("{base}/api/messages/{conv_id}?device_id=22"))
+            .header("Authorization", format!("Bearer {bob_token}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let last_d22 = resp_d22.as_array().unwrap().last().unwrap().clone();
+        assert_eq!(
+            last_d22["content"], "CT_D22",
+            "device 22 should receive its OWN per-device ciphertext, not device 11's"
+        );
+
+        // No device_id -> legacy canonical fallback (backward compat for old clients).
+        let resp_legacy: Value = client
+            .get(format!("{base}/api/messages/{conv_id}"))
+            .header("Authorization", format!("Bearer {bob_token}"))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let last_legacy = resp_legacy.as_array().unwrap().last().unwrap().clone();
+        assert_eq!(
+            last_legacy["content"], "CANON_CT",
+            "no device_id param -> legacy canonical content (backward compat)"
+        );
+    }
+
+    /// Bug #557 — even though the route accepts `device_id`, the per-device
+    /// JOIN must be bound to the authenticated user's id, NOT the param,
+    /// so a non-member of the conversation cannot retrieve any per-device
+    /// ciphertext by guessing device ids.
+    #[tokio::test]
+    async fn test_get_messages_rejects_non_member_with_device_id() {
+        let base = common::spawn_server().await;
+        let client = Client::new();
+
+        let (alice_token, _alice_id, _alice_name) =
+            common::register_and_login(&client, &base, "auz_alice").await;
+        let (bob_token, bob_id, bob_name) =
+            common::register_and_login(&client, &base, "auz_bob").await;
+        let (carol_token, _carol_id, _carol_name) =
+            common::register_and_login(&client, &base, "auz_carol").await;
+
+        let conv_id =
+            common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name)
+                .await;
+
+        // Carol (not a member of Alice <-> Bob's DM) tries to read history
+        // with a guessed device_id.  Auth gate must reject regardless.
+        let status = client
+            .get(format!("{base}/api/messages/{conv_id}?device_id=11"))
+            .header("Authorization", format!("Bearer {carol_token}"))
+            .send()
+            .await
+            .unwrap()
+            .status();
+        assert!(
+            !status.is_success(),
+            "non-member must not access conversation history (got {status})"
+        );
+    }
 }

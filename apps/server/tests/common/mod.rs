@@ -161,6 +161,26 @@ pub async fn get_ws_ticket(client: &Client, base: &str, token: &str) -> String {
     body["ticket"].as_str().expect("missing ticket").to_string()
 }
 
+/// Obtain a WebSocket ticket bound to a specific device id.  Used by
+/// multi-device fanout / replay tests (#557).
+pub async fn get_ws_ticket_for_device(
+    client: &Client,
+    base: &str,
+    token: &str,
+    device_id: i32,
+) -> String {
+    let resp = client
+        .post(format!("{base}/api/auth/ws-ticket"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "device_id": device_id }))
+        .send()
+        .await
+        .expect("ws-ticket request failed");
+
+    let body: Value = resp.json().await.expect("ws-ticket JSON parse failed");
+    body["ticket"].as_str().expect("missing ticket").to_string()
+}
+
 /// Generate a unique username using a UUID suffix to avoid collisions across parallel tests.
 pub fn unique_username(prefix: &str) -> String {
     let suffix = uuid::Uuid::new_v4().simple().to_string();
