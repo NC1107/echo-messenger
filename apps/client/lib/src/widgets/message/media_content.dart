@@ -333,9 +333,13 @@ class MediaContentState extends State<MediaContent> {
                     onTap: () => Navigator.of(dialogContext).pop(),
                     behavior: HitTestBehavior.opaque,
                     child: imageUrl.endsWith('.gif')
-                        ? Image.network(
-                            imageUrl,
-                            headers: headers,
+                        ? Image(
+                            image: CachedNetworkImageProvider(
+                              imageUrl,
+                              cacheKey: stableMediaCacheKey(imageUrl),
+                              cacheManager: chatMediaCacheManager,
+                              headers: headers,
+                            ),
                             fit: BoxFit.contain,
                             gaplessPlayback: true,
                             errorBuilder: (_, _, _) => const Center(
@@ -434,9 +438,16 @@ class MediaContentState extends State<MediaContent> {
                         builder: (ctx, ref, _) {
                           final gif = ref.watch(gifPlaybackProvider);
                           if (gif.isAnimating) {
-                            return Image.network(
-                              fullUrl,
-                              headers: _headers(),
+                            // Route GIF playback through the disk cache so
+                            // switching conversations doesn't re-fetch the
+                            // animation each time (#562).
+                            return Image(
+                              image: CachedNetworkImageProvider(
+                                fullUrl,
+                                cacheKey: stableMediaCacheKey(rawUrl),
+                                cacheManager: chatMediaCacheManager,
+                                headers: _headers(),
+                              ),
                               width: 300,
                               fit: BoxFit.cover,
                               gaplessPlayback: true,
