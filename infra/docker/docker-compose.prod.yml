@@ -1,6 +1,6 @@
 services:
   server:
-    image: ghcr.io/nc1107/echo-messenger/server:${SERVER_VERSION:-latest}
+    image: ghcr.io/nc1107/echo-messenger/server:${SERVER_VERSION:?SERVER_VERSION must be set to a published release tag (no 'latest' fallback)}
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://echo:${DB_PASSWORD}@postgres:5432/echo_prod
@@ -31,7 +31,7 @@ services:
       - echo-internal
 
   web:
-    image: ghcr.io/nc1107/echo-messenger/web:${WEB_VERSION:-latest}
+    image: ghcr.io/nc1107/echo-messenger/web:${WEB_VERSION:?WEB_VERSION must be set to a published release tag (no 'latest' fallback)}
     restart: unless-stopped
     labels:
       - "traefik.enable=true"

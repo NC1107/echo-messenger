@@ -88,7 +88,9 @@ jobs:
           CORS_ORIGINS: http://localhost:8081
 
       - name: Install serve
-        run: npm install -g serve
+        # Pinned to a specific version so we don't pull a different `serve` per
+        # CI run (#533). The Playwright runner below uses the tracked lockfile.
+        run: npm install -g serve@14.2.5
 
       - name: Serve web client
         run: |
@@ -99,8 +101,10 @@ jobs:
       # -- Playwright --
       - name: Install Playwright dependencies
         working-directory: tests/e2e
+        # `npm ci` against the tracked lockfile so the installed Playwright
+        # version is exactly what was committed (#533).
         run: |
-          npm install
+          npm ci
           npx playwright install --with-deps chromium
 
       - name: Run E2E tests

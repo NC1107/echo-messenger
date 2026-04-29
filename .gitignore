@@ -75,10 +75,6 @@ Thumbs.db
 # Docker overrides
 docker-compose.override.yml
 
-# Node (commitlint)
-node_modules/
-package-lock.json
-
 # Research/context files (project notes, not source)
 /research/
 /context/
@@ -88,10 +84,10 @@ RESEARCH.md
 
 # Node
 node_modules/
-package.json
-package-lock.json
-# Allow E2E test package.json
-!tests/e2e/package.json
+# Tracked package.json + lockfiles for reproducible CI tooling (#533).
+# The repo-root pair pins commitlint and Playwright; tests/e2e pins the
+# Playwright test runner used by E2E.
+# (No new ignores needed — package.json and package-lock.json default to tracked.)
 
 # Playwright & test artifacts
 tests/e2e/test-results/
