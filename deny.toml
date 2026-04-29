@@ -34,16 +34,17 @@ allow = [
     "CDLA-Permissive-2.0",
 ]
 
-# AGPL-3.0-or-later is the project's own license and must not leak in via
-# transitive deps. Narrow exceptions below cover only first-party workspace
-# crates so a future AGPL dependency won't silently slip through.
+# PolyForm Noncommercial 1.0.0 is the project's own license. SPDX has no
+# canonical identifier for it so cargo-deny treats it as "unknown" — we
+# exception it for first-party crates only, so any future non-commercial
+# dependency won't silently slip through.
 [[licenses.exceptions]]
 name = "echo-core"
-allow = ["AGPL-3.0-or-later"]
+allow = ["LicenseRef-PolyForm-Noncommercial-1.0.0"]
 
 [[licenses.exceptions]]
 name = "echo-server"
-allow = ["AGPL-3.0-or-later"]
+allow = ["LicenseRef-PolyForm-Noncommercial-1.0.0"]
 
 [bans]
 multiple-versions = "warn"

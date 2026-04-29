@@ -2,7 +2,7 @@
 name = "echo-server"
 version = "0.1.0"
 edition = "2024"
-license = "AGPL-3.0-or-later"
+license = "LicenseRef-PolyForm-Noncommercial-1.0.0"
 
 [dependencies]
 tokio.workspace = true

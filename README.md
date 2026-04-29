@@ -271,4 +271,8 @@ cd apps/client && flutter analyze --fatal-infos
 
 ## License
 
-AGPL-3.0-or-later. See [LICENSE](LICENSE).
+[PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0). See [LICENSE](LICENSE).
+
+This is a **source-available** license — anyone may use, modify, and contribute to Echo for any **non-commercial** purpose (personal, hobby, educational, non-profit, public-research, religious). Selling it, hosting it as a paid service, or using it inside a commercial entity is **not permitted** without a separate commercial license from the copyright holder.
+
+Contributions are welcome via pull request. By submitting a contribution you agree that your changes are released under the same license.
