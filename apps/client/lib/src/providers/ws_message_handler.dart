@@ -419,6 +419,9 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       );
     } else {
       // Crypto not ready yet — show a placeholder and queue for decryption.
+      // The literal 'Securing message...' string is recognised by
+      // chat_provider.dart's `_placeholderContents` so the decrypted
+      // version replaces it in place when the queue drains (#430).
       final placeholder = ChatMessage.fromServerJson({
         ...json,
         'content': 'Securing message...',
