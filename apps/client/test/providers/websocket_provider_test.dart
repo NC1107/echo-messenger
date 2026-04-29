@@ -42,6 +42,34 @@ void main() {
       expect(state.isUserOnline('user-3'), isFalse);
     });
 
+    group('lastSeenFor (#503)', () {
+      test('returns null when no entry exists', () {
+        const state = WebSocketState();
+        expect(state.lastSeenFor('user-1'), isNull);
+      });
+
+      test('returns the stored timestamp when present', () {
+        final ts = DateTime.utc(2026, 4, 28, 12, 30);
+        final state = WebSocketState(lastSeenAt: {'user-1': ts});
+        expect(state.lastSeenFor('user-1'), ts);
+      });
+
+      test('copyWith preserves lastSeenAt when not overridden', () {
+        final ts = DateTime.utc(2026, 4, 28, 12, 30);
+        final state = WebSocketState(lastSeenAt: {'user-1': ts});
+        final copied = state.copyWith(isConnected: true);
+        expect(copied.lastSeenFor('user-1'), ts);
+      });
+
+      test('copyWith replaces lastSeenAt when provided', () {
+        final ts1 = DateTime.utc(2026, 4, 28, 12, 30);
+        final ts2 = DateTime.utc(2026, 4, 28, 13, 0);
+        final state = WebSocketState(lastSeenAt: {'user-1': ts1});
+        final updated = state.copyWith(lastSeenAt: {'user-1': ts2});
+        expect(updated.lastSeenFor('user-1'), ts2);
+      });
+    });
+
     test('typing indicators are tracked per conversation', () {
       final now = DateTime.now();
       final state = WebSocketState(

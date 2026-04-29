@@ -249,11 +249,10 @@ class ChatHeaderBar extends ConsumerWidget {
     final peer = conv.members.where((m) => m.userId != myUserId).firstOrNull;
     final peerOnline = peer != null && wsState.isUserOnline(peer.userId);
     final lastSeen = peer == null ? null : wsState.lastSeenFor(peer.userId);
-    final label = peerOnline
-        ? 'online'
-        : (lastSeen != null
-              ? 'last seen ${formatMessageTimestamp(lastSeen.toIso8601String())}'
-              : 'offline');
+    final label = formatPeerStatusLabel(
+      isOnline: peerOnline,
+      lastSeen: lastSeen,
+    );
     return Text(
       label,
       maxLines: 1,
