@@ -119,6 +119,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch --tags --quiet origin
 
+          PUSH_ERR=$(mktemp)
+          trap 'rm -f "$PUSH_ERR"' EXIT
+
           for attempt in 1 2 3 4 5; do
             LATEST=$(git tag -l 'v*' --sort=-v:refname | head -1)
             if [ -z "$LATEST" ]; then
@@ -134,8 +137,25 @@ jobs:
             NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
             NEW_TAG="v${NEW_VERSION}"
 
+            # Idempotency: if a prior attempt of this same step already
+            # pushed the tag (e.g. step retry, runner restart), short-
+            # circuit to success rather than re-tagging and aborting.
+            if git ls-remote --exit-code --tags origin "refs/tags/$NEW_TAG" >/dev/null 2>&1; then
+              REMOTE_SHA=$(git ls-remote --tags origin "refs/tags/$NEW_TAG" | awk '{print $1}')
+              LOCAL_SHA=$(git rev-parse HEAD)
+              if [ "$REMOTE_SHA" = "$LOCAL_SHA" ] || git merge-base --is-ancestor "$LOCAL_SHA" "$REMOTE_SHA" 2>/dev/null; then
+                echo "Tag $NEW_TAG already reserved by this run; skipping push"
+                echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+                echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              # Tag exists but points elsewhere -- bump and retry.
+              git fetch --tags --quiet origin
+              continue
+            fi
+
             git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
-            if git push origin "$NEW_TAG" 2>/tmp/push_err; then
+            if git push origin "$NEW_TAG" 2>"$PUSH_ERR"; then
               echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
               echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
               echo "Reserved $NEW_TAG (previous: $LATEST, attempt $attempt)"
@@ -143,7 +163,7 @@ jobs:
             fi
 
             echo "Push of $NEW_TAG lost a race (attempt $attempt):"
-            cat /tmp/push_err || true
+            cat "$PUSH_ERR" || true
             git tag -d "$NEW_TAG"
             git fetch --tags --quiet origin
           done
