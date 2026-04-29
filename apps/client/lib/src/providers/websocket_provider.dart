@@ -375,6 +375,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
     if (msg.contains('No session for')) {
       return 'Encryption session expired. Tap to retry.';
     }
+    // #344: surfaced when sendGroupMessage cannot fetch the group key.
+    if (msg.contains('No group session') || msg.contains('group key')) {
+      return 'Group encryption key not available yet. Tap to retry.';
+    }
     if (msg.contains('cannot decrypt') || msg.contains('Could not decrypt')) {
       return 'Message could not be decrypted.';
     }

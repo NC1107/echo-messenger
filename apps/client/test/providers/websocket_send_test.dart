@@ -450,7 +450,11 @@ void main() {
       expect(msgs.first.isMine, isTrue);
       // Plaintext must be retained for retry, not sent over the wire.
       expect(msgs.first.failedContent, 'leak this');
-      expect(msgs.first.content, isNot(equals('leak this')));
+      // #344-specific friendly error -- locks the new branch in
+      // _friendlyEncryptionError so a future generic-fallback regression
+      // (or removal of the dedicated message) is visible.
+      expect(msgs.first.content, contains('Group encryption key'));
+      expect(msgs.first.content, contains('Tap to retry'));
     });
 
     test('encrypted group + getGroupKey throws adds failed message', () async {
