@@ -15,7 +15,7 @@ chrono.workspace = true
 
 # Web framework
 axum = { version = "0.8", features = ["ws", "multipart"] }
-axum-extra = { version = "0.12", features = ["typed-header"] }
+axum-extra = { version = "0.12", features = ["typed-header", "cookie"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "set-header"] }
 
