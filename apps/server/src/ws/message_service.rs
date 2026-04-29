@@ -562,9 +562,16 @@ pub(super) fn deliver_to_member(
     if let Some(by_recipient) = per_recipient_json
         && let Some(device_jsons) = by_recipient.get(member_id)
     {
-        return device_jsons.iter().any(|(did, json)| {
-            hub.send_to_device(member_id, *did, WsMessage::Text(json.clone().into()))
-        });
+        // #557: deliver to ALL recipient devices. `Iterator::any` short-circuits
+        // on the first `true`, so a successful send to device #1 would skip
+        // device #2 entirely. Walk every device and OR-accumulate instead.
+        let mut any_sent = false;
+        for (did, json) in device_jsons {
+            if hub.send_to_device(member_id, *did, WsMessage::Text(json.clone().into())) {
+                any_sent = true;
+            }
+        }
+        return any_sent;
     }
     if let Some(json) = legacy_json {
         hub.send_to_user(member_id, WsMessage::Text(json.to_owned().into()))
