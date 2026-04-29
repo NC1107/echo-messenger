@@ -118,6 +118,7 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - **Traefik routing**: API priority 100, Web priority 1 (API routes must take precedence).
 - **Message wire format**: Initial V2 (with OTP) = `[0xEC, 0x02] + identity_pub(32) + ephemeral_pub(32) + otp_id(4 LE) + ratchet_wire`; Initial V1 (no OTP) = `[0xEC, 0x01] + identity_pub(32) + ephemeral_pub(32) + ratchet_wire`; Normal = `header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`. All base64-wrapped over WebSocket.
 - **Soft deletes**: Messages use `is_deleted` flag, not hard deletes.
+- **Refresh tokens (web)**: HttpOnly + Secure + SameSite=Strict cookie scoped to `/api/auth`; mobile/desktop continue to use the JSON body. `/refresh` accepts either; cookie wins. CORS requires explicit origins (not `*`) when cookie auth is enabled.
 
 ## Commit Style
 
