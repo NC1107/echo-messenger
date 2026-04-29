@@ -758,6 +758,9 @@ class _MessageItemState extends State<MessageItem>
   Widget _buildHoverActions(ChatMessage msg, bool isMine, {String? mediaUrl}) {
     final isImage = mediaUrl != null && _isImageMedia(msg.content, mediaUrl);
     return Container(
+      // Clip the InkWell ripples on the 44x44 chips so they don't bleed
+      // past the rounded card boundary into the adjacent message bubble.
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: context.surface.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(6),

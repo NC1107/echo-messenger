@@ -158,12 +158,17 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   int _newMessagesBelowCount = 0;
 
   /// Hidden Semantics live-region label for screen-reader announcements
-  /// when peer messages arrive (#495). Empty until the first announcement.
+  /// when peer messages arrive (#495). Empty until the first announcement,
+  /// then cleared again ~3s after each announcement so a window-focus event
+  /// doesn't make the screen reader replay the stale label.
   String _liveRegionAnnouncement = '';
 
   /// Last announced peer message id; prevents duplicate announcements when
   /// the chat state notifier fires back-to-back updates with the same tail.
   String? _lastAnnouncedMessageId;
+
+  /// Clears [_liveRegionAnnouncement] a short time after each announcement.
+  Timer? _liveRegionClearTimer;
 
   OverlayEntry? _reactionOverlay;
 
@@ -245,6 +250,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       _messageKeys.clear();
       _liveRegionAnnouncement = '';
       _lastAnnouncedMessageId = null;
+      _liveRegionClearTimer?.cancel();
       _dismissReactionPicker();
 
       // Restore cached scroll position for the new conversation, or scroll
@@ -293,6 +299,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     _dismissReactionPicker();
     _highlightTimer?.cancel();
     _floatingDateTimer?.cancel();
+    _liveRegionClearTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
@@ -1993,6 +2000,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             _liveRegionAnnouncement = preview.isEmpty
                 ? 'New message from ${newest.fromUsername}'
                 : 'New message from ${newest.fromUsername}: $preview';
+          });
+          _liveRegionClearTimer?.cancel();
+          _liveRegionClearTimer = Timer(const Duration(seconds: 3), () {
+            if (!mounted) return;
+            setState(() => _liveRegionAnnouncement = '');
           });
         }
 

@@ -28,10 +28,14 @@ void main() {
       expect(previewForSemantics('[voice:msg-1]'), 'Voice message');
     });
 
+    test('substitutes [video:...] with "Video"', () {
+      // Video is an active wire format -- review surfaced that omitting
+      // the substitution would leave the screen reader silent on a
+      // video-only message.
+      expect(previewForSemantics('[video:clip.mp4]'), 'Video');
+    });
+
     test('strips unknown bracketed tokens', () {
-      // [video:...] is not in the substitution table -- the catch-all
-      // strip rule removes it without leaving a sentinel.
-      expect(previewForSemantics('[video:clip.mp4]'), '');
       expect(
         previewForSemantics('start [unknown:x] middle [thing:y] end'),
         'start middle end',
