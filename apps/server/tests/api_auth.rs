@@ -342,3 +342,114 @@ async fn refresh_cookie_takes_precedence() {
     assert!(body["access_token"].as_str().is_some());
     assert!(body["refresh_token"].as_str().is_some());
 }
+
+/// /refresh with NEITHER a cookie NOR a body token must 401 -- the only
+/// new error branch introduced by the cookie path (#342).
+#[tokio::test]
+async fn refresh_with_no_token_anywhere_returns_401() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let resp = client
+        .post(format!("{base}/api/auth/refresh"))
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .expect("refresh request failed");
+
+    assert_eq!(
+        resp.status().as_u16(),
+        401,
+        "no cookie + no body must be unauthorized"
+    );
+}
+
+/// After /logout the server-side refresh token is revoked.  Replaying the
+/// previously-set cookie value against /refresh must therefore 401 even
+/// though the cookie attributes themselves still parse cleanly (#342).
+#[tokio::test]
+async fn refresh_with_logged_out_cookie_returns_401() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("logoutreplay");
+
+    common::register(&client, &base, &username, "password123").await;
+    let login_resp = common::login_raw(&client, &base, &username, "password123").await;
+    assert_eq!(login_resp.status().as_u16(), 200);
+
+    let raw_cookie = find_set_cookie(&login_resp, "echo_refresh")
+        .expect("login Set-Cookie")
+        .to_string();
+    let cookie_header = raw_cookie
+        .split(';')
+        .next()
+        .expect("cookie name=value")
+        .trim()
+        .to_string();
+
+    let body: serde_json::Value = login_resp.json().await.unwrap();
+    let access_token = body["access_token"].as_str().unwrap().to_string();
+
+    // Log out -- revokes the refresh family server-side and clears the cookie.
+    let resp = client
+        .post(format!("{base}/api/auth/logout"))
+        .header("Authorization", format!("Bearer {access_token}"))
+        .send()
+        .await
+        .expect("logout request failed");
+    assert_eq!(resp.status().as_u16(), 204);
+
+    // Replay the captured cookie -- server must reject because the underlying
+    // refresh family was revoked.
+    let resp = client
+        .post(format!("{base}/api/auth/refresh"))
+        .header(reqwest::header::COOKIE, &cookie_header)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .expect("refresh request failed");
+    assert_eq!(
+        resp.status().as_u16(),
+        401,
+        "revoked cookie must not refresh"
+    );
+}
+
+/// A cleared cookie (`echo_refresh=`) must NOT short-circuit the body token
+/// lookup -- the empty-string filter in the cookie/body resolution chain
+/// is what makes mobile/desktop fallback robust when a stale cleared cookie
+/// is still attached by the browser (#342).
+#[tokio::test]
+async fn refresh_empty_cookie_falls_through_to_body() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("emptycookie");
+
+    common::register(&client, &base, &username, "password123").await;
+    let login_body: serde_json::Value = client
+        .post(format!("{base}/api/auth/login"))
+        .json(&serde_json::json!({ "username": username, "password": "password123" }))
+        .send()
+        .await
+        .expect("login failed")
+        .json()
+        .await
+        .unwrap();
+    let body_token = login_body["refresh_token"].as_str().unwrap().to_string();
+
+    // Send an empty echo_refresh cookie alongside a valid body token.  The
+    // server's `.filter(|s| !s.is_empty())` guard must let the body token win.
+    let resp = client
+        .post(format!("{base}/api/auth/refresh"))
+        .header(reqwest::header::COOKIE, "echo_refresh=")
+        .json(&serde_json::json!({ "refresh_token": body_token }))
+        .send()
+        .await
+        .expect("refresh request failed");
+
+    assert_eq!(
+        resp.status().as_u16(),
+        200,
+        "empty cookie must fall through to body token, not 401"
+    );
+}
