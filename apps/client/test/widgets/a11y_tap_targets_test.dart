@@ -157,31 +157,35 @@ void main() {
       );
       await tester.pump();
 
-      // Find the 4 IconButtons (scan-QR, search, collapse, settings) plus
-      // the PopupMenuButton (new) — each should report ≥44×44 constraints.
+      // Sidebar header has IconButtons that we explicitly bumped to 44×44
+      // for #498.  Count how many satisfy the WCAG 2.5.5 minimum so a
+      // regression that drops a constraint (or sets it to zero) shows up
+      // as a coverage shortfall instead of slipping past a guarded loop.
       final iconButtons = tester.widgetList<IconButton>(
         find.byType(IconButton),
       );
-      expect(iconButtons.length, greaterThanOrEqualTo(4));
-
+      var compliantCount = 0;
       for (final btn in iconButtons) {
         final c = btn.constraints;
         if (c == null) continue;
-        // We only assert on buttons that explicitly set constraints; the
-        // sidebar header sites all do.
-        if (c.minWidth > 0 || c.minHeight > 0) {
-          expect(
-            c.minWidth,
-            greaterThanOrEqualTo(44),
-            reason: 'IconButton minWidth too small: $c',
-          );
-          expect(
-            c.minHeight,
-            greaterThanOrEqualTo(44),
-            reason: 'IconButton minHeight too small: $c',
+        if (c.minWidth >= 44 && c.minHeight >= 44) {
+          compliantCount++;
+        } else if (c.minWidth > 0 || c.minHeight > 0) {
+          fail(
+            'IconButton has explicit constraints below 44×44: $c '
+            '(WCAG 2.5.5 minimum)',
           );
         }
       }
+      // We expect at least the 3 always-rendered header IconButtons:
+      // scan-QR, search, collapse.  The settings button lives in
+      // _buildUserStatusBar which only renders when authenticated and is
+      // not exercised here -- visual confirmation suffices for that one.
+      expect(
+        compliantCount,
+        greaterThanOrEqualTo(3),
+        reason: 'expected ≥3 sidebar IconButtons with 44×44 constraints',
+      );
 
       // The "new" PopupMenuButton in the header.
       final popups = tester.widgetList<PopupMenuButton<String>>(

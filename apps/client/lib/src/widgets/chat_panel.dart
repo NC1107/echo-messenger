@@ -51,8 +51,6 @@ import 'message_item.dart';
 import 'message_search_overlay.dart';
 import 'thread_view_panel.dart';
 
-// reactionEmojis imported from message_item.dart
-
 class ChatPanel extends ConsumerStatefulWidget {
   final Conversation? conversation;
   final VoidCallback? onMembersToggle;
