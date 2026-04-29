@@ -472,6 +472,27 @@ void main() {
       expect(msgs.first.failedContent, 'also leak this');
     });
 
+    test('conversation not in cache defaults to plaintext (documents '
+        'current boundary behavior)', () async {
+      // No seedConversations -- the conversationsProvider has no row for
+      // grp-unknown.  The current code defaults isEncrypted=false in that
+      // case and falls through to plaintext (no failed message).  This
+      // test pins the boundary so a future regression that changes the
+      // `?? false` default is visible.  If the security model later
+      // requires hard-failing on unknown conversations, update here AND
+      // sendGroupMessage in lockstep.
+      final container = _createContainer();
+      addTearDown(container.dispose);
+
+      final wsNotifier = container.read(websocketProvider.notifier);
+      await wsNotifier.sendGroupMessage('grp-unknown', 'silent plaintext?');
+
+      final msgs = container
+          .read(chatProvider)
+          .messagesForConversation('grp-unknown');
+      expect(msgs, isEmpty);
+    });
+
     test('unencrypted group does NOT add a failed message (plaintext path '
         'preserved)', () async {
       // No group crypto override needed -- the !isEncrypted branch never

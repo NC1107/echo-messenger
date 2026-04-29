@@ -414,11 +414,6 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
 
   /// Send a message to a group conversation.
   ///
-  /// If the conversation has encryption enabled and a group encryption key is
-  /// available, the message content is AES-256-GCM encrypted before being
-  /// sent. Otherwise the message is sent as plaintext (backward compatible).
-  /// Send a message to a group conversation.
-  ///
   /// When the conversation is marked `isEncrypted=true`, encryption MUST
   /// succeed before the message goes on the wire.  If the group key is
   /// unavailable or encryption raises, the message surfaces as a failed
