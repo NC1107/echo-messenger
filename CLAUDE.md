@@ -114,7 +114,7 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - **Web renderer**: CanvasKit is the default (and only) renderer in Flutter 3.22+. The `--web-renderer` flag was removed.
 - **Rust edition 2024** used in both Cargo.toml and rustfmt.toml.
 - **rustfmt**: max_width=100, Unix newlines, field_init_shorthand + try_shorthand enabled.
-- **Server required env**: `DATABASE_URL` and `JWT_SECRET` (≥32 chars, panics without them). Optional: `HOST` (default `0.0.0.0`), `PORT` (default `8080`), `CORS_ORIGINS` for allowed origins, `RUST_LOG` for log filtering (e.g. `echo_server=debug`).
+- **Server required env**: `DATABASE_URL` and `JWT_SECRET` (≥32 chars, panics without them). Optional: `SERVER_HOST` (default `0.0.0.0`), `SERVER_PORT` (default `8080`), `CORS_ORIGINS` for allowed origins, `RUST_LOG` for log filtering (e.g. `echo_server=debug`). Legacy `HOST`/`PORT` are still accepted but emit a deprecation warning at startup (#532).
 - **Traefik routing**: API priority 100, Web priority 1 (API routes must take precedence).
 - **Message wire format**: Initial V2 (with OTP) = `[0xEC, 0x02] + identity_pub(32) + ephemeral_pub(32) + otp_id(4 LE) + ratchet_wire`; Initial V1 (no OTP) = `[0xEC, 0x01] + identity_pub(32) + ephemeral_pub(32) + ratchet_wire`; Normal = `header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`. All base64-wrapped over WebSocket.
 - **Soft deletes**: Messages use `is_deleted` flag, not hard deletes.
