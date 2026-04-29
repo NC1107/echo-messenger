@@ -775,45 +775,66 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   /// player" duality and quietly fell through to the system browser when
   /// init failed.
   Widget _buildVideoArea() {
+    // Server generates a JPEG first-frame thumbnail at upload time (#561).
+    // If that endpoint 404s (older upload, ffmpeg missing, etc.), the
+    // CachedNetworkImage's errorWidget falls back to the previous solid tile.
+    final thumbUrl = '${widget.videoUrl}/thumb';
+    final thumb = CachedNetworkImage(
+      imageUrl: thumbUrl,
+      cacheKey: stableMediaCacheKey(thumbUrl),
+      cacheManager: chatMediaCacheManager,
+      httpHeaders: widget.headers,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: 170,
+      placeholder: (_, _) => Container(color: widget.mainBg),
+      errorWidget: (_, _, _) => Container(color: widget.mainBg),
+    );
+
     return Semantics(
       label: 'play video',
       button: true,
       child: GestureDetector(
         onTap: _openInApp,
-        child: Container(
+        child: SizedBox(
           height: 170,
-          color: widget.mainBg,
-          child: Center(
-            child: Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.black.withValues(alpha: 0.55),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              thumb,
+              Center(
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black.withValues(alpha: 0.55),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.4),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              alignment: Alignment.center,
-              child: const Padding(
-                // Optical centering: the play triangle's mass sits left of
-                // its bounding box, so nudge it right by 2px.
-                padding: EdgeInsets.only(left: 2),
-                child: Icon(
-                  Icons.play_arrow_rounded,
-                  color: Colors.white,
-                  size: 32,
+                  alignment: Alignment.center,
+                  child: const Padding(
+                    // Optical centering: the play triangle's mass sits left of
+                    // its bounding box, so nudge it right by 2px.
+                    padding: EdgeInsets.only(left: 2),
+                    child: Icon(
+                      Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 32,
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
       ),

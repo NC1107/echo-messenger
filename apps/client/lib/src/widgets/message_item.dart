@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:photo_manager/photo_manager.dart' show PhotoManager;
 
 import '../models/chat_message.dart';
+import '../providers/theme_provider.dart' show MessageLayout;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
@@ -79,8 +80,15 @@ class MessageItem extends StatefulWidget {
   /// Avatar URL path for the message sender (relative, e.g. /api/users/.../avatar).
   final String? senderAvatarUrl;
 
-  /// When true, uses Discord-style compact layout (all left-aligned, colored usernames).
-  final bool compactLayout;
+  /// User-selected layout: `bubbles` (default WhatsApp-style L/R align), `compact`
+  /// (Discord-style all-left with bubble bg), or `plain` (Slack-style all-left, no bg).
+  final MessageLayout layout;
+
+  /// True for any non-bubbles layout — they share alignment + spacing semantics.
+  bool get compactLayout => layout != MessageLayout.bubbles;
+
+  /// True for the no-background plain (Slack) layout.
+  bool get _isPlain => layout == MessageLayout.plain;
 
   /// Called when an image in this message is tapped, with the resolved URL.
   /// When provided, the gallery viewer in the parent is opened instead of the
@@ -114,7 +122,7 @@ class MessageItem extends StatefulWidget {
     this.authToken,
     this.mediaTicket,
     this.senderAvatarUrl,
-    this.compactLayout = false,
+    this.layout = MessageLayout.bubbles,
     this.onImageTap,
   });
 
@@ -425,73 +433,90 @@ class _MessageItemState extends State<MessageItem>
   }
 
   /// Quick reaction emoji row for the mobile action sheet.
+  ///
+  /// Wrapped in a horizontal-fade ShaderMask so the leading and trailing edges
+  /// hint at off-screen reactions (#508).
   Widget _buildQuickReactionRow(BuildContext sheetContext, ChatMessage msg) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
-        children: [
-          for (final emoji in reactionEmojis) ...[
-            Builder(
-              builder: (_) {
-                final alreadyReacted = msg.reactions.any(
-                  (r) => r.emoji == emoji && r.userId == widget.myUserId,
-                );
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    widget.onReactionSelect?.call(msg, emoji);
-                  },
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: alreadyReacted
-                          ? context.accent.withValues(alpha: 0.2)
-                          : null,
-                      borderRadius: BorderRadius.circular(8),
-                      border: alreadyReacted
-                          ? Border.all(color: context.accent, width: 2)
-                          : null,
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      emoji,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        decoration: TextDecoration.none,
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (bounds) => const LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        stops: [0.0, 0.04, 0.96, 1.0],
+        colors: [
+          Colors.transparent,
+          Colors.black,
+          Colors.black,
+          Colors.transparent,
+        ],
+      ).createShader(bounds),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          children: [
+            for (final emoji in reactionEmojis) ...[
+              Builder(
+                builder: (_) {
+                  final alreadyReacted = msg.reactions.any(
+                    (r) => r.emoji == emoji && r.userId == widget.myUserId,
+                  );
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      widget.onReactionSelect?.call(msg, emoji);
+                    },
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: alreadyReacted
+                            ? context.accent.withValues(alpha: 0.2)
+                            : null,
+                        borderRadius: BorderRadius.circular(8),
+                        border: alreadyReacted
+                            ? Border.all(color: context.accent, width: 2)
+                            : null,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        emoji,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          decoration: TextDecoration.none,
+                        ),
                       ),
                     ),
+                  );
+                },
+              ),
+              const SizedBox(width: 4),
+            ],
+            Semantics(
+              button: true,
+              label: 'More emojis',
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  widget.onMoreReactions?.call(msg);
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                );
-              },
-            ),
-            const SizedBox(width: 4),
-          ],
-          Semantics(
-            button: true,
-            label: 'More emojis',
-            child: GestureDetector(
-              onTap: () {
-                Navigator.pop(sheetContext);
-                widget.onMoreReactions?.call(msg);
-              },
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                alignment: Alignment.center,
-                child: Icon(
-                  Icons.add_reaction_outlined,
-                  size: 24,
-                  color: context.accent,
+                  alignment: Alignment.center,
+                  child: Icon(
+                    Icons.add_reaction_outlined,
+                    size: 24,
+                    color: context.accent,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -950,16 +975,20 @@ class _MessageItemState extends State<MessageItem>
   }
 
   /// Resolve the bubble background color based on message state.
+  /// Plain (Slack) layout drops the bubble fill entirely (#564).
   Color _bubbleColor({required bool isMine, required bool isFailed}) {
     if (isFailed) return EchoTheme.danger.withValues(alpha: 0.2);
+    if (widget._isPlain) return Colors.transparent;
     if (isMine) return context.sentBubble;
     return context.recvBubble;
   }
 
   /// Resolve the bubble border radius with a flat corner on the sender's side.
   /// In compact mode all messages are left-aligned, so the flat corner is
-  /// always on the bottom-left regardless of sender.
+  /// always on the bottom-left regardless of sender. Plain mode squares off
+  /// entirely (#564).
   BorderRadius _bubbleBorderRadius({required bool isMine}) {
+    if (widget._isPlain) return BorderRadius.zero;
     final isRight = isMine && !widget.compactLayout;
     return BorderRadius.only(
       topLeft: const Radius.circular(14),

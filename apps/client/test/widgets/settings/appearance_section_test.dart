@@ -28,15 +28,19 @@ void main() {
   });
 
   group('MessageLayout', () {
-    test('has bubbles and compact options', () {
+    test('has bubbles, compact, and plain options', () {
       expect(
         MessageLayout.values,
-        containsAll([MessageLayout.bubbles, MessageLayout.compact]),
+        containsAll([
+          MessageLayout.bubbles,
+          MessageLayout.compact,
+          MessageLayout.plain,
+        ]),
       );
     });
 
-    test('has 2 layout options', () {
-      expect(MessageLayout.values, hasLength(2));
+    test('has 3 layout options', () {
+      expect(MessageLayout.values, hasLength(3));
     });
   });
 }

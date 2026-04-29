@@ -1764,8 +1764,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             authToken: authToken,
             mediaTicket: mediaTicket,
             senderAvatarUrl: senderAvatarUrl,
-            compactLayout:
-                ref.watch(messageLayoutProvider) == MessageLayout.compact,
+            layout: ref.watch(messageLayoutProvider),
             onReactionTap: _showReactionPicker,
             onReactionSelect: (message, emoji) {
               final alreadyReacted = message.reactions.any(
