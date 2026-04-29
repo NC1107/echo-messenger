@@ -108,13 +108,11 @@ jobs:
       - name: Reserve next version tag (atomic)
         id: version
         # #530: reserve the tag IMMEDIATELY (before expensive builds) so
-        # downstream jobs reference a real persistent tag instead of one
-        # that gets pushed at the end of the pipeline.  The retry loop is
-        # belt-and-suspenders alongside the workflow-level concurrency
-        # group: protects against manual `git push origin vX.Y.Z` between
-        # CI runs without forcing the operator to abort the release.
-        # If a build later fails, the tag remains as an orphan; the next
-        # release auto-bumps past it.  No double-publish risk.
+        # downstream jobs reference a real persistent tag.  The retry loop
+        # complements the workflow-level concurrency group by handling
+        # manual `git push origin vX.Y.Z` between CI runs without aborting
+        # the release.  If a build later fails the orphan tag is left in
+        # place; the next release auto-bumps past it.
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
