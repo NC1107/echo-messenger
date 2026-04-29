@@ -61,7 +61,7 @@ impl Config {
 /// Resolve the bind host, preferring `SERVER_HOST` and falling back to the
 /// legacy `HOST` (with a deprecation warning) so existing self-hosters using
 /// the bare `HOST=` form keep booting cleanly while new deployments adopt
-/// the namespaced env name (#532).
+/// the namespaced env name.  Defaults to `0.0.0.0` if neither is set (#532).
 fn resolve_host<F: Fn(&str) -> Option<String>>(get: F) -> String {
     if let Some(v) = get("SERVER_HOST") {
         return v;
@@ -74,15 +74,25 @@ fn resolve_host<F: Fn(&str) -> Option<String>>(get: F) -> String {
 }
 
 /// Resolve the bind port, preferring `SERVER_PORT` and falling back to the
-/// legacy `PORT` (with a deprecation warning).  Unparseable values silently
-/// fall through to the default 8080, matching the prior behavior (#532).
+/// legacy `PORT` (with a deprecation warning).  Unparseable values fall
+/// through to the default `8080` and emit a warning so a typo'd value is
+/// observable rather than silently ignored (#532).
 fn resolve_port<F: Fn(&str) -> Option<String>>(get: F) -> u16 {
+    fn parse_port_or_warn(name: &str, raw: &str) -> u16 {
+        match raw.parse() {
+            Ok(p) => p,
+            Err(_) => {
+                tracing::warn!("{name}='{raw}' is not a valid port; defaulting to 8080");
+                8080
+            }
+        }
+    }
     if let Some(v) = get("SERVER_PORT") {
-        return v.parse().unwrap_or(8080);
+        return parse_port_or_warn("SERVER_PORT", &v);
     }
     if let Some(v) = get("PORT") {
         tracing::warn!("PORT is deprecated; use SERVER_PORT instead (#532)");
-        return v.parse().unwrap_or(8080);
+        return parse_port_or_warn("PORT", &v);
     }
     8080
 }
@@ -191,6 +201,15 @@ mod tests {
     #[test]
     fn resolve_port_defaults_on_unparseable_value() {
         let port = resolve_port(fake_env(&[("SERVER_PORT", "not-a-number")]));
+        assert_eq!(port, 8080);
+    }
+
+    #[test]
+    fn resolve_port_legacy_unparseable_falls_through_to_default() {
+        // Belt-and-suspenders branch coverage: same parse logic on the legacy
+        // arm should also default rather than panic if a future refactor
+        // diverges the two paths.
+        let port = resolve_port(fake_env(&[("PORT", "garbage")]));
         assert_eq!(port, 8080);
     }
 }
