@@ -44,6 +44,13 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   /// Cache of decrypted message previews by conversationId.
   final Map<String, String> _decryptedPreviews = {};
 
+  /// Monotonic generation counter for [loadConversations] (#515). Each
+  /// call captures `++_loadGen` and bails before mutating state when
+  /// the captured value no longer matches -- guards against a stale
+  /// in-flight response (e.g. WS reconnect racing pull-to-refresh)
+  /// overwriting fresh state.
+  int _loadGen = 0;
+
   ConversationsNotifier(this.ref) : super(const ConversationsState());
 
   String get _serverUrl => ref.read(serverUrlProvider);
@@ -99,8 +106,13 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   }
 
   /// Load all conversations from the server.
+  ///
+  /// Uses a monotonic generation counter (#515) so a stale in-flight
+  /// response cannot overwrite fresh state when two reloads overlap
+  /// (e.g. WS reconnect racing pull-to-refresh).  Latest call wins.
   Future<void> loadConversations() async {
     state = state.copyWith(isLoading: true, error: null);
+    final gen = ++_loadGen;
     try {
       final response = await _authenticatedRequest(
         (token) => http.get(
@@ -108,6 +120,11 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
           headers: _headersWithToken(token),
         ),
       );
+      // Drop a stale response (a newer call has been issued) before any
+      // state mutation so we don't clobber fresh data with an old payload.
+      // Also bail if the notifier was disposed while we were awaiting --
+      // writing to `state` after dispose throws StateError.
+      if (gen != _loadGen || !mounted) return;
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
@@ -149,6 +166,9 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
         );
       }
     } catch (e) {
+      // Stale errors must not clobber a fresh success, and writing to
+      // `state` on a disposed notifier throws.
+      if (gen != _loadGen || !mounted) return;
       state = state.copyWith(isLoading: false, error: _friendlyError(e));
     }
   }

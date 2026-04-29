@@ -650,8 +650,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ),
           ),
           const Spacer(),
-          // All action icons at 18px with uniform 32x32 tap targets and
-          // consistent color so they read as a cohesive action group.
+          // All action icons at 18px with uniform 44x44 tap targets per
+          // WCAG 2.5.5, with consistent color so they read as a cohesive
+          // action group.
           if (widget.onScanQr != null)
             IconButton(
               icon: const Icon(Icons.qr_code_scanner, size: 18),
@@ -659,7 +660,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               tooltip: 'Scan QR to add contact',
               onPressed: widget.onScanQr,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             ),
           const SizedBox(width: 2),
           _buildNewActionMenu(context, pendingCount),
@@ -671,7 +672,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               tooltip: 'Search messages (Ctrl+Shift+F)',
               onPressed: widget.onGlobalSearch,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             ),
           ],
           if (widget.onCollapseSidebar != null) ...[
@@ -682,7 +683,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               tooltip: 'Collapse sidebar',
               onPressed: widget.onCollapseSidebar,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             ),
           ],
         ],
@@ -698,8 +699,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           icon: Icon(Icons.add, size: 18, color: context.textSecondary),
           tooltip: 'New',
           padding: EdgeInsets.zero,
-          // Button tap target size
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          // 44×44 tap target per WCAG 2.5.5
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           // Menu minimum width so text never clips on narrow viewports
           menuPadding: const EdgeInsets.symmetric(vertical: 4),
           popUpAnimationStyle: AnimationStyle.noAnimation,
@@ -791,8 +792,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ),
         if (pendingCount > 0)
           Positioned(
-            top: 2,
-            right: 2,
+            // Re-center the badge on the larger 44×44 button.
+            top: 6,
+            right: 6,
             child: IgnorePointer(
               child: Container(
                 width: 14,
@@ -1110,7 +1112,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             tooltip: 'Settings',
             onPressed: widget.onSettings,
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           ),
         ],
       ),
