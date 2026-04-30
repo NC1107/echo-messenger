@@ -68,14 +68,17 @@ void main() {
       expect(svc.isMessageSaved('does-not-exist'), isFalse);
     });
 
-    test('bookmarking is idempotent -- double save does not duplicate', () async {
-      final msg = _msg(id: 'msg-2');
-      await svc.bookmark(msg);
-      await svc.bookmark(msg);
+    test(
+      'bookmarking is idempotent -- double save does not duplicate',
+      () async {
+        final msg = _msg(id: 'msg-2');
+        await svc.bookmark(msg);
+        await svc.bookmark(msg);
 
-      final saved = svc.getSavedMessages();
-      expect(saved.where((s) => s.message.id == 'msg-2'), hasLength(1));
-    });
+        final saved = svc.getSavedMessages();
+        expect(saved.where((s) => s.message.id == 'msg-2'), hasLength(1));
+      },
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -129,8 +132,14 @@ void main() {
       final after = DateTime.now();
 
       final saved = svc.getSavedMessages().first;
-      expect(saved.savedAt.isAfter(before.subtract(const Duration(seconds: 1))), isTrue);
-      expect(saved.savedAt.isBefore(after.add(const Duration(seconds: 1))), isTrue);
+      expect(
+        saved.savedAt.isAfter(before.subtract(const Duration(seconds: 1))),
+        isTrue,
+      );
+      expect(
+        saved.savedAt.isBefore(after.add(const Duration(seconds: 1))),
+        isTrue,
+      );
     });
 
     test('message content is preserved through bookmark roundtrip', () async {

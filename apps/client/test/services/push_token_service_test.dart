@@ -30,13 +30,13 @@ void main() {
   });
 
   group('PushTokenService.unregister', () {
-    test('is a no-op when no token has been registered (returns normally)', () async {
-      // Without a current token or server URL, unregister is a no-op.
-      await expectLater(
-        PushTokenService.instance.unregister(),
-        completes,
-      );
-    });
+    test(
+      'is a no-op when no token has been registered (returns normally)',
+      () async {
+        // Without a current token or server URL, unregister is a no-op.
+        await expectLater(PushTokenService.instance.unregister(), completes);
+      },
+    );
   });
 
   group('PushTokenService.init', () {

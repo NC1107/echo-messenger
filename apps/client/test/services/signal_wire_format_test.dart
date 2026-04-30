@@ -55,28 +55,31 @@ void main() {
       expect(restored.messageNumber, 255);
     });
 
-    test('ratchet key bytes are placed at offset 0..31 (little-endian fields after)', () {
-      final key = Uint8List.fromList(List.generate(32, (i) => i + 1));
-      final header = MessageHeader(
-        ratchetPublicKey: key,
-        prevChainLength: 1,
-        messageNumber: 2,
-      );
-      final bytes = header.serialize();
+    test(
+      'ratchet key bytes are placed at offset 0..31 (little-endian fields after)',
+      () {
+        final key = Uint8List.fromList(List.generate(32, (i) => i + 1));
+        final header = MessageHeader(
+          ratchetPublicKey: key,
+          prevChainLength: 1,
+          messageNumber: 2,
+        );
+        final bytes = header.serialize();
 
-      // First 32 bytes must be the key
-      expect(bytes.sublist(0, 32), equals(key));
-      // Bytes 32..35 = prevChainLength (1) LE
-      expect(bytes[32], 1);
-      expect(bytes[33], 0);
-      expect(bytes[34], 0);
-      expect(bytes[35], 0);
-      // Bytes 36..39 = messageNumber (2) LE
-      expect(bytes[36], 2);
-      expect(bytes[37], 0);
-      expect(bytes[38], 0);
-      expect(bytes[39], 0);
-    });
+        // First 32 bytes must be the key
+        expect(bytes.sublist(0, 32), equals(key));
+        // Bytes 32..35 = prevChainLength (1) LE
+        expect(bytes[32], 1);
+        expect(bytes[33], 0);
+        expect(bytes[34], 0);
+        expect(bytes[35], 0);
+        // Bytes 36..39 = messageNumber (2) LE
+        expect(bytes[36], 2);
+        expect(bytes[37], 0);
+        expect(bytes[38], 0);
+        expect(bytes[39], 0);
+      },
+    );
 
     test('large counter values serialize and deserialize correctly', () {
       final header = MessageHeader(
@@ -92,10 +95,7 @@ void main() {
     });
 
     test('deserialize throws when data is fewer than 40 bytes', () {
-      expect(
-        () => MessageHeader.deserialize(Uint8List(39)),
-        throwsException,
-      );
+      expect(() => MessageHeader.deserialize(Uint8List(39)), throwsException);
     });
 
     test('deserialize succeeds with exactly 40 bytes', () {
@@ -142,16 +142,22 @@ void main() {
     });
 
     /// V1 layout: [0xEC, 0x01] + identity(32) + ephemeral(32) + ratchet_wire
-    test('V1 wire minimum length is 66 bytes (2 magic + 32 identity + 32 ephemeral)', () {
-      const minV1 = 2 + 32 + 32;
-      expect(minV1, 66);
-    });
+    test(
+      'V1 wire minimum length is 66 bytes (2 magic + 32 identity + 32 ephemeral)',
+      () {
+        const minV1 = 2 + 32 + 32;
+        expect(minV1, 66);
+      },
+    );
 
     /// V2 layout: [0xEC, 0x02] + identity(32) + ephemeral(32) + otp_id(4 LE) + ratchet_wire
-    test('V2 wire minimum length is 70 bytes (2 magic + 32 identity + 32 ephemeral + 4 otp_id)', () {
-      const minV2 = 2 + 32 + 32 + 4;
-      expect(minV2, 70);
-    });
+    test(
+      'V2 wire minimum length is 70 bytes (2 magic + 32 identity + 32 ephemeral + 4 otp_id)',
+      () {
+        const minV2 = 2 + 32 + 32 + 4;
+        expect(minV2, 70);
+      },
+    );
 
     test('building a synthetic V1 wire parses magic correctly', () {
       final identity = Uint8List.fromList(List.generate(32, (i) => i));
@@ -214,7 +220,11 @@ void main() {
     });
 
     test('base64 encoding and decoding of wire bytes is lossless', () {
-      final wire = Uint8List.fromList([0xEC, 0x01, ...List.generate(64, (i) => i)]);
+      final wire = Uint8List.fromList([
+        0xEC,
+        0x01,
+        ...List.generate(64, (i) => i),
+      ]);
       final encoded = base64Encode(wire);
       final decoded = base64Decode(encoded);
       expect(decoded, equals(wire));

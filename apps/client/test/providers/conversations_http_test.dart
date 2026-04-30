@@ -952,17 +952,9 @@ void main() {
 
       expect(result, isTrue);
       // No HTTP call should have been made.
+      verifyNever(() => mockClient.put(any(), headers: any(named: 'headers')));
       verifyNever(
-        () => mockClient.put(
-          any(),
-          headers: any(named: 'headers'),
-        ),
-      );
-      verifyNever(
-        () => mockClient.delete(
-          any(),
-          headers: any(named: 'headers'),
-        ),
+        () => mockClient.delete(any(), headers: any(named: 'headers')),
       );
     });
 

@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -262,7 +260,7 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('ChatInputBar edit mode', () {
-    const _editMsg = ChatMessage(
+    const editMsg = ChatMessage(
       id: 'msg-edit',
       fromUserId: 'test-user-id',
       fromUsername: 'testuser',
@@ -289,7 +287,7 @@ void main() {
       // Initially the text field is empty
       expect(find.text('Original content'), findsNothing);
 
-      key.currentState!.enterEditMode(_editMsg);
+      key.currentState!.enterEditMode(editMsg);
       await tester.pump();
 
       expect(find.text('Original content'), findsOneWidget);
@@ -312,7 +310,7 @@ void main() {
       // Normal hint before edit mode
       expect(find.text('Message — encrypted'), findsOneWidget);
 
-      key.currentState!.enterEditMode(_editMsg);
+      key.currentState!.enterEditMode(editMsg);
       await tester.pump();
 
       // Hint changes to 'Edit your message…' when a TextField has no text
@@ -335,7 +333,7 @@ void main() {
       );
       await tester.pump();
 
-      key.currentState!.enterEditMode(_editMsg);
+      key.currentState!.enterEditMode(editMsg);
       await tester.pump();
 
       expect(find.textContaining('Editing message'), findsOneWidget);
@@ -353,7 +351,7 @@ void main() {
       );
       await tester.pump();
 
-      key.currentState!.enterEditMode(_editMsg);
+      key.currentState!.enterEditMode(editMsg);
       await tester.pump();
 
       // Confirm we are in edit mode
@@ -382,7 +380,7 @@ void main() {
       // Both buttons present before edit mode
       expect(find.byIcon(Icons.add), findsOneWidget);
 
-      key.currentState!.enterEditMode(_editMsg);
+      key.currentState!.enterEditMode(editMsg);
       await tester.pump();
 
       // Attach button hidden during edit mode

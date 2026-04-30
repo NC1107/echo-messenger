@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,18 +11,33 @@ void main() {
 
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
+
+    // Mock the audioplayers platform channels so AudioPlayer construction in
+    // SoundService doesn't throw MissingPluginException asynchronously
+    // (#670). The mocks return success/null for any method call.
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    for (final channel in [
+      'xyz.luan/audioplayers.global',
+      'xyz.luan/audioplayers',
+      'xyz.luan/audioplayers.global/events',
+    ]) {
+      messenger.setMockMethodCallHandler(
+        MethodChannel(channel),
+        (_) async => null,
+      );
+    }
   });
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  // After each test restore known defaults so test ordering doesn't matter.
-  tearDown(() async {
-    SoundService().enabled = true;
-    await SoundService().setNotificationSound(NotificationSound.defaultSound);
-    SharedPreferences.setMockInitialValues({});
-  });
+  // Note: a global tearDown calling SoundService() would construct the
+  // singleton (and its AudioPlayer fields), which throws asynchronously
+  // because the audioplayers plugin is not registered in unit tests
+  // (#670). Pure-Dart enum tests must NOT touch the singleton, so
+  // tearDown is scoped only to groups that actually exercise it.
 
   // ---------------------------------------------------------------------------
   // NotificationSound enum -- pure Dart, no platform dependencies
@@ -46,7 +62,10 @@ void main() {
         NotificationSound.fromPrefValue('defaultSound'),
         NotificationSound.defaultSound,
       );
-      expect(NotificationSound.fromPrefValue('subtle'), NotificationSound.subtle);
+      expect(
+        NotificationSound.fromPrefValue('subtle'),
+        NotificationSound.subtle,
+      );
     });
 
     test('fromPrefValue returns defaultSound for unknown value', () {
@@ -57,7 +76,10 @@ void main() {
     });
 
     test('fromPrefValue returns defaultSound for null', () {
-      expect(NotificationSound.fromPrefValue(null), NotificationSound.defaultSound);
+      expect(
+        NotificationSound.fromPrefValue(null),
+        NotificationSound.defaultSound,
+      );
     });
 
     test('none assetPath is null', () {
@@ -152,4 +174,3 @@ void main() {
     });
   });
 }
-

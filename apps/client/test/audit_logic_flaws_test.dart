@@ -139,7 +139,8 @@ void main() {
               'Should not be able to send encrypted messages with failed upload',
         );
       },
-      skip: 'BUG C2: documents current buggy behavior -- '
+      skip:
+          'BUG C2: documents current buggy behavior -- '
           'update to isFalse when CryptoState.isInitialized is fixed',
     );
   });

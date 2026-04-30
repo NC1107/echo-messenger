@@ -78,13 +78,21 @@ async fn setup_dm_with_message(
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
+    // DMs are auto-encrypted, so the ciphertext-shape gate (#591) requires
+    // a wire-shaped canonical content and per-recipient device ciphertexts.
+    let canonical = common::dummy_ciphertext("wsev_canonical");
+    let bob_ct = common::dummy_ciphertext("wsev_bob_d0");
     alice_ws
         .send(Message::Text(
             serde_json::json!({
                 "type": "send_message",
                 "to_user_id": bob_id,
                 "conversation_id": conv_id,
-                "content": "event relay test message",
+                "content": canonical.clone(),
+                "recipient_device_contents": {
+                    bob_id.to_string(): { "0": bob_ct },
+                    alice_id.to_string(): { "0": canonical },
+                },
             })
             .to_string()
             .into(),
@@ -237,12 +245,13 @@ async fn delete_message_broadcasts_ws_event_to_peer() {
 // Message edit WS broadcast
 // ---------------------------------------------------------------------------
 
-/// When Alice edits her message via REST, Bob (a connected WS client)
-/// should receive a `message_edited` event containing the new content.
+/// Edits on encrypted DMs are rejected at the REST layer (#582), so no
+/// `message_edited` event is broadcast. This test verifies the rejection
+/// path: Alice's PUT returns 409 and Bob's WS receives no edit frame.
 #[tokio::test]
-async fn edit_message_broadcasts_ws_event_to_peer() {
+async fn edit_message_on_encrypted_dm_rejected_no_broadcast() {
     let base = common::spawn_server().await;
-    let (client, alice_token, _, bob_token, _, conv_id, message_id) =
+    let (client, alice_token, _, bob_token, _, _conv_id, message_id) =
         setup_dm_with_message(&base).await;
 
     // Bob connects.
@@ -251,7 +260,7 @@ async fn edit_message_broadcasts_ws_event_to_peer() {
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut bob_ws).await;
 
-    // Alice edits the message via REST.
+    // Alice attempts to edit on an encrypted DM — rejected with 409.
     let resp = client
         .put(format!("{base}/api/messages/{message_id}"))
         .header("Authorization", format!("Bearer {alice_token}"))
@@ -259,15 +268,30 @@ async fn edit_message_broadcasts_ws_event_to_peer() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 200);
+    assert_eq!(resp.status().as_u16(), 409);
 
-    // Bob should receive `message_edited`.
-    let event_text = read_text_skipping_noise(&mut bob_ws).await;
-    let event: Value = serde_json::from_str(&event_text).unwrap();
-    assert_eq!(event["type"], "message_edited");
-    assert_eq!(event["message_id"], message_id.as_str());
-    assert_eq!(event["conversation_id"], conv_id.as_str());
-    assert_eq!(event["content"], "edited content");
+    // Bob should NOT receive a `message_edited` event within a short window.
+    let saw_edit = tokio::time::timeout(std::time::Duration::from_millis(500), async {
+        loop {
+            match bob_ws.next().await {
+                Some(Ok(Message::Text(text))) => {
+                    if let Ok(v) = serde_json::from_str::<Value>(&text)
+                        && v["type"] == "message_edited"
+                    {
+                        return true;
+                    }
+                }
+                Some(Ok(_)) => continue,
+                Some(Err(_)) | None => return false,
+            }
+        }
+    })
+    .await
+    .unwrap_or(false);
+    assert!(
+        !saw_edit,
+        "no message_edited should be broadcast for rejected edit"
+    );
 
     let _ = bob_ws.close(None).await;
 }
