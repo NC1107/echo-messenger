@@ -227,16 +227,22 @@ class FakeCryptoNotifier extends CryptoNotifier {
 
 /// Override [biometricProvider] with a fixed state (unavailable by default in
 /// tests since [LocalAuthentication] is not available on host machines).
+///
+/// After the @riverpod migration the `Biometric` class extends a generated
+/// `_$Biometric` parent, so the test fake overrides `build()` to return the
+/// fixed state instead of mutating `state` from a constructor.
 Override biometricOverride([
   BiometricState initialState = const BiometricState(isLoading: false),
 ]) {
-  return biometricProvider.overrideWith(
-    (_) => _FakeBiometricNotifier(initialState),
-  );
+  return biometricProvider.overrideWith(() => _FakeBiometric(initialState));
 }
 
-class _FakeBiometricNotifier extends BiometricNotifier {
-  _FakeBiometricNotifier(super.initial) : super.forTest();
+class _FakeBiometric extends Biometric {
+  _FakeBiometric(this._initial);
+  final BiometricState _initial;
+
+  @override
+  BiometricState build() => _initial;
 
   @override
   Future<void> setEnabled(bool value) async {
