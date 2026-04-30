@@ -70,16 +70,14 @@ class _FakeVoiceRtcNotifier extends LiveKitVoiceNotifier {
   _FakeVoiceRtcNotifier(super.ref);
 }
 
-class _FakeThemeNotifier extends ThemeNotifier {
-  _FakeThemeNotifier() {
-    state = AppThemeSelection.dark;
-  }
+class _FakeTheme extends AppTheme {
+  @override
+  AppThemeSelection build() => AppThemeSelection.dark;
 }
 
 class _FakeMessageLayoutNotifier extends MessageLayoutNotifier {
-  _FakeMessageLayoutNotifier() {
-    state = MessageLayout.bubbles;
-  }
+  @override
+  MessageLayout build() => MessageLayout.bubbles;
 }
 
 const _conv = Conversation(
@@ -137,8 +135,8 @@ List<Override> _overrides({
     privacyProvider.overrideWith((ref) => _FakePrivacyNotifier(ref)),
     voiceSettingsProvider.overrideWith((ref) => _FakeVoiceSettingsNotifier()),
     voiceRtcProvider.overrideWith((ref) => _FakeVoiceRtcNotifier(ref)),
-    themeProvider.overrideWith((ref) => _FakeThemeNotifier()),
-    messageLayoutProvider.overrideWith((ref) => _FakeMessageLayoutNotifier()),
+    appThemeProvider.overrideWith(_FakeTheme.new),
+    messageLayoutNotifierProvider.overrideWith(_FakeMessageLayoutNotifier.new),
   ];
 }
 
