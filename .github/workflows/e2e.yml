@@ -10,8 +10,12 @@ on:
       - 'architecture/**'
       - 'meta/**'
       - 'CLAUDE.md'
+  # Per project policy (CLAUDE.md): dev branch runs lint CI + dev builds
+  # only; E2E gating happens on PR to main. The maintained lane currently
+  # fails CanvasKit getByRole lookups (#673) — restore dev push when that
+  # is fixed.
   push:
-    branches: [main, dev]
+    branches: [main]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
