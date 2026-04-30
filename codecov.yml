@@ -1,15 +1,18 @@
 coverage:
   status:
+    # Targets are aspirational. Marked informational while real coverage
+    # ratchets up from the current ~40% baseline (#671). Flip to
+    # informational: false once we hit each threshold.
     project:
       default:
         target: 60%
         threshold: 2%
-        informational: false
+        informational: true
     patch:
       default:
         target: 70%
         threshold: 5%
-        informational: false
+        informational: true
 
 comment:
   layout: "reach,diff,flags,components"

@@ -882,6 +882,56 @@ async fn encrypted_dm_rejects_nonciphertext_device_payload() {
     let _ = alice_ws.close(None).await;
 }
 
+/// Regression for PR #659 reviewer catch: encrypted DMs must also reject
+/// plaintext in the canonical `content` field, even when
+/// `recipient_device_contents` are valid ciphertext. Otherwise an attacker
+/// could pass the gate while smuggling plaintext via `content`, which is
+/// persisted and relayed in `NewMessage` events.
+#[tokio::test]
+async fn encrypted_dm_rejects_plaintext_canonical_content_with_valid_per_device() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "encdm3_a").await;
+    let (bob_token, bob_id, bob_name) =
+        common::register_and_login(&client, &base, "encdm3_b").await;
+
+    let conv_id =
+        common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    drain_pending(&mut alice_ws).await;
+
+    // Per-device value is valid ciphertext (passes the per-device check)
+    // but `content` is plaintext — the gate must reject this combination.
+    let bob_ct = common::dummy_ciphertext("encdm3_bob");
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "conversation_id": conv_id,
+        "content": "ATTACKER_PLAINTEXT_IN_CANONICAL",
+        "recipient_device_contents": {
+            bob_id.to_string(): { "0": bob_ct },
+        },
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("send failed");
+
+    let event = read_text_skipping_presence(&mut alice_ws).await;
+    let msg: Value = serde_json::from_str(&event).expect("error JSON parse failed");
+    assert_eq!(
+        msg["type"], "error",
+        "plaintext canonical content must be rejected even with valid per-device ciphertext"
+    );
+
+    let _ = alice_ws.close(None).await;
+}
+
 /// Encrypted group: the canonical `content` carries the group-key envelope
 /// wire and MUST be ciphertext-shaped (#591). Plaintext is rejected.
 #[tokio::test]

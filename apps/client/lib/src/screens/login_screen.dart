@@ -45,7 +45,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   final _passwordController = TextEditingController();
 
   bool _obscurePassword = true;
-  bool _didPrefill = false;
 
   Future<Map<String, String?>>? _versionFuture;
 
@@ -59,13 +58,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   /// Fill the username field from the matching [knownServersProvider]
   /// entry on first build. Re-runs whenever the active server URL changes
   /// so a server switch back to a known origin still pre-fills.
+  ///
+  /// Never overwrites text the user has already typed (PR #659 reviewer
+  /// catch): we only pre-fill when the field is empty.
   void _maybePrefillUsername() {
-    if (_didPrefill && _usernameController.text.isNotEmpty) return;
+    if (_usernameController.text.isNotEmpty) return;
     final cached = _knownUsernameFor(ref);
     if (cached != null && cached.isNotEmpty) {
       _usernameController.text = cached;
     }
-    _didPrefill = true;
   }
 
   Future<void> _login() async {
@@ -93,9 +94,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     final authState = ref.watch(authProvider);
     final serverUrl = ref.watch(serverUrlProvider);
     // Re-prefill if the active URL changes (e.g. server switch lands here).
+    // Clear the field first so the guard (text.isNotEmpty) lets the new
+    // server's cached username repopulate. Without the clear we'd keep the
+    // OLD server's username after a switch.
     ref.listen<String>(serverUrlProvider, (prev, next) {
       if (prev != next) {
-        _didPrefill = false;
+        _usernameController.clear();
         _maybePrefillUsername();
       }
     });

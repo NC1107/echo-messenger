@@ -96,6 +96,23 @@ pub(super) fn validate_encrypted_payload(
 ) -> bool {
     match conv_kind {
         Some(ConversationKind::Direct) => {
+            // The canonical content field is persisted and relayed in
+            // NewMessage events, so it must be ciphertext-shaped — otherwise
+            // a client could pass valid recipient_device_contents while
+            // smuggling plaintext in `content` (PR #659 reviewer catch).
+            if !is_valid_ciphertext_shape(content) {
+                tracing::warn!(
+                    conversation_id = %conversation_id,
+                    sender_id = %sender_id,
+                    "rejected encrypted DM: canonical content is not ciphertext-shaped"
+                );
+                send_error(
+                    state,
+                    sender_id,
+                    "Encrypted conversation requires ciphertext payload",
+                );
+                return false;
+            }
             let Some(rdc) = recipient_device_contents else {
                 tracing::warn!(
                     conversation_id = %conversation_id,

@@ -380,10 +380,16 @@ pub async fn readyz(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 
     match result {
         Ok(Ok(_)) => (StatusCode::OK, Json(serde_json::json!({ "status": "ok" }))),
-        Ok(Err(e)) => (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({ "status": "not_ready", "reason": e.to_string() })),
-        ),
+        Ok(Err(e)) => {
+            // Log the underlying error server-side; do NOT expose connection
+            // details (hostnames, usernames, etc.) on the unauthenticated
+            // /readyz endpoint (PR #659 reviewer catch).
+            tracing::warn!(error = %e, "/readyz: db query failed");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "status": "not_ready", "reason": "db error" })),
+            )
+        }
         Err(_) => (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({ "status": "not_ready", "reason": "db timeout" })),
