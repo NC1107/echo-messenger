@@ -235,13 +235,20 @@ LIVEKIT_KEYS: "${LIVEKIT_API_KEY}:${LIVEKIT_API_SECRET}"
 The published `server` and `web` images are intentionally minimal — they
 **do not include `curl`, `wget`, or `nc`** (the slim Debian server) or only
 include `wget` (the nginx web image). Use these patterns when adding
-`healthcheck:` blocks to your compose:
+`healthcheck:` blocks to your compose.
+
+> ⚠️ **Always use `127.0.0.1`, NOT `localhost`.** Inside many containers
+> `localhost` resolves to `::1` (IPv6) first, but our images bind only
+> `0.0.0.0` (IPv4) — `wget localhost` then fails with connection refused,
+> the healthcheck reports unhealthy, and Traefik v3 yanks the container
+> out of routing. The site will silently 502 even though the process is
+> fine. Pinning to `127.0.0.1` avoids the dual-stack resolution.
 
 ```yaml
 server:
   healthcheck:
-    # Server image has bash but no HTTP clients — use /dev/tcp
-    test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 || exit 1"]
+    # Server image has bash but no HTTP clients — use /dev/tcp.
+    test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 || exit 1"]
     interval: 30s
     timeout: 5s
     retries: 3
@@ -249,15 +256,15 @@ server:
 
 web:
   healthcheck:
-    # nginx:alpine ships busybox wget
-    test: ["CMD", "wget", "-qO-", "http://localhost/version.txt"]
+    # nginx:alpine ships busybox wget. 127.0.0.1 avoids the IPv6 trap.
+    test: ["CMD", "wget", "-qO-", "http://127.0.0.1/version.txt"]
     interval: 30s
     timeout: 5s
     retries: 3
 
 livekit:
   healthcheck:
-    test: ["CMD", "wget", "-qO-", "http://localhost:7880/"]
+    test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7880/"]
     interval: 30s
     timeout: 5s
     retries: 3
