@@ -115,7 +115,7 @@ jobs:
         run: |
           missing=()
           for spec in $(find . -maxdepth 1 -name '*.spec.ts' | sed 's|^\./||' | sort); do
-            if ! grep -q "\"${spec}\"" playwright.config.ts; then
+            if ! grep -qE "(['\"])${spec}\1" playwright.config.ts; then
               missing+=("$spec")
             fi
           done
