@@ -657,7 +657,9 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
       height: _kAvatarSize,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: hasVideo ? Colors.black : Colors.black.withValues(alpha: 0.45),
+        color: hasVideo
+            ? context.chatBg
+            : context.chatBg.withValues(alpha: 0.45),
       ),
       clipBehavior: Clip.antiAlias,
       child: hasVideo
@@ -684,7 +686,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
           border: Border.all(color: speakRingColor, width: ringWidth),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.35),
+              color: context.mainBg.withValues(alpha: 0.35),
               blurRadius: 8,
               offset: const Offset(0, 3),
             ),
@@ -703,13 +705,13 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
-            color: Colors.black54,
+            color: context.surface.withValues(alpha: 0.54),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text(
             info.name,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: context.textPrimary,
               fontSize: 11,
               fontWeight: FontWeight.w500,
             ),
@@ -750,8 +752,8 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
   Widget _initialsWidget(String initial) => Center(
     child: Text(
       initial,
-      style: const TextStyle(
-        color: Colors.white,
+      style: TextStyle(
+        color: context.textPrimary,
         fontSize: 18,
         fontWeight: FontWeight.bold,
       ),
@@ -802,7 +804,7 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
                 borderRadius: BorderRadius.circular(4),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.4),
+                    color: context.mainBg.withValues(alpha: 0.4),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -815,11 +817,8 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
                   httpHeaders: widget.httpHeaders ?? const {},
                   fit: BoxFit.cover,
                   errorWidget: (_, _, _) => Container(
-                    color: Colors.grey[800],
-                    child: const Icon(
-                      Icons.broken_image,
-                      color: Colors.white54,
-                    ),
+                    color: context.surfaceHover,
+                    child: Icon(Icons.broken_image, color: context.textMuted),
                   ),
                 ),
               ),
@@ -833,15 +832,15 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
                   child: Container(
                     width: 32,
                     height: 32,
-                    decoration: const BoxDecoration(
-                      color: Colors.black54,
+                    decoration: BoxDecoration(
+                      color: context.surface.withValues(alpha: 0.54),
                       shape: BoxShape.circle,
                     ),
                     alignment: Alignment.center,
-                    child: const Icon(
+                    child: Icon(
                       Icons.close,
                       size: 16,
-                      color: Colors.white,
+                      color: context.textPrimary,
                     ),
                   ),
                 ),

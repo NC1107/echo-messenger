@@ -152,7 +152,7 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
       child: GestureDetector(
         onTap: () => Navigator.of(context).pop(),
         child: Material(
-          color: Colors.black54,
+          color: context.mainBg.withValues(alpha: 0.54),
           child: Center(
             child: GestureDetector(
               onTap: () {}, // prevent backdrop tap
@@ -165,7 +165,7 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
                   border: Border.all(color: context.border),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.4),
+                      color: context.mainBg.withValues(alpha: 0.4),
                       blurRadius: 24,
                       offset: const Offset(0, 8),
                     ),
