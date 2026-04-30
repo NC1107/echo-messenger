@@ -56,7 +56,11 @@ async function login(page: Page, username: string, password: string) {
     const passInput = page.locator('input[aria-label="Password"]');
     await passInput.focus();
     await page.keyboard.type(password, { delay: 12 });
-    await page.getByRole('button', { name: /login/i }).click();
+    await page
+      .getByRole('button', { name: /login/i })
+      .or(page.getByText(/^log in$/i))
+      .first()
+      .click();
   } else {
     // Fallback: viewport-relative coordinates (avoids absolute-pixel brittleness)
     const vp = page.viewportSize()!;

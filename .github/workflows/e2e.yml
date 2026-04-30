@@ -10,12 +10,8 @@ on:
       - 'architecture/**'
       - 'meta/**'
       - 'CLAUDE.md'
-  # Per project policy (CLAUDE.md): dev branch runs lint CI + dev builds
-  # only; E2E gating happens on PR to main. The maintained lane currently
-  # fails CanvasKit getByRole lookups (#673) — restore dev push when that
-  # is fixed.
   push:
-    branches: [main]
+    branches: [main, dev]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -129,6 +125,11 @@ jobs:
             exit 1
           fi
           echo "All spec files are covered by a lane."
+
+      - name: Install websocat
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y websocat || cargo install websocat --locked
 
       - name: Run smoke tests
         # Smoke lane: local_full.spec.ts exercises the full feature surface

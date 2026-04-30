@@ -368,15 +368,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Widget _buildSubmitButton(AuthState authState) {
     return SizedBox(
       width: double.infinity,
-      child: FilledButton(
-        onPressed: authState.isLoading ? null : _register,
-        child: authState.isLoading
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Text('Create account'),
+      child: Semantics(
+        button: true,
+        label: 'register',
+        child: FilledButton(
+          onPressed: authState.isLoading ? null : _register,
+          child: authState.isLoading
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Create account'),
+        ),
       ),
     );
   }

@@ -49,7 +49,11 @@ async function register(page: Page, username: string, password: string) {
   await page.goto(APP);
   await waitForFlutter(page);
 
-  await page.getByRole('button', { name: /create an account/i }).click();
+  await page
+    .getByRole('button', { name: /create an account/i })
+    .or(page.getByText(/^create an account$/i))
+    .first()
+    .click();
   await page.waitForTimeout(1500);
 
   // Fill registration form. Use Tab to navigate between fields because
@@ -63,7 +67,11 @@ async function register(page: Page, username: string, password: string) {
   await page.waitForTimeout(200);
   await page.keyboard.type(password, { delay: 10 });
   await page.waitForTimeout(300);
-  await page.getByRole('button', { name: /register/i }).click();
+  await page
+    .getByRole('button', { name: /register/i })
+    .or(page.getByText(/^create account$/i))
+    .first()
+    .click();
 
   await page.waitForTimeout(6000);
   await dismissDialogs(page);
@@ -82,7 +90,11 @@ async function login(page: Page, username: string, password: string) {
   const passInput = page.locator('input[aria-label="Password"]');
   await passInput.focus();
   await page.keyboard.type(password, { delay: 10 });
-  await page.getByRole('button', { name: /login/i }).click();
+  await page
+    .getByRole('button', { name: /login/i })
+    .or(page.getByText(/^log in$/i))
+    .first()
+    .click();
 
   await page.waitForTimeout(6000);
   await dismissDialogs(page);

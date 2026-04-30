@@ -89,12 +89,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           const SizedBox(height: 12),
                           SizedBox(
                             height: 44,
-                            child: TextButton(
-                              onPressed: () => context.go('/register'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: context.textSecondary,
+                            child: Semantics(
+                              button: true,
+                              label: 'create-account',
+                              child: TextButton(
+                                onPressed: () => context.go('/register'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: context.textSecondary,
+                                ),
+                                child: const Text('Create an account'),
                               ),
-                              child: const Text('Create an account'),
                             ),
                           ),
                         ],
@@ -209,15 +213,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Widget _buildLoginButton(AuthState authState) {
     return SizedBox(
       width: double.infinity,
-      child: FilledButton(
-        onPressed: authState.isLoading ? null : _login,
-        child: authState.isLoading
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Text('Log in'),
+      child: Semantics(
+        button: true,
+        label: 'login',
+        child: FilledButton(
+          onPressed: authState.isLoading ? null : _login,
+          child: authState.isLoading
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Log in'),
+        ),
       ),
     );
   }
