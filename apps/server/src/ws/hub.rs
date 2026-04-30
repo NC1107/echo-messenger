@@ -5,53 +5,87 @@
 
 use axum::extract::ws::Message as WsMessage;
 use dashmap::DashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use uuid::Uuid;
 
 pub type WsTx = mpsc::Sender<WsMessage>;
 
+/// After this many consecutive `Full` results inside [`SLOW_CONSUMER_WINDOW`],
+/// the hub unregisters the device so the client must reconnect.  Picked
+/// conservatively: a busy public group can produce occasional Full bursts
+/// when a tab is briefly throttled, so we allow short spikes but kill any
+/// connection that consistently can't keep up (audit #634).
+const SLOW_CONSUMER_FULL_THRESHOLD: u32 = 50;
+const SLOW_CONSUMER_WINDOW: Duration = Duration::from_secs(60);
+
 #[derive(Debug, Default, Clone)]
 pub struct Hub {
+    inner: std::sync::Arc<HubInner>,
+}
+
+#[derive(Debug, Default)]
+struct HubInner {
     /// user_id -> (device_id -> sender channel)
     connections: DashMap<Uuid, DashMap<i32, WsTx>>,
+    /// Per-(user, device) counter of consecutive `try_send` Full results.
+    /// Reset on any successful send.  When the counter exceeds the threshold
+    /// inside the rolling window, the device is unregistered.
+    full_counters: DashMap<(Uuid, i32), FullCounter>,
+}
+
+#[derive(Debug, Default)]
+struct FullCounter {
+    consecutive: AtomicU32,
+    first_failure_at: std::sync::Mutex<Option<Instant>>,
 }
 
 impl Hub {
     pub fn new() -> Self {
-        Self {
-            connections: DashMap::new(),
-        }
+        Self::default()
     }
 
     /// Register a device connection. Multiple devices per user are supported.
     pub fn register(&self, user_id: Uuid, device_id: i32, tx: WsTx) {
-        self.connections
+        self.inner
+            .connections
             .entry(user_id)
             .or_default()
             .insert(device_id, tx);
+        // Wipe any stale slow-consumer counter from a previous session.
+        self.inner.full_counters.remove(&(user_id, device_id));
     }
 
     /// Unregister a specific device. Cleans up the user entry if no devices remain.
     pub fn unregister(&self, user_id: Uuid, device_id: i32) {
-        if let Some(devices) = self.connections.get(&user_id) {
+        if let Some(devices) = self.inner.connections.get(&user_id) {
             devices.remove(&device_id);
             if devices.is_empty() {
                 drop(devices);
                 // Re-check after dropping the ref to avoid race
-                self.connections
+                self.inner
+                    .connections
                     .remove_if(&user_id, |_, devs| devs.is_empty());
             }
         }
+        // Drop the slow-consumer counter alongside the connection so a future
+        // reconnect from the same device gets a clean slate.
+        self.inner.full_counters.remove(&(user_id, device_id));
     }
 
     /// Unregister ALL devices for a user (e.g., account deletion).
     pub fn unregister_all(&self, user_id: Uuid) {
-        self.connections.remove(&user_id);
+        self.inner.connections.remove(&user_id);
     }
 
     pub fn get_online_user_ids(&self) -> Vec<Uuid> {
-        self.connections.iter().map(|entry| *entry.key()).collect()
+        self.inner
+            .connections
+            .iter()
+            .map(|entry| *entry.key())
+            .collect()
     }
 
     /// Send a message to ALL connected devices of a user.
@@ -59,29 +93,41 @@ impl Hub {
     /// message. Full/closed queues are logged separately so beta-test
     /// telemetry distinguishes saturation from disconnect cleanup.
     pub fn send_to_user(&self, user_id: &Uuid, msg: WsMessage) -> bool {
-        if let Some(devices) = self.connections.get(user_id) {
-            let mut any_sent = false;
-            for entry in devices.iter() {
-                if try_send_logged(entry.value(), msg.clone(), user_id, *entry.key()) {
-                    any_sent = true;
-                }
+        // Snapshot the device IDs while holding the read ref so we can
+        // mutate `connections` (via `unregister`) without re-entrant locks
+        // on the slow-consumer eviction path below.
+        let device_ids: Vec<(i32, WsTx)> = {
+            let Some(devices) = self.inner.connections.get(user_id) else {
+                return false;
+            };
+            devices
+                .iter()
+                .map(|e| (*e.key(), e.value().clone()))
+                .collect()
+        };
+
+        let mut any_sent = false;
+        for (device_id, tx) in device_ids {
+            if self.try_send_tracked(*user_id, device_id, &tx, msg.clone()) {
+                any_sent = true;
             }
-            any_sent
-        } else {
-            false
         }
+        any_sent
     }
 
     /// Send a message to a specific device of a user. Returns true only when
     /// the message was actually enqueued — callers in the replay path rely
     /// on this to avoid prematurely marking messages as delivered (#523).
     pub fn send_to_device(&self, user_id: &Uuid, device_id: i32, msg: WsMessage) -> bool {
-        if let Some(devices) = self.connections.get(user_id)
-            && let Some(tx) = devices.get(&device_id)
-        {
-            return try_send_logged(tx.value(), msg, user_id, device_id);
+        let tx_opt: Option<WsTx> = self
+            .inner
+            .connections
+            .get(user_id)
+            .and_then(|devices| devices.get(&device_id).map(|e| e.value().clone()));
+        match tx_opt {
+            Some(tx) => self.try_send_tracked(*user_id, device_id, &tx, msg),
+            None => false,
         }
-        false
     }
 
     /// Backward-compatible: send to user (all devices). Alias for `send_to_user`.
@@ -106,24 +152,82 @@ impl Hub {
     }
 }
 
-fn try_send_logged(tx: &WsTx, msg: WsMessage, user_id: &Uuid, device_id: i32) -> bool {
-    match tx.try_send(msg) {
-        Ok(()) => true,
-        Err(TrySendError::Full(_)) => {
-            tracing::warn!(
-                user_id = %user_id,
-                device_id = device_id,
-                "WS outbound queue full — message not delivered"
-            );
-            false
+impl Hub {
+    /// Try to send a message and update the per-(user, device) slow-consumer
+    /// counter.  When a device has had `SLOW_CONSUMER_FULL_THRESHOLD`
+    /// consecutive `Full` results within `SLOW_CONSUMER_WINDOW`, unregister
+    /// it so the client must reconnect (audit #634) -- otherwise a stalled
+    /// tab can starve itself indefinitely with silent drops.
+    fn try_send_tracked(&self, user_id: Uuid, device_id: i32, tx: &WsTx, msg: WsMessage) -> bool {
+        match tx.try_send(msg) {
+            Ok(()) => {
+                // Reset the counter on any success.
+                self.inner.full_counters.remove(&(user_id, device_id));
+                true
+            }
+            Err(TrySendError::Full(_)) => {
+                let kick = self.record_full(user_id, device_id);
+                tracing::warn!(
+                    %user_id,
+                    device_id,
+                    "WS outbound queue full -- message not delivered"
+                );
+                if kick {
+                    tracing::warn!(
+                        %user_id,
+                        device_id,
+                        threshold = SLOW_CONSUMER_FULL_THRESHOLD,
+                        window_secs = SLOW_CONSUMER_WINDOW.as_secs(),
+                        "slow consumer threshold reached -- forcing reconnect"
+                    );
+                    self.unregister(user_id, device_id);
+                }
+                false
+            }
+            Err(TrySendError::Closed(_)) => {
+                tracing::debug!(
+                    %user_id,
+                    device_id,
+                    "WS outbound queue closed -- recipient disconnected"
+                );
+                // Closed (rather than Full) indicates the receiver is gone --
+                // no point keeping the counter.
+                self.inner.full_counters.remove(&(user_id, device_id));
+                false
+            }
         }
-        Err(TrySendError::Closed(_)) => {
-            tracing::debug!(
-                user_id = %user_id,
-                device_id = device_id,
-                "WS outbound queue closed — recipient disconnected"
-            );
-            false
+    }
+
+    /// Increment the failure counter for `(user_id, device_id)`.  Returns
+    /// `true` when the threshold has just been reached and the caller should
+    /// unregister the device.  The window is rolling: if the first failure
+    /// is older than `SLOW_CONSUMER_WINDOW`, the counter resets.
+    fn record_full(&self, user_id: Uuid, device_id: i32) -> bool {
+        let counter = self
+            .inner
+            .full_counters
+            .entry((user_id, device_id))
+            .or_default();
+
+        // Rolling-window reset: if the first failure was longer ago than the
+        // window, treat this Full as a fresh start.
+        let now = Instant::now();
+        let mut first_failure_at = counter.first_failure_at.lock().unwrap();
+        match *first_failure_at {
+            Some(t) if now.duration_since(t) > SLOW_CONSUMER_WINDOW => {
+                *first_failure_at = Some(now);
+                counter.consecutive.store(1, Ordering::Relaxed);
+                false
+            }
+            None => {
+                *first_failure_at = Some(now);
+                counter.consecutive.store(1, Ordering::Relaxed);
+                false
+            }
+            Some(_) => {
+                let n = counter.consecutive.fetch_add(1, Ordering::Relaxed) + 1;
+                n >= SLOW_CONSUMER_FULL_THRESHOLD
+            }
         }
     }
 }
@@ -299,6 +403,61 @@ mod tests {
 
         let sent = hub.send_to_device(&user_id, 1, WsMessage::Text("dropped".into()));
         assert!(!sent, "send must report failure once receiver is dropped");
+    }
+
+    /// Audit #634: a stuck consumer must be force-disconnected after the
+    /// configured threshold of consecutive Full results so the connection
+    /// slot is freed and the client is forced to reconnect.
+    #[tokio::test]
+    async fn test_slow_consumer_unregisters_after_threshold() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        let (tx, _rx) = mpsc::channel(1);
+        hub.register(user_id, 1, tx);
+
+        // First send fits in the cap-1 queue.
+        assert!(hub.send_to_device(&user_id, 1, WsMessage::Text("first".into())));
+        // Subsequent sends fail (queue is full and we're not consuming) but
+        // the device stays registered until the threshold is crossed.
+        for i in 0..(SLOW_CONSUMER_FULL_THRESHOLD - 1) {
+            assert!(
+                !hub.send_to_device(&user_id, 1, WsMessage::Text("blocked".into())),
+                "iteration {i}: send should fail while queue is full"
+            );
+            assert!(
+                hub.inner.connections.contains_key(&user_id),
+                "iteration {i}: device should still be registered"
+            );
+        }
+        // The next failure trips the threshold and unregisters the device.
+        assert!(!hub.send_to_device(&user_id, 1, WsMessage::Text("kicker".into())));
+        assert!(
+            !hub.inner.connections.contains_key(&user_id),
+            "device must be unregistered after slow-consumer threshold"
+        );
+    }
+
+    /// Successful sends reset the consecutive-Full counter so a brief burst
+    /// of contention doesn't accumulate toward eviction.
+    #[tokio::test]
+    async fn test_full_counter_resets_on_success() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        let (tx, mut rx) = mpsc::channel(1);
+        hub.register(user_id, 1, tx);
+
+        // Half-fill the failure budget without consuming.
+        assert!(hub.send_to_device(&user_id, 1, WsMessage::Text("ok".into())));
+        for _ in 0..10 {
+            assert!(!hub.send_to_device(&user_id, 1, WsMessage::Text("full".into())));
+        }
+        // Drain the receiver and send again -- counter must reset.
+        let _ = rx.recv().await;
+        assert!(hub.send_to_device(&user_id, 1, WsMessage::Text("recovered".into())));
+        assert!(
+            hub.inner.full_counters.get(&(user_id, 1)).is_none(),
+            "successful send must clear the counter"
+        );
     }
 
     #[tokio::test]
