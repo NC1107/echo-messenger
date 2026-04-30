@@ -23,6 +23,7 @@ use axum::response::IntoResponse;
 use axum::routing::{delete, get, patch, post, put};
 use dashmap::DashMap;
 use sqlx::PgPool;
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Instant;
 use tower_http::cors::{AllowOrigin, CorsLayer};
@@ -47,7 +48,7 @@ pub struct AppState {
     pub media_tickets: MediaTicketStore,
 }
 
-pub fn create_router(state: Arc<AppState>) -> Router {
+pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Router {
     let cors_origins = std::env::var("CORS_ORIGINS")
         .unwrap_or_else(|_| "https://echo-messenger.us,http://localhost:8081".into());
 
@@ -89,15 +90,23 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             .allow_credentials(true)
     };
 
-    let login_limit = rate_limit::make_rate_limit_layer(rate_limit::login_limiter());
-    let register_limit = rate_limit::make_rate_limit_layer(rate_limit::register_limiter());
-    let refresh_limit = rate_limit::make_rate_limit_layer(rate_limit::refresh_limiter());
-    let ticket_limit = rate_limit::make_rate_limit_layer(rate_limit::ticket_limiter());
-    let media_upload_limit = rate_limit::make_rate_limit_layer(rate_limit::media_upload_limiter());
-    let link_preview_limit = rate_limit::make_rate_limit_layer(rate_limit::link_preview_limiter());
-    let key_reset_limit = rate_limit::make_rate_limit_layer(rate_limit::key_reset_limiter());
+    let proxies = Arc::new(trusted_proxies);
+    let login_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::login_limiter(Arc::clone(&proxies)));
+    let register_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::register_limiter(Arc::clone(&proxies)));
+    let refresh_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::refresh_limiter(Arc::clone(&proxies)));
+    let ticket_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::ticket_limiter(Arc::clone(&proxies)));
+    let media_upload_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::media_upload_limiter(Arc::clone(&proxies)));
+    let link_preview_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::link_preview_limiter(Arc::clone(&proxies)));
+    let key_reset_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::key_reset_limiter(Arc::clone(&proxies)));
     let revoke_others_limit =
-        rate_limit::make_rate_limit_layer(rate_limit::revoke_others_limiter());
+        rate_limit::make_rate_limit_layer(rate_limit::revoke_others_limiter(proxies));
 
     let auth_routes = Router::new()
         .route(
