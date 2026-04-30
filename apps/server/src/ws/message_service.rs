@@ -555,32 +555,41 @@ pub(super) fn build_per_device_json(
 }
 
 /// Deliver a message to a single member via per-device or legacy delivery.
-/// Returns `true` if the member received the message on at least one device.
+///
+/// Returns the device IDs that received the message:
+/// - Encrypted per-device path: the specific device IDs for which
+///   `send_to_device` returned `true`.
+/// - Unencrypted / legacy path: `[0]` (sentinel meaning "any device of this
+///   user got it"); used when recording delivery receipts so the offline
+///   replay query can skip the message for all reconnecting devices of this
+///   user.
+/// - Empty vec if the member was not reached on any device (offline).
 pub(super) fn deliver_to_member(
     hub: &crate::ws::hub::Hub,
     member_id: &Uuid,
     per_recipient_json: Option<&HashMap<Uuid, Vec<(i32, String)>>>,
     legacy_json: Option<&str>,
-) -> bool {
+) -> Vec<i32> {
     if let Some(by_recipient) = per_recipient_json
         && let Some(device_jsons) = by_recipient.get(member_id)
     {
-        // #557: deliver to ALL recipient devices. `Iterator::any` short-circuits
-        // on the first `true`, so a successful send to device #1 would skip
-        // device #2 entirely. Walk every device and OR-accumulate instead.
-        let mut any_sent = false;
+        // #557: deliver to ALL recipient devices and collect the IDs that
+        // were actually enqueued so receipts can be recorded per-device.
+        let mut delivered_device_ids = Vec::new();
         for (did, json) in device_jsons {
             if hub.send_to_device(member_id, *did, WsMessage::Text(json.clone().into())) {
-                any_sent = true;
+                delivered_device_ids.push(*did);
             }
         }
-        return any_sent;
+        return delivered_device_ids;
     }
-    if let Some(json) = legacy_json {
-        hub.send_to_user(member_id, WsMessage::Text(json.to_owned().into()))
-    } else {
-        false
+    if let Some(json) = legacy_json
+        && hub.send_to_user(member_id, WsMessage::Text(json.to_owned().into()))
+    {
+        // Sentinel 0: unencrypted delivery to any/all devices.
+        return vec![0];
     }
+    vec![]
 }
 
 /// Mark messages as delivered in the DB and send a delivery confirmation back to the sender.
@@ -676,26 +685,31 @@ pub(super) async fn fanout_message(
 
     let mut any_delivered = false;
     let mut offline_user_ids = Vec::new();
+    let mut delivery_receipts: Vec<(Uuid, Uuid, i32)> = Vec::new();
 
     let eligible = member_ids
         .iter()
         .filter(|id| **id != sender_id && !blockers.contains(id));
 
     for member_id in eligible {
-        let delivered = deliver_to_member(
+        let delivered_device_ids = deliver_to_member(
             &state.hub,
             member_id,
             per_recipient_json.as_ref(),
             legacy_json.as_deref(),
         );
-        if delivered {
+        if !delivered_device_ids.is_empty() {
             any_delivered = true;
+            for did in delivered_device_ids {
+                delivery_receipts.push((stored_id, *member_id, did));
+            }
         } else {
             offline_user_ids.push(*member_id);
         }
     }
 
     if any_delivered {
+        let _ = db::messages::record_delivery_receipts(&state.pool, &delivery_receipts).await;
         send_delivery_confirmation(state, sender_id, sender_device_id, stored_id, conv_id).await;
     }
 
@@ -721,7 +735,7 @@ pub(super) async fn fanout_message(
 /// used as a fallback when no device-specific row exists (group messages,
 /// unencrypted convs, or messages predating multi-device support).
 pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid, device_id: i32) {
-    let undelivered = match db::messages::get_undelivered(&state.pool, user_id).await {
+    let undelivered = match db::messages::get_undelivered(&state.pool, user_id, device_id).await {
         Ok(msgs) => msgs,
         Err(_) => return,
     };
@@ -823,6 +837,11 @@ pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid
         return;
     }
 
+    let receipts: Vec<(Uuid, Uuid, i32)> = delivered_ids
+        .iter()
+        .map(|&id| (id, user_id, device_id))
+        .collect();
+    let _ = db::messages::record_delivery_receipts(&state.pool, &receipts).await;
     let _ = db::messages::mark_delivered(&state.pool, &delivered_ids).await;
 
     // Notify original senders that their messages were delivered

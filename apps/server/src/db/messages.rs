@@ -208,6 +208,7 @@ pub async fn get_messages(
 pub async fn get_undelivered(
     pool: &PgPool,
     user_id: Uuid,
+    device_id: i32,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
@@ -224,11 +225,17 @@ pub async fn get_undelivered(
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
                   AND cm.is_removed = false \
-         WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
+         WHERE m.sender_id != $1 AND m.deleted_at IS NULL \
+           AND NOT EXISTS ( \
+               SELECT 1 FROM message_delivery_receipts mdr \
+               WHERE mdr.message_id = m.id AND mdr.user_id = $1 \
+                 AND (mdr.device_id = $2 OR mdr.device_id = 0) \
+           ) \
          ORDER BY m.created_at ASC \
          LIMIT 200",
     )
     .bind(user_id)
+    .bind(device_id)
     .fetch_all(pool)
     .await
 }
@@ -267,6 +274,42 @@ pub async fn mark_delivered(pool: &PgPool, message_ids: &[Uuid]) -> Result<(), s
         .bind(message_ids)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+/// Record per-recipient delivery receipts in `message_delivery_receipts`.
+///
+/// Each entry is `(message_id, user_id, device_id)`.
+/// `device_id = 0` is the sentinel for unencrypted / any-device delivery
+/// (group messages, plaintext convs, legacy rows). A positive `device_id`
+/// means a specific device received the encrypted per-device ciphertext.
+///
+/// Duplicate receipts (e.g. live delivery followed by reconnect) are silently
+/// ignored via `ON CONFLICT DO NOTHING`.
+pub async fn record_delivery_receipts(
+    pool: &PgPool,
+    receipts: &[(Uuid, Uuid, i32)],
+) -> Result<(), sqlx::Error> {
+    if receipts.is_empty() {
+        return Ok(());
+    }
+    let mut query = String::from(
+        "INSERT INTO message_delivery_receipts \
+         (message_id, user_id, device_id) VALUES ",
+    );
+    for (i, _) in receipts.iter().enumerate() {
+        if i > 0 {
+            query.push_str(", ");
+        }
+        let base = i * 3;
+        query.push_str(&format!("(${}, ${}, ${})", base + 1, base + 2, base + 3));
+    }
+    query.push_str(" ON CONFLICT (message_id, user_id, device_id) DO NOTHING");
+    let mut q = sqlx::query(&query);
+    for (message_id, user_id, device_id) in receipts {
+        q = q.bind(message_id).bind(user_id).bind(device_id);
+    }
+    q.execute(pool).await?;
     Ok(())
 }
 

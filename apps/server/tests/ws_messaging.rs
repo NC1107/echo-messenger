@@ -298,6 +298,105 @@ async fn group_message_fanout() {
 }
 
 // ---------------------------------------------------------------------------
+// Per-recipient delivery: offline member gets replay when peer was online
+// ---------------------------------------------------------------------------
+
+/// Regression test for the global `delivered` flag bug.
+///
+/// Scenario: Alice sends a group message while Bob is online and Charlie is
+/// offline. Bob receives it live (which used to set `delivered = true` globally).
+/// When Charlie reconnects, he must still receive the message via offline
+/// replay. Under the old schema Charlie would permanently miss the message
+/// because `get_undelivered` filtered on `delivered = false`.
+#[tokio::test]
+async fn group_offline_member_gets_replay_when_peer_was_online() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "orpalice").await;
+    let (bob_token, bob_id, _bob_name) = common::register_and_login(&client, &base, "orpbob").await;
+    let (charlie_token, charlie_id, _charlie_name) =
+        common::register_and_login(&client, &base, "orpcharlie").await;
+
+    let group_id = common::create_group(&client, &base, &alice_token, "OfflineReplayGroup").await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
+
+    // All three connect initially so presence noise drains.
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
+    let charlie_ticket = common::get_ws_ticket(&client, &base, &charlie_token).await;
+
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+    let mut bob_ws = connect_ws(&base, &bob_ticket).await;
+    let mut charlie_ws = connect_ws(&base, &charlie_ticket).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    drain_pending(&mut alice_ws).await;
+    drain_pending(&mut bob_ws).await;
+    drain_pending(&mut charlie_ws).await;
+
+    // Charlie goes offline before the message is sent.
+    let _ = charlie_ws.close(None).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    // Alice sends a message while only Bob is online.
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "conversation_id": group_id,
+        "content": "charlie should see this on reconnect",
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("Alice group send failed");
+
+    // Alice gets message_sent, Bob gets new_message (live delivery).
+    let alice_event = read_text_skipping_presence(&mut alice_ws).await;
+    let alice_msg: Value = serde_json::from_str(&alice_event).unwrap();
+    assert_eq!(
+        alice_msg["type"], "message_sent",
+        "Alice should get message_sent"
+    );
+
+    let bob_event = read_text_skipping_presence(&mut bob_ws).await;
+    let bob_msg: Value = serde_json::from_str(&bob_event).unwrap();
+    assert_eq!(
+        bob_msg["type"], "new_message",
+        "Bob should get new_message live"
+    );
+    assert_eq!(bob_msg["content"], "charlie should see this on reconnect");
+
+    // Small delay to ensure the delivery receipt is recorded before Charlie reconnects.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    // Charlie reconnects — offline replay must deliver the missed message.
+    let charlie_ticket2 = common::get_ws_ticket(&client, &base, &charlie_token).await;
+    let mut charlie_ws2 = connect_ws(&base, &charlie_ticket2).await;
+
+    let charlie_event = read_text_skipping_presence(&mut charlie_ws2).await;
+    let charlie_msg: Value = serde_json::from_str(&charlie_event).unwrap();
+    assert_eq!(
+        charlie_msg["type"], "new_message",
+        "Charlie must receive the missed message on reconnect"
+    );
+    assert_eq!(
+        charlie_msg["content"], "charlie should see this on reconnect",
+        "Replayed message content must match"
+    );
+    assert_eq!(
+        charlie_msg["conversation_id"],
+        group_id.as_str(),
+        "Replayed message must carry the correct conversation_id"
+    );
+
+    let _ = alice_ws.close(None).await;
+    let _ = bob_ws.close(None).await;
+    let _ = charlie_ws2.close(None).await;
+}
+
+// ---------------------------------------------------------------------------
 // Error handling
 // ---------------------------------------------------------------------------
 
