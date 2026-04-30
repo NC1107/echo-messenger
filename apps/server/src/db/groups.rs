@@ -265,14 +265,20 @@ pub async fn remove_member(
 }
 
 /// Get all member user IDs for a conversation (works for both DMs and groups).
-pub async fn get_conversation_member_ids(
-    pool: &PgPool,
+///
+/// Generic over `Executor` so callers can reuse the existing tx during
+/// upload_group_key validation (#686).
+pub async fn get_conversation_member_ids<'e, E>(
+    executor: E,
     conversation_id: Uuid,
-) -> Result<Vec<Uuid>, sqlx::Error> {
+) -> Result<Vec<Uuid>, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let rows: Vec<(Uuid,)> =
         sqlx::query_as("SELECT user_id FROM conversation_members WHERE conversation_id = $1 AND is_removed = false")
             .bind(conversation_id)
-            .fetch_all(pool)
+            .fetch_all(executor)
             .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }

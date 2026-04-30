@@ -113,6 +113,17 @@ pub async fn upload_group_key(
         ));
     }
 
+    // Audit #686: cap envelope count and reject empty payloads up front so
+    // a hostile admin can't pollute the table with millions of junk entries.
+    // 10 000 is generous -- the largest group on echo-messenger.us is well
+    // below this, and matches the per-conv member ceiling we'd want anyway.
+    const MAX_ENVELOPES_PER_REQUEST: usize = 10_000;
+    if body.envelopes.len() > MAX_ENVELOPES_PER_REQUEST {
+        return Err(AppError::bad_request(format!(
+            "Too many envelopes (max {MAX_ENVELOPES_PER_REQUEST})"
+        )));
+    }
+
     for envelope in &body.envelopes {
         if envelope.encrypted_key.is_empty() {
             return Err(AppError::bad_request(
@@ -121,10 +132,45 @@ pub async fn upload_group_key(
         }
     }
 
+    // Audit #687: sentinel row + envelopes commit atomically. Previously
+    // these were two separate pool queries -- if the second envelope failed,
+    // the conversation was left with a key_version row but only some members
+    // had envelopes, and those without one could not decrypt anything until
+    // the next rotation.
+    let mut tx = state.pool.begin().await.map_err(|e| {
+        tracing::error!("DB error in upload_group_key/begin: {e:?}");
+        AppError::internal("Database error")
+    })?;
+
+    // Audit #686: every envelope.user_id must be a current group member.
+    // Without this, a hostile admin can stage envelopes for arbitrary users
+    // who never were members; future invitees would receive pre-staged
+    // envelopes on join, and banned-then-readded users could be silently
+    // re-keyed.  Read membership inside the same tx so we see the current
+    // committed view (matches the writes that follow).
+    let member_ids: std::collections::HashSet<Uuid> =
+        db::groups::get_conversation_member_ids(&mut *tx, group_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error in upload_group_key/members: {e:?}");
+                AppError::internal("Database error")
+            })?
+            .into_iter()
+            .collect();
+
+    for envelope in &body.envelopes {
+        if !member_ids.contains(&envelope.user_id) {
+            return Err(AppError::bad_request(format!(
+                "envelope user_id {} is not a member of this group",
+                envelope.user_id
+            )));
+        }
+    }
+
     // Store a sentinel row in group_keys for version tracking (encrypted_key
     // is a placeholder -- the real per-member keys live in group_key_envelopes).
     let row = db::keys::store_group_key(
-        &state.pool,
+        &mut *tx,
         group_id,
         body.key_version,
         "__envelope__",
@@ -141,10 +187,10 @@ pub async fn upload_group_key(
         }
     })?;
 
-    // Store per-member envelopes
+    // Store per-member envelopes inside the same tx.
     for envelope in &body.envelopes {
         db::keys::store_group_key_envelope(
-            &state.pool,
+            &mut *tx,
             group_id,
             body.key_version,
             envelope.user_id,
@@ -159,6 +205,11 @@ pub async fn upload_group_key(
             AppError::internal("Failed to store group key envelope")
         })?;
     }
+
+    tx.commit().await.map_err(|e| {
+        tracing::error!("DB error in upload_group_key/commit: {e:?}");
+        AppError::internal("Database error")
+    })?;
 
     // Broadcast key_rotated event to all group members
     let member_ids = db::groups::get_conversation_member_ids(&state.pool, group_id)
