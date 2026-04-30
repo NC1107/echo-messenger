@@ -2,6 +2,7 @@
 
 use axum::Json;
 use axum::extract::State;
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
@@ -166,12 +167,38 @@ pub async fn fetch_preview(
         }));
     }
 
-    // Limit body size to 256KB to prevent abuse
-    let html = resp
-        .text()
-        .await
-        .map_err(|_| AppError::bad_request("Failed to read response"))?;
-    let html = cap_html(&html);
+    // Audit #684: stream the body and abort once the byte cap is reached
+    // instead of buffering the whole response and then truncating. Otherwise
+    // a multi-GB response (or a gzip bomb if compression is ever enabled)
+    // OOMs the server before cap_html ever runs. Also reject obvious size
+    // hints up front via Content-Length so we don't pay the round-trip
+    // for clearly-oversized bodies.
+    if let Some(declared_len) = resp.content_length()
+        && declared_len > MAX_HTML_BYTES as u64
+    {
+        return Err(AppError::bad_request(
+            "URL response declares Content-Length above the size cap",
+        ));
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut buf: Vec<u8> = Vec::with_capacity(8 * 1024);
+    while let Some(chunk_result) = stream.next().await {
+        let chunk: bytes::Bytes =
+            chunk_result.map_err(|_| AppError::bad_request("Failed to read response"))?;
+        // Cap hard; we don't even copy the tail of an oversized chunk.
+        let remaining = MAX_HTML_BYTES.saturating_sub(buf.len());
+        if remaining == 0 {
+            break;
+        }
+        let take = chunk.len().min(remaining);
+        buf.extend_from_slice(&chunk[..take]);
+        if buf.len() >= MAX_HTML_BYTES {
+            break;
+        }
+    }
+    let html_owned = String::from_utf8_lossy(&buf).into_owned();
+    let html = cap_html(&html_owned);
 
     // Extract Open Graph tags with simple regex (no HTML parser dependency)
     let title = extract_og_content(html, "og:title").or_else(|| extract_tag_content(html, "title"));
