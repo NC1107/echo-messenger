@@ -27,7 +27,6 @@ async fn alice_sends_bob_receives() {
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
@@ -97,7 +96,6 @@ async fn typing_indicator_broadcast() {
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
@@ -144,7 +142,6 @@ async fn read_receipt_broadcast() {
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
@@ -166,7 +163,6 @@ async fn read_receipt_broadcast() {
         .expect("Alice send failed");
 
     // Drain the message_sent and new_message events
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
@@ -217,7 +213,6 @@ async fn key_reset_broadcast() {
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
@@ -270,7 +265,6 @@ async fn group_message_fanout() {
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
     let mut charlie_ws = connect_ws(&base, &charlie_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
     drain_pending(&mut charlie_ws).await;
@@ -325,7 +319,6 @@ async fn invalid_json_returns_error() {
 
     let mut ws = connect_ws(&base, &ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut ws).await;
 
     // Send invalid JSON
@@ -353,7 +346,6 @@ async fn message_to_noncontact_returns_error() {
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // Alice tries to message Eve (not a contact)
@@ -407,7 +399,6 @@ async fn offline_delivery_marks_unknown_device_undecryptable() {
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // Bob has device_id=42 in this simulation; the test WS path uses device_id=0
@@ -490,7 +481,6 @@ async fn device_content_db_roundtrip() {
     // Alice sends a message that stores a device-specific ciphertext.
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // Both alice and bob use device_id=1 — this is the exact collision case
@@ -586,7 +576,6 @@ async fn test_dm_fanout_delivers_to_all_recipient_devices() {
     let mut bob_d1_ws = connect_ws(&base, &bob_d1_ticket).await;
     let mut bob_d2_ws = connect_ws(&base, &bob_d2_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_d1_ws).await;
     drain_pending(&mut bob_d2_ws).await;
@@ -685,7 +674,6 @@ async fn test_group_fanout_delivers_to_all_devices_of_all_members() {
     let mut charlie_d1_ws = connect_ws(&base, &charlie_d1_ticket).await;
     let mut charlie_d2_ws = connect_ws(&base, &charlie_d2_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_d1_ws).await;
     drain_pending(&mut bob_d2_ws).await;
@@ -806,7 +794,6 @@ async fn encrypted_dm_rejects_plaintext_send() {
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     let send_msg = serde_json::json!({
@@ -855,7 +842,6 @@ async fn encrypted_dm_rejects_nonciphertext_device_payload() {
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // The per-device value is plain ASCII (no 0xEC magic, not normal-msg shape).
@@ -903,7 +889,6 @@ async fn encrypted_dm_rejects_plaintext_canonical_content_with_valid_per_device(
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // Per-device value is valid ciphertext (passes the per-device check)
@@ -962,7 +947,6 @@ async fn encrypted_group_rejects_plaintext_send() {
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     let send_msg = serde_json::json!({
@@ -1012,7 +996,6 @@ async fn encrypted_group_accepts_ciphertext_shaped_content() {
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     let ct = common::dummy_ciphertext("encgrp_ok");

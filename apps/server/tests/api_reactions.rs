@@ -60,8 +60,6 @@ async fn setup_dm_with_message(base: &str) -> (Client, String, String, String, S
         .await
         .expect("WS connect failed");
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
     // Drain initial presence/contact events so they don't interfere with the
     // message_sent assertion below. The 100ms timeout means we stop draining
     // once there are no more pending messages.

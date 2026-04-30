@@ -150,7 +150,6 @@ async fn reply_to_message_in_other_conversation_is_rejected() {
 
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // Alice posts a message in conv_ab.
@@ -218,7 +217,6 @@ async fn thread_replies_does_not_return_cross_conversation_replies() {
     let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
-    tokio::time::sleep(Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 

@@ -61,8 +61,6 @@ async fn setup_dm_with_message(
         .await
         .expect("WS connect failed");
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
     // Drain initial events
     while let Ok(Some(Ok(_))) = tokio::time::timeout(Duration::from_millis(100), ws.next()).await {}
 
@@ -209,7 +207,6 @@ async fn edit_message_on_unencrypted_group_succeeds() {
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("{ws_url}/ws?ticket={ticket}"))
         .await
         .expect("WS connect failed");
-    tokio::time::sleep(Duration::from_millis(200)).await;
     while let Ok(Some(Ok(_))) = tokio::time::timeout(Duration::from_millis(100), ws.next()).await {}
 
     ws.send(Message::Text(
