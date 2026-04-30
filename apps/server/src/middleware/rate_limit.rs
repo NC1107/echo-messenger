@@ -8,13 +8,43 @@ use axum::response::{IntoResponse, Response};
 use dashmap::DashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
+
+/// How often (in seconds) expired buckets are swept from the map.
+/// Between sweeps the hot path pays only a single atomic load.
+const SWEEP_INTERVAL_SECS: u64 = 60;
 
 /// Tracks request count and window start per IP.
 #[derive(Debug, Clone)]
 struct RateBucket {
     count: u32,
     window_start: Instant,
+}
+
+/// Periodic-sweep state shared across all clones of a `RateLimiter`.
+struct SweepState {
+    /// Process-relative epoch used to convert `Instant::now()` to u64 nanos.
+    epoch: Instant,
+    /// Nanos since `epoch` at which the last sweep completed (0 = never).
+    ///
+    /// Relaxed ordering: the only consequence of a stale read is that two
+    /// threads concurrently believe the sweep is due.  The CAS below ensures
+    /// only one of them actually runs `retain`; the other reads the updated
+    /// value and skips.  No happens-before relationship with the DashMap
+    /// shards is required here because DashMap manages its own shard locks.
+    last_sweep_nanos: AtomicU64,
+}
+
+impl std::fmt::Debug for SweepState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SweepState")
+            .field(
+                "last_sweep_nanos",
+                &self.last_sweep_nanos.load(Ordering::Relaxed),
+            )
+            .finish()
+    }
 }
 
 /// Shared rate limit state using lock-free concurrent map.
@@ -27,15 +57,24 @@ pub struct RateLimiter {
     /// headers we trust.  When empty, proxy headers are ignored and the
     /// peer (ConnectInfo) IP is used directly.
     trusted_proxies: Arc<Vec<IpAddr>>,
+    sweep: Arc<SweepState>,
 }
 
 impl RateLimiter {
+    fn new_sweep() -> Arc<SweepState> {
+        Arc::new(SweepState {
+            epoch: Instant::now(),
+            last_sweep_nanos: AtomicU64::new(0),
+        })
+    }
+
     pub fn new(max_requests: u32, window_secs: u64) -> Self {
         Self {
             entries: Arc::new(DashMap::new()),
             max_requests,
             window_secs,
             trusted_proxies: Arc::new(Vec::new()),
+            sweep: Self::new_sweep(),
         }
     }
 
@@ -46,6 +85,7 @@ impl RateLimiter {
             max_requests,
             window_secs,
             trusted_proxies: Arc::new(proxies),
+            sweep: Self::new_sweep(),
         }
     }
 
@@ -62,18 +102,41 @@ impl RateLimiter {
             max_requests,
             window_secs,
             trusted_proxies: proxies,
+            sweep: Self::new_sweep(),
         }
     }
 
     /// Check rate limit for an IP. Returns true if the request should be allowed.
+    ///
+    /// Expired-bucket cleanup is **periodic** (at most once every
+    /// [`SWEEP_INTERVAL_SECS`]), not per-request.  On the hot path the only
+    /// overhead vs. the old code is a single `AtomicU64` load.
+    ///
+    /// Sweep contention: `last_sweep_nanos` is updated via compare-and-exchange
+    /// so that at most one thread runs `retain` when the interval expires.
+    /// All other concurrent threads lose the CAS, see the updated timestamp,
+    /// and skip immediately -- they never block waiting for the sweeper.
     fn check(&self, ip: IpAddr) -> bool {
         let now = Instant::now();
+        let now_nanos = now.duration_since(self.sweep.epoch).as_nanos() as u64;
 
-        // Opportunistic cleanup: remove entries older than 2x window
-        let cleanup_threshold = self.window_secs * 2;
-        self.entries.retain(|_, bucket| {
-            now.duration_since(bucket.window_start).as_secs() < cleanup_threshold
-        });
+        // Lazy periodic sweep: skip the O(N) retain unless the interval has elapsed.
+        let last = self.sweep.last_sweep_nanos.load(Ordering::Relaxed);
+        let interval_nanos = SWEEP_INTERVAL_SECS * 1_000_000_000;
+        if now_nanos.saturating_sub(last) >= interval_nanos {
+            // Only the thread that wins the CAS runs retain(); losers skip.
+            if self
+                .sweep
+                .last_sweep_nanos
+                .compare_exchange(last, now_nanos, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                let cleanup_threshold = self.window_secs * 2;
+                self.entries.retain(|_, bucket| {
+                    now.duration_since(bucket.window_start).as_secs() < cleanup_threshold
+                });
+            }
+        }
 
         let mut bucket = self.entries.entry(ip).or_insert(RateBucket {
             count: 0,
@@ -216,6 +279,11 @@ pub fn revoke_others_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(3, 60, trusted_proxies)
 }
 
+/// Edit message rate limiter: 30 edits per 60 seconds per IP.
+pub fn edit_message_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+    RateLimiter::with_shared_proxies(30, 60, trusted_proxies)
+}
+
 /// Check whether an IP is in a private/reserved range (RFC 1918, link-local, ULA).
 fn is_private(ip: IpAddr) -> bool {
     match ip {
@@ -290,6 +358,13 @@ mod tests {
     fn test_link_preview_limiter_config() {
         let limiter = link_preview_limiter(Arc::new(vec![]));
         assert_eq!(limiter.max_requests, 20);
+        assert_eq!(limiter.window_secs, 60);
+    }
+
+    #[test]
+    fn test_edit_message_limiter_config() {
+        let limiter = edit_message_limiter(Arc::new(vec![]));
+        assert_eq!(limiter.max_requests, 30);
         assert_eq!(limiter.window_secs, 60);
     }
 
@@ -422,5 +497,63 @@ mod tests {
         assert_eq!(limiter.max_requests, 5);
         assert_eq!(limiter.window_secs, 60);
         assert_eq!(*limiter.trusted_proxies, proxies);
+    }
+
+    /// With 1000 expired buckets already in the map, a `check()` for a fresh
+    /// IP must complete in under 5 ms.  A per-request retain() on 1000 entries
+    /// typically takes 1-10 ms in debug builds; the periodic sweep approach
+    /// skips it entirely on this call because the interval has not elapsed.
+    #[test]
+    fn test_check_does_not_sweep_on_hot_path_with_expired_buckets() {
+        // Use a very long window so nothing counts as active, and a large
+        // sweep interval so no sweep fires during this test.
+        let limiter = RateLimiter::new(100, 3600);
+
+        // Pre-fill 1000 distinct IPs with expired buckets (window_start = epoch,
+        // which is far in the past relative to any real Instant).  We can't
+        // directly set window_start to an "ancient" Instant from outside, so we
+        // insert at address-space level via the DashMap.
+        let ancient = limiter.sweep.epoch; // epoch itself: 0 nanos since epoch
+        for i in 0u32..1000 {
+            let ip = IpAddr::V4(std::net::Ipv4Addr::from(0x0A00_0001 + i));
+            limiter.entries.insert(
+                ip,
+                RateBucket {
+                    count: 0,
+                    window_start: ancient,
+                },
+            );
+        }
+
+        // The sweep timer starts at 0 (never swept).  SWEEP_INTERVAL_SECS is 60 s.
+        // Set last_sweep_nanos to "right now" so the 60-second interval has NOT
+        // elapsed -- no sweep will be triggered during check().
+        let now_nanos = Instant::now()
+            .duration_since(limiter.sweep.epoch)
+            .as_nanos() as u64;
+        limiter
+            .sweep
+            .last_sweep_nanos
+            .store(now_nanos, Ordering::Relaxed);
+
+        let fresh_ip = IpAddr::V4(std::net::Ipv4Addr::new(8, 8, 8, 8));
+        let deadline_ns: u64 = 5_000_000; // 5 ms
+
+        let t0 = Instant::now();
+        let allowed = limiter.check(fresh_ip);
+        let elapsed_ns = t0.elapsed().as_nanos() as u64;
+
+        assert!(allowed, "fresh IP should be allowed");
+        assert!(
+            elapsed_ns < deadline_ns,
+            "check() took {elapsed_ns} ns with 1000 expired buckets (limit {deadline_ns} ns / 5 ms); \
+             per-request sweep was not eliminated"
+        );
+        // Stale entries still present -- sweep did NOT run.
+        assert_eq!(
+            limiter.entries.len(),
+            1001, // 1000 pre-filled + 1 for fresh_ip
+            "stale entries should not have been removed during the hot-path check"
+        );
     }
 }

@@ -93,7 +93,11 @@ pub async fn list_public_groups(
 ) -> Result<Vec<PublicGroupRow>, sqlx::Error> {
     match search {
         Some(term) => {
-            let pattern = format!("%{}%", term);
+            let escaped = term
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            let pattern = format!("%{escaped}%");
             sqlx::query_as::<_, PublicGroupRow>(
                 "SELECT c.id, c.title, \
                  COUNT(cm.user_id) AS member_count, c.created_at, \
@@ -104,7 +108,7 @@ pub async fn list_public_groups(
                  LEFT JOIN conversation_members cm \
                    ON cm.conversation_id = c.id AND cm.is_removed = false \
                  WHERE c.is_public = true AND c.kind = 'group' \
-                   AND c.title ILIKE $1 \
+                   AND c.title ILIKE $1 ESCAPE '\\' \
                  GROUP BY c.id \
                  ORDER BY c.created_at DESC \
                  LIMIT $3 OFFSET $4",

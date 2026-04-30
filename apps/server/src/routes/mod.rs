@@ -109,7 +109,9 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
     let key_reset_device_limit =
         rate_limit::make_rate_limit_layer(rate_limit::key_reset_limiter(Arc::clone(&proxies)));
     let revoke_others_limit =
-        rate_limit::make_rate_limit_layer(rate_limit::revoke_others_limiter(proxies));
+        rate_limit::make_rate_limit_layer(rate_limit::revoke_others_limiter(Arc::clone(&proxies)));
+    let edit_message_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::edit_message_limiter(proxies));
 
     let auth_routes = Router::new()
         .route(
@@ -180,7 +182,8 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
             "/messages/{id}",
             get(messages::get_messages)
                 .delete(messages::delete_message)
-                .put(messages::edit_message),
+                .put(messages::edit_message)
+                .layer(middleware::from_fn(edit_message_limit)),
         )
         .route("/messages/{id}/replies", get(messages::get_thread_replies))
         .route("/messages/{id}/reactions", post(reactions::add_reaction))

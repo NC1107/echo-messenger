@@ -13,10 +13,12 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
+import '../models/contact.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/media_ticket_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../utils/fuzzy_score.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 
 const _kJsonHeaders = {'Content-Type': 'application/json'};
@@ -130,17 +132,24 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         final searchController = TextEditingController();
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
-            final query = searchController.text.trim().toLowerCase();
-            final filtered = query.isEmpty
-                ? available
-                : available
-                      .where(
-                        (c) =>
-                            c.username.toLowerCase().contains(query) ||
-                            (c.displayName?.toLowerCase().contains(query) ??
-                                false),
-                      )
-                      .toList();
+            final query = searchController.text.trim();
+            List<Contact> filtered;
+            if (query.isEmpty) {
+              filtered = available;
+            } else {
+              final scored = <({Contact contact, double score})>[];
+              for (final c in available) {
+                final nameScore = fuzzyScore(
+                  query,
+                  c.displayName ?? c.username,
+                );
+                final handleScore = fuzzyScore(query, c.username);
+                final best = nameScore > handleScore ? nameScore : handleScore;
+                if (best > 0.2) scored.add((contact: c, score: best));
+              }
+              scored.sort((a, b) => b.score.compareTo(a.score));
+              filtered = scored.map((e) => e.contact).toList();
+            }
             final serverUrl = ref.read(serverUrlProvider);
             return SimpleDialog(
               title: Column(

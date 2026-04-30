@@ -73,9 +73,36 @@ pub async fn find_or_create_dm_conversation(
     }
 
     // Slow path: create the conversation and claim the canonical slot.
-    // Two concurrent requests may both reach this point; the ON CONFLICT
-    // clause ensures only one conversation survives per user pair.
+    // Acquire a transaction-scoped advisory lock keyed on the canonical
+    // (lo, hi) pair so concurrent creators for the same user pair serialize
+    // here rather than contending at the UNIQUE constraint level.  We
+    // concatenate the lexicographically smaller UUID first so both argument
+    // orderings hash to the same i64.  `pg_advisory_xact_lock` (not the
+    // `try_` variant) blocks until the lock is available and releases
+    // automatically when the transaction ends.
     let mut tx = pool.begin().await?;
+
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1::text || $2::text))")
+        .bind(lo)
+        .bind(hi)
+        .execute(&mut *tx)
+        .await?;
+
+    // Re-check inside the tx: another creator may have committed while we
+    // were waiting for the lock, in which case we can take the fast path.
+    let existing_in_tx: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT conversation_id FROM direct_conversations \
+         WHERE user_lo = $1 AND user_hi = $2",
+    )
+    .bind(lo)
+    .bind(hi)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if let Some(row) = existing_in_tx {
+        tx.rollback().await?;
+        return Ok(row.0);
+    }
 
     // Create the conversation row.
     let conv: (Uuid,) = sqlx::query_as(
