@@ -20,6 +20,60 @@ use crate::ws::typing_service::invalidate_member_cache;
 
 use super::AppState;
 
+/// #656 — Rotate the group key after a member loses access.
+///
+/// On encrypted groups, bump the conversation's `key_version`, purge every
+/// existing per-member envelope (so the kicked user can no longer decrypt
+/// future ciphertext, and so a stale envelope cannot be replayed), and
+/// broadcast a `group_key_rotation_requested` event to every remaining member.
+///
+/// The remaining members race to upload the next envelope batch. The
+/// `(conversation_id, key_version)` UNIQUE constraint on `group_keys` ensures
+/// only the first writer wins; everyone else gets a 409 and falls back to
+/// fetching whatever the winner produced.
+///
+/// MVP scope (#656): no leader election, no atomicity beyond the per-row
+/// transaction inside `bump_key_version_and_purge_envelopes`. If the chosen
+/// member crashes mid-rotation the group will surface as undecryptable until
+/// any other live member reuploads the next version. Tracked in #658.
+async fn rotate_group_key_after_member_loss(state: &Arc<AppState>, group_id: Uuid) {
+    let encrypted = match db::groups::is_encrypted(&state.pool, group_id).await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("rotate_group_key/is_encrypted({group_id}) failed: {e:?}");
+            return;
+        }
+    };
+    if !encrypted {
+        return;
+    }
+
+    let new_version =
+        match db::groups::bump_key_version_and_purge_envelopes(&state.pool, group_id).await {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("rotate_group_key/bump({group_id}) failed: {e:?}");
+                return;
+            }
+        };
+
+    let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
+        .await
+        .unwrap_or_default();
+    if remaining.is_empty() {
+        return;
+    }
+
+    let event = serde_json::json!({
+        "type": "group_key_rotation_requested",
+        "conversation_id": group_id,
+        "key_version": new_version,
+    });
+    if let Ok(s) = serde_json::to_string(&event) {
+        state.hub.broadcast_json(&remaining, &s, None);
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateGroupRequest {
     pub name: String,
@@ -373,6 +427,10 @@ pub async fn remove_member(
     if remaining.is_empty() {
         let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;
         tracing::info!("Auto-deleted empty group {group_id}");
+    } else {
+        // #656 — kick a fresh group-key rotation so the removed member can no
+        // longer decrypt future messages with the AES key they still hold.
+        rotate_group_key_after_member_loss(&state, group_id).await;
     }
 
     Ok(Json(serde_json::json!({ "status": "removed" })))
@@ -544,6 +602,9 @@ pub async fn leave_group(
         // delete_group checks owner, but we just need a raw delete for empty groups
         let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;
         tracing::info!("Auto-deleted empty group {group_id}");
+    } else {
+        // #656 — rotate so the leaver loses access to future ciphertext.
+        rotate_group_key_after_member_loss(&state, group_id).await;
     }
 
     Ok(Json(serde_json::json!({ "status": "left" })))
@@ -675,6 +736,9 @@ pub async fn ban_member(
     if remaining.is_empty() {
         let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;
         tracing::info!("Auto-deleted empty group {group_id}");
+    } else {
+        // #656 — rotate so the banned member loses future-message access.
+        rotate_group_key_after_member_loss(&state, group_id).await;
     }
 
     Ok(Json(serde_json::json!({ "status": "banned" })))

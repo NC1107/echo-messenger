@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
@@ -18,6 +20,7 @@ import 'channels_provider.dart';
 import 'chat_provider.dart';
 import 'conversations_provider.dart';
 import 'crypto_provider.dart';
+import 'server_url_provider.dart';
 
 /// State that tracks both connection status and typing indicators.
 class WebSocketState {
@@ -200,6 +203,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleMention(json, myUserId);
       case 'group_key_rotated':
         _handleGroupKeyRotated(json);
+      case 'group_key_rotation_requested':
+        _handleGroupKeyRotationRequested(json);
       case 'self_message':
         _handleSelfMessage(json, myUserId);
       case 'session_replaced':
@@ -782,6 +787,55 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
 
     // Pre-fetch the new key so subsequent messages decrypt immediately.
     groupCrypto.fetchGroupKey(conversationId);
+  }
+
+  /// #656 — server signaled that a member was removed and we (or any other
+  /// remaining member) should regenerate the group AES key for the new
+  /// version. We race other clients; the server enforces single-writer via a
+  /// UNIQUE constraint, so a 409 just means we lost the race.
+  void _handleGroupKeyRotationRequested(Map<String, dynamic> json) {
+    final conversationId = json['conversation_id'] as String? ?? '';
+    final keyVersion = (json['key_version'] as num?)?.toInt();
+    if (conversationId.isEmpty || keyVersion == null) return;
+
+    final auth = ref.read(authProvider);
+    final token = auth.token;
+    if (token == null) return;
+
+    final serverUrl = ref.read(serverUrlProvider);
+    final groupCrypto = ref.read(groupCryptoServiceProvider);
+    final crypto = ref.read(cryptoServiceProvider);
+    groupCrypto.setToken(token);
+
+    unawaited(
+      groupCrypto.performRotation(
+        conversationId,
+        keyVersion,
+        fetchMembers: () async {
+          try {
+            final resp = await http.get(
+              Uri.parse('$serverUrl/api/groups/$conversationId'),
+              headers: {'Authorization': 'Bearer $token'},
+            );
+            if (resp.statusCode != 200) return [];
+            final body = jsonDecode(resp.body) as Map<String, dynamic>;
+            final members = body['members'] as List<dynamic>? ?? [];
+            return members
+                .whereType<Map<String, dynamic>>()
+                .map((m) => {'user_id': m['user_id'] as String? ?? ''})
+                .toList();
+          } catch (e) {
+            DebugLogService.instance.log(
+              LogLevel.warning,
+              'GroupRotation',
+              'Failed to load members for $conversationId: $e',
+            );
+            return [];
+          }
+        },
+        fetchIdentityKey: (userId) => crypto.fetchPeerIdentityKey(userId),
+      ),
+    );
   }
 
   void _handlePresence(Map<String, dynamic> json) {
