@@ -629,6 +629,88 @@ async fn test_dm_fanout_delivers_to_all_recipient_devices() {
     let _ = bob_d2_ws.close(None).await;
 }
 
+/// Plain message — no `recipient_device_contents` — is broadcast to all
+/// simultaneously-connected devices for the recipient via `send_to_user`.
+/// Two WS sessions for Bob (different device IDs) must both receive
+/// `new_message` when Alice sends a single unencrypted message.
+#[tokio::test]
+async fn multi_device_ws_fanout_both_sessions_receive_message() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, alice_name) =
+        common::register_and_login(&client, &base, "mdf_alice").await;
+    let (bob_token, bob_id, bob_name) = common::register_and_login(&client, &base, "mdf_bob").await;
+
+    common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+
+    // Bob opens two simultaneous WebSocket connections with distinct device IDs,
+    // mirroring a user logged in on both desktop (device 1) and mobile (device 2).
+    let bob_d1_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 1).await;
+    let bob_d2_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 2).await;
+
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+    let mut bob_d1_ws = connect_ws(&base, &bob_d1_ticket).await;
+    let mut bob_d2_ws = connect_ws(&base, &bob_d2_ticket).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    drain_pending(&mut alice_ws).await;
+    drain_pending(&mut bob_d1_ws).await;
+    drain_pending(&mut bob_d2_ws).await;
+
+    let msg_content = "fanout test -- both devices should see this";
+
+    // Alice sends a plain message with no recipient_device_contents, so the
+    // server must use hub::send_to_user to broadcast to every registered device.
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "to_user_id": bob_id,
+        "content": msg_content,
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("Alice send failed");
+
+    // Alice gets message_sent confirmation.
+    let ack_text = read_text_skipping_presence(&mut alice_ws).await;
+    let ack: Value = serde_json::from_str(&ack_text).unwrap();
+    assert_eq!(ack["type"], "message_sent");
+
+    // Both Bob devices must receive new_message with the correct payload.
+    let d1_text = read_text_skipping_presence(&mut bob_d1_ws).await;
+    let d1: Value = serde_json::from_str(&d1_text).unwrap();
+    assert_eq!(d1["type"], "new_message", "device 1 should get new_message");
+    assert_eq!(
+        d1["content"], msg_content,
+        "device 1 should have correct content"
+    );
+    assert_eq!(
+        d1["from_username"],
+        alice_name.as_str(),
+        "device 1 from_username"
+    );
+
+    let d2_text = read_text_skipping_presence(&mut bob_d2_ws).await;
+    let d2: Value = serde_json::from_str(&d2_text).unwrap();
+    assert_eq!(d2["type"], "new_message", "device 2 should get new_message");
+    assert_eq!(
+        d2["content"], msg_content,
+        "device 2 should have correct content"
+    );
+    assert_eq!(
+        d2["from_username"],
+        alice_name.as_str(),
+        "device 2 from_username"
+    );
+
+    let _ = alice_ws.close(None).await;
+    let _ = bob_d1_ws.close(None).await;
+    let _ = bob_d2_ws.close(None).await;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
