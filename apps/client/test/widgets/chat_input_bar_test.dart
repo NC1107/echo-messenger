@@ -133,7 +133,7 @@ void main() {
     });
 
     testWidgets('reply preview shows when reply is active', (tester) async {
-      final replyMsg = ChatMessage(
+      final replyMsg = const ChatMessage(
         id: 'msg-reply',
         fromUserId: 'user-alice',
         fromUsername: 'alice',
@@ -156,7 +156,7 @@ void main() {
     });
 
     testWidgets('reply preview has close button', (tester) async {
-      final replyMsg = ChatMessage(
+      final replyMsg = const ChatMessage(
         id: 'msg-reply',
         fromUserId: 'user-alice',
         fromUsername: 'alice',
@@ -208,7 +208,7 @@ void main() {
     });
 
     testWidgets('escape key clears reply when reply is active', (tester) async {
-      final replyMsg = ChatMessage(
+      final replyMsg = const ChatMessage(
         id: 'msg-reply',
         fromUserId: 'user-alice',
         fromUsername: 'alice',

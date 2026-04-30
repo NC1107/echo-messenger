@@ -12,9 +12,9 @@ import '../helpers/pump_app.dart';
 
 class _FakeChannelsNotifier extends ChannelsNotifier {
   _FakeChannelsNotifier(super.ref) : super() {
-    state = ChannelsState(
+    state = const ChannelsState(
       channelsByConversation: {
-        'conv-1': const [
+        'conv-1': [
           GroupChannel(
             id: 'voice-1',
             conversationId: 'conv-1',
@@ -26,7 +26,7 @@ class _FakeChannelsNotifier extends ChannelsNotifier {
           ),
         ],
       },
-      voiceSessionsByChannel: const {'voice-1': []},
+      voiceSessionsByChannel: {'voice-1': []},
     );
   }
 

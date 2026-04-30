@@ -156,7 +156,7 @@ void main() {
     ) async {
       final holder = _NotifierHolder();
       await tester.pumpApp(
-        ChatPanel(conversation: _conv),
+        const ChatPanel(conversation: _conv),
         overrides: _overrides(initial: const ChatState(), holder: holder),
       );
       await tester.pump();
@@ -178,7 +178,7 @@ void main() {
       );
 
       await tester.pumpApp(
-        ChatPanel(conversation: _conv),
+        const ChatPanel(conversation: _conv),
         overrides: _overrides(initial: initial, holder: holder),
       );
       await tester.pump();
@@ -209,7 +209,7 @@ void main() {
       );
 
       await tester.pumpApp(
-        ChatPanel(conversation: _conv),
+        const ChatPanel(conversation: _conv),
         overrides: _overrides(initial: initial, holder: holder),
       );
       await tester.pump();
@@ -234,7 +234,7 @@ void main() {
       );
 
       await tester.pumpApp(
-        ChatPanel(conversation: _conv),
+        const ChatPanel(conversation: _conv),
         overrides: _overrides(initial: initial, holder: holder),
       );
       await tester.pump();
@@ -277,7 +277,7 @@ void main() {
         );
 
         await tester.pumpApp(
-          ChatPanel(conversation: _conv),
+          const ChatPanel(conversation: _conv),
           overrides: _overrides(initial: initial, holder: holder),
         );
         await tester.pump();
@@ -304,7 +304,7 @@ void main() {
       final holder = _NotifierHolder();
 
       await tester.pumpApp(
-        ChatPanel(conversation: _conv),
+        const ChatPanel(conversation: _conv),
         overrides: _overrides(initial: const ChatState(), holder: holder),
       );
       await tester.pump();

@@ -507,8 +507,8 @@ void main() {
   group('Semantic labels - ReactionBar', () {
     testWidgets('single reaction shows "1 reaction:" label', (tester) async {
       await tester.pumpApp(
-        ReactionBar(
-          reactions: const [
+        const ReactionBar(
+          reactions: [
             Reaction(
               messageId: 'm1',
               userId: 'u1',
@@ -517,7 +517,7 @@ void main() {
             ),
           ],
           isMine: false,
-          chatBgColor: const Color(0xFF141415),
+          chatBgColor: Color(0xFF141415),
         ),
       );
       await tester.pump();
@@ -529,8 +529,8 @@ void main() {
       tester,
     ) async {
       await tester.pumpApp(
-        ReactionBar(
-          reactions: const [
+        const ReactionBar(
+          reactions: [
             Reaction(
               messageId: 'm1',
               userId: 'u1',
@@ -545,7 +545,7 @@ void main() {
             ),
           ],
           isMine: false,
-          chatBgColor: const Color(0xFF141415),
+          chatBgColor: Color(0xFF141415),
         ),
       );
       await tester.pump();
@@ -555,8 +555,8 @@ void main() {
 
     testWidgets('reaction bar has button: true', (tester) async {
       await tester.pumpApp(
-        ReactionBar(
-          reactions: const [
+        const ReactionBar(
+          reactions: [
             Reaction(
               messageId: 'm1',
               userId: 'u1',
@@ -565,7 +565,7 @@ void main() {
             ),
           ],
           isMine: false,
-          chatBgColor: const Color(0xFF141415),
+          chatBgColor: Color(0xFF141415),
         ),
       );
       await tester.pump();

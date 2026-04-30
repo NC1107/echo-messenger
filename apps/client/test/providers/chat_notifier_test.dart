@@ -344,7 +344,7 @@ void main() {
       final notifier = _createNotifier();
       notifier.addMessage(_msg1);
 
-      final reaction = Reaction(
+      final reaction = const Reaction(
         messageId: 'msg-1',
         userId: 'user-2',
         username: 'bob',
@@ -361,7 +361,7 @@ void main() {
       final notifier = _createNotifier();
       notifier.addMessage(_msg1);
 
-      final reaction = Reaction(
+      final reaction = const Reaction(
         messageId: 'msg-1',
         userId: 'user-2',
         username: 'bob',

@@ -29,7 +29,7 @@ void main() {
         timestamp: '2026-01-01T00:00:00Z',
         isMine: false,
       );
-      final state = ChatState(
+      final state = const ChatState(
         messagesByConversation: {
           'conv-1': [msg],
         },
@@ -69,7 +69,7 @@ void main() {
         isMine: false,
       );
 
-      final state = ChatState(
+      final state = const ChatState(
         messagesByConversation: {
           'conv-1': [msg1, msg2, msg3],
         },
@@ -92,13 +92,13 @@ void main() {
     });
 
     test('isLoadingHistory returns correct value', () {
-      final state = ChatState(loadingHistory: {'conv-1:': true});
+      final state = const ChatState(loadingHistory: {'conv-1:': true});
       expect(state.isLoadingHistory('conv-1'), isTrue);
       expect(state.isLoadingHistory('conv-2'), isFalse);
     });
 
     test('isLoadingHistory with channel', () {
-      final state = ChatState(loadingHistory: {'conv-1:ch-1': true});
+      final state = const ChatState(loadingHistory: {'conv-1:ch-1': true});
       expect(state.isLoadingHistory('conv-1', channelId: 'ch-1'), isTrue);
       expect(state.isLoadingHistory('conv-1'), isFalse);
     });
@@ -109,7 +109,7 @@ void main() {
     });
 
     test('conversationHasMore returns stored value', () {
-      final state = ChatState(hasMore: {'conv-1:': false});
+      final state = const ChatState(hasMore: {'conv-1:': false});
       expect(state.conversationHasMore('conv-1'), isFalse);
     });
 
@@ -388,7 +388,7 @@ void main() {
         timestamp: '2026-01-01T00:00:00Z',
         isMine: false,
       );
-      final state = ChatState(
+      final state = const ChatState(
         messagesByConversation: {
           'conv-1': [msg],
         },

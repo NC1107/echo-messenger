@@ -56,6 +56,12 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   bool _isPendingLoadInFlight = false;
   DateTime? _lastPendingLoadedAt;
 
+  /// Monotonic generation counter for [loadContacts] (#599). Each call
+  /// captures `++_loadGen` and bails before mutating state when the captured
+  /// value no longer matches -- guards against a stale in-flight response
+  /// overwriting fresh state when two reloads overlap.
+  int _loadGen = 0;
+
   ContactsNotifier(this.ref) : super(const ContactsState());
 
   String get _serverUrl => ref.read(serverUrlProvider);
@@ -74,6 +80,7 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
 
   Future<void> loadContacts() async {
     state = state.copyWith(isLoading: true, error: null);
+    final gen = ++_loadGen;
     try {
       final response = await _authenticatedRequest(
         (token) => http.get(
@@ -81,6 +88,10 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
           headers: _headersWithToken(token),
         ),
       );
+      // Drop a stale response -- a newer call has been issued or the notifier
+      // was disposed while awaiting.
+      if (gen != _loadGen || !mounted) return;
+
       if (response.statusCode == 200) {
         final list = (jsonDecode(response.body) as List)
             .map((e) => Contact.fromJson(e as Map<String, dynamic>))
@@ -93,6 +104,7 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
         );
       }
     } catch (e) {
+      if (gen != _loadGen || !mounted) return;
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }

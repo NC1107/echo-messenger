@@ -12,8 +12,8 @@ void main() {
     });
 
     test('copyWith preserves conversations and isLoading', () {
-      final state = ConversationsState(
-        conversations: [const Conversation(id: 'c1', isGroup: false)],
+      final state = const ConversationsState(
+        conversations: [Conversation(id: 'c1', isGroup: false)],
         isLoading: true,
       );
       final copied = state.copyWith();
@@ -23,7 +23,7 @@ void main() {
     });
 
     test('copyWith with no error argument clears error (by design)', () {
-      final state = ConversationsState(error: 'old error');
+      final state = const ConversationsState(error: 'old error');
       // The copyWith uses direct assignment for error (not null-coalesce),
       // so calling copyWith() without error clears it.
       final copied = state.copyWith();
@@ -82,11 +82,11 @@ void main() {
     });
 
     test('removing a conversation updates the list', () {
-      final state = ConversationsState(
+      final state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'c1', isGroup: false),
-          const Conversation(id: 'c2', isGroup: true, name: 'Group'),
-          const Conversation(id: 'c3', isGroup: false),
+          Conversation(id: 'c1', isGroup: false),
+          Conversation(id: 'c2', isGroup: true, name: 'Group'),
+          Conversation(id: 'c3', isGroup: false),
         ],
       );
       final filtered = state.conversations.where((c) => c.id != 'c2').toList();
