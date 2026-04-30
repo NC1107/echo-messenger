@@ -161,6 +161,62 @@ docker compose -f docker-compose.prod.yml ps
 curl https://your-domain.com/api/health
 ```
 
+## LiveKit Voice & Video Calls
+
+Echo uses [LiveKit](https://livekit.io) for group voice and video calls. The
+LiveKit server runs as a separate container in the production compose and
+needs **direct UDP access** for WebRTC media — Traefik cannot proxy this.
+
+### Required router / firewall ports
+
+If the host running Echo is behind a router (typical for home self-hosters),
+**these ports must be forwarded from the public internet to the host** for
+external participants to join calls:
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 7880 | TCP | LiveKit signaling (WebSocket) |
+| 7881 | TCP | LiveKit signaling fallback |
+| 7882 | UDP | TURN/TCP fallback for restrictive networks |
+| 50000–50200 | UDP | WebRTC media (audio/video frames) |
+
+The Docker compose already binds these on the host. Forwarding them on the
+router is what's missing for most setups. **Symptom if not forwarded**: voice
+channels show "connecting" forever, or two LAN users can call each other but
+external users cannot.
+
+### Verify after opening ports
+
+From outside your network (e.g. phone on cellular), check that the signaling
+port responds:
+
+```bash
+# Should return a 4xx (LiveKit auth response) — confirms the port is open
+curl -i http://your-public-ip:7880/
+
+# UDP media is harder to test without a real client; use a LiveKit room
+# from two devices on different networks as the smoke test.
+```
+
+### Optional: put LiveKit signaling behind Traefik
+
+By default LiveKit's signaling port 7880 is plaintext HTTP. Tokens travel
+over the wire. If you want TLS on signaling (the UDP media path is already
+encrypted by SRTP), add a Traefik label set similar to the server service:
+
+```yaml
+livekit:
+  labels:
+    - "traefik.enable=true"
+    - "traefik.http.routers.echo-livekit.rule=Host(`livekit.your-domain.com`)"
+    - "traefik.http.routers.echo-livekit.entrypoints=websecure"
+    - "traefik.http.routers.echo-livekit.tls=true"
+    - "traefik.http.services.echo-livekit.loadbalancer.server.port=7880"
+```
+
+Keep the UDP port mappings as-is — Traefik does NOT proxy UDP, so media
+frames continue to bypass it.
+
 ## TURN Server for Voice Channels
 
 ### Why you need TURN
