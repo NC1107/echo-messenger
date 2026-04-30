@@ -192,21 +192,34 @@ async function dismissDialogs(page: Page) {
 }
 
 /**
- * Login via coordinate-based typing (Flutter CanvasKit ignores DOM fill).
- * Matches the pattern used in local_full.spec.ts / hover_then_type.spec.ts.
+ * Login using semantic locators (ARIA/Semantics tree from Flutter web).
+ * Falls back to viewport-relative coordinates only as a last resort.
  */
 async function loginInBrowser(page: Page, username: string) {
   await page.goto(APP);
-  await page.waitForTimeout(5000);
+  await page.waitForSelector('flt-semantics', { timeout: 20000 });
+  await page.waitForTimeout(2000);
 
-  const vp = page.viewportSize()!;
-  await page.mouse.click(vp.width / 2, vp.height / 2 - 40);
-  await page.waitForTimeout(250);
-  await page.keyboard.type(username, { delay: 12 });
-  await page.keyboard.press('Tab');
-  await page.waitForTimeout(250);
-  await page.keyboard.type(PW, { delay: 12 });
-  await page.keyboard.press('Enter');
+  const userInput = page.locator('input[aria-label="Username"]');
+  if (await userInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await userInput.focus();
+    await page.keyboard.type(username, { delay: 12 });
+    const passInput = page.locator('input[aria-label="Password"]');
+    await passInput.focus();
+    await page.keyboard.type(PW, { delay: 12 });
+    await page.getByRole('button', { name: /login/i }).click();
+  } else {
+    // Fallback: viewport-relative coordinates
+    const vp = page.viewportSize()!;
+    await page.mouse.click(vp.width / 2, vp.height / 2 - 40);
+    await page.waitForTimeout(250);
+    await page.keyboard.type(username, { delay: 12 });
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(250);
+    await page.keyboard.type(PW, { delay: 12 });
+    await page.keyboard.press('Enter');
+  }
+
   await page.waitForTimeout(8000);
 
   // Dismiss popups aggressively
@@ -261,11 +274,16 @@ async function pageContains(page: Page, text: string): Promise<boolean> {
   return (body ?? '').includes(text);
 }
 
-/** Type into the chat input and press Enter. */
+/** Type into the chat input and press Enter. Uses ARIA textbox role. */
 async function sendMessageViaUI(page: Page, text: string) {
-  const vp = page.viewportSize()!;
-  // Chat input sits at the bottom-center of the main content area
-  await page.mouse.click(vp.width * 0.6, vp.height - 45);
+  const chatInput = page.getByRole('textbox').last();
+  if (await chatInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await chatInput.focus();
+  } else {
+    // Fallback: viewport-relative coordinates (avoids absolute-pixel brittleness)
+    const vp = page.viewportSize()!;
+    await page.mouse.click(vp.width * 0.6, vp.height - 45);
+  }
   await page.waitForTimeout(300);
   await page.keyboard.type(text, { delay: 8 });
   await page.waitForTimeout(300);

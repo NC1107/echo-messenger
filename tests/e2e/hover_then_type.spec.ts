@@ -42,21 +42,34 @@ async function dismissDialogs(page: Page) {
 }
 
 /**
- * Login via coordinate-based typing (Flutter CanvasKit ignores DOM fill).
- * Matches the pattern from local_full.spec.ts.
+ * Login using semantic locators (ARIA/Semantics tree from Flutter web).
+ * Falls back to viewport-relative coordinates only as a last resort.
  */
 async function login(page: Page, username: string, password: string) {
   await page.goto(APP);
-  await page.waitForTimeout(5000);
-  const vp = page.viewportSize()!;
-  // Click username field (center of viewport, slightly above middle)
-  await page.mouse.click(vp.width / 2, vp.height / 2 - 40);
-  await page.waitForTimeout(200);
-  await page.keyboard.type(username, { delay: 12 });
-  await page.keyboard.press('Tab');
-  await page.waitForTimeout(200);
-  await page.keyboard.type(password, { delay: 12 });
-  await page.keyboard.press('Enter');
+  await page.waitForSelector('flt-semantics', { timeout: 20000 });
+  await page.waitForTimeout(2000);
+
+  const userInput = page.locator('input[aria-label="Username"]');
+  if (await userInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await userInput.focus();
+    await page.keyboard.type(username, { delay: 12 });
+    const passInput = page.locator('input[aria-label="Password"]');
+    await passInput.focus();
+    await page.keyboard.type(password, { delay: 12 });
+    await page.getByRole('button', { name: /login/i }).click();
+  } else {
+    // Fallback: viewport-relative coordinates
+    const vp = page.viewportSize()!;
+    await page.mouse.click(vp.width / 2, vp.height / 2 - 40);
+    await page.waitForTimeout(200);
+    await page.keyboard.type(username, { delay: 12 });
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(200);
+    await page.keyboard.type(password, { delay: 12 });
+    await page.keyboard.press('Enter');
+  }
+
   await page.waitForTimeout(7000);
   // Dismiss popups
   for (let i = 0; i < 3; i++) {
