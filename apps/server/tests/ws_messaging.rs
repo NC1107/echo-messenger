@@ -643,6 +643,147 @@ async fn test_dm_fanout_delivers_to_all_recipient_devices() {
     let _ = bob_d2_ws.close(None).await;
 }
 
+// Group × multi-device fanout regression (#557 follow-up)
+// ---------------------------------------------------------------------------
+
+/// `deliver_to_member` is called for every conversation member.  A regression
+/// that re-introduced short-circuiting only in the group-fanout branch (e.g.
+/// via `filter`/`any` over members) would skip later members entirely.  This
+/// test uses a 3-user group where Bob and Charlie each connect on two devices
+/// and asserts that every device socket receives its own distinct ciphertext.
+#[tokio::test]
+async fn test_group_fanout_delivers_to_all_devices_of_all_members() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "gfmd_alice").await;
+    let (bob_token, bob_id, _bob_name) =
+        common::register_and_login(&client, &base, "gfmd_bob").await;
+    let (charlie_token, charlie_id, _charlie_name) =
+        common::register_and_login(&client, &base, "gfmd_charlie").await;
+
+    let group_id = common::create_group(&client, &base, &alice_token, "MultiDevFanoutGroup").await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
+
+    // Alice connects on her primary device (sender).
+    let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+
+    // Bob connects on TWO devices simultaneously.
+    let bob_d1_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 21).await;
+    let bob_d2_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 22).await;
+    let mut bob_d1_ws = connect_ws(&base, &bob_d1_ticket).await;
+    let mut bob_d2_ws = connect_ws(&base, &bob_d2_ticket).await;
+
+    // Charlie connects on TWO devices simultaneously.
+    let charlie_d1_ticket =
+        common::get_ws_ticket_for_device(&client, &base, &charlie_token, 31).await;
+    let charlie_d2_ticket =
+        common::get_ws_ticket_for_device(&client, &base, &charlie_token, 32).await;
+    let mut charlie_d1_ws = connect_ws(&base, &charlie_d1_ticket).await;
+    let mut charlie_d2_ws = connect_ws(&base, &charlie_d2_ticket).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    drain_pending(&mut alice_ws).await;
+    drain_pending(&mut bob_d1_ws).await;
+    drain_pending(&mut bob_d2_ws).await;
+    drain_pending(&mut charlie_d1_ws).await;
+    drain_pending(&mut charlie_d2_ws).await;
+
+    // Distinct per-device ciphertexts for all four recipient device slots.
+    let bob_d1_ct = "BOB_D1_CT_GROUP";
+    let bob_d2_ct = "BOB_D2_CT_GROUP";
+    let charlie_d1_ct = "CHARLIE_D1_CT_GROUP";
+    let charlie_d2_ct = "CHARLIE_D2_CT_GROUP";
+    let canonical = "CANONICAL_GROUP";
+
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "conversation_id": group_id,
+        "content": canonical,
+        "recipient_device_contents": {
+            bob_id.to_string(): {
+                "21": bob_d1_ct,
+                "22": bob_d2_ct,
+            },
+            charlie_id.to_string(): {
+                "31": charlie_d1_ct,
+                "32": charlie_d2_ct,
+            },
+        },
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("Alice group send failed");
+
+    // Alice gets the message_sent ack.
+    let ack_text = read_text_skipping_presence(&mut alice_ws).await;
+    let ack: Value = serde_json::from_str(&ack_text).unwrap();
+    assert_eq!(ack["type"], "message_sent");
+
+    // Bob — both devices must receive new_message with their own ciphertext.
+    let bob1_text = read_text_skipping_presence(&mut bob_d1_ws).await;
+    let bob1: Value = serde_json::from_str(&bob1_text).unwrap();
+    assert_eq!(
+        bob1["type"], "new_message",
+        "bob device 1 should get new_message"
+    );
+    assert_eq!(
+        bob1["content"], bob_d1_ct,
+        "bob device 1 must receive its own ciphertext"
+    );
+
+    let bob2_text = read_text_skipping_presence(&mut bob_d2_ws).await;
+    let bob2: Value = serde_json::from_str(&bob2_text).unwrap();
+    assert_eq!(
+        bob2["type"], "new_message",
+        "bob device 2 should get new_message"
+    );
+    assert_eq!(
+        bob2["content"], bob_d2_ct,
+        "bob device 2 must receive its own ciphertext"
+    );
+
+    // Charlie — both devices must receive new_message with their own ciphertext.
+    let charlie1_text = read_text_skipping_presence(&mut charlie_d1_ws).await;
+    let charlie1: Value = serde_json::from_str(&charlie1_text).unwrap();
+    assert_eq!(
+        charlie1["type"], "new_message",
+        "charlie device 1 should get new_message"
+    );
+    assert_eq!(
+        charlie1["content"], charlie_d1_ct,
+        "charlie device 1 must receive its own ciphertext"
+    );
+
+    let charlie2_text = read_text_skipping_presence(&mut charlie_d2_ws).await;
+    let charlie2: Value = serde_json::from_str(&charlie2_text).unwrap();
+    assert_eq!(
+        charlie2["type"], "new_message",
+        "charlie device 2 should get new_message"
+    );
+    assert_eq!(
+        charlie2["content"], charlie_d2_ct,
+        "charlie device 2 must receive its own ciphertext"
+    );
+
+    // All four ciphertexts must be distinct — guards against any regression
+    // that broadcasts a single ciphertext to multiple devices or members.
+    assert_ne!(bob1["content"], bob2["content"]);
+    assert_ne!(charlie1["content"], charlie2["content"]);
+    assert_ne!(bob1["content"], charlie1["content"]);
+    assert_ne!(bob1["content"], charlie2["content"]);
+
+    let _ = alice_ws.close(None).await;
+    let _ = bob_d1_ws.close(None).await;
+    let _ = bob_d2_ws.close(None).await;
+    let _ = charlie_d1_ws.close(None).await;
+    let _ = charlie_d2_ws.close(None).await;
+}
+
 // ---------------------------------------------------------------------------
 // #455 / #591 — server-side ciphertext-shape gate on encrypted conversations
 // ---------------------------------------------------------------------------
