@@ -268,6 +268,38 @@ void main() {
       expect(after, equals(firstLabel));
     });
 
+    testWidgets(
+      'peer message arrival is discoverable via find.bySemanticsLabel (#630)',
+      (tester) async {
+        final holder = _NotifierHolder();
+        final initial = ChatState(
+          messagesByConversation: {
+            'conv-dm': [_peerMsg('m1', content: 'first')],
+          },
+        );
+
+        await tester.pumpApp(
+          ChatPanel(conversation: _conv),
+          overrides: _overrides(initial: initial, holder: holder),
+        );
+        await tester.pump();
+
+        holder.notifier!.setMessages('conv-dm', [
+          _peerMsg('m1', content: 'first'),
+          _peerMsg('m2', content: 'hello stable region'),
+        ]);
+        await tester.pump();
+
+        // The Semantics liveRegion is mounted at a stable index in the
+        // outer Stack, so screen readers (and find.bySemanticsLabel) can
+        // discover the announcement label directly.
+        expect(
+          find.bySemanticsLabel('New message from alice: hello stable region'),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('initial history load (prevCount==0) does NOT announce', (
       tester,
     ) async {

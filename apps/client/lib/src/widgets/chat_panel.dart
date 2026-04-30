@@ -2304,6 +2304,16 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           : BoxDecoration(color: context.chatBg),
       child: Stack(
         children: [
+          // Hidden live region for screen-reader announcements when peer
+          // messages arrive (#495 / #630). Mounted as the first child of
+          // the outer Stack so it lives at a stable index in the build
+          // tree — Flutter won't recreate the Semantics node when the
+          // floating-date pill or new-messages-below pill toggle.
+          Semantics(
+            liveRegion: true,
+            label: _liveRegionAnnouncement,
+            child: const SizedBox.shrink(),
+          ),
           Column(
             children: [
               ChatHeaderBar(
@@ -2375,15 +2385,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                       ),
                       if (_floatingDate != null) _buildFloatingDatePill(),
                       if (_hasNewMessagesBelow) _buildNewMessagesPill(),
-                      // Hidden live region for screen-reader announcements
-                      // when peer messages arrive (#495). Renders zero-size
-                      // and is updated via setState in the chatProvider
-                      // listener inside _setupAutoScroll.
-                      Semantics(
-                        liveRegion: true,
-                        label: _liveRegionAnnouncement,
-                        child: const SizedBox.shrink(),
-                      ),
+                      // Live region moved to the outer Stack so its index
+                      // in the tree is stable across pill toggles (#630).
                     ],
                   ),
                 ),
