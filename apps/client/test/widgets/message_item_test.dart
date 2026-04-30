@@ -661,5 +661,89 @@ void main() {
         expect(find.text('carol'), findsAtLeast(1));
       });
     });
+
+    // -------------------------------------------------------------------
+    // #582 — encrypted-conversation edit affordance gating
+    // -------------------------------------------------------------------
+
+    testWidgets(
+      'mobile action sheet shows Edit when onEdit is provided (unencrypted conv)',
+      (tester) async {
+        // Force mobile viewport so MessageItem opens the bottom-sheet path.
+        tester.view.physicalSize = const Size(400, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await mockNetworkImagesFor(() async {
+          final msg = _makeMessage(isMine: true, fromUserId: 'test-user-id');
+          await tester.pumpApp(
+            MessageItem(
+              message: msg,
+              showHeader: false,
+              isLastInGroup: true,
+              myUserId: 'test-user-id',
+              onEdit: (_) {},
+              onDelete: (_) {},
+            ),
+          );
+          await tester.pump();
+
+          // Long press triggers _showMobileActionSheet on mobile widths.
+          await tester.longPress(find.text('Hello world'));
+          await tester.pumpAndSettle();
+
+          expect(
+            find.text('Edit'),
+            findsOneWidget,
+            reason: 'Edit must appear when the parent passes onEdit',
+          );
+        });
+      },
+    );
+
+    testWidgets(
+      'mobile action sheet hides Edit when onEdit is null (encrypted conv gating, #582)',
+      (tester) async {
+        tester.view.physicalSize = const Size(400, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await mockNetworkImagesFor(() async {
+          final msg = _makeMessage(
+            isMine: true,
+            fromUserId: 'test-user-id',
+            isEncrypted: true,
+          );
+          await tester.pumpApp(
+            MessageItem(
+              message: msg,
+              showHeader: false,
+              isLastInGroup: true,
+              myUserId: 'test-user-id',
+              // ChatPanel passes onEdit: null on encrypted conversations
+              // (#582). The action sheet must hide the Edit entry to
+              // prevent user-initiated edits that the server would reject
+              // with 409 -- and that, pre-fix, would have leaked plaintext.
+              onEdit: null,
+              onDelete: (_) {},
+            ),
+          );
+          await tester.pump();
+
+          await tester.longPress(find.text('Hello world'));
+          await tester.pumpAndSettle();
+
+          expect(
+            find.text('Edit'),
+            findsNothing,
+            reason:
+                'Edit must NOT appear on encrypted conversations (#582). '
+                'Editing would broadcast plaintext to every member.',
+          );
+        });
+      },
+    );
   });
 }

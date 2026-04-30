@@ -307,6 +307,11 @@ class MediaContentState extends State<MediaContent> {
       barrierDismissible: true,
       barrierColor: Colors.black.withValues(alpha: 0.9),
       builder: (dialogContext) {
+        // Decode at most the screen-sized resolution so the image cache
+        // doesn't hold a 4K JPEG in RAM for a 1920px viewport (#639).
+        final dpr = MediaQuery.devicePixelRatioOf(dialogContext);
+        final viewerCacheWidth = (MediaQuery.sizeOf(dialogContext).width * dpr)
+            .round();
         return Stack(
           children: [
             // Dismiss layer — tapping black region closes the viewer.
@@ -334,11 +339,18 @@ class MediaContentState extends State<MediaContent> {
                     behavior: HitTestBehavior.opaque,
                     child: imageUrl.endsWith('.gif')
                         ? Image(
-                            image: CachedNetworkImageProvider(
-                              imageUrl,
-                              cacheKey: stableMediaCacheKey(imageUrl),
-                              cacheManager: chatMediaCacheManager,
-                              headers: headers,
+                            // ResizeImage caps decode resolution to the
+                            // viewport (#639) — cheaper than holding a
+                            // 4K GIF in RAM for a 1920px viewer.
+                            image: ResizeImage(
+                              CachedNetworkImageProvider(
+                                imageUrl,
+                                cacheKey: stableMediaCacheKey(imageUrl),
+                                cacheManager: chatMediaCacheManager,
+                                headers: headers,
+                              ),
+                              width: viewerCacheWidth,
+                              policy: ResizeImagePolicy.fit,
                             ),
                             fit: BoxFit.contain,
                             gaplessPlayback: true,
@@ -356,6 +368,8 @@ class MediaContentState extends State<MediaContent> {
                             cacheManager: chatMediaCacheManager,
                             httpHeaders: headers,
                             fit: BoxFit.contain,
+                            // Cap decode resolution to the viewport (#639).
+                            memCacheWidth: viewerCacheWidth,
                             placeholder: (_, _) => const SizedBox(
                               width: 320,
                               height: 240,
@@ -441,12 +455,20 @@ class MediaContentState extends State<MediaContent> {
                             // Route GIF playback through the disk cache so
                             // switching conversations doesn't re-fetch the
                             // animation each time (#562).
+                            // Cap decode at 300px * DPR so a 4K GIF
+                            // doesn't get fully decoded for a 300px
+                            // bubble (#639).
+                            final dpr = MediaQuery.devicePixelRatioOf(ctx);
                             return Image(
-                              image: CachedNetworkImageProvider(
-                                fullUrl,
-                                cacheKey: stableMediaCacheKey(rawUrl),
-                                cacheManager: chatMediaCacheManager,
-                                headers: _headers(),
+                              image: ResizeImage(
+                                CachedNetworkImageProvider(
+                                  fullUrl,
+                                  cacheKey: stableMediaCacheKey(rawUrl),
+                                  cacheManager: chatMediaCacheManager,
+                                  headers: _headers(),
+                                ),
+                                width: (300 * dpr).round(),
+                                policy: ResizeImagePolicy.fit,
                               ),
                               width: 300,
                               fit: BoxFit.cover,
@@ -472,6 +494,12 @@ class MediaContentState extends State<MediaContent> {
                         width: 300,
                         fit: BoxFit.cover,
                         httpHeaders: headers,
+                        // Cap decode at 300px * DPR so a 4K JPEG isn't
+                        // held in RAM at full size for a 300px inline
+                        // bubble (#639).
+                        memCacheWidth:
+                            (300 * MediaQuery.devicePixelRatioOf(context))
+                                .round(),
                         imageBuilder: (ctx, imageProvider) {
                           if (!_imageSizeCache.containsKey(fullUrl)) {
                             imageProvider
@@ -779,6 +807,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     // If that endpoint 404s (older upload, ffmpeg missing, etc.), the
     // CachedNetworkImage's errorWidget falls back to the previous solid tile.
     final thumbUrl = '${widget.videoUrl}/thumb';
+    // Inline thumbnail is 170px tall; cap decode height at 170 * DPR so
+    // we don't hold a 4K still-frame in RAM for a thumbnail (#639).
+    final dpr = MediaQuery.devicePixelRatioOf(context);
     final thumb = CachedNetworkImage(
       imageUrl: thumbUrl,
       cacheKey: stableMediaCacheKey(thumbUrl),
@@ -787,6 +818,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       fit: BoxFit.cover,
       width: double.infinity,
       height: 170,
+      memCacheHeight: (170 * dpr).round(),
       placeholder: (_, _) => Container(color: widget.mainBg),
       errorWidget: (_, _, _) => Container(color: widget.mainBg),
     );

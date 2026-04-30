@@ -69,11 +69,16 @@ async fn setup_dm_with_message(
     // Drain presence events
     while let Ok(Some(Ok(_))) = tokio::time::timeout(Duration::from_millis(100), ws.next()).await {}
 
+    let canonical = common::dummy_ciphertext("pin_canonical");
+    let bob_ct = common::dummy_ciphertext("pin_bob");
     let send_msg = serde_json::json!({
         "type": "send_message",
         "to_user_id": _bob_id,
         "conversation_id": conv_id,
-        "content": "Pin me!",
+        "content": canonical,
+        "recipient_device_contents": {
+            _bob_id.to_string(): { "0": bob_ct },
+        },
     });
     ws.send(Message::Text(send_msg.to_string().into()))
         .await

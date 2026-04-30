@@ -535,3 +535,65 @@ pub async fn unban_member(
             .await?;
     Ok(result.rows_affected() > 0)
 }
+
+// ---------------------------------------------------------------------------
+// Group key rotation (#656)
+// ---------------------------------------------------------------------------
+
+/// Returns true when the conversation row has `is_encrypted = true`.
+pub async fn is_encrypted(pool: &PgPool, conversation_id: Uuid) -> Result<bool, sqlx::Error> {
+    let row: Option<(bool,)> =
+        sqlx::query_as("SELECT is_encrypted FROM conversations WHERE id = $1")
+            .bind(conversation_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.map(|(v,)| v).unwrap_or(false))
+}
+
+/// Atomically bump the conversation `key_version` and purge every existing
+/// `group_key_envelopes` row for that conversation. The caller is expected to
+/// then broadcast a `GroupKeyRotationRequested` event so that one of the
+/// remaining members regenerates and re-distributes the AES group key.
+///
+/// Returns the new key_version.
+pub async fn bump_key_version_and_purge_envelopes(
+    pool: &PgPool,
+    conversation_id: Uuid,
+) -> Result<i32, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let row: (i32,) = sqlx::query_as(
+        "UPDATE conversations SET key_version = key_version + 1 \
+         WHERE id = $1 RETURNING key_version",
+    )
+    .bind(conversation_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM group_key_envelopes WHERE conversation_id = $1")
+        .bind(conversation_id)
+        .execute(&mut *tx)
+        .await?;
+
+    // We intentionally leave rows in `group_keys` alone — they only carry the
+    // sentinel "__envelope__" placeholder and the version number, which lets
+    // existing duplicate-version protection (UNIQUE(conversation_id,
+    // key_version)) continue to work for the next rotation upload. Old
+    // envelopes carry the actual ciphertext and are gone.
+
+    tx.commit().await?;
+    Ok(row.0)
+}
+
+/// Get the current key_version for a conversation. Returns None if the row is
+/// missing.
+pub async fn get_key_version(
+    pool: &PgPool,
+    conversation_id: Uuid,
+) -> Result<Option<i32>, sqlx::Error> {
+    let row: Option<(i32,)> = sqlx::query_as("SELECT key_version FROM conversations WHERE id = $1")
+        .bind(conversation_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.map(|(v,)| v))
+}

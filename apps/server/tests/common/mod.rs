@@ -296,6 +296,21 @@ pub async fn create_group(client: &Client, base: &str, token: &str, name: &str) 
 }
 
 // ---------------------------------------------------------------------------
+// Ciphertext helpers
+// ---------------------------------------------------------------------------
+
+/// Build a base64-encoded payload that is shaped like an Echo wire frame
+/// so it passes the server's ciphertext-shape gate (#591). The bytes are
+/// not a real session frame — they only carry the magic prefix the server
+/// validates. The optional `tag` is appended verbatim so different test
+/// cases can distinguish payloads (e.g. "alice", "bob_d11") in assertions.
+pub fn dummy_ciphertext(tag: &str) -> String {
+    let mut bytes = vec![0xEC, 0x01];
+    bytes.extend_from_slice(tag.as_bytes());
+    BASE64.encode(&bytes)
+}
+
+// ---------------------------------------------------------------------------
 // PreKey bundle helpers
 // ---------------------------------------------------------------------------
 

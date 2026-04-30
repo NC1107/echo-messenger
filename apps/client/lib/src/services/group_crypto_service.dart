@@ -241,6 +241,111 @@ class GroupCryptoService {
     }
   }
 
+  /// Fetch the current group members from the server and rotate the AES
+  /// group key on their behalf (#656).
+  ///
+  /// Used by the WS event handler when the server signals
+  /// `group_key_rotation_requested` — typically right after another member is
+  /// kicked, leaves, or is banned. We:
+  ///
+  /// 1. Drop our cached/persisted material for the old version (so we cannot
+  ///    accidentally encrypt with the now-revoked key).
+  /// 2. Pull the live member roster from `/api/groups/{id}` and resolve each
+  ///    member's identity public key.
+  /// 3. Generate a fresh 256-bit AES key, wrap it for each remaining member,
+  ///    and POST the envelopes back at `keyVersion`.
+  ///
+  /// Race semantics: any number of members may attempt rotation in parallel.
+  /// The server enforces `(conversation_id, key_version)` UNIQUE on
+  /// `group_keys`, so only the first writer wins (201). Losers receive 409
+  /// and short-circuit by simply dropping their candidate key — they will
+  /// fetch the winning envelope on their next `getGroupKey` call.
+  ///
+  /// TODO(#658): leader election + recovery from partial rotations.
+  /// Today this is "first writer wins" with no liveness guarantee — if every
+  /// online member crashes mid-rotation the group is wedged until someone
+  /// retries.
+  Future<int?> performRotation(
+    String conversationId,
+    int keyVersion, {
+    required Future<List<Map<String, dynamic>>> Function() fetchMembers,
+    required Future<Uint8List?> Function(String userId) fetchIdentityKey,
+  }) async {
+    // Drop the stale key first so we never encrypt with the now-revoked
+    // material on the next outgoing message — even if we cannot finish the
+    // rotation right now (no CryptoService wired yet, or no envelopes
+    // built), we must NOT keep the old key around. A stale-cache leak is a
+    // correctness bug; a missing envelope is just a refetch.
+    await _purgeKey(conversationId);
+
+    if (_cryptoService == null) {
+      debugPrint('[GroupCrypto] performRotation: no CryptoService set');
+      return null;
+    }
+
+    final members = await fetchMembers();
+    final newKeyBytes = Uint8List.fromList(base64Decode(generateGroupKey()));
+    final newKeyB64 = base64Encode(newKeyBytes);
+
+    final envelopes = <Map<String, dynamic>>[];
+    for (final m in members) {
+      final userId = m['user_id'] as String?;
+      if (userId == null || userId.isEmpty) continue;
+      final identityKey = await fetchIdentityKey(userId);
+      if (identityKey == null) {
+        debugPrint(
+          '[GroupCrypto] performRotation: missing identity key for $userId',
+        );
+        continue;
+      }
+      final wrapped = await _cryptoService!.encryptForUser(
+        newKeyBytes,
+        identityKey,
+      );
+      envelopes.add({'user_id': userId, 'encrypted_key': wrapped});
+    }
+
+    if (envelopes.isEmpty) {
+      debugPrint('[GroupCrypto] performRotation: no envelopes built');
+      return null;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('$serverUrl/api/groups/$conversationId/keys'),
+        headers: {
+          'Authorization': 'Bearer $_token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'key_version': keyVersion, 'envelopes': envelopes}),
+      );
+
+      if (response.statusCode == 409) {
+        // Another member raced us and won. Drop our candidate key — the
+        // server-broadcast `group_key_rotated` event will trigger a refetch.
+        debugPrint(
+          '[GroupCrypto] performRotation: lost race (409); '
+          'will fetch winning envelope',
+        );
+        return null;
+      }
+
+      if (response.statusCode != 201) {
+        debugPrint(
+          '[GroupCrypto] performRotation upload failed: '
+          '${response.statusCode} ${response.body}',
+        );
+        return null;
+      }
+
+      await _cacheKey(conversationId, keyVersion, newKeyB64);
+      return keyVersion;
+    } catch (e) {
+      debugPrint('[GroupCrypto] performRotation error: $e');
+      return null;
+    }
+  }
+
   /// Generate a new group key and upload per-member encrypted envelopes.
   ///
   /// For each group member, the raw AES key is encrypted using their identity
@@ -350,5 +455,20 @@ class GroupCryptoService {
 
     final store = SecureKeyStore.instance;
     await store.write('group_key_${conversationId}_$version', keyBase64);
+  }
+
+  /// Drop every cached/persisted key for [conversationId] across all
+  /// versions. Used during rotation (#656) so a kicked member who still has
+  /// the old key cannot inject ciphertext we would encrypt for them.
+  Future<void> _purgeKey(String conversationId) async {
+    _keyCache.remove(conversationId);
+    final store = SecureKeyStore.instance;
+    final allEntries = await store.readAll();
+    final prefix = 'group_key_${conversationId}_';
+    for (final key in allEntries.keys) {
+      if (key.startsWith(prefix)) {
+        await store.delete(key);
+      }
+    }
   }
 }

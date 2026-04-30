@@ -93,6 +93,19 @@ class _IdentityKeyChangedBannerState
     }
   }
 
+  /// Explicitly trust the peer's new identity key. Drops the old session
+  /// and clears the change flag so the next outbound message X3DH's
+  /// against the freshly-trusted key.
+  Future<void> _trustNewKey() async {
+    if (_peerUserId == null) return;
+    await ref
+        .read(cryptoProvider.notifier)
+        .acceptIdentityKeyChange(_peerUserId!);
+    if (mounted) {
+      setState(() => _changed = false);
+    }
+  }
+
   void _viewSafetyNumber() {
     if (_peerUserId == null) return;
     final myName = ref.read(authProvider).username ?? 'You';
@@ -162,6 +175,36 @@ class _IdentityKeyChangedBannerState
                           ),
                           child: Text(
                             'Verify',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: EchoTheme.warning,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Semantics(
+                      label: 'trust new identity key',
+                      button: true,
+                      child: GestureDetector(
+                        onTap: _trustNewKey,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: EchoTheme.warning.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: EchoTheme.warning.withValues(alpha: 0.6),
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            'Trust new key',
                             style: TextStyle(
                               fontSize: 11,
                               color: EchoTheme.warning,

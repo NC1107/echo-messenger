@@ -100,13 +100,19 @@ class MessageCache {
   ) async {
     final box = _box;
     if (box == null) return;
+    // Build the entries map in one pass so we can flush them all with a
+    // single Hive transaction — N awaited puts caused #636. Same skip
+    // filters and same key/value shape as the previous loop.
+    final entries = <String, Map<dynamic, dynamic>>{};
     for (final msg in messages) {
       if (msg.id.startsWith('pending_')) continue;
       // Skip failure sentinels -- caching these would permanently replace the
       // real ciphertext and block future retries.
       if (_failureSentinels.contains(msg.content)) continue;
-      await box.put('$conversationId:${msg.id}', msg.toJson());
+      entries['$conversationId:${msg.id}'] = msg.toJson();
     }
+    if (entries.isEmpty) return;
+    await box.putAll(entries);
   }
 
   static List<ChatMessage> getCachedMessages(

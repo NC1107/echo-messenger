@@ -339,6 +339,27 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
     final crypto = ref.read(cryptoServiceProvider);
     await crypto.acknowledgePeerIdentityKeyChange(peerUserId);
   }
+
+  /// Explicitly trust the peer's new identity key, drop the old session,
+  /// and clear the change flag. The next outbound message will trigger a
+  /// fresh X3DH against the trusted key.
+  Future<void> acceptIdentityKeyChange(
+    String peerUserId, {
+    String? newIdentityKeyB64,
+  }) async {
+    final crypto = ref.read(cryptoServiceProvider);
+    await crypto.acceptIdentityKeyChange(
+      peerUserId,
+      newIdentityKeyB64: newIdentityKeyB64,
+    );
+  }
+
+  /// Compute the safety-number fingerprint for [peerUserId], or `null`
+  /// if either identity key is unavailable.
+  Future<String?> safetyNumberFor(String peerUserId) async {
+    final crypto = ref.read(cryptoServiceProvider);
+    return crypto.safetyNumberFor(peerUserId);
+  }
 }
 
 final cryptoProvider = StateNotifierProvider<CryptoNotifier, CryptoState>((

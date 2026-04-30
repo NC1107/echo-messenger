@@ -16,8 +16,8 @@ pub mod ws;
 
 use axum::Json;
 use axum::Router;
-use axum::extract::DefaultBodyLimit;
-use axum::http::{HeaderValue, Method, header};
+use axum::extract::{DefaultBodyLimit, State};
+use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, patch, post, put};
@@ -303,6 +303,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/api/link-preview",
             post(link_preview::fetch_preview).layer(middleware::from_fn(link_preview_limit)),
         )
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
         .route("/api/health", get(health))
         .route("/api/config/ice", get(ice_config))
         .route("/ws", get(ws::ws_upgrade))
@@ -337,6 +339,35 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             ),
         ))
         .with_state(state)
+}
+
+/// Liveness probe -- no auth, no DB. Returns 200 immediately if the process is alive.
+pub async fn healthz() -> impl IntoResponse {
+    Json(serde_json::json!({ "status": "ok" }))
+}
+
+/// Readiness probe -- no auth, probes DB with a 2-second timeout.
+/// Returns 200 on success, 503 on failure.
+pub async fn readyz(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    use tokio::time::{Duration, timeout};
+
+    let result = timeout(
+        Duration::from_secs(2),
+        sqlx::query("SELECT 1").fetch_one(&state.pool),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(_)) => (StatusCode::OK, Json(serde_json::json!({ "status": "ok" }))),
+        Ok(Err(e)) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "status": "not_ready", "reason": e.to_string() })),
+        ),
+        Err(_) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "status": "not_ready", "reason": "db timeout" })),
+        ),
+    }
 }
 
 pub async fn health() -> impl IntoResponse {

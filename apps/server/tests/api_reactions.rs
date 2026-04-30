@@ -67,12 +67,18 @@ async fn setup_dm_with_message(base: &str) -> (Client, String, String, String, S
     // once there are no more pending messages.
     while let Ok(Some(Ok(_))) = tokio::time::timeout(Duration::from_millis(100), ws.next()).await {}
 
+    let canonical = common::dummy_ciphertext("react_canonical");
+    let bob_ct = common::dummy_ciphertext("react_bob");
     ws.send(Message::Text(
         serde_json::json!({
             "type": "send_message",
             "to_user_id": bob_id,
             "conversation_id": conv_id,
-            "content": "React to me!",
+            "content": canonical.clone(),
+            "recipient_device_contents": {
+                bob_id.to_string(): { "0": bob_ct },
+                alice_id.to_string(): { "0": canonical },
+            },
         })
         .to_string()
         .into(),
