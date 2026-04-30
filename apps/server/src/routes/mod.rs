@@ -90,24 +90,23 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
             .allow_credentials(true)
     };
 
+    let proxies = Arc::new(trusted_proxies);
     let login_limit =
-        rate_limit::make_rate_limit_layer(rate_limit::login_limiter(trusted_proxies.clone()));
+        rate_limit::make_rate_limit_layer(rate_limit::login_limiter(Arc::clone(&proxies)));
     let register_limit =
-        rate_limit::make_rate_limit_layer(rate_limit::register_limiter(trusted_proxies.clone()));
+        rate_limit::make_rate_limit_layer(rate_limit::register_limiter(Arc::clone(&proxies)));
     let refresh_limit =
-        rate_limit::make_rate_limit_layer(rate_limit::refresh_limiter(trusted_proxies.clone()));
+        rate_limit::make_rate_limit_layer(rate_limit::refresh_limiter(Arc::clone(&proxies)));
     let ticket_limit =
-        rate_limit::make_rate_limit_layer(rate_limit::ticket_limiter(trusted_proxies.clone()));
-    let media_upload_limit = rate_limit::make_rate_limit_layer(rate_limit::media_upload_limiter(
-        trusted_proxies.clone(),
-    ));
-    let link_preview_limit = rate_limit::make_rate_limit_layer(rate_limit::link_preview_limiter(
-        trusted_proxies.clone(),
-    ));
+        rate_limit::make_rate_limit_layer(rate_limit::ticket_limiter(Arc::clone(&proxies)));
+    let media_upload_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::media_upload_limiter(Arc::clone(&proxies)));
+    let link_preview_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::link_preview_limiter(Arc::clone(&proxies)));
     let key_reset_limit =
-        rate_limit::make_rate_limit_layer(rate_limit::key_reset_limiter(trusted_proxies.clone()));
+        rate_limit::make_rate_limit_layer(rate_limit::key_reset_limiter(Arc::clone(&proxies)));
     let revoke_others_limit =
-        rate_limit::make_rate_limit_layer(rate_limit::revoke_others_limiter(trusted_proxies));
+        rate_limit::make_rate_limit_layer(rate_limit::revoke_others_limiter(proxies));
 
     let auth_routes = Router::new()
         .route(
