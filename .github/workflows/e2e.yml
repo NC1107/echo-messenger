@@ -35,7 +35,7 @@ jobs:
   e2e:
     name: End-to-End Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     services:
       postgres:
         image: postgres:17
@@ -107,9 +107,40 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Run E2E tests
+      - name: Validate spec coverage
         working-directory: tests/e2e
-        run: npx playwright test ./local_full.spec.ts
+        # Every *.spec.ts file must be listed in exactly one project inside
+        # playwright.config.ts.  This step fails CI if a new spec is added
+        # without being assigned to the smoke or maintained lane.
+        run: |
+          missing=()
+          for spec in $(find . -maxdepth 1 -name '*.spec.ts' | sed 's|^\./||' | sort); do
+            if ! grep -qE "(['\"])${spec}\1" playwright.config.ts; then
+              missing+=("$spec")
+            fi
+          done
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "ERROR: the following spec files are not assigned to any lane in playwright.config.ts:"
+            printf '  %s\n' "${missing[@]}"
+            exit 1
+          fi
+          echo "All spec files are covered by a lane."
+
+      - name: Run smoke tests
+        # Smoke lane: local_full.spec.ts exercises the full feature surface
+        # in a single end-to-end flow.  Documented as smoke coverage only.
+        working-directory: tests/e2e
+        run: npx playwright test --project=smoke
+        env:
+          DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
+          JWT_SECRET: ci-e2e-secret-do-not-use-in-production
+
+      - name: Run maintained E2E suite
+        # Maintained lane: targeted UI and protocol specs (semantics_e2e,
+        # group_create_ui, group_messaging_ui, hover_then_type, crypto_dm_test).
+        # These run on every PR and push to give per-feature regression signal.
+        working-directory: tests/e2e
+        run: npx playwright test --project=maintained
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
           JWT_SECRET: ci-e2e-secret-do-not-use-in-production
