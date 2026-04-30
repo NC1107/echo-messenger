@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::db;
-use crate::error::AppError;
+use crate::error::{AppError, DbErrCtx};
 
 use super::AppState;
 
@@ -77,10 +77,7 @@ pub async fn get_my_privacy(
 ) -> Result<impl IntoResponse, AppError> {
     let privacy = db::users::get_privacy_preferences(&state.pool, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in get_my_privacy: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("get_my_privacy")?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
     Ok(Json(PrivacyPreferencesResponse {
@@ -102,10 +99,7 @@ pub async fn update_my_privacy(
 ) -> Result<impl IntoResponse, AppError> {
     let current = db::users::get_privacy_preferences(&state.pool, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in update_my_privacy/get_current: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("update_my_privacy/get_current")?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
     let prefs = db::users::PrivacyUpdate {
@@ -151,10 +145,7 @@ pub async fn get_profile(
 ) -> Result<impl IntoResponse, AppError> {
     let profile = db::users::find_public_profile(&state.pool, user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in get_profile: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("get_profile")?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
     Ok(Json(UserProfile {
@@ -268,10 +259,7 @@ pub async fn update_profile(
     };
     let profile = db::users::update_profile(&state.pool, auth.user_id, &fields)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in update_profile: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("update_profile")?;
 
     Ok(Json(UserProfile {
         user_id: profile.id,
@@ -310,10 +298,7 @@ pub async fn update_presence_status(
 
     db::users::update_presence_status(&state.pool, auth.user_id, &body.status)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in update_presence_status: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("update_presence_status")?;
 
     // Broadcast to contacts.  Invisible users appear offline to others.
     let broadcast_status = if body.status == "invisible" {
@@ -509,10 +494,7 @@ pub async fn online_users(
 ) -> Result<impl IntoResponse, AppError> {
     let contact_ids = db::contacts::list_contact_user_ids(&state.pool, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in online_users/list_contacts: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("online_users/list_contacts")?;
     let all_online = state.hub.get_online_user_ids();
     let online_contacts: Vec<_> = all_online
         .into_iter()
@@ -538,10 +520,7 @@ pub async fn search_users(
 
     let results = db::users::search_users(&state.pool, query, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in search_users: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("search_users")?;
 
     let users: Vec<_> = results
         .into_iter()
@@ -591,10 +570,7 @@ pub async fn resolve_username_invite(
 
     let resolved = db::users::resolve_username_invite(&state.pool, auth.user_id, candidate)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in resolve_username_invite: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("resolve_username_invite")?
         .ok_or_else(|| AppError::not_found("User not found"))?;
 
     let discoverable = resolved.searchable
@@ -792,9 +768,6 @@ pub async fn update_status_text(
     }
     db::users::update_status_text(&state.pool, auth.user_id, text)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in update_status_text: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("update_status_text")?;
     Ok(StatusCode::NO_CONTENT)
 }

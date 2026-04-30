@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::auth::{jwt, middleware::AuthUser};
 use crate::db;
-use crate::error::AppError;
+use crate::error::{AppError, DbErrCtx};
 
 use super::AppState;
 
@@ -195,10 +195,7 @@ pub async fn upload(
             // Verify the uploader is a member of this conversation
             let is_member = db::groups::is_member(&state.pool, cid, auth.user_id)
                 .await
-                .map_err(|e| {
-                    tracing::error!("DB error in upload_media/is_member: {e:?}");
-                    AppError::internal("Database error")
-                })?;
+                .db_ctx("upload_media/is_member")?;
             if !is_member {
                 return Err(AppError {
                     status: StatusCode::FORBIDDEN,

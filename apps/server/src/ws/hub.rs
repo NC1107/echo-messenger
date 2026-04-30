@@ -88,6 +88,19 @@ impl Hub {
             .collect()
     }
 
+    /// Number of devices currently registered for `user_id`.  Used by the
+    /// presence broadcaster (#436) to gate `online`/`offline` events on
+    /// first-device-up / last-device-down so a user with three devices
+    /// reconnecting after a flaky network blip doesn't make contacts see
+    /// online/offline/online/offline per device.
+    pub fn device_count(&self, user_id: &Uuid) -> usize {
+        self.inner
+            .connections
+            .get(user_id)
+            .map(|devices| devices.len())
+            .unwrap_or(0)
+    }
+
     /// Send a message to ALL connected devices of a user.
     /// Returns true if at least one device's outbound queue accepted the
     /// message. Full/closed queues are logged separately so beta-test

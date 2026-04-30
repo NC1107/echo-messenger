@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::db;
-use crate::error::AppError;
+use crate::error::{AppError, DbErrCtx};
 use crate::types::Role;
 
 use super::AppState;
@@ -91,10 +91,7 @@ pub async fn upload_group_key(
     // Verify membership and role
     let role_str = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in upload_group_key/get_role: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("upload_group_key/get_role")?
         .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
     let role = Role::from_str_opt(&role_str).unwrap_or(Role::Member);
@@ -137,10 +134,7 @@ pub async fn upload_group_key(
     // the conversation was left with a key_version row but only some members
     // had envelopes, and those without one could not decrypt anything until
     // the next rotation.
-    let mut tx = state.pool.begin().await.map_err(|e| {
-        tracing::error!("DB error in upload_group_key/begin: {e:?}");
-        AppError::internal("Database error")
-    })?;
+    let mut tx = state.pool.begin().await.db_ctx("upload_group_key/begin")?;
 
     // Audit #686: every envelope.user_id must be a current group member.
     // Without this, a hostile admin can stage envelopes for arbitrary users
@@ -151,10 +145,7 @@ pub async fn upload_group_key(
     let member_ids: std::collections::HashSet<Uuid> =
         db::groups::get_conversation_member_ids(&mut *tx, group_id)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in upload_group_key/members: {e:?}");
-                AppError::internal("Database error")
-            })?
+            .db_ctx("upload_group_key/members")?
             .into_iter()
             .collect();
 
@@ -206,10 +197,7 @@ pub async fn upload_group_key(
         })?;
     }
 
-    tx.commit().await.map_err(|e| {
-        tracing::error!("DB error in upload_group_key/commit: {e:?}");
-        AppError::internal("Database error")
-    })?;
+    tx.commit().await.db_ctx("upload_group_key/commit")?;
 
     // Broadcast key_rotated event to all group members
     let member_ids = db::groups::get_conversation_member_ids(&state.pool, group_id)
@@ -247,10 +235,7 @@ pub async fn get_latest_group_key(
 ) -> Result<impl IntoResponse, AppError> {
     let is_member = db::groups::is_member(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in get_latest_group_key/is_member: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("get_latest_group_key/is_member")?;
 
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this group"));
@@ -259,10 +244,7 @@ pub async fn get_latest_group_key(
     // Try envelope-based lookup first (new E2E scheme)
     let envelope = db::keys::get_my_group_key_envelope(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in get_latest_group_key/envelope: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("get_latest_group_key/envelope")?;
 
     if let Some(env) = envelope {
         return Ok(Json(GroupKeyEnvelopeResponse::from_row(env)).into_response());
@@ -271,10 +253,7 @@ pub async fn get_latest_group_key(
     // Fallback: legacy group_keys table (for groups that haven't rotated yet)
     let row = db::keys::get_latest_group_key(&state.pool, group_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in get_latest_group_key/fetch: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("get_latest_group_key/fetch")?
         .ok_or_else(|| AppError::bad_request("No group key found for this conversation"))?;
 
     Ok(Json(GroupKeyResponse::from_row(row)).into_response())
@@ -291,10 +270,7 @@ pub async fn get_group_key_version(
 ) -> Result<impl IntoResponse, AppError> {
     let is_member = db::groups::is_member(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in get_group_key_version/is_member: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("get_group_key_version/is_member")?;
 
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this group"));
@@ -304,10 +280,7 @@ pub async fn get_group_key_version(
     let envelope =
         db::keys::get_my_group_key_envelope_version(&state.pool, group_id, auth.user_id, version)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in get_group_key_version/envelope: {e:?}");
-                AppError::internal("Database error")
-            })?;
+            .db_ctx("get_group_key_version/envelope")?;
 
     if let Some(env) = envelope {
         return Ok(Json(GroupKeyEnvelopeResponse::from_row(env)).into_response());
@@ -316,10 +289,7 @@ pub async fn get_group_key_version(
     // Fallback: legacy group_keys table
     let row = db::keys::get_group_key(&state.pool, group_id, version)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in get_group_key_version/fetch: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("get_group_key_version/fetch")?
         .ok_or_else(|| AppError::bad_request("Group key version not found"))?;
 
     Ok(Json(GroupKeyResponse::from_row(row)).into_response())

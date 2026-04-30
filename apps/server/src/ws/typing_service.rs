@@ -104,6 +104,48 @@ pub fn invalidate_member_cache(conversation_id: Uuid) {
     MEMBERSHIP_CACHE.retain(|(_, conv_id), _| *conv_id != conversation_id);
 }
 
+/// Periodic sweep that drops cache entries older than 2× their TTL across
+/// all three caches.  Called from the cleanup scheduler in main.rs every
+/// 5 minutes (audit #692).  Without this, entries never expire on a busy
+/// server -- after 24h a `MEMBERSHIP_CACHE` for a public group with 1k
+/// members and 100 typers can hold 100k stale `(user_id, conversation_id)`
+/// pairs that no live read path will ever revisit.
+pub fn sweep_expired_caches() {
+    let cutoff = MEMBERSHIP_CACHE_TTL * 2;
+    let mut membership_evicted = 0usize;
+    MEMBERSHIP_CACHE.retain(|_, last_seen| {
+        let keep = last_seen.elapsed() < cutoff;
+        if !keep {
+            membership_evicted += 1;
+        }
+        keep
+    });
+    let mut member_ids_evicted = 0usize;
+    MEMBER_IDS_CACHE.retain(|_, (_, fetched_at)| {
+        let keep = fetched_at.elapsed() < cutoff;
+        if !keep {
+            member_ids_evicted += 1;
+        }
+        keep
+    });
+    let mut kind_evicted = 0usize;
+    CONV_KIND_CACHE.retain(|_, (_, fetched_at)| {
+        let keep = fetched_at.elapsed() < cutoff;
+        if !keep {
+            kind_evicted += 1;
+        }
+        keep
+    });
+    if membership_evicted > 0 || member_ids_evicted > 0 || kind_evicted > 0 {
+        tracing::debug!(
+            membership_evicted,
+            member_ids_evicted,
+            kind_evicted,
+            "ws cache sweep"
+        );
+    }
+}
+
 pub(super) async fn handle_typing(
     state: &AppState,
     sender_id: Uuid,
@@ -193,6 +235,25 @@ pub(super) async fn broadcast_presence(
     username: &str,
     status: &str,
 ) {
+    // Audit #436: gate presence on first-device-up / last-device-down so
+    // a multi-device user reconnecting after a network blip doesn't make
+    // every contact see online/offline/online/offline once per device.
+    // `register` happens before this call (online) and `unregister` happens
+    // before this call (offline), so:
+    //   online:  device_count == 1 -> first device just connected, broadcast
+    //   online:  device_count >  1 -> already had other devices, no-op
+    //   offline: device_count == 0 -> last device just disconnected, broadcast
+    //   offline: device_count >  0 -> still has other devices, no-op
+    let dev_count = state.hub.device_count(&user_id);
+    let should_broadcast = match status {
+        "online" => dev_count == 1,
+        "offline" => dev_count == 0,
+        _ => true, // explicit status changes (away/dnd) always broadcast
+    };
+    if !should_broadcast {
+        return;
+    }
+
     let contact_ids = match db::contacts::list_contact_user_ids(&state.pool, user_id).await {
         Ok(ids) => ids,
         Err(e) => {
@@ -242,7 +303,11 @@ pub(super) async fn broadcast_presence(
         Err(_) => return,
     };
 
+    // Audit #690: build the WsMessage once outside the loop. axum's
+    // Message::Text is backed by bytes::Bytes, so msg.clone() inside the
+    // loop is O(1) reference-count bump rather than a fresh String alloc.
+    let msg = WsMessage::Text(json.into());
     for cid in &contact_ids {
-        state.hub.send_to(cid, WsMessage::Text(json.clone().into()));
+        state.hub.send_to(cid, msg.clone());
     }
 }

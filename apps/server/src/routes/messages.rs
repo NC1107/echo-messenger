@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::db;
-use crate::error::AppError;
+use crate::error::{AppError, DbErrCtx};
 use crate::types::{ConversationKind, Role};
 use crate::ws::typing_service::invalidate_member_cache;
 
@@ -240,10 +240,7 @@ pub async fn get_messages(
     // Verify the user is a member of this conversation
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in get_messages/is_member: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("get_messages/is_member")?;
 
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
@@ -252,10 +249,7 @@ pub async fn get_messages(
     if let Some(channel_id) = params.channel_id {
         let conversation_kind = db::groups::get_conversation_kind(&state.pool, conversation_id)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in get_messages/get_conversation_kind: {e:?}");
-                AppError::internal("Database error")
-            })?
+            .db_ctx("get_messages/get_conversation_kind")?
             .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
 
         if ConversationKind::from_str_opt(&conversation_kind) != Some(ConversationKind::Group) {
@@ -266,10 +260,7 @@ pub async fn get_messages(
 
         let channel = db::channels::get_channel(&state.pool, channel_id)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in get_messages/get_channel: {e:?}");
-                AppError::internal("Database error")
-            })?
+            .db_ctx("get_messages/get_channel")?
             .ok_or_else(|| AppError::bad_request("Channel not found"))?;
 
         if channel.conversation_id != conversation_id {
@@ -296,10 +287,7 @@ pub async fn get_messages(
         params.device_id,
     )
     .await
-    .map_err(|e| {
-        tracing::error!("DB error in get_messages/fetch: {e:?}");
-        AppError::internal("Database error")
-    })?;
+    .db_ctx("get_messages/fetch")?;
 
     // Re-shape the response to expose `from_user_id` / `from_username` /
     // `from_device_id` keys the client expects on history (#557). Doing it
@@ -343,10 +331,7 @@ pub async fn create_dm(
 ) -> Result<impl IntoResponse, AppError> {
     let are_contacts = db::contacts::are_contacts(&state.pool, auth.user_id, req.peer_user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in create_dm/are_contacts: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("create_dm/are_contacts")?;
     if !are_contacts {
         return Err(AppError::bad_request("Not a contact"));
     }
@@ -373,10 +358,7 @@ pub async fn delete_message(
 ) -> Result<impl IntoResponse, AppError> {
     let conversation_id = db::messages::delete_message(&state.pool, message_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in delete_message: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("delete_message")?
         .ok_or_else(|| AppError::bad_request("Message not found or you are not the sender"))?;
 
     // Broadcast to conversation members via WebSocket
@@ -428,10 +410,7 @@ pub async fn edit_message(
     let convo_meta =
         db::messages::get_message_conversation_security(&state.pool, message_id, auth.user_id)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in edit_message/security lookup: {e:?}");
-                AppError::internal("Database error")
-            })?
+            .db_ctx("edit_message/security lookup")?
             .ok_or_else(|| AppError::bad_request("Message not found or you are not the sender"))?;
     if convo_meta.is_encrypted {
         tracing::warn!(
@@ -448,10 +427,7 @@ pub async fn edit_message(
     let (conversation_id, edited_at) =
         db::messages::edit_message(&state.pool, message_id, auth.user_id, &body.content)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in edit_message: {e:?}");
-                AppError::internal("Database error")
-            })?
+            .db_ctx("edit_message")?
             .ok_or_else(|| AppError::bad_request("Message not found or you are not the sender"))?;
 
     // Broadcast to conversation members via WebSocket
@@ -498,10 +474,7 @@ pub async fn get_thread_replies(
             .bind(message_id)
             .fetch_optional(&state.pool)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in get_thread_replies/lookup: {e:?}");
-                AppError::internal("Database error")
-            })?;
+            .db_ctx("get_thread_replies/lookup")?;
 
     let conversation_id = parent
         .map(|(cid,)| cid)
@@ -509,10 +482,7 @@ pub async fn get_thread_replies(
 
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in get_thread_replies/is_member: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("get_thread_replies/is_member")?;
 
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
@@ -523,10 +493,7 @@ pub async fn get_thread_replies(
     // replies (or any future regression) cannot leak content across DMs.
     let replies = db::messages::get_thread_replies(&state.pool, message_id, conversation_id, limit)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in get_thread_replies/fetch: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("get_thread_replies/fetch")?;
 
     Ok(Json(replies))
 }
@@ -554,10 +521,7 @@ pub async fn search_messages(
 ) -> Result<impl IntoResponse, AppError> {
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in search_messages/is_member: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("search_messages/is_member")?;
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
     }
@@ -622,10 +586,7 @@ pub async fn leave_conversation(
     // Owners must transfer ownership before leaving (unless they're the last member)
     let role = db::groups::get_member_role(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in leave_conversation/get_role: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("leave_conversation/get_role")?;
     if role.as_deref().and_then(Role::from_str_opt) == Some(Role::Owner) {
         let members = db::groups::get_conversation_member_ids(&state.pool, conversation_id)
             .await
@@ -681,10 +642,7 @@ pub async fn toggle_mute(
     let updated =
         db::messages::set_mute_status(&state.pool, conversation_id, auth.user_id, body.is_muted)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in toggle_mute: {e:?}");
-                AppError::internal("Database error")
-            })?;
+            .db_ctx("toggle_mute")?;
 
     if !updated {
         return Err(AppError::bad_request("Not a member of this conversation"));
@@ -767,10 +725,7 @@ pub async fn pin_message(
     // Verify membership
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in pin_message/is_member: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("pin_message/is_member")?;
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
     }
@@ -778,19 +733,13 @@ pub async fn pin_message(
     // For groups, only admins/owners can pin
     let kind = db::groups::get_conversation_kind(&state.pool, conversation_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in pin_message/get_kind: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("pin_message/get_kind")?
         .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
 
     if ConversationKind::from_str_opt(&kind) == Some(ConversationKind::Group) {
         let role_str = db::groups::get_member_role(&state.pool, conversation_id, auth.user_id)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in pin_message/get_role: {e:?}");
-                AppError::internal("Database error")
-            })?
+            .db_ctx("pin_message/get_role")?
             .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
         let role = Role::from_str_opt(&role_str).unwrap_or(Role::Member);
@@ -805,10 +754,7 @@ pub async fn pin_message(
     let _conv_id =
         db::messages::pin_message(&state.pool, message_id, auth.user_id, conversation_id)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in pin_message: {e:?}");
-                AppError::internal("Database error")
-            })?
+            .db_ctx("pin_message")?
             .ok_or_else(|| {
                 AppError::bad_request("Message not found or does not belong to this conversation")
             })?;
@@ -816,10 +762,7 @@ pub async fn pin_message(
     // Look up pinner's username for the broadcast event
     let pinner = db::users::find_by_id(&state.pool, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in pin_message/find_user: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("pin_message/find_user")?;
     let pinned_by_username = pinner
         .map(|u| u.username)
         .unwrap_or_else(|| "unknown".to_string());
@@ -861,10 +804,7 @@ pub async fn unpin_message(
     // Verify membership
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in unpin_message/is_member: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("unpin_message/is_member")?;
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
     }
@@ -872,19 +812,13 @@ pub async fn unpin_message(
     // For groups, only admins/owners can unpin
     let kind = db::groups::get_conversation_kind(&state.pool, conversation_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in unpin_message/get_kind: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("unpin_message/get_kind")?
         .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
 
     if ConversationKind::from_str_opt(&kind) == Some(ConversationKind::Group) {
         let role_str = db::groups::get_member_role(&state.pool, conversation_id, auth.user_id)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in unpin_message/get_role: {e:?}");
-                AppError::internal("Database error")
-            })?
+            .db_ctx("unpin_message/get_role")?
             .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
         let role = Role::from_str_opt(&role_str).unwrap_or(Role::Member);
@@ -898,10 +832,7 @@ pub async fn unpin_message(
     // Unpin the message (atomically verified against the correct conversation)
     let _conv_id = db::messages::unpin_message(&state.pool, message_id, conversation_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in unpin_message: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("unpin_message")?
         .ok_or_else(|| {
             AppError::bad_request("Message not found, not pinned, or wrong conversation")
         })?;
@@ -936,20 +867,14 @@ pub async fn get_pinned_messages(
     // Verify membership
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in get_pinned_messages/is_member: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("get_pinned_messages/is_member")?;
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
     }
 
     let pinned = db::messages::get_pinned_messages(&state.pool, conversation_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in get_pinned_messages: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("get_pinned_messages")?;
 
     Ok(Json(pinned))
 }
@@ -965,10 +890,7 @@ pub async fn pin_conversation(
 ) -> Result<impl IntoResponse, AppError> {
     db::users::pin_conversation(&state.pool, auth.user_id, conversation_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in pin_conversation: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("pin_conversation")?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -983,9 +905,6 @@ pub async fn unpin_conversation(
 ) -> Result<impl IntoResponse, AppError> {
     db::users::unpin_conversation(&state.pool, auth.user_id, conversation_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in unpin_conversation: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("unpin_conversation")?;
     Ok(StatusCode::NO_CONTENT)
 }
