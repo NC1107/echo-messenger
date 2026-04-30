@@ -488,6 +488,70 @@ async fn create_dm_idempotent() {
     );
 }
 
+/// Concurrent DM creation must not produce duplicate conversations.
+///
+/// Before the fix, two simultaneous POST /api/conversations/dm requests for the
+/// same user pair could both pass the "not found" check and each insert a new
+/// conversation, violating the one-DM-per-pair invariant.  After the fix, both
+/// requests must return the same conversation_id.
+#[tokio::test]
+async fn create_dm_concurrent_no_duplicate() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _, _) = common::register_and_login(&client, &base, "dm_conc_alice").await;
+    let (bob_token, bob_id, bob_name) =
+        common::register_and_login(&client, &base, "dm_conc_bob").await;
+
+    // Establish contact so the DM endpoint accepts the request.
+    let resp = client
+        .post(format!("{base}/api/contacts/request"))
+        .header("Authorization", format!("Bearer {alice_token}"))
+        .json(&serde_json::json!({ "username": bob_name }))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = resp.json().await.unwrap();
+    let contact_id = body["contact_id"].as_str().unwrap().to_string();
+
+    client
+        .post(format!("{base}/api/contacts/accept"))
+        .header("Authorization", format!("Bearer {bob_token}"))
+        .json(&serde_json::json!({ "contact_id": contact_id }))
+        .send()
+        .await
+        .unwrap();
+
+    // Fire two concurrent DM-create requests from Alice toward Bob.
+    let (r1, r2) = tokio::join!(
+        client
+            .post(format!("{base}/api/conversations/dm"))
+            .header("Authorization", format!("Bearer {alice_token}"))
+            .json(&serde_json::json!({ "peer_user_id": bob_id }))
+            .send(),
+        client
+            .post(format!("{base}/api/conversations/dm"))
+            .header("Authorization", format!("Bearer {alice_token}"))
+            .json(&serde_json::json!({ "peer_user_id": bob_id }))
+            .send(),
+    );
+
+    let r1 = r1.unwrap();
+    let r2 = r2.unwrap();
+    assert_eq!(r1.status().as_u16(), 200);
+    assert_eq!(r2.status().as_u16(), 200);
+
+    let b1: Value = r1.json().await.unwrap();
+    let b2: Value = r2.json().await.unwrap();
+    let id1 = b1["conversation_id"].as_str().unwrap();
+    let id2 = b2["conversation_id"].as_str().unwrap();
+
+    assert_eq!(
+        id1, id2,
+        "Concurrent DM creation must return the same conversation_id, got {id1} and {id2}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Offline replay regression for #557
 // ---------------------------------------------------------------------------
