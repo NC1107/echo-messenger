@@ -126,14 +126,20 @@ echo "── WebSocket Messaging ──"
 
 source "$HOME/.cargo/env" 2>/dev/null || true
 
+# Obtain ws-tickets (30-sec single-use; client must use ?ticket= not ?token=)
+ALICE_TICKET=$(curl -s "$SERVER_URL/api/auth/ws-ticket" -X POST \
+  -H "Authorization: Bearer $ALICE_TOKEN" | python3 -c "import sys,json; print(json.load(sys.stdin)['ticket'])")
+BOB_TICKET1=$(curl -s "$SERVER_URL/api/auth/ws-ticket" -X POST \
+  -H "Authorization: Bearer $BOB_TOKEN" | python3 -c "import sys,json; print(json.load(sys.stdin)['ticket'])")
+
 # Test: Send message while recipient is offline (offline delivery)
 echo '{"type":"send_message","to_user_id":"'"$BOB_ID"'","content":"Hello from alice (offline)"}' \
-  | timeout 3 websocat "ws://localhost:8080/ws?token=$ALICE_TOKEN" > /tmp/e2e_alice1.txt 2>&1 || true
+  | timeout 3 websocat "ws://localhost:8080/ws?ticket=$ALICE_TICKET" > /tmp/e2e_alice1.txt 2>&1 || true
 
 assert_contains "$(cat /tmp/e2e_alice1.txt)" "message_sent" "Alice sends message (bob offline), gets confirmation"
 
 # Bob connects and should receive the offline message
-timeout 3 websocat "ws://localhost:8080/ws?token=$BOB_TOKEN" > /tmp/e2e_bob1.txt 2>&1 || true
+timeout 3 websocat "ws://localhost:8080/ws?ticket=$BOB_TICKET1" > /tmp/e2e_bob1.txt 2>&1 || true
 assert_contains "$(cat /tmp/e2e_bob1.txt)" "Hello from alice" "Bob receives offline message on connect"
 assert_contains "$(cat /tmp/e2e_bob1.txt)" "new_message" "Bob receives correct message type"
 
@@ -142,14 +148,20 @@ assert_contains "$(cat /tmp/e2e_bob1.txt)" "new_message" "Bob receives correct m
 rm -f /tmp/e2e_bob_fifo
 mkfifo /tmp/e2e_bob_fifo
 
+# Fresh tickets for each new connection (single-use)
+ALICE_TICKET2=$(curl -s "$SERVER_URL/api/auth/ws-ticket" -X POST \
+  -H "Authorization: Bearer $ALICE_TOKEN" | python3 -c "import sys,json; print(json.load(sys.stdin)['ticket'])")
+BOB_TICKET2=$(curl -s "$SERVER_URL/api/auth/ws-ticket" -X POST \
+  -H "Authorization: Bearer $BOB_TOKEN" | python3 -c "import sys,json; print(json.load(sys.stdin)['ticket'])")
+
 # Bob connects via named pipe (stays open)
-cat /tmp/e2e_bob_fifo | timeout 8 websocat "ws://localhost:8080/ws?token=$BOB_TOKEN" > /tmp/e2e_bob2.txt 2>&1 &
+cat /tmp/e2e_bob_fifo | timeout 8 websocat "ws://localhost:8080/ws?ticket=$BOB_TICKET2" > /tmp/e2e_bob2.txt 2>&1 &
 BOB_WS=$!
 sleep 2
 
 # Alice sends while Bob is online
 echo '{"type":"send_message","to_user_id":"'"$BOB_ID"'","content":"Real-time hello!"}' \
-  | timeout 3 websocat "ws://localhost:8080/ws?token=$ALICE_TOKEN" > /tmp/e2e_alice2.txt 2>&1 || true
+  | timeout 3 websocat "ws://localhost:8080/ws?ticket=$ALICE_TICKET2" > /tmp/e2e_alice2.txt 2>&1 || true
 sleep 2
 
 # Close Bob's input to let him finish
@@ -161,8 +173,10 @@ assert_contains "$(cat /tmp/e2e_alice2.txt)" "message_sent" "Alice gets confirma
 assert_contains "$(cat /tmp/e2e_bob2.txt)" "Real-time hello" "Bob receives real-time message"
 
 # Test: Non-contact messaging should fail
+ALICE_TICKET3=$(curl -s "$SERVER_URL/api/auth/ws-ticket" -X POST \
+  -H "Authorization: Bearer $ALICE_TOKEN" | python3 -c "import sys,json; print(json.load(sys.stdin)['ticket'])")
 echo '{"type":"send_message","to_user_id":"00000000-0000-0000-0000-000000000000","content":"should fail"}' \
-  | timeout 3 websocat "ws://localhost:8080/ws?token=$ALICE_TOKEN" > /tmp/e2e_alice3.txt 2>&1 || true
+  | timeout 3 websocat "ws://localhost:8080/ws?ticket=$ALICE_TICKET3" > /tmp/e2e_alice3.txt 2>&1 || true
 assert_contains "$(cat /tmp/e2e_alice3.txt)" "error" "Non-contact message rejected"
 
 # ─── REST Message History ───
