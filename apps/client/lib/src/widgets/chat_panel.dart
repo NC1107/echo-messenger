@@ -1853,6 +1853,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String serverUrl,
     required String authToken,
     String? mediaTicket,
+    String? channelId,
   }) {
     return Scrollbar(
       controller: _scrollController,
@@ -1863,10 +1864,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         itemCount: messages.length + 1,
         itemBuilder: (context, index) {
           if (index == 0) {
-            if (chatState.hasMore[conv.id] ?? true) {
+            if (chatState.conversationHasMore(conv.id, channelId: channelId)) {
               return SizedBox(
                 height: 48,
-                child: (chatState.loadingHistory[conv.id] ?? false)
+                child: chatState.isLoadingHistory(conv.id, channelId: channelId)
                     ? const Center(
                         child: SizedBox(
                           width: 16,
@@ -1905,6 +1906,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String serverUrl,
     required String authToken,
     String? mediaTicket,
+    String? channelId,
   }) {
     final Widget child;
     if (messages.isEmpty && isLoadingHistory) {
@@ -1929,6 +1931,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           serverUrl: serverUrl,
           authToken: authToken,
           mediaTicket: mediaTicket,
+          channelId: channelId,
         ),
       );
     }
@@ -2280,7 +2283,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       includeUnchanneled,
     );
 
-    final isLoadingHistory = chatState.loadingHistory[conv.id] ?? false;
+    final isLoadingHistory = chatState.isLoadingHistory(
+      conv.id,
+      channelId: selectedChannelId,
+    );
 
     final typingUsers = typingUserIds.where((u) => u != myUserId).map((uid) {
       final member = conv.members.where((m) => m.userId == uid).firstOrNull;
@@ -2382,6 +2388,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                         serverUrl: serverUrl,
                         authToken: authToken,
                         mediaTicket: mediaTicket,
+                        channelId: selectedChannelId,
                       ),
                       if (_floatingDate != null) _buildFloatingDatePill(),
                       if (_hasNewMessagesBelow) _buildNewMessagesPill(),
