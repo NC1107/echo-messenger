@@ -11,6 +11,7 @@ import 'package:echo_app/src/providers/livekit_voice_provider.dart';
 import 'package:echo_app/src/providers/voice_settings_provider.dart';
 import 'package:echo_app/src/services/crypto_service.dart';
 import 'package:echo_app/src/services/group_crypto_service.dart';
+import 'package:echo_app/src/theme/echo_theme.dart';
 import 'package:echo_app/src/widgets/chat_panel.dart';
 
 import '../helpers/mock_providers.dart';
@@ -212,7 +213,7 @@ void main() {
     });
 
     testWidgets('loading indicator shows when loading history', (tester) async {
-      final chatState = ChatState(loadingHistory: {'conv-dm': true});
+      final chatState = ChatState(loadingHistory: {'conv-dm:': true});
 
       await tester.pumpApp(
         ChatPanel(conversation: _dmConversation),
@@ -260,6 +261,218 @@ void main() {
 
       // The "No conversation selected" placeholder should NOT be shown
       expect(find.text('No conversation selected'), findsNothing);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // State mutation tests: delete, pin, rollback
+  // ---------------------------------------------------------------------------
+
+  /// Pumps [ChatPanel] using an [UncontrolledProviderScope] so tests can
+  /// mutate the [ProviderContainer] directly and observe widget reactions.
+  Future<ProviderContainer> _pumpWithContainer(
+    WidgetTester tester, {
+    required ChatState chatState,
+  }) async {
+    final container = ProviderContainer(
+      overrides: _chatPanelOverrides(chatState: chatState),
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: EchoTheme.darkTheme,
+          darkTheme: EchoTheme.darkTheme,
+          themeMode: ThemeMode.dark,
+          home: const Scaffold(
+            body: ChatPanel(conversation: _dmConversation),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    return container;
+  }
+
+  group('ChatPanel mutation – delete', () {
+    const _msg = ChatMessage(
+      id: 'msg-del',
+      fromUserId: 'user-alice',
+      fromUsername: 'alice',
+      conversationId: 'conv-dm',
+      content: 'Delete me please',
+      timestamp: '2026-01-15T10:00:00Z',
+      isMine: false,
+    );
+
+    testWidgets('optimistic delete removes message from list', (tester) async {
+      final chatState = ChatState(
+        messagesByConversation: {
+          'conv-dm': [_msg],
+        },
+      );
+
+      final container = await _pumpWithContainer(
+        tester,
+        chatState: chatState,
+      );
+      expect(find.text('Delete me please'), findsOneWidget);
+
+      container.read(chatProvider.notifier).deleteMessage('conv-dm', 'msg-del');
+      await tester.pump();
+
+      expect(find.text('Delete me please'), findsNothing);
+    });
+
+    testWidgets('rollback restores message after failed delete', (
+      tester,
+    ) async {
+      final chatState = ChatState(
+        messagesByConversation: {
+          'conv-dm': [_msg],
+        },
+      );
+
+      final container = await _pumpWithContainer(
+        tester,
+        chatState: chatState,
+      );
+      expect(find.text('Delete me please'), findsOneWidget);
+
+      // Simulate optimistic remove then rollback (server rejected the delete)
+      container.read(chatProvider.notifier).deleteMessage('conv-dm', 'msg-del');
+      await tester.pump();
+      expect(find.text('Delete me please'), findsNothing);
+
+      container.read(chatProvider.notifier).addMessage(_msg);
+      await tester.pump();
+
+      expect(find.text('Delete me please'), findsOneWidget);
+    });
+  });
+
+  group('ChatPanel mutation – pin', () {
+    const _msg = ChatMessage(
+      id: 'msg-pin',
+      fromUserId: 'user-alice',
+      fromUsername: 'alice',
+      conversationId: 'conv-dm',
+      content: 'Pin this message',
+      timestamp: '2026-01-15T10:00:00Z',
+      isMine: false,
+    );
+
+    testWidgets('optimistic pin update is reflected in state', (tester) async {
+      final chatState = ChatState(
+        messagesByConversation: {
+          'conv-dm': [_msg],
+        },
+      );
+
+      final container = await _pumpWithContainer(
+        tester,
+        chatState: chatState,
+      );
+
+      // Before pin – pinnedById is null
+      final before = container
+          .read(chatProvider)
+          .messagesForConversation('conv-dm')
+          .first;
+      expect(before.pinnedById, isNull);
+
+      // Optimistically pin the message
+      final pinTime = DateTime.parse('2026-03-01T12:00:00Z');
+      container.read(chatProvider.notifier).updateMessagePin(
+        'conv-dm',
+        'msg-pin',
+        'test-user-id',
+        pinTime,
+      );
+      await tester.pump();
+
+      final after = container
+          .read(chatProvider)
+          .messagesForConversation('conv-dm')
+          .first;
+      expect(after.pinnedById, 'test-user-id');
+      expect(after.pinnedAt, pinTime);
+    });
+
+    testWidgets('rollback clears pin on server failure', (tester) async {
+      final chatState = ChatState(
+        messagesByConversation: {
+          'conv-dm': [_msg],
+        },
+      );
+
+      final container = await _pumpWithContainer(
+        tester,
+        chatState: chatState,
+      );
+
+      // Optimistically pin
+      container.read(chatProvider.notifier).updateMessagePin(
+        'conv-dm',
+        'msg-pin',
+        'test-user-id',
+        DateTime.now(),
+      );
+      await tester.pump();
+
+      // Server rejected → revert
+      container.read(chatProvider.notifier).updateMessagePin(
+        'conv-dm',
+        'msg-pin',
+        null,
+        null,
+      );
+      await tester.pump();
+
+      final reverted = container
+          .read(chatProvider)
+          .messagesForConversation('conv-dm')
+          .first;
+      expect(reverted.pinnedById, isNull);
+      expect(reverted.pinnedAt, isNull);
+    });
+  });
+
+  group('ChatPanel loading states', () {
+    testWidgets('history-key with channel suffix is respected', (tester) async {
+      // Key format is '$conversationId:$channelId' — for a DM with no
+      // channel the suffix is empty, so the correct key is 'conv-dm:'.
+      final chatState = ChatState(loadingHistory: {'conv-dm:': true});
+
+      await tester.pumpApp(
+        ChatPanel(conversation: _dmConversation),
+        overrides: _chatPanelOverrides(chatState: chatState),
+      );
+      await tester.pump();
+
+      // The LinearProgressIndicator must be visible when loading.
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('skeleton loader shown when loading with no messages', (
+      tester,
+    ) async {
+      final chatState = ChatState(loadingHistory: {'conv-dm:': true});
+
+      await tester.pumpApp(
+        ChatPanel(conversation: _dmConversation),
+        overrides: _chatPanelOverrides(chatState: chatState),
+      );
+      await tester.pump();
+
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      // Empty-state placeholder should NOT appear while loading
+      expect(
+        find.textContaining('Start your conversation'),
+        findsNothing,
+      );
     });
   });
 }
