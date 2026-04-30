@@ -112,7 +112,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 400),
                 child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
                   child: Form(
                     key: _formKey,
                     child: AutofillGroup(

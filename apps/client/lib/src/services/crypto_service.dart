@@ -102,6 +102,8 @@ class InitialDecryptFailedException implements Exception {
 class CryptoService {
   static const _deviceIdPref = 'echo_device_id';
   static const _identityKeyPref = 'echo_identity_key';
+  static const _contentTypeHeader = 'Content-Type';
+  static const _applicationJson = 'application/json';
   static const _identityPubKeyPref = 'echo_identity_pub_key';
   static const _signingKeyPref = 'echo_signing_key';
   static const _signingPubKeyPref = 'echo_signing_pub_key';
@@ -812,7 +814,7 @@ class CryptoService {
     final response = await http.post(
       Uri.parse('$serverUrl/api/keys/upload'),
       headers: {
-        'Content-Type': 'application/json',
+        _contentTypeHeader: _applicationJson,
         'Authorization': 'Bearer $_token',
       },
       body: body,
@@ -941,7 +943,7 @@ class CryptoService {
     final response = await http.post(
       Uri.parse('$serverUrl/api/keys/upload'),
       headers: {
-        'Content-Type': 'application/json',
+        _contentTypeHeader: _applicationJson,
         'Authorization': 'Bearer $_token',
       },
       body: body,
@@ -1564,7 +1566,7 @@ class CryptoService {
     final resetResponse = await http.post(
       Uri.parse('$serverUrl/api/keys/reset'),
       headers: {
-        'Content-Type': 'application/json',
+        _contentTypeHeader: _applicationJson,
         'Authorization': 'Bearer $_token',
       },
       body: jsonEncode({'password': password}),

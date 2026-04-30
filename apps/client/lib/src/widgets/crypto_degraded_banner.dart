@@ -28,7 +28,7 @@ class CryptoDegradedBanner extends ConsumerWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.lock_open_outlined,
                       size: 12,
                       color: EchoTheme.warning,
@@ -66,7 +66,7 @@ class CryptoDegradedBanner extends ConsumerWidget {
                               width: 1,
                             ),
                           ),
-                          child: Text(
+                          child: const Text(
                             'Retry',
                             style: TextStyle(
                               fontSize: 11,

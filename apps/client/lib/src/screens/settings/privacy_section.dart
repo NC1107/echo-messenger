@@ -590,7 +590,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
             children: [
               const Icon(Icons.verified_user, color: Colors.green, size: 18),
               const SizedBox(width: 8),
-              Text(
+              const Text(
                 'Encryption keys active',
                 style: TextStyle(
                   color: Colors.green,
@@ -739,7 +739,7 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
         const SizedBox(height: 24),
         const Divider(),
         const SizedBox(height: 8),
-        Text(
+        const Text(
           'Danger Zone',
           style: TextStyle(
             color: EchoTheme.danger,

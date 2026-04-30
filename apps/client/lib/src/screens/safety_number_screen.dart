@@ -519,7 +519,7 @@ class _SafetyNumberScreenState extends ConsumerState<SafetyNumberScreen> {
               Text(
                 'Verified ${_timeAgo(_verifiedAt!)}',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: EchoTheme.online, fontSize: 12),
+                style: const TextStyle(color: EchoTheme.online, fontSize: 12),
               ),
             ],
             const SizedBox(height: 12),

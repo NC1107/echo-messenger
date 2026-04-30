@@ -23,6 +23,8 @@ import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import 'shared_media_gallery.dart';
 
+const _disappearingMessagesLabel = 'Disappearing messages';
+
 class ChatHeaderBar extends ConsumerWidget {
   final Conversation conversation;
   final String myUserId;
@@ -397,7 +399,7 @@ class ChatHeaderBar extends ConsumerWidget {
             child: _overflowItem(
               ctx,
               icon: Icons.timer_outlined,
-              label: 'Disappearing messages',
+              label: _disappearingMessagesLabel,
             ),
           ),
       ],
@@ -686,7 +688,7 @@ class ChatHeaderBar extends ConsumerWidget {
     final selected = await showDialog<int?>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('Disappearing messages'),
+        title: const Text(_disappearingMessagesLabel),
         children: _kTtlOptions.map((opt) {
           final isCurrent = opt.seconds == currentTtl;
           return SimpleDialogOption(
@@ -997,7 +999,7 @@ class _TimerChip extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(left: 6),
       child: Tooltip(
-        message: 'Disappearing messages',
+        message: _disappearingMessagesLabel,
         child: Material(
           color: Colors.transparent,
           child: InkWell(

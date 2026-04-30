@@ -137,7 +137,7 @@ class _IdentityKeyChangedBannerState
                 ),
                 child: Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.warning_amber_rounded,
                       size: 16,
                       color: EchoTheme.warning,
@@ -173,7 +173,7 @@ class _IdentityKeyChangedBannerState
                               width: 1,
                             ),
                           ),
-                          child: Text(
+                          child: const Text(
                             'Verify',
                             style: TextStyle(
                               fontSize: 11,
@@ -220,7 +220,7 @@ class _IdentityKeyChangedBannerState
                       button: true,
                       child: GestureDetector(
                         onTap: _dismiss,
-                        child: Icon(
+                        child: const Icon(
                           Icons.close,
                           size: 16,
                           color: EchoTheme.warning,

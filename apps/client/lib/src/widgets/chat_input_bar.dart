@@ -1333,15 +1333,15 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         children: [
           const SizedBox(width: 12),
           // Pulsing red dot
-          _PulsingDot(color: EchoTheme.danger),
+          const _PulsingDot(color: EchoTheme.danger),
           const SizedBox(width: 8),
           Text(
             _formatRecordingDuration(_recordingDuration),
-            style: TextStyle(
+            style: const TextStyle(
               color: EchoTheme.danger,
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              fontFeatures: const [FontFeature.tabularFigures()],
+              fontFeatures: [FontFeature.tabularFigures()],
             ),
           ),
           const SizedBox(width: 12),
@@ -1372,7 +1372,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                   child: Container(
                     width: 32,
                     height: 32,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: EchoTheme.danger,
                       shape: BoxShape.circle,
                     ),
