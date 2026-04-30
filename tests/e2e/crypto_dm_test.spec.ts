@@ -252,38 +252,38 @@ test.describe('Encrypted DM Tests', () => {
       await ss(alicePage, '02_alice_sent');
 
       const aliceErrors = await hasCryptoErrors(alicePage);
-      if (aliceErrors.length > 0) {
-        console.log(`  ⚠️ Alice send errors: ${aliceErrors.join(', ')}`);
-      } else {
-        console.log('  ✓ Alice sent message without errors');
-      }
+      expect(
+        aliceErrors,
+        `Alice surfaced crypto errors after sending: ${aliceErrors.join(', ')}`,
+      ).toEqual([]);
 
       // Bob opens the conversation
       await bobPage.waitForTimeout(2000);
       const bobOpened = await openConversation(bobPage, ALICE);
-      if (bobOpened) {
-        await bobPage.waitForTimeout(2000);
-        await ss(bobPage, '03_bob_received');
-        const bobSees = await pageContains(bobPage, 'Hello Bob from Alice');
-        console.log(`  Bob sees Alice's message: ${bobSees ? '✓' : '✗'}`);
+      expect(bobOpened, 'Bob could not open conversation with Alice').toBe(true);
 
-        // Bob replies
-        const msg2 = `Reply from Bob [${ts}]`;
-        await sendMessage(bobPage, msg2);
-        await ss(bobPage, '04_bob_replied');
-        const bobErrors = await hasCryptoErrors(bobPage);
-        console.log(`  Bob reply errors: ${bobErrors.length === 0 ? '✓ none' : bobErrors.join(', ')}`);
+      await bobPage.waitForTimeout(2000);
+      await ss(bobPage, '03_bob_received');
+      const bobSees = await pageContains(bobPage, 'Hello Bob from Alice');
+      expect(bobSees, "Bob did not see Alice's encrypted message").toBe(true);
 
-        // Alice sees the reply
-        await alicePage.waitForTimeout(3000);
-        const aliceSees = await pageContains(alicePage, 'Reply from Bob');
-        console.log(`  Alice sees Bob's reply: ${aliceSees ? '✓' : '✗'}`);
-        await ss(alicePage, '05_alice_sees_reply');
-      } else {
-        console.log('  ✗ Bob could not open conversation with Alice');
-      }
+      // Bob replies
+      const msg2 = `Reply from Bob [${ts}]`;
+      await sendMessage(bobPage, msg2);
+      await ss(bobPage, '04_bob_replied');
+      const bobErrors = await hasCryptoErrors(bobPage);
+      expect(
+        bobErrors,
+        `Bob surfaced crypto errors after replying: ${bobErrors.join(', ')}`,
+      ).toEqual([]);
+
+      // Alice sees the reply
+      await alicePage.waitForTimeout(3000);
+      const aliceSees = await pageContains(alicePage, 'Reply from Bob');
+      expect(aliceSees, "Alice did not see Bob's reply").toBe(true);
+      await ss(alicePage, '05_alice_sees_reply');
     } else {
-      console.log('  ✗ Could not open DM conversation');
+      expect(aliceOpened, 'Could not open DM conversation as Alice').toBe(true);
     }
 
     await aliceCtx.close();

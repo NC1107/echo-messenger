@@ -1,4 +1,4 @@
-import { test, Page } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { execSync } from 'child_process';
 
 const LOCAL = 'http://localhost:8080';
@@ -7,7 +7,10 @@ const APP = `${APP_BASE}/?server=${encodeURIComponent(LOCAL)}`;
 const SS = 'tests/e2e/test-results/local-full';
 
 function check(name: string, ok: boolean, note = '') {
+  // Console line is for human-readable test output; the assertion is what
+  // actually fails the spec when something is wrong.
   console.log(`${ok ? '✅' : '❌'} ${name}${note ? ` -- ${note}` : ''}`);
+  expect(ok, `${name}${note ? ` -- ${note}` : ''}`).toBe(true);
 }
 
 async function ss(page: Page, name: string) {
@@ -143,12 +146,30 @@ test('Full feature test', async ({ browser }) => {
   });
   check('Contacts', true);
 
-  // Pre-send messages via websocat so conversations exist
+  // Pre-send messages via websocat so conversations exist.  WS auth is
+  // ticket-based (see CLAUDE.md): mint a single-use ticket, then connect
+  // with `?ticket=`.  Earlier `?token=` form is forbidden.
+  async function mintTicket(accessToken: string): Promise<string> {
+    const r = await fetch(`${LOCAL}/api/auth/ws-ticket`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+    if (!r.ok) throw new Error(`ws-ticket HTTP ${r.status}`);
+    const body = await r.json();
+    return body.ticket as string;
+  }
+
+  let seedOk = false;
   try {
-    execSync(`echo '{"type":"send_message","to_user_id":"${r2.user_id}","content":"Hello from setup!"}' | timeout 3 websocat "ws://localhost:8080/ws?token=${r1.access_token}" || true`, { timeout: 5000 });
-    execSync(`echo '{"type":"send_message","to_user_id":"${r1.user_id}","content":"Reply from setup!"}' | timeout 3 websocat "ws://localhost:8080/ws?token=${r2.access_token}" || true`, { timeout: 5000 });
-    check('Seed messages', true);
-  } catch (_) { check('Seed messages', false, 'websocat failed'); }
+    const t1 = await mintTicket(r1.access_token);
+    const t2 = await mintTicket(r2.access_token);
+    execSync(`echo '{"type":"send_message","to_user_id":"${r2.user_id}","content":"Hello from setup!"}' | timeout 3 websocat "ws://localhost:8080/ws?ticket=${t1}"`, { timeout: 5000 });
+    execSync(`echo '{"type":"send_message","to_user_id":"${r1.user_id}","content":"Reply from setup!"}' | timeout 3 websocat "ws://localhost:8080/ws?ticket=${t2}"`, { timeout: 5000 });
+    seedOk = true;
+  } catch (e) {
+    seedOk = false;
+  }
+  check('Seed messages', seedOk, seedOk ? '' : 'websocat or ws-ticket failed');
 
   // Health
   const health = await fetch(`${LOCAL}/api/health`).then(r => r.json()).catch(() => null);
