@@ -1,0 +1,66 @@
+# Audit H26 (#356): without a .dockerignore, `docker build .` shipped
+# the entire ~2GB workspace to the docker daemon on every build.  This
+# bloats CI runner disk, slows local builds, and risks accidental
+# inclusion of secrets in image layers if a future COPY is sloppy.
+#
+# Minimal exclusion list -- prefer explicit COPY directives in
+# Dockerfiles over implicit "include everything except ...".
+
+# Build artefacts
+target/
+node_modules/
+build/
+dist/
+coverage/
+test-results/
+.playwright-mcp/
+
+# VCS
+.git/
+.gitignore
+
+# Local env / secrets (never ship into images)
+.env
+.env.*
+!.env.example
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Flutter client artefacts (the web image copies build/web explicitly
+# from a stage; never bundle the source tree into the server image).
+apps/client/build/
+apps/client/.dart_tool/
+apps/client/.flutter-plugins
+apps/client/.flutter-plugins-dependencies
+apps/client/.packages
+apps/client/ios/Pods/
+apps/client/macos/Pods/
+
+# Distribution-only files
+*.AppImage
+*.AppImage.zsync
+*.dmg
+*.exe
+*.apk
+*.aab
+*.ipa
+
+# Docs / research / planning -- not runtime artefacts
+docs/
+research/
+RESEARCH.md
+TECHNICAL_DEBT.md
+SPRINT_PLAN.md
+RIVERPOD_MIGRATION.md
+
+# Claude / agent state
+.claude/
+
+# QA scratch
+qa/
+uploads/

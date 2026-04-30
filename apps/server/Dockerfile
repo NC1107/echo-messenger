@@ -27,6 +27,7 @@ FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    curl \
     tini \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
@@ -34,12 +35,24 @@ RUN apt-get update && apt-get install -y \
     && useradd --uid 1000 --gid echo --shell /bin/sh echo
 
 COPY --from=builder /app/target/release/echo-server /usr/local/bin/echo-server
-COPY apps/server/src/migrations /opt/echo/migrations
+# Audit H25 (#356): the original COPY pointed at apps/server/src/migrations
+# which holds stale 001_/002_/003_ files unused since the 20250101000000
+# baseline consolidated migration. The runtime sqlx::migrate!() macro
+# embeds migrations from apps/server/migrations/ at compile time, so this
+# COPY is purely defensive (operators who ever shell into the image to
+# inspect schema history).  Point it at the right directory.
+COPY apps/server/migrations /opt/echo/migrations
 
 RUN mkdir -p /app/uploads/avatars
 
 USER echo
 EXPOSE 8080
+
+# Audit H27 (#356): healthcheck so traefik / docker-compose stop routing
+# to the container before tcp accepts refuse.  /api/health is a cheap
+# unauthenticated endpoint that returns {"status": "ok", ...}.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -fsS http://localhost:8080/api/health || exit 1
 
 ENTRYPOINT ["tini", "--"]
 CMD ["echo-server"]
