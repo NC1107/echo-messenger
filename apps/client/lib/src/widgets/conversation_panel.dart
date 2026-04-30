@@ -719,7 +719,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           },
           itemBuilder: (context) => [
             // ignore: prefer_const_constructors
-            PopupMenuItem( // TODO(#674): cannot const due to ConstrainedBox child
+            PopupMenuItem(
+              // TODO(#674): cannot const due to ConstrainedBox child
               value: 'chat',
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minWidth: 200),
@@ -736,7 +737,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               ),
             ),
             // ignore: prefer_const_constructors
-            PopupMenuItem( // TODO(#674): cannot const due to ConstrainedBox child
+            PopupMenuItem(
+              // TODO(#674): cannot const due to ConstrainedBox child
               value: 'group',
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minWidth: 200),
@@ -753,7 +755,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               ),
             ),
             // ignore: prefer_const_constructors
-            PopupMenuItem( // TODO(#674): cannot const due to ConstrainedBox child
+            PopupMenuItem(
+              // TODO(#674): cannot const due to ConstrainedBox child
               value: 'discover',
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minWidth: 200),
@@ -773,7 +776,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               ),
             ),
             // ignore: prefer_const_constructors
-            PopupMenuItem( // TODO(#674): cannot const due to ConstrainedBox child
+            PopupMenuItem(
+              // TODO(#674): cannot const due to ConstrainedBox child
               value: 'saved',
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minWidth: 200),
