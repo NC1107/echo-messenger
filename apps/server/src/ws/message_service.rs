@@ -904,15 +904,44 @@ pub(super) async fn fanout_message(
 /// used as a fallback when no device-specific row exists (group messages,
 /// unencrypted convs, or messages predating multi-device support).
 pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid, device_id: i32) {
-    let undelivered = match db::messages::get_undelivered(&state.pool, user_id).await {
-        Ok(msgs) => msgs,
-        Err(_) => return,
-    };
+    // Audit #689: loop with cursor pagination so backlogs >200 messages
+    // (multi-week offline) replay completely instead of leaving the rest
+    // stuck until the next reconnect.  Cap iterations defensively against a
+    // pathological pool error returning the same row over and over.
+    const MAX_ITERATIONS: usize = 50; // 50 * 200 = 10 000 messages per reconnect
+    let mut after_ts: Option<chrono::DateTime<chrono::Utc>> = None;
+    for _iter in 0..MAX_ITERATIONS {
+        let batch = match db::messages::get_undelivered(&state.pool, user_id, after_ts).await {
+            Ok(msgs) => msgs,
+            Err(e) => {
+                tracing::error!(?e, %user_id, "deliver_undelivered: db error -- aborting replay loop");
+                return;
+            }
+        };
 
-    if undelivered.is_empty() {
-        return;
+        if batch.is_empty() {
+            return;
+        }
+
+        // Advance cursor before processing so a continue-on-error inside the
+        // loop body can't infinitely re-fetch the same rows.
+        let last_ts = batch.last().map(|m| m.created_at);
+        let was_full = batch.len() as i64 == db::messages::UNDELIVERED_PAGE_SIZE;
+        deliver_one_batch(state, user_id, device_id, batch).await;
+        if !was_full {
+            return; // last page
+        }
+        after_ts = last_ts;
     }
+    tracing::warn!(%user_id, "deliver_undelivered: hit MAX_ITERATIONS, deferring remainder to next reconnect");
+}
 
+async fn deliver_one_batch(
+    state: &AppState,
+    user_id: Uuid,
+    device_id: i32,
+    undelivered: Vec<db::messages::MessageWithSender>,
+) {
     let all_ids: Vec<Uuid> = undelivered.iter().map(|m| m.id).collect();
 
     // Batch-fetch all per-device ciphertexts in a single query to avoid N+1.

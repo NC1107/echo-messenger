@@ -223,9 +223,23 @@ pub async fn get_messages(
     .await
 }
 
+/// Page size for offline-replay batches.  Picked so a single batch fits
+/// comfortably in the WS outbound mpsc(256) without immediate backpressure
+/// (#634), while still exercising the ack queue under realistic backlogs.
+pub const UNDELIVERED_PAGE_SIZE: i64 = 200;
+
+/// Fetch undelivered messages for a user, optionally after a `created_at`
+/// cursor.  Caller paginates by passing the last-seen `created_at` from the
+/// previous batch; with `None` this returns the oldest 200.
+///
+/// Audit #689: previously this had no `after_ts` and the caller fetched
+/// once.  Backlogs > 200 silently truncated -- the rest got stuck until the
+/// next reconnect.  Callers now loop with the cursor until the batch
+/// returns < UNDELIVERED_PAGE_SIZE rows.
 pub async fn get_undelivered(
     pool: &PgPool,
     user_id: Uuid,
+    after_ts: Option<DateTime<Utc>>,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
@@ -243,10 +257,13 @@ pub async fn get_undelivered(
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
                   AND cm.is_removed = false \
          WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
+                  AND ($2::timestamptz IS NULL OR m.created_at > $2) \
          ORDER BY m.created_at ASC \
-         LIMIT 200",
+         LIMIT $3",
     )
     .bind(user_id)
+    .bind(after_ts)
+    .bind(UNDELIVERED_PAGE_SIZE)
     .fetch_all(pool)
     .await
 }
