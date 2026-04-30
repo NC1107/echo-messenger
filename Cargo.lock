@@ -759,6 +759,7 @@ dependencies = [
  "criterion",
  "dashmap",
  "dotenvy",
+ "echo-core",
  "ed25519-dalek",
  "futures-util",
  "infer",

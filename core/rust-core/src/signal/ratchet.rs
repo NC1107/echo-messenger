@@ -18,16 +18,13 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::error::CoreError;
 
-/// Maximum number of skipped message keys allowed in a single skip call,
-/// and the global cap on `skipped_keys` size across the lifetime of a session.
-/// Prevents memory exhaustion from a malicious peer sending huge message
-/// numbers or repeatedly bumping the ratchet key (which resets `recv_counter`)
-/// to accumulate skipped keys without bound.
-const MAX_SKIP: u32 = 1000;
-const MAX_SKIPPED_KEYS: usize = 2000;
+/// Re-exports of the protocol-level skip caps; defined once in `protocol.rs`
+/// so the Rust server can refer to the same MAX_SKIP / MAX_SKIPPED_KEYS
+/// (#700, audit CRIT-4 gate).
+use super::protocol::{MAX_SKIP, MAX_SKIPPED_KEYS, RATCHET_KDF_INFO};
 
-/// HKDF info strings for key derivation.
-const RATCHET_KDF_INFO: &[u8] = b"EchoDoubleRatchet";
+/// Local KDF context bytes -- not protocol-shared because they're internal
+/// to the message-key derivation scheme inside this file.
 const CHAIN_KEY_SEED: u8 = 0x02;
 const MESSAGE_KEY_SEED: u8 = 0x01;
 

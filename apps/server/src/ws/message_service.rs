@@ -15,16 +15,13 @@ use crate::ws::typing_service::get_member_ids_cached;
 
 pub(super) const MAX_MESSAGE_LENGTH: usize = 10_000;
 
-/// Echo Messenger wire format magic byte (#591). The first byte of any
-/// initial-message payload identifies the protocol family.
-const ECHO_WIRE_MAGIC: u8 = 0xEC;
-/// Initial-message version 1 (no one-time prekey).
-const ECHO_WIRE_INITIAL_V1: u8 = 0x01;
-/// Initial-message version 2 (with one-time prekey).
-const ECHO_WIRE_INITIAL_V2: u8 = 0x02;
-/// Normal-message wire prefix is a u32 LE header length of 40 bytes
-/// (`header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`).
-const ECHO_NORMAL_HEADER_LEN: u32 = 40;
+// Wire-format constants are defined once in `echo_core::signal::protocol`
+// (audit #700). Re-export under the historical local names so the rest of
+// this file reads unchanged.
+use echo_core::signal::protocol::{
+    NORMAL_HEADER_LEN as ECHO_NORMAL_HEADER_LEN, WIRE_INITIAL_V1 as ECHO_WIRE_INITIAL_V1,
+    WIRE_INITIAL_V2 as ECHO_WIRE_INITIAL_V2, WIRE_MAGIC as ECHO_WIRE_MAGIC,
+};
 
 /// Validate that a base64-encoded payload is shaped like an Echo
 /// ciphertext wire frame. We do NOT decrypt or otherwise validate
