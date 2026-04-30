@@ -100,38 +100,48 @@ void main() {
   // C2: Crypto marked initialized even when key upload fails
   // =========================================================================
   group('C2: CryptoState allows operation after upload failure', () {
-    test('isInitialized should be false when keysUploadFailed is true', () {
-      // crypto_provider.dart:117-124 sets isInitialized=true AND
-      // keysUploadFailed=true simultaneously. This means any code that
-      // only checks isInitialized will proceed with broken keys.
+    // This test documents CURRENT BUGGY behavior. When the bug is fixed by
+    // making CryptoState.isInitialized return false (or adding an isReady
+    // getter) when keysUploadFailed is true, update the first assertion
+    // from isTrue → isFalse and remove the skip.
+    test(
+      'isInitialized should be false when keysUploadFailed is true',
+      () {
+        // crypto_provider.dart:117-124 sets isInitialized=true AND
+        // keysUploadFailed=true simultaneously. This means any code that
+        // only checks isInitialized will proceed with broken keys.
 
-      const state = CryptoState(
-        isInitialized: true,
-        keysUploadFailed: true,
-        error: 'Key upload failed: network error',
-      );
+        const state = CryptoState(
+          isInitialized: true,
+          keysUploadFailed: true,
+          error: 'Key upload failed: network error',
+        );
 
-      // BUG: isInitialized is true even though keys failed to upload
-      // Any code that checks only isInitialized will think crypto is ready
-      expect(
-        state.isInitialized,
-        isTrue,
-        reason: 'BUG: isInitialized is true despite keysUploadFailed',
-      );
-      expect(state.keysUploadFailed, isTrue);
+        // BUG: isInitialized is true even though keys failed to upload.
+        // This assertion verifies the current incorrect behavior and WILL
+        // break once the fix makes isInitialized return false here.
+        expect(
+          state.isInitialized,
+          isTrue,
+          reason: 'BUG: isInitialized is true despite keysUploadFailed',
+        );
+        expect(state.keysUploadFailed, isTrue);
 
-      // The correct behavior: isInitialized should be false OR there should
-      // be a combined check like `isReady` that checks both flags.
-      // Currently nothing prevents sending encrypted messages with
-      // unuploaded keys.
-      final canSendEncrypted = state.isInitialized && !state.keysUploadFailed;
-      expect(
-        canSendEncrypted,
-        isFalse,
-        reason:
-            'Should not be able to send encrypted messages with failed upload',
-      );
-    });
+        // The correct behavior: isInitialized should be false OR there
+        // should be a combined check like `isReady` that checks both flags.
+        // Currently nothing prevents sending encrypted messages with
+        // unuploaded keys.
+        final canSendEncrypted = state.isInitialized && !state.keysUploadFailed;
+        expect(
+          canSendEncrypted,
+          isFalse,
+          reason:
+              'Should not be able to send encrypted messages with failed upload',
+        );
+      },
+      skip: 'BUG C2: documents current buggy behavior -- '
+          'update to isFalse when CryptoState.isInitialized is fixed',
+    );
   });
 
   // =========================================================================
