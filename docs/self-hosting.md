@@ -217,6 +217,55 @@ livekit:
 Keep the UDP port mappings as-is — Traefik does NOT proxy UDP, so media
 frames continue to bypass it.
 
+### LIVEKIT_KEYS format (gotcha)
+
+LiveKit parses the `LIVEKIT_KEYS` env var as YAML mapping syntax. The space
+after the colon is **required**:
+
+```yaml
+# Correct — note the space after the colon
+LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+
+# Wrong — LiveKit will fail to start with a parse error
+LIVEKIT_KEYS: "${LIVEKIT_API_KEY}:${LIVEKIT_API_SECRET}"
+```
+
+## Healthcheck patterns for the slim production images
+
+The published `server` and `web` images are intentionally minimal — they
+**do not include `curl`, `wget`, or `nc`** (the slim Debian server) or only
+include `wget` (the nginx web image). Use these patterns when adding
+`healthcheck:` blocks to your compose:
+
+```yaml
+server:
+  healthcheck:
+    # Server image has bash but no HTTP clients — use /dev/tcp
+    test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 || exit 1"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 20s
+
+web:
+  healthcheck:
+    # nginx:alpine ships busybox wget
+    test: ["CMD", "wget", "-qO-", "http://localhost/version.txt"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+
+livekit:
+  healthcheck:
+    test: ["CMD", "wget", "-qO-", "http://localhost:7880/"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+```
+
+The server's `/healthz` endpoint exists for richer probes but a TCP-level
+check is enough for Docker / Traefik to route around a hung container.
+
 ## TURN Server for Voice Channels
 
 ### Why you need TURN
