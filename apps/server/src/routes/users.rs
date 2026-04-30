@@ -459,13 +459,25 @@ pub async fn change_password(
         .map_err(|_| AppError::internal("Database error"))?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
-    let valid = password::verify_password(&body.current_password, &user.password_hash)?;
+    // Argon2 verify takes ~50-150ms of pure CPU. Without spawn_blocking it
+    // stalls a tokio worker for the whole duration -- login/register already
+    // do this; change_password was missing it (#697).
+    let stored_hash = user.password_hash.clone();
+    let current_password = body.current_password.clone();
+    let valid = tokio::task::spawn_blocking(move || {
+        password::verify_password(&current_password, &stored_hash)
+    })
+    .await
+    .map_err(|e| AppError::internal(format!("argon2 join error: {e}")))??;
     if !valid {
         return Err(AppError::unauthorized("Current password is incorrect"));
     }
 
-    // Hash and store new password
-    let new_hash = password::hash_password(&body.new_password)?;
+    // Hash and store new password (also spawn_blocking, same reason).
+    let new_password = body.new_password.clone();
+    let new_hash = tokio::task::spawn_blocking(move || password::hash_password(&new_password))
+        .await
+        .map_err(|e| AppError::internal(format!("argon2 join error: {e}")))??;
     db::users::update_password(&state.pool, auth.user_id, &new_hash)
         .await
         .map_err(|e| {
