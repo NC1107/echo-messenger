@@ -165,6 +165,28 @@ void main() {
       expect(svc.shown, isEmpty);
     });
 
+    test('isMuted takes priority over forceShow (ordering verified)', () {
+      svc.setAppFocused(true);
+
+      // forceShow=true alone is sufficient to bypass focus suppression
+      svc.showMessageNotification(
+        senderUsername: 'first',
+        body: 'force-shown',
+        forceShow: true,
+      );
+      expect(svc.shown, hasLength(1));
+
+      // isMuted=true still suppresses even when forceShow=true
+      svc.showMessageNotification(
+        senderUsername: 'second',
+        body: 'muted overrides force',
+        isMuted: true,
+        forceShow: true,
+      );
+      // Count stays at 1 — second notification was suppressed by isMuted
+      expect(svc.shown, hasLength(1));
+    });
+
     test('notification payload includes conversationId', () {
       svc.setAppFocused(false);
       svc.showMessageNotification(
