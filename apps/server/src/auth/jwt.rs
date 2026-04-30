@@ -135,4 +135,32 @@ mod tests {
         let h2 = hash_refresh_token("token_b");
         assert_ne!(h1, h2);
     }
+
+    #[test]
+    fn test_expired_token_is_rejected() {
+        // Mint a token whose exp is in the past and confirm validate_token
+        // rejects it.  Guards against regressions that disable expiry checks
+        // (e.g. flipping `validation.validate_exp` off).
+        let user_id = Uuid::new_v4();
+        let now = chrono::Utc::now().timestamp() as usize;
+        // jsonwebtoken's Validation::default() has a 60-second clock-skew
+        // leeway, so the expiry must be more than 60s in the past for the
+        // assertion to be meaningful.
+        let expired = Claims {
+            sub: user_id.to_string(),
+            exp: now - 3600,
+            iat: now - 7200,
+            iss: "echo-messenger".to_string(),
+            aud: "echo-app".to_string(),
+        };
+        let token = encode(
+            &Header::default(),
+            &expired,
+            &EncodingKey::from_secret(TEST_SECRET.as_bytes()),
+        )
+        .unwrap();
+
+        let result = validate_token(&token, TEST_SECRET);
+        assert!(result.is_err(), "expired token should be rejected");
+    }
 }
