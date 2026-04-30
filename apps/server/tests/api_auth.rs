@@ -192,6 +192,45 @@ async fn login_sets_refresh_cookie() {
     assert_refresh_cookie_attrs(set_cookie, "604800");
 }
 
+/// Regression guard for the three security flags the issue specifically tracks.
+/// Each attribute is asserted independently so a single missing flag fails the
+/// test immediately with an actionable message, rather than being masked by
+/// other assertions in the shared helper.
+///
+/// - `HttpOnly` — JavaScript cannot read the cookie, preventing token theft
+///   via XSS.
+/// - `Secure` — the cookie is transmitted over HTTPS only, preventing
+///   interception on plain-HTTP connections.
+/// - `SameSite=Strict` — the cookie is not sent on cross-site requests,
+///   mitigating CSRF attacks against the `/api/auth/refresh` endpoint.
+#[tokio::test]
+async fn login_refresh_cookie_has_httponly_secure_samesite_strict() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("websecflags");
+
+    common::register(&client, &base, &username, "password123").await;
+    let resp = common::login_raw(&client, &base, &username, "password123").await;
+    assert_eq!(resp.status().as_u16(), 200);
+
+    let set_cookie = find_set_cookie(&resp, "echo_refresh")
+        .expect("Set-Cookie: echo_refresh must be present on login");
+    let lower = set_cookie.to_ascii_lowercase();
+
+    assert!(
+        lower.contains("httponly"),
+        "echo_refresh cookie is missing HttpOnly -- JS can read the token: {set_cookie}"
+    );
+    assert!(
+        lower.contains("secure"),
+        "echo_refresh cookie is missing Secure -- token transmitted over plain HTTP: {set_cookie}"
+    );
+    assert!(
+        lower.contains("samesite=strict"),
+        "echo_refresh cookie is missing SameSite=Strict -- CSRF risk on /refresh: {set_cookie}"
+    );
+}
+
 #[tokio::test]
 async fn register_sets_refresh_cookie() {
     let base = common::spawn_server().await;
