@@ -50,6 +50,12 @@ rand = "0.10"
 # Signal Protocol signature verification
 ed25519-dalek = { version = "2", features = ["std"] }
 
+# Shared wire-format constants (#700). echo-core defines magic bytes,
+# version markers, header_len, KDF info strings, and skip-key bounds in
+# one place; server consumes via `echo_core::signal::protocol::*` so
+# the protocol contract has a single source of truth.
+echo-core = { path = "../../core/rust-core" }
+
 # Tracing
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

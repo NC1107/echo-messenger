@@ -15,14 +15,11 @@ void main() {
   group('handleCanvasEvent – stroke', () {
     test('appends stroke to state', () {
       var state = const CanvasState(isLoaded: true);
-      final stroke = CanvasStroke(
+      final stroke = const CanvasStroke(
         id: 'stroke-1',
         color: '#FFFFFF',
         width: 3.0,
-        points: const [
-          CanvasPoint(x: 0.1, y: 0.2),
-          CanvasPoint(x: 0.3, y: 0.4),
-        ],
+        points: [CanvasPoint(x: 0.1, y: 0.2), CanvasPoint(x: 0.3, y: 0.4)],
       );
 
       // Simulate what handleCanvasEvent("stroke") does.
@@ -36,20 +33,20 @@ void main() {
 
   group('handleCanvasEvent – clear', () {
     test('removes all strokes', () {
-      var state = CanvasState(
+      var state = const CanvasState(
         isLoaded: true,
         strokes: [
           CanvasStroke(
             id: 'a',
             color: '#FF0000',
             width: 2.0,
-            points: const [CanvasPoint(x: 0.0, y: 0.0)],
+            points: [CanvasPoint(x: 0.0, y: 0.0)],
           ),
           CanvasStroke(
             id: 'b',
             color: '#00FF00',
             width: 2.0,
-            points: const [CanvasPoint(x: 0.5, y: 0.5)],
+            points: [CanvasPoint(x: 0.5, y: 0.5)],
           ),
         ],
       );
@@ -90,7 +87,7 @@ void main() {
         width: 0.25,
         height: 0.2,
       );
-      var state = CanvasState(isLoaded: true, images: [original]);
+      var state = const CanvasState(isLoaded: true, images: [original]);
 
       // Simulate image_move
       final updated = original.copyWith(x: 0.5, y: 0.6);
@@ -121,7 +118,7 @@ void main() {
         width: 0.1,
         height: 0.1,
       );
-      var state = CanvasState(isLoaded: true, images: [img1, img2]);
+      var state = const CanvasState(isLoaded: true, images: [img1, img2]);
 
       final newImages = state.images.where((img) => img.id != 'img-1').toList();
       state = state.copyWith(images: newImages);

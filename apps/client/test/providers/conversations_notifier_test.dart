@@ -161,7 +161,7 @@ void main() {
 
   group('ConversationsState', () {
     test('copyWith preserves conversations when not overridden', () {
-      final state = ConversationsState(
+      final state = const ConversationsState(
         conversations: [_conv1, _conv2],
         isLoading: true,
       );

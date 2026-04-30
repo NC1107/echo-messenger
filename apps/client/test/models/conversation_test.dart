@@ -52,11 +52,11 @@ void main() {
     });
 
     test('displayName shows group name for groups', () {
-      final conv = Conversation(
+      final conv = const Conversation(
         id: 'conv-1',
         name: 'Team Chat',
         isGroup: true,
-        members: const [
+        members: [
           ConversationMember(userId: 'user-1', username: 'alice'),
           ConversationMember(userId: 'user-2', username: 'bob'),
         ],
@@ -66,10 +66,10 @@ void main() {
     });
 
     test('displayName shows peer name for 1:1', () {
-      final conv = Conversation(
+      final conv = const Conversation(
         id: 'conv-1',
         isGroup: false,
-        members: const [
+        members: [
           ConversationMember(userId: 'user-1', username: 'alice'),
           ConversationMember(userId: 'user-2', username: 'bob'),
         ],
@@ -80,7 +80,7 @@ void main() {
     });
 
     test('copyWith updates specified fields', () {
-      final conv = Conversation(
+      final conv = const Conversation(
         id: 'conv-1',
         name: 'Old Name',
         isGroup: true,

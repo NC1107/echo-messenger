@@ -147,7 +147,7 @@ class _IdentityKeyChangedBannerState
                       child: Text(
                         "Security alert: $_peerUsername's identity key "
                         'has changed. Verify their safety number.',
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 12,
                           color: EchoTheme.warning,
                           fontWeight: FontWeight.w500,
@@ -203,7 +203,7 @@ class _IdentityKeyChangedBannerState
                               width: 1,
                             ),
                           ),
-                          child: Text(
+                          child: const Text(
                             'Trust new key',
                             style: TextStyle(
                               fontSize: 11,

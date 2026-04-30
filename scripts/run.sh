@@ -29,7 +29,7 @@ sleep 1
 
 source "$HOME/.cargo/env" 2>/dev/null || true
 export DATABASE_URL="postgres://echo:dev_password@localhost:5432/echo_dev"
-export JWT_SECRET="dev-secret"
+export JWT_SECRET="dev-jwt-secret-must-be-at-least-32-chars-long"
 export RUST_LOG="echo_server=info"
 mkdir -p uploads/avatars
 

@@ -199,24 +199,14 @@ pub async fn handle_socket(
     // Broadcast online presence to contacts
     typing_service::broadcast_presence(&state, user_id, &username, "online").await;
 
-    // Forward hub messages to WebSocket sink. Audit #696: previously this
-    // ran as a detached `tokio::spawn` and the receive loop ran serially
-    // afterward, so the two halves had no shared lifecycle -- if the peer's
-    // TCP died but more inbound bytes arrived, the receive loop kept
-    // accepting frames and the hub kept enqueueing into a now-unread mpsc
-    // channel until it filled. Conversely if the receive loop ended first
-    // (ticket expiry), aborting the send task discarded any pending hub
-    // messages. We now wrap both halves in `tokio::select!` so either half
-    // ending tears down both, and we drain `rx` with a brief timeout after
-    // shutdown to flush in-flight frames before the connection drops.
+    // Forward hub -> sink. Both halves are select!-linked below so neither
+    // outlives the other; rx returned for post-shutdown drain.
     let send_fut = async move {
         while let Some(msg) = rx.recv().await {
             if sender.send(msg).await.is_err() {
                 break;
             }
         }
-        // Return ownership of the sink + the receiver so the post-shutdown
-        // drain step can continue using the same socket.
         (sender, rx)
     };
     tokio::pin!(send_fut);

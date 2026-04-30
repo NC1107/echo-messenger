@@ -167,12 +167,6 @@ pub async fn fetch_preview(
         }));
     }
 
-    // Audit #684: stream the body and abort once the byte cap is reached
-    // instead of buffering the whole response and then truncating. Otherwise
-    // a multi-GB response (or a gzip bomb if compression is ever enabled)
-    // OOMs the server before cap_html ever runs. Also reject obvious size
-    // hints up front via Content-Length so we don't pay the round-trip
-    // for clearly-oversized bodies.
     if let Some(declared_len) = resp.content_length()
         && declared_len > MAX_HTML_BYTES as u64
     {

@@ -91,6 +91,50 @@ pub struct LastMessageInfo {
     pub created_at: DateTime<Utc>,
 }
 
+/// Message response DTO for GET /api/messages/:conversation_id.
+#[derive(Debug, Serialize)]
+pub struct MessageDto {
+    pub id: Uuid,
+    pub message_id: Uuid,
+    pub conversation_id: Uuid,
+    pub channel_id: Option<Uuid>,
+    pub sender_id: Uuid,
+    pub from_user_id: Uuid,
+    pub from_device_id: Option<i32>,
+    pub sender_username: String,
+    pub from_username: String,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub edited_at: Option<DateTime<Utc>>,
+    pub reply_to_id: Option<Uuid>,
+    pub reply_to_content: Option<String>,
+    pub reply_to_username: Option<String>,
+    pub reply_count: i64,
+}
+
+impl From<db::messages::MessageWithSender> for MessageDto {
+    fn from(m: db::messages::MessageWithSender) -> Self {
+        Self {
+            id: m.id,
+            message_id: m.id,
+            conversation_id: m.conversation_id,
+            channel_id: m.channel_id,
+            sender_id: m.sender_id,
+            from_user_id: m.sender_id,
+            from_device_id: m.sender_device_id,
+            sender_username: m.sender_username.clone(),
+            from_username: m.sender_username,
+            content: m.content,
+            created_at: m.created_at,
+            edited_at: m.edited_at,
+            reply_to_id: m.reply_to_id,
+            reply_to_content: m.reply_to_content,
+            reply_to_username: m.reply_to_username,
+            reply_count: m.reply_count,
+        }
+    }
+}
+
 /// Raw row returned by the single optimized list_conversations query.
 #[derive(Debug, sqlx::FromRow)]
 struct ConversationFullRow {
@@ -289,34 +333,8 @@ pub async fn get_messages(
     .await
     .db_ctx("get_messages/fetch")?;
 
-    // Re-shape the response to expose `from_user_id` / `from_username` /
-    // `from_device_id` keys the client expects on history (#557). Doing it
-    // here avoids changing every other consumer of `MessageWithSender`.
-    let body: Vec<serde_json::Value> = messages
-        .into_iter()
-        .map(|m| {
-            serde_json::json!({
-                "id": m.id,
-                "message_id": m.id,
-                "conversation_id": m.conversation_id,
-                "channel_id": m.channel_id,
-                "sender_id": m.sender_id,
-                "from_user_id": m.sender_id,
-                "from_device_id": m.sender_device_id,
-                "sender_username": m.sender_username,
-                "from_username": m.sender_username,
-                "content": m.content,
-                "created_at": m.created_at,
-                "edited_at": m.edited_at,
-                "reply_to_id": m.reply_to_id,
-                "reply_to_content": m.reply_to_content,
-                "reply_to_username": m.reply_to_username,
-                "reply_count": m.reply_count,
-            })
-        })
-        .collect();
-
-    Ok(Json(body))
+    let dtos: Vec<MessageDto> = messages.into_iter().map(MessageDto::from).collect();
+    Ok(Json(dtos))
 }
 
 #[derive(Debug, Deserialize)]

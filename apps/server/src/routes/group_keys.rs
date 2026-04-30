@@ -110,10 +110,7 @@ pub async fn upload_group_key(
         ));
     }
 
-    // Audit #686: cap envelope count and reject empty payloads up front so
-    // a hostile admin can't pollute the table with millions of junk entries.
-    // 10 000 is generous -- the largest group on echo-messenger.us is well
-    // below this, and matches the per-conv member ceiling we'd want anyway.
+    // Cap envelope count so a hostile admin can't pollute the table.
     const MAX_ENVELOPES_PER_REQUEST: usize = 10_000;
     if body.envelopes.len() > MAX_ENVELOPES_PER_REQUEST {
         return Err(AppError::bad_request(format!(
@@ -129,19 +126,10 @@ pub async fn upload_group_key(
         }
     }
 
-    // Audit #687: sentinel row + envelopes commit atomically. Previously
-    // these were two separate pool queries -- if the second envelope failed,
-    // the conversation was left with a key_version row but only some members
-    // had envelopes, and those without one could not decrypt anything until
-    // the next rotation.
+    // Sentinel row + envelopes commit atomically; member-set read inside
+    // the same tx so we see the committed view that matches the writes.
     let mut tx = state.pool.begin().await.db_ctx("upload_group_key/begin")?;
 
-    // Audit #686: every envelope.user_id must be a current group member.
-    // Without this, a hostile admin can stage envelopes for arbitrary users
-    // who never were members; future invitees would receive pre-staged
-    // envelopes on join, and banned-then-readded users could be silently
-    // re-keyed.  Read membership inside the same tx so we see the current
-    // committed view (matches the writes that follow).
     let member_ids: std::collections::HashSet<Uuid> =
         db::groups::get_conversation_member_ids(&mut *tx, group_id)
             .await

@@ -183,15 +183,9 @@ pub async fn get_messages(
     requesting_device_id: Option<i32>,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     // Single query handles both cursor and non-cursor cases via optional $3 param.
-    // #557: when the caller passes its own `device_id`, we LEFT JOIN
-    // `message_device_contents` and surface the device-specific ciphertext via
-    // COALESCE so multi-device DM history decrypts on the right ratchet.
-    // When no device_id is provided we preserve the legacy behaviour.
-    // Audit #678: replace correlated `(SELECT COUNT(*) ...)` per-row with a
-    // single LEFT JOIN LATERAL.  Postgres can plan the lateral once per outer
-    // row but still benefit from the partial index `idx_messages_reply_to_id`
-    // -- and importantly the same shape is reused by `search_messages` /
-    // `get_thread_replies` so the planner statistics line up across paths.
+    // #557: when device_id is supplied, COALESCE per-device ciphertext over
+    // the canonical content. reply_count via LEFT JOIN LATERAL matches the
+    // shape used by search_messages / get_thread_replies.
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -236,21 +230,14 @@ pub async fn get_messages(
 /// (#634), while still exercising the ack queue under realistic backlogs.
 pub const UNDELIVERED_PAGE_SIZE: i64 = 200;
 
-/// Fetch undelivered messages for a user, optionally after a `created_at`
-/// cursor.  Caller paginates by passing the last-seen `created_at` from the
-/// previous batch; with `None` this returns the oldest 200.
-///
-/// Audit #689: previously this had no `after_ts` and the caller fetched
-/// once.  Backlogs > 200 silently truncated -- the rest got stuck until the
-/// next reconnect.  Callers now loop with the cursor until the batch
-/// returns < UNDELIVERED_PAGE_SIZE rows.
+/// Fetch undelivered messages, optionally after a `created_at` cursor.
+/// Callers loop with the cursor until the batch returns
+/// < UNDELIVERED_PAGE_SIZE rows.
 pub async fn get_undelivered(
     pool: &PgPool,
     user_id: Uuid,
     after_ts: Option<DateTime<Utc>>,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
-    // Audit #638: same LEFT JOIN LATERAL shape as get_messages -- one
-    // sub-query per outer row instead of a correlated COUNT(*).
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \

@@ -15,16 +15,10 @@ use crate::ws::typing_service::get_member_ids_cached;
 
 pub(super) const MAX_MESSAGE_LENGTH: usize = 10_000;
 
-/// Echo Messenger wire format magic byte (#591). The first byte of any
-/// initial-message payload identifies the protocol family.
-const ECHO_WIRE_MAGIC: u8 = 0xEC;
-/// Initial-message version 1 (no one-time prekey).
-const ECHO_WIRE_INITIAL_V1: u8 = 0x01;
-/// Initial-message version 2 (with one-time prekey).
-const ECHO_WIRE_INITIAL_V2: u8 = 0x02;
-/// Normal-message wire prefix is a u32 LE header length of 40 bytes
-/// (`header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`).
-const ECHO_NORMAL_HEADER_LEN: u32 = 40;
+use echo_core::signal::protocol::{
+    NORMAL_HEADER_LEN as ECHO_NORMAL_HEADER_LEN, WIRE_INITIAL_V1 as ECHO_WIRE_INITIAL_V1,
+    WIRE_INITIAL_V2 as ECHO_WIRE_INITIAL_V2, WIRE_MAGIC as ECHO_WIRE_MAGIC,
+};
 
 /// Validate that a base64-encoded payload is shaped like an Echo
 /// ciphertext wire frame. We do NOT decrypt or otherwise validate
@@ -904,10 +898,7 @@ pub(super) async fn fanout_message(
 /// used as a fallback when no device-specific row exists (group messages,
 /// unencrypted convs, or messages predating multi-device support).
 pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid, device_id: i32) {
-    // Audit #689: loop with cursor pagination so backlogs >200 messages
-    // (multi-week offline) replay completely instead of leaving the rest
-    // stuck until the next reconnect.  Cap iterations defensively against a
-    // pathological pool error returning the same row over and over.
+    // Cursor-paginated replay; cap iterations against pathological pool errors.
     const MAX_ITERATIONS: usize = 50; // 50 * 200 = 10 000 messages per reconnect
     let mut after_ts: Option<chrono::DateTime<chrono::Utc>> = None;
     for _iter in 0..MAX_ITERATIONS {

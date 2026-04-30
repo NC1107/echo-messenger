@@ -12,7 +12,7 @@ void main() {
 
     test('withMessage adds message to correct conversation', () {
       const state = ChatState();
-      final msg = ChatMessage(
+      final msg = const ChatMessage(
         id: 'msg1',
         fromUserId: 'user1',
         fromUsername: 'alice',
@@ -28,7 +28,7 @@ void main() {
 
     test('messages for different conversations are isolated', () {
       const state = ChatState();
-      final msg1 = ChatMessage(
+      final msg1 = const ChatMessage(
         id: 'msg1',
         fromUserId: 'user1',
         fromUsername: 'alice',
@@ -37,7 +37,7 @@ void main() {
         timestamp: '2026-01-01T00:00:00Z',
         isMine: false,
       );
-      final msg2 = ChatMessage(
+      final msg2 = const ChatMessage(
         id: 'msg2',
         fromUserId: 'user2',
         fromUsername: 'bob',
@@ -54,7 +54,7 @@ void main() {
 
     test('withMessage deduplicates by id', () {
       const state = ChatState();
-      final msg = ChatMessage(
+      final msg = const ChatMessage(
         id: 'msg1',
         fromUserId: 'user1',
         fromUsername: 'alice',
@@ -84,7 +84,7 @@ void main() {
     });
 
     test('Reaction model', () {
-      final r = Reaction(
+      final r = const Reaction(
         messageId: 'm1',
         userId: 'u1',
         username: 'alice',
@@ -101,7 +101,7 @@ void main() {
 
     test('copyWith with replyToMessage sets the reply', () {
       const state = ChatState();
-      final replyMsg = ChatMessage(
+      final replyMsg = const ChatMessage(
         id: 'reply-1',
         fromUserId: 'user1',
         fromUsername: 'alice',
@@ -117,7 +117,7 @@ void main() {
     });
 
     test('copyWith with clearReply clears the reply', () {
-      final replyMsg = ChatMessage(
+      final replyMsg = const ChatMessage(
         id: 'reply-1',
         fromUserId: 'user1',
         fromUsername: 'alice',
@@ -134,7 +134,7 @@ void main() {
     });
 
     test('clearReply takes precedence over replyToMessage in copyWith', () {
-      final msg = ChatMessage(
+      final msg = const ChatMessage(
         id: 'r1',
         fromUserId: 'u1',
         fromUsername: 'alice',
@@ -150,7 +150,7 @@ void main() {
     });
 
     test('withMessage preserves replyToMessage', () {
-      final replyMsg = ChatMessage(
+      final replyMsg = const ChatMessage(
         id: 'reply-1',
         fromUserId: 'user1',
         fromUsername: 'alice',
@@ -160,7 +160,7 @@ void main() {
         isMine: false,
       );
       final state = ChatState(replyToMessage: replyMsg);
-      final newMsg = ChatMessage(
+      final newMsg = const ChatMessage(
         id: 'msg-new',
         fromUserId: 'user2',
         fromUsername: 'bob',
@@ -176,7 +176,7 @@ void main() {
 
     test('messages are ordered by insertion (append-only)', () {
       const state = ChatState();
-      final msg1 = ChatMessage(
+      final msg1 = const ChatMessage(
         id: 'msg1',
         fromUserId: 'u1',
         fromUsername: 'alice',
@@ -185,7 +185,7 @@ void main() {
         timestamp: '2026-01-01T00:00:00Z',
         isMine: false,
       );
-      final msg2 = ChatMessage(
+      final msg2 = const ChatMessage(
         id: 'msg2',
         fromUserId: 'u2',
         fromUsername: 'bob',
@@ -194,7 +194,7 @@ void main() {
         timestamp: '2026-01-01T00:00:01Z',
         isMine: false,
       );
-      final msg3 = ChatMessage(
+      final msg3 = const ChatMessage(
         id: 'msg3',
         fromUserId: 'u1',
         fromUsername: 'alice',
@@ -212,7 +212,7 @@ void main() {
     });
 
     test('ChatMessage pinnedAt and pinnedById via copyWith', () {
-      final msg = ChatMessage(
+      final msg = const ChatMessage(
         id: 'msg1',
         fromUserId: 'u1',
         fromUsername: 'alice',
@@ -252,7 +252,7 @@ void main() {
     });
 
     test('updateMessagePin updates pin on correct message', () {
-      final msg1 = ChatMessage(
+      final msg1 = const ChatMessage(
         id: 'msg1',
         fromUserId: 'u1',
         fromUsername: 'alice',
@@ -261,7 +261,7 @@ void main() {
         timestamp: '2026-01-01T00:00:00Z',
         isMine: false,
       );
-      final msg2 = ChatMessage(
+      final msg2 = const ChatMessage(
         id: 'msg2',
         fromUserId: 'u2',
         fromUsername: 'bob',
@@ -301,7 +301,7 @@ void main() {
     });
 
     test('messagesForConversationChannel filters by channelId', () {
-      final msg1 = ChatMessage(
+      final msg1 = const ChatMessage(
         id: 'msg1',
         fromUserId: 'u1',
         fromUsername: 'alice',
@@ -311,7 +311,7 @@ void main() {
         timestamp: '2026-01-01T00:00:00Z',
         isMine: false,
       );
-      final msg2 = ChatMessage(
+      final msg2 = const ChatMessage(
         id: 'msg2',
         fromUserId: 'u2',
         fromUsername: 'bob',

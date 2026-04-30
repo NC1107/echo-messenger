@@ -44,7 +44,7 @@ services:
       - traefik
 
   postgres:
-    image: postgres:17
+    image: postgres:17.6
     restart: unless-stopped
     environment:
       POSTGRES_DB: echo_prod
@@ -100,7 +100,7 @@ services:
   #   SERVER_VERSION=v1.2.3 WEB_VERSION=v1.2.3 docker compose pull && docker compose up -d
 
   backup:
-    image: prodrigestivill/postgres-backup-local:17
+    image: prodrigestivill/postgres-backup-local:17.6
     restart: unless-stopped
     environment:
       POSTGRES_HOST: postgres

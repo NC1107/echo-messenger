@@ -508,8 +508,6 @@ pub async fn join_group(
         return Err(AppError::bad_request("Group not found or is not public"));
     }
 
-    // Audit #692: drop the membership cache so the new member's typing /
-    // presence / fanout requests no longer hit a cached "not a member" miss.
     invalidate_member_cache(group_id);
 
     Ok(Json(serde_json::json!({ "status": "joined" })))
