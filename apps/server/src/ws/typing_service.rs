@@ -235,6 +235,25 @@ pub(super) async fn broadcast_presence(
     username: &str,
     status: &str,
 ) {
+    // Audit #436: gate presence on first-device-up / last-device-down so
+    // a multi-device user reconnecting after a network blip doesn't make
+    // every contact see online/offline/online/offline once per device.
+    // `register` happens before this call (online) and `unregister` happens
+    // before this call (offline), so:
+    //   online:  device_count == 1 -> first device just connected, broadcast
+    //   online:  device_count >  1 -> already had other devices, no-op
+    //   offline: device_count == 0 -> last device just disconnected, broadcast
+    //   offline: device_count >  0 -> still has other devices, no-op
+    let dev_count = state.hub.device_count(&user_id);
+    let should_broadcast = match status {
+        "online" => dev_count == 1,
+        "offline" => dev_count == 0,
+        _ => true, // explicit status changes (away/dnd) always broadcast
+    };
+    if !should_broadcast {
+        return;
+    }
+
     let contact_ids = match db::contacts::list_contact_user_ids(&state.pool, user_id).await {
         Ok(ids) => ids,
         Err(e) => {
