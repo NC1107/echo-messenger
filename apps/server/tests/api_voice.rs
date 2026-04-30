@@ -165,9 +165,14 @@ async fn voice_token_without_conversation_id_rejected() {
     );
 }
 
-/// Voice token with empty room is rejected.
+/// Voice token with empty body is rejected (no room can be derived).
+///
+/// After CRIT-1 the `room` field was removed from the request: rooms are
+/// always derived from a verified-membership conversation_id/channel_id, so
+/// the canonical "missing room" failure now surfaces as the missing
+/// conversation_id error.
 #[tokio::test]
-async fn voice_token_empty_room_rejected() {
+async fn voice_token_empty_body_rejected() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
@@ -189,6 +194,39 @@ async fn voice_token_empty_room_rejected() {
         body["error"]
             .as_str()
             .unwrap_or("")
-            .contains("Room name is required")
+            .contains("conversation_id or channel_id is required"),
+        "expected conversation-id error, got: {}",
+        body
+    );
+}
+
+/// CRIT-1 regression test: the `room` field on the request is silently
+/// dropped now -- the LiveKit grant must always be derived from the
+/// validated conversation_id, never an attacker-supplied value.  We assert
+/// the request reaches the LIVEKIT-config error (i.e. validation passed)
+/// even though we tried to set a different `room` than `conversation_id`.
+#[tokio::test]
+async fn voice_token_ignores_attacker_supplied_room() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _, conv_id) = setup_voice_test(&client, &base).await;
+
+    let resp = client
+        .post(format!("{base}/api/voice/token"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({
+            // An attacker tries to steer the room claim to a victim conv id.
+            "room": "00000000-0000-0000-0000-000000000000",
+            "conversation_id": conv_id,
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let body: Value = resp.json().await.unwrap();
+    let error = body["error"].as_str().unwrap_or("");
+    assert!(
+        error.contains("Voice chat is not configured"),
+        "expected LIVEKIT config error (validation passed), got: {error}"
     );
 }

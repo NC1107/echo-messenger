@@ -14,11 +14,12 @@ use crate::routes::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct TokenRequest {
-    pub room: Option<String>,
     pub identity: Option<String>,
     /// Alternative field name used by some mobile clients.
     pub channel_id: Option<String>,
-    /// Conversation context -- used to derive room name when `room` is absent.
+    /// Conversation context -- the room name is derived from this so the
+    /// LiveKit grant cannot be steered to a conversation the caller is not
+    /// a member of (CRIT-1, audit 2026-04-30).
     pub conversation_id: Option<String>,
 }
 
@@ -81,53 +82,32 @@ pub async fn generate_token(
         ));
     }
 
-    // Resolve room: prefer explicit `room`, fall back to channel_id or
-    // conversation_id so mobile clients that send either field still work.
-    let room = body
-        .room
-        .or(body.channel_id.clone())
-        .or(body.conversation_id.clone())
-        .unwrap_or_default();
+    // Security: derive the LiveKit room name from the conversation the caller
+    // claims membership of, then check membership against THAT same value.
+    // Earlier code accepted a separate `body.room` that was used as the JWT
+    // claim while membership was checked against `conversation_id`, so a
+    // member of conv A could request `{room: "<victim>", conversation_id: "<A>"}`
+    // and receive a token granting access to the victim's room (CRIT-1).
+    let conversation_id_str = body.conversation_id.or(body.channel_id).ok_or_else(|| {
+        AppError::bad_request("conversation_id or channel_id is required for voice token")
+    })?;
 
-    if room.is_empty() {
-        return Err(AppError::bad_request("Room name is required"));
+    let conv_uuid = uuid::Uuid::parse_str(&conversation_id_str)
+        .map_err(|_| AppError::bad_request("Invalid conversation_id or channel_id"))?;
+
+    let is_member = db::groups::is_member(&state.pool, conv_uuid, auth.user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("DB error checking voice token membership: {e:?}");
+            AppError::internal("Database error")
+        })?;
+    if !is_member {
+        return Err(AppError::bad_request("Not a member of this conversation"));
     }
 
-    // Validate room name: alphanumeric, hyphens, underscores, colons only.
-    // Prevents injection into LiveKit room names that could break tenant
-    // isolation or cause unexpected behavior in the LiveKit server.
-    if room.len() > 128
-        || !room
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == ':')
-    {
-        return Err(AppError::bad_request(
-            "Room name must be alphanumeric with hyphens, underscores, or colons (max 128 chars)",
-        ));
-    }
-
-    // Security: verify the user is a member of the conversation they are
-    // requesting a voice token for.  Without this check any authenticated
-    // user could generate a token for an arbitrary room and eavesdrop on
-    // voice channels they should not have access to.
-    let conversation_id_str = body.conversation_id.or(body.channel_id);
-    if let Some(ref cid) = conversation_id_str {
-        let conv_uuid = uuid::Uuid::parse_str(cid)
-            .map_err(|_| AppError::bad_request("Invalid conversation_id or channel_id"))?;
-        let is_member = db::groups::is_member(&state.pool, conv_uuid, auth.user_id)
-            .await
-            .map_err(|e| {
-                tracing::error!("DB error checking voice token membership: {e:?}");
-                AppError::internal("Database error")
-            })?;
-        if !is_member {
-            return Err(AppError::bad_request("Not a member of this conversation"));
-        }
-    } else {
-        return Err(AppError::bad_request(
-            "conversation_id or channel_id is required for voice token",
-        ));
-    }
+    // Use the conversation UUID (canonical, hyphenated) as the LiveKit room
+    // name -- safe by construction (alphanumeric + hyphens, <= 36 chars).
+    let room = conv_uuid.to_string();
 
     let api_key = std::env::var("LIVEKIT_API_KEY").map_err(|_| {
         AppError::bad_request(
