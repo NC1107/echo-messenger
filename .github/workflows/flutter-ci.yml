@@ -79,7 +79,11 @@ jobs:
         with:
           files: apps/client/coverage/lcov.info
           flags: flutter
-          fail_ci_if_error: true
+          # Codecov rejects tokenless uploads on protected branches; the
+          # coverage threshold check above is already enforced separately,
+          # so let the upload fail soft until CODECOV_TOKEN is wired up.
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
           token: ${{ secrets.CODECOV_TOKEN }}
 
   smoke-linux:
