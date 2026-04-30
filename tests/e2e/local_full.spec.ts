@@ -23,22 +23,89 @@ async function dismiss(page: Page) {
   await page.waitForTimeout(300);
 }
 
+/** Wait for Flutter to boot and the semantics tree to appear. */
+async function waitForFlutter(page: Page) {
+  await page.waitForSelector('flt-semantics', { timeout: 20000 });
+  await page.waitForTimeout(2000);
+}
+
+/** Dismiss any modal dialogs (e.g. "Welcome to Echo"). */
+async function dismissDialogs(page: Page) {
+  for (const label of [/got it/i, /close/i, /dismiss/i]) {
+    const btn = page.getByRole('button', { name: label });
+    if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await btn.click();
+      await page.waitForTimeout(500);
+    }
+  }
+}
+
+/**
+ * Login using semantic locators (ARIA/Semantics tree from Flutter web).
+ * Falls back to viewport-relative coordinates only as a last resort.
+ */
 async function login(page: Page, username: string, password: string) {
   await page.goto(APP);
-  await page.waitForTimeout(5000);
-  const vp = page.viewportSize()!;
-  // Click username field
-  await page.mouse.click(vp.width / 2, vp.height / 2 - 40);
-  await page.waitForTimeout(200);
-  await page.keyboard.type(username, { delay: 12 });
-  await page.keyboard.press('Tab');
-  await page.waitForTimeout(200);
-  await page.keyboard.type(password, { delay: 12 });
-  await page.keyboard.press('Enter');
+  await waitForFlutter(page);
+
+  // Flutter web exposes text field labels via aria-label matching InputDecoration.labelText
+  const userInput = page.locator('input[aria-label="Username"]');
+  if (await userInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await userInput.focus();
+    await page.keyboard.type(username, { delay: 12 });
+    const passInput = page.locator('input[aria-label="Password"]');
+    await passInput.focus();
+    await page.keyboard.type(password, { delay: 12 });
+    await page.getByRole('button', { name: /login/i }).click();
+  } else {
+    // Fallback: viewport-relative coordinates (avoids absolute-pixel brittleness)
+    const vp = page.viewportSize()!;
+    await page.mouse.click(vp.width / 2, vp.height / 2 - 40);
+    await page.waitForTimeout(200);
+    await page.keyboard.type(username, { delay: 12 });
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(200);
+    await page.keyboard.type(password, { delay: 12 });
+    await page.keyboard.press('Enter');
+  }
+
   await page.waitForTimeout(7000);
-  // Dismiss popups aggressively
   await dismiss(page);
+  await dismissDialogs(page);
   await page.waitForTimeout(1000);
+}
+
+/**
+ * Open a DM or group conversation in the sidebar by name.
+ * Prefers semantic button locators; falls back to viewport-relative click.
+ */
+async function openConversation(page: Page, name: string) {
+  const btn = page.getByRole('button', { name: new RegExp(name, 'i') });
+  if (await btn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await btn.click();
+  } else {
+    // Fallback: proportional coords (conversation list is in the left sidebar)
+    const vp = page.viewportSize()!;
+    await page.mouse.click(vp.width * 0.125, vp.height * 0.195);
+  }
+  await page.waitForTimeout(3000);
+}
+
+/**
+ * Focus the chat input and type a message, then press Enter.
+ * Uses ARIA textbox role; falls back to viewport-relative click.
+ */
+async function sendMessage(page: Page, text: string) {
+  const chatInput = page.getByRole('textbox').last();
+  if (await chatInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await chatInput.focus();
+  } else {
+    const vp = page.viewportSize()!;
+    await page.mouse.click(vp.width * 0.625, vp.height * 0.958);
+  }
+  await page.waitForTimeout(300);
+  await page.keyboard.type(text, { delay: 8 });
+  await page.keyboard.press('Enter');
 }
 
 test('Full feature test', async ({ browser }) => {
@@ -106,32 +173,22 @@ test('Full feature test', async ({ browser }) => {
   await p2.waitForTimeout(5000);
   await ss(p2, '04-u2-after-refresh');
 
-  // Click first conversation (sidebar area, ~160px from left, ~140px from top)
-  // On desktop sidebar is 320px wide
-  await p1.mouse.click(160, 140);
-  await p1.waitForTimeout(3000);
+  // Open the DM conversation with u2 using the semantic button locator
+  await openConversation(p1, u2);
   await ss(p1, '05-u1-conv-selected');
 
-  // Try sending a message (input at bottom of chat area)
-  // Chat area starts at ~321px, input at bottom ~690px
-  await p1.mouse.click(800, 690);
-  await p1.waitForTimeout(300);
-  await p1.keyboard.type(`Live test from ${u1}!`, { delay: 8 });
+  // Send a message using the semantic chat input
+  await sendMessage(p1, `Live test from ${u1}!`);
   await ss(p1, '06-u1-typing');
-  await p1.keyboard.press('Enter');
   await p1.waitForTimeout(2000);
   await ss(p1, '07-u1-sent');
 
-  // U2 clicks conversation
-  await p2.mouse.click(160, 140);
-  await p2.waitForTimeout(3000);
+  // U2 opens the conversation with u1
+  await openConversation(p2, u1);
   await ss(p2, '08-u2-conv-selected');
 
   // U2 replies
-  await p2.mouse.click(800, 690);
-  await p2.waitForTimeout(300);
-  await p2.keyboard.type(`Reply from ${u2}!`, { delay: 8 });
-  await p2.keyboard.press('Enter');
+  await sendMessage(p2, `Reply from ${u2}!`);
   await p2.waitForTimeout(2000);
   await ss(p2, '09-u2-replied');
 
@@ -140,38 +197,26 @@ test('Full feature test', async ({ browser }) => {
   await ss(p1, '10-u1-sees-reply');
 
   // Emoji test
-  await p1.mouse.click(800, 690);
-  await p1.waitForTimeout(200);
-  await p1.keyboard.type('🔥🎉✨ Emoji works!', { delay: 8 });
-  await p1.keyboard.press('Enter');
+  await sendMessage(p1, '🔥🎉✨ Emoji works!');
   await p1.waitForTimeout(1500);
   await ss(p1, '11-emoji');
   check('Emoji', true);
 
   // XSS test
-  await p1.mouse.click(800, 690);
-  await p1.waitForTimeout(200);
-  await p1.keyboard.type('<script>alert("xss")</script>', { delay: 8 });
-  await p1.keyboard.press('Enter');
+  await sendMessage(p1, '<script>alert("xss")</script>');
   await p1.waitForTimeout(1500);
   await ss(p1, '12-xss');
   check('XSS safe', true, 'rendered as text');
 
   // URL test
-  await p1.mouse.click(800, 690);
-  await p1.waitForTimeout(200);
-  await p1.keyboard.type('Visit https://echo-messenger.us today', { delay: 8 });
-  await p1.keyboard.press('Enter');
+  await sendMessage(p1, 'Visit https://echo-messenger.us today');
   await p1.waitForTimeout(1500);
   await ss(p1, '13-url');
   check('URL message', true);
 
   // Rapid messages
   for (let i = 1; i <= 5; i++) {
-    await p1.mouse.click(800, 690);
-    await p1.waitForTimeout(100);
-    await p1.keyboard.type(`Rapid ${i}`);
-    await p1.keyboard.press('Enter');
+    await sendMessage(p1, `Rapid ${i}`);
     await p1.waitForTimeout(200);
   }
   await p1.waitForTimeout(2000);
@@ -180,12 +225,24 @@ test('Full feature test', async ({ browser }) => {
   await ss(p2, '15-u2-sees-rapid');
   check('Rapid messages', true);
 
-  // Settings (gear at bottom of sidebar, ~290px x, ~690px y for 320px sidebar)
-  await p1.mouse.click(290, 690);
+  // Open Settings via the semantic button (tooltip: 'Settings')
+  const settingsBtn = p1.getByRole('button', { name: 'Settings' });
+  if (await settingsBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await settingsBtn.click();
+  } else {
+    const vp = p1.viewportSize()!;
+    await p1.mouse.click(vp.width * 0.227, vp.height * 0.958);
+  }
   await p1.waitForTimeout(2000);
   await ss(p1, '16-settings');
-  // Back
-  await p1.mouse.click(20, 25);
+  // Back to conversations via the semantic button (tooltip: 'Back to conversations')
+  const backBtn = p1.getByRole('button', { name: 'Back to conversations' });
+  if (await backBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await backBtn.click();
+  } else {
+    const vp = p1.viewportSize()!;
+    await p1.mouse.click(vp.width * 0.016, vp.height * 0.035);
+  }
   await p1.waitForTimeout(1500);
   await ss(p1, '17-back-from-settings');
 
