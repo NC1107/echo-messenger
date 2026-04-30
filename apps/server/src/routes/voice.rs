@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::auth::middleware::AuthUser;
 use crate::db;
-use crate::error::AppError;
+use crate::error::{AppError, DbErrCtx};
 use crate::routes::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -64,10 +64,7 @@ pub async fn generate_token(
     // longer has to race a post-connect `setName` call.
     let user = db::users::find_by_id(&state.pool, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error looking up user for voice token: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("looking up user for voice token")?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
     let username = user.username;
@@ -97,10 +94,7 @@ pub async fn generate_token(
 
     let is_member = db::groups::is_member(&state.pool, conv_uuid, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error checking voice token membership: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("checking voice token membership")?;
     if !is_member {
         return Err(AppError::bad_request("Not a member of this conversation"));
     }
