@@ -426,4 +426,125 @@ void main() {
       expect(find.textContaining('You:'), findsOneWidget);
     });
   });
+
+  group('ConversationItem semantics label (#631)', () {
+    test('plain conversation, no unread, not muted, no snippet', () {
+      expect(
+        composeConversationItemSemanticsLabel(
+          displayName: 'alice',
+          unreadCount: 0,
+          muted: false,
+          snippet: null,
+        ),
+        equals('Conversation with alice'),
+      );
+    });
+
+    test('unread count is included', () {
+      expect(
+        composeConversationItemSemanticsLabel(
+          displayName: 'alice',
+          unreadCount: 3,
+          muted: false,
+          snippet: null,
+        ),
+        equals('Conversation with alice, 3 unread'),
+      );
+    });
+
+    test('muted is included', () {
+      expect(
+        composeConversationItemSemanticsLabel(
+          displayName: 'alice',
+          unreadCount: 0,
+          muted: true,
+          snippet: null,
+        ),
+        equals('Conversation with alice, muted'),
+      );
+    });
+
+    test('snippet is appended after the comma-separated tags', () {
+      expect(
+        composeConversationItemSemanticsLabel(
+          displayName: 'alice',
+          unreadCount: 0,
+          muted: false,
+          snippet: 'hey there',
+        ),
+        equals('Conversation with alice. Last message: hey there'),
+      );
+    });
+
+    test('full composition: name + unread + muted + snippet', () {
+      expect(
+        composeConversationItemSemanticsLabel(
+          displayName: 'Dev Team',
+          unreadCount: 5,
+          muted: true,
+          snippet: 'lunch?',
+        ),
+        equals(
+          'Conversation with Dev Team, 5 unread, muted. Last message: lunch?',
+        ),
+      );
+    });
+
+    test('empty snippet is omitted', () {
+      expect(
+        composeConversationItemSemanticsLabel(
+          displayName: 'alice',
+          unreadCount: 1,
+          muted: false,
+          snippet: '',
+        ),
+        equals('Conversation with alice, 1 unread'),
+      );
+    });
+
+    testWidgets(
+      'rendered Semantics node carries the composed label and excludes children',
+      (tester) async {
+        final conv = _makeConversation(
+          unreadCount: 2,
+          isMuted: true,
+          lastMessage: 'see you soon',
+          members: const [
+            ConversationMember(userId: 'peer-id', username: 'alice'),
+            ConversationMember(userId: 'my-id', username: 'me'),
+          ],
+        );
+        await tester.pumpApp(
+          ConversationItem(
+            conversation: conv,
+            myUserId: 'my-id',
+            isSelected: false,
+            isPinned: false,
+            isPeerOnline: false,
+            timestamp: '10:30',
+            onTap: () {},
+          ),
+        );
+        await tester.pump();
+
+        // The composed outer label is present somewhere in the Semantics
+        // tree of the widget.
+        final composed =
+            'Conversation with alice, 2 unread, muted. '
+            'Last message: see you soon';
+        final labels = tester
+            .widgetList<Semantics>(find.byType(Semantics))
+            .map((s) => s.properties.label ?? '')
+            .toList();
+        expect(
+          labels.any((l) => l == composed),
+          isTrue,
+          reason: 'expected composed label in $labels',
+        );
+
+        // ExcludeSemantics is wrapping the visual children.
+        expect(find.byType(ExcludeSemantics), findsWidgets);
+      },
+    );
+  });
 }

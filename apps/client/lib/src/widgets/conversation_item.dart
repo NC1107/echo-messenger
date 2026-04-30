@@ -31,6 +31,30 @@ Color presenceStatusDotColor(
   };
 }
 
+/// Compose the screen-reader announcement for a conversation row (#631).
+///
+/// Order: name -> unread count -> muted -> last message snippet. Exposed
+/// at top level so widget tests can lock the contract without reaching
+/// into the private state class.
+String composeConversationItemSemanticsLabel({
+  required String displayName,
+  required int unreadCount,
+  required bool muted,
+  required String? snippet,
+}) {
+  final buf = StringBuffer('Conversation with $displayName');
+  if (unreadCount > 0) {
+    buf.write(', $unreadCount unread');
+  }
+  if (muted) {
+    buf.write(', muted');
+  }
+  if (snippet != null && snippet.isNotEmpty) {
+    buf.write('. Last message: $snippet');
+  }
+  return buf.toString();
+}
+
 class ConversationItem extends ConsumerStatefulWidget {
   final Conversation conversation;
   final String myUserId;
@@ -272,7 +296,12 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     final snippet = _resolveSnippet();
 
     return Semantics(
-      label: 'Conversation with $displayName',
+      label: composeConversationItemSemanticsLabel(
+        displayName: displayName,
+        unreadCount: conv.unreadCount,
+        muted: conv.isMuted,
+        snippet: snippet,
+      ),
       button: true,
       child: Material(
         type: MaterialType.transparency,
@@ -293,18 +322,23 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
               borderRadius: BorderRadius.circular(10),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                _buildAvatarStack(context, conv, displayName),
-                const SizedBox(width: 12),
-                _buildNameAndSnippet(
-                  context,
-                  displayName: displayName,
-                  snippet: snippet,
-                  hasUnread: hasUnread,
-                  conv: conv,
-                ),
-              ],
+            // Visual children re-announce muted/unread/timestamp via
+            // their own Semantics nodes; suppress those so the composed
+            // outer label is the single announcement (#631).
+            child: ExcludeSemantics(
+              child: Row(
+                children: [
+                  _buildAvatarStack(context, conv, displayName),
+                  const SizedBox(width: 12),
+                  _buildNameAndSnippet(
+                    context,
+                    displayName: displayName,
+                    snippet: snippet,
+                    hasUnread: hasUnread,
+                    conv: conv,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
