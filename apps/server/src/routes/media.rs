@@ -203,6 +203,7 @@ pub async fn upload(
                 return Err(AppError {
                     status: StatusCode::FORBIDDEN,
                     message: "Not a member of this conversation".to_string(),
+                    body: None,
                 });
             }
             conversation_id = Some(cid);
@@ -381,6 +382,7 @@ pub async fn download(
         .ok_or_else(|| AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
+            body: None,
         })?;
 
     // ACL: verify the requesting user can access this media
@@ -396,6 +398,7 @@ pub async fn download(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
+            body: None,
         });
     }
 
@@ -411,6 +414,7 @@ pub async fn download(
         AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media file not found on disk".to_string(),
+            body: None,
         }
     })?;
     let total_size = metadata.len();
@@ -478,6 +482,7 @@ pub async fn download(
         AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media file not found on disk".to_string(),
+            body: None,
         }
     })?;
 
@@ -526,6 +531,7 @@ pub async fn download_thumb(
         .ok_or_else(|| AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
+            body: None,
         })?;
 
     let allowed = db::media::can_user_access_media(&state.pool, id, user_id)
@@ -538,6 +544,7 @@ pub async fn download_thumb(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
+            body: None,
         });
     }
 
@@ -547,6 +554,7 @@ pub async fn download_thumb(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "Thumbnail not available".to_string(),
+            body: None,
         });
     }
 
@@ -554,6 +562,7 @@ pub async fn download_thumb(
     let data = fs::read(&thumb_path).await.map_err(|_| AppError {
         status: StatusCode::NOT_FOUND,
         message: "Thumbnail not available".to_string(),
+        body: None,
     })?;
 
     Response::builder()

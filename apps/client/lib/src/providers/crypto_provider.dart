@@ -85,7 +85,12 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
           'Key upload attempt $attempt failed: $uploadError',
         );
         // Don't retry on rate limit or identity conflict -- same error repeats.
-        if (errorStr.contains('429') || errorStr.contains('409')) {
+        // Identity-key conflicts now surface as the typed
+        // IdentityKeyConflictException (#664); UI is responsible for prompting
+        // the user to run resetThisDeviceKeys.
+        if (uploadError is IdentityKeyConflictException ||
+            errorStr.contains('429') ||
+            errorStr.contains('409')) {
           return errorStr;
         }
         if (attempt == 2) return errorStr;

@@ -55,6 +55,50 @@ class IdentityKeyChangedException implements Exception {
       'changed; user must verify safety number or explicitly accept new key';
 }
 
+/// Thrown by [CryptoService.uploadKeys] when the server rejects the upload
+/// because the identity-key fingerprint we presented for this device does
+/// not match what is on file (#664). The body carries the device_id and the
+/// expected/actual fingerprints (base64) so the UI can drive a typed reset
+/// flow instead of parsing English error strings.
+class IdentityKeyConflictException implements Exception {
+  /// Device id reported by the server. Falls back to the local device id when
+  /// the server returned a legacy (string-only) 409 without a JSON body.
+  final int deviceId;
+
+  /// Server-side fingerprint (base64) -- the value we'd need to match. Null
+  /// when the server returned a legacy body.
+  final String? expectedFingerprint;
+
+  /// Fingerprint we sent (base64). Null when no body was returned.
+  final String? actualFingerprint;
+
+  const IdentityKeyConflictException({
+    required this.deviceId,
+    this.expectedFingerprint,
+    this.actualFingerprint,
+  });
+
+  @override
+  String toString() =>
+      'IdentityKeyConflictException(device=$deviceId, '
+      'expected=${expectedFingerprint ?? "?"}, '
+      'actual=${actualFingerprint ?? "?"})';
+}
+
+/// Thrown by [CryptoService.decryptMessage] when an initial X3DH wire
+/// failed to authenticate (AES-GCM tag check). The receiver's keys on the
+/// server are likely stale; the service schedules an `uploadKeys()` to heal
+/// the bundle so the next message from the same peer can decrypt (#662).
+class InitialDecryptFailedException implements Exception {
+  final String peerUserId;
+  const InitialDecryptFailedException(this.peerUserId);
+
+  @override
+  String toString() =>
+      'InitialDecryptFailedException(peer=$peerUserId): initial X3DH wire '
+      'failed AES-GCM auth; uploaded fresh keys to heal stale bundle';
+}
+
 class CryptoService {
   static const _deviceIdPref = 'echo_device_id';
   static const _identityKeyPref = 'echo_identity_key';
@@ -775,9 +819,29 @@ class CryptoService {
     );
 
     if (response.statusCode == 409) {
-      throw Exception(
-        'Identity key conflict (409). Log out and back in to reset '
-        'encryption keys.',
+      // Server returns a structured `identity_key_conflict` envelope (#664)
+      // with `device_id`, `expected_fingerprint`, `actual_fingerprint`. Older
+      // servers emit a plain `{"error": "..."}` body; tolerate both.
+      int conflictDeviceId = _deviceId;
+      String? expected;
+      String? actual;
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map<String, dynamic>) {
+          if (body['code'] == 'identity_key_conflict') {
+            conflictDeviceId =
+                (body['device_id'] as num?)?.toInt() ?? _deviceId;
+            expected = body['expected_fingerprint'] as String?;
+            actual = body['actual_fingerprint'] as String?;
+          }
+        }
+      } catch (_) {
+        // Legacy server response -- fall through with defaults.
+      }
+      throw IdentityKeyConflictException(
+        deviceId: conflictDeviceId,
+        expectedFingerprint: expected,
+        actualFingerprint: actual,
       );
     }
 
@@ -1241,7 +1305,28 @@ class CryptoService {
     );
 
     final session = await SignalSession.initBob(sharedSecret, prekeyToUse);
-    final plainBytes = await session.decrypt(sessionWire);
+    final List<int> plainBytes;
+    try {
+      plainBytes = await session.decrypt(sessionWire);
+    } catch (e) {
+      // Initial X3DH wire failed AES-GCM auth -- almost always because our
+      // server-side bundle was stale and the sender encrypted against a
+      // signed prekey / OTP whose private half we no longer hold (#662).
+      // Re-upload our keys (fire-and-forget) so the NEXT message from this
+      // peer authenticates, and surface the failure as a typed exception so
+      // UI can show "couldn't establish secure session".
+      debugPrint(
+        '[Crypto] Initial X3DH decrypt failed for $peerUserId: $e -- '
+        'scheduling key re-upload to heal stale bundle',
+      );
+      _needsOtpReplenishment = true;
+      unawaited(
+        uploadKeys().catchError((upErr) {
+          debugPrint('[Crypto] heal uploadKeys failed: $upErr');
+        }),
+      );
+      throw InitialDecryptFailedException(peerUserId);
+    }
     _sessions.put(sessionKey, session);
     await _saveSession(sessionKey, session);
 
@@ -1515,6 +1600,90 @@ class CryptoService {
     await uploadKeys();
   }
 
+  /// Reset only THIS device's keys without disturbing peer sessions (#664).
+  ///
+  /// Calls `POST /api/keys/reset_device` to clear the server-side per-device
+  /// fingerprint binding, then regenerates the local identity / signing /
+  /// signed-prekey pair, bumps the OTP counter, and re-uploads. Peer sessions
+  /// (sessions whose key does NOT start with `myUserId`) are intentionally
+  /// preserved -- the peer's identity key has not changed, only ours.
+  ///
+  /// [password] is required for server-side re-auth.
+  /// [myUserId] (optional) is the caller's user id; when provided, only the
+  /// caller's own self-sessions (`myUserId` and `myUserId:<deviceId>`) and
+  /// own bundle cache are cleared.
+  Future<void> resetThisDeviceKeys(String password, {String? myUserId}) async {
+    final resp = await http.post(
+      Uri.parse('$serverUrl/api/keys/reset_device'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_token',
+      },
+      body: jsonEncode({'password': password, 'device_id': _deviceId}),
+    );
+    if (resp.statusCode != 204) {
+      throw Exception(
+        'Per-device key reset failed: HTTP ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final store = SecureKeyStore.instance;
+
+    // Drop in-memory + persisted self-sessions (`me:<deviceId>`) so the next
+    // outbound message to one of our own other devices runs a fresh X3DH
+    // against the regenerated keys. Peer sessions are intentionally
+    // preserved -- only OUR identity changed, the peer's didn't.
+    if (myUserId != null && myUserId.isNotEmpty) {
+      final allEntries = await store.readAll();
+      for (final k in allEntries.keys) {
+        if (k.startsWith('$_sessionPrefix$myUserId:') ||
+            k == '$_sessionPrefix$myUserId') {
+          await store.delete(k);
+        }
+      }
+      // Also drop in-memory self-sessions (user-id-keyed entries only).
+      final toDrop = <String>[];
+      _sessions.forEach((k, _) {
+        if (k == myUserId || k.startsWith('$myUserId:')) toDrop.add(k);
+      });
+      for (final k in toDrop) {
+        _sessions.remove(k);
+      }
+      // Drop our own bundle cache so the next encryptForOwnDevices fetches
+      // the freshly-uploaded bundle.
+      _bundleCache.remove(myUserId);
+    }
+
+    // Bump the OTP counter so newly-generated OTPs do not collide with any
+    // IDs the server may still have pinned to the old bundle.
+    final stored = await store.read(_otpNextIdPref);
+    final cur = int.tryParse(stored ?? '0') ?? 0;
+    await store.write(_otpNextIdPref, '${cur + 100}');
+
+    // Regenerate identity / signing / signed-prekey IN PLACE (cannot route
+    // through init() because init's regen branch purges every session in
+    // storage, and we explicitly need to preserve peer sessions here).
+    _identityKeyPair = await _x25519.newKeyPair();
+    _signingKeyPair = await _ed25519.newKeyPair();
+    _signedPrekeyPair = await _x25519.newKeyPair();
+
+    final privateBytes = await (_identityKeyPair as SimpleKeyPairData)
+        .extractPrivateKeyBytes();
+    final publicKey = await _identityKeyPair!.extractPublicKey();
+    await store.write(_identityKeyPref, base64Encode(privateBytes));
+    await store.write(_identityPubKeyPref, base64Encode(publicKey.bytes));
+    await _saveSigningKey(store);
+    await _saveSignedPrekey(store);
+    await store.write(
+      _signedPrekeyCreatedAtPref,
+      DateTime.now().toIso8601String(),
+    );
+
+    _keysAreFresh = true;
+    _needsOtpReplenishment = true;
+    await uploadKeys();
+  }
+
   /// Load the previous signed prekey pair from secure storage.
   ///
   /// Returns null if no previous prekey is stored.
@@ -1751,6 +1920,15 @@ class CryptoService {
     String peerUserId,
     String plaintext,
   ) async {
+    // First-send heal (#662): if we don't currently have ANY session for this
+    // peer (cache miss across all devices) but we DO hold a cached bundle
+    // from a prior fetch, evict the cached bundle so the upcoming
+    // _fetchAllBundles re-pulls fresh keys. Stale cached bundles are the root
+    // cause of the "first DM can't decrypt until peer replies" bug.
+    if (_bundleCache.containsKey(peerUserId) &&
+        !_hasAnySessionForPeer(peerUserId)) {
+      invalidateBundleCache(peerUserId);
+    }
     final bundles = await _fetchAllBundles(peerUserId);
     if (bundles.isEmpty) {
       // Fall back to legacy single-device encrypt
@@ -1807,6 +1985,11 @@ class CryptoService {
     String plaintext,
   ) async {
     try {
+      // Same first-send bundle-cache heal as `encryptForAllDevices` (#662).
+      if (_bundleCache.containsKey(myUserId) &&
+          !_hasAnySessionForPeer(myUserId)) {
+        invalidateBundleCache(myUserId);
+      }
       final bundles = await _fetchAllBundles(myUserId);
       final results = <String, String>{};
       for (final bundle in bundles) {
@@ -1854,6 +2037,34 @@ class CryptoService {
   /// Invalidate the device bundle cache for a specific user.
   void invalidateBundleCache(String userId) {
     _bundleCache.remove(userId);
+  }
+
+  /// Visible for testing: seed the bundle cache so the first-send heal path
+  /// can be exercised without a real server round-trip (#662).
+  @visibleForTesting
+  void debugSeedBundleCache(String userId, List<Map<String, dynamic>> bundles) {
+    _bundleCache[userId] = (bundles, DateTime.now());
+  }
+
+  /// Visible for testing: probe whether the bundle cache currently holds an
+  /// entry for [userId]. Used by the first-send-heal regression test.
+  @visibleForTesting
+  bool debugBundleCacheContains(String userId) =>
+      _bundleCache.containsKey(userId);
+
+  /// True if the in-memory session cache holds at least one fresh entry for
+  /// [peerUserId] (legacy `peer` key OR multi-device `peer:<deviceId>` keys).
+  /// Used to drive the first-send bundle-cache heal (#662): if we have a
+  /// cached bundle but no session for the peer, the cached bundle is almost
+  /// certainly stale -- drop it before fetching.
+  bool _hasAnySessionForPeer(String peerUserId) {
+    if (_sessions.isFresh(peerUserId)) return true;
+    var found = false;
+    final prefix = '$peerUserId:';
+    _sessions.forEach((k, _) {
+      if (!found && k.startsWith(prefix)) found = true;
+    });
+    return found;
   }
 
   // -----------------------------------------------------------------------

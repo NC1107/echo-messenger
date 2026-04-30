@@ -926,6 +926,7 @@ pub async fn get_group_avatar(
         .ok_or_else(|| AppError {
             status: StatusCode::NOT_FOUND,
             message: "No avatar set for this group".to_string(),
+            body: None,
         })?;
 
     let expected = format!("/api/groups/{group_id}/avatar");
@@ -933,6 +934,7 @@ pub async fn get_group_avatar(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "No avatar set for this group".to_string(),
+            body: None,
         });
     }
 
@@ -952,5 +954,6 @@ pub async fn get_group_avatar(
     Err(AppError {
         status: StatusCode::NOT_FOUND,
         message: "Avatar file not found on disk".to_string(),
+        body: None,
     })
 }

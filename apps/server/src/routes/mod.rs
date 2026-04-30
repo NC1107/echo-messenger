@@ -105,6 +105,8 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         rate_limit::make_rate_limit_layer(rate_limit::link_preview_limiter(Arc::clone(&proxies)));
     let key_reset_limit =
         rate_limit::make_rate_limit_layer(rate_limit::key_reset_limiter(Arc::clone(&proxies)));
+    let key_reset_device_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::key_reset_limiter(Arc::clone(&proxies)));
     let revoke_others_limit =
         rate_limit::make_rate_limit_layer(rate_limit::revoke_others_limiter(proxies));
 
@@ -191,6 +193,10 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         .route(
             "/reset",
             post(keys::reset_keys).layer(middleware::from_fn(key_reset_limit)),
+        )
+        .route(
+            "/reset_device",
+            post(keys::reset_device).layer(middleware::from_fn(key_reset_device_limit)),
         )
         .route("/bundle/{user_id}", get(keys::get_bundle))
         .route(

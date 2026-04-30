@@ -484,6 +484,198 @@ async fn identity_key_mismatch_returns_409() {
         .await
         .unwrap();
     assert_eq!(resp.status().as_u16(), 409);
+    // Body must be the structured `identity_key_conflict` envelope so the
+    // client can drive the typed `IdentityKeyConflictException` (#664).
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "identity_key_conflict");
+    assert_eq!(body["device_id"], 0);
+    assert!(body["expected_fingerprint"].is_string());
+    assert!(body["actual_fingerprint"].is_string());
+}
+
+#[tokio::test]
+async fn two_devices_different_fingerprints_both_succeed() {
+    // #664 root cause: previously the per-USER fingerprint rejected device 1's
+    // independent identity key once device 0 had bound. Now both bind cleanly.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keymdev0").await;
+
+    common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
+    // Device 1 with FRESH identity + signing key (NOT reusing bundle0's keys).
+    let signing_key = SigningKey::from_bytes(&rand::random::<[u8; 32]>());
+    let signing_key_pub = signing_key.verifying_key().to_bytes();
+    let identity_key = rand::random::<[u8; 32]>().to_vec();
+    let signed_prekey = rand::random::<[u8; 32]>().to_vec();
+    let signature = signing_key.sign(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(&identity_key),
+        "signed_prekey": BASE64.encode(&signed_prekey),
+        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [],
+        "device_id": 1,
+        "signing_key": BASE64.encode(signing_key_pub),
+    });
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status().as_u16(),
+        201,
+        "device 1 should bind its own fingerprint independently of device 0"
+    );
+}
+
+#[tokio::test]
+async fn same_device_different_fingerprint_returns_409_with_device_id() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keymdevdup").await;
+
+    // Bind device 7 once
+    let bundle0 = common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
+    common::upload_additional_device(&client, &base, &token, &bundle0, 7).await;
+
+    // Re-upload device 7 with a different identity key -- must 409 with the
+    // device_id of the conflicting row (NOT device 0).
+    let signing_key = SigningKey::from_bytes(&rand::random::<[u8; 32]>());
+    let signing_key_pub = signing_key.verifying_key().to_bytes();
+    let identity_key = rand::random::<[u8; 32]>().to_vec();
+    let signed_prekey = rand::random::<[u8; 32]>().to_vec();
+    let signature = signing_key.sign(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(&identity_key),
+        "signed_prekey": BASE64.encode(&signed_prekey),
+        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
+        "signed_prekey_id": 2,
+        "one_time_prekeys": [],
+        "device_id": 7,
+        "signing_key": BASE64.encode(signing_key_pub),
+    });
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 409);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "identity_key_conflict");
+    assert_eq!(body["device_id"], 7);
+}
+
+#[tokio::test]
+async fn device_0_legacy_fingerprint_still_enforced() {
+    // The migration backfilled `users.identity_key_fingerprint` into device 0
+    // rows, so the per-device check finds it directly. But the legacy
+    // fallback path also matters for users whose device 0 row pre-dates the
+    // migration backfill. This test verifies the standard device-0 binding
+    // is still enforced -- a different upload to device 0 must still 409.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _uid, _) = common::register_and_login(&client, &base, "keylegacy0").await;
+
+    common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
+
+    let signing_key = SigningKey::from_bytes(&rand::random::<[u8; 32]>());
+    let signing_key_pub = signing_key.verifying_key().to_bytes();
+    let identity_key = rand::random::<[u8; 32]>().to_vec();
+    let signed_prekey = rand::random::<[u8; 32]>().to_vec();
+    let signature = signing_key.sign(&signed_prekey);
+
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(&identity_key),
+        "signed_prekey": BASE64.encode(&signed_prekey),
+        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [],
+        "device_id": 0,
+        "signing_key": BASE64.encode(signing_key_pub),
+    });
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 409);
+}
+
+#[tokio::test]
+async fn reset_device_clears_only_that_device() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, uid, _username) = common::register_and_login(&client, &base, "keyresetdev").await;
+
+    let bundle0 = common::upload_prekey_bundle(&client, &base, &token, 0, 0).await;
+    common::upload_additional_device(&client, &base, &token, &bundle0, 1).await;
+
+    // Reset only device 1 (password matches the constant used by `register`).
+    let resp = client
+        .post(format!("{base}/api/keys/reset_device"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "password": "password123", "device_id": 1 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 204);
+
+    // Device 0 must still be reachable
+    let (token_other, _, _) = common::register_and_login(&client, &base, "keyresetdevobs").await;
+    let resp = client
+        .get(format!("{base}/api/keys/bundle/{uid}/0"))
+        .header("Authorization", format!("Bearer {token_other}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200, "device 0 must remain bound");
+
+    // Device 1 row was deleted by revoke_device; fetching its bundle 400s.
+    let resp = client
+        .get(format!("{base}/api/keys/bundle/{uid}/1"))
+        .header("Authorization", format!("Bearer {token_other}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 400, "device 1 must be cleared");
+
+    // Device 1 can now bind a brand-new identity without conflicting with
+    // device 0.
+    let signing_key = SigningKey::from_bytes(&rand::random::<[u8; 32]>());
+    let signing_key_pub = signing_key.verifying_key().to_bytes();
+    let identity_key = rand::random::<[u8; 32]>().to_vec();
+    let signed_prekey = rand::random::<[u8; 32]>().to_vec();
+    let signature = signing_key.sign(&signed_prekey);
+    let body = serde_json::json!({
+        "identity_key": BASE64.encode(&identity_key),
+        "signed_prekey": BASE64.encode(&signed_prekey),
+        "signed_prekey_signature": BASE64.encode(signature.to_bytes()),
+        "signed_prekey_id": 1,
+        "one_time_prekeys": [],
+        "device_id": 1,
+        "signing_key": BASE64.encode(signing_key_pub),
+    });
+    let resp = client
+        .post(format!("{base}/api/keys/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status().as_u16(),
+        201,
+        "post-reset device 1 must rebind cleanly"
+    );
 }
 
 #[tokio::test]

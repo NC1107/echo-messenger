@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:echo_app/src/services/crypto_service.dart';
@@ -9,6 +11,7 @@ import 'package:echo_app/src/services/safety_number_service.dart';
 import 'package:echo_app/src/services/secure_key_store.dart';
 
 import '../helpers/fake_secure_key_store.dart';
+import '../helpers/mock_http_client.dart';
 
 void main() {
   late FakeSecureKeyStore fakeStore;
@@ -376,6 +379,329 @@ void main() {
           myKeyBytes!,
         );
         expect(fromCryptoService, swapped);
+      },
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // Per-device identity fingerprint + bundle heal (#664 / #662)
+  // -------------------------------------------------------------------------
+  group('CryptoService per-device identity (#664 #662)', () {
+    setUpAll(() {
+      registerHttpFallbackValues();
+    });
+
+    test(
+      '409 with structured body surfaces IdentityKeyConflictException',
+      () async {
+        final crypto = CryptoService(serverUrl: 'http://localhost:8080');
+        crypto.setToken('t');
+        await crypto.init();
+
+        final mockClient = MockHttpClient();
+        when(() => mockClient.close()).thenReturn(null);
+        when(
+          () => mockClient.get(
+            any(that: predicate<Uri>((u) => u.path.contains('otp-count'))),
+            headers: any(named: 'headers'),
+          ),
+        ).thenAnswer((_) async => http.Response('{"count": 10}', 200));
+        when(
+          () => mockClient.post(
+            any(
+              that: predicate<Uri>((u) => u.path.contains('/api/keys/upload')),
+            ),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+            encoding: any(named: 'encoding'),
+          ),
+        ).thenAnswer(
+          (_) async => http.Response(
+            jsonEncode({
+              'code': 'identity_key_conflict',
+              'device_id': 7,
+              'expected_fingerprint': 'AAAA',
+              'actual_fingerprint': 'BBBB',
+            }),
+            409,
+          ),
+        );
+
+        Object? caught;
+        await http.runWithClient(() async {
+          try {
+            await crypto.uploadKeys();
+          } catch (e) {
+            caught = e;
+          }
+        }, () => mockClient);
+
+        expect(caught, isA<IdentityKeyConflictException>());
+        final ex = caught as IdentityKeyConflictException;
+        expect(ex.deviceId, 7);
+        expect(ex.expectedFingerprint, 'AAAA');
+        expect(ex.actualFingerprint, 'BBBB');
+      },
+    );
+
+    test('legacy 409 (no JSON body) still throws typed exception', () async {
+      final crypto = CryptoService(serverUrl: 'http://localhost:8080');
+      crypto.setToken('t');
+      await crypto.init();
+
+      final mockClient = MockHttpClient();
+      when(() => mockClient.close()).thenReturn(null);
+      when(
+        () => mockClient.get(
+          any(that: predicate<Uri>((u) => u.path.contains('otp-count'))),
+          headers: any(named: 'headers'),
+        ),
+      ).thenAnswer((_) async => http.Response('{"count": 10}', 200));
+      when(
+        () => mockClient.post(
+          any(that: predicate<Uri>((u) => u.path.contains('/api/keys/upload'))),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenAnswer(
+        (_) async =>
+            http.Response(jsonEncode({'error': 'Identity key changed'}), 409),
+      );
+
+      Object? caught;
+      await http.runWithClient(() async {
+        try {
+          await crypto.uploadKeys();
+        } catch (e) {
+          caught = e;
+        }
+      }, () => mockClient);
+
+      expect(caught, isA<IdentityKeyConflictException>());
+      // Legacy bodies have no `device_id`; the exception falls back to the
+      // local device id and leaves the fingerprints null.
+      expect(
+        (caught as IdentityKeyConflictException).expectedFingerprint,
+        isNull,
+      );
+    });
+
+    test(
+      'bundle cache invalidated on first send when no session exists',
+      () async {
+        final crypto = CryptoService(serverUrl: 'http://localhost:8080');
+        crypto.setToken('t');
+        await crypto.init();
+
+        // Pre-seed the bundle cache for a peer we have NO session with.
+        crypto.debugSeedBundleCache('peer-stale', [
+          {'device_id': 0, 'identity_key': 'AAAA'},
+        ]);
+        expect(crypto.debugBundleCacheContains('peer-stale'), isTrue);
+
+        // Mock /api/keys/bundles/<peer>: returning empty list lets us assert
+        // (a) the network was actually hit (cache was evicted instead of
+        // returned-from-cache) and (b) encryptForAllDevices fell back through
+        // gracefully.
+        final mockClient = MockHttpClient();
+        when(() => mockClient.close()).thenReturn(null);
+        var bundlesGetCalls = 0;
+        when(
+          () => mockClient.get(
+            any(
+              that: predicate<Uri>(
+                (u) => u.path.contains('/api/keys/bundles/peer-stale'),
+              ),
+            ),
+            headers: any(named: 'headers'),
+          ),
+        ).thenAnswer((_) async {
+          bundlesGetCalls += 1;
+          return http.Response(jsonEncode({'bundles': []}), 200);
+        });
+        // Stub the legacy single-bundle endpoint that the empty-bundle
+        // fallback path routes through (encryptMessage -> getOrCreateSession).
+        when(
+          () => mockClient.get(
+            any(
+              that: predicate<Uri>(
+                (u) => u.path.contains('/api/keys/bundle/peer-stale'),
+              ),
+            ),
+            headers: any(named: 'headers'),
+          ),
+        ).thenAnswer((_) async => http.Response('{}', 404));
+
+        await http.runWithClient(() async {
+          try {
+            await crypto.encryptForAllDevices('peer-stale', 'hi');
+          } catch (_) {
+            // We expect the empty-bundle fallback path to fail with no
+            // bundle available; the test only cares about cache eviction +
+            // network round-trip.
+          }
+        }, () => mockClient);
+
+        expect(
+          bundlesGetCalls,
+          greaterThan(0),
+          reason:
+              'first-send heal must drop stale cached bundle and re-fetch '
+              'from /api/keys/bundles/<peer>',
+        );
+      },
+    );
+
+    test(
+      'resetThisDeviceKeys regenerates self-only and preserves peer sessions',
+      () async {
+        final fakeStore = FakeSecureKeyStore();
+        SecureKeyStore.instance = fakeStore;
+        final crypto = CryptoService(serverUrl: 'http://localhost:8080');
+        crypto.setToken('t');
+        await crypto.init();
+
+        final priorIdentityB64 = await fakeStore.read('echo_identity_pub_key');
+
+        // Seed peer sessions for A and B (raw JSON blobs). They should
+        // survive the reset because they're keyed on peerUserId, not
+        // myUserId.
+        await fakeStore.write(
+          'echo_signal_session_peer-a',
+          '{"some":"sessionA"}',
+        );
+        await fakeStore.write(
+          'echo_signal_session_peer-b:1',
+          '{"some":"sessionB"}',
+        );
+        // Seed a self-session that SHOULD be cleared.
+        await fakeStore.write(
+          'echo_signal_session_me-uid:1',
+          '{"some":"selfSess"}',
+        );
+
+        final mockClient = MockHttpClient();
+        when(() => mockClient.close()).thenReturn(null);
+        when(
+          () => mockClient.post(
+            any(
+              that: predicate<Uri>(
+                (u) => u.path.contains('/api/keys/reset_device'),
+              ),
+            ),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+            encoding: any(named: 'encoding'),
+          ),
+        ).thenAnswer((_) async => http.Response('', 204));
+        when(
+          () => mockClient.post(
+            any(
+              that: predicate<Uri>((u) => u.path.contains('/api/keys/upload')),
+            ),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+            encoding: any(named: 'encoding'),
+          ),
+        ).thenAnswer((_) async => http.Response('{}', 201));
+        when(
+          () => mockClient.get(
+            any(that: predicate<Uri>((u) => u.path.contains('otp-count'))),
+            headers: any(named: 'headers'),
+          ),
+        ).thenAnswer((_) async => http.Response('{"count": 10}', 200));
+
+        await http.runWithClient(
+          () => crypto.resetThisDeviceKeys('pw', myUserId: 'me-uid'),
+          () => mockClient,
+        );
+
+        final newIdentityB64 = await fakeStore.read('echo_identity_pub_key');
+        expect(
+          newIdentityB64,
+          isNot(equals(priorIdentityB64)),
+          reason: 'identity key must be regenerated',
+        );
+        // Peer sessions intact.
+        expect(await fakeStore.read('echo_signal_session_peer-a'), isNotNull);
+        expect(await fakeStore.read('echo_signal_session_peer-b:1'), isNotNull);
+        // Self-session cleared.
+        expect(await fakeStore.read('echo_signal_session_me-uid:1'), isNull);
+      },
+    );
+
+    test(
+      'initial X3DH decrypt failure throws InitialDecryptFailedException',
+      () async {
+        final crypto = CryptoService(serverUrl: 'http://localhost:8080');
+        crypto.setToken('t');
+        await crypto.init();
+
+        // Build a corrupt initial-V1 wire whose AES-GCM body is properly
+        // shaped (header_len + header + nonce + ct + tag) but cannot
+        // authenticate. The decryptInitial path runs X3DH, derives a session,
+        // then session.decrypt throws -> heal path triggers.
+        final headerLen = 40;
+        final body = Uint8List(4 + headerLen + 12 + 32 + 16);
+        // header_len LE
+        final bd = ByteData.sublistView(body);
+        bd.setInt32(0, headerLen, Endian.little);
+        // Fill the rest with a deterministic pattern so AES-GCM fails auth.
+        for (var i = 4; i < body.length; i++) {
+          body[i] = (i * 37) & 0xff;
+        }
+        final corrupt = Uint8List(2 + 32 + 32 + body.length);
+        corrupt[0] = 0xEC;
+        corrupt[1] = 0x01;
+        for (var i = 2; i < 66; i++) {
+          // identity/ephemeral pubkeys (random bytes)
+          corrupt[i] = (i * 11) & 0xff;
+        }
+        corrupt.setRange(66, corrupt.length, body);
+        final corruptB64 = base64Encode(corrupt);
+
+        final mockClient = MockHttpClient();
+        when(() => mockClient.close()).thenReturn(null);
+
+        var uploadCalled = false;
+        when(
+          () => mockClient.post(
+            any(
+              that: predicate<Uri>((u) => u.path.contains('/api/keys/upload')),
+            ),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+            encoding: any(named: 'encoding'),
+          ),
+        ).thenAnswer((_) async {
+          uploadCalled = true;
+          return http.Response('{}', 201);
+        });
+        when(
+          () => mockClient.get(
+            any(that: predicate<Uri>((u) => u.path.contains('otp-count'))),
+            headers: any(named: 'headers'),
+          ),
+        ).thenAnswer((_) async => http.Response('{"count": 10}', 200));
+
+        Object? caught;
+        await http.runWithClient(() async {
+          try {
+            await crypto.decryptMessage('peer-x', corruptB64);
+          } catch (e) {
+            caught = e;
+          }
+          // Give the fire-and-forget uploadKeys a tick to run.
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        }, () => mockClient);
+
+        expect(caught, isA<InitialDecryptFailedException>());
+        expect(
+          uploadCalled,
+          isTrue,
+          reason: 'heal path must fire-and-forget uploadKeys()',
+        );
       },
     );
   });

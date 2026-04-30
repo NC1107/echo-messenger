@@ -219,6 +219,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleVoiceSignal(json);
       case 'key_reset':
         _handleKeyReset(json);
+      case 'identity_reset':
+        _handleIdentityReset(json);
       case 'call_started':
         _handleCallStarted(json);
       case 'canvas_event':
@@ -241,8 +243,14 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     final fromUsername = json['from_username'] as String? ?? 'Someone';
     final conversationId = json['conversation_id'] as String? ?? '';
 
-    // Invalidate the local session so the next message re-establishes X3DH
-    ref.read(cryptoServiceProvider).invalidateSessionKey(fromUserId);
+    // Invalidate the local session so the next message re-establishes X3DH.
+    // Also drop any cached prekey bundles so the next outgoing message
+    // re-fetches against the freshly-rotated keys (#662).
+    final crypto = ref.read(cryptoServiceProvider);
+    crypto.invalidateSessionKey(fromUserId);
+    if (fromUserId.isNotEmpty) {
+      crypto.invalidateBundleCache(fromUserId);
+    }
 
     ref
         .read(chatProvider.notifier)
@@ -250,6 +258,16 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
           conversationId,
           '$fromUsername reset their encryption keys',
         );
+  }
+
+  /// Server emits `identity_reset` after a /api/keys/reset or
+  /// /api/keys/reset_device. Drop the bundle cache for the affected user so
+  /// the next encrypt-for-peer round fetches the new identity keys (#664).
+  void _handleIdentityReset(Map<String, dynamic> json) {
+    final fromUserId =
+        json['user_id'] as String? ?? json['from_user_id'] as String? ?? '';
+    if (fromUserId.isEmpty) return;
+    ref.read(cryptoServiceProvider).invalidateBundleCache(fromUserId);
   }
 
   void _handleCallStarted(Map<String, dynamic> json) {

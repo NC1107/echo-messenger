@@ -61,6 +61,67 @@ pub async fn clear_identity_key_fingerprint(
     Ok(())
 }
 
+/// Fetch the identity-key fingerprint bound to a specific device, if any
+/// (#664).
+///
+/// Falls back to `None` when the row exists but has no fingerprint yet (newly
+/// uploaded device pre-binding) or the row is missing entirely.
+pub async fn get_device_fingerprint(
+    db: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+    device_id: i32,
+) -> Result<Option<Vec<u8>>, sqlx::Error> {
+    let row: Option<(Option<Vec<u8>>,)> = sqlx::query_as(
+        "SELECT fingerprint FROM identity_keys WHERE user_id = $1 AND device_id = $2",
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .fetch_optional(db)
+    .await?;
+    Ok(row.and_then(|(fp,)| fp))
+}
+
+/// Bind a fingerprint to a specific (user, device) row. Upserts so the first
+/// upload after the migration writes both the identity_keys row (via
+/// [`store_identity_key`]) and this fingerprint within the same transaction.
+pub async fn set_device_fingerprint(
+    db: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+    device_id: i32,
+    fingerprint: &[u8],
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE identity_keys \
+         SET fingerprint = $3, fingerprint_bound_at = NOW() \
+         WHERE user_id = $1 AND device_id = $2",
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .bind(fingerprint)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// Clear the per-device fingerprint binding so the next upload re-binds.
+/// Used by `POST /api/keys/reset_device`.
+pub async fn clear_device_fingerprint(
+    db: impl sqlx::PgExecutor<'_>,
+    user_id: Uuid,
+    device_id: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE identity_keys \
+         SET fingerprint = NULL, fingerprint_bound_at = NULL \
+         WHERE user_id = $1 AND device_id = $2",
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
 /// Store or replace a user's identity key for a specific device.
 ///
 /// If `platform` is provided, it is written alongside the identity keys so the

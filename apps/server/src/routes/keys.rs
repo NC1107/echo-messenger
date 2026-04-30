@@ -176,24 +176,40 @@ pub async fn upload_bundle(
         .map_err(|_| AppError::bad_request("Invalid base64 for signing_key"))?;
     verify_signed_prekey_signature(&signing_key_bytes, &signed_prekey, &signed_prekey_signature)?;
 
-    // --- Identity binding check ---
-    // On first upload the identity+signing key fingerprint is stored on the
-    // user row. On subsequent uploads the keys MUST match or the request is
-    // rejected with 409. Rotation requires POST /api/keys/reset.
+    // --- Identity binding check (per-device, #664) ---
+    // On first upload for this (user, device) the identity+signing key
+    // fingerprint is recorded on the identity_keys row. Subsequent uploads
+    // for the same device MUST match or the request is rejected with 409
+    // and a structured body the client uses to drive the
+    // `IdentityKeyConflictException` reset flow. Rotation requires
+    // POST /api/keys/reset_device (single device) or /api/keys/reset
+    // (full account).
+    //
+    // Legacy fallback: if the per-device fingerprint hasn't been bound yet
+    // (e.g. a pre-#664 device 0 row that was created before the migration
+    // backfill), fall back to the legacy per-user fingerprint so existing
+    // single-device users stay enforced during the rollout.
     let new_fingerprint = identity_fingerprint(&identity_key, &signing_key_bytes);
-    let stored_fingerprint =
-        db::keys::get_identity_key_fingerprint(&state.pool, auth_user.user_id).await?;
-    match stored_fingerprint {
-        Some(ref existing) if *existing != new_fingerprint => {
-            tracing::warn!(
-                "Identity key mismatch for user {} -- rejecting upload",
-                auth_user.user_id,
-            );
-            return Err(AppError::conflict(
-                "Identity key changed; use key reset flow to rotate",
-            ));
-        }
-        _ => {} // First upload or same key -- OK
+    let device_fp =
+        db::keys::get_device_fingerprint(&state.pool, auth_user.user_id, device_id).await?;
+    let stored_fingerprint = match device_fp {
+        Some(fp) => Some(fp),
+        None => db::keys::get_identity_key_fingerprint(&state.pool, auth_user.user_id).await?,
+    };
+    if let Some(existing) = stored_fingerprint.as_ref()
+        && *existing != new_fingerprint
+    {
+        tracing::warn!(
+            "Identity key mismatch for user {} device {} -- rejecting upload",
+            auth_user.user_id,
+            device_id,
+        );
+        return Err(AppError::conflict_with_body(serde_json::json!({
+            "code": "identity_key_conflict",
+            "device_id": device_id,
+            "expected_fingerprint": BASE64.encode(existing),
+            "actual_fingerprint": BASE64.encode(&new_fingerprint),
+        })));
     }
 
     let one_time_prekeys: Vec<(i32, Vec<u8>)> = body
@@ -218,12 +234,6 @@ pub async fn upload_bundle(
         AppError::internal("Database error")
     })?;
 
-    // Bind the identity key fingerprint on first upload.
-    if stored_fingerprint.is_none() {
-        db::keys::set_identity_key_fingerprint(&mut *tx, auth_user.user_id, &new_fingerprint)
-            .await?;
-    }
-
     db::keys::store_identity_key(
         &mut *tx,
         auth_user.user_id,
@@ -233,6 +243,14 @@ pub async fn upload_bundle(
         body.platform.as_deref(),
     )
     .await?;
+
+    // Bind the per-device fingerprint on first upload (or after a reset that
+    // cleared it). Done AFTER store_identity_key so the upsert above guarantees
+    // the row exists for `set_device_fingerprint` to update.
+    if stored_fingerprint.is_none() {
+        db::keys::set_device_fingerprint(&mut *tx, auth_user.user_id, device_id, &new_fingerprint)
+            .await?;
+    }
     db::keys::store_signed_prekey(
         &mut tx,
         auth_user.user_id,
@@ -445,6 +463,7 @@ pub async fn revoke_device(
         return Err(AppError {
             status: axum::http::StatusCode::NOT_FOUND,
             message: "Device not found".to_string(),
+            body: None,
         });
     }
 
@@ -572,6 +591,77 @@ pub async fn reset_keys(
     let event = serde_json::json!({
         "type": "identity_reset",
         "user_id": auth_user.user_id,
+    });
+    if let Ok(json) = serde_json::to_string(&event) {
+        state
+            .hub
+            .send_to_user(&auth_user.user_id, WsMessage::Text(json.into()));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Request body for `POST /api/keys/reset_device` -- single-device key reset.
+#[derive(Debug, Deserialize)]
+pub struct ResetDeviceRequest {
+    pub password: String,
+    pub device_id: i32,
+}
+
+/// POST /api/keys/reset_device -- Reset the keys for a single device of the
+/// authenticated user (#664). Clears the per-device fingerprint binding and
+/// drops the identity_keys row + signed prekeys + OTPs so the client can
+/// re-upload a fresh bundle without colliding with siblings.
+///
+/// Requires password re-auth so a stolen JWT cannot wipe a device's binding.
+pub async fn reset_device(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+    Json(body): Json<ResetDeviceRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    use crate::auth::password;
+
+    if body.password.is_empty() {
+        return Err(AppError::bad_request(
+            "Password is required for device key reset",
+        ));
+    }
+
+    let user = db::users::find_by_id(&state.pool, auth_user.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::bad_request("User not found"))?;
+
+    let pw = body.password.clone();
+    let hash = user.password_hash.clone();
+    let valid = tokio::task::spawn_blocking(move || password::verify_password(&pw, &hash))
+        .await
+        .map_err(|_| AppError::internal("Password verification failed"))??;
+    if !valid {
+        return Err(AppError::unauthorized("Invalid password"));
+    }
+
+    // Clear the device's fingerprint AND delete its identity_keys row +
+    // signed/one-time prekeys so the next upload binds cleanly. Use the
+    // existing `revoke_device` helper for the cascade delete; the partial
+    // index ignores rows where fingerprint is NULL so cleared rows do not
+    // bloat lookups.
+    db::keys::clear_device_fingerprint(&state.pool, auth_user.user_id, body.device_id).await?;
+    db::keys::revoke_device(&state.pool, auth_user.user_id, body.device_id).await?;
+
+    tracing::info!(
+        "Device key reset for user {} device {}",
+        auth_user.user_id,
+        body.device_id,
+    );
+
+    // Notify other connected sessions of this user so their bundle caches
+    // can drop stale entries.
+    use axum::extract::ws::Message as WsMessage;
+    let event = serde_json::json!({
+        "type": "identity_reset",
+        "user_id": auth_user.user_id,
+        "device_id": body.device_id,
     });
     if let Ok(json) = serde_json::to_string(&event) {
         state
