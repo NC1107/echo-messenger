@@ -61,6 +61,38 @@ class PushTokenService {
     _authToken = token;
   }
 
+  /// Detach this client from ALL push tokens registered against the current
+  /// server. Used by the server-switch flow before flipping
+  /// [serverUrlProvider]: hits the new bulk-delete endpoint regardless of
+  /// platform so non-iOS clients can call it unconditionally.
+  ///
+  /// Best-effort: network errors are swallowed so a switch-on-flaky-network
+  /// is never blocked by push cleanup.
+  Future<void> deregister({String? serverUrl, String? authToken}) async {
+    final origin = serverUrl ?? _serverUrl;
+    final token = authToken ?? _authToken;
+    if (origin.isEmpty) return;
+    try {
+      await http
+          .delete(
+            Uri.parse('$origin/api/push/token'),
+            headers: {
+              'Content-Type': 'application/json',
+              if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 5));
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'Push',
+        'Push tokens cleared via DELETE /api/push/token',
+      );
+    } catch (e) {
+      debugPrint('[Push] deregister failed: $e');
+    }
+    _currentToken = null;
+  }
+
   /// Unregister the push token on logout.
   Future<void> unregister() async {
     final token = _currentToken;

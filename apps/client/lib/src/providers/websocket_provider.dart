@@ -60,6 +60,23 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       const Duration(seconds: 2),
       (_) => _cleanupTyping(),
     );
+
+    // Re-bind the websocket whenever the active server URL changes (#PR-2).
+    // The previous code path read the URL via `ref.read` at connect time,
+    // which left the live socket pointed at the OLD origin after a switch.
+    // We listen here, in the constructor, so the subscription lasts as long
+    // as the notifier itself.
+    ref.listen<String>(serverUrlProvider, (previous, next) {
+      if (previous == next) return;
+      // Always tear down the existing socket; the old origin must not see
+      // any further frames from this client.
+      disconnect();
+      // Reconnect only if we still have an authenticated session. The login
+      // flow will call `connect()` itself once auth completes.
+      if (ref.read(authProvider).isLoggedIn) {
+        connect();
+      }
+    });
   }
 
   Stream<Map<String, dynamic>> get voiceSignals =>

@@ -92,6 +92,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   String get _serverUrl => ref.read(serverUrlProvider);
 
+  /// Host-suffixed preference key for the user-id pinned to a given
+  /// server origin. Lets the new login screen pre-fill the username for
+  /// any known server (#PR-2). The legacy global key is kept as a fallback
+  /// so live sessions don't break across the upgrade.
+  static String _userIdKeyFor(String host) => '$_keyUserId@$host';
+
+  /// Host-suffixed preference key for the username last used on a server.
+  static String _usernameKeyFor(String host) => '$_keyUsername@$host';
+
+  /// Best-effort host extraction. Falls back to the raw URL if parsing
+  /// fails so the prefs key is at least deterministic.
+  static String _hostOf(String url) {
+    final host = Uri.tryParse(url)?.host;
+    return (host == null || host.isEmpty) ? url : host;
+  }
+
   /// Try to auto-login using stored refresh token (native) or HttpOnly cookie (web).
   ///
   /// On native platforms: reads the refresh token from [SecureKeyStore] (global
@@ -475,6 +491,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await prefs.setString(_keyUserId, userId);
       await prefs.setString(_keyUsername, username);
 
+      // Mirror userId/username into per-host slots so the login screen on
+      // a known server can pre-fill the username after a server switch
+      // (#PR-2). The global keys above stay authoritative for the active
+      // session because tokens themselves remain global in Option B.
+      final host = _hostOf(_serverUrl);
+      if (host.isNotEmpty) {
+        await prefs.setString(_userIdKeyFor(host), userId);
+        await prefs.setString(_usernameKeyFor(host), username);
+      }
+
       // Clean up legacy password key if it exists
       await _clearLegacyCredentials(prefs);
     } catch (e) {
@@ -725,7 +751,43 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<void> logout() async {
+  /// Sign out locally, and best-effort sign out on the server.
+  ///
+  /// `serverUrl` lets the caller target an origin that may differ from the
+  /// one currently held in [serverUrlProvider] -- specifically the
+  /// server-switch flow needs to clear the OLD origin's cookie + refresh
+  /// token row even though it is about to flip [serverUrlProvider] to a
+  /// different URL (#PR-2).
+  ///
+  /// Network errors during the remote `POST /api/auth/logout` are swallowed
+  /// so logout always succeeds locally; the server-side refresh row will
+  /// expire on its own if the call never landed.
+  Future<void> logout({String? serverUrl}) async {
+    final origin = serverUrl ?? _serverUrl;
+    final accessToken = state.token;
+
+    // Best-effort remote logout. On web this is the only way to clear the
+    // HttpOnly refresh cookie. On native it revokes the refresh-token row.
+    try {
+      final client = buildHttpClient();
+      try {
+        await client
+            .post(
+              Uri.parse('$origin/api/auth/logout'),
+              headers: {
+                'Content-Type': 'application/json',
+                if (accessToken != null && accessToken.isNotEmpty)
+                  'Authorization': 'Bearer $accessToken',
+              },
+            )
+            .timeout(const Duration(seconds: 5));
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      debugPrint('[Auth] remote logout ignored: $e');
+    }
+
     BackgroundService.instance.stop();
     SecureKeyStore.instance.clearUserScope();
     UserDataDir.instance.clearUser();

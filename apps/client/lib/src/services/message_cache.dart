@@ -189,6 +189,28 @@ class MessageCache {
     await _box?.clear();
   }
 
+  /// Delete the on-disk Hive box for a (user, server) pair. Used by the
+  /// "Forget server" flow in settings (#PR-2). Idempotent: missing boxes
+  /// are a no-op. Best-effort: deletion failures are swallowed because the
+  /// caller is already wiping a wider scope.
+  static Future<void> dropForServer(String userId, String serverHost) async {
+    final sanitized = '${userId}_$serverHost'.replaceAll(RegExp(r'[^\w]'), '_');
+    final targetName = 'echo_messages_$sanitized';
+    try {
+      // Close it if it happens to be the active box, otherwise this throws.
+      if (_currentBoxName == targetName && _box?.isOpen == true) {
+        try {
+          await _box!.close();
+        } catch (_) {}
+        _box = null;
+        _currentBoxName = null;
+      }
+      await Hive.deleteBoxFromDisk(targetName);
+    } catch (e) {
+      debugLog('dropForServer($targetName) failed: $e', 'MessageCache');
+    }
+  }
+
   /// Number of cached message entries (conversations x messages).
   static int entryCount() => _box?.length ?? 0;
 

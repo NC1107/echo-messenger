@@ -171,6 +171,67 @@ async fn unregister_token_without_auth_returns_401() {
 }
 
 #[tokio::test]
+async fn delete_push_token_idempotent() {
+    // The server-switching flow calls `DELETE /api/push/token` BEFORE the
+    // URL flip; clients with no registered tokens (e.g. desktop/web) must
+    // still get a 2xx so they can call it unconditionally.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _, _) = common::register_and_login(&client, &base, "push_del").await;
+
+    // First call -- nothing to delete, but still ok.
+    let resp1 = client
+        .delete(format!("{base}/api/push/token"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp1.status().as_u16(), 200);
+
+    // Register a token, then delete -- should also succeed and clear it.
+    client
+        .post(format!("{base}/api/push/register"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({
+            "token": "tok-to-clear",
+            "platform": "apns",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    let resp2 = client
+        .delete(format!("{base}/api/push/token"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp2.status().as_u16(), 200);
+
+    // Idempotent: a second delete is also a 200.
+    let resp3 = client
+        .delete(format!("{base}/api/push/token"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp3.status().as_u16(), 200);
+}
+
+#[tokio::test]
+async fn delete_push_token_without_auth_returns_401() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let resp = client
+        .delete(format!("{base}/api/push/token"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 401);
+}
+
+#[tokio::test]
 async fn unregister_nonexistent_token_still_returns_200() {
     // Unregistering a token that was never registered should not error --
     // idempotent delete semantics prevent noisy error logs on app reinstall.

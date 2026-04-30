@@ -10,6 +10,7 @@ pub mod media;
 pub mod messages;
 pub mod push;
 pub mod reactions;
+pub mod server_info;
 pub mod users;
 pub mod voice;
 pub mod ws;
@@ -302,7 +303,11 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
 
     let push_routes = Router::new()
         .route("/register", post(push::register_token))
-        .route("/unregister", post(push::unregister_token));
+        .route("/unregister", post(push::unregister_token))
+        // Server-switching teardown (#PR-2): clears every push token bound to
+        // the caller. Idempotent — calling with no tokens registered still
+        // returns 200 so clients can call it unconditionally before logout.
+        .route("/token", delete(push::delete_all_tokens));
 
     Router::new()
         .nest("/api/auth", auth_routes)
@@ -321,6 +326,7 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api/health", get(health))
+        .route("/api/server-info", get(server_info::server_info))
         .route("/api/config/ice", get(ice_config))
         .route("/ws", get(ws::ws_upgrade))
         .layer(cors)
