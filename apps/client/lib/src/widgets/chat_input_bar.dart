@@ -191,7 +191,10 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _showMentionPicker = false;
       _mentionQuery = '';
       _searchDebounce?.cancel();
-      _clearPendingAttachment();
+      // Release every staged attachment's ValueNotifier — switching
+      // conversations was previously only releasing the last one (#623),
+      // leaking notifiers for the rest.
+      _clearAllPendingAttachments();
       _messageController.clear();
       _editingMessage = null;
       _isTextEmpty = true;
@@ -213,6 +216,14 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
     _inputFocusNode.dispose();
+    // Release every staged attachment's ValueNotifier (#623). Calling
+    // setState here would be unsafe during dispose; just walk the list
+    // and dispose each one directly.
+    for (final att in _pendingAttachments) {
+      att.cancelled = true;
+      att.dispose();
+    }
+    _pendingAttachments.clear();
     super.dispose();
   }
 
@@ -671,13 +682,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     for (final att in toDispose) {
       att.dispose();
     }
-  }
-
-  /// Backwards-compatible no-arg clear for legacy callers (the recorder /
-  /// outer error handling). Removes the most recently staged attachment.
-  void _clearPendingAttachment() {
-    if (_pendingAttachments.isEmpty) return;
-    _removePendingAttachment(_pendingAttachments.last);
   }
 
   Future<void> _startAttachmentUploadFor(PendingAttachment att) async {
