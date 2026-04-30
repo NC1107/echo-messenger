@@ -56,7 +56,7 @@ async fn main() {
         }
     });
 
-    let app = routes::create_router(state);
+    let app = routes::create_router(state, config.trusted_proxies);
 
     // Start server
     let addr: SocketAddr = format!("{}:{}", config.host, config.port)

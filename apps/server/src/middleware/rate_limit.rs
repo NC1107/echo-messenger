@@ -158,46 +158,46 @@ pub fn make_rate_limit_layer(
 }
 
 /// Login rate limiter: 5 attempts per 60 seconds per IP.
-pub fn login_limiter() -> RateLimiter {
-    RateLimiter::new(5, 60)
+pub fn login_limiter(trusted_proxies: Vec<IpAddr>) -> RateLimiter {
+    RateLimiter::with_trusted_proxies(5, 60, trusted_proxies)
 }
 
 /// Register rate limiter: 3 attempts per 60 seconds per IP.
-pub fn register_limiter() -> RateLimiter {
-    RateLimiter::new(3, 60)
+pub fn register_limiter(trusted_proxies: Vec<IpAddr>) -> RateLimiter {
+    RateLimiter::with_trusted_proxies(3, 60, trusted_proxies)
 }
 
 /// Refresh token rate limiter: 10 attempts per 60 seconds per IP.
-pub fn refresh_limiter() -> RateLimiter {
-    RateLimiter::new(10, 60)
+pub fn refresh_limiter(trusted_proxies: Vec<IpAddr>) -> RateLimiter {
+    RateLimiter::with_trusted_proxies(10, 60, trusted_proxies)
 }
 
 /// WebSocket ticket rate limiter: 10 tickets per 60 seconds per IP.
-pub fn ticket_limiter() -> RateLimiter {
-    RateLimiter::new(10, 60)
+pub fn ticket_limiter(trusted_proxies: Vec<IpAddr>) -> RateLimiter {
+    RateLimiter::with_trusted_proxies(10, 60, trusted_proxies)
 }
 
 /// Media upload rate limiter: 30 uploads per 60 seconds per IP.
-pub fn media_upload_limiter() -> RateLimiter {
-    RateLimiter::new(30, 60)
+pub fn media_upload_limiter(trusted_proxies: Vec<IpAddr>) -> RateLimiter {
+    RateLimiter::with_trusted_proxies(30, 60, trusted_proxies)
 }
 
 /// Link preview rate limiter: 20 requests per 60 seconds per IP.
-pub fn link_preview_limiter() -> RateLimiter {
-    RateLimiter::new(20, 60)
+pub fn link_preview_limiter(trusted_proxies: Vec<IpAddr>) -> RateLimiter {
+    RateLimiter::with_trusted_proxies(20, 60, trusted_proxies)
 }
 
 /// Key reset rate limiter: 3 attempts per 300 seconds per IP.
 /// Tight limit since this is a password-guessing vector.
-pub fn key_reset_limiter() -> RateLimiter {
-    RateLimiter::new(3, 300)
+pub fn key_reset_limiter(trusted_proxies: Vec<IpAddr>) -> RateLimiter {
+    RateLimiter::with_trusted_proxies(3, 300, trusted_proxies)
 }
 
 /// Revoke-others rate limiter: 3 requests per 60 seconds per IP.
 /// Revoking every other device is a disruptive op -- cap it tightly so
 /// stolen tokens can't wipe a user's whole device list in a loop.
-pub fn revoke_others_limiter() -> RateLimiter {
-    RateLimiter::new(3, 60)
+pub fn revoke_others_limiter(trusted_proxies: Vec<IpAddr>) -> RateLimiter {
+    RateLimiter::with_trusted_proxies(3, 60, trusted_proxies)
 }
 
 /// Check whether an IP is in a private/reserved range (RFC 1918, link-local, ULA).
@@ -251,28 +251,28 @@ mod tests {
 
     #[test]
     fn test_login_limiter_config() {
-        let limiter = login_limiter();
+        let limiter = login_limiter(vec![]);
         assert_eq!(limiter.max_requests, 5);
         assert_eq!(limiter.window_secs, 60);
     }
 
     #[test]
     fn test_register_limiter_config() {
-        let limiter = register_limiter();
+        let limiter = register_limiter(vec![]);
         assert_eq!(limiter.max_requests, 3);
         assert_eq!(limiter.window_secs, 60);
     }
 
     #[test]
     fn test_media_upload_limiter_config() {
-        let limiter = media_upload_limiter();
+        let limiter = media_upload_limiter(vec![]);
         assert_eq!(limiter.max_requests, 30);
         assert_eq!(limiter.window_secs, 60);
     }
 
     #[test]
     fn test_link_preview_limiter_config() {
-        let limiter = link_preview_limiter();
+        let limiter = link_preview_limiter(vec![]);
         assert_eq!(limiter.max_requests, 20);
         assert_eq!(limiter.window_secs, 60);
     }
