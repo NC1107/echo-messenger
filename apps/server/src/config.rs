@@ -58,6 +58,30 @@ impl Config {
     }
 }
 
+/// Returns whether registration is open on this server.
+///
+/// Read once per call so operators can change the env without a restart in
+/// development.  Defaults to `true` (open) for backwards compatibility with
+/// existing self-hosted instances; set `REGISTRATION_OPEN=false` (or `0`,
+/// `no`, `off`) to lock down a server.  Used by both `GET /api/server-info`
+/// (which advertises the policy) and `POST /api/auth/register` (which
+/// enforces it -- #685).
+pub fn registration_open() -> bool {
+    parse_registration_open(std::env::var("REGISTRATION_OPEN").ok())
+}
+
+/// Parser split out so tests can exercise the truthiness rules without
+/// touching the process-wide env (which would race with parallel tests).
+fn parse_registration_open(raw: Option<String>) -> bool {
+    match raw {
+        Some(v) => !matches!(
+            v.trim().to_lowercase().as_str(),
+            "false" | "0" | "no" | "off"
+        ),
+        None => true,
+    }
+}
+
 /// Resolve the bind host, preferring `SERVER_HOST` and falling back to the
 /// legacy `HOST` (with a deprecation warning) so existing self-hosters using
 /// the bare `HOST=` form keep booting cleanly while new deployments adopt
@@ -211,5 +235,40 @@ mod tests {
         // diverges the two paths.
         let port = resolve_port(fake_env(&[("PORT", "garbage")]));
         assert_eq!(port, 8080);
+    }
+
+    // -----------------------------------------------------------------
+    // #685: REGISTRATION_OPEN parsing rules.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn registration_open_defaults_true_when_unset() {
+        assert!(parse_registration_open(None));
+    }
+
+    #[test]
+    fn registration_open_false_for_falsy_strings() {
+        for v in ["false", "FALSE", "False", "0", "no", "NO", "off", "Off"] {
+            assert!(
+                !parse_registration_open(Some(v.into())),
+                "{v} should parse as closed"
+            );
+        }
+    }
+
+    #[test]
+    fn registration_open_true_for_truthy_strings() {
+        for v in ["true", "1", "yes", "on", "open", "anything-else"] {
+            assert!(
+                parse_registration_open(Some(v.into())),
+                "{v} should parse as open"
+            );
+        }
+    }
+
+    #[test]
+    fn registration_open_trims_whitespace() {
+        assert!(!parse_registration_open(Some("  false  ".into())));
+        assert!(!parse_registration_open(Some("\tno\n".into())));
     }
 }

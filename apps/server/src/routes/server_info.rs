@@ -11,6 +11,7 @@ use axum::response::IntoResponse;
 use serde::Serialize;
 use std::sync::Arc;
 
+use crate::config::registration_open;
 use crate::error::AppError;
 use crate::routes::AppState;
 
@@ -46,20 +47,11 @@ pub async fn server_info(
             .await
             .map_err(|_| AppError::internal("Database error"))?;
 
-    let registration_open = std::env::var("REGISTRATION_OPEN")
-        .map(|v| {
-            !matches!(
-                v.trim().to_lowercase().as_str(),
-                "false" | "0" | "no" | "off"
-            )
-        })
-        .unwrap_or(true);
-
     Ok(Json(ServerInfoResponse {
         name: env!("CARGO_PKG_NAME"),
         version: env!("CARGO_PKG_VERSION"),
         server_id: server_id.to_string(),
-        registration_open,
+        registration_open: registration_open(),
         federation_capable: false,
     }))
 }

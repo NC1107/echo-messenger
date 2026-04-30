@@ -142,6 +142,13 @@ pub async fn register(
     jar: CookieJar,
     Json(body): Json<AuthRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    // Audit #685: server-side enforcement of REGISTRATION_OPEN. Without this
+    // gate, any client (including direct curl) could create accounts on a
+    // self-hosted instance whose operator advertises "closed" via /server-info.
+    if !crate::config::registration_open() {
+        return Err(AppError::forbidden("Registration is closed on this server"));
+    }
+
     validate_username(&body.username)?;
     validate_password(&body.password)?;
 

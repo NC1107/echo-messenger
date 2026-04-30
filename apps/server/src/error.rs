@@ -56,6 +56,14 @@ impl AppError {
         }
     }
 
+    pub fn forbidden(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: msg.into(),
+            body: None,
+        }
+    }
+
     /// 409 Conflict that carries a structured JSON body. Used for the
     /// per-device identity-key conflict so the client can extract `device_id`
     /// + expected/actual fingerprints without parsing English error strings.
