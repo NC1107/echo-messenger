@@ -48,11 +48,25 @@ async fn wait_for_event(ws: &mut WsStream, wanted: &[&str]) -> Value {
 /// Send a `send_message` frame and return the resulting `message_sent`
 /// confirmation's `message_id` (as String).  Panics if an `error` frame
 /// arrives instead.
-async fn post_message(ws: &mut WsStream, conversation_id: &str, content: &str) -> String {
+///
+/// Note: DMs are auto-encrypted, so callers must pass the recipient_id and
+/// device id of the peer; the helper builds a ciphertext-shaped payload
+/// that satisfies the server-side gate (#591).
+async fn post_message(
+    ws: &mut WsStream,
+    conversation_id: &str,
+    tag: &str,
+    recipient_user_id: &str,
+) -> String {
+    let canonical = common::dummy_ciphertext(&format!("{tag}_canonical"));
+    let recipient_ct = common::dummy_ciphertext(&format!("{tag}_recipient"));
     let frame = serde_json::json!({
         "type": "send_message",
         "conversation_id": conversation_id,
-        "content": content,
+        "content": canonical,
+        "recipient_device_contents": {
+            recipient_user_id.to_string(): { "0": recipient_ct },
+        },
     });
     ws.send(Message::Text(frame.to_string().into()))
         .await
@@ -73,14 +87,20 @@ async fn post_message(ws: &mut WsStream, conversation_id: &str, content: &str) -
 async fn post_reply_raw(
     ws: &mut WsStream,
     conversation_id: &str,
-    content: &str,
+    tag: &str,
     reply_to_id: &str,
+    recipient_user_id: &str,
 ) -> Result<String, String> {
+    let canonical = common::dummy_ciphertext(&format!("{tag}_canonical"));
+    let recipient_ct = common::dummy_ciphertext(&format!("{tag}_recipient"));
     let frame = serde_json::json!({
         "type": "send_message",
         "conversation_id": conversation_id,
-        "content": content,
+        "content": canonical,
         "reply_to_id": reply_to_id,
+        "recipient_device_contents": {
+            recipient_user_id.to_string(): { "0": recipient_ct },
+        },
     });
     ws.send(Message::Text(frame.to_string().into()))
         .await
@@ -111,6 +131,8 @@ async fn reply_to_message_in_other_conversation_is_rejected() {
         common::register_and_login(&client, &base, "scope_bob").await;
     let (carol_token, carol_id, carol_name) =
         common::register_and_login(&client, &base, "scope_carol").await;
+    let bob_id_for_post = bob_id.clone();
+    let carol_id_for_post = carol_id.clone();
 
     // alice <-> bob and alice <-> carol are two disjoint DM conversations.
     let conv_ab =
@@ -132,7 +154,8 @@ async fn reply_to_message_in_other_conversation_is_rejected() {
     drain_pending(&mut alice_ws).await;
 
     // Alice posts a message in conv_ab.
-    let parent_id = post_message(&mut alice_ws, &conv_ab, "hi bob -- secret").await;
+    let parent_id =
+        post_message(&mut alice_ws, &conv_ab, "scope_parent_ab", &bob_id_for_post).await;
 
     // Drain any echoes/new_message frames before the next interaction.
     drain_pending(&mut alice_ws).await;
@@ -141,8 +164,9 @@ async fn reply_to_message_in_other_conversation_is_rejected() {
     let result = post_reply_raw(
         &mut alice_ws,
         &conv_ac,
-        "leaking the parent context",
+        "scope_leak",
         &parent_id,
+        &carol_id_for_post,
     )
     .await;
 
@@ -152,8 +176,10 @@ async fn reply_to_message_in_other_conversation_is_rejected() {
         "error should mention reply_to, got: {err}"
     );
 
-    // Verify nothing landed in conv_ac.  GET /api/messages/{conversation_id}
-    // returns the message list ordered by created_at DESC.
+    // Verify nothing with the leaking marker landed in conv_ac. We check the
+    // server didn't persist *any* row containing the canonical leak ciphertext
+    // we tried to post.
+    let leaking_marker = common::dummy_ciphertext("scope_leak_canonical");
     let resp = client
         .get(format!("{base}/api/messages/{conv_ac}"))
         .header("Authorization", format!("Bearer {alice_token}"))
@@ -164,8 +190,7 @@ async fn reply_to_message_in_other_conversation_is_rejected() {
     let messages: Value = resp.json().await.unwrap();
     let arr = messages.as_array().expect("messages must be an array");
     assert!(
-        arr.iter()
-            .all(|m| m["content"] != "leaking the parent context"),
+        arr.iter().all(|m| m["content"] != leaking_marker),
         "rejected reply must not be persisted: {arr:?}"
     );
 
@@ -179,7 +204,7 @@ async fn thread_replies_does_not_return_cross_conversation_replies() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
-    let (alice_token, _alice_id, _alice_name) =
+    let (alice_token, alice_id, _alice_name) =
         common::register_and_login(&client, &base, "thr_alice").await;
     let (bob_token, bob_id, bob_name) = common::register_and_login(&client, &base, "thr_bob").await;
     let (carol_token, _carol_id, _carol_name) =
@@ -197,9 +222,10 @@ async fn thread_replies_does_not_return_cross_conversation_replies() {
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
-    let parent_id = post_message(&mut alice_ws, &conv_ab, "parent in ab").await;
+    let parent_id = post_message(&mut alice_ws, &conv_ab, "thr_parent", &bob_id).await;
     drain_pending(&mut bob_ws).await;
-    let _reply_id = post_reply_raw(&mut bob_ws, &conv_ab, "reply in ab", &parent_id)
+    // Bob is replying back in the same DM, so the recipient is Alice.
+    let _reply_id = post_reply_raw(&mut bob_ws, &conv_ab, "thr_reply", &parent_id, &alice_id)
         .await
         .expect("in-conversation reply should succeed");
 
@@ -231,7 +257,8 @@ async fn thread_replies_does_not_return_cross_conversation_replies() {
     let body: Value = resp.json().await.unwrap();
     let replies = body.as_array().expect("replies must be an array");
     assert_eq!(replies.len(), 1, "expected exactly one reply: {replies:?}");
-    assert_eq!(replies[0]["content"], "reply in ab");
+    let expected_content = common::dummy_ciphertext("thr_reply_canonical");
+    assert_eq!(replies[0]["content"], expected_content);
     assert_eq!(replies[0]["conversation_id"].as_str().unwrap(), conv_ab);
 
     let _ = alice_ws.close(None).await;

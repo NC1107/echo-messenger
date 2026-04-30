@@ -324,7 +324,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            Text(
+            const Text(
               'Your local encryption keys will be cleared. '
               'Old encrypted messages on this device may become unreadable.',
               style: TextStyle(

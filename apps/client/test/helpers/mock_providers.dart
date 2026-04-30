@@ -71,7 +71,7 @@ class _FakeAuthNotifier extends AuthNotifier {
   Future<bool> tryAutoLogin() async => false;
 
   @override
-  Future<void> logout() async => state = const AuthState();
+  Future<void> logout({String? serverUrl}) async => state = const AuthState();
 }
 
 // ---------------------------------------------------------------------------

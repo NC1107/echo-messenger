@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
@@ -14,6 +15,8 @@ import '../../providers/server_url_provider.dart';
 import '../../providers/update_provider.dart';
 import '../../providers/websocket_provider.dart';
 import '../../services/debug_log_service.dart';
+import '../../services/message_cache.dart';
+import '../../services/secure_key_store.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../version.dart';
@@ -28,7 +31,6 @@ class AboutSection extends ConsumerStatefulWidget {
 class _AboutSectionState extends ConsumerState<AboutSection> {
   bool _serverOnline = false;
   bool _checkingHealth = true;
-  String? _serverVersion;
 
   Color get _serverHealthColor {
     if (_checkingHealth) return EchoTheme.warning;
@@ -58,15 +60,9 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           .get(Uri.parse('$serverUrl/api/health'))
           .timeout(const Duration(seconds: 5));
       if (response.statusCode == 200 && mounted) {
-        String? version;
-        try {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          version = data['version'] as String?;
-        } catch (_) {}
         setState(() {
           _serverOnline = true;
           _checkingHealth = false;
-          _serverVersion = version;
         });
       } else if (mounted) {
         setState(() {
@@ -84,9 +80,11 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
     }
   }
 
-  Future<void> _showChangeServerDialog() async {
-    final currentUrl = ref.read(serverUrlProvider);
-    final controller = TextEditingController(text: currentUrl);
+  /// "Add server" dialog with a pre-flight `GET /api/server-info` check.
+  /// On success, captures `server_id` so future PRs can pin server identity
+  /// across hostname changes.
+  Future<void> _showAddServerDialog() async {
+    final controller = TextEditingController();
 
     final newUrl = await showDialog<String>(
       context: context,
@@ -97,7 +95,7 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           side: BorderSide(color: context.border),
         ),
         title: Text(
-          'Change Server',
+          'Add server',
           style: TextStyle(
             color: context.textPrimary,
             fontSize: 18,
@@ -109,7 +107,8 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Enter the URL of an Echo server. You will need to log in again after changing servers.',
+              'Enter the URL of an Echo server. The URL is checked before '
+              "it's added so we can fail fast on typos.",
               style: TextStyle(
                 color: context.textSecondary,
                 fontSize: 13,
@@ -127,16 +126,6 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
               keyboardType: TextInputType.url,
               autofocus: true,
             ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () {
-                controller.text = defaultServerUrl;
-              },
-              child: const Text(
-                'Reset to default',
-                style: TextStyle(fontSize: 12),
-              ),
-            ),
           ],
         ),
         actions: [
@@ -147,22 +136,195 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           FilledButton(
             onPressed: () =>
                 Navigator.pop(dialogContext, controller.text.trim()),
-            child: const Text('Save'),
+            child: const Text('Check & add'),
           ),
         ],
       ),
     );
 
-    if (newUrl != null && newUrl.isNotEmpty && newUrl != currentUrl) {
-      await ref.read(serverUrlProvider.notifier).setUrl(newUrl);
-      await _checkServerHealth();
+    if (newUrl == null || newUrl.isEmpty) return;
+    final normalized = newUrl.endsWith('/')
+        ? newUrl.substring(0, newUrl.length - 1)
+        : newUrl;
+
+    // Pre-flight: GET /api/server-info. 4xx/5xx => surface error and bail.
+    String? serverId;
+    try {
+      final response = await http
+          .get(Uri.parse('$normalized/api/server-info'))
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode != 200) {
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Server returned HTTP ${response.statusCode}. Not added.',
+            type: ToastType.error,
+          );
+        }
+        return;
+      }
+      try {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        serverId = data['server_id'] as String?;
+      } catch (_) {
+        // server_info older than this build -- still treat as a valid add.
+      }
+    } catch (e) {
       if (mounted) {
         ToastService.show(
           context,
-          'Server URL updated. Please log out and log in again for changes to take full effect.',
-          type: ToastType.info,
+          'Could not reach $normalized. Not added.',
+          type: ToastType.error,
         );
       }
+      return;
+    }
+
+    await ref
+        .read(serverUrlProvider.notifier)
+        .addKnownServer(url: normalized, serverId: serverId);
+
+    if (mounted) {
+      ToastService.show(context, 'Server added.', type: ToastType.success);
+    }
+  }
+
+  /// Switch to a known server. Funnels through
+  /// [ServerUrlNotifier.switchTo] so the logout-on-switch invariant holds.
+  Future<void> _confirmAndSwitchTo(KnownServer target) async {
+    final oldHost =
+        Uri.tryParse(ref.read(serverUrlProvider))?.host ??
+        ref.read(serverUrlProvider);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: Text(
+          'Switch server?',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          "You'll be logged out of $oldHost; messages and keys for both "
+          'servers stay on this device.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Switch'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await ref.read(serverUrlProvider.notifier).switchTo(target.url);
+    if (!mounted) return;
+    // The switch logged out the active session; route back to /login so
+    // the user can re-authenticate against the new origin.
+    context.go('/login');
+  }
+
+  /// Forget a known server: drop it from the list and best-effort wipe its
+  /// scoped state on this device. The active server cannot be forgotten.
+  Future<void> _confirmAndForget(KnownServer target) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: context.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: context.border),
+        ),
+        title: Text(
+          'Forget server?',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'This deletes locally-stored keys and message cache for '
+          '${Uri.tryParse(target.url)?.host ?? target.url}. '
+          'The remote account is not affected.',
+          style: TextStyle(
+            color: context.textSecondary,
+            fontSize: 13,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: EchoTheme.danger),
+            child: const Text('Forget'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    // Wipe scoped state. SecureKeyStore.deleteAllForUser only operates on
+    // the currently-set scope, so we briefly set it for the user we have
+    // stored against this server (if any), then restore the scope of the
+    // currently-logged-in session afterwards.
+    try {
+      final host = Uri.tryParse(target.url)?.host ?? target.url;
+      final keystore = SecureKeyStore.instance;
+      final activeAuth = ref.read(authProvider);
+      final activeUrl = ref.read(serverUrlProvider);
+      final activeHost = Uri.tryParse(activeUrl)?.host ?? activeUrl;
+
+      final prefs = await SharedPreferences.getInstance();
+      final hostUserId = prefs.getString('echo_auth_user_id@$host');
+      if (hostUserId != null && hostUserId.isNotEmpty) {
+        keystore.setUserScope(hostUserId, host);
+        try {
+          await keystore.deleteAllForUser();
+        } catch (_) {}
+        await prefs.remove('echo_auth_user_id@$host');
+        await prefs.remove('echo_auth_username@$host');
+        try {
+          await MessageCache.dropForServer(hostUserId, host);
+        } catch (_) {}
+      }
+
+      // Restore the active session's scope so the rest of the running app
+      // keeps decrypting / writing to its own keystore namespace.
+      if (activeAuth.userId != null && activeAuth.userId!.isNotEmpty) {
+        keystore.setUserScope(activeAuth.userId!, activeHost);
+      } else {
+        keystore.clearUserScope();
+      }
+    } catch (e) {
+      debugPrint('[Settings] forget server cleanup error: $e');
+    }
+
+    await ref.read(serverUrlProvider.notifier).forget(target.url);
+    if (mounted) {
+      ToastService.show(context, 'Server forgotten.', type: ToastType.info);
     }
   }
 
@@ -288,6 +450,119 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
     }
   }
 
+  Widget _buildServersList() {
+    final activeUrl = ref.watch(serverUrlProvider);
+    final servers = ref.watch(knownServersProvider);
+    if (servers.isEmpty) {
+      // Should be rare post-migration, but covers a fresh install where the
+      // user hasn't logged in yet.
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(
+          Icons.dns_outlined,
+          color: context.textSecondary,
+          size: 22,
+        ),
+        title: Text(
+          Uri.tryParse(activeUrl)?.host ?? activeUrl,
+          style: TextStyle(color: context.textPrimary, fontSize: 15),
+        ),
+        subtitle: Text(
+          'Active (no other servers added yet)',
+          style: TextStyle(color: context.textMuted, fontSize: 12),
+        ),
+        trailing: Icon(Icons.circle, color: _serverHealthColor, size: 10),
+      );
+    }
+
+    // Active first, then by lastSeen desc.
+    final sorted = [...servers]
+      ..sort((a, b) {
+        if (a.url == activeUrl) return -1;
+        if (b.url == activeUrl) return 1;
+        return b.lastSeen.compareTo(a.lastSeen);
+      });
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final s in sorted) _serverRow(s, isActive: s.url == activeUrl),
+      ],
+    );
+  }
+
+  Widget _serverRow(KnownServer s, {required bool isActive}) {
+    final host = Uri.tryParse(s.url)?.host ?? s.url;
+    final subtitleParts = <String>[];
+    if (s.lastUsername != null && s.lastUsername!.isNotEmpty) {
+      subtitleParts.add(s.lastUsername!);
+    }
+    if (isActive) {
+      subtitleParts.add(_serverHealthLabel.toLowerCase());
+    }
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        isActive ? Icons.dns : Icons.dns_outlined,
+        color: context.textSecondary,
+        size: 22,
+      ),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(
+              host,
+              style: TextStyle(color: context.textPrimary, fontSize: 15),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (isActive) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: context.accent.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'CURRENT',
+                style: TextStyle(
+                  color: context.accent,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(Icons.circle, color: _serverHealthColor, size: 10),
+          ],
+        ],
+      ),
+      subtitle: subtitleParts.isEmpty
+          ? null
+          : Text(
+              subtitleParts.join(' · '),
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+      trailing: PopupMenuButton<String>(
+        icon: Icon(Icons.more_vert, color: context.textMuted, size: 20),
+        onSelected: (value) async {
+          if (value == 'switch') {
+            await _confirmAndSwitchTo(s);
+          } else if (value == 'forget') {
+            await _confirmAndForget(s);
+          }
+        },
+        itemBuilder: (_) => [
+          if (!isActive)
+            const PopupMenuItem(value: 'switch', child: Text('Switch')),
+          if (!isActive)
+            const PopupMenuItem(value: 'forget', child: Text('Forget')),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCheckForUpdates() {
     final update = ref.watch(updateProvider);
     return Row(
@@ -376,57 +651,29 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
           ),
         ),
         const SizedBox(height: 12),
+        _buildServersList(),
+        const SizedBox(height: 8),
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: Icon(
-            Icons.dns_outlined,
+            Icons.add_circle_outline,
             color: context.textSecondary,
             size: 22,
           ),
           title: Text(
-            'Connected to',
+            'Add server',
             style: TextStyle(color: context.textPrimary, fontSize: 15),
           ),
           subtitle: Text(
-            Uri.tryParse(ref.watch(serverUrlProvider))?.host ??
-                ref.watch(serverUrlProvider),
+            'Verifies the URL before adding it to your list.',
             style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(Icons.circle, color: _serverHealthColor, size: 12),
-          title: Text(
-            'Status: $_serverHealthLabel',
-            style: TextStyle(color: context.textPrimary, fontSize: 15),
-          ),
-          subtitle: Text(
-            'Server v${_serverVersion ?? "unknown"}',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          trailing: IconButton(
-            icon: Icon(Icons.refresh, color: context.textMuted, size: 20),
-            tooltip: 'Refresh',
-            onPressed: _checkServerHealth,
-          ),
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(
-            Icons.swap_horiz_outlined,
-            color: context.textSecondary,
-            size: 22,
-          ),
-          title: Text(
-            'Change server',
-            style: TextStyle(color: context.textPrimary, fontSize: 15),
           ),
           trailing: Icon(
             Icons.chevron_right,
             color: context.textMuted,
             size: 20,
           ),
-          onTap: _showChangeServerDialog,
+          onTap: _showAddServerDialog,
         ),
         const SizedBox(height: 16),
         Divider(color: context.border),

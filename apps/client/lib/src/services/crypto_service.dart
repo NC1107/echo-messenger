@@ -20,14 +20,90 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'debug_log_service.dart';
+import 'safety_number_service.dart';
 import 'secure_key_store.dart';
 import 'session_cache.dart';
 import 'signal_session.dart';
 import 'signal_x3dh.dart';
 
+/// Thrown by [CryptoService.getOrCreateSession] when the peer's identity
+/// key on the server differs from the key we previously trusted (TOFU
+/// violation). Callers must surface this via the safety-number /
+/// "trust new key" UI before establishing a new session — silently
+/// overwriting the trusted key would let an attacker who has taken over
+/// the server impersonate the peer (#580).
+class IdentityKeyChangedException implements Exception {
+  /// Peer whose identity key changed.
+  final String peerUserId;
+
+  /// Previously-trusted identity key (base64), or `null` if for some
+  /// reason the old value could not be read back.
+  final String? oldIdentityKeyB64;
+
+  /// New identity key returned by the server (base64).
+  final String newIdentityKeyB64;
+
+  const IdentityKeyChangedException({
+    required this.peerUserId,
+    required this.oldIdentityKeyB64,
+    required this.newIdentityKeyB64,
+  });
+
+  @override
+  String toString() =>
+      'IdentityKeyChangedException(peer=$peerUserId): trusted identity key '
+      'changed; user must verify safety number or explicitly accept new key';
+}
+
+/// Thrown by [CryptoService.uploadKeys] when the server rejects the upload
+/// because the identity-key fingerprint we presented for this device does
+/// not match what is on file (#664). The body carries the device_id and the
+/// expected/actual fingerprints (base64) so the UI can drive a typed reset
+/// flow instead of parsing English error strings.
+class IdentityKeyConflictException implements Exception {
+  /// Device id reported by the server. Falls back to the local device id when
+  /// the server returned a legacy (string-only) 409 without a JSON body.
+  final int deviceId;
+
+  /// Server-side fingerprint (base64) -- the value we'd need to match. Null
+  /// when the server returned a legacy body.
+  final String? expectedFingerprint;
+
+  /// Fingerprint we sent (base64). Null when no body was returned.
+  final String? actualFingerprint;
+
+  const IdentityKeyConflictException({
+    required this.deviceId,
+    this.expectedFingerprint,
+    this.actualFingerprint,
+  });
+
+  @override
+  String toString() =>
+      'IdentityKeyConflictException(device=$deviceId, '
+      'expected=${expectedFingerprint ?? "?"}, '
+      'actual=${actualFingerprint ?? "?"})';
+}
+
+/// Thrown by [CryptoService.decryptMessage] when an initial X3DH wire
+/// failed to authenticate (AES-GCM tag check). The receiver's keys on the
+/// server are likely stale; the service schedules an `uploadKeys()` to heal
+/// the bundle so the next message from the same peer can decrypt (#662).
+class InitialDecryptFailedException implements Exception {
+  final String peerUserId;
+  const InitialDecryptFailedException(this.peerUserId);
+
+  @override
+  String toString() =>
+      'InitialDecryptFailedException(peer=$peerUserId): initial X3DH wire '
+      'failed AES-GCM auth; uploaded fresh keys to heal stale bundle';
+}
+
 class CryptoService {
   static const _deviceIdPref = 'echo_device_id';
   static const _identityKeyPref = 'echo_identity_key';
+  static const _contentTypeHeader = 'Content-Type';
+  static const _applicationJson = 'application/json';
   static const _identityPubKeyPref = 'echo_identity_pub_key';
   static const _signingKeyPref = 'echo_signing_key';
   static const _signingPubKeyPref = 'echo_signing_pub_key';
@@ -81,8 +157,6 @@ class CryptoService {
   /// Sessions persist on disk via [_saveSession]; eviction is non-destructive
   /// and the cache reloads from secure storage on miss (#343).
   final SessionCache _sessions = SessionCache();
-  X3dhInitResult? _lastX3dhResult;
-  int? _lastOtpKeyId;
   bool _keysAreFresh = false;
   bool _keysWereRegenerated = false;
   bool _needsOtpReplenishment = false;
@@ -527,6 +601,45 @@ class CryptoService {
     await store.delete('$_peerIdentityChangedPrefix$peerUserId');
   }
 
+  /// Explicitly trust the peer's new identity key after the user has
+  /// reviewed (or chosen to skip reviewing) the safety number.
+  ///
+  /// This is the explicit counterpart to the previously-silent overwrite
+  /// in TOFU: it clears the change flag, persists [newIdentityKeyB64] (or,
+  /// if `null`, leaves whatever was last written by TOFU in place), and
+  /// drops any cached/persisted Signal session for the peer so the next
+  /// outbound message triggers a fresh X3DH against the trusted key.
+  /// (#580)
+  Future<void> acceptIdentityKeyChange(
+    String peerUserId, {
+    String? newIdentityKeyB64,
+  }) async {
+    final store = SecureKeyStore.instance;
+    if (newIdentityKeyB64 != null) {
+      await store.write('$_peerIdentityPrefix$peerUserId', newIdentityKeyB64);
+    }
+    await store.delete('$_peerIdentityChangedPrefix$peerUserId');
+    // Drop any cached/persisted session keyed to the old identity so the
+    // next send re-runs X3DH against the freshly-trusted key.
+    _sessions.remove(peerUserId);
+    await store.delete('$_sessionPrefix$peerUserId');
+  }
+
+  /// Compute the safety-number fingerprint between this device and
+  /// [peerUserId], or `null` if either identity key is unavailable.
+  ///
+  /// Deterministic regardless of which side calls it (keys are sorted
+  /// before hashing). See [SafetyNumberService] for the spec.
+  Future<String?> safetyNumberFor(String peerUserId) async {
+    final myKey = await getIdentityPublicKey();
+    if (myKey == null) return null;
+    final store = SecureKeyStore.instance;
+    final peerB64 = await store.read('$_peerIdentityPrefix$peerUserId');
+    if (peerB64 == null) return null;
+    final peerKey = Uint8List.fromList(base64Decode(peerB64));
+    return SafetyNumberService.generate(myKey, peerKey);
+  }
+
   /// Get the local identity public key bytes.
   Future<Uint8List?> getIdentityPublicKey() async {
     if (_identityKeyPair == null) return null;
@@ -701,16 +814,36 @@ class CryptoService {
     final response = await http.post(
       Uri.parse('$serverUrl/api/keys/upload'),
       headers: {
-        'Content-Type': 'application/json',
+        _contentTypeHeader: _applicationJson,
         'Authorization': 'Bearer $_token',
       },
       body: body,
     );
 
     if (response.statusCode == 409) {
-      throw Exception(
-        'Identity key conflict (409). Log out and back in to reset '
-        'encryption keys.',
+      // Server returns a structured `identity_key_conflict` envelope (#664)
+      // with `device_id`, `expected_fingerprint`, `actual_fingerprint`. Older
+      // servers emit a plain `{"error": "..."}` body; tolerate both.
+      int conflictDeviceId = _deviceId;
+      String? expected;
+      String? actual;
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map<String, dynamic>) {
+          if (body['code'] == 'identity_key_conflict') {
+            conflictDeviceId =
+                (body['device_id'] as num?)?.toInt() ?? _deviceId;
+            expected = body['expected_fingerprint'] as String?;
+            actual = body['actual_fingerprint'] as String?;
+          }
+        }
+      } catch (_) {
+        // Legacy server response -- fall through with defaults.
+      }
+      throw IdentityKeyConflictException(
+        deviceId: conflictDeviceId,
+        expectedFingerprint: expected,
+        actualFingerprint: actual,
       );
     }
 
@@ -810,7 +943,7 @@ class CryptoService {
     final response = await http.post(
       Uri.parse('$serverUrl/api/keys/upload'),
       headers: {
-        'Content-Type': 'application/json',
+        _contentTypeHeader: _applicationJson,
         'Authorization': 'Bearer $_token',
       },
       body: body,
@@ -823,17 +956,25 @@ class CryptoService {
 
   /// Get or create a Signal session with a peer.
   ///
-  /// If a session already exists in memory or was loaded from storage, returns it.
+  /// If a session already exists in memory or was loaded from storage, returns
+  /// it with both X3DH fields null (no initial-message header needed).
   /// Otherwise, fetches the peer's prekey bundle from the server, performs X3DH
-  /// to establish a shared secret, and initializes a new Double Ratchet session.
-  Future<SignalSession> getOrCreateSession(String peerUserId) async {
+  /// to establish a shared secret, and initializes a new Double Ratchet session;
+  /// the returned record carries the X3DH state so the caller can build the
+  /// initial wire prefix without relying on shared instance fields (#655).
+  Future<({SignalSession session, X3dhInitResult? x3dhResult, int? otpKeyId})>
+  getOrCreateSession(String peerUserId) async {
     final cached = _sessions.get(peerUserId);
-    if (cached != null) return cached;
+    if (cached != null) {
+      return (session: cached, x3dhResult: null, otpKeyId: null);
+    }
 
     // Cache miss may be due to TTL/LRU eviction -- attempt non-destructive
     // reload from secure storage before falling back to a fresh X3DH.
     final reloaded = await _reloadSession(peerUserId);
-    if (reloaded != null) return reloaded;
+    if (reloaded != null) {
+      return (session: reloaded, x3dhResult: null, otpKeyId: null);
+    }
 
     if (_identityKeyPair == null) await init();
 
@@ -894,8 +1035,33 @@ class CryptoService {
       type: KeyPairType.x25519,
     );
 
+    // Block silent session establishment when the peer's identity key has
+    // changed since first contact. The user must explicitly accept the new
+    // key (via [acceptIdentityKeyChange]) after verifying the safety number;
+    // otherwise we would happily X3DH against an attacker-supplied key.
+    // (#580)
+    final newIdentityKeyB64 = data['identity_key'] as String;
+    final tofuStore = SecureKeyStore.instance;
+    final existingIdentityKeyB64 = await tofuStore.read(
+      '$_peerIdentityPrefix$peerUserId',
+    );
+    if (existingIdentityKeyB64 != null &&
+        existingIdentityKeyB64 != newIdentityKeyB64) {
+      // Mark the change so the UI can show a banner even if the caller
+      // catches the exception silently.
+      await tofuStore.write(
+        '$_peerIdentityChangedPrefix$peerUserId',
+        DateTime.now().toIso8601String(),
+      );
+      throw IdentityKeyChangedException(
+        peerUserId: peerUserId,
+        oldIdentityKeyB64: existingIdentityKeyB64,
+        newIdentityKeyB64: newIdentityKeyB64,
+      );
+    }
+
     // Cache peer identity key with TOFU change detection
-    await _storePeerIdentityKeyTofu(peerUserId, data['identity_key'] as String);
+    await _storePeerIdentityKeyTofu(peerUserId, newIdentityKeyB64);
 
     // Extract one-time prekey if the server provided one (4-DH)
     SimplePublicKey? bobOneTimePrekey;
@@ -920,9 +1086,6 @@ class CryptoService {
       bobOneTimePrekey: bobOneTimePrekey,
     );
 
-    // Track which OTP key ID was used so we can include it in the wire format
-    _lastOtpKeyId = otpKeyId;
-
     // Initialize Double Ratchet as Alice.
     // Bob's signed prekey serves as his initial ratchet public key.
     final session = await SignalSession.initAlice(
@@ -931,10 +1094,11 @@ class CryptoService {
     );
 
     _sessions.put(peerUserId, session);
-    _lastX3dhResult = x3dhResult; // Save for initial message prefix
     await _saveSession(peerUserId, session);
 
-    return session;
+    // Return the X3DH state alongside the session so the caller can build the
+    // initial-message header. otpKeyId is the prekey id consumed (if any).
+    return (session: session, x3dhResult: x3dhResult, otpKeyId: otpKeyId);
   }
 
   // Magic byte prefix for initial messages that include X3DH key exchange data.
@@ -944,22 +1108,31 @@ class CryptoService {
   static const _initialMsgMagicV2 = [0xEC, 0x02];
 
   /// Build the initial message wire format with X3DH key exchange header.
-  /// Returns the session wire bytes unchanged if no X3DH result is pending.
-  Future<Uint8List> _buildInitialWire(Uint8List sessionWire) async {
-    if (_lastX3dhResult == null) return sessionWire;
+  ///
+  /// If [x3dhResult] is null, returns [sessionWire] unchanged (normal message).
+  /// Otherwise prepends V2 (with [otpKeyId]) or V1 (no OTP) header. The X3DH
+  /// state is passed in as locals (not read from instance fields) so concurrent
+  /// calls to different peers cannot clobber each other's initial-message
+  /// state (#655).
+  Future<Uint8List> _buildInitialWire(
+    Uint8List sessionWire, {
+    required X3dhInitResult? x3dhResult,
+    required int? otpKeyId,
+  }) async {
+    if (x3dhResult == null) return sessionWire;
 
     final idPub = (await _identityKeyPair!.extractPublicKey()).bytes;
-    final ephPub = _lastX3dhResult!.ephemeralPublic.bytes;
+    final ephPub = x3dhResult.ephemeralPublic.bytes;
 
     Uint8List wire;
-    if (_lastOtpKeyId != null) {
+    if (otpKeyId != null) {
       wire = Uint8List(2 + 32 + 32 + 4 + sessionWire.length);
       wire[0] = _initialMsgMagicV2[0];
       wire[1] = _initialMsgMagicV2[1];
       wire.setRange(2, 34, Uint8List.fromList(idPub));
       wire.setRange(34, 66, Uint8List.fromList(ephPub));
       final bd = ByteData.sublistView(wire);
-      bd.setInt32(66, _lastOtpKeyId!, Endian.little);
+      bd.setInt32(66, otpKeyId, Endian.little);
       wire.setRange(70, wire.length, sessionWire);
     } else {
       wire = Uint8List(2 + 32 + 32 + sessionWire.length);
@@ -970,8 +1143,6 @@ class CryptoService {
       wire.setRange(66, wire.length, sessionWire);
     }
 
-    _lastX3dhResult = null;
-    _lastOtpKeyId = null;
     return wire;
   }
 
@@ -989,13 +1160,13 @@ class CryptoService {
     String peerUserId,
     String plaintext,
   ) async {
-    // Defensive: clear any stale result from a prior aborted call so the
-    // isNewSession derivation below reflects only this call's X3DH outcome.
-    _lastX3dhResult = null;
-    var session = await getOrCreateSession(peerUserId);
+    var sessionInfo = await getOrCreateSession(peerUserId);
+    var session = sessionInfo.session;
     // "New" means X3DH just ran (initial message will need the X3DH prefix).
     // A session reloaded from secure storage after cache eviction is NOT new.
-    var isNewSession = _lastX3dhResult != null;
+    var x3dhResult = sessionInfo.x3dhResult;
+    var otpKeyId = sessionInfo.otpKeyId;
+    var isNewSession = x3dhResult != null;
     final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
 
     Uint8List wire;
@@ -1014,12 +1185,19 @@ class CryptoService {
       );
       _sessions.remove(peerUserId);
       await SecureKeyStore.instance.delete('$_sessionPrefix$peerUserId');
+      sessionInfo = await getOrCreateSession(peerUserId);
+      session = sessionInfo.session;
+      x3dhResult = sessionInfo.x3dhResult;
+      otpKeyId = sessionInfo.otpKeyId;
       isNewSession = true;
-      session = await getOrCreateSession(peerUserId);
       wire = await session.encrypt(plaintextBytes);
     }
 
-    final finalWire = await _buildInitialWire(wire);
+    final finalWire = await _buildInitialWire(
+      wire,
+      x3dhResult: x3dhResult,
+      otpKeyId: otpKeyId,
+    );
 
     await _saveSession(peerUserId, session);
     // Refresh LRU ordering after in-place mutation.
@@ -1129,7 +1307,28 @@ class CryptoService {
     );
 
     final session = await SignalSession.initBob(sharedSecret, prekeyToUse);
-    final plainBytes = await session.decrypt(sessionWire);
+    final List<int> plainBytes;
+    try {
+      plainBytes = await session.decrypt(sessionWire);
+    } catch (e) {
+      // Initial X3DH wire failed AES-GCM auth -- almost always because our
+      // server-side bundle was stale and the sender encrypted against a
+      // signed prekey / OTP whose private half we no longer hold (#662).
+      // Re-upload our keys (fire-and-forget) so the NEXT message from this
+      // peer authenticates, and surface the failure as a typed exception so
+      // UI can show "couldn't establish secure session".
+      debugPrint(
+        '[Crypto] Initial X3DH decrypt failed for $peerUserId: $e -- '
+        'scheduling key re-upload to heal stale bundle',
+      );
+      _needsOtpReplenishment = true;
+      unawaited(
+        uploadKeys().catchError((upErr) {
+          debugPrint('[Crypto] heal uploadKeys failed: $upErr');
+        }),
+      );
+      throw InitialDecryptFailedException(peerUserId);
+    }
     _sessions.put(sessionKey, session);
     await _saveSession(sessionKey, session);
 
@@ -1367,7 +1566,7 @@ class CryptoService {
     final resetResponse = await http.post(
       Uri.parse('$serverUrl/api/keys/reset'),
       headers: {
-        'Content-Type': 'application/json',
+        _contentTypeHeader: _applicationJson,
         'Authorization': 'Bearer $_token',
       },
       body: jsonEncode({'password': password}),
@@ -1400,6 +1599,90 @@ class CryptoService {
     _signingKeyPair = null;
     _signedPrekeyPair = null;
     await init(); // Generates new keys, sets _keysAreFresh = true
+    await uploadKeys();
+  }
+
+  /// Reset only THIS device's keys without disturbing peer sessions (#664).
+  ///
+  /// Calls `POST /api/keys/reset_device` to clear the server-side per-device
+  /// fingerprint binding, then regenerates the local identity / signing /
+  /// signed-prekey pair, bumps the OTP counter, and re-uploads. Peer sessions
+  /// (sessions whose key does NOT start with `myUserId`) are intentionally
+  /// preserved -- the peer's identity key has not changed, only ours.
+  ///
+  /// [password] is required for server-side re-auth.
+  /// [myUserId] (optional) is the caller's user id; when provided, only the
+  /// caller's own self-sessions (`myUserId` and `myUserId:<deviceId>`) and
+  /// own bundle cache are cleared.
+  Future<void> resetThisDeviceKeys(String password, {String? myUserId}) async {
+    final resp = await http.post(
+      Uri.parse('$serverUrl/api/keys/reset_device'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_token',
+      },
+      body: jsonEncode({'password': password, 'device_id': _deviceId}),
+    );
+    if (resp.statusCode != 204) {
+      throw Exception(
+        'Per-device key reset failed: HTTP ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final store = SecureKeyStore.instance;
+
+    // Drop in-memory + persisted self-sessions (`me:<deviceId>`) so the next
+    // outbound message to one of our own other devices runs a fresh X3DH
+    // against the regenerated keys. Peer sessions are intentionally
+    // preserved -- only OUR identity changed, the peer's didn't.
+    if (myUserId != null && myUserId.isNotEmpty) {
+      final allEntries = await store.readAll();
+      for (final k in allEntries.keys) {
+        if (k.startsWith('$_sessionPrefix$myUserId:') ||
+            k == '$_sessionPrefix$myUserId') {
+          await store.delete(k);
+        }
+      }
+      // Also drop in-memory self-sessions (user-id-keyed entries only).
+      final toDrop = <String>[];
+      _sessions.forEach((k, _) {
+        if (k == myUserId || k.startsWith('$myUserId:')) toDrop.add(k);
+      });
+      for (final k in toDrop) {
+        _sessions.remove(k);
+      }
+      // Drop our own bundle cache so the next encryptForOwnDevices fetches
+      // the freshly-uploaded bundle.
+      _bundleCache.remove(myUserId);
+    }
+
+    // Bump the OTP counter so newly-generated OTPs do not collide with any
+    // IDs the server may still have pinned to the old bundle.
+    final stored = await store.read(_otpNextIdPref);
+    final cur = int.tryParse(stored ?? '0') ?? 0;
+    await store.write(_otpNextIdPref, '${cur + 100}');
+
+    // Regenerate identity / signing / signed-prekey IN PLACE (cannot route
+    // through init() because init's regen branch purges every session in
+    // storage, and we explicitly need to preserve peer sessions here).
+    _identityKeyPair = await _x25519.newKeyPair();
+    _signingKeyPair = await _ed25519.newKeyPair();
+    _signedPrekeyPair = await _x25519.newKeyPair();
+
+    final privateBytes = await (_identityKeyPair as SimpleKeyPairData)
+        .extractPrivateKeyBytes();
+    final publicKey = await _identityKeyPair!.extractPublicKey();
+    await store.write(_identityKeyPref, base64Encode(privateBytes));
+    await store.write(_identityPubKeyPref, base64Encode(publicKey.bytes));
+    await _saveSigningKey(store);
+    await _saveSignedPrekey(store);
+    await store.write(
+      _signedPrekeyCreatedAtPref,
+      DateTime.now().toIso8601String(),
+    );
+
+    _keysAreFresh = true;
+    _needsOtpReplenishment = true;
     await uploadKeys();
   }
 
@@ -1455,8 +1738,6 @@ class CryptoService {
     _signingKeyPair = null;
     _signedPrekeyPair = null;
     _sessions.clear();
-    _lastX3dhResult = null;
-    _lastOtpKeyId = null;
     _keysAreFresh = false;
     _keysWereRegenerated = false;
     _needsOtpReplenishment = false;
@@ -1526,25 +1807,37 @@ class CryptoService {
 
   /// Get or create a Signal session for a specific device of a peer.
   ///
-  /// Uses device-specific session key (`userId:deviceId`).
-  Future<SignalSession> _getOrCreateSessionForDevice(
+  /// Uses device-specific session key (`userId:deviceId`). Returns the X3DH
+  /// state alongside the session so the caller can build the initial-message
+  /// header without relying on shared instance fields (#655). For cached or
+  /// reloaded sessions, the X3DH fields are null (no initial header needed).
+  Future<({SignalSession session, X3dhInitResult? x3dhResult, int? otpKeyId})>
+  _getOrCreateSessionForDevice(
     String peerUserId,
     int deviceId,
     Map<String, dynamic> bundleData,
   ) async {
     final sessionKey = '$peerUserId:$deviceId';
     final cached = _sessions.get(sessionKey);
-    if (cached != null) return cached;
+    if (cached != null) {
+      return (session: cached, x3dhResult: null, otpKeyId: null);
+    }
 
     // Cache miss may be due to TTL/LRU eviction -- try non-destructive reload.
     final reloaded = await _reloadSession(sessionKey);
-    if (reloaded != null) return reloaded;
+    if (reloaded != null) {
+      return (session: reloaded, x3dhResult: null, otpKeyId: null);
+    }
 
     // Fall back to legacy session if it exists (pre-multi-device)
     final legacy = _sessions.get(peerUserId);
-    if (legacy != null) return legacy;
+    if (legacy != null) {
+      return (session: legacy, x3dhResult: null, otpKeyId: null);
+    }
     final legacyReloaded = await _reloadSession(peerUserId);
-    if (legacyReloaded != null) return legacyReloaded;
+    if (legacyReloaded != null) {
+      return (session: legacyReloaded, x3dhResult: null, otpKeyId: null);
+    }
 
     if (_identityKeyPair == null) await init();
 
@@ -1610,9 +1903,6 @@ class CryptoService {
       bobOneTimePrekey: bobOneTimePrekey,
     );
 
-    _lastOtpKeyId = otpKeyId;
-    _lastX3dhResult = x3dhResult;
-
     final session = await SignalSession.initAlice(
       x3dhResult.sharedSecret,
       bobSignedPrekey,
@@ -1620,7 +1910,7 @@ class CryptoService {
 
     _sessions.put(sessionKey, session);
     await _saveSession(sessionKey, session);
-    return session;
+    return (session: session, x3dhResult: x3dhResult, otpKeyId: otpKeyId);
   }
 
   /// Encrypt a message for ALL devices of a peer.
@@ -1632,6 +1922,15 @@ class CryptoService {
     String peerUserId,
     String plaintext,
   ) async {
+    // First-send heal (#662): if we don't currently have ANY session for this
+    // peer (cache miss across all devices) but we DO hold a cached bundle
+    // from a prior fetch, evict the cached bundle so the upcoming
+    // _fetchAllBundles re-pulls fresh keys. Stale cached bundles are the root
+    // cause of the "first DM can't decrypt until peer replies" bug.
+    if (_bundleCache.containsKey(peerUserId) &&
+        !_hasAnySessionForPeer(peerUserId)) {
+      invalidateBundleCache(peerUserId);
+    }
     final bundles = await _fetchAllBundles(peerUserId);
     if (bundles.isEmpty) {
       // Fall back to legacy single-device encrypt
@@ -1645,19 +1944,27 @@ class CryptoService {
       try {
         final sessionKey = '$peerUserId:$deviceId';
         final ct = await _withSessionLock(sessionKey, () async {
-          final session = await _getOrCreateSessionForDevice(
+          final info = await _getOrCreateSessionForDevice(
             peerUserId,
             deviceId,
             bundle,
           );
+          final session = info.session;
           final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
 
-          if (_lastX3dhResult == null) {
+          // For an existing (cached or reloaded) session, write-ahead save
+          // before the ratchet mutation so a crash mid-encrypt is recoverable.
+          // For a brand-new X3DH session there is no previous state to save.
+          if (info.x3dhResult == null) {
             await _saveSession(sessionKey, session);
           }
 
           final wire = await session.encrypt(plaintextBytes);
-          final finalWire = await _buildInitialWire(wire);
+          final finalWire = await _buildInitialWire(
+            wire,
+            x3dhResult: info.x3dhResult,
+            otpKeyId: info.otpKeyId,
+          );
 
           await _saveSession(sessionKey, session);
           // Refresh LRU ordering after in-place mutation.
@@ -1680,6 +1987,11 @@ class CryptoService {
     String plaintext,
   ) async {
     try {
+      // Same first-send bundle-cache heal as `encryptForAllDevices` (#662).
+      if (_bundleCache.containsKey(myUserId) &&
+          !_hasAnySessionForPeer(myUserId)) {
+        invalidateBundleCache(myUserId);
+      }
       final bundles = await _fetchAllBundles(myUserId);
       final results = <String, String>{};
       for (final bundle in bundles) {
@@ -1688,17 +2000,22 @@ class CryptoService {
         try {
           final sessionKey = '$myUserId:$deviceId';
           final ct = await _withSessionLock(sessionKey, () async {
-            final session = await _getOrCreateSessionForDevice(
+            final info = await _getOrCreateSessionForDevice(
               myUserId,
               deviceId,
               bundle,
             );
+            final session = info.session;
             final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
-            if (_lastX3dhResult == null) {
+            if (info.x3dhResult == null) {
               await _saveSession(sessionKey, session);
             }
             final wire = await session.encrypt(plaintextBytes);
-            final finalWire = await _buildInitialWire(wire);
+            final finalWire = await _buildInitialWire(
+              wire,
+              x3dhResult: info.x3dhResult,
+              otpKeyId: info.otpKeyId,
+            );
 
             await _saveSession(sessionKey, session);
             // Refresh LRU ordering after in-place mutation.
@@ -1722,6 +2039,34 @@ class CryptoService {
   /// Invalidate the device bundle cache for a specific user.
   void invalidateBundleCache(String userId) {
     _bundleCache.remove(userId);
+  }
+
+  /// Visible for testing: seed the bundle cache so the first-send heal path
+  /// can be exercised without a real server round-trip (#662).
+  @visibleForTesting
+  void debugSeedBundleCache(String userId, List<Map<String, dynamic>> bundles) {
+    _bundleCache[userId] = (bundles, DateTime.now());
+  }
+
+  /// Visible for testing: probe whether the bundle cache currently holds an
+  /// entry for [userId]. Used by the first-send-heal regression test.
+  @visibleForTesting
+  bool debugBundleCacheContains(String userId) =>
+      _bundleCache.containsKey(userId);
+
+  /// True if the in-memory session cache holds at least one fresh entry for
+  /// [peerUserId] (legacy `peer` key OR multi-device `peer:<deviceId>` keys).
+  /// Used to drive the first-send bundle-cache heal (#662): if we have a
+  /// cached bundle but no session for the peer, the cached bundle is almost
+  /// certainly stale -- drop it before fetching.
+  bool _hasAnySessionForPeer(String peerUserId) {
+    if (_sessions.isFresh(peerUserId)) return true;
+    var found = false;
+    final prefix = '$peerUserId:';
+    _sessions.forEach((k, _) {
+      if (!found && k.startsWith(prefix)) found = true;
+    });
+    return found;
   }
 
   // -----------------------------------------------------------------------

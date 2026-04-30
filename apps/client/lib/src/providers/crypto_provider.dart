@@ -85,7 +85,12 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
           'Key upload attempt $attempt failed: $uploadError',
         );
         // Don't retry on rate limit or identity conflict -- same error repeats.
-        if (errorStr.contains('429') || errorStr.contains('409')) {
+        // Identity-key conflicts now surface as the typed
+        // IdentityKeyConflictException (#664); UI is responsible for prompting
+        // the user to run resetThisDeviceKeys.
+        if (uploadError is IdentityKeyConflictException ||
+            errorStr.contains('429') ||
+            errorStr.contains('409')) {
           return errorStr;
         }
         if (attempt == 2) return errorStr;
@@ -338,6 +343,27 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
   Future<void> acknowledgePeerIdentityKeyChange(String peerUserId) async {
     final crypto = ref.read(cryptoServiceProvider);
     await crypto.acknowledgePeerIdentityKeyChange(peerUserId);
+  }
+
+  /// Explicitly trust the peer's new identity key, drop the old session,
+  /// and clear the change flag. The next outbound message will trigger a
+  /// fresh X3DH against the trusted key.
+  Future<void> acceptIdentityKeyChange(
+    String peerUserId, {
+    String? newIdentityKeyB64,
+  }) async {
+    final crypto = ref.read(cryptoServiceProvider);
+    await crypto.acceptIdentityKeyChange(
+      peerUserId,
+      newIdentityKeyB64: newIdentityKeyB64,
+    );
+  }
+
+  /// Compute the safety-number fingerprint for [peerUserId], or `null`
+  /// if either identity key is unavailable.
+  Future<String?> safetyNumberFor(String peerUserId) async {
+    final crypto = ref.read(cryptoServiceProvider);
+    return crypto.safetyNumberFor(peerUserId);
   }
 }
 

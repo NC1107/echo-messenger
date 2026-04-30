@@ -1,5 +1,15 @@
 module.exports = {
   extends: ['@commitlint/config-conventional'],
+  // Skip Copilot scaffolding commits and merge/bot artifacts that arrive
+  // via squash/merge from PR branches we don't control.
+  ignores: [
+    (msg) => /^Initial plan/i.test(msg),
+    (msg) => /^merge:/i.test(msg),
+    (msg) => /^Merge pull request /.test(msg),
+    (msg) => /^Merge branch /.test(msg),
+    (msg) => /^Merge remote-tracking branch /.test(msg),
+    (msg) => /^Bump /.test(msg),
+  ],
   rules: {
     'type-enum': [2, 'always', [
       'feat', 'fix', 'docs', 'style', 'refactor', 'perf',
@@ -7,8 +17,14 @@ module.exports = {
     ]],
     'scope-enum': [1, 'always', [
       'core', 'server', 'client', 'infra', 'proto', 'crypto', 'ci', 'deps',
+      'a11y', 'security',
     ]],
-    'subject-case': [2, 'always', 'lower-case'],
-    'subject-max-length': [2, 'always', 72],
+    // Forbid SHOUTING subjects but allow proper-noun acronyms
+    // (e.g. "E2E", "Playwright") in otherwise-lowercase subjects.
+    'subject-case': [2, 'never', ['upper-case', 'start-case', 'pascal-case']],
+    // 72 is the convention for new commits (lefthook enforces locally),
+    // but PR squash-merge subjects with "(#NNN)" suffix can edge over —
+    // bump CI to 80 so trailing PR refs don't fail builds.
+    'subject-max-length': [2, 'always', 80],
   },
 };

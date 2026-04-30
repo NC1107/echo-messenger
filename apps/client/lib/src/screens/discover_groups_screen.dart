@@ -456,7 +456,7 @@ class _GroupDiscoveryItem extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       '${_onlineCount(group)}',
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: EchoTheme.online,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,

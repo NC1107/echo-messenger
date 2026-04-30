@@ -50,48 +50,42 @@ pub async fn find_or_create_dm_conversation(
     user_a: Uuid,
     user_b: Uuid,
 ) -> Result<Uuid, sqlx::Error> {
-    let mut tx = pool.begin().await?;
+    // Canonical order: the smaller UUID is always user_lo so the unique
+    // constraint on (user_lo, user_hi) is independent of argument order.
+    let (lo, hi) = if user_a < user_b {
+        (user_a, user_b)
+    } else {
+        (user_b, user_a)
+    };
 
-    // Find existing DM conversation where both users are members, the
-    // conversation is a direct message (not a group), and no third member
-    // exists.  Without the kind check a 2-person group whose other members
-    // left would be returned as a DM.
+    // Fast path: the canonical lookup table already has an entry.
     let existing: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT cm1.conversation_id \
-         FROM conversation_members cm1 \
-         JOIN conversation_members cm2 ON cm1.conversation_id = cm2.conversation_id \
-         JOIN conversations c ON c.id = cm1.conversation_id \
-         WHERE cm1.user_id = $1 AND cm2.user_id = $2 \
-           AND cm1.is_removed = false AND cm2.is_removed = false \
-           AND c.kind = 'direct' \
-           AND NOT EXISTS ( \
-               SELECT 1 FROM conversation_members cm3 \
-               WHERE cm3.conversation_id = cm1.conversation_id \
-                 AND cm3.user_id != $1 AND cm3.user_id != $2 \
-                 AND cm3.is_removed = false \
-           ) \
-         LIMIT 1",
+        "SELECT conversation_id FROM direct_conversations \
+         WHERE user_lo = $1 AND user_hi = $2",
     )
-    .bind(user_a)
-    .bind(user_b)
-    .fetch_optional(&mut *tx)
+    .bind(lo)
+    .bind(hi)
+    .fetch_optional(pool)
     .await?;
 
     if let Some(row) = existing {
-        tx.commit().await?;
         return Ok(row.0);
     }
 
-    // Create new DM conversation with encryption enabled by default.
+    // Slow path: create the conversation and claim the canonical slot.
+    // Two concurrent requests may both reach this point; the ON CONFLICT
+    // clause ensures only one conversation survives per user pair.
+    let mut tx = pool.begin().await?;
+
+    // Create the conversation row.
     let conv: (Uuid,) = sqlx::query_as(
         "INSERT INTO conversations (kind, is_encrypted) VALUES ('direct', true) RETURNING id",
     )
     .fetch_one(&mut *tx)
     .await?;
-
     let conv_id = conv.0;
 
-    // Add both members
+    // Add both members.
     sqlx::query("INSERT INTO conversation_members (conversation_id, user_id) VALUES ($1, $2)")
         .bind(conv_id)
         .bind(user_a)
@@ -103,6 +97,30 @@ pub async fn find_or_create_dm_conversation(
         .bind(user_b)
         .execute(&mut *tx)
         .await?;
+
+    // Atomically claim the (lo, hi) slot.  If another concurrent request
+    // already committed a row for this pair, the DO UPDATE is a no-op that
+    // returns the *existing* conversation_id, letting us discard the one we
+    // just created by rolling back.
+    let winner: (Uuid,) = sqlx::query_as(
+        "INSERT INTO direct_conversations (user_lo, user_hi, conversation_id) \
+         VALUES ($1, $2, $3) \
+         ON CONFLICT (user_lo, user_hi) \
+         DO UPDATE SET conversation_id = direct_conversations.conversation_id \
+         RETURNING conversation_id",
+    )
+    .bind(lo)
+    .bind(hi)
+    .bind(conv_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if winner.0 != conv_id {
+        // A concurrent request won the race. Roll back to avoid orphan rows,
+        // then return the already-committed conversation.
+        tx.rollback().await?;
+        return Ok(winner.0);
+    }
 
     tx.commit().await?;
     Ok(conv_id)
@@ -288,6 +306,32 @@ pub async fn delete_message(
     .await?;
 
     Ok(row.map(|(conv_id,)| conv_id))
+}
+
+/// Look up the conversation security flags for a message that the caller
+/// claims to own. Returns `None` when the message does not exist, has been
+/// soft-deleted, or was sent by a different user. Used to gate edits on
+/// encrypted conversations (#582) before performing the UPDATE.
+pub async fn get_message_conversation_security(
+    pool: &PgPool,
+    message_id: Uuid,
+    sender_id: Uuid,
+) -> Result<Option<MessageConversationSecurity>, sqlx::Error> {
+    sqlx::query_as::<_, MessageConversationSecurity>(
+        "SELECT m.conversation_id, c.is_encrypted \
+         FROM messages m JOIN conversations c ON c.id = m.conversation_id \
+         WHERE m.id = $1 AND m.sender_id = $2 AND m.deleted_at IS NULL",
+    )
+    .bind(message_id)
+    .bind(sender_id)
+    .fetch_optional(pool)
+    .await
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct MessageConversationSecurity {
+    pub conversation_id: Uuid,
+    pub is_encrypted: bool,
 }
 
 /// Edit a message's content. Only the sender can edit their own message.

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 const _mimeImagePng = 'image/png';
+const _xclipSelectionFlag = '-selection';
 
 class ClipboardImageData {
   final Uint8List bytes;
@@ -58,7 +59,7 @@ Future<ClipboardImageData?> _readLinuxClipboard() async {
 Future<ClipboardImageData?> _readX11Clipboard() async {
   // Check if xclip is available and clipboard has image data
   final targets = await Process.run('xclip', [
-    '-selection',
+    _xclipSelectionFlag,
     'clipboard',
     '-t',
     'TARGETS',
@@ -86,7 +87,7 @@ Future<ClipboardImageData?> _readX11Clipboard() async {
 
   final result = await Process.run(
     'xclip',
-    ['-selection', 'clipboard', '-t', imageType, '-o'],
+    [_xclipSelectionFlag, 'clipboard', '-t', imageType, '-o'],
     stdoutEncoding: null, // raw bytes
   );
 
@@ -272,7 +273,7 @@ Future<bool> _writeLinuxClipboard(Uint8List bytes, String mimeType) async {
 
 Future<bool> _writeX11Clipboard(Uint8List bytes, String mimeType) async {
   final process = await Process.start('xclip', [
-    '-selection',
+    _xclipSelectionFlag,
     'clipboard',
     '-t',
     mimeType,

@@ -167,7 +167,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 400),
                 child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
                   child: Form(
                     key: _formKey,
                     child: Column(
@@ -368,15 +368,19 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Widget _buildSubmitButton(AuthState authState) {
     return SizedBox(
       width: double.infinity,
-      child: FilledButton(
-        onPressed: authState.isLoading ? null : _register,
-        child: authState.isLoading
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Text('Create account'),
+      child: Semantics(
+        button: true,
+        label: 'register',
+        child: FilledButton(
+          onPressed: authState.isLoading ? null : _register,
+          child: authState.isLoading
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Create account'),
+        ),
       ),
     );
   }

@@ -5,7 +5,7 @@
 
 #![allow(dead_code)]
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use base64::Engine;
@@ -24,6 +24,16 @@ static MIGRATIONS: OnceCell<()> = OnceCell::const_new();
 
 /// Spawn a test server and return its base URL (e.g. `http://127.0.0.1:12345`).
 pub async fn spawn_server() -> String {
+    spawn_server_inner(vec![]).await
+}
+
+/// Spawn a test server that treats `trusted_proxies` as trusted reverse proxies
+/// for IP extraction in rate-limit middleware.
+pub async fn spawn_server_with_trusted_proxies(trusted_proxies: Vec<IpAddr>) -> String {
+    spawn_server_inner(trusted_proxies).await
+}
+
+async fn spawn_server_inner(trusted_proxies: Vec<IpAddr>) -> String {
     let database_url = std::env::var("TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .expect("TEST_DATABASE_URL or DATABASE_URL must be set for integration tests");
@@ -47,7 +57,7 @@ pub async fn spawn_server() -> String {
         media_tickets: dashmap::DashMap::new(),
     });
 
-    let app = routes::create_router(state);
+    let app = routes::create_router(state, trusted_proxies);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -293,6 +303,21 @@ pub async fn create_group(client: &Client, base: &str, token: &str, name: &str) 
     );
     let body: Value = resp.json().await.unwrap();
     body["id"].as_str().unwrap().to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Ciphertext helpers
+// ---------------------------------------------------------------------------
+
+/// Build a base64-encoded payload that is shaped like an Echo wire frame
+/// so it passes the server's ciphertext-shape gate (#591). The bytes are
+/// not a real session frame — they only carry the magic prefix the server
+/// validates. The optional `tag` is appended verbatim so different test
+/// cases can distinguish payloads (e.g. "alice", "bob_d11") in assertions.
+pub fn dummy_ciphertext(tag: &str) -> String {
+    let mut bytes = vec![0xEC, 0x01];
+    bytes.extend_from_slice(tag.as_bytes());
+    BASE64.encode(&bytes)
 }
 
 // ---------------------------------------------------------------------------

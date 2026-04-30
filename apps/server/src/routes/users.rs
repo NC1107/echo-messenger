@@ -720,6 +720,7 @@ pub async fn get_avatar(
         .ok_or_else(|| AppError {
             status: StatusCode::NOT_FOUND,
             message: "No avatar set for this user".to_string(),
+            body: None,
         })?;
 
     // Ensure the avatar_url actually points to this user
@@ -728,6 +729,7 @@ pub async fn get_avatar(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "No avatar set for this user".to_string(),
+            body: None,
         });
     }
 
@@ -748,6 +750,7 @@ pub async fn get_avatar(
     Err(AppError {
         status: StatusCode::NOT_FOUND,
         message: "Avatar file not found on disk".to_string(),
+        body: None,
     })
 }
 

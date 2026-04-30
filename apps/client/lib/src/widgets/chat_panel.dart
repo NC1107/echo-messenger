@@ -1794,9 +1794,15 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                 ? _deleteFailed
                 : _confirmDelete,
             onRetry: msg.status == MessageStatus.failed ? _retryMessage : null,
-            onEdit: (msg) {
-              _chatInputBarKey.currentState?.enterEditMode(msg);
-            },
+            // #582: editing on an encrypted conversation would broadcast
+            // plaintext to every member, breaking E2E. Until per-device
+            // ciphertext fanout for edits ships, suppress the affordance
+            // entirely on encrypted conversations. Server enforces with 409.
+            onEdit: conv.isEncrypted
+                ? null
+                : (msg) {
+                    _chatInputBarKey.currentState?.enterEditMode(msg);
+                  },
             onReply: (msg) {
               ref.read(chatProvider.notifier).setReplyTo(msg);
               _chatInputBarKey.currentState?.requestInputFocus();
@@ -1847,6 +1853,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String serverUrl,
     required String authToken,
     String? mediaTicket,
+    String? channelId,
   }) {
     return Scrollbar(
       controller: _scrollController,
@@ -1857,10 +1864,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         itemCount: messages.length + 1,
         itemBuilder: (context, index) {
           if (index == 0) {
-            if (chatState.hasMore[conv.id] ?? true) {
+            if (chatState.conversationHasMore(conv.id, channelId: channelId)) {
               return SizedBox(
                 height: 48,
-                child: (chatState.loadingHistory[conv.id] ?? false)
+                child: chatState.isLoadingHistory(conv.id, channelId: channelId)
                     ? const Center(
                         child: SizedBox(
                           width: 16,
@@ -1899,6 +1906,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     required String serverUrl,
     required String authToken,
     String? mediaTicket,
+    String? channelId,
   }) {
     final Widget child;
     if (messages.isEmpty && isLoadingHistory) {
@@ -1923,6 +1931,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           serverUrl: serverUrl,
           authToken: authToken,
           mediaTicket: mediaTicket,
+          channelId: channelId,
         ),
       );
     }
@@ -2274,7 +2283,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       includeUnchanneled,
     );
 
-    final isLoadingHistory = chatState.loadingHistory[conv.id] ?? false;
+    final isLoadingHistory = chatState.isLoadingHistory(
+      conv.id,
+      channelId: selectedChannelId,
+    );
 
     final typingUsers = typingUserIds.where((u) => u != myUserId).map((uid) {
       final member = conv.members.where((m) => m.userId == uid).firstOrNull;
@@ -2298,6 +2310,16 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           : BoxDecoration(color: context.chatBg),
       child: Stack(
         children: [
+          // Hidden live region for screen-reader announcements when peer
+          // messages arrive (#495 / #630). Mounted as the first child of
+          // the outer Stack so it lives at a stable index in the build
+          // tree — Flutter won't recreate the Semantics node when the
+          // floating-date pill or new-messages-below pill toggle.
+          Semantics(
+            liveRegion: true,
+            label: _liveRegionAnnouncement,
+            child: const SizedBox.shrink(),
+          ),
           Column(
             children: [
               ChatHeaderBar(
@@ -2366,18 +2388,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                         serverUrl: serverUrl,
                         authToken: authToken,
                         mediaTicket: mediaTicket,
+                        channelId: selectedChannelId,
                       ),
                       if (_floatingDate != null) _buildFloatingDatePill(),
                       if (_hasNewMessagesBelow) _buildNewMessagesPill(),
-                      // Hidden live region for screen-reader announcements
-                      // when peer messages arrive (#495). Renders zero-size
-                      // and is updated via setState in the chatProvider
-                      // listener inside _setupAutoScroll.
-                      Semantics(
-                        liveRegion: true,
-                        label: _liveRegionAnnouncement,
-                        child: const SizedBox.shrink(),
-                      ),
+                      // Live region moved to the outer Stack so its index
+                      // in the tree is stable across pill toggles (#630).
                     ],
                   ),
                 ),

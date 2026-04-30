@@ -55,3 +55,15 @@ pub async fn unregister_token(
     db::push_tokens::remove_token(&state.pool, auth_user.user_id, &body.token).await?;
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
+
+/// Delete every push token bound to the caller. Used when the client switches
+/// servers and wants to fully detach itself from the old origin without
+/// having to remember individual device tokens. Idempotent.
+/// DELETE /api/push/token
+pub async fn delete_all_tokens(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+) -> Result<impl IntoResponse, AppError> {
+    db::push_tokens::remove_all_tokens(&state.pool, auth_user.user_id).await?;
+    Ok(Json(serde_json::json!({ "status": "ok" })))
+}

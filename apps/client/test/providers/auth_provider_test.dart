@@ -597,4 +597,144 @@ void main() {
       expect(callCount, 2, reason: 'should have retried after 401');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Web cookie path -- unit-tested by inspecting the body sent to the mock
+  // and verifying storage.  kIsWeb is always false in the Dart VM test runner,
+  // so we cannot exercise the real kIsWeb branches directly.  Instead the tests
+  // below call the internal helpers through thin @visibleForTesting hooks and
+  // verify the storage contracts that the web path enforces.
+  // ---------------------------------------------------------------------------
+  group('Web cookie security invariants (storage contracts)', () {
+    late FakeSecureKeyStore fakeStore;
+    late ProviderContainer container;
+    late Directory tmpDir;
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      fakeStore = FakeSecureKeyStore();
+      SecureKeyStore.instance = fakeStore;
+
+      tmpDir = Directory.systemTemp.createTempSync('echo_auth_web_test_');
+      PathProviderPlatform.instance = FakePathProvider(tmpDir.path);
+      Hive.init(tmpDir.path);
+      await UserDataDir.instance.init();
+
+      container = ProviderContainer(
+        overrides: [
+          serverUrlProvider.overrideWith((ref) {
+            final n = ServerUrlNotifier();
+            n.state = 'http://localhost:8080';
+            return n;
+          }),
+        ],
+      );
+    });
+
+    tearDown(() async {
+      container.dispose();
+      await Hive.close();
+      try {
+        tmpDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    // Verify the _storeTokens contract: when called with an empty refreshToken
+    // (simulating the web path) the refresh token must not appear in any
+    // JS-accessible storage layer (SecureKeyStore or SharedPreferences).
+    test(
+      '_storeTokens with empty refreshToken writes no refresh key to storage',
+      () async {
+        final notifier = container.read(authProvider.notifier);
+
+        // Call with an empty refresh token, mirroring what the web login path
+        // does (_storeTokens(..., refreshToken: '', ...)).
+        await notifier.storeTokensForTest(
+          accessToken: 'access-123',
+          refreshToken: '',
+          userId: 'uid-web',
+          username: 'webuser',
+        );
+
+        // Access token must be persisted.
+        expect(
+          await fakeStore.readGlobal('echo_auth_access_token'),
+          'access-123',
+        );
+
+        // Refresh token key must NOT exist in SecureKeyStore.
+        expect(
+          await fakeStore.readGlobal('echo_auth_refresh_token'),
+          isNull,
+          reason: 'refresh token must not be in secure storage on web',
+        );
+
+        // Refresh token key must NOT exist in SharedPreferences.
+        final prefs = await SharedPreferences.getInstance();
+        expect(
+          prefs.getString('echo_auth_refresh_token'),
+          isNull,
+          reason: 'refresh token must not be in SharedPreferences on web',
+        );
+      },
+    );
+
+    // Verify that a refresh request omitting the body field still succeeds
+    // when the server returns 200 (server reads the cookie).  The mock
+    // accepts any body (including null/empty) for the refresh endpoint.
+    test(
+      'refresh request with no body field succeeds when server returns 200',
+      () async {
+        final mockClient = MockHttpClient();
+        when(() => mockClient.close()).thenReturn(null);
+
+        // The server accepts a request with an empty body (cookie path).
+        when(
+          () => mockClient.post(
+            any(that: predicate<Uri>((u) => u.path == '/api/auth/refresh')),
+            headers: any(named: 'headers'),
+            body: any(named: 'body'),
+            encoding: any(named: 'encoding'),
+          ),
+        ).thenAnswer((invocation) async {
+          // Verify no refresh_token field in the body.
+          final body =
+              invocation.namedArguments[const Symbol('body')] as String?;
+          final decoded = body != null && body.isNotEmpty
+              ? jsonDecode(body) as Map<String, dynamic>
+              : <String, dynamic>{};
+          expect(
+            decoded.containsKey('refresh_token'),
+            isFalse,
+            reason: 'web refresh must not send refresh_token in body',
+          );
+          return http.Response(
+            jsonEncode({
+              'access_token': 'new-web-tok',
+              'user_id': 'uid-web',
+              'username': 'webuser',
+            }),
+            200,
+          );
+        });
+
+        final notifier = container.read(authProvider.notifier);
+        notifier.state = const AuthState(
+          isLoggedIn: true,
+          userId: 'uid-web',
+          username: 'webuser',
+          token: 'old-tok',
+          // refreshToken intentionally null -- web never holds it in state
+        );
+
+        // Call via http.runWithClient to inject the mock for the no-body path.
+        final result = await http.runWithClient(
+          () => notifier.refreshAccessTokenForTest(sendBody: false),
+          () => mockClient,
+        );
+
+        expect(result, isTrue);
+      },
+    );
+  });
 }

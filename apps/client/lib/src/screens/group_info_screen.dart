@@ -1187,8 +1187,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       if (myRole == 'owner') ...[
         const SizedBox(height: 16),
         const Divider(),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Text(
             'Danger Zone',
             style: TextStyle(

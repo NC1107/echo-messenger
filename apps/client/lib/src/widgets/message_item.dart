@@ -31,6 +31,8 @@ import 'message/rich_text_content.dart';
 /// Common emojis for the reaction picker.
 const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🎉'];
 
+const _forwardedPrefix = '[Forwarded] ';
+
 /// True on Android/iOS (native, not web).
 bool get _isMobilePlatform =>
     !kIsWeb &&
@@ -1178,8 +1180,8 @@ class _MessageItemState extends State<MessageItem>
       return _buildDecryptionFailure();
     }
 
-    final displayContent = msg.content.startsWith('[Forwarded] ')
-        ? msg.content.substring('[Forwarded] '.length)
+    final displayContent = msg.content.startsWith(_forwardedPrefix)
+        ? msg.content.substring(_forwardedPrefix.length)
         : msg.content;
 
     final textColor = _contentTextColor(isMine: isMine, isFailed: isFailed);
@@ -1378,7 +1380,7 @@ class _MessageItemState extends State<MessageItem>
               ? () => widget.onTapReplyQuote!(msg.replyToId!)
               : null,
         ),
-      if (msg.content.startsWith('[Forwarded] '))
+      if (msg.content.startsWith(_forwardedPrefix))
         _buildForwardedBadge(isMine: isMine),
       _buildBubbleContent(
         msg: msg,

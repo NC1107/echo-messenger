@@ -681,4 +681,293 @@ void main() {
       );
     });
   });
+
+  group('ConversationsNotifier.setMuted', () {
+    test('optimistically mutes and keeps state on 200', () async {
+      when(
+        () => mockClient.put(
+          any(
+            that: predicate<Uri>(
+              (u) => u.path == '/api/conversations/conv-1/mute',
+            ),
+          ),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenAnswer((_) async => http.Response('{}', 200));
+
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(id: 'conv-1', isGroup: false, isMuted: false),
+        ],
+      );
+
+      final result = await http.runWithClient(
+        () => notifier.setMuted('conv-1', true),
+        () => mockClient,
+      );
+
+      expect(result, isTrue);
+      expect(
+        notifier.state.conversations.first.isMuted,
+        isTrue,
+        reason: 'conversation stays muted after server confirmation',
+      );
+    });
+
+    test('reverts optimistic mute on server 500', () async {
+      when(
+        () => mockClient.put(
+          any(
+            that: predicate<Uri>(
+              (u) => u.path == '/api/conversations/conv-1/mute',
+            ),
+          ),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenAnswer((_) async => http.Response('Internal Server Error', 500));
+
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(id: 'conv-1', isGroup: false, isMuted: false),
+        ],
+      );
+
+      final result = await http.runWithClient(
+        () => notifier.setMuted('conv-1', true),
+        () => mockClient,
+      );
+
+      expect(result, isFalse);
+      expect(
+        notifier.state.conversations.first.isMuted,
+        isFalse,
+        reason: 'muted state reverted after server rejection',
+      );
+    });
+
+    test('no-op returns true when already in target state', () async {
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(id: 'conv-1', isGroup: false, isMuted: true),
+        ],
+      );
+
+      final result = await http.runWithClient(
+        () => notifier.setMuted('conv-1', true),
+        () => mockClient,
+      );
+
+      expect(result, isTrue);
+      // Verify no HTTP request was made.
+      verifyNever(
+        () => mockClient.put(
+          any(),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      );
+    });
+
+    test('returns false for unknown conversation id', () async {
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = const ConversationsState();
+
+      final result = await http.runWithClient(
+        () => notifier.setMuted('no-such-conv', true),
+        () => mockClient,
+      );
+
+      expect(result, isFalse);
+    });
+  });
+
+  group('ConversationsNotifier.toggleMute extra', () {
+    test('returns false for unknown conversation id', () async {
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = const ConversationsState();
+
+      final result = await http.runWithClient(
+        () => notifier.toggleMute('no-such-conv'),
+        () => mockClient,
+      );
+
+      expect(result, isFalse);
+    });
+  });
+
+  group('ConversationsNotifier.setPinned', () {
+    test('optimistically pins and keeps state on 204', () async {
+      when(
+        () => mockClient.put(
+          any(
+            that: predicate<Uri>(
+              (u) => u.path == '/api/conversations/conv-1/pin',
+            ),
+          ),
+          headers: any(named: 'headers'),
+        ),
+      ).thenAnswer((_) async => http.Response('', 204));
+
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(id: 'conv-1', isGroup: false, isPinned: false),
+        ],
+      );
+
+      final result = await http.runWithClient(
+        () => notifier.setPinned('conv-1', true),
+        () => mockClient,
+      );
+
+      expect(result, isTrue);
+      expect(
+        notifier.state.conversations.first.isPinned,
+        isTrue,
+        reason: 'conversation stays pinned after server confirmation',
+      );
+    });
+
+    test('reverts optimistic pin on server 500', () async {
+      when(
+        () => mockClient.put(
+          any(
+            that: predicate<Uri>(
+              (u) => u.path == '/api/conversations/conv-1/pin',
+            ),
+          ),
+          headers: any(named: 'headers'),
+        ),
+      ).thenAnswer((_) async => http.Response('Internal Server Error', 500));
+
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(id: 'conv-1', isGroup: false, isPinned: false),
+        ],
+      );
+
+      final result = await http.runWithClient(
+        () => notifier.setPinned('conv-1', true),
+        () => mockClient,
+      );
+
+      expect(result, isFalse);
+      expect(
+        notifier.state.conversations.first.isPinned,
+        isFalse,
+        reason: 'pinned state reverted after server rejection',
+      );
+    });
+
+    test('sends DELETE to unpin conversation', () async {
+      Uri? capturedUri;
+      when(
+        () => mockClient.delete(
+          any(
+            that: predicate<Uri>(
+              (u) => u.path == '/api/conversations/conv-1/pin',
+            ),
+          ),
+          headers: any(named: 'headers'),
+        ),
+      ).thenAnswer((inv) async {
+        capturedUri = inv.positionalArguments.first as Uri;
+        return http.Response('', 204);
+      });
+
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(id: 'conv-1', isGroup: false, isPinned: true),
+        ],
+      );
+
+      final result = await http.runWithClient(
+        () => notifier.setPinned('conv-1', false),
+        () => mockClient,
+      );
+
+      expect(result, isTrue);
+      expect(capturedUri?.path, '/api/conversations/conv-1/pin');
+      expect(
+        notifier.state.conversations.first.isPinned,
+        isFalse,
+        reason: 'conversation unpinned after server confirmation',
+      );
+    });
+
+    test('reverts optimistic unpin on server failure', () async {
+      when(
+        () => mockClient.delete(
+          any(
+            that: predicate<Uri>(
+              (u) => u.path == '/api/conversations/conv-1/pin',
+            ),
+          ),
+          headers: any(named: 'headers'),
+        ),
+      ).thenThrow(const SocketException('Connection refused'));
+
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(id: 'conv-1', isGroup: false, isPinned: true),
+        ],
+      );
+
+      final result = await http.runWithClient(
+        () => notifier.setPinned('conv-1', false),
+        () => mockClient,
+      );
+
+      expect(result, isFalse);
+      expect(
+        notifier.state.conversations.first.isPinned,
+        isTrue,
+        reason: 'pinned state reverted after network failure',
+      );
+    });
+
+    test('no-op returns true when already in target state', () async {
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = ConversationsState(
+        conversations: [
+          const Conversation(id: 'conv-1', isGroup: false, isPinned: true),
+        ],
+      );
+
+      final result = await http.runWithClient(
+        () => notifier.setPinned('conv-1', true),
+        () => mockClient,
+      );
+
+      expect(result, isTrue);
+      // No HTTP call should have been made.
+      verifyNever(() => mockClient.put(any(), headers: any(named: 'headers')));
+      verifyNever(
+        () => mockClient.delete(any(), headers: any(named: 'headers')),
+      );
+    });
+
+    test('returns false for unknown conversation id', () async {
+      final notifier = container.read(conversationsProvider.notifier);
+      notifier.state = const ConversationsState();
+
+      final result = await http.runWithClient(
+        () => notifier.setPinned('no-such-conv', true),
+        () => mockClient,
+      );
+
+      expect(result, isFalse);
+    });
+  });
 }

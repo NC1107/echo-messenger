@@ -10,19 +10,21 @@ pub mod media;
 pub mod messages;
 pub mod push;
 pub mod reactions;
+pub mod server_info;
 pub mod users;
 pub mod voice;
 pub mod ws;
 
 use axum::Json;
 use axum::Router;
-use axum::extract::DefaultBodyLimit;
-use axum::http::{HeaderValue, Method, header};
+use axum::extract::{DefaultBodyLimit, State};
+use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, patch, post, put};
 use dashmap::DashMap;
 use sqlx::PgPool;
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Instant;
 use tower_http::cors::{AllowOrigin, CorsLayer};
@@ -47,7 +49,7 @@ pub struct AppState {
     pub media_tickets: MediaTicketStore,
 }
 
-pub fn create_router(state: Arc<AppState>) -> Router {
+pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Router {
     let cors_origins = std::env::var("CORS_ORIGINS")
         .unwrap_or_else(|_| "https://echo-messenger.us,http://localhost:8081".into());
 
@@ -89,15 +91,25 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             .allow_credentials(true)
     };
 
-    let login_limit = rate_limit::make_rate_limit_layer(rate_limit::login_limiter());
-    let register_limit = rate_limit::make_rate_limit_layer(rate_limit::register_limiter());
-    let refresh_limit = rate_limit::make_rate_limit_layer(rate_limit::refresh_limiter());
-    let ticket_limit = rate_limit::make_rate_limit_layer(rate_limit::ticket_limiter());
-    let media_upload_limit = rate_limit::make_rate_limit_layer(rate_limit::media_upload_limiter());
-    let link_preview_limit = rate_limit::make_rate_limit_layer(rate_limit::link_preview_limiter());
-    let key_reset_limit = rate_limit::make_rate_limit_layer(rate_limit::key_reset_limiter());
+    let proxies = Arc::new(trusted_proxies);
+    let login_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::login_limiter(Arc::clone(&proxies)));
+    let register_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::register_limiter(Arc::clone(&proxies)));
+    let refresh_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::refresh_limiter(Arc::clone(&proxies)));
+    let ticket_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::ticket_limiter(Arc::clone(&proxies)));
+    let media_upload_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::media_upload_limiter(Arc::clone(&proxies)));
+    let link_preview_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::link_preview_limiter(Arc::clone(&proxies)));
+    let key_reset_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::key_reset_limiter(Arc::clone(&proxies)));
+    let key_reset_device_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::key_reset_limiter(Arc::clone(&proxies)));
     let revoke_others_limit =
-        rate_limit::make_rate_limit_layer(rate_limit::revoke_others_limiter());
+        rate_limit::make_rate_limit_layer(rate_limit::revoke_others_limiter(proxies));
 
     let auth_routes = Router::new()
         .route(
@@ -182,6 +194,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route(
             "/reset",
             post(keys::reset_keys).layer(middleware::from_fn(key_reset_limit)),
+        )
+        .route(
+            "/reset_device",
+            post(keys::reset_device).layer(middleware::from_fn(key_reset_device_limit)),
         )
         .route("/bundle/{user_id}", get(keys::get_bundle))
         .route(
@@ -287,7 +303,11 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let push_routes = Router::new()
         .route("/register", post(push::register_token))
-        .route("/unregister", post(push::unregister_token));
+        .route("/unregister", post(push::unregister_token))
+        // Server-switching teardown (#PR-2): clears every push token bound to
+        // the caller. Idempotent — calling with no tokens registered still
+        // returns 200 so clients can call it unconditionally before logout.
+        .route("/token", delete(push::delete_all_tokens));
 
     Router::new()
         .nest("/api/auth", auth_routes)
@@ -303,7 +323,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/api/link-preview",
             post(link_preview::fetch_preview).layer(middleware::from_fn(link_preview_limit)),
         )
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
         .route("/api/health", get(health))
+        .route("/api/server-info", get(server_info::server_info))
         .route("/api/config/ice", get(ice_config))
         .route("/ws", get(ws::ws_upgrade))
         .layer(cors)
@@ -337,6 +360,35 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             ),
         ))
         .with_state(state)
+}
+
+/// Liveness probe -- no auth, no DB. Returns 200 immediately if the process is alive.
+pub async fn healthz() -> impl IntoResponse {
+    Json(serde_json::json!({ "status": "ok" }))
+}
+
+/// Readiness probe -- no auth, probes DB with a 2-second timeout.
+/// Returns 200 on success, 503 on failure.
+pub async fn readyz(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    use tokio::time::{Duration, timeout};
+
+    let result = timeout(
+        Duration::from_secs(2),
+        sqlx::query("SELECT 1").fetch_one(&state.pool),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(_)) => (StatusCode::OK, Json(serde_json::json!({ "status": "ok" }))),
+        Ok(Err(e)) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "status": "not_ready", "reason": e.to_string() })),
+        ),
+        Err(_) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "status": "not_ready", "reason": "db timeout" })),
+        ),
+    }
 }
 
 pub async fn health() -> impl IntoResponse {

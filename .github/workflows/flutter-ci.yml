@@ -40,10 +40,94 @@ jobs:
       - name: Test with coverage
         working-directory: apps/client
         run: flutter test --coverage
+      - name: Check coverage threshold
+        working-directory: apps/client
+        run: |
+          python3 - <<'EOF'
+          import sys
+
+          found = hit = 0
+          with open("coverage/lcov.info") as f:
+              for line in f:
+                  if line.startswith("LF:"):
+                      found += int(line[3:])
+                  elif line.startswith("LH:"):
+                      hit += int(line[3:])
+
+          if found == 0:
+              print("ERROR: No coverage data found in lcov.info")
+              sys.exit(1)
+
+          pct = hit / found * 100
+          print(f"Line coverage: {pct:.1f}% ({hit}/{found} lines)")
+
+          # Ratcheting baseline. Current Flutter coverage is ~40%; raising
+          # this floor is a follow-up. Bump this as coverage actually
+          # improves so we never regress below where we are today.
+          threshold = 40.0
+          if pct < threshold:
+              print(
+                  f"::error::Coverage {pct:.1f}% is below the required "
+                  f"{threshold:.0f}% threshold"
+              )
+              sys.exit(1)
+
+          print(f"Coverage {pct:.1f}% meets the required {threshold:.0f}% threshold.")
+          EOF
       - name: Upload Flutter coverage
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
         with:
           files: apps/client/coverage/lcov.info
           flags: flutter
+          # Codecov rejects tokenless uploads on protected branches; the
+          # coverage threshold check above is already enforced separately,
+          # so let the upload fail soft until CODECOV_TOKEN is wired up.
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  smoke-linux:
+    name: Smoke — Linux Desktop
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build libgtk-3-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-good libsecret-1-dev \
+            libayatana-appindicator3-dev
+      - name: Install dependencies
+        working-directory: apps/client
+        run: flutter pub get
+      - name: Compile smoke (Linux debug)
+        working-directory: apps/client
+        run: flutter build linux --debug --no-pub --dart-define=APP_VERSION=smoke
+
+  smoke-android:
+    name: Smoke — Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        working-directory: apps/client
+        run: flutter pub get
+      - name: Compile smoke (Android debug APK)
+        working-directory: apps/client
+        run: flutter build apk --debug --no-pub --dart-define=APP_VERSION=smoke

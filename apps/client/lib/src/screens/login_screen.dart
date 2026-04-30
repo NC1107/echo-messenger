@@ -11,6 +11,18 @@ import '../utils/version_utils.dart';
 import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/echo_logo_icon.dart';
 
+/// Pre-fill the username from the [knownServersProvider] entry that
+/// matches the active server URL, if any. Returns null when there is no
+/// match so the caller can leave the controller untouched.
+String? _knownUsernameFor(WidgetRef ref) {
+  final url = ref.read(serverUrlProvider);
+  final servers = ref.read(knownServersProvider);
+  for (final s in servers) {
+    if (s.url == url) return s.lastUsername;
+  }
+  return null;
+}
+
 /// Larger bottom padding in debug builds leaves room for the multi-line
 /// version footer (server reachability + web bundle), which would otherwise
 /// overlap the form when the keyboard is open on small screens.
@@ -33,6 +45,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   final _passwordController = TextEditingController();
 
   bool _obscurePassword = true;
+  bool _didPrefill = false;
 
   Future<Map<String, String?>>? _versionFuture;
 
@@ -43,14 +56,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     super.dispose();
   }
 
+  /// Fill the username field from the matching [knownServersProvider]
+  /// entry on first build. Re-runs whenever the active server URL changes
+  /// so a server switch back to a known origin still pre-fills.
+  void _maybePrefillUsername() {
+    if (_didPrefill && _usernameController.text.isNotEmpty) return;
+    final cached = _knownUsernameFor(ref);
+    if (cached != null && cached.isNotEmpty) {
+      _usernameController.text = cached;
+    }
+    _didPrefill = true;
+  }
+
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
     final auth = ref.read(authProvider.notifier);
-    await auth.login(_usernameController.text.trim(), _passwordController.text);
+    final enteredUsername = _usernameController.text.trim();
+    await auth.login(enteredUsername, _passwordController.text);
     if (!mounted) return;
     if (ref.read(authProvider).error != null) {
       _passwordController.clear();
+      return;
     }
+    // Successful login -- record the username against the active URL so
+    // the next visit pre-fills it (#PR-2).
+    final serverUrl = ref.read(serverUrlProvider);
+    await ref
+        .read(serverUrlProvider.notifier)
+        .recordLastUsername(url: serverUrl, username: enteredUsername);
     // Crypto init happens in contacts_screen._initData() after navigation
   }
 
@@ -59,6 +92,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     super.build(context);
     final authState = ref.watch(authProvider);
     final serverUrl = ref.watch(serverUrlProvider);
+    // Re-prefill if the active URL changes (e.g. server switch lands here).
+    ref.listen<String>(serverUrlProvider, (prev, next) {
+      if (prev != next) {
+        _didPrefill = false;
+        _maybePrefillUsername();
+      }
+    });
+    _maybePrefillUsername();
 
     _versionFuture ??= fetchVersionInfo(serverUrl);
 
@@ -71,7 +112,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 400),
                 child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
                   child: Form(
                     key: _formKey,
                     child: AutofillGroup(
@@ -89,12 +130,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           const SizedBox(height: 12),
                           SizedBox(
                             height: 44,
-                            child: TextButton(
-                              onPressed: () => context.go('/register'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: context.textSecondary,
+                            child: Semantics(
+                              button: true,
+                              label: 'create-account',
+                              child: TextButton(
+                                onPressed: () => context.go('/register'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: context.textSecondary,
+                                ),
+                                child: const Text('Create an account'),
                               ),
-                              child: const Text('Create an account'),
                             ),
                           ),
                         ],
@@ -209,15 +254,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Widget _buildLoginButton(AuthState authState) {
     return SizedBox(
       width: double.infinity,
-      child: FilledButton(
-        onPressed: authState.isLoading ? null : _login,
-        child: authState.isLoading
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Text('Log in'),
+      child: Semantics(
+        button: true,
+        label: 'login',
+        child: FilledButton(
+          onPressed: authState.isLoading ? null : _login,
+          child: authState.isLoading
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Log in'),
+        ),
       ),
     );
   }

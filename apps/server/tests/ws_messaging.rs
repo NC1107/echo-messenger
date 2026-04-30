@@ -15,7 +15,7 @@ async fn alice_sends_bob_receives() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
-    let (alice_token, _alice_id, alice_name) =
+    let (alice_token, alice_id, alice_name) =
         common::register_and_login(&client, &base, "alice").await;
     let (bob_token, bob_id, bob_name) = common::register_and_login(&client, &base, "bob").await;
 
@@ -31,10 +31,18 @@ async fn alice_sends_bob_receives() {
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
+    // DMs are auto-encrypted, so the ciphertext-shape gate (#591) requires a
+    // wire-shaped canonical content and per-recipient device ciphertexts.
+    let canonical = common::dummy_ciphertext("alice_to_bob_canonical");
+    let bob_ct = common::dummy_ciphertext("alice_to_bob_d0");
     let send_msg = serde_json::json!({
         "type": "send_message",
         "to_user_id": bob_id,
-        "content": "Hello from integration test!",
+        "content": canonical.clone(),
+        "recipient_device_contents": {
+            bob_id.to_string(): { "0": bob_ct.clone() },
+            alice_id.to_string(): { "0": canonical.clone() },
+        },
     });
     alice_ws
         .send(Message::Text(send_msg.to_string().into()))
@@ -54,8 +62,8 @@ async fn alice_sends_bob_receives() {
     let bob_msg: Value = serde_json::from_str(&bob_event).expect("Bob JSON parse failed");
     assert_eq!(bob_msg["type"], "new_message", "Bob should get new_message");
     assert_eq!(
-        bob_msg["content"], "Hello from integration test!",
-        "Message content should match"
+        bob_msg["content"], bob_ct,
+        "Message content should be Bob's per-device ciphertext"
     );
     assert_eq!(
         bob_msg["from_username"],
@@ -140,11 +148,17 @@ async fn read_receipt_broadcast() {
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
-    // Alice sends a message to create some content to read
+    // Alice sends a message to create some content to read. DMs are
+    // auto-encrypted so the payload must be wire-shaped (#591).
+    let canonical = common::dummy_ciphertext("rr_canonical");
+    let bob_ct = common::dummy_ciphertext("rr_bob");
     let send_msg = serde_json::json!({
         "type": "send_message",
         "conversation_id": conv_id,
-        "content": "hello for read receipt test",
+        "content": canonical,
+        "recipient_device_contents": {
+            bob_id.to_string(): { "0": bob_ct },
+        },
     });
     alice_ws
         .send(Message::Text(send_msg.to_string().into()))
@@ -399,14 +413,14 @@ async fn offline_delivery_marks_unknown_device_undecryptable() {
     // Bob has device_id=42 in this simulation; the test WS path uses device_id=0
     // (the default when no key bundle is registered).
     let bob_device_id: i32 = 42;
-    let canonical_ct = "CANONICAL_CIPHERTEXT";
-    let device_ct = "BOB_DEVICE_42_CIPHERTEXT";
+    let canonical_ct = common::dummy_ciphertext("od_canonical");
+    let device_ct = common::dummy_ciphertext("od_bob_d42");
 
     // Alice sends a message while Bob is offline, including per-device content.
     let send_msg = serde_json::json!({
         "type": "send_message",
         "to_user_id": bob_id,
-        "content": canonical_ct,
+        "content": canonical_ct.clone(),
         "recipient_device_contents": {
             bob_id.to_string(): {
                 bob_device_id.to_string(): device_ct,
@@ -482,17 +496,17 @@ async fn device_content_db_roundtrip() {
     // Both alice and bob use device_id=1 — this is the exact collision case
     // that the recipient-scoped storage fix (#522) must resolve.
     let device_id: i32 = 1;
-    let bob_device_ct = "BOB_DEVICE_1_CIPHERTEXT";
-    let alice_device_ct = "ALICE_DEVICE_1_CIPHERTEXT";
-    let canonical = "CANONICAL";
+    let bob_device_ct = common::dummy_ciphertext("dbrt_bob_d1");
+    let alice_device_ct = common::dummy_ciphertext("dbrt_alice_d1");
+    let canonical = common::dummy_ciphertext("dbrt_canonical");
 
     let send_msg = serde_json::json!({
         "type": "send_message",
         "to_user_id": bob_id,
         "content": canonical,
         "recipient_device_contents": {
-            bob_id.to_string(): { device_id.to_string(): bob_device_ct },
-            alice_id.to_string(): { device_id.to_string(): alice_device_ct },
+            bob_id.to_string(): { device_id.to_string(): bob_device_ct.clone() },
+            alice_id.to_string(): { device_id.to_string(): alice_device_ct.clone() },
         },
     });
     alice_ws
@@ -516,7 +530,7 @@ async fn device_content_db_roundtrip() {
             .expect("db query failed");
     assert_eq!(
         bob_stored,
-        Some(bob_device_ct.to_string()),
+        Some(bob_device_ct.clone()),
         "Bob's device-1 ciphertext must be stored"
     );
 
@@ -526,7 +540,7 @@ async fn device_content_db_roundtrip() {
             .expect("db query failed");
     assert_eq!(
         alice_stored,
-        Some(alice_device_ct.to_string()),
+        Some(alice_device_ct.clone()),
         "Alice's device-1 ciphertext must coexist with Bob's despite same device_id"
     );
 
@@ -577,9 +591,9 @@ async fn test_dm_fanout_delivers_to_all_recipient_devices() {
     drain_pending(&mut bob_d1_ws).await;
     drain_pending(&mut bob_d2_ws).await;
 
-    let bob_d1_ct = "BOB_D1_CT_557";
-    let bob_d2_ct = "BOB_D2_CT_557";
-    let canonical = "CANONICAL_557";
+    let bob_d1_ct = common::dummy_ciphertext("557_bob_d11");
+    let bob_d2_ct = common::dummy_ciphertext("557_bob_d22");
+    let canonical = common::dummy_ciphertext("557_canonical");
 
     let send_msg = serde_json::json!({
         "type": "send_message",
@@ -587,8 +601,8 @@ async fn test_dm_fanout_delivers_to_all_recipient_devices() {
         "content": canonical,
         "recipient_device_contents": {
             bob_id.to_string(): {
-                "11": bob_d1_ct,
-                "22": bob_d2_ct,
+                "11": bob_d1_ct.clone(),
+                "22": bob_d2_ct.clone(),
             },
         },
     });
@@ -627,6 +641,349 @@ async fn test_dm_fanout_delivers_to_all_recipient_devices() {
     let _ = alice_ws.close(None).await;
     let _ = bob_d1_ws.close(None).await;
     let _ = bob_d2_ws.close(None).await;
+}
+
+// Group × multi-device fanout regression (#557 follow-up)
+// ---------------------------------------------------------------------------
+
+/// `deliver_to_member` is called for every conversation member.  A regression
+/// that re-introduced short-circuiting only in the group-fanout branch (e.g.
+/// via `filter`/`any` over members) would skip later members entirely.  This
+/// test uses a 3-user group where Bob and Charlie each connect on two devices
+/// and asserts that every device socket receives its own distinct ciphertext.
+#[tokio::test]
+async fn test_group_fanout_delivers_to_all_devices_of_all_members() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "gfmd_alice").await;
+    let (bob_token, bob_id, _bob_name) =
+        common::register_and_login(&client, &base, "gfmd_bob").await;
+    let (charlie_token, charlie_id, _charlie_name) =
+        common::register_and_login(&client, &base, "gfmd_charlie").await;
+
+    let group_id = common::create_group(&client, &base, &alice_token, "MultiDevFanoutGroup").await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
+
+    // Alice connects on her primary device (sender).
+    let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+
+    // Bob connects on TWO devices simultaneously.
+    let bob_d1_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 21).await;
+    let bob_d2_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 22).await;
+    let mut bob_d1_ws = connect_ws(&base, &bob_d1_ticket).await;
+    let mut bob_d2_ws = connect_ws(&base, &bob_d2_ticket).await;
+
+    // Charlie connects on TWO devices simultaneously.
+    let charlie_d1_ticket =
+        common::get_ws_ticket_for_device(&client, &base, &charlie_token, 31).await;
+    let charlie_d2_ticket =
+        common::get_ws_ticket_for_device(&client, &base, &charlie_token, 32).await;
+    let mut charlie_d1_ws = connect_ws(&base, &charlie_d1_ticket).await;
+    let mut charlie_d2_ws = connect_ws(&base, &charlie_d2_ticket).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    drain_pending(&mut alice_ws).await;
+    drain_pending(&mut bob_d1_ws).await;
+    drain_pending(&mut bob_d2_ws).await;
+    drain_pending(&mut charlie_d1_ws).await;
+    drain_pending(&mut charlie_d2_ws).await;
+
+    // Distinct per-device ciphertexts for all four recipient device slots.
+    let bob_d1_ct = "BOB_D1_CT_GROUP";
+    let bob_d2_ct = "BOB_D2_CT_GROUP";
+    let charlie_d1_ct = "CHARLIE_D1_CT_GROUP";
+    let charlie_d2_ct = "CHARLIE_D2_CT_GROUP";
+    let canonical = "CANONICAL_GROUP";
+
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "conversation_id": group_id,
+        "content": canonical,
+        "recipient_device_contents": {
+            bob_id.to_string(): {
+                "21": bob_d1_ct,
+                "22": bob_d2_ct,
+            },
+            charlie_id.to_string(): {
+                "31": charlie_d1_ct,
+                "32": charlie_d2_ct,
+            },
+        },
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("Alice group send failed");
+
+    // Alice gets the message_sent ack.
+    let ack_text = read_text_skipping_presence(&mut alice_ws).await;
+    let ack: Value = serde_json::from_str(&ack_text).unwrap();
+    assert_eq!(ack["type"], "message_sent");
+
+    // Bob — both devices must receive new_message with their own ciphertext.
+    let bob1_text = read_text_skipping_presence(&mut bob_d1_ws).await;
+    let bob1: Value = serde_json::from_str(&bob1_text).unwrap();
+    assert_eq!(
+        bob1["type"], "new_message",
+        "bob device 1 should get new_message"
+    );
+    assert_eq!(
+        bob1["content"], bob_d1_ct,
+        "bob device 1 must receive its own ciphertext"
+    );
+
+    let bob2_text = read_text_skipping_presence(&mut bob_d2_ws).await;
+    let bob2: Value = serde_json::from_str(&bob2_text).unwrap();
+    assert_eq!(
+        bob2["type"], "new_message",
+        "bob device 2 should get new_message"
+    );
+    assert_eq!(
+        bob2["content"], bob_d2_ct,
+        "bob device 2 must receive its own ciphertext"
+    );
+
+    // Charlie — both devices must receive new_message with their own ciphertext.
+    let charlie1_text = read_text_skipping_presence(&mut charlie_d1_ws).await;
+    let charlie1: Value = serde_json::from_str(&charlie1_text).unwrap();
+    assert_eq!(
+        charlie1["type"], "new_message",
+        "charlie device 1 should get new_message"
+    );
+    assert_eq!(
+        charlie1["content"], charlie_d1_ct,
+        "charlie device 1 must receive its own ciphertext"
+    );
+
+    let charlie2_text = read_text_skipping_presence(&mut charlie_d2_ws).await;
+    let charlie2: Value = serde_json::from_str(&charlie2_text).unwrap();
+    assert_eq!(
+        charlie2["type"], "new_message",
+        "charlie device 2 should get new_message"
+    );
+    assert_eq!(
+        charlie2["content"], charlie_d2_ct,
+        "charlie device 2 must receive its own ciphertext"
+    );
+
+    // All four ciphertexts must be distinct — guards against any regression
+    // that broadcasts a single ciphertext to multiple devices or members.
+    assert_ne!(bob1["content"], bob2["content"]);
+    assert_ne!(charlie1["content"], charlie2["content"]);
+    assert_ne!(bob1["content"], charlie1["content"]);
+    assert_ne!(bob1["content"], charlie2["content"]);
+
+    let _ = alice_ws.close(None).await;
+    let _ = bob_d1_ws.close(None).await;
+    let _ = bob_d2_ws.close(None).await;
+    let _ = charlie_d1_ws.close(None).await;
+    let _ = charlie_d2_ws.close(None).await;
+}
+
+// ---------------------------------------------------------------------------
+// #455 / #591 — server-side ciphertext-shape gate on encrypted conversations
+// ---------------------------------------------------------------------------
+
+/// Encrypted DM: a `send_message` with plaintext content and no
+/// `recipient_device_contents` MUST be rejected with a targeted error.
+/// Pre-fix the server stored and broadcast plaintext.
+#[tokio::test]
+async fn encrypted_dm_rejects_plaintext_send() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "encdm_a").await;
+    let (bob_token, bob_id, bob_name) = common::register_and_login(&client, &base, "encdm_b").await;
+
+    let conv_id =
+        common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    drain_pending(&mut alice_ws).await;
+
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "conversation_id": conv_id,
+        "content": "Plaintext on encrypted DM",
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("send failed");
+
+    let event = read_text_skipping_presence(&mut alice_ws).await;
+    let msg: Value = serde_json::from_str(&event).expect("error JSON parse failed");
+    assert_eq!(
+        msg["type"], "error",
+        "encrypted DM with plaintext must error"
+    );
+    assert!(
+        msg["message"]
+            .as_str()
+            .unwrap_or("")
+            .to_lowercase()
+            .contains("ciphertext"),
+        "error message should mention 'ciphertext', got: {msg:?}"
+    );
+
+    let _ = alice_ws.close(None).await;
+}
+
+/// Encrypted DM: even with `recipient_device_contents` populated, payloads
+/// that don't base64-decode to a wire-shaped buffer are rejected.
+#[tokio::test]
+async fn encrypted_dm_rejects_nonciphertext_device_payload() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "encdm2_a").await;
+    let (bob_token, bob_id, bob_name) =
+        common::register_and_login(&client, &base, "encdm2_b").await;
+
+    let conv_id =
+        common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    drain_pending(&mut alice_ws).await;
+
+    // The per-device value is plain ASCII (no 0xEC magic, not normal-msg shape).
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "conversation_id": conv_id,
+        "content": "ignored",
+        "recipient_device_contents": {
+            bob_id.to_string(): { "0": "ATTACKER_PLAINTEXT" },
+        },
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("send failed");
+
+    let event = read_text_skipping_presence(&mut alice_ws).await;
+    let msg: Value = serde_json::from_str(&event).expect("error JSON parse failed");
+    assert_eq!(
+        msg["type"], "error",
+        "encrypted DM with bad-shape per-device must error"
+    );
+
+    let _ = alice_ws.close(None).await;
+}
+
+/// Encrypted group: the canonical `content` carries the group-key envelope
+/// wire and MUST be ciphertext-shaped (#591). Plaintext is rejected.
+#[tokio::test]
+async fn encrypted_group_rejects_plaintext_send() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "encgrp_a").await;
+    let (_bob_token, bob_id, _bob_name) =
+        common::register_and_login(&client, &base, "encgrp_b").await;
+
+    let group_id = common::create_group(&client, &base, &alice_token, "EncryptedGroup").await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
+
+    // Flip the group to encrypted directly via the DB so the test doesn't
+    // depend on whatever toggle endpoint exists.
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("TEST_DATABASE_URL or DATABASE_URL must be set");
+    let pool = echo_server::db::create_pool(&database_url).await;
+    sqlx::query("UPDATE conversations SET is_encrypted = true WHERE id = $1")
+        .bind(uuid::Uuid::parse_str(&group_id).unwrap())
+        .execute(&pool)
+        .await
+        .expect("flip is_encrypted failed");
+
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    drain_pending(&mut alice_ws).await;
+
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "conversation_id": group_id,
+        "content": "Plaintext on encrypted group",
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("send failed");
+
+    let event = read_text_skipping_presence(&mut alice_ws).await;
+    let msg: Value = serde_json::from_str(&event).expect("error JSON parse failed");
+    assert_eq!(
+        msg["type"], "error",
+        "encrypted group with plaintext must error"
+    );
+
+    let _ = alice_ws.close(None).await;
+}
+
+/// Encrypted group: a wire-shaped `content` is accepted.
+#[tokio::test]
+async fn encrypted_group_accepts_ciphertext_shaped_content() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "encgrp2_a").await;
+    let (_bob_token, bob_id, _bob_name) =
+        common::register_and_login(&client, &base, "encgrp2_b").await;
+
+    let group_id = common::create_group(&client, &base, &alice_token, "EncryptedGroupOk").await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
+
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("TEST_DATABASE_URL or DATABASE_URL must be set");
+    let pool = echo_server::db::create_pool(&database_url).await;
+    sqlx::query("UPDATE conversations SET is_encrypted = true WHERE id = $1")
+        .bind(uuid::Uuid::parse_str(&group_id).unwrap())
+        .execute(&pool)
+        .await
+        .expect("flip is_encrypted failed");
+
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    drain_pending(&mut alice_ws).await;
+
+    let ct = common::dummy_ciphertext("encgrp_ok");
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "conversation_id": group_id,
+        "content": ct,
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("send failed");
+
+    let event = read_text_skipping_presence(&mut alice_ws).await;
+    let msg: Value = serde_json::from_str(&event).expect("ack JSON parse failed");
+    assert_eq!(
+        msg["type"], "message_sent",
+        "wire-shaped group ciphertext should be accepted"
+    );
+
+    let _ = alice_ws.close(None).await;
 }
 
 // ---------------------------------------------------------------------------

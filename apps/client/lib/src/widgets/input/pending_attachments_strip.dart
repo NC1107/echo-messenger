@@ -198,7 +198,7 @@ class _AttachmentChip extends StatelessWidget {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.check_circle, size: 12, color: EchoTheme.online),
+          const Icon(Icons.check_circle, size: 12, color: EchoTheme.online),
           const SizedBox(width: 4),
           Text(
             'Ready',

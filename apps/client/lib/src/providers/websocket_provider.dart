@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/chat_message.dart';
+import '../services/crypto_service.dart' show IdentityKeyChangedException;
 import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
 import '../utils/debug_log.dart';
@@ -59,6 +60,23 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       const Duration(seconds: 2),
       (_) => _cleanupTyping(),
     );
+
+    // Re-bind the websocket whenever the active server URL changes (#PR-2).
+    // The previous code path read the URL via `ref.read` at connect time,
+    // which left the live socket pointed at the OLD origin after a switch.
+    // We listen here, in the constructor, so the subscription lasts as long
+    // as the notifier itself.
+    ref.listen<String>(serverUrlProvider, (previous, next) {
+      if (previous == next) return;
+      // Always tear down the existing socket; the old origin must not see
+      // any further frames from this client.
+      disconnect();
+      // Reconnect only if we still have an authenticated session. The login
+      // flow will call `connect()` itself once auth completes.
+      if (ref.read(authProvider).isLoggedIn) {
+        connect();
+      }
+    });
   }
 
   Stream<Map<String, dynamic>> get voiceSignals =>
@@ -362,6 +380,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   /// Map raw encryption exceptions to user-readable messages.
   /// Never surfaces raw exception text — always returns a friendly string.
   static String _friendlyEncryptionError(Object e) {
+    if (e is IdentityKeyChangedException) {
+      return "This contact's identity has changed. "
+          'Verify their safety number before sending.';
+    }
     final msg = e.toString();
     if (msg.contains('No PreKey bundle found')) {
       return 'Waiting for this person to come online to secure the chat.';

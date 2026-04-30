@@ -8,6 +8,11 @@ use serde_json::json;
 pub struct AppError {
     pub status: StatusCode,
     pub message: String,
+    /// Optional structured body used in place of the default `{"error": ...}`
+    /// envelope. Set via [`AppError::conflict_with_body`] when the client needs
+    /// machine-readable detail (e.g. the per-device identity-key conflict
+    /// response in `POST /api/keys/upload` -- #664).
+    pub body: Option<serde_json::Value>,
 }
 
 impl AppError {
@@ -15,6 +20,7 @@ impl AppError {
         Self {
             status: StatusCode::BAD_REQUEST,
             message: msg.into(),
+            body: None,
         }
     }
 
@@ -22,6 +28,7 @@ impl AppError {
         Self {
             status: StatusCode::UNAUTHORIZED,
             message: msg.into(),
+            body: None,
         }
     }
 
@@ -29,6 +36,7 @@ impl AppError {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: msg.into(),
+            body: None,
         }
     }
 
@@ -36,6 +44,7 @@ impl AppError {
         Self {
             status: StatusCode::NOT_FOUND,
             message: msg.into(),
+            body: None,
         }
     }
 
@@ -43,13 +52,32 @@ impl AppError {
         Self {
             status: StatusCode::CONFLICT,
             message: msg.into(),
+            body: None,
+        }
+    }
+
+    /// 409 Conflict that carries a structured JSON body. Used for the
+    /// per-device identity-key conflict so the client can extract `device_id`
+    /// + expected/actual fingerprints without parsing English error strings.
+    pub fn conflict_with_body(body: serde_json::Value) -> Self {
+        let message = body
+            .get("code")
+            .and_then(|v| v.as_str())
+            .unwrap_or("conflict")
+            .to_string();
+        Self {
+            status: StatusCode::CONFLICT,
+            message,
+            body: Some(body),
         }
     }
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let body = json!({ "error": self.message });
+        let body = self
+            .body
+            .unwrap_or_else(|| json!({ "error": self.message }));
         (self.status, axum::Json(body)).into_response()
     }
 }

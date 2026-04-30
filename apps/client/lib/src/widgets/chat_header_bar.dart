@@ -23,6 +23,8 @@ import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import 'shared_media_gallery.dart';
 
+const _disappearingMessagesLabel = 'Disappearing messages';
+
 class ChatHeaderBar extends ConsumerWidget {
   final Conversation conversation;
   final String myUserId;
@@ -218,6 +220,7 @@ class ChatHeaderBar extends ConsumerWidget {
       children: [
         nameText,
         ?lockGlyph,
+        _IdentityChangedBadge(peerUserId: peer.userId),
         _VerifiedBadge(peerUserId: peer.userId),
         ?timerChip,
       ],
@@ -396,7 +399,7 @@ class ChatHeaderBar extends ConsumerWidget {
             child: _overflowItem(
               ctx,
               icon: Icons.timer_outlined,
-              label: 'Disappearing messages',
+              label: _disappearingMessagesLabel,
             ),
           ),
       ],
@@ -685,7 +688,7 @@ class ChatHeaderBar extends ConsumerWidget {
     final selected = await showDialog<int?>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('Disappearing messages'),
+        title: const Text(_disappearingMessagesLabel),
         children: _kTtlOptions.map((opt) {
           final isCurrent = opt.seconds == currentTtl;
           return SimpleDialogOption(
@@ -853,6 +856,68 @@ class ChatHeaderBar extends ConsumerWidget {
   }
 }
 
+/// Small red warning triangle shown next to a DM peer's name when the
+/// crypto layer has flagged the peer's identity key as changed (TOFU
+/// violation). Tapping opens the safety-number screen so the user can
+/// compare the new key out-of-band before trusting it.
+class _IdentityChangedBadge extends ConsumerStatefulWidget {
+  final String peerUserId;
+
+  const _IdentityChangedBadge({required this.peerUserId});
+
+  @override
+  ConsumerState<_IdentityChangedBadge> createState() =>
+      _IdentityChangedBadgeState();
+}
+
+class _IdentityChangedBadgeState extends ConsumerState<_IdentityChangedBadge> {
+  bool _changed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _IdentityChangedBadge oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.peerUserId != widget.peerUserId) {
+      setState(() => _changed = false);
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    final crypto = ref.read(cryptoProvider);
+    if (!crypto.isInitialized) return;
+    final flag = await ref
+        .read(cryptoProvider.notifier)
+        .hasPeerIdentityKeyChanged(widget.peerUserId);
+    if (!mounted) return;
+    if (flag != _changed) setState(() => _changed = flag);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_changed) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Semantics(
+        label: 'identity changed warning',
+        child: Tooltip(
+          message: "Identity changed -- verify safety number",
+          child: Icon(
+            Icons.warning_amber_rounded,
+            size: 14,
+            color: EchoTheme.warning,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Tiny green check shown next to a DM peer's name when the user has
 /// previously verified their safety number. Reads `echo_safety_verified_<id>`
 /// from SharedPreferences. Clears itself if the pref changes between rebuilds
@@ -934,7 +999,7 @@ class _TimerChip extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(left: 6),
       child: Tooltip(
-        message: 'Disappearing messages',
+        message: _disappearingMessagesLabel,
         child: Material(
           color: Colors.transparent,
           child: InkWell(
