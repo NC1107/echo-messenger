@@ -60,8 +60,6 @@ dev_dependencies:
   mockito: ^5.4.4
   mocktail: ^1.0.4
   build_runner: ^2.4.8
-  integration_test:
-    sdk: flutter
   network_image_mock: ^2.1.1
   path_provider_platform_interface: ^2.1.0
   plugin_platform_interface: ^2.1.0
