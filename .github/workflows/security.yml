@@ -37,6 +37,19 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-      - uses: trufflesecurity/trufflehog@17456f8c7d042d8c82c9a8ca9e937231f9f42e26 # v3.95.2
+      # On pull_request, trufflehog auto-detects base/head from the event
+      # context.  On push the action's defaults can fall back to scanning the
+      # working tree only, missing historical secrets in a single squash
+      # commit.  Pass the explicit range so push events scan the new commits.
+      - name: Scan for secrets (pull_request)
+        if: github.event_name == 'pull_request'
+        uses: trufflesecurity/trufflehog@17456f8c7d042d8c82c9a8ca9e937231f9f42e26 # v3.95.2
         with:
+          extra_args: --only-verified
+      - name: Scan for secrets (push)
+        if: github.event_name == 'push'
+        uses: trufflesecurity/trufflehog@17456f8c7d042d8c82c9a8ca9e937231f9f42e26 # v3.95.2
+        with:
+          base: ${{ github.event.before }}
+          head: ${{ github.event.after }}
           extra_args: --only-verified
