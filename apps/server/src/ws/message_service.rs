@@ -15,9 +15,6 @@ use crate::ws::typing_service::get_member_ids_cached;
 
 pub(super) const MAX_MESSAGE_LENGTH: usize = 10_000;
 
-// Wire-format constants are defined once in `echo_core::signal::protocol`
-// (audit #700). Re-export under the historical local names so the rest of
-// this file reads unchanged.
 use echo_core::signal::protocol::{
     NORMAL_HEADER_LEN as ECHO_NORMAL_HEADER_LEN, WIRE_INITIAL_V1 as ECHO_WIRE_INITIAL_V1,
     WIRE_INITIAL_V2 as ECHO_WIRE_INITIAL_V2, WIRE_MAGIC as ECHO_WIRE_MAGIC,
@@ -901,10 +898,7 @@ pub(super) async fn fanout_message(
 /// used as a fallback when no device-specific row exists (group messages,
 /// unencrypted convs, or messages predating multi-device support).
 pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid, device_id: i32) {
-    // Audit #689: loop with cursor pagination so backlogs >200 messages
-    // (multi-week offline) replay completely instead of leaving the rest
-    // stuck until the next reconnect.  Cap iterations defensively against a
-    // pathological pool error returning the same row over and over.
+    // Cursor-paginated replay; cap iterations against pathological pool errors.
     const MAX_ITERATIONS: usize = 50; // 50 * 200 = 10 000 messages per reconnect
     let mut after_ts: Option<chrono::DateTime<chrono::Utc>> = None;
     for _iter in 0..MAX_ITERATIONS {

@@ -39,12 +39,7 @@ async fn main() {
         media_tickets: dashmap::DashMap::new(),
     });
 
-    // Audit #625: each cleanup runs in its own task with per-task cadence
-    // and panic recovery (catch_unwind on the future).  Previously all five
-    // shared one 60s loop, so a panic anywhere killed every cleanup
-    // silently.  Cadences: voice + expired-messages stay tight (60s / 30s)
-    // because their UX impact is immediate; tokens/prekeys/empty-groups
-    // are hygiene tasks at lower frequency.
+    // Per-task cleanup loops with panic recovery; cadence per task.
     spawn_periodic("voice_sessions", std::time::Duration::from_secs(60), {
         let pool = pool.clone();
         let hub = hub.clone();
@@ -127,13 +122,8 @@ async fn main() {
     .expect("Server error");
 }
 
-/// Spawn a periodic cleanup task that recovers from panics.
-///
-/// Each task gets its own `tokio::spawn` so a panic anywhere doesn't kill
-/// the others (audit #625).  `AssertUnwindSafe` is sound here because the
-/// closures we pass are stateless re-creators -- they capture `Arc` clones
-/// of pool/hub and rebuild a fresh future per tick, so any partially-
-/// mutated state from a panicked invocation is dropped on unwind.
+/// Periodic task with panic recovery. `make_fut` is a stateless re-creator;
+/// captured `Arc` clones make `AssertUnwindSafe` sound.
 fn spawn_periodic<F, Fut>(name: &'static str, period: std::time::Duration, mut make_fut: F)
 where
     F: FnMut() -> Fut + Send + 'static,
@@ -302,18 +292,9 @@ async fn cleanup_expired_messages(pool: &PgPool, hub: &ws::hub::Hub) {
 }
 
 /// Delete all dependent rows for a group conversation, then the conversation
-/// itself, atomically (audit #625, H32). Previously this was 9 sequential
-/// pool queries with `if let Err(e) ...` swallows -- a connection drop after
-/// step 4 left the conversation half-deleted and the next sweep picked it up
-/// incompletely. Wrapped in one tx so the database is never observed in a
-/// partially-cleaned state.
-///
-/// Migration 20260412000000 added ON DELETE CASCADE on a subset of child
-/// tables (`messages`, `read_receipts`, `conversation_members`); the others
-/// are still cleaned explicitly here. A follow-up migration that adds
-/// CASCADE to `voice_sessions`, `channels`, `group_keys`,
-/// `group_key_envelopes`, `banned_members`, and `media` would let this
-/// collapse to `DELETE FROM conversations WHERE id = $1`.
+/// itself, atomically. Migration 20260412000000 added ON DELETE CASCADE on
+/// a subset of child tables; the rest are cleaned explicitly until a
+/// follow-up migration extends CASCADE.
 async fn delete_group_dependents(pool: &PgPool, gid: uuid::Uuid) {
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,

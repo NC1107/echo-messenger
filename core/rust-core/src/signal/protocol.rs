@@ -1,31 +1,13 @@
-//! Wire-format constants shared by the Rust server, the Rust core, and the
-//! Dart client.
+//! Wire-format constants shared by the Rust server and core. Dart parity
+//! lives in `apps/client/lib/src/services/signal_protocol.dart` and is
+//! enforced by hand until codegen lands.
 //!
-//! Audit #700 (H34): before this module, these constants were re-typed in
-//! at least three places (Rust server, Rust core, Dart client). One typo
-//! silently breaks decryption with no compile-time check. CLAUDE.md
-//! documented the wire format in prose but no schema lived in version
-//! control.
-//!
-//! Phase 1 (this PR): Rust server + Rust core re-export from a single
-//! definition here. Dart parity is Phase 2 — it requires either codegen
-//! from a manifest or a CI test that round-trips a Rust-encrypted
-//! ciphertext through Dart and vice versa with a fixed seed.
-//!
-//! ## Wire format reference
-//!
-//! Every encrypted message frame starts with a magic byte sequence so the
-//! server can distinguish protocol versions and reject malformed payloads
-//! at the edge:
-//!
+//! Wire layout:
 //! ```text
 //! Initial V1 (no OTP): [0xEC, 0x01] || identity_pub(32) || ephemeral_pub(32) || ratchet_wire
 //! Initial V2 (OTP):    [0xEC, 0x02] || identity_pub(32) || ephemeral_pub(32) || otp_id(4 LE) || ratchet_wire
 //! Normal:              header_len(4 LE) || header(40) || nonce(12) || ciphertext || tag(16)
 //! ```
-//!
-//! Where `ratchet_wire` is the canonical `MessageHeader` (see ratchet.rs)
-//! plus AEAD payload.
 
 // -----------------------------------------------------------------------
 // Magic bytes

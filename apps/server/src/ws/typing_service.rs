@@ -104,12 +104,9 @@ pub fn invalidate_member_cache(conversation_id: Uuid) {
     MEMBERSHIP_CACHE.retain(|(_, conv_id), _| *conv_id != conversation_id);
 }
 
-/// Periodic sweep that drops cache entries older than 2× their TTL across
-/// all three caches.  Called from the cleanup scheduler in main.rs every
-/// 5 minutes (audit #692).  Without this, entries never expire on a busy
-/// server -- after 24h a `MEMBERSHIP_CACHE` for a public group with 1k
-/// members and 100 typers can hold 100k stale `(user_id, conversation_id)`
-/// pairs that no live read path will ever revisit.
+/// Drop cache entries older than 2× their TTL across all three caches.
+/// Called from the cleanup scheduler so stale entries don't accumulate on
+/// long-running servers.
 pub fn sweep_expired_caches() {
     let cutoff = MEMBERSHIP_CACHE_TTL * 2;
     let mut membership_evicted = 0usize;
@@ -235,20 +232,13 @@ pub(super) async fn broadcast_presence(
     username: &str,
     status: &str,
 ) {
-    // Audit #436: gate presence on first-device-up / last-device-down so
-    // a multi-device user reconnecting after a network blip doesn't make
-    // every contact see online/offline/online/offline once per device.
-    // `register` happens before this call (online) and `unregister` happens
-    // before this call (offline), so:
-    //   online:  device_count == 1 -> first device just connected, broadcast
-    //   online:  device_count >  1 -> already had other devices, no-op
-    //   offline: device_count == 0 -> last device just disconnected, broadcast
-    //   offline: device_count >  0 -> still has other devices, no-op
+    // Gate on first-device-up / last-device-down so multi-device reconnects
+    // don't surface online/offline flapping to contacts.
     let dev_count = state.hub.device_count(&user_id);
     let should_broadcast = match status {
         "online" => dev_count == 1,
         "offline" => dev_count == 0,
-        _ => true, // explicit status changes (away/dnd) always broadcast
+        _ => true,
     };
     if !should_broadcast {
         return;
@@ -303,9 +293,7 @@ pub(super) async fn broadcast_presence(
         Err(_) => return,
     };
 
-    // Audit #690: build the WsMessage once outside the loop. axum's
-    // Message::Text is backed by bytes::Bytes, so msg.clone() inside the
-    // loop is O(1) reference-count bump rather than a fresh String alloc.
+    // Build once; clone is O(1) on Bytes-backed Message::Text.
     let msg = WsMessage::Text(json.into());
     for cid in &contact_ids {
         state.hub.send_to(cid, msg.clone());

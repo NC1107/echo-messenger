@@ -13,11 +13,8 @@ use uuid::Uuid;
 
 pub type WsTx = mpsc::Sender<WsMessage>;
 
-/// After this many consecutive `Full` results inside [`SLOW_CONSUMER_WINDOW`],
-/// the hub unregisters the device so the client must reconnect.  Picked
-/// conservatively: a busy public group can produce occasional Full bursts
-/// when a tab is briefly throttled, so we allow short spikes but kill any
-/// connection that consistently can't keep up (audit #634).
+/// Slow-consumer eviction threshold: this many consecutive `Full` results
+/// inside the window unregister the device so the client must reconnect.
 const SLOW_CONSUMER_FULL_THRESHOLD: u32 = 50;
 const SLOW_CONSUMER_WINDOW: Duration = Duration::from_secs(60);
 
@@ -166,11 +163,8 @@ impl Hub {
 }
 
 impl Hub {
-    /// Try to send a message and update the per-(user, device) slow-consumer
-    /// counter.  When a device has had `SLOW_CONSUMER_FULL_THRESHOLD`
-    /// consecutive `Full` results within `SLOW_CONSUMER_WINDOW`, unregister
-    /// it so the client must reconnect (audit #634) -- otherwise a stalled
-    /// tab can starve itself indefinitely with silent drops.
+    /// `try_send` plus slow-consumer tracking. Force-unregisters once the
+    /// threshold trips so a stalled tab can't starve itself indefinitely.
     fn try_send_tracked(&self, user_id: Uuid, device_id: i32, tx: &WsTx, msg: WsMessage) -> bool {
         match tx.try_send(msg) {
             Ok(()) => {
@@ -418,9 +412,6 @@ mod tests {
         assert!(!sent, "send must report failure once receiver is dropped");
     }
 
-    /// Audit #634: a stuck consumer must be force-disconnected after the
-    /// configured threshold of consecutive Full results so the connection
-    /// slot is freed and the client is forced to reconnect.
     #[tokio::test]
     async fn test_slow_consumer_unregisters_after_threshold() {
         let hub = Hub::new();
