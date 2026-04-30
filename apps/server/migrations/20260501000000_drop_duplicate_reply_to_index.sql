@@ -1,0 +1,13 @@
+-- Audit perf #6 / #678: drop the duplicate partial index on messages.reply_to_id.
+--
+-- The baseline migration created `idx_messages_reply_to ON messages (reply_to_id)
+-- WHERE reply_to_id IS NOT NULL` and 20260423000000 added an identical
+-- index named `idx_messages_reply_to_id` covering the same column with the
+-- same predicate. Postgres maintains both on every insert/update/delete that
+-- touches `reply_to_id`, doubling the write amplification for zero query
+-- benefit (the planner only ever uses one of them).
+--
+-- Keep `idx_messages_reply_to_id` because the LEFT JOIN LATERAL added in
+-- 2026-04-30 (#678) deliberately uses that name in EXPLAIN traces and code
+-- comments; drop the older `idx_messages_reply_to`.
+DROP INDEX IF EXISTS idx_messages_reply_to;
