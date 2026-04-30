@@ -290,6 +290,32 @@ pub async fn delete_message(
     Ok(row.map(|(conv_id,)| conv_id))
 }
 
+/// Look up the conversation security flags for a message that the caller
+/// claims to own. Returns `None` when the message does not exist, has been
+/// soft-deleted, or was sent by a different user. Used to gate edits on
+/// encrypted conversations (#582) before performing the UPDATE.
+pub async fn get_message_conversation_security(
+    pool: &PgPool,
+    message_id: Uuid,
+    sender_id: Uuid,
+) -> Result<Option<MessageConversationSecurity>, sqlx::Error> {
+    sqlx::query_as::<_, MessageConversationSecurity>(
+        "SELECT m.conversation_id, c.is_encrypted \
+         FROM messages m JOIN conversations c ON c.id = m.conversation_id \
+         WHERE m.id = $1 AND m.sender_id = $2 AND m.deleted_at IS NULL",
+    )
+    .bind(message_id)
+    .bind(sender_id)
+    .fetch_optional(pool)
+    .await
+}
+
+#[derive(Debug, sqlx::FromRow)]
+pub struct MessageConversationSecurity {
+    pub conversation_id: Uuid,
+    pub is_encrypted: bool,
+}
+
 /// Edit a message's content. Only the sender can edit their own message.
 /// Returns the conversation_id if the edit was successful, None if no matching row found.
 pub async fn edit_message(

@@ -1072,6 +1072,20 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     if (text.isEmpty || _editingMessage == null) return;
 
     final conv = widget.conversation;
+    // #582: belt-and-suspenders for the parent UI gate. Editing on an
+    // encrypted conversation would broadcast plaintext to every member, so
+    // we never submit it. The server also returns 409.
+    if (conv.isEncrypted) {
+      _cancelEditMode();
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Edit unsupported for encrypted messages.',
+          type: ToastType.info,
+        );
+      }
+      return;
+    }
     final messageId = _editingMessage!.id;
     final serverUrl = ref.read(serverUrlProvider);
 
@@ -1080,7 +1094,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _cancelEditMode();
 
     try {
-      await ref
+      final response = await ref
           .read(authProvider.notifier)
           .authenticatedRequest(
             (token) => http.put(
@@ -1092,6 +1106,22 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
               body: jsonEncode({'content': text}),
             ),
           );
+      // The server returns 409 when an encrypted conversation rejects an
+      // edit (#582). Surface a non-fatal toast so the user understands
+      // why the change rolled back.
+      if (response.statusCode == 409 && mounted) {
+        ToastService.show(
+          context,
+          'Edit unsupported for encrypted messages.',
+          type: ToastType.info,
+        );
+      } else if (response.statusCode >= 400 && mounted) {
+        ToastService.show(
+          context,
+          'Failed to edit message',
+          type: ToastType.error,
+        );
+      }
     } catch (e) {
       if (mounted) {
         ToastService.show(
@@ -1755,8 +1785,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   /// Up arrow with empty input: edit last own message (Discord behavior).
+  /// #582: skip on encrypted conversations to avoid surfacing an edit flow
+  /// the server will reject.
   KeyEventResult _handleArrowUpEditLast() {
     if (!_isTextEmpty || _isEditing) return KeyEventResult.ignored;
+    if (widget.conversation.isEncrypted) return KeyEventResult.ignored;
     final messages = ref
         .read(chatProvider)
         .messagesForConversation(widget.conversation.id);

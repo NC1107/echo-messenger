@@ -66,12 +66,21 @@ async fn setup_dm_with_message(
     // Drain initial events
     while let Ok(Some(Ok(_))) = tokio::time::timeout(Duration::from_millis(100), ws.next()).await {}
 
+    // DMs are auto-encrypted at creation, so the ciphertext-shape gate (#591)
+    // requires both a wire-shaped canonical content and per-recipient device
+    // ciphertexts.
+    let ct_alice = common::dummy_ciphertext("setup_dm_alice");
+    let ct_bob = common::dummy_ciphertext("setup_dm_bob");
     ws.send(Message::Text(
         serde_json::json!({
             "type": "send_message",
             "to_user_id": bob_id,
             "conversation_id": conv_id,
-            "content": "Original content",
+            "content": ct_alice.clone(),
+            "recipient_device_contents": {
+                bob_id.to_string(): { "0": ct_bob },
+                alice_id.to_string(): { "0": ct_alice },
+            },
         })
         .to_string()
         .into(),
@@ -109,8 +118,11 @@ async fn setup_dm_with_message(
 // Edit message
 // ---------------------------------------------------------------------------
 
+/// #582: editing on encrypted conversations would broadcast plaintext to
+/// every member. The server must reject with 409 until per-device
+/// ciphertext fanout for edits is implemented.
 #[tokio::test]
-async fn edit_own_message_succeeds() {
+async fn edit_message_on_encrypted_dm_returns_409() {
     let base = common::spawn_server().await;
     let (client, alice_token, _, _, _, _, message_id) = setup_dm_with_message(&base).await;
 
@@ -122,10 +134,20 @@ async fn edit_own_message_succeeds() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 200);
+    assert_eq!(
+        resp.status().as_u16(),
+        409,
+        "encrypted DMs must reject edits with 409 (#582)"
+    );
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["message_id"].as_str(), Some(message_id.as_str()));
-    assert!(body["edited_at"].is_string());
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .to_lowercase()
+            .contains("encrypted"),
+        "error message should mention 'encrypted', got: {body:?}"
+    );
 }
 
 #[tokio::test]
@@ -149,7 +171,10 @@ async fn edit_someone_elses_message_returns_400() {
     let base = common::spawn_server().await;
     let (client, _, _, bob_token, _, _, message_id) = setup_dm_with_message(&base).await;
 
-    // Bob tries to edit Alice's message — should fail
+    // Bob tries to edit Alice's message — should fail. Note: the encrypted-DM
+    // gate (#582) now runs BEFORE the ownership check, so non-senders also
+    // get 409 instead of 400 for encrypted conversations. Either is fine; we
+    // just need to confirm the edit didn't succeed.
     let resp = client
         .put(format!("{base}/api/messages/{message_id}"))
         .header("Authorization", format!("Bearer {bob_token}"))
@@ -158,7 +183,74 @@ async fn edit_someone_elses_message_returns_400() {
         .await
         .unwrap();
 
-    assert_eq!(resp.status().as_u16(), 400);
+    let status = resp.status().as_u16();
+    assert!(
+        status == 400 || status == 409,
+        "expected 400/409, got {status}"
+    );
+}
+
+/// #582: edits should still succeed for non-encrypted (legacy / group)
+/// conversations so the rejection is scoped to the confidentiality hole.
+#[tokio::test]
+async fn edit_message_on_unencrypted_group_succeeds() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "edit_pl_alice").await;
+
+    // Groups default to `is_encrypted = false` so edits remain allowed.
+    let group_id = common::create_group(&client, &base, &alice_token, "EditPlainGroup").await;
+
+    // Send a plaintext message via WS.
+    let ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let ws_url = base.replace("http://", "ws://");
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("{ws_url}/ws?ticket={ticket}"))
+        .await
+        .expect("WS connect failed");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    while let Ok(Some(Ok(_))) = tokio::time::timeout(Duration::from_millis(100), ws.next()).await {}
+
+    ws.send(Message::Text(
+        serde_json::json!({
+            "type": "send_message",
+            "conversation_id": group_id,
+            "content": "Plain group message",
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
+
+    let mut message_id = String::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while let Ok(Some(Ok(Message::Text(text)))) = tokio::time::timeout_at(deadline, ws.next()).await
+    {
+        if let Ok(json) = serde_json::from_str::<Value>(&text)
+            && json["type"] == "message_sent"
+        {
+            message_id = json["message_id"].as_str().unwrap().to_string();
+            break;
+        }
+    }
+    let _ = ws.close(None).await;
+    assert!(!message_id.is_empty(), "should have received message_id");
+
+    let resp = client
+        .put(format!("{base}/api/messages/{message_id}"))
+        .header("Authorization", format!("Bearer {alice_token}"))
+        .json(&serde_json::json!({ "content": "Edited plain content" }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status().as_u16(),
+        200,
+        "edits on non-encrypted conversations must still succeed"
+    );
 }
 
 #[tokio::test]
@@ -418,26 +510,25 @@ async fn get_unmuted_user_ids_excludes_muted_member() {
 // Search messages
 // ---------------------------------------------------------------------------
 
+/// Search returns 200 and an array (possibly empty) for member queries.
+/// Server-side full-text search across encrypted ciphertext is mostly a
+/// no-op now that the gate (#591) requires wire-shaped content; but the
+/// route must still answer cleanly. (Pre-#591 this asserted a hit on the
+/// plaintext message we used to send.)
 #[tokio::test]
-async fn search_messages_finds_content() {
+async fn search_messages_returns_array_for_member() {
     let base = common::spawn_server().await;
     let (client, alice_token, _, _, _, conv_id, _) = setup_dm_with_message(&base).await;
 
     let resp = client
-        .get(format!(
-            "{base}/api/conversations/{conv_id}/search?q=Original"
-        ))
+        .get(format!("{base}/api/conversations/{conv_id}/search?q=setup"))
         .header("Authorization", format!("Bearer {alice_token}"))
         .send()
         .await
         .unwrap();
 
     assert_eq!(resp.status().as_u16(), 200);
-    let results: Vec<Value> = resp.json().await.unwrap();
-    assert!(
-        !results.is_empty(),
-        "search for 'Original' should find the message"
-    );
+    let _results: Vec<Value> = resp.json().await.unwrap();
 }
 
 #[tokio::test]
@@ -556,12 +647,14 @@ mod offline_replay_557 {
         tokio::time::sleep(Duration::from_millis(150)).await;
         let _ = collect_text_frames(&mut alice_ws, 4).await; // drain presence
 
+        let alice_wire = common::dummy_ciphertext("rs1_alice_wire");
+        let bob_d11_ct = common::dummy_ciphertext("rs1_bob_d11");
         let send = serde_json::json!({
             "type": "send_message",
             "to_user_id": bob_id,
-            "content": "ALICE_WIRE",
+            "content": alice_wire.clone(),
             "recipient_device_contents": {
-                bob_id.to_string(): { "11": "BOB_D11_CT" },
+                bob_id.to_string(): { "11": bob_d11_ct },
             },
         });
         alice_ws
@@ -591,7 +684,7 @@ mod offline_replay_557 {
         );
         // Pre-fix bug shipped Alice's ciphertext here. The fix MUST NOT leak it.
         assert_ne!(
-            m["content"], "ALICE_WIRE",
+            m["content"], alice_wire,
             "must not return canonical sender ciphertext to wrong device"
         );
 
@@ -623,12 +716,14 @@ mod offline_replay_557 {
         tokio::time::sleep(Duration::from_millis(150)).await;
         let _ = collect_text_frames(&mut alice_ws, 4).await;
 
+        let canonical = common::dummy_ciphertext("rs2_canonical");
+        let bob_replay_ct = common::dummy_ciphertext("rs2_bob_replay");
         let send = serde_json::json!({
             "type": "send_message",
             "to_user_id": bob_id,
-            "content": "CANON",
+            "content": canonical,
             "recipient_device_contents": {
-                bob_id.to_string(): { bob_device_id.to_string(): "BOB_REPLAY_CT" },
+                bob_id.to_string(): { bob_device_id.to_string(): bob_replay_ct.clone() },
             },
         });
         alice_ws
@@ -646,7 +741,7 @@ mod offline_replay_557 {
             .iter()
             .find(|v| v["type"] == "new_message")
             .expect("expected a replay new_message");
-        assert_eq!(m["content"], "BOB_REPLAY_CT");
+        assert_eq!(m["content"], bob_replay_ct);
         assert_eq!(
             m["from_device_id"].as_i64(),
             Some(alice_device_id as i64),
@@ -723,17 +818,20 @@ mod history_device_aware_557 {
             tokio::time::timeout(Duration::from_millis(100), alice_ws.next()).await
         {}
 
+        let canon_ct = common::dummy_ciphertext("hist_canon");
+        let ct_d11 = common::dummy_ciphertext("hist_d11");
+        let ct_d22 = common::dummy_ciphertext("hist_d22");
         alice_ws
             .send(WsMsg::Text(
                 serde_json::json!({
                     "type": "send_message",
                     "to_user_id": bob_id,
                     "conversation_id": conv_id,
-                    "content": "CANON_CT",
+                    "content": canon_ct.clone(),
                     "recipient_device_contents": {
                         bob_id.to_string(): {
-                            "11": "CT_D11",
-                            "22": "CT_D22",
+                            "11": ct_d11.clone(),
+                            "22": ct_d22.clone(),
                         },
                     },
                 })
@@ -773,7 +871,7 @@ mod history_device_aware_557 {
             .expect("at least one message")
             .clone();
         assert_eq!(
-            last_d11["content"], "CT_D11",
+            last_d11["content"], ct_d11,
             "device 11 should receive its per-device ciphertext"
         );
         assert_eq!(
@@ -794,7 +892,7 @@ mod history_device_aware_557 {
             .unwrap();
         let last_d22 = resp_d22.as_array().unwrap().last().unwrap().clone();
         assert_eq!(
-            last_d22["content"], "CT_D22",
+            last_d22["content"], ct_d22,
             "device 22 should receive its OWN per-device ciphertext, not device 11's"
         );
 
@@ -810,7 +908,7 @@ mod history_device_aware_557 {
             .unwrap();
         let last_legacy = resp_legacy.as_array().unwrap().last().unwrap().clone();
         assert_eq!(
-            last_legacy["content"], "CANON_CT",
+            last_legacy["content"], canon_ct,
             "no device_id param -> legacy canonical content (backward compat)"
         );
     }

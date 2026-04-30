@@ -419,6 +419,32 @@ pub async fn edit_message(
         return Err(AppError::bad_request("Content too long"));
     }
 
+    // #582: edits on encrypted conversations would broadcast plaintext to
+    // every member, breaking E2E confidentiality. Reject up front and
+    // surface a 409 so the client can hide / disable the edit affordance.
+    // TODO(#582 follow-up): once the per-device ciphertext fanout for edits
+    // is implemented, replace this guard with the proper edit-with-ciphertext
+    // path. Tracked separately so the beta ships with the hole closed.
+    let convo_meta =
+        db::messages::get_message_conversation_security(&state.pool, message_id, auth.user_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB error in edit_message/security lookup: {e:?}");
+                AppError::internal("Database error")
+            })?
+            .ok_or_else(|| AppError::bad_request("Message not found or you are not the sender"))?;
+    if convo_meta.is_encrypted {
+        tracing::warn!(
+            user_id = %auth.user_id,
+            message_id = %message_id,
+            conversation_id = %convo_meta.conversation_id,
+            "rejected edit_message on encrypted conversation (#582)"
+        );
+        return Err(AppError::conflict(
+            "Editing encrypted messages is not yet supported",
+        ));
+    }
+
     let (conversation_id, edited_at) =
         db::messages::edit_message(&state.pool, message_id, auth.user_id, &body.content)
             .await

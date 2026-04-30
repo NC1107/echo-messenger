@@ -1,6 +1,8 @@
 //! Message send, fanout, and delivery logic.
 
 use axum::extract::ws::Message as WsMessage;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -12,6 +14,49 @@ use crate::ws::handler::{ServerMessage, send_error};
 use crate::ws::typing_service::get_member_ids_cached;
 
 pub(super) const MAX_MESSAGE_LENGTH: usize = 10_000;
+
+/// Echo Messenger wire format magic byte (#591). The first byte of any
+/// initial-message payload identifies the protocol family.
+const ECHO_WIRE_MAGIC: u8 = 0xEC;
+/// Initial-message version 1 (no one-time prekey).
+const ECHO_WIRE_INITIAL_V1: u8 = 0x01;
+/// Initial-message version 2 (with one-time prekey).
+const ECHO_WIRE_INITIAL_V2: u8 = 0x02;
+/// Normal-message wire prefix is a u32 LE header length of 40 bytes
+/// (`header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`).
+const ECHO_NORMAL_HEADER_LEN: u32 = 40;
+
+/// Validate that a base64-encoded payload is shaped like an Echo
+/// ciphertext wire frame. We do NOT decrypt or otherwise validate
+/// authenticity here — this is a belt-and-suspenders shape gate (#591)
+/// that prevents a malicious or buggy client from storing/relaying
+/// plaintext on conversations marked `is_encrypted = true`.
+pub(super) fn is_valid_ciphertext_shape(b64: &str) -> bool {
+    let Ok(bytes) = BASE64.decode(b64.as_bytes()) else {
+        return false;
+    };
+
+    // Initial-message wires (V1 / V2) start with the 0xEC magic byte plus
+    // a known version. We require the keys+ratchet wire to follow but only
+    // gate the prefix here; full structural validation lives in the crypto
+    // layer.
+    if bytes.len() >= 2
+        && bytes[0] == ECHO_WIRE_MAGIC
+        && (bytes[1] == ECHO_WIRE_INITIAL_V1 || bytes[1] == ECHO_WIRE_INITIAL_V2)
+    {
+        return true;
+    }
+
+    // Normal messages start with a u32 LE header_len of exactly 40.
+    if bytes.len() >= 4 {
+        let header_len = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        if header_len == ECHO_NORMAL_HEADER_LEN {
+            return true;
+        }
+    }
+
+    false
+}
 
 /// Validate that the message content does not exceed the maximum length.
 pub(super) fn validate_message_length(state: &AppState, sender_id: Uuid, content: &str) -> bool {
@@ -28,6 +73,109 @@ pub(super) fn validate_message_length(state: &AppState, sender_id: Uuid, content
         return false;
     }
     true
+}
+
+/// Reject inbound messages on encrypted conversations whose payload isn't
+/// shaped like an Echo ciphertext wire (#455 / #591).
+///
+/// - Direct (DM): `recipient_device_contents` MUST be non-empty and every
+///   per-device ciphertext MUST pass `is_valid_ciphertext_shape`.
+/// - Group: the canonical `content` field carries the group-key envelope
+///   wire and MUST pass `is_valid_ciphertext_shape`.
+///
+/// Returns `true` when the payload is acceptable. On rejection the helper
+/// emits a `tracing::warn!` (so we can observe attempts) and sends a
+/// targeted error frame back to the sender.
+pub(super) fn validate_encrypted_payload(
+    state: &AppState,
+    sender_id: Uuid,
+    conversation_id: Uuid,
+    conv_kind: Option<ConversationKind>,
+    content: &str,
+    recipient_device_contents: Option<&RecipientDeviceContents>,
+) -> bool {
+    match conv_kind {
+        Some(ConversationKind::Direct) => {
+            let Some(rdc) = recipient_device_contents else {
+                tracing::warn!(
+                    conversation_id = %conversation_id,
+                    sender_id = %sender_id,
+                    "rejected encrypted DM with no recipient_device_contents"
+                );
+                send_error(
+                    state,
+                    sender_id,
+                    "Encrypted conversation requires ciphertext payload",
+                );
+                return false;
+            };
+            if rdc.is_empty() {
+                tracing::warn!(
+                    conversation_id = %conversation_id,
+                    sender_id = %sender_id,
+                    "rejected encrypted DM with empty recipient_device_contents"
+                );
+                send_error(
+                    state,
+                    sender_id,
+                    "Encrypted conversation requires ciphertext payload",
+                );
+                return false;
+            }
+            for (recipient, devices) in rdc.iter() {
+                if devices.is_empty() {
+                    tracing::warn!(
+                        conversation_id = %conversation_id,
+                        sender_id = %sender_id,
+                        recipient = %recipient,
+                        "rejected encrypted DM: empty per-recipient device map"
+                    );
+                    send_error(
+                        state,
+                        sender_id,
+                        "Encrypted conversation requires ciphertext payload",
+                    );
+                    return false;
+                }
+                for (device_id, ciphertext) in devices.iter() {
+                    if !is_valid_ciphertext_shape(ciphertext) {
+                        tracing::warn!(
+                            conversation_id = %conversation_id,
+                            sender_id = %sender_id,
+                            recipient = %recipient,
+                            device_id = %device_id,
+                            "rejected encrypted DM: per-device payload is not ciphertext-shaped"
+                        );
+                        send_error(
+                            state,
+                            sender_id,
+                            "Encrypted conversation requires ciphertext payload",
+                        );
+                        return false;
+                    }
+                }
+            }
+            true
+        }
+        Some(ConversationKind::Group) => {
+            if !is_valid_ciphertext_shape(content) {
+                tracing::warn!(
+                    conversation_id = %conversation_id,
+                    sender_id = %sender_id,
+                    "rejected encrypted group message: content is not ciphertext-shaped"
+                );
+                send_error(
+                    state,
+                    sender_id,
+                    "Encrypted conversation requires ciphertext payload",
+                );
+                return false;
+            }
+            true
+        }
+        // Unknown / unrecognised kind: leave existing flow to handle errors.
+        None => true,
+    }
 }
 
 /// Look up conversation security, validate channel usage, and enforce
@@ -111,11 +259,29 @@ pub(super) async fn handle_send_message(
         return;
     };
 
-    let Some((conv_security, _conv_kind, resolved_channel_id)) =
+    let Some((conv_security, conv_kind, resolved_channel_id)) =
         validate_conversation_security(state, sender_id, conv_id, channel_id).await
     else {
         return;
     };
+
+    // #455 / #591: belt-and-suspenders ciphertext shape gate. When a
+    // conversation is marked `is_encrypted`, the server must refuse any
+    // payload that isn't shaped like an Echo wire frame (initial V1/V2 or
+    // normal-message header). This closes the confidentiality hole left
+    // open by client-only enforcement.
+    if conv_security.is_encrypted
+        && !validate_encrypted_payload(
+            state,
+            sender_id,
+            conv_id,
+            conv_kind,
+            &content,
+            recipient_device_contents.as_ref(),
+        )
+    {
+        return;
+    }
 
     let (reply_content, reply_username) =
         lookup_reply_context(&state.pool, reply_to_id, conv_id).await;

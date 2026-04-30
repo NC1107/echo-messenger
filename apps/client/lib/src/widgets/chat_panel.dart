@@ -1794,9 +1794,15 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                 ? _deleteFailed
                 : _confirmDelete,
             onRetry: msg.status == MessageStatus.failed ? _retryMessage : null,
-            onEdit: (msg) {
-              _chatInputBarKey.currentState?.enterEditMode(msg);
-            },
+            // #582: editing on an encrypted conversation would broadcast
+            // plaintext to every member, breaking E2E. Until per-device
+            // ciphertext fanout for edits ships, suppress the affordance
+            // entirely on encrypted conversations. Server enforces with 409.
+            onEdit: conv.isEncrypted
+                ? null
+                : (msg) {
+                    _chatInputBarKey.currentState?.enterEditMode(msg);
+                  },
             onReply: (msg) {
               ref.read(chatProvider.notifier).setReplyTo(msg);
               _chatInputBarKey.currentState?.requestInputFocus();
