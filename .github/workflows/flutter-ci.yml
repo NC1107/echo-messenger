@@ -47,3 +47,48 @@ jobs:
           flags: flutter
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  smoke-linux:
+    name: Smoke — Linux Desktop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build libgtk-3-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-good libsecret-1-dev \
+            libayatana-appindicator3-dev
+      - name: Install dependencies
+        working-directory: apps/client
+        run: flutter pub get
+      - name: Compile smoke (Linux debug)
+        working-directory: apps/client
+        run: flutter build linux --debug --dart-define=APP_VERSION=smoke
+
+  smoke-android:
+    name: Smoke — Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install dependencies
+        working-directory: apps/client
+        run: flutter pub get
+      - name: Compile smoke (Android debug APK)
+        working-directory: apps/client
+        run: flutter build apk --debug --dart-define=APP_VERSION=smoke
