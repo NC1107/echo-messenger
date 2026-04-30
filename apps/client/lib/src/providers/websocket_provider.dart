@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/chat_message.dart';
+import '../services/crypto_service.dart' show IdentityKeyChangedException;
 import '../services/debug_log_service.dart';
 import '../services/group_crypto_service.dart';
 import '../utils/debug_log.dart';
@@ -362,6 +363,10 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   /// Map raw encryption exceptions to user-readable messages.
   /// Never surfaces raw exception text — always returns a friendly string.
   static String _friendlyEncryptionError(Object e) {
+    if (e is IdentityKeyChangedException) {
+      return "This contact's identity has changed. "
+          'Verify their safety number before sending.';
+    }
     final msg = e.toString();
     if (msg.contains('No PreKey bundle found')) {
       return 'Waiting for this person to come online to secure the chat.';
