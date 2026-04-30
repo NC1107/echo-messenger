@@ -61,6 +61,17 @@ class PushTokenService {
     _authToken = token;
   }
 
+  /// Update the server URL (e.g. for testing or after settings change).
+  void setServerUrl(String url) {
+    _serverUrl = url;
+  }
+
+  /// Override the current device token.  For use in tests only.
+  @visibleForTesting
+  void setCurrentTokenForTest(String token) {
+    _currentToken = token;
+  }
+
   /// Unregister the push token on logout.
   Future<void> unregister() async {
     final token = _currentToken;
