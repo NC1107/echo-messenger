@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -798,7 +798,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ),
           ],
         ),
-        if (pendingCount > 0)
+        if (pendingCount > 0 &&
+            (kIsWeb ||
+                defaultTargetPlatform == TargetPlatform.android ||
+                defaultTargetPlatform == TargetPlatform.iOS))
           Positioned(
             // Re-center the badge on the larger 44×44 button.
             top: 6,
