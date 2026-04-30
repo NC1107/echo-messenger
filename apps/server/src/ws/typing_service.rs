@@ -284,7 +284,11 @@ pub(super) async fn broadcast_presence(
         Err(_) => return,
     };
 
+    // Audit #690: build the WsMessage once outside the loop. axum's
+    // Message::Text is backed by bytes::Bytes, so msg.clone() inside the
+    // loop is O(1) reference-count bump rather than a fresh String alloc.
+    let msg = WsMessage::Text(json.into());
     for cid in &contact_ids {
-        state.hub.send_to(cid, WsMessage::Text(json.clone().into()));
+        state.hub.send_to(cid, msg.clone());
     }
 }
