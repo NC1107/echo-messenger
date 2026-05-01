@@ -42,7 +42,7 @@ dependencies:
   window_manager: ^0.5.1
   local_auth: ^3.0.1
   desktop_drop: ^0.7.1
-  flutter_slidable: ^3.1.1
+  flutter_slidable: ^4.0.3
   # Inline YouTube playback. Backed by webview_flutter which supports
   # iOS / Android / Web / macOS. On Linux + Windows desktop where webview
   # support is limited, the YouTubeEmbed widget falls back to the static
