@@ -79,7 +79,7 @@ jobs:
         with:
           files: apps/client/coverage/lcov.info
           flags: flutter
-          fail_ci_if_error: false
+          fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
 
   smoke-linux:
@@ -128,3 +128,26 @@ jobs:
       - name: Compile smoke (Android debug APK)
         working-directory: apps/client
         run: flutter build apk --debug --no-pub --dart-define=APP_VERSION=smoke
+
+  # ------------------------------------------------------------------
+  # Summary gate — the single check name branch protection should
+  # require: "Flutter CI / Summary".  It passes only when every other
+  # job in this workflow has passed (format, analyze, test, coverage
+  # threshold, smoke builds).
+  # ------------------------------------------------------------------
+  summary:
+    name: Summary
+    runs-on: ubuntu-latest
+    needs: [check, smoke-linux, smoke-android]
+    if: always()
+    steps:
+      - name: All Flutter CI gates passed
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          for r in $results; do
+            if [ "$r" != "success" ]; then
+              echo "::error::One or more Flutter CI jobs failed or were skipped (results: $results)"
+              exit 1
+            fi
+          done
+          echo "All Flutter CI gates passed."

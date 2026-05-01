@@ -167,3 +167,26 @@ jobs:
           path: |
             tests/e2e/test-results/
           retention-days: 7
+
+  # ------------------------------------------------------------------
+  # Summary gate — require "E2E Tests / Summary" in branch protection.
+  # Gates on the smoke lane only; the maintained lane remains
+  # continue-on-error until #673 (CanvasKit selector brittleness) is
+  # resolved and that gate can flip from advisory to required.
+  # ------------------------------------------------------------------
+  summary:
+    name: Summary
+    runs-on: ubuntu-latest
+    needs: [e2e]
+    if: always()
+    steps:
+      - name: E2E smoke gate passed
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          for r in $results; do
+            if [ "$r" != "success" ]; then
+              echo "::error::E2E job failed or was skipped (results: $results)"
+              exit 1
+            fi
+          done
+          echo "E2E smoke gate passed."
