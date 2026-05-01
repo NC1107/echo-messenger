@@ -10,6 +10,13 @@ use serde_json::Value;
 /// padded to exceed Axum's default 2 MB body limit.
 const SYNTHETIC_MP4_SIZE: usize = 3 * 1024 * 1024;
 
+/// 50 MB synthetic MP4 -- exercises the streaming upload path (#680).
+const LARGE_MP4_SIZE: usize = 50 * 1024 * 1024;
+
+/// 101 MB synthetic MP4 -- one byte over `MAX_FILE_SIZE` (100 MB).
+/// The server must reject this before writing the full payload to disk.
+const OVERSIZED_MP4_SIZE: usize = 101 * 1024 * 1024;
+
 fn make_minimal_mp4(size: usize) -> Vec<u8> {
     // Minimal ISO Base Media (ftyp) box: size(4) + "ftyp"(4) + "isom"(4)
     // + minor_version(4) + compatible_brand(4) = 20 bytes total.
@@ -381,5 +388,74 @@ async fn upload_video_larger_than_2mb_returns_201() {
         201,
         "video upload should succeed: body = {}",
         resp.text().await.unwrap_or_default()
+    );
+}
+
+#[tokio::test]
+async fn streaming_upload_50mb_returns_201() {
+    // Validates the streaming upload path (#680): a 50 MB file must be
+    // accepted and persisted without buffering the full payload into RAM.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _, _) = common::register_and_login(&client, &base, "media_50m").await;
+
+    let video_bytes = make_minimal_mp4(LARGE_MP4_SIZE);
+    assert_eq!(video_bytes.len(), LARGE_MP4_SIZE);
+
+    let part = Part::bytes(video_bytes)
+        .file_name("large.mp4")
+        .mime_str("video/mp4")
+        .unwrap();
+    let form = Form::new().part("file", part);
+
+    let resp = client
+        .post(format!("{base}/api/media/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status().as_u16(),
+        201,
+        "50 MB streaming upload should succeed: body = {}",
+        resp.text().await.unwrap_or_default()
+    );
+}
+
+#[tokio::test]
+async fn streaming_upload_oversized_returns_400() {
+    // Validates the streaming size guard (#680): a payload exceeding
+    // MAX_FILE_SIZE (100 MB) must be rejected before the full payload
+    // lands on disk.  The server aborts mid-stream and returns 400.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _, _) = common::register_and_login(&client, &base, "media_101m").await;
+
+    let video_bytes = make_minimal_mp4(OVERSIZED_MP4_SIZE);
+    assert_eq!(video_bytes.len(), OVERSIZED_MP4_SIZE);
+
+    let part = Part::bytes(video_bytes)
+        .file_name("toobig.mp4")
+        .mime_str("video/mp4")
+        .unwrap();
+    let form = Form::new().part("file", part);
+
+    let resp = client
+        .post(format!("{base}/api/media/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+
+    let status = resp.status().as_u16();
+    let body = resp.text().await.unwrap_or_default();
+    // The server rejects oversized uploads with 400 (streaming byte counter)
+    // or 413 (axum DefaultBodyLimit layer), depending on which guard fires first.
+    assert!(
+        status == 400 || status == 413,
+        "oversized upload should be rejected with 400 or 413, got {status}: body = {body}"
     );
 }

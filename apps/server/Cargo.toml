@@ -34,6 +34,8 @@ futures-util = "0.3"
 # Used by link_preview streaming body cap (#684) -- reqwest bytes_stream
 # yields bytes::Bytes, but it's not re-exported, so we depend directly.
 bytes = "1"
+# ReaderStream for streaming file download bodies (#680)
+tokio-util = { version = "0.7", features = ["io"] }
 
 # Connection hub
 dashmap = "6"
