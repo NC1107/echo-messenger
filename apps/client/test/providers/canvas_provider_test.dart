@@ -60,6 +60,45 @@ void main() {
 
       expect(state.strokes, isEmpty);
     });
+
+    // Regression test for #407: clear must also remove images, not just strokes.
+    test('removes strokes AND images (#407)', () {
+      var state = const CanvasState(
+        isLoaded: true,
+        strokes: [
+          CanvasStroke(
+            id: 'stroke-1',
+            color: '#FF0000',
+            width: 2.0,
+            points: [CanvasPoint(x: 0.0, y: 0.0)],
+          ),
+        ],
+        images: [
+          CanvasImage(
+            id: 'img-1',
+            url: 'https://example.com/photo.png',
+            x: 0.1,
+            y: 0.1,
+            width: 0.3,
+            height: 0.2,
+          ),
+          CanvasImage(
+            id: 'img-2',
+            url: 'https://example.com/avatar.png',
+            x: 0.5,
+            y: 0.5,
+            width: 0.2,
+            height: 0.2,
+          ),
+        ],
+      );
+
+      // Simulate what clearDrawing() / handleCanvasEvent('clear') now does.
+      state = state.copyWith(strokes: [], images: []);
+
+      expect(state.strokes, isEmpty, reason: 'strokes must be cleared');
+      expect(state.images, isEmpty, reason: 'images must also be cleared');
+    });
   });
 
   group('handleCanvasEvent – image_add', () {

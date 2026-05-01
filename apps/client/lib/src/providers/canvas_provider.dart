@@ -150,7 +150,7 @@ class CanvasNotifier extends StateNotifier<CanvasState> {
 
   void clearDrawing() {
     if (_channelId == null) return;
-    state = state.copyWith(strokes: []);
+    state = state.copyWith(strokes: [], images: []);
     _sendCanvasEvent('clear', {});
   }
 
@@ -294,7 +294,7 @@ class CanvasNotifier extends StateNotifier<CanvasState> {
         final newStrokes = List<CanvasStroke>.from(state.strokes)..add(stroke);
         state = state.copyWith(strokes: newStrokes);
       case 'clear':
-        state = state.copyWith(strokes: []);
+        state = state.copyWith(strokes: [], images: []);
       case 'image_add':
         final image = CanvasImage.fromJson(payload);
         final newImages = List<CanvasImage>.from(state.images)..add(image);
