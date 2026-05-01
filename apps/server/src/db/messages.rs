@@ -257,14 +257,20 @@ pub async fn get_messages(
 /// (#634), while still exercising the ack queue under realistic backlogs.
 pub const UNDELIVERED_PAGE_SIZE: i64 = 200;
 
-/// Fetch undelivered messages, optionally after a `created_at` cursor.
+/// Fetch undelivered messages, optionally after a `(created_at, id)` cursor.
+/// Composite cursor handles ties when multiple messages share a timestamp;
+/// using `created_at` alone would skip same-tick siblings on the next page.
 /// Callers loop with the cursor until the batch returns
 /// < UNDELIVERED_PAGE_SIZE rows.
 pub async fn get_undelivered(
     pool: &PgPool,
     user_id: Uuid,
-    after_ts: Option<DateTime<Utc>>,
+    after_cursor: Option<(DateTime<Utc>, Uuid)>,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
+    let (after_ts, after_id): (Option<DateTime<Utc>>, Option<Uuid>) = match after_cursor {
+        Some((ts, id)) => (Some(ts), Some(id)),
+        None => (None, None),
+    };
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -284,12 +290,13 @@ pub async fn get_undelivered(
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
                   AND cm.is_removed = false \
          WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
-                  AND ($2::timestamptz IS NULL OR m.created_at > $2) \
-         ORDER BY m.created_at ASC \
-         LIMIT $3",
+                  AND ($2::timestamptz IS NULL OR (m.created_at, m.id) > ($2, $3)) \
+         ORDER BY m.created_at ASC, m.id ASC \
+         LIMIT $4",
     )
     .bind(user_id)
     .bind(after_ts)
+    .bind(after_id)
     .bind(UNDELIVERED_PAGE_SIZE)
     .fetch_all(pool)
     .await

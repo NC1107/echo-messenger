@@ -899,10 +899,11 @@ pub(super) async fn fanout_message(
 /// unencrypted convs, or messages predating multi-device support).
 pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid, device_id: i32) {
     // Cursor-paginated replay; cap iterations against pathological pool errors.
+    // Composite (created_at, id) cursor handles same-tick ties.
     const MAX_ITERATIONS: usize = 50; // 50 * 200 = 10 000 messages per reconnect
-    let mut after_ts: Option<chrono::DateTime<chrono::Utc>> = None;
+    let mut after_cursor: Option<(chrono::DateTime<chrono::Utc>, Uuid)> = None;
     for _iter in 0..MAX_ITERATIONS {
-        let batch = match db::messages::get_undelivered(&state.pool, user_id, after_ts).await {
+        let batch = match db::messages::get_undelivered(&state.pool, user_id, after_cursor).await {
             Ok(msgs) => msgs,
             Err(e) => {
                 tracing::error!(?e, %user_id, "deliver_undelivered: db error -- aborting replay loop");
@@ -916,13 +917,13 @@ pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid
 
         // Advance cursor before processing so a continue-on-error inside the
         // loop body can't infinitely re-fetch the same rows.
-        let last_ts = batch.last().map(|m| m.created_at);
+        let last_cursor = batch.last().map(|m| (m.created_at, m.id));
         let was_full = batch.len() as i64 == db::messages::UNDELIVERED_PAGE_SIZE;
         deliver_one_batch(state, user_id, device_id, batch).await;
         if !was_full {
             return; // last page
         }
-        after_ts = last_ts;
+        after_cursor = last_cursor;
     }
     tracing::warn!(%user_id, "deliver_undelivered: hit MAX_ITERATIONS, deferring remainder to next reconnect");
 }

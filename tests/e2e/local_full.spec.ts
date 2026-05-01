@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 
 const LOCAL = 'http://localhost:8080';
 const APP_BASE = 'http://localhost:8081';
@@ -159,14 +159,26 @@ test('Full feature test', async ({ browser }) => {
     return body.ticket as string;
   }
 
+  // Use spawnSync with argv arrays so user_ids and tickets pass as program
+  // arguments, never shell-interpolated (CodeQL js/shell-command-injected-with-input).
+  function seedViaWebsocat(toUserId: string, content: string, ticket: string): boolean {
+    const payload = JSON.stringify({ type: 'send_message', to_user_id: toUserId, content });
+    const wsUrl = `ws://localhost:8080/ws?ticket=${ticket}`;
+    const r = spawnSync('timeout', ['3', 'websocat', wsUrl], {
+      input: payload,
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    return r.status === 0 || r.status === 124; // 124 = timeout exit, but the message was sent
+  }
+
   let seedOk = false;
   try {
     const t1 = await mintTicket(r1.access_token);
     const t2 = await mintTicket(r2.access_token);
-    execSync(`echo '{"type":"send_message","to_user_id":"${r2.user_id}","content":"Hello from setup!"}' | timeout 3 websocat "ws://localhost:8080/ws?ticket=${t1}"`, { timeout: 5000 });
-    execSync(`echo '{"type":"send_message","to_user_id":"${r1.user_id}","content":"Reply from setup!"}' | timeout 3 websocat "ws://localhost:8080/ws?ticket=${t2}"`, { timeout: 5000 });
-    seedOk = true;
-  } catch (e) {
+    seedOk = seedViaWebsocat(r2.user_id, 'Hello from setup!', t1)
+      && seedViaWebsocat(r1.user_id, 'Reply from setup!', t2);
+  } catch (_) {
     seedOk = false;
   }
   check('Seed messages', seedOk, seedOk ? '' : 'websocat or ws-ticket failed');

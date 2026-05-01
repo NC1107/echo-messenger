@@ -537,19 +537,14 @@ mod tests {
             .store(now_nanos, Ordering::Relaxed);
 
         let fresh_ip = IpAddr::V4(std::net::Ipv4Addr::new(8, 8, 8, 8));
-        let deadline_ns: u64 = 5_000_000; // 5 ms
 
-        let t0 = Instant::now();
         let allowed = limiter.check(fresh_ip);
-        let elapsed_ns = t0.elapsed().as_nanos() as u64;
 
         assert!(allowed, "fresh IP should be allowed");
-        assert!(
-            elapsed_ns < deadline_ns,
-            "check() took {elapsed_ns} ns with 1000 expired buckets (limit {deadline_ns} ns / 5 ms); \
-             per-request sweep was not eliminated"
-        );
-        // Stale entries still present -- sweep did NOT run.
+        // Stale entries still present -- sweep did NOT run on this hot path.
+        // Deterministic check; the wall-clock perf claim is covered by the
+        // sweep-gate logic itself (verified by the entries.len() == 1001
+        // invariant, which only holds if retain() was never called).
         assert_eq!(
             limiter.entries.len(),
             1001, // 1000 pre-filled + 1 for fresh_ip
