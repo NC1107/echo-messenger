@@ -472,8 +472,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       isLoading: convIsLoading,
       error: convError,
     );
-    final (myUserId, myUsername, myAvatarUrl) = ref.watch(
-      authProvider.select((s) => (s.userId, s.username, s.avatarUrl)),
+    final (myUserId, myUsername, myAvatarUrl, myPresenceStatus) = ref.watch(
+      authProvider.select(
+        (s) => (s.userId, s.username, s.avatarUrl, s.presenceStatus),
+      ),
     );
     final userId = myUserId ?? '';
     final username = myUsername ?? 'User';
@@ -523,6 +525,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                   avatarUrl: myAvatarUrl,
                   wsConnected: wsConnected,
                   wsReplaced: wsReplaced,
+                  presenceStatus: myPresenceStatus,
                 ),
             ],
           ),
@@ -1039,6 +1042,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     required String? avatarUrl,
     required bool wsConnected,
     required bool wsReplaced,
+    required String presenceStatus,
   }) {
     return Container(
       height: 56,
@@ -1055,6 +1059,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             serverUrl,
             avatarUrl,
             wsConnected,
+            presenceStatus,
           ),
           const SizedBox(width: 10),
           _buildUserNameAndStatus(context, myUsername, wsConnected, wsReplaced),
@@ -1071,35 +1076,83 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
+  static Color _presenceColor(String status) => switch (status) {
+    'away' => EchoTheme.warning,
+    'dnd' => EchoTheme.danger,
+    'invisible' => const Color(0xFF6B6B6F),
+    _ => EchoTheme.online,
+  };
+
   Widget _buildUserAvatar(
     BuildContext context,
     String myUsername,
     String serverUrl,
     String? avatarUrl,
     bool wsConnected,
+    String presenceStatus,
   ) {
-    return Stack(
-      children: [
-        buildAvatar(
-          name: myUsername,
-          radius: 16,
-          bgColor: context.accent,
-          imageUrl: resolveAvatarUrl(avatarUrl, serverUrl),
-        ),
-        Positioned(
-          bottom: 0,
-          right: 0,
-          child: Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: wsConnected ? EchoTheme.online : EchoTheme.warning,
-              shape: BoxShape.circle,
-              border: Border.all(color: context.mainBg, width: 2),
+    final dotColor = wsConnected
+        ? _presenceColor(presenceStatus)
+        : EchoTheme.warning;
+
+    return Semantics(
+      label: 'Status: $presenceStatus. Tap to change.',
+      button: true,
+      child: PopupMenuButton<String>(
+        key: const Key('status-picker'),
+        tooltip: 'Change status',
+        offset: const Offset(0, -160),
+        onSelected: (status) {
+          ref.read(authProvider.notifier).setPresenceStatus(status);
+        },
+        itemBuilder: (_) => const [
+          PopupMenuItem(
+            value: 'online',
+            child: _StatusMenuItem(label: 'Online', color: EchoTheme.online),
+          ),
+          PopupMenuItem(
+            value: 'away',
+            child: _StatusMenuItem(label: 'Away', color: EchoTheme.warning),
+          ),
+          PopupMenuItem(
+            value: 'dnd',
+            child: _StatusMenuItem(
+              label: 'Do Not Disturb',
+              color: EchoTheme.danger,
             ),
           ),
+          PopupMenuItem(
+            value: 'invisible',
+            child: _StatusMenuItem(
+              label: 'Invisible',
+              color: Color(0xFF6B6B6F),
+            ),
+          ),
+        ],
+        child: Stack(
+          children: [
+            buildAvatar(
+              name: myUsername,
+              radius: 16,
+              bgColor: context.accent,
+              imageUrl: resolveAvatarUrl(avatarUrl, serverUrl),
+            ),
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: dotColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: context.mainBg, width: 2),
+                ),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -1488,6 +1541,32 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ],
       ),
       child: item,
+    );
+  }
+}
+
+/// Row widget used inside the status picker popup menu.
+///
+/// Each entry shows a coloured presence dot and a label, matching the visual
+/// language used in conversation list items and user profile screens.
+class _StatusMenuItem extends StatelessWidget {
+  const _StatusMenuItem({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 10),
+        Text(label),
+      ],
     );
   }
 }
