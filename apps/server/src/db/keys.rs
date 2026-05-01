@@ -128,6 +128,9 @@ pub async fn clear_device_fingerprint(
 /// UI can show "iOS", "Linux", etc. Omitted platforms leave the existing value
 /// intact (useful for OTP replenishment that re-uploads the identity without
 /// new metadata).
+///
+/// On conflict (re-upload of the same device), `revoked_at` is cleared so that
+/// a fresh key bundle re-activates a previously revoked device slot (#657).
 pub async fn store_identity_key(
     db: impl sqlx::PgExecutor<'_>,
     user_id: Uuid,
@@ -142,7 +145,8 @@ pub async fn store_identity_key(
          ON CONFLICT (user_id, device_id) DO UPDATE \
          SET identity_key = $3, \
              signing_key = $4, \
-             platform = COALESCE($5, identity_keys.platform)",
+             platform = COALESCE($5, identity_keys.platform), \
+             revoked_at = NULL",
     )
     .bind(user_id)
     .bind(device_id)
@@ -259,9 +263,10 @@ pub async fn get_prekey_bundle(
     user_id: Uuid,
     device_id: i32,
 ) -> Result<Option<PreKeyBundleRow>, sqlx::Error> {
-    // Fetch identity key for this device
+    // Exclude revoked rows — revoked devices must not supply bundles (#657).
     let identity_row: Option<(Vec<u8>, Option<Vec<u8>>)> = sqlx::query_as(
-        "SELECT identity_key, signing_key FROM identity_keys WHERE user_id = $1 AND device_id = $2",
+        "SELECT identity_key, signing_key FROM identity_keys \
+         WHERE user_id = $1 AND device_id = $2 AND revoked_at IS NULL",
     )
     .bind(user_id)
     .bind(device_id)
@@ -331,10 +336,11 @@ pub async fn get_all_prekey_bundles(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<Vec<(i32, PreKeyBundleRow)>, sqlx::Error> {
+    // Exclude revoked devices so senders can't encrypt to them (#657).
     let identity_rows: Vec<(i32, Vec<u8>, Option<Vec<u8>>)> = sqlx::query_as(
         "SELECT device_id, identity_key, signing_key \
          FROM identity_keys \
-         WHERE user_id = $1 \
+         WHERE user_id = $1 AND revoked_at IS NULL \
          ORDER BY device_id DESC \
          LIMIT 10",
     )
@@ -426,12 +432,12 @@ pub struct DeviceRow {
 }
 
 /// Return devices registered for a given user (capped at 10), including
-/// their platform and last-seen timestamp.
+/// their platform and last-seen timestamp. Excludes revoked devices (#657).
 pub async fn get_user_devices(pool: &PgPool, user_id: Uuid) -> Result<Vec<DeviceRow>, sqlx::Error> {
     sqlx::query_as::<_, DeviceRow>(
         "SELECT device_id, platform, last_seen \
          FROM identity_keys \
-         WHERE user_id = $1 \
+         WHERE user_id = $1 AND revoked_at IS NULL \
          ORDER BY device_id DESC \
          LIMIT 10",
     )
@@ -441,7 +447,8 @@ pub async fn get_user_devices(pool: &PgPool, user_id: Uuid) -> Result<Vec<Device
 }
 
 /// Update the `last_seen` timestamp for a user's device to NOW(). Called on
-/// WebSocket connect so the device list reflects recent activity.
+/// WebSocket connect so the device list reflects recent activity. Only updates
+/// active (non-revoked) rows (#657).
 pub async fn update_last_seen(
     pool: &PgPool,
     user_id: Uuid,
@@ -449,7 +456,7 @@ pub async fn update_last_seen(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "UPDATE identity_keys SET last_seen = NOW() \
-         WHERE user_id = $1 AND device_id = $2",
+         WHERE user_id = $1 AND device_id = $2 AND revoked_at IS NULL",
     )
     .bind(user_id)
     .bind(device_id)
@@ -459,7 +466,11 @@ pub async fn update_last_seen(
 }
 
 /// Revoke all keys for a specific (user_id, device_id) pair.
-/// Returns true if any rows were deleted, false if the device was not found.
+///
+/// Soft-deletes the `identity_keys` row by stamping `revoked_at` so the fanout
+/// filter can distinguish "revoked" from "never registered" (#657). Prekeys are
+/// hard-deleted because they are useless after revocation.
+/// Returns true if the device was found and is now revoked, false if not found.
 pub async fn revoke_device(
     pool: &PgPool,
     user_id: Uuid,
@@ -467,13 +478,18 @@ pub async fn revoke_device(
 ) -> Result<bool, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    // Delete identity key binding first (FK constraint from prekeys)
-    let r1 = sqlx::query("DELETE FROM identity_keys WHERE user_id = $1 AND device_id = $2")
-        .bind(user_id)
-        .bind(device_id)
-        .execute(&mut *tx)
-        .await?;
+    // Soft-delete: stamp revoked_at instead of hard-deleting so the fanout
+    // filter can detect "was revoked" vs "never existed" (#657).
+    let r1 = sqlx::query(
+        "UPDATE identity_keys SET revoked_at = NOW() \
+         WHERE user_id = $1 AND device_id = $2 AND revoked_at IS NULL",
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .execute(&mut *tx)
+    .await?;
 
+    // Prekeys are worthless after revocation; hard-delete them.
     sqlx::query("DELETE FROM signed_prekeys WHERE user_id = $1 AND device_id = $2")
         .bind(user_id)
         .bind(device_id)
@@ -493,6 +509,9 @@ pub async fn revoke_device(
 /// Revoke every device belonging to `user_id` except `keep_device_id` in a
 /// single transaction. Returns the list of device IDs that were revoked so the
 /// caller can fan out WS notifications without another DB round-trip.
+///
+/// Like `revoke_device`, uses a soft-delete on `identity_keys` so the fanout
+/// filter can distinguish revoked from never-registered devices (#657).
 pub async fn revoke_devices_except(
     pool: &PgPool,
     user_id: Uuid,
@@ -500,21 +519,27 @@ pub async fn revoke_devices_except(
 ) -> Result<Vec<i32>, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
+    // Collect only the currently active (non-revoked) device IDs being revoked.
     let revoked: Vec<(i32,)> = sqlx::query_as(
         "SELECT device_id FROM identity_keys \
-         WHERE user_id = $1 AND device_id != $2",
+         WHERE user_id = $1 AND device_id != $2 AND revoked_at IS NULL",
     )
     .bind(user_id)
     .bind(keep_device_id)
     .fetch_all(&mut *tx)
     .await?;
 
-    sqlx::query("DELETE FROM identity_keys WHERE user_id = $1 AND device_id != $2")
-        .bind(user_id)
-        .bind(keep_device_id)
-        .execute(&mut *tx)
-        .await?;
+    // Soft-delete all other active devices (#657).
+    sqlx::query(
+        "UPDATE identity_keys SET revoked_at = NOW() \
+         WHERE user_id = $1 AND device_id != $2 AND revoked_at IS NULL",
+    )
+    .bind(user_id)
+    .bind(keep_device_id)
+    .execute(&mut *tx)
+    .await?;
 
+    // Prekeys are worthless after revocation; hard-delete them.
     sqlx::query("DELETE FROM signed_prekeys WHERE user_id = $1 AND device_id != $2")
         .bind(user_id)
         .bind(keep_device_id)
@@ -530,6 +555,34 @@ pub async fn revoke_devices_except(
     tx.commit().await?;
 
     Ok(revoked.into_iter().map(|(id,)| id).collect())
+}
+
+/// Return a map of `user_id → [revoked device_ids]` for the given users.
+///
+/// Used by the message fanout filter (#657): entries in
+/// `recipient_device_contents` whose `(user_id, device_id)` appears in the
+/// returned map are dropped before routing. Entries absent from both the
+/// active AND the revoked set (e.g. test fixtures that never uploaded identity
+/// keys) are passed through unchanged.
+pub async fn get_revoked_devices_for_users(
+    pool: &PgPool,
+    user_ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, Vec<i32>>, sqlx::Error> {
+    if user_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let rows: Vec<(Uuid, i32)> = sqlx::query_as(
+        "SELECT user_id, device_id FROM identity_keys \
+         WHERE user_id = ANY($1) AND revoked_at IS NOT NULL",
+    )
+    .bind(user_ids)
+    .fetch_all(pool)
+    .await?;
+    let mut map: std::collections::HashMap<Uuid, Vec<i32>> = std::collections::HashMap::new();
+    for (uid, did) in rows {
+        map.entry(uid).or_default().push(did);
+    }
+    Ok(map)
 }
 
 /// Count available (unused) one-time prekeys for a user's device.

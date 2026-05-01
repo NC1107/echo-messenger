@@ -869,6 +869,41 @@ pub(super) async fn fanout_message(
         .await
         .unwrap_or_default();
 
+    // #657: Strip ciphertexts destined for explicitly revoked devices before
+    // building per-device frames. Devices with NO identity_keys row at all
+    // (test fixtures, fresh registrations) are passed through unchanged — only
+    // rows with a non-NULL revoked_at are dropped.
+    let recipient_device_contents = if let Some(rdc) = recipient_device_contents {
+        let recipient_ids: Vec<Uuid> = rdc.keys().filter_map(|s| Uuid::parse_str(s).ok()).collect();
+        let revoked_map = db::keys::get_revoked_devices_for_users(&state.pool, &recipient_ids)
+            .await
+            .unwrap_or_default();
+        if revoked_map.is_empty() {
+            Some(rdc)
+        } else {
+            let filtered: RecipientDeviceContents = rdc
+                .into_iter()
+                .filter_map(|(uid_str, devices)| {
+                    let uid = Uuid::parse_str(&uid_str).ok()?;
+                    let revoked_dids = revoked_map.get(&uid);
+                    let kept: HashMap<String, String> = devices
+                        .into_iter()
+                        .filter(|(did_str, _)| {
+                            let Ok(did) = did_str.parse::<i32>() else {
+                                return true;
+                            };
+                            !revoked_dids.is_some_and(|rv| rv.contains(&did))
+                        })
+                        .collect();
+                    Some((uid_str, kept))
+                })
+                .collect();
+            Some(filtered)
+        }
+    } else {
+        None
+    };
+
     // Pre-build per-recipient WsMessage values and the legacy fallback once
     // before the fanout loop so no serialization or String allocation happens
     // per recipient (#690). Both paths store Bytes-backed WsMessage::Text;

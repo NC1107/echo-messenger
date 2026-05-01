@@ -1204,6 +1204,135 @@ async fn encrypted_group_accepts_ciphertext_shaped_content() {
 }
 
 // ---------------------------------------------------------------------------
+// Revoked-device fanout filter (#657)
+// ---------------------------------------------------------------------------
+
+/// Regression test: ciphertexts addressed to a revoked device must NOT be
+/// delivered, while the sibling active device still receives its ciphertext.
+///
+/// Setup: Alice and Bob are contacts. Bob uploads identity bundles for devices
+/// 11 and 22, then revokes device 22. Alice sends with per-device ciphertexts
+/// for both 11 and 22. Device 11 MUST receive `new_message`; device 22 MUST
+/// NOT receive anything within a 300 ms window.
+#[tokio::test]
+async fn revoked_device_excluded_from_fanout() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, alice_id, alice_name) =
+        common::register_and_login(&client, &base, "rev657_alice").await;
+    let (bob_token, bob_id, bob_name) =
+        common::register_and_login(&client, &base, "rev657_bob").await;
+
+    common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+    // Bob registers valid PreKey bundles for device 11 (active) and 22 (to be revoked).
+    common::upload_prekey_bundle(&client, &base, &bob_token, 11, 1).await;
+    common::upload_prekey_bundle(&client, &base, &bob_token, 22, 1).await;
+
+    // Revoke Bob's device 22.
+    let revoke_resp = client
+        .delete(format!("{base}/api/keys/device/22"))
+        .bearer_auth(&bob_token)
+        .send()
+        .await
+        .expect("revoke request failed");
+    assert!(revoke_resp.status().is_success(), "revoke device 22 failed");
+
+    // Alice connects on her device.
+    let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+
+    // Bob's active device 11 connects.
+    let bob_d11_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 11).await;
+    let mut bob_d11_ws = connect_ws(&base, &bob_d11_ticket).await;
+
+    // Bob's revoked device 22 also connects (it is still a valid WS session;
+    // only the fanout filter should silence it).
+    let bob_d22_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 22).await;
+    let mut bob_d22_ws = connect_ws(&base, &bob_d22_ticket).await;
+
+    drain_pending(&mut alice_ws).await;
+    drain_pending(&mut bob_d11_ws).await;
+    drain_pending(&mut bob_d22_ws).await;
+
+    let d11_ct = common::dummy_ciphertext("rev657_d11");
+    let d22_ct = common::dummy_ciphertext("rev657_d22");
+    let canonical = common::dummy_ciphertext("rev657_canonical");
+
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "to_user_id": bob_id,
+        "content": canonical,
+        "recipient_device_contents": {
+            bob_id.to_string(): {
+                "11": d11_ct.clone(),
+                "22": d22_ct.clone(),
+            },
+            alice_id.to_string(): {
+                "1": common::dummy_ciphertext("rev657_alice_d1"),
+            },
+        },
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("Alice send failed");
+
+    // Alice gets message_sent.
+    let ack = read_text_skipping_presence(&mut alice_ws).await;
+    let ack_val: Value = serde_json::from_str(&ack).unwrap();
+    assert_eq!(
+        ack_val["type"], "message_sent",
+        "Alice should get message_sent"
+    );
+
+    // Device 11 (active) MUST receive its ciphertext.
+    let d11_text = read_text_skipping_presence(&mut bob_d11_ws).await;
+    let d11_val: Value = serde_json::from_str(&d11_text).unwrap();
+    assert_eq!(
+        d11_val["type"], "new_message",
+        "device 11 should get new_message"
+    );
+    assert_eq!(
+        d11_val["content"], d11_ct,
+        "device 11 must receive its own ciphertext"
+    );
+    assert_eq!(d11_val["from_username"], alice_name.as_str());
+
+    // Device 22 (revoked) must NOT receive new_message within 300 ms.
+    let d22_silent = tokio::time::timeout(
+        std::time::Duration::from_millis(300),
+        recv_new_message(&mut bob_d22_ws),
+    )
+    .await;
+    assert!(
+        d22_silent.is_err(),
+        "revoked device 22 must not receive new_message, got: {d22_silent:?}"
+    );
+
+    let _ = alice_ws.close(None).await;
+    let _ = bob_d11_ws.close(None).await;
+    let _ = bob_d22_ws.close(None).await;
+}
+
+/// Helper: read frames until a `new_message` arrives, ignoring presence noise.
+async fn recv_new_message(ws: &mut WsStream) -> Value {
+    loop {
+        match ws.next().await {
+            Some(Ok(Message::Text(text))) => {
+                let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+                if v["type"] == "new_message" {
+                    return v;
+                }
+            }
+            Some(Ok(Message::Ping(_) | Message::Pong(_))) => continue,
+            _ => futures_util::future::pending::<()>().await,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
