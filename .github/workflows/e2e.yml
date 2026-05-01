@@ -28,9 +28,6 @@ concurrency:
   group: e2e-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  FLUTTER_VERSION: "3.41.x"
-
 jobs:
   e2e:
     name: End-to-End Tests
@@ -64,7 +61,7 @@ jobs:
       # -- Flutter web --
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version-file: .flutter-version
           channel: stable
           cache: true
       - name: Build web client
@@ -81,7 +78,7 @@ jobs:
           curl --retry 10 --retry-delay 2 --retry-connrefused -s http://localhost:8080/api/health
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
-          JWT_SECRET: ci-e2e-secret-do-not-use-in-production
+          JWT_SECRET: ${{ format('{0}{1}', github.run_id, github.run_attempt) }}
           RUST_LOG: echo_server=info
           SERVER_HOST: 0.0.0.0
           SERVER_PORT: 8080
@@ -142,7 +139,7 @@ jobs:
         run: npx playwright test --project=smoke --retries=1
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
-          JWT_SECRET: ci-e2e-secret-do-not-use-in-production
+          JWT_SECRET: ${{ format('{0}{1}', github.run_id, github.run_attempt) }}
 
       - name: Run maintained E2E suite
         # Maintained lane: targeted UI and protocol specs (semantics_e2e,
@@ -157,7 +154,7 @@ jobs:
         run: npx playwright test --project=maintained --retries=2
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
-          JWT_SECRET: ci-e2e-secret-do-not-use-in-production
+          JWT_SECRET: ${{ format('{0}{1}', github.run_id, github.run_attempt) }}
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
