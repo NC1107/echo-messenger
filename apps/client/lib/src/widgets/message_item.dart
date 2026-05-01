@@ -148,6 +148,7 @@ class _MessageItemState extends State<MessageItem>
   bool _swipeTriggered = false;
   Timer? _expireTimer;
   late final AnimationController _swipeAnimController;
+  late final ScrollController _reactionScrollController;
 
   @override
   void initState() {
@@ -156,6 +157,7 @@ class _MessageItemState extends State<MessageItem>
       vsync: this,
       duration: const Duration(milliseconds: 200),
     );
+    _reactionScrollController = ScrollController();
     _scheduleExpireTimer();
   }
 
@@ -171,6 +173,7 @@ class _MessageItemState extends State<MessageItem>
   @override
   void dispose() {
     _swipeAnimController.dispose();
+    _reactionScrollController.dispose();
     _expireTimer?.cancel();
     super.dispose();
   }
@@ -446,89 +449,151 @@ class _MessageItemState extends State<MessageItem>
   /// Quick reaction emoji row for the mobile action sheet.
   ///
   /// Wrapped in a horizontal-fade ShaderMask so the leading and trailing edges
-  /// hint at off-screen reactions (#508).
+  /// hint at off-screen reactions (#508). On desktop, mouse-only chevron buttons
+  /// appear at the edges to scroll through reactions (#577).
   Widget _buildQuickReactionRow(BuildContext sheetContext, ChatMessage msg) {
     final textDir = Directionality.of(sheetContext);
-    return ShaderMask(
-      blendMode: BlendMode.dstIn,
-      shaderCallback: (bounds) => const LinearGradient(
-        begin: AlignmentDirectional.centerStart,
-        end: AlignmentDirectional.centerEnd,
-        stops: [0.0, 0.04, 0.96, 1.0],
-        colors: [
-          Colors.transparent,
-          Colors.black,
-          Colors.black,
-          Colors.transparent,
-        ],
-      ).createShader(bounds, textDirection: textDir),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          children: [
-            for (final emoji in reactionEmojis) ...[
-              Builder(
-                builder: (_) {
-                  final alreadyReacted = msg.reactions.any(
-                    (r) => r.emoji == emoji && r.userId == widget.myUserId,
-                  );
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      widget.onReactionSelect?.call(msg, emoji);
-                    },
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: alreadyReacted
-                            ? context.accent.withValues(alpha: 0.2)
-                            : null,
-                        borderRadius: BorderRadius.circular(8),
-                        border: alreadyReacted
-                            ? Border.all(color: context.accent, width: 2)
-                            : null,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Stack(
+        alignment: AlignmentDirectional.centerEnd,
+        children: [
+          ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (bounds) => const LinearGradient(
+              begin: AlignmentDirectional.centerStart,
+              end: AlignmentDirectional.centerEnd,
+              stops: [0.0, 0.04, 0.96, 1.0],
+              colors: [
+                Colors.transparent,
+                Colors.black,
+                Colors.black,
+                Colors.transparent,
+              ],
+            ).createShader(bounds, textDirection: textDir),
+            child: SingleChildScrollView(
+              controller: _reactionScrollController,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  for (final emoji in reactionEmojis) ...[
+                    Builder(
+                      builder: (_) {
+                        final alreadyReacted = msg.reactions.any(
+                          (r) =>
+                              r.emoji == emoji && r.userId == widget.myUserId,
+                        );
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.pop(sheetContext);
+                            widget.onReactionSelect?.call(msg, emoji);
+                          },
+                          child: Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: alreadyReacted
+                                  ? context.accent.withValues(alpha: 0.2)
+                                  : null,
+                              borderRadius: BorderRadius.circular(8),
+                              border: alreadyReacted
+                                  ? Border.all(color: context.accent, width: 2)
+                                  : null,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              emoji,
+                              style: const TextStyle(
+                                fontSize: 24,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  Semantics(
+                    button: true,
+                    label: 'More emojis',
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        widget.onMoreReactions?.call(msg);
+                      },
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          Icons.add_reaction_outlined,
+                          size: 24,
+                          color: context.accent,
+                        ),
                       ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        emoji,
-                        style: const TextStyle(
-                          fontSize: 24,
-                          decoration: TextDecoration.none,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (!_isMobilePlatform)
+            IgnorePointer(
+              ignoring: false,
+              child: ListenableBuilder(
+                listenable: _reactionScrollController,
+                builder: (context, _) {
+                  final scrollExtent =
+                      _reactionScrollController.position.maxScrollExtent;
+                  final canScroll = scrollExtent > 0;
+                  final canScrollRight =
+                      _reactionScrollController.offset < scrollExtent;
+
+                  if (!canScroll || !canScrollRight) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 4),
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.click,
+                      child: GestureDetector(
+                        onTap: () {
+                          _reactionScrollController.animateTo(
+                            (_reactionScrollController.offset + 80).clamp(
+                              0,
+                              scrollExtent,
+                            ),
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeOut,
+                          );
+                        },
+                        child: Container(
+                          width: 32,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: context.surface.withValues(alpha: 0.95),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            Icons.chevron_right,
+                            size: 20,
+                            color: context.accent,
+                          ),
                         ),
                       ),
                     ),
                   );
                 },
               ),
-              const SizedBox(width: 4),
-            ],
-            Semantics(
-              button: true,
-              label: 'More emojis',
-              child: GestureDetector(
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  widget.onMoreReactions?.call(msg);
-                },
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.add_reaction_outlined,
-                    size: 24,
-                    color: context.accent,
-                  ),
-                ),
-              ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

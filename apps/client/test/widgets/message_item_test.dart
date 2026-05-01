@@ -662,6 +662,51 @@ void main() {
       });
     });
 
+    testWidgets('reaction quick-pick renders on mobile action sheet (#577)', (
+      tester,
+    ) async {
+      // Verify the reaction quick-pick row renders in the mobile action sheet.
+      // The chevron button is conditionally rendered on desktop when scroll
+      // is possible; this test confirms the quick-pick structure is intact.
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(isMine: true, fromUserId: 'test-user-id');
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+            onReactionTap: (m, _) {},
+            onReactionSelect: (m, emoji) {},
+          ),
+        );
+        await tester.pump();
+
+        // Long press to open mobile action sheet
+        await tester.longPress(find.text('Hello world'));
+        await tester.pumpAndSettle();
+
+        // The quick-pick row should have the "More emojis" button
+        expect(
+          find.byIcon(Icons.add_reaction_outlined),
+          findsAtLeastNWidgets(1),
+          reason: 'Quick-pick row must include More emojis button (#577)',
+        );
+
+        // All default emoji should be present
+        expect(
+          find.text('👍'),
+          findsOneWidget,
+          reason: 'Quick-pick should render first emoji (thumbs up)',
+        );
+      });
+    });
+
     // -------------------------------------------------------------------
     // #582 — encrypted-conversation edit affordance gating
     // -------------------------------------------------------------------
