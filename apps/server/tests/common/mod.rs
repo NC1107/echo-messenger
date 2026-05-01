@@ -198,6 +198,62 @@ pub fn unique_username(prefix: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// WebSocket helpers (audit #695)
+// ---------------------------------------------------------------------------
+//
+// 32 integration tests sat on a `tokio::time::sleep(200ms); drain_pending()`
+// pattern to wait for chatter to arrive before reading a specific frame.
+// Under CI load (cargo running 250+ tests in parallel) the 200ms became
+// brittle and tests flaked intermittently. These helpers replace the
+// wall-clock waits with predicate-based reads bounded by an explicit
+// timeout, mirroring the pattern that already worked in
+// `api_messages_reply_scope.rs::wait_for_event`.
+
+/// WebSocket stream type used by the integration suite.
+pub type WsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+/// Read frames until one whose `type` field is in `wanted` arrives, or fail
+/// after `Duration::from_secs(5)`.  Skips presence/typing/echo chatter the
+/// caller didn't ask about.
+///
+/// Use this in place of `tokio::time::sleep(200ms); drain_pending()` when
+/// you know the next interesting frame's type.
+pub async fn recv_until_event(ws: &mut WsStream, wanted: &[&str]) -> serde_json::Value {
+    use futures_util::StreamExt;
+    use std::time::Duration;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let next = tokio::time::timeout_at(deadline, ws.next())
+            .await
+            .expect("timed out waiting for event");
+        let frame = next.expect("WS stream closed").expect("WS error");
+        if let tokio_tungstenite::tungstenite::Message::Text(text) = frame
+            && let Ok(v) = serde_json::from_str::<serde_json::Value>(&text)
+            && let Some(t) = v["type"].as_str()
+            && wanted.contains(&t)
+        {
+            return v;
+        }
+    }
+}
+
+/// Read every immediately-available frame and discard.  Returns once 150ms
+/// pass without a new frame.  Use after a write to swallow chatter when no
+/// specific reply is expected.
+///
+/// Prefer `recv_until_event` when you know the expected event type --
+/// `drain_pending` accepts the lossy "best effort" model that the audit
+/// flagged as flaky, but kept here as an escape hatch for tests where the
+/// next interesting frame depends on inputs the test deliberately doesn't
+/// know.
+pub async fn drain_pending(ws: &mut WsStream) {
+    use futures_util::StreamExt;
+    use std::time::Duration;
+    while let Ok(Some(Ok(_))) = tokio::time::timeout(Duration::from_millis(150), ws.next()).await {}
+}
+
+// ---------------------------------------------------------------------------
 // Convenience helpers
 // ---------------------------------------------------------------------------
 

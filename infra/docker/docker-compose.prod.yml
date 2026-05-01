@@ -44,7 +44,7 @@ services:
       - traefik
 
   postgres:
-    image: postgres:17
+    image: postgres:17.6
     restart: unless-stopped
     environment:
       POSTGRES_DB: echo_prod
@@ -63,8 +63,18 @@ services:
   livekit:
     image: livekit/livekit-server:v1.10.1
     restart: unless-stopped
+    # Signaling (7880) is bound to localhost only -- public access must go
+    # through Traefik with TLS via the labels below.  Direct 0.0.0.0 binding
+    # bypassed TLS termination and let anyone hit the API-key surface.
+    # Media TURN/UDP ports remain public; deploy docs must require
+    # `ufw allow 7881/tcp,7882/udp,50000:50200/udp` on the host.
+    #
+    # DEPLOY NOTE: this requires a DNS A record for livekit.echo-messenger.us
+    # pointing at this host *and* the client's LiveKit URL configured to
+    # `wss://livekit.echo-messenger.us`.  Until both are in place, voice/video
+    # connectivity will fail.  Reverting to public 7880 must not be done.
     ports:
-      - "7880:7880"
+      - "127.0.0.1:7880:7880"
       - "7881:7881"
       - "7882:7882/udp"
       - "50000-50200:50000-50200/udp"
@@ -73,7 +83,14 @@ services:
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml
     command: ["--config", "/etc/livekit.yaml"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.echo-livekit.rule=Host(`livekit.echo-messenger.us`)"
+      - "traefik.http.routers.echo-livekit.tls=true"
+      - "traefik.http.routers.echo-livekit.tls.certresolver=cloudflare"
+      - "traefik.http.services.echo-livekit.loadbalancer.server.port=7880"
     networks:
+      - traefik
       - echo-internal
 
   # Watchtower removed: auto-pulling `latest` every 5 minutes risks deploying
@@ -83,7 +100,7 @@ services:
   #   SERVER_VERSION=v1.2.3 WEB_VERSION=v1.2.3 docker compose pull && docker compose up -d
 
   backup:
-    image: prodrigestivill/postgres-backup-local:17
+    image: prodrigestivill/postgres-backup-local:17.6
     restart: unless-stopped
     environment:
       POSTGRES_HOST: postgres

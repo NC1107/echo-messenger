@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+part 'biometric_provider.g.dart';
 
 const _kBiometricLockKey = 'biometric_lock_enabled';
 
@@ -25,15 +27,12 @@ class BiometricState {
   }
 }
 
-class BiometricNotifier extends StateNotifier<BiometricState> {
-  BiometricNotifier() : super(const BiometricState()) {
-    _init();
-  }
-
-  /// Named constructor for tests: sets initial state without running [_init].
-  @visibleForTesting
-  BiometricNotifier.forTest(super.initial);
-
+/// Migrated from `StateNotifier` to `@riverpod` Notifier (audit 2026-04-30).
+/// Singleton lifetime via `keepAlive: true` because the lock-session timer
+/// (`_lastAuthTime` + `_lockTimeout`) lives on the notifier instance and
+/// the auto-dispose default would lose it whenever no widget is watching.
+@Riverpod(keepAlive: true)
+class Biometric extends _$Biometric {
   final _auth = LocalAuthentication();
 
   bool _authenticatedThisSession = false;
@@ -44,6 +43,12 @@ class BiometricNotifier extends StateNotifier<BiometricState> {
   bool get isSessionValid {
     if (!_authenticatedThisSession || _lastAuthTime == null) return false;
     return DateTime.now().difference(_lastAuthTime!) < _lockTimeout;
+  }
+
+  @override
+  BiometricState build() {
+    _init();
+    return const BiometricState();
   }
 
   Future<void> _init() async {
@@ -103,8 +108,3 @@ class BiometricNotifier extends StateNotifier<BiometricState> {
     }
   }
 }
-
-final biometricProvider =
-    StateNotifierProvider<BiometricNotifier, BiometricState>(
-      (_) => BiometricNotifier(),
-    );

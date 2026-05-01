@@ -93,7 +93,11 @@ pub async fn list_public_groups(
 ) -> Result<Vec<PublicGroupRow>, sqlx::Error> {
     match search {
         Some(term) => {
-            let pattern = format!("%{}%", term);
+            let escaped = term
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            let pattern = format!("%{escaped}%");
             sqlx::query_as::<_, PublicGroupRow>(
                 "SELECT c.id, c.title, \
                  COUNT(cm.user_id) AS member_count, c.created_at, \
@@ -104,7 +108,7 @@ pub async fn list_public_groups(
                  LEFT JOIN conversation_members cm \
                    ON cm.conversation_id = c.id AND cm.is_removed = false \
                  WHERE c.is_public = true AND c.kind = 'group' \
-                   AND c.title ILIKE $1 \
+                   AND c.title ILIKE $1 ESCAPE '\\' \
                  GROUP BY c.id \
                  ORDER BY c.created_at DESC \
                  LIMIT $3 OFFSET $4",
@@ -265,14 +269,20 @@ pub async fn remove_member(
 }
 
 /// Get all member user IDs for a conversation (works for both DMs and groups).
-pub async fn get_conversation_member_ids(
-    pool: &PgPool,
+///
+/// Generic over `Executor` so callers can reuse the existing tx during
+/// upload_group_key validation (#686).
+pub async fn get_conversation_member_ids<'e, E>(
+    executor: E,
     conversation_id: Uuid,
-) -> Result<Vec<Uuid>, sqlx::Error> {
+) -> Result<Vec<Uuid>, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     let rows: Vec<(Uuid,)> =
         sqlx::query_as("SELECT user_id FROM conversation_members WHERE conversation_id = $1 AND is_removed = false")
             .bind(conversation_id)
-            .fetch_all(pool)
+            .fetch_all(executor)
             .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }

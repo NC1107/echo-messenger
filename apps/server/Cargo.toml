@@ -30,6 +30,9 @@ argon2 = "0.5"
 
 # WebSocket / async
 futures-util = "0.3"
+# Used by link_preview streaming body cap (#684) -- reqwest bytes_stream
+# yields bytes::Bytes, but it's not re-exported, so we depend directly.
+bytes = "1"
 
 # Connection hub
 dashmap = "6"
@@ -47,11 +50,16 @@ rand = "0.10"
 # Signal Protocol signature verification
 ed25519-dalek = { version = "2", features = ["std"] }
 
+# Shared wire-format constants (#700).
+echo-core = { version = "0.1.0", path = "../../core/rust-core" }
+
 # Tracing
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # HTTP client (link previews)
-reqwest = { version = "0.13", features = ["json"] }
+# `stream` feature exposes Response::bytes_stream() for incremental body
+# reads with a hard cap (#684).
+reqwest = { version = "0.13", features = ["json", "stream"] }
 
 # File type detection (magic bytes)
 infer = "0.19"

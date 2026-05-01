@@ -61,8 +61,6 @@ async fn setup_dm_with_message(
         .await
         .expect("WS connect failed");
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
     // Drain initial events
     while let Ok(Some(Ok(_))) = tokio::time::timeout(Duration::from_millis(100), ws.next()).await {}
 
@@ -209,7 +207,6 @@ async fn edit_message_on_unencrypted_group_succeeds() {
     let (mut ws, _) = tokio_tungstenite::connect_async(format!("{ws_url}/ws?ticket={ticket}"))
         .await
         .expect("WS connect failed");
-    tokio::time::sleep(Duration::from_millis(200)).await;
     while let Ok(Some(Ok(_))) = tokio::time::timeout(Duration::from_millis(100), ws.next()).await {}
 
     ws.send(Message::Text(
@@ -579,12 +576,12 @@ async fn create_dm_idempotent() {
     );
 }
 
-/// Concurrent DM creation must not produce duplicate conversations.
+/// Concurrent DM creation must not produce duplicate conversations (#525).
 ///
-/// Before the fix, two simultaneous POST /api/conversations/dm requests for the
-/// same user pair could both pass the "not found" check and each insert a new
-/// conversation, violating the one-DM-per-pair invariant.  After the fix, both
-/// requests must return the same conversation_id.
+/// Five simultaneous POST /api/conversations/dm requests for the same user pair
+/// are fired with no prior DM existing.  The `pg_advisory_xact_lock` added to
+/// `find_or_create_dm_conversation` serializes slow-path creators at the DB
+/// level, so all five must return the identical conversation_id.
 #[tokio::test]
 async fn create_dm_concurrent_no_duplicate() {
     let base = common::spawn_server().await;
@@ -613,34 +610,53 @@ async fn create_dm_concurrent_no_duplicate() {
         .await
         .unwrap();
 
-    // Fire two concurrent DM-create requests from Alice toward Bob.
-    let (r1, r2) = tokio::join!(
-        client
-            .post(format!("{base}/api/conversations/dm"))
-            .header("Authorization", format!("Bearer {alice_token}"))
-            .json(&serde_json::json!({ "peer_user_id": bob_id }))
-            .send(),
-        client
-            .post(format!("{base}/api/conversations/dm"))
-            .header("Authorization", format!("Bearer {alice_token}"))
-            .json(&serde_json::json!({ "peer_user_id": bob_id }))
-            .send(),
-    );
+    // Fire 5 concurrent DM-create requests; all must return the same id.
+    const CONCURRENCY: usize = 5;
+    let mut handles = Vec::with_capacity(CONCURRENCY);
+    for _ in 0..CONCURRENCY {
+        let c = client.clone();
+        let b = base.clone();
+        let tok = alice_token.clone();
+        let peer = bob_id.clone();
+        handles.push(tokio::spawn(async move {
+            let resp = c
+                .post(format!("{b}/api/conversations/dm"))
+                .header("Authorization", format!("Bearer {tok}"))
+                .json(&serde_json::json!({ "peer_user_id": peer }))
+                .send()
+                .await
+                .expect("request failed");
+            let status = resp.status().as_u16();
+            let body: Value = resp.json().await.unwrap_or(Value::Null);
+            (status, body)
+        }));
+    }
 
-    let r1 = r1.unwrap();
-    let r2 = r2.unwrap();
-    assert_eq!(r1.status().as_u16(), 200);
-    assert_eq!(r2.status().as_u16(), 200);
+    let results: Vec<_> = futures_util::future::join_all(handles)
+        .await
+        .into_iter()
+        .map(|r| r.expect("task panicked"))
+        .collect();
 
-    let b1: Value = r1.json().await.unwrap();
-    let b2: Value = r2.json().await.unwrap();
-    let id1 = b1["conversation_id"].as_str().unwrap();
-    let id2 = b2["conversation_id"].as_str().unwrap();
+    let conv_ids: Vec<String> = results
+        .iter()
+        .enumerate()
+        .map(|(i, (status, body))| {
+            assert_eq!(*status, 200, "request {i} returned {status}: {body}");
+            body["conversation_id"]
+                .as_str()
+                .unwrap_or_else(|| panic!("request {i} missing conversation_id: {body}"))
+                .to_string()
+        })
+        .collect();
 
-    assert_eq!(
-        id1, id2,
-        "Concurrent DM creation must return the same conversation_id, got {id1} and {id2}"
-    );
+    let first = &conv_ids[0];
+    for (i, id) in conv_ids.iter().enumerate() {
+        assert_eq!(
+            id, first,
+            "request {i} returned {id} but request 0 returned {first} -- duplicate DM created"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

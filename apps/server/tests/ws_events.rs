@@ -32,7 +32,10 @@ async fn drain_pending(ws: &mut WsStream) {
     {}
 }
 
-/// Read text frames, skipping presence events, until a non-presence frame arrives.
+/// Read text frames, skipping `presence` and `new_message` events.
+/// `new_message` arrives asynchronously when the server replays undelivered
+/// messages on WS connect; tests that exercise reactions/deletes/edits don't
+/// care about it and would otherwise race with `drain_pending`.
 async fn read_text_skipping_noise(ws: &mut WsStream) -> String {
     let timeout = std::time::Duration::from_secs(5);
     loop {
@@ -40,7 +43,7 @@ async fn read_text_skipping_noise(ws: &mut WsStream) -> String {
             Ok(Some(Ok(Message::Text(text)))) => {
                 let s = text.to_string();
                 if let Ok(v) = serde_json::from_str::<Value>(&s)
-                    && v["type"] == "presence"
+                    && matches!(v["type"].as_str(), Some("presence") | Some("new_message"))
                 {
                     continue;
                 }
@@ -75,7 +78,6 @@ async fn setup_dm_with_message(
     let alice_ticket = common::get_ws_ticket(&client, base, &alice_token).await;
     let mut alice_ws = connect_ws(base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // DMs are auto-encrypted, so the ciphertext-shape gate (#591) requires
@@ -135,7 +137,6 @@ async fn add_reaction_broadcasts_ws_event_to_peer() {
     // Bob connects via WS to receive the reaction broadcast.
     let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut bob_ws).await;
 
     // Alice adds a reaction via REST.
@@ -181,7 +182,6 @@ async fn remove_reaction_broadcasts_ws_event_to_peer() {
     // Bob connects.
     let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut bob_ws).await;
 
     // Alice removes the reaction.
@@ -219,7 +219,6 @@ async fn delete_message_broadcasts_ws_event_to_peer() {
     // Bob connects to receive the broadcast.
     let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut bob_ws).await;
 
     // Alice deletes the message via REST.
@@ -257,7 +256,6 @@ async fn edit_message_on_encrypted_dm_rejected_no_broadcast() {
     // Bob connects.
     let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut bob_ws).await;
 
     // Alice attempts to edit on an encrypted DM — rejected with 409.
@@ -316,7 +314,6 @@ async fn connecting_broadcasts_online_presence_to_peer() {
     // Alice connects first.
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // Bob connects — Alice should receive a presence event for Bob.

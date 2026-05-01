@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17
+    image: postgres:17.6
     environment:
       POSTGRES_DB: echo_dev
       POSTGRES_USER: echo

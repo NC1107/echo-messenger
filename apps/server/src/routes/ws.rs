@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::db;
-use crate::error::AppError;
+use crate::error::{AppError, DbErrCtx};
 use crate::ws::handler;
 
 use super::AppState;
@@ -52,10 +52,7 @@ pub async fn ws_upgrade(
 
     let user = db::users::find_by_id(&state.pool, user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in ws_upgrade/find_user: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("ws_upgrade/find_user")?
         .ok_or_else(|| AppError::unauthorized("User not found"))?;
 
     tracing::info!(

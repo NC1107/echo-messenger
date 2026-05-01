@@ -70,16 +70,14 @@ class _FakeVoiceRtcNotifier extends LiveKitVoiceNotifier {
   _FakeVoiceRtcNotifier(super.ref);
 }
 
-class _FakeThemeNotifier extends ThemeNotifier {
-  _FakeThemeNotifier() {
-    state = AppThemeSelection.dark;
-  }
+class _FakeTheme extends AppTheme {
+  @override
+  AppThemeSelection build() => AppThemeSelection.dark;
 }
 
 class _FakeMessageLayoutNotifier extends MessageLayoutNotifier {
-  _FakeMessageLayoutNotifier() {
-    state = MessageLayout.bubbles;
-  }
+  @override
+  MessageLayout build() => MessageLayout.bubbles;
 }
 
 const _conv = Conversation(
@@ -137,8 +135,8 @@ List<Override> _overrides({
     privacyProvider.overrideWith((ref) => _FakePrivacyNotifier(ref)),
     voiceSettingsProvider.overrideWith((ref) => _FakeVoiceSettingsNotifier()),
     voiceRtcProvider.overrideWith((ref) => _FakeVoiceRtcNotifier(ref)),
-    themeProvider.overrideWith((ref) => _FakeThemeNotifier()),
-    messageLayoutProvider.overrideWith((ref) => _FakeMessageLayoutNotifier()),
+    appThemeProvider.overrideWith(_FakeTheme.new),
+    messageLayoutNotifierProvider.overrideWith(_FakeMessageLayoutNotifier.new),
   ];
 }
 
@@ -158,7 +156,7 @@ void main() {
     ) async {
       final holder = _NotifierHolder();
       await tester.pumpApp(
-        ChatPanel(conversation: _conv),
+        const ChatPanel(conversation: _conv),
         overrides: _overrides(initial: const ChatState(), holder: holder),
       );
       await tester.pump();
@@ -180,7 +178,7 @@ void main() {
       );
 
       await tester.pumpApp(
-        ChatPanel(conversation: _conv),
+        const ChatPanel(conversation: _conv),
         overrides: _overrides(initial: initial, holder: holder),
       );
       await tester.pump();
@@ -211,7 +209,7 @@ void main() {
       );
 
       await tester.pumpApp(
-        ChatPanel(conversation: _conv),
+        const ChatPanel(conversation: _conv),
         overrides: _overrides(initial: initial, holder: holder),
       );
       await tester.pump();
@@ -236,7 +234,7 @@ void main() {
       );
 
       await tester.pumpApp(
-        ChatPanel(conversation: _conv),
+        const ChatPanel(conversation: _conv),
         overrides: _overrides(initial: initial, holder: holder),
       );
       await tester.pump();
@@ -279,7 +277,7 @@ void main() {
         );
 
         await tester.pumpApp(
-          ChatPanel(conversation: _conv),
+          const ChatPanel(conversation: _conv),
           overrides: _overrides(initial: initial, holder: holder),
         );
         await tester.pump();
@@ -306,7 +304,7 @@ void main() {
       final holder = _NotifierHolder();
 
       await tester.pumpApp(
-        ChatPanel(conversation: _conv),
+        const ChatPanel(conversation: _conv),
         overrides: _overrides(initial: const ChatState(), holder: holder),
       );
       await tester.pump();

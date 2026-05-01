@@ -468,13 +468,20 @@ pub struct GroupKeyRow {
 }
 
 /// Insert a new group key version.
-pub async fn store_group_key(
-    pool: &PgPool,
+///
+/// Generic over `Executor` so callers can run this against either the pool
+/// or an in-flight transaction.  `upload_group_key` (#687) needs the latter
+/// so the sentinel row + per-member envelopes commit atomically.
+pub async fn store_group_key<'e, E>(
+    executor: E,
     conversation_id: Uuid,
     key_version: i32,
     encrypted_key: &str,
     created_by: Uuid,
-) -> Result<GroupKeyRow, sqlx::Error> {
+) -> Result<GroupKeyRow, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     sqlx::query_as::<_, GroupKeyRow>(
         "INSERT INTO group_keys \
              (conversation_id, key_version, encrypted_key, created_by) \
@@ -486,7 +493,7 @@ pub async fn store_group_key(
     .bind(key_version)
     .bind(encrypted_key)
     .bind(created_by)
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await
 }
 
@@ -542,13 +549,19 @@ pub struct GroupKeyEnvelopeRow {
 }
 
 /// Store an encrypted group key envelope for a specific recipient.
-pub async fn store_group_key_envelope(
-    pool: &PgPool,
+///
+/// Generic over `Executor` so callers can run this against a transaction
+/// alongside `store_group_key` (#687).
+pub async fn store_group_key_envelope<'e, E>(
+    executor: E,
     conversation_id: Uuid,
     key_version: i32,
     recipient_user_id: Uuid,
     encrypted_key: &str,
-) -> Result<GroupKeyEnvelopeRow, sqlx::Error> {
+) -> Result<GroupKeyEnvelopeRow, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
     sqlx::query_as::<_, GroupKeyEnvelopeRow>(
         "INSERT INTO group_key_envelopes \
              (conversation_id, key_version, recipient_user_id, encrypted_key) \
@@ -562,7 +575,7 @@ pub async fn store_group_key_envelope(
     .bind(key_version)
     .bind(recipient_user_id)
     .bind(encrypted_key)
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await
 }
 

@@ -15,16 +15,10 @@ use crate::ws::typing_service::get_member_ids_cached;
 
 pub(super) const MAX_MESSAGE_LENGTH: usize = 10_000;
 
-/// Echo Messenger wire format magic byte (#591). The first byte of any
-/// initial-message payload identifies the protocol family.
-const ECHO_WIRE_MAGIC: u8 = 0xEC;
-/// Initial-message version 1 (no one-time prekey).
-const ECHO_WIRE_INITIAL_V1: u8 = 0x01;
-/// Initial-message version 2 (with one-time prekey).
-const ECHO_WIRE_INITIAL_V2: u8 = 0x02;
-/// Normal-message wire prefix is a u32 LE header length of 40 bytes
-/// (`header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`).
-const ECHO_NORMAL_HEADER_LEN: u32 = 40;
+use echo_core::signal::protocol::{
+    NORMAL_HEADER_LEN as ECHO_NORMAL_HEADER_LEN, WIRE_INITIAL_V1 as ECHO_WIRE_INITIAL_V1,
+    WIRE_INITIAL_V2 as ECHO_WIRE_INITIAL_V2, WIRE_MAGIC as ECHO_WIRE_MAGIC,
+};
 
 /// Validate that a base64-encoded payload is shaped like an Echo
 /// ciphertext wire frame. We do NOT decrypt or otherwise validate
@@ -904,15 +898,42 @@ pub(super) async fn fanout_message(
 /// used as a fallback when no device-specific row exists (group messages,
 /// unencrypted convs, or messages predating multi-device support).
 pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid, device_id: i32) {
-    let undelivered = match db::messages::get_undelivered(&state.pool, user_id).await {
-        Ok(msgs) => msgs,
-        Err(_) => return,
-    };
+    // Cursor-paginated replay; cap iterations against pathological pool errors.
+    // Composite (created_at, id) cursor handles same-tick ties.
+    const MAX_ITERATIONS: usize = 50; // 50 * 200 = 10 000 messages per reconnect
+    let mut after_cursor: Option<(chrono::DateTime<chrono::Utc>, Uuid)> = None;
+    for _iter in 0..MAX_ITERATIONS {
+        let batch = match db::messages::get_undelivered(&state.pool, user_id, after_cursor).await {
+            Ok(msgs) => msgs,
+            Err(e) => {
+                tracing::error!(?e, %user_id, "deliver_undelivered: db error -- aborting replay loop");
+                return;
+            }
+        };
 
-    if undelivered.is_empty() {
-        return;
+        if batch.is_empty() {
+            return;
+        }
+
+        // Advance cursor before processing so a continue-on-error inside the
+        // loop body can't infinitely re-fetch the same rows.
+        let last_cursor = batch.last().map(|m| (m.created_at, m.id));
+        let was_full = batch.len() as i64 == db::messages::UNDELIVERED_PAGE_SIZE;
+        deliver_one_batch(state, user_id, device_id, batch).await;
+        if !was_full {
+            return; // last page
+        }
+        after_cursor = last_cursor;
     }
+    tracing::warn!(%user_id, "deliver_undelivered: hit MAX_ITERATIONS, deferring remainder to next reconnect");
+}
 
+async fn deliver_one_batch(
+    state: &AppState,
+    user_id: Uuid,
+    device_id: i32,
+    undelivered: Vec<db::messages::MessageWithSender>,
+) {
     let all_ids: Vec<Uuid> = undelivered.iter().map(|m| m.id).collect();
 
     // Batch-fetch all per-device ciphertexts in a single query to avoid N+1.

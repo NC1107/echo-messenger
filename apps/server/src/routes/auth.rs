@@ -142,6 +142,10 @@ pub async fn register(
     jar: CookieJar,
     Json(body): Json<AuthRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    if !crate::config::registration_open() {
+        return Err(AppError::forbidden("Registration is closed on this server"));
+    }
+
     validate_username(&body.username)?;
     validate_password(&body.password)?;
 

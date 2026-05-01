@@ -199,14 +199,17 @@ pub async fn handle_socket(
     // Broadcast online presence to contacts
     typing_service::broadcast_presence(&state, user_id, &username, "online").await;
 
-    // Task: forward hub messages to WebSocket sink
-    let send_task = tokio::spawn(async move {
+    // Forward hub -> sink. Both halves are select!-linked below so neither
+    // outlives the other; rx returned for post-shutdown drain.
+    let send_fut = async move {
         while let Some(msg) = rx.recv().await {
             if sender.send(msg).await.is_err() {
                 break;
             }
         }
-    });
+        (sender, rx)
+    };
+    tokio::pin!(send_fut);
 
     // Task: send heartbeat every 30 seconds to keep the connection alive
     // through reverse-proxy (Traefik/Cloudflare) idle timeouts.
@@ -255,11 +258,39 @@ pub async fn handle_socket(
 
     message_service::deliver_undelivered_messages(&state, user_id, device_id).await;
 
-    run_receive_loop(&mut receiver, user_id, device_id, &username, &state).await;
+    // Run receive + send concurrently. Whichever finishes first triggers the
+    // tear-down; the other half is awaited (or dropped) in the cleanup arm.
+    let recv_fut = run_receive_loop(&mut receiver, user_id, device_id, &username, &state);
+    tokio::pin!(recv_fut);
 
-    // Cleanup
-    state.hub.unregister(user_id, device_id);
-    send_task.abort();
+    let leftover_rx: Option<mpsc::Receiver<WsMessage>> = tokio::select! {
+        _ = &mut recv_fut => {
+            // Receive loop ended -- the send half might still have pending
+            // frames in `rx`. Unregister so no new ones land, then attempt a
+            // brief drain (50ms) to flush what's already buffered.
+            state.hub.unregister(user_id, device_id);
+            // Pull the sink + rx back out of the send future by polling
+            // it once with a tight timeout. If the channel was already
+            // closed by `unregister` (which dropped the tx) the future
+            // resolves immediately; otherwise the timeout caps it.
+            match tokio::time::timeout(Duration::from_millis(50), &mut send_fut).await {
+                Ok((_sender, rx)) => Some(rx),
+                Err(_) => None,
+            }
+        }
+        (_sender, rx) = &mut send_fut => {
+            // Send half ended (peer TCP died, or rx was closed). Stop
+            // accepting new inbound frames by unregistering, then let the
+            // recv future complete naturally as the underlying socket
+            // surfaces the error.
+            state.hub.unregister(user_id, device_id);
+            // Best-effort: give the recv loop a moment to observe the
+            // socket close before we drop it.
+            let _ = tokio::time::timeout(Duration::from_millis(50), &mut recv_fut).await;
+            Some(rx)
+        }
+    };
+    drop(leftover_rx);
     ping_task.abort();
 
     cleanup_user_voice_sessions(&state, user_id).await;

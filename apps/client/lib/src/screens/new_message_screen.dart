@@ -8,6 +8,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
+import '../utils/fuzzy_score.dart';
 import '../widgets/avatar_utils.dart';
 import '../widgets/settings/section_header.dart';
 
@@ -81,13 +82,17 @@ class _NewMessageScreenState extends ConsumerState<NewMessageScreen> {
   }
 
   List<Contact> _filtered(List<Contact> source) {
-    final q = _query.trim().toLowerCase();
+    final q = _query.trim();
     if (q.isEmpty) return source;
-    return source.where((c) {
-      final name = (c.displayName ?? c.username).toLowerCase();
-      final handle = c.username.toLowerCase();
-      return name.contains(q) || handle.contains(q);
-    }).toList();
+    final scored = <({Contact contact, double score})>[];
+    for (final c in source) {
+      final nameScore = fuzzyScore(q, c.displayName ?? c.username);
+      final handleScore = fuzzyScore(q, c.username);
+      final best = nameScore > handleScore ? nameScore : handleScore;
+      if (best > 0.2) scored.add((contact: c, score: best));
+    }
+    scored.sort((a, b) => b.score.compareTo(a.score));
+    return scored.map((e) => e.contact).toList();
   }
 
   @override

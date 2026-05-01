@@ -56,6 +56,14 @@ impl AppError {
         }
     }
 
+    pub fn forbidden(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: msg.into(),
+            body: None,
+        }
+    }
+
     /// 409 Conflict that carries a structured JSON body. Used for the
     /// per-device identity-key conflict so the client can extract `device_id`
     /// + expected/actual fingerprints without parsing English error strings.
@@ -115,6 +123,36 @@ impl From<argon2::password_hash::Error> for AppError {
     fn from(err: argon2::password_hash::Error) -> Self {
         tracing::error!("Password hash error: {:?}", err);
         Self::internal("Authentication error")
+    }
+}
+
+/// Extension trait deduplicating the `Result<_, sqlx::Error>` → `AppError`
+/// boilerplate that previously appeared 120+ times across `routes/*.rs`
+/// (#694).  Callers that need richer error mapping (e.g. distinguishing
+/// 23505 unique-violation conflicts from generic failures) keep using the
+/// explicit `match` form -- this trait is for the dominant case where the
+/// route just wants to log + return 500.
+///
+/// Usage:
+/// ```ignore
+/// let row = db::users::find_by_id(&state.pool, user_id)
+///     .await
+///     .db_ctx("find_by_id")?;
+/// ```
+pub trait DbErrCtx<T> {
+    /// Convert a `Result<_, sqlx::Error>` into `Result<_, AppError>` while
+    /// logging the operation's identifying context.  The label is captured
+    /// as a structured tracing field so observability tools can group
+    /// occurrences without parsing the message string.
+    fn db_ctx(self, ctx: &'static str) -> Result<T, AppError>;
+}
+
+impl<T> DbErrCtx<T> for Result<T, sqlx::Error> {
+    fn db_ctx(self, ctx: &'static str) -> Result<T, AppError> {
+        self.map_err(|e| {
+            tracing::error!(error = ?e, db_ctx = ctx, "DB error");
+            AppError::internal("Database error")
+        })
     }
 }
 
@@ -178,5 +216,22 @@ mod tests {
             debug_str.contains("debug me"),
             "Debug output should contain message"
         );
+    }
+
+    #[test]
+    fn db_ctx_passes_through_ok() {
+        let result: Result<i32, sqlx::Error> = Ok(42);
+        let mapped = result.db_ctx("test_ctx").unwrap();
+        assert_eq!(mapped, 42);
+    }
+
+    #[test]
+    fn db_ctx_maps_err_to_internal() {
+        // Use a synthesised RowNotFound -- the cheapest sqlx::Error variant
+        // that doesn't require touching a real connection.
+        let result: Result<i32, sqlx::Error> = Err(sqlx::Error::RowNotFound);
+        let err = result.db_ctx("test_ctx").unwrap_err();
+        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(err.message, "Database error");
     }
 }

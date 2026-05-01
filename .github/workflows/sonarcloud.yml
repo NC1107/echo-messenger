@@ -1,9 +1,16 @@
 name: SonarCloud
 
+# Security: do NOT run on `pull_request` -- the head-of-PR code executes the
+# `cargo test` and `flutter test` build steps with `SONAR_TOKEN` in env, so a
+# malicious PR could exfiltrate the token via a modified `build.rs`, test, or
+# any third-party action.  Restrict to push events on protected branches; PR
+# code goes through review on `dev` before reaching `main`.  If PR-level
+# Sonar feedback is needed later, split into a `pull_request` job that
+# produces artifacts (no token) and a `workflow_run` job that consumes them
+# with the token in a clean environment.
 on:
-  pull_request:
   push:
-    branches: [main]
+    branches: [main, dev]
 
 permissions:
   contents: read
@@ -11,7 +18,9 @@ permissions:
 
 concurrency:
   group: sonar-${{ github.ref }}
-  cancel-in-progress: true
+  # SonarCloud analysis is not idempotent across cancellations -- a partial
+  # upload can leave the project in a confused state.
+  cancel-in-progress: false
 
 env:
   FLUTTER_VERSION: '3.41.x'

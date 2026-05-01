@@ -159,10 +159,10 @@ void main() {
       ).thenAnswer((_) async => http.Response('{}', 200));
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'group-1', name: 'G1', isGroup: true),
-          const Conversation(id: 'group-2', name: 'G2', isGroup: true),
+          Conversation(id: 'group-1', name: 'G1', isGroup: true),
+          Conversation(id: 'group-2', name: 'G2', isGroup: true),
         ],
       );
 
@@ -192,10 +192,8 @@ void main() {
       ).thenAnswer((_) async => http.Response('error', 500));
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
-        conversations: [
-          const Conversation(id: 'group-1', name: 'G1', isGroup: true),
-        ],
+      notifier.state = const ConversationsState(
+        conversations: [Conversation(id: 'group-1', name: 'G1', isGroup: true)],
       );
 
       final result = await http.runWithClient(
@@ -225,8 +223,8 @@ void main() {
       ).thenAnswer((_) async => http.Response('{}', 200));
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
-        conversations: [const Conversation(id: 'conv-1', isGroup: false)],
+      notifier.state = const ConversationsState(
+        conversations: [Conversation(id: 'conv-1', isGroup: false)],
       );
 
       final result = await http.runWithClient(
@@ -427,9 +425,9 @@ void main() {
   group('ConversationsNotifier.getOrCreateDm', () {
     test('finds existing DM locally without HTTP call', () async {
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(
+          Conversation(
             id: 'dm-1',
             isGroup: false,
             members: [
@@ -566,9 +564,9 @@ void main() {
       ).thenAnswer((_) async => http.Response('{}', 200));
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'conv-1', isGroup: false, unreadCount: 5),
+          Conversation(id: 'conv-1', isGroup: false, unreadCount: 5),
         ],
       );
 
@@ -595,9 +593,9 @@ void main() {
       ).thenThrow(const SocketException('Connection refused'));
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'conv-1', isGroup: false, unreadCount: 5),
+          Conversation(id: 'conv-1', isGroup: false, unreadCount: 5),
         ],
       );
 
@@ -630,9 +628,9 @@ void main() {
       ).thenAnswer((_) async => http.Response('{}', 200));
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'conv-1', isGroup: false, isMuted: false),
+          Conversation(id: 'conv-1', isGroup: false, isMuted: false),
         ],
       );
 
@@ -663,9 +661,9 @@ void main() {
       ).thenThrow(const SocketException('Connection refused'));
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'conv-1', isGroup: false, isMuted: false),
+          Conversation(id: 'conv-1', isGroup: false, isMuted: false),
         ],
       );
 
@@ -698,9 +696,9 @@ void main() {
       ).thenAnswer((_) async => http.Response('{}', 200));
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'conv-1', isGroup: false, isMuted: false),
+          Conversation(id: 'conv-1', isGroup: false, isMuted: false),
         ],
       );
 
@@ -732,9 +730,9 @@ void main() {
       ).thenAnswer((_) async => http.Response('Internal Server Error', 500));
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'conv-1', isGroup: false, isMuted: false),
+          Conversation(id: 'conv-1', isGroup: false, isMuted: false),
         ],
       );
 
@@ -753,9 +751,9 @@ void main() {
 
     test('no-op returns true when already in target state', () async {
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'conv-1', isGroup: false, isMuted: true),
+          Conversation(id: 'conv-1', isGroup: false, isMuted: true),
         ],
       );
 
@@ -817,9 +815,9 @@ void main() {
       ).thenAnswer((_) async => http.Response('', 204));
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'conv-1', isGroup: false, isPinned: false),
+          Conversation(id: 'conv-1', isGroup: false, isPinned: false),
         ],
       );
 
@@ -849,9 +847,9 @@ void main() {
       ).thenAnswer((_) async => http.Response('Internal Server Error', 500));
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'conv-1', isGroup: false, isPinned: false),
+          Conversation(id: 'conv-1', isGroup: false, isPinned: false),
         ],
       );
 
@@ -885,9 +883,9 @@ void main() {
       });
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'conv-1', isGroup: false, isPinned: true),
+          Conversation(id: 'conv-1', isGroup: false, isPinned: true),
         ],
       );
 
@@ -918,9 +916,9 @@ void main() {
       ).thenThrow(const SocketException('Connection refused'));
 
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'conv-1', isGroup: false, isPinned: true),
+          Conversation(id: 'conv-1', isGroup: false, isPinned: true),
         ],
       );
 
@@ -939,9 +937,9 @@ void main() {
 
     test('no-op returns true when already in target state', () async {
       final notifier = container.read(conversationsProvider.notifier);
-      notifier.state = ConversationsState(
+      notifier.state = const ConversationsState(
         conversations: [
-          const Conversation(id: 'conv-1', isGroup: false, isPinned: true),
+          Conversation(id: 'conv-1', isGroup: false, isPinned: true),
         ],
       );
 

@@ -24,6 +24,7 @@ import 'avatar_utils.dart' show buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import 'shared_media_gallery.dart';
 
 const _disappearingMessagesLabel = 'Disappearing messages';
+const _kAuthorizationHeader = 'Authorization';
 
 class ChatHeaderBar extends ConsumerWidget {
   final Conversation conversation;
@@ -721,7 +722,7 @@ class ChatHeaderBar extends ConsumerWidget {
             (token) => http.put(
               Uri.parse('$serverUrl/api/conversations/${conv.id}/disappearing'),
               headers: {
-                'Authorization': 'Bearer $token',
+                _kAuthorizationHeader: 'Bearer $token',
                 'Content-Type': 'application/json',
               },
               body: jsonEncode({'ttl_seconds': ttl}),
@@ -905,7 +906,7 @@ class _IdentityChangedBadgeState extends ConsumerState<_IdentityChangedBadge> {
       padding: const EdgeInsets.only(left: 4),
       child: Semantics(
         label: 'identity changed warning',
-        child: Tooltip(
+        child: const Tooltip(
           message: "Identity changed -- verify safety number",
           child: Icon(
             Icons.warning_amber_rounded,
@@ -1089,7 +1090,7 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
                 '/${widget.conversationId}/pinned',
               ),
               headers: {
-                'Authorization': 'Bearer $token',
+                _kAuthorizationHeader: 'Bearer $token',
                 'Content-Type': 'application/json',
               },
             ),
@@ -1140,7 +1141,7 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
                 '/${widget.conversationId}'
                 '/messages/${message.id}/pin',
               ),
-              headers: {'Authorization': 'Bearer $token'},
+              headers: {_kAuthorizationHeader: 'Bearer $token'},
             ),
           );
 

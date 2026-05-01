@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, TargetPlatform;
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -724,12 +724,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               value: 'chat',
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minWidth: 200),
-                child: Row(
+                child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.person_add_outlined, size: 18),
-                    const SizedBox(width: 10),
-                    const Flexible(
+                    Icon(Icons.person_add_outlined, size: 18),
+                    SizedBox(width: 10),
+                    Flexible(
                       child: Text('New Chat', overflow: TextOverflow.ellipsis),
                     ),
                   ],
@@ -742,12 +742,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               value: 'group',
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minWidth: 200),
-                child: Row(
+                child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.group_add_outlined, size: 18),
-                    const SizedBox(width: 10),
-                    const Flexible(
+                    Icon(Icons.group_add_outlined, size: 18),
+                    SizedBox(width: 10),
+                    Flexible(
                       child: Text('New Group', overflow: TextOverflow.ellipsis),
                     ),
                   ],
@@ -760,12 +760,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               value: 'discover',
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minWidth: 200),
-                child: Row(
+                child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.explore_outlined, size: 18),
-                    const SizedBox(width: 10),
-                    const Flexible(
+                    Icon(Icons.explore_outlined, size: 18),
+                    SizedBox(width: 10),
+                    Flexible(
                       child: Text(
                         'Discover Groups',
                         overflow: TextOverflow.ellipsis,
@@ -781,12 +781,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               value: 'saved',
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minWidth: 200),
-                child: Row(
+                child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.bookmark_border_outlined, size: 18),
-                    const SizedBox(width: 10),
-                    const Flexible(
+                    Icon(Icons.bookmark_border_outlined, size: 18),
+                    SizedBox(width: 10),
+                    Flexible(
                       child: Text(
                         'Saved Messages',
                         overflow: TextOverflow.ellipsis,
@@ -798,7 +798,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ),
           ],
         ),
-        if (pendingCount > 0)
+        if (pendingCount > 0 &&
+            (kIsWeb ||
+                defaultTargetPlatform == TargetPlatform.android ||
+                defaultTargetPlatform == TargetPlatform.iOS))
           Positioned(
             // Re-center the badge on the larger 44×44 button.
             top: 6,

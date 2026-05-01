@@ -64,10 +64,11 @@ async fn setup_dm_with_message(
             .await
             .expect("WS connect failed");
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
-    // Drain presence events
-    while let Ok(Some(Ok(_))) = tokio::time::timeout(Duration::from_millis(100), ws.next()).await {}
+    // Audit #695: replace the 200ms wall-clock sleep with the bounded-idle
+    // drain helper.  Alice has no contacts here so no `presence` echoes
+    // reach her socket; the drain just absorbs anything that does arrive
+    // within 150ms of the last frame and returns immediately when idle.
+    common::drain_pending(&mut ws).await;
 
     let canonical = common::dummy_ciphertext("pin_canonical");
     let bob_ct = common::dummy_ciphertext("pin_bob");

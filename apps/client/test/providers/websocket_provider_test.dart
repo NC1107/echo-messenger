@@ -20,7 +20,7 @@ void main() {
     });
 
     test('copyWith preserves values when no arguments given', () {
-      final state = WebSocketState(
+      final state = const WebSocketState(
         isConnected: true,
         onlineUsers: {'u1', 'u2'},
       );
@@ -36,7 +36,7 @@ void main() {
     });
 
     test('isUserOnline returns true for online users', () {
-      final state = WebSocketState(onlineUsers: {'user-1', 'user-2'});
+      final state = const WebSocketState(onlineUsers: {'user-1', 'user-2'});
       expect(state.isUserOnline('user-1'), isTrue);
       expect(state.isUserOnline('user-2'), isTrue);
       expect(state.isUserOnline('user-3'), isFalse);
@@ -135,7 +135,7 @@ void main() {
     });
 
     test('onlineUsers empty set means no users online', () {
-      final state = WebSocketState(onlineUsers: {'u1'});
+      final state = const WebSocketState(onlineUsers: {'u1'});
       final cleared = state.copyWith(onlineUsers: <String>{});
       expect(cleared.onlineUsers, isEmpty);
       expect(cleared.isUserOnline('u1'), isFalse);
@@ -256,7 +256,7 @@ void main() {
 
   group('WebSocketState disconnect semantics', () {
     test('disconnect clears isConnected but preserves onlineUsers snapshot', () {
-      final state = WebSocketState(
+      final state = const WebSocketState(
         isConnected: true,
         onlineUsers: {'u1', 'u2'},
       );
@@ -269,7 +269,7 @@ void main() {
     });
 
     test('full disconnect clears connection and online users', () {
-      final state = WebSocketState(
+      final state = const WebSocketState(
         isConnected: true,
         onlineUsers: {'u1', 'u2'},
       );

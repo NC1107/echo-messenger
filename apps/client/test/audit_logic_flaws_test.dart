@@ -30,7 +30,7 @@ void main() {
       const state = ChatState();
 
       // Add 3 pending messages
-      final msg1 = ChatMessage(
+      final msg1 = const ChatMessage(
         id: 'pending_1000',
         fromUserId: 'me',
         fromUsername: 'Me',
@@ -40,7 +40,7 @@ void main() {
         isMine: true,
         status: MessageStatus.sending,
       );
-      final msg2 = ChatMessage(
+      final msg2 = const ChatMessage(
         id: 'pending_2000',
         fromUserId: 'me',
         fromUsername: 'Me',
@@ -50,7 +50,7 @@ void main() {
         isMine: true,
         status: MessageStatus.sending,
       );
-      final msg3 = ChatMessage(
+      final msg3 = const ChatMessage(
         id: 'pending_3000',
         fromUserId: 'me',
         fromUsername: 'Me',
@@ -234,7 +234,7 @@ void main() {
       // BEFORE the server call. No rollback on failure.
 
       const conv = Conversation(id: 'conv1', isGroup: false, unreadCount: 5);
-      final state = ConversationsState(conversations: [conv]);
+      final state = const ConversationsState(conversations: [conv]);
       expect(state.conversations.first.unreadCount, 5);
 
       // After markAsRead, count is 0 regardless of server response
@@ -263,7 +263,7 @@ void main() {
       // Stale messages remain in memory.
 
       const chatState = ChatState();
-      final msg = ChatMessage(
+      final msg = const ChatMessage(
         id: 'msg1',
         fromUserId: 'alice',
         fromUsername: 'alice',
@@ -334,7 +334,7 @@ void main() {
       // chat_provider.dart:79 — replyToMessage is a global field in ChatState,
       // not scoped to a conversation. Switching conversations doesn't clear it.
 
-      final replyMsg = ChatMessage(
+      final replyMsg = const ChatMessage(
         id: 'msg_in_conv1',
         fromUserId: 'alice',
         fromUsername: 'alice',
@@ -365,7 +365,7 @@ void main() {
       'ConversationsState supports restoring unread count after failure',
       () {
         const conv = Conversation(id: 'conv1', isGroup: false, unreadCount: 5);
-        final state = ConversationsState(conversations: [conv]);
+        final state = const ConversationsState(conversations: [conv]);
 
         // Optimistically clear
         final updated = List<Conversation>.from(state.conversations);
@@ -392,7 +392,7 @@ void main() {
   group('H3 fix: clearConversation removes cached messages', () {
     test('ChatState can remove all messages for a conversation', () {
       const state = ChatState();
-      final msg1 = ChatMessage(
+      final msg1 = const ChatMessage(
         id: 'msg1',
         fromUserId: 'alice',
         fromUsername: 'alice',
@@ -401,7 +401,7 @@ void main() {
         timestamp: '2026-01-01T00:00:00Z',
         isMine: false,
       );
-      final msg2 = ChatMessage(
+      final msg2 = const ChatMessage(
         id: 'msg2',
         fromUserId: 'bob',
         fromUsername: 'bob',
@@ -462,7 +462,7 @@ void main() {
   group('H6 fix: reaction guard on deleted messages', () {
     test('message existence check prevents reaction on deleted message', () {
       const state = ChatState();
-      final msg = ChatMessage(
+      final msg = const ChatMessage(
         id: 'msg1',
         fromUserId: 'alice',
         fromUsername: 'alice',
@@ -537,7 +537,7 @@ void main() {
   // =========================================================================
   group('M2 fix: edit mode clears reply state', () {
     test('entering edit should clear replyToMessage', () {
-      final replyMsg = ChatMessage(
+      final replyMsg = const ChatMessage(
         id: 'msg1',
         fromUserId: 'alice',
         fromUsername: 'alice',

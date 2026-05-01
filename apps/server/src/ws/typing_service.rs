@@ -104,6 +104,45 @@ pub fn invalidate_member_cache(conversation_id: Uuid) {
     MEMBERSHIP_CACHE.retain(|(_, conv_id), _| *conv_id != conversation_id);
 }
 
+/// Drop cache entries older than 2× their TTL across all three caches.
+/// Called from the cleanup scheduler so stale entries don't accumulate on
+/// long-running servers.
+pub fn sweep_expired_caches() {
+    let cutoff = MEMBERSHIP_CACHE_TTL * 2;
+    let mut membership_evicted = 0usize;
+    MEMBERSHIP_CACHE.retain(|_, last_seen| {
+        let keep = last_seen.elapsed() < cutoff;
+        if !keep {
+            membership_evicted += 1;
+        }
+        keep
+    });
+    let mut member_ids_evicted = 0usize;
+    MEMBER_IDS_CACHE.retain(|_, (_, fetched_at)| {
+        let keep = fetched_at.elapsed() < cutoff;
+        if !keep {
+            member_ids_evicted += 1;
+        }
+        keep
+    });
+    let mut kind_evicted = 0usize;
+    CONV_KIND_CACHE.retain(|_, (_, fetched_at)| {
+        let keep = fetched_at.elapsed() < cutoff;
+        if !keep {
+            kind_evicted += 1;
+        }
+        keep
+    });
+    if membership_evicted > 0 || member_ids_evicted > 0 || kind_evicted > 0 {
+        tracing::debug!(
+            membership_evicted,
+            member_ids_evicted,
+            kind_evicted,
+            "ws cache sweep"
+        );
+    }
+}
+
 pub(super) async fn handle_typing(
     state: &AppState,
     sender_id: Uuid,
@@ -193,6 +232,18 @@ pub(super) async fn broadcast_presence(
     username: &str,
     status: &str,
 ) {
+    // Gate on first-device-up / last-device-down so multi-device reconnects
+    // don't surface online/offline flapping to contacts.
+    let dev_count = state.hub.device_count(&user_id);
+    let should_broadcast = match status {
+        "online" => dev_count == 1,
+        "offline" => dev_count == 0,
+        _ => true,
+    };
+    if !should_broadcast {
+        return;
+    }
+
     let contact_ids = match db::contacts::list_contact_user_ids(&state.pool, user_id).await {
         Ok(ids) => ids,
         Err(e) => {
@@ -242,7 +293,9 @@ pub(super) async fn broadcast_presence(
         Err(_) => return,
     };
 
+    // Build once; clone is O(1) on Bytes-backed Message::Text.
+    let msg = WsMessage::Text(json.into());
     for cid in &contact_ids {
-        state.hub.send_to(cid, WsMessage::Text(json.clone().into()));
+        state.hub.send_to(cid, msg.clone());
     }
 }

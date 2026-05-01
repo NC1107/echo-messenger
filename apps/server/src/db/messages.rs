@@ -73,9 +73,36 @@ pub async fn find_or_create_dm_conversation(
     }
 
     // Slow path: create the conversation and claim the canonical slot.
-    // Two concurrent requests may both reach this point; the ON CONFLICT
-    // clause ensures only one conversation survives per user pair.
+    // Acquire a transaction-scoped advisory lock keyed on the canonical
+    // (lo, hi) pair so concurrent creators for the same user pair serialize
+    // here rather than contending at the UNIQUE constraint level.  We
+    // concatenate the lexicographically smaller UUID first so both argument
+    // orderings hash to the same i64.  `pg_advisory_xact_lock` (not the
+    // `try_` variant) blocks until the lock is available and releases
+    // automatically when the transaction ends.
     let mut tx = pool.begin().await?;
+
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1::text || $2::text))")
+        .bind(lo)
+        .bind(hi)
+        .execute(&mut *tx)
+        .await?;
+
+    // Re-check inside the tx: another creator may have committed while we
+    // were waiting for the lock, in which case we can take the fast path.
+    let existing_in_tx: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT conversation_id FROM direct_conversations \
+         WHERE user_lo = $1 AND user_hi = $2",
+    )
+    .bind(lo)
+    .bind(hi)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if let Some(row) = existing_in_tx {
+        tx.rollback().await?;
+        return Ok(row.0);
+    }
 
     // Create the conversation row.
     let conv: (Uuid,) = sqlx::query_as(
@@ -183,10 +210,9 @@ pub async fn get_messages(
     requesting_device_id: Option<i32>,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     // Single query handles both cursor and non-cursor cases via optional $3 param.
-    // #557: when the caller passes its own `device_id`, we LEFT JOIN
-    // `message_device_contents` and surface the device-specific ciphertext via
-    // COALESCE so multi-device DM history decrypts on the right ratchet.
-    // When no device_id is provided we preserve the legacy behaviour.
+    // #557: when device_id is supplied, COALESCE per-device ciphertext over
+    // the canonical content. reply_count via LEFT JOIN LATERAL matches the
+    // shape used by search_messages / get_thread_replies.
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -195,12 +221,15 @@ pub async fn get_messages(
                 m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                (SELECT COUNT(*) FROM messages r \
-                 WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL) AS reply_count \
+                COALESCE(rc.cnt, 0) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
+         LEFT JOIN LATERAL ( \
+             SELECT COUNT(*) AS cnt FROM messages r \
+             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
+         ) rc ON true \
          LEFT JOIN message_device_contents mdc \
                 ON $5::int IS NOT NULL \
                AND mdc.message_id = m.id \
@@ -223,10 +252,25 @@ pub async fn get_messages(
     .await
 }
 
+/// Page size for offline-replay batches.  Picked so a single batch fits
+/// comfortably in the WS outbound mpsc(256) without immediate backpressure
+/// (#634), while still exercising the ack queue under realistic backlogs.
+pub const UNDELIVERED_PAGE_SIZE: i64 = 200;
+
+/// Fetch undelivered messages, optionally after a `(created_at, id)` cursor.
+/// Composite cursor handles ties when multiple messages share a timestamp;
+/// using `created_at` alone would skip same-tick siblings on the next page.
+/// Callers loop with the cursor until the batch returns
+/// < UNDELIVERED_PAGE_SIZE rows.
 pub async fn get_undelivered(
     pool: &PgPool,
     user_id: Uuid,
+    after_cursor: Option<(DateTime<Utc>, Uuid)>,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
+    let (after_ts, after_id): (Option<DateTime<Utc>>, Option<Uuid>) = match after_cursor {
+        Some((ts, id)) => (Some(ts), Some(id)),
+        None => (None, None),
+    };
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -234,19 +278,26 @@ pub async fn get_undelivered(
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                (SELECT COUNT(*) FROM messages r \
-                 WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL) AS reply_count \
+                COALESCE(rc.cnt, 0) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
+         LEFT JOIN LATERAL ( \
+             SELECT COUNT(*) AS cnt FROM messages r \
+             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
+         ) rc ON true \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
                   AND cm.is_removed = false \
          WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
-         ORDER BY m.created_at ASC \
-         LIMIT 200",
+                  AND ($2::timestamptz IS NULL OR (m.created_at, m.id) > ($2, $3)) \
+         ORDER BY m.created_at ASC, m.id ASC \
+         LIMIT $4",
     )
     .bind(user_id)
+    .bind(after_ts)
+    .bind(after_id)
+    .bind(UNDELIVERED_PAGE_SIZE)
     .fetch_all(pool)
     .await
 }

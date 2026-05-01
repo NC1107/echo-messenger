@@ -11,7 +11,7 @@ import '../helpers/mock_providers.dart';
 import '../helpers/pump_app.dart';
 
 ChatMessage _peerMsg() {
-  return ChatMessage(
+  return const ChatMessage(
     id: 'msg-1',
     fromUserId: 'user-alice',
     fromUsername: 'alice',

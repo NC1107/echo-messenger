@@ -133,13 +133,13 @@ jobs:
 
       - name: Run smoke tests
         # Smoke lane: local_full.spec.ts exercises the full feature surface
-        # in a single end-to-end flow.  Documented as smoke coverage only.
-        # Soft-failed on CI because the CanvasKit login selector is brittle
-        # and prone to 10-min timeouts; the maintained lane below provides
-        # the required per-feature regression signal.
-        continue-on-error: true
+        # in a single end-to-end flow.  Audit H33 (#357): the assertion
+        # antipatterns (console.log instead of expect) and forbidden ws
+        # `?token=` seed step were fixed in CRIT-2/3, so this lane now
+        # gates strictly. `--retries=1` absorbs single-flake noise without
+        # masking real failures.
         working-directory: tests/e2e
-        run: npx playwright test --project=smoke
+        run: npx playwright test --project=smoke --retries=1
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
           JWT_SECRET: ci-e2e-secret-do-not-use-in-production
@@ -147,13 +147,14 @@ jobs:
       - name: Run maintained E2E suite
         # Maintained lane: targeted UI and protocol specs (semantics_e2e,
         # group_create_ui, group_messaging_ui, hover_then_type, crypto_dm_test).
-        # Soft-failed pending #673: login/register selectors fixed via
-        # Semantics labels, but deeper widgets (chatsTab, createGroupBtn,
-        # etc.) still hit the same CanvasKit `getByRole` brittleness.
-        # Sweep across all maintained specs is a separate effort.
+        # Still soft-failed pending #673: login/register selectors fixed
+        # via Semantics labels, but deeper widgets (chatsTab, createGroupBtn,
+        # etc.) still hit CanvasKit `getByRole` brittleness.  The sweep
+        # across all maintained specs is its own effort tracked there.
+        # `--retries=2` reduces noise once the gate flips on.
         continue-on-error: true
         working-directory: tests/e2e
-        run: npx playwright test --project=maintained
+        run: npx playwright test --project=maintained --retries=2
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
           JWT_SECRET: ci-e2e-secret-do-not-use-in-production

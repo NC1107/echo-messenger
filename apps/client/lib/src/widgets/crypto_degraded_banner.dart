@@ -37,7 +37,7 @@ class CryptoDegradedBanner extends ConsumerWidget {
                     Flexible(
                       child: Text(
                         cryptoState.error!,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 12,
                           color: EchoTheme.warning,
                           fontWeight: FontWeight.w500,

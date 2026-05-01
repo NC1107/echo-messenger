@@ -18,6 +18,23 @@ comment:
   layout: "reach,diff,flags,components"
   behavior: default
 
+component_management:
+  individual_components:
+    - component_id: ratchet
+      name: Ratchet/Signal Protocol
+      paths:
+        - apps/client/lib/src/services/signal_*.dart
+        - apps/client/lib/src/services/crypto_*.dart
+      status:
+        project:
+          target: 60%
+          threshold: 5%
+          informational: true
+        patch:
+          target: 70%
+          threshold: 5%
+          informational: true
+
 flags:
   flutter:
     paths:

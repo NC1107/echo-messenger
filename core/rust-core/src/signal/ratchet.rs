@@ -18,12 +18,13 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::error::CoreError;
 
-/// Maximum number of skipped message keys to store (prevents memory exhaustion
-/// from a malicious peer sending huge message numbers).
-const MAX_SKIP: u32 = 1000;
+/// Re-exports of the protocol-level skip caps; defined once in `protocol.rs`
+/// so the Rust server can refer to the same MAX_SKIP / MAX_SKIPPED_KEYS
+/// (#700, audit CRIT-4 gate).
+use super::protocol::{MAX_SKIP, MAX_SKIPPED_KEYS, RATCHET_KDF_INFO};
 
-/// HKDF info strings for key derivation.
-const RATCHET_KDF_INFO: &[u8] = b"EchoDoubleRatchet";
+/// Local KDF context bytes -- not protocol-shared because they're internal
+/// to the message-key derivation scheme inside this file.
 const CHAIN_KEY_SEED: u8 = 0x02;
 const MESSAGE_KEY_SEED: u8 = 0x01;
 
@@ -361,7 +362,9 @@ impl RatchetState {
     ///
     /// Stores the skipped keys so out-of-order messages can still be decrypted.
     fn skip_message_keys(&mut self, until: u32) -> Result<(), CoreError> {
-        if self.recv_counter + MAX_SKIP < until {
+        // saturating_add avoids debug-build overflow panics when `until` is
+        // close to u32::MAX (a malicious peer can pick the message_number).
+        if self.recv_counter.saturating_add(MAX_SKIP) < until {
             return Err(CoreError::Crypto(format!(
                 "Too many skipped messages (recv_counter={}, target={})",
                 self.recv_counter, until,
@@ -370,6 +373,14 @@ impl RatchetState {
 
         if let Some(ref mut chain_key) = self.receiving_chain_key {
             while self.recv_counter < until {
+                // Global cap across DH-ratchet steps: each step resets
+                // `recv_counter` to 0, so without this an adversary could
+                // accumulate skipped_keys across many steps unbounded.
+                if self.skipped_keys.len() >= MAX_SKIPPED_KEYS {
+                    return Err(CoreError::Crypto(format!(
+                        "Skipped-keys map full ({MAX_SKIPPED_KEYS}); refusing to grow"
+                    )));
+                }
                 let (new_ck, mk) = kdf_ck(chain_key)?;
                 let rk = self
                     .receiving_ratchet_key
@@ -720,5 +731,69 @@ mod tests {
         let (ct, hdr) = alice.encrypt(&big_msg).unwrap();
         let pt = bob.decrypt(&hdr, &ct).unwrap();
         assert_eq!(pt, big_msg);
+    }
+
+    #[test]
+    fn test_skip_limit_exceeded_rejects() {
+        // A malicious peer that puts an outsized message_number in the header
+        // must be rejected before the skip loop allocates `until` keys.
+        let (mut alice, mut bob) = setup_ratchet_pair();
+
+        // Push Bob's recv_counter forward by decrypting one in-order message.
+        let (ct0, hdr0) = alice.encrypt(b"first").unwrap();
+        bob.decrypt(&hdr0, &ct0).unwrap();
+
+        // Forge a header claiming we're far past the cap.
+        let bad_hdr = MessageHeader {
+            ratchet_public_key: hdr0.ratchet_public_key,
+            prev_chain_length: 0,
+            message_number: MAX_SKIP + 5,
+        };
+        // The ciphertext value doesn't matter -- skip_message_keys runs first.
+        let result = bob.decrypt(&bad_hdr, b"ignored");
+        assert!(
+            result.is_err(),
+            "headers exceeding MAX_SKIP must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_skip_with_max_msg_number_does_not_overflow() {
+        // Guards against debug-build overflow on `recv_counter + MAX_SKIP`.
+        let (mut alice, mut bob) = setup_ratchet_pair();
+        let (ct0, hdr0) = alice.encrypt(b"first").unwrap();
+        bob.decrypt(&hdr0, &ct0).unwrap();
+
+        let bad_hdr = MessageHeader {
+            ratchet_public_key: hdr0.ratchet_public_key,
+            prev_chain_length: 0,
+            message_number: u32::MAX,
+        };
+        // Must be a clean Err, not a panic.
+        let result = bob.decrypt(&bad_hdr, b"ignored");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deserialize_rejects_oversized_skipped_keys() {
+        // Hand-craft a serialized blob whose num_skipped exceeds MAX_SKIP and
+        // confirm deserialize() rejects it before allocating.
+        let mut blob = Vec::new();
+        blob.extend_from_slice(&[0u8; 32]); // root_key
+        blob.extend_from_slice(&[0u8; 32]); // sending_chain_key
+        blob.push(0); // has_receiving_chain_key = false
+        blob.extend_from_slice(&[0u8; 32]); // sending_ratchet_private
+        blob.extend_from_slice(&[0u8; 32]); // sending_ratchet_public
+        blob.push(0); // has_receiving_ratchet_key = false
+        blob.extend_from_slice(&0u32.to_le_bytes()); // send_counter
+        blob.extend_from_slice(&0u32.to_le_bytes()); // recv_counter
+        blob.extend_from_slice(&0u32.to_le_bytes()); // prev_send_counter
+        blob.extend_from_slice(&(MAX_SKIP + 1).to_le_bytes()); // num_skipped
+
+        let result = RatchetState::deserialize(&blob);
+        assert!(
+            result.is_err(),
+            "oversized num_skipped must be rejected before allocation"
+        );
     }
 }

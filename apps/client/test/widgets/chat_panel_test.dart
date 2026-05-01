@@ -78,21 +78,22 @@ List<Override> _chatPanelOverrides({ChatState chatState = const ChatState()}) {
     privacyProvider.overrideWith((ref) => _FakePrivacyNotifier(ref)),
     voiceSettingsProvider.overrideWith((ref) => _FakeVoiceSettingsNotifier()),
     voiceRtcProvider.overrideWith((ref) => _FakeVoiceRtcNotifier(ref)),
-    themeProvider.overrideWith((ref) => _FakeThemeNotifier()),
-    messageLayoutProvider.overrideWith((ref) => _FakeMessageLayoutNotifier()),
+    appThemeProvider.overrideWith(_FakeTheme.new),
+    messageLayoutNotifierProvider.overrideWith(_FakeMessageLayoutNotifier.new),
   ];
 }
 
-class _FakeThemeNotifier extends ThemeNotifier {
-  _FakeThemeNotifier() {
-    state = AppThemeSelection.dark;
-  }
+/// `@riverpod` Notifier fakes override `build()` instead of mutating
+/// `state` from a constructor -- the generated parent class initialises
+/// `state` from the value `build()` returns.
+class _FakeTheme extends AppTheme {
+  @override
+  AppThemeSelection build() => AppThemeSelection.dark;
 }
 
 class _FakeMessageLayoutNotifier extends MessageLayoutNotifier {
-  _FakeMessageLayoutNotifier() {
-    state = MessageLayout.bubbles;
-  }
+  @override
+  MessageLayout build() => MessageLayout.bubbles;
 }
 
 /// A 1:1 DM conversation.
@@ -141,7 +142,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpApp(
-        ChatPanel(conversation: _dmConversation),
+        const ChatPanel(conversation: _dmConversation),
         overrides: _chatPanelOverrides(),
       );
       await tester.pump();
@@ -152,7 +153,7 @@ void main() {
 
     testWidgets('shows group name in group conversation', (tester) async {
       await tester.pumpApp(
-        ChatPanel(conversation: _groupConversation),
+        const ChatPanel(conversation: _groupConversation),
         overrides: _chatPanelOverrides(),
       );
       await tester.pump();
@@ -164,7 +165,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpApp(
-        ChatPanel(conversation: _dmConversation),
+        const ChatPanel(conversation: _dmConversation),
         overrides: _chatPanelOverrides(),
       );
       await tester.pump();
@@ -178,7 +179,7 @@ void main() {
 
     testWidgets('message list renders with messages', (tester) async {
       final messages = [
-        ChatMessage(
+        const ChatMessage(
           id: 'msg-1',
           fromUserId: 'user-alice',
           fromUsername: 'alice',
@@ -187,7 +188,7 @@ void main() {
           timestamp: '2026-01-15T10:00:00Z',
           isMine: false,
         ),
-        ChatMessage(
+        const ChatMessage(
           id: 'msg-2',
           fromUserId: 'test-user-id',
           fromUsername: 'testuser',
@@ -203,7 +204,7 @@ void main() {
       );
 
       await tester.pumpApp(
-        ChatPanel(conversation: _dmConversation),
+        const ChatPanel(conversation: _dmConversation),
         overrides: _chatPanelOverrides(chatState: chatState),
       );
       await tester.pump();
@@ -213,10 +214,10 @@ void main() {
     });
 
     testWidgets('loading indicator shows when loading history', (tester) async {
-      final chatState = ChatState(loadingHistory: {'conv-dm:': true});
+      final chatState = const ChatState(loadingHistory: {'conv-dm:': true});
 
       await tester.pumpApp(
-        ChatPanel(conversation: _dmConversation),
+        const ChatPanel(conversation: _dmConversation),
         overrides: _chatPanelOverrides(chatState: chatState),
       );
       await tester.pump();
@@ -228,7 +229,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpApp(
-        ChatPanel(conversation: _dmConversation),
+        const ChatPanel(conversation: _dmConversation),
         overrides: _chatPanelOverrides(),
       );
       await tester.pump();
@@ -240,7 +241,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpApp(
-        ChatPanel(conversation: _dmConversation),
+        const ChatPanel(conversation: _dmConversation),
         overrides: _chatPanelOverrides(),
       );
       await tester.pump();
@@ -254,7 +255,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpApp(
-        ChatPanel(conversation: _dmConversation),
+        const ChatPanel(conversation: _dmConversation),
         overrides: _chatPanelOverrides(),
       );
       await tester.pump();
@@ -309,7 +310,7 @@ void main() {
     testWidgets('optimistic delete removes message from list', skip: true, (
       tester,
     ) async {
-      final chatState = ChatState(
+      final chatState = const ChatState(
         messagesByConversation: {
           'conv-dm': [testMsg],
         },
@@ -328,7 +329,7 @@ void main() {
     testWidgets('rollback restores message after failed delete', skip: true, (
       tester,
     ) async {
-      final chatState = ChatState(
+      final chatState = const ChatState(
         messagesByConversation: {
           'conv-dm': [testMsg],
         },
@@ -364,7 +365,7 @@ void main() {
     testWidgets('optimistic pin update is reflected in state', skip: true, (
       tester,
     ) async {
-      final chatState = ChatState(
+      final chatState = const ChatState(
         messagesByConversation: {
           'conv-dm': [testMsg],
         },
@@ -398,7 +399,7 @@ void main() {
     testWidgets('rollback clears pin on server failure', skip: true, (
       tester,
     ) async {
-      final chatState = ChatState(
+      final chatState = const ChatState(
         messagesByConversation: {
           'conv-dm': [testMsg],
         },
@@ -436,10 +437,10 @@ void main() {
     testWidgets('history-key with channel suffix is respected', (tester) async {
       // Key format is '$conversationId:$channelId' — for a DM with no
       // channel the suffix is empty, so the correct key is 'conv-dm:'.
-      final chatState = ChatState(loadingHistory: {'conv-dm:': true});
+      final chatState = const ChatState(loadingHistory: {'conv-dm:': true});
 
       await tester.pumpApp(
-        ChatPanel(conversation: _dmConversation),
+        const ChatPanel(conversation: _dmConversation),
         overrides: _chatPanelOverrides(chatState: chatState),
       );
       await tester.pump();
@@ -451,10 +452,10 @@ void main() {
     testWidgets('skeleton loader shown when loading with no messages', (
       tester,
     ) async {
-      final chatState = ChatState(loadingHistory: {'conv-dm:': true});
+      final chatState = const ChatState(loadingHistory: {'conv-dm:': true});
 
       await tester.pumpApp(
-        ChatPanel(conversation: _dmConversation),
+        const ChatPanel(conversation: _dmConversation),
         overrides: _chatPanelOverrides(chatState: chatState),
       );
       await tester.pump();

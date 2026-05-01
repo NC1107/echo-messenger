@@ -27,7 +27,6 @@ async fn alice_sends_bob_receives() {
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
@@ -97,7 +96,6 @@ async fn typing_indicator_broadcast() {
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
@@ -112,7 +110,7 @@ async fn typing_indicator_broadcast() {
         .expect("Alice typing send failed");
 
     // Bob should receive typing event
-    let bob_event = read_text_with_timeout(&mut bob_ws).await;
+    let bob_event = read_text_skipping_chatter(&mut bob_ws).await;
     let event: Value = serde_json::from_str(&bob_event).expect("Bob typing JSON parse failed");
     assert_eq!(event["type"], "typing", "Bob should get typing event");
     assert_eq!(event["conversation_id"], conv_id);
@@ -144,7 +142,6 @@ async fn read_receipt_broadcast() {
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
@@ -166,7 +163,6 @@ async fn read_receipt_broadcast() {
         .expect("Alice send failed");
 
     // Drain the message_sent and new_message events
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
@@ -181,7 +177,7 @@ async fn read_receipt_broadcast() {
         .expect("Bob read_receipt send failed");
 
     // Alice should receive read_receipt
-    let alice_event = read_text_with_timeout(&mut alice_ws).await;
+    let alice_event = read_text_skipping_chatter(&mut alice_ws).await;
     let event: Value =
         serde_json::from_str(&alice_event).expect("Alice read_receipt JSON parse failed");
     assert_eq!(
@@ -217,7 +213,6 @@ async fn key_reset_broadcast() {
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
 
@@ -232,7 +227,7 @@ async fn key_reset_broadcast() {
         .expect("Alice key_reset send failed");
 
     // Bob should receive key_reset
-    let bob_event = read_text_with_timeout(&mut bob_ws).await;
+    let bob_event = read_text_skipping_chatter(&mut bob_ws).await;
     let event: Value = serde_json::from_str(&bob_event).expect("Bob key_reset JSON parse failed");
     assert_eq!(event["type"], "key_reset", "Bob should get key_reset");
     assert_eq!(event["conversation_id"], conv_id);
@@ -270,7 +265,6 @@ async fn group_message_fanout() {
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
     let mut charlie_ws = connect_ws(&base, &charlie_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_ws).await;
     drain_pending(&mut charlie_ws).await;
@@ -325,7 +319,6 @@ async fn invalid_json_returns_error() {
 
     let mut ws = connect_ws(&base, &ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut ws).await;
 
     // Send invalid JSON
@@ -353,7 +346,6 @@ async fn message_to_noncontact_returns_error() {
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // Alice tries to message Eve (not a contact)
@@ -407,7 +399,6 @@ async fn offline_delivery_marks_unknown_device_undecryptable() {
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // Bob has device_id=42 in this simulation; the test WS path uses device_id=0
@@ -490,7 +481,6 @@ async fn device_content_db_roundtrip() {
     // Alice sends a message that stores a device-specific ciphertext.
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // Both alice and bob use device_id=1 — this is the exact collision case
@@ -586,7 +576,6 @@ async fn test_dm_fanout_delivers_to_all_recipient_devices() {
     let mut bob_d1_ws = connect_ws(&base, &bob_d1_ticket).await;
     let mut bob_d2_ws = connect_ws(&base, &bob_d2_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_d1_ws).await;
     drain_pending(&mut bob_d2_ws).await;
@@ -685,7 +674,6 @@ async fn test_group_fanout_delivers_to_all_devices_of_all_members() {
     let mut charlie_d1_ws = connect_ws(&base, &charlie_d1_ticket).await;
     let mut charlie_d2_ws = connect_ws(&base, &charlie_d2_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
     drain_pending(&mut bob_d1_ws).await;
     drain_pending(&mut bob_d2_ws).await;
@@ -806,7 +794,6 @@ async fn encrypted_dm_rejects_plaintext_send() {
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     let send_msg = serde_json::json!({
@@ -855,7 +842,6 @@ async fn encrypted_dm_rejects_nonciphertext_device_payload() {
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // The per-device value is plain ASCII (no 0xEC magic, not normal-msg shape).
@@ -903,7 +889,6 @@ async fn encrypted_dm_rejects_plaintext_canonical_content_with_valid_per_device(
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     // Per-device value is valid ciphertext (passes the per-device check)
@@ -962,7 +947,6 @@ async fn encrypted_group_rejects_plaintext_send() {
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     let send_msg = serde_json::json!({
@@ -1012,7 +996,6 @@ async fn encrypted_group_accepts_ciphertext_shaped_content() {
     let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
     let mut alice_ws = connect_ws(&base, &alice_ticket).await;
 
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     drain_pending(&mut alice_ws).await;
 
     let ct = common::dummy_ciphertext("encgrp_ok");
@@ -1078,10 +1061,8 @@ async fn drain_pending(ws: &mut WsStream) {
     {}
 }
 
-/// Read frames from the socket, skipping any `presence` events, until a
-/// non-presence text frame arrives. Presence events can race in late under
-/// slower runtimes (tarpaulin coverage instrumentation, CI pressure) and
-/// should not cause flakes in tests that assert other event types.
+/// Read frames, skipping `presence` events. Use when the test expects a
+/// non-presence non-new_message frame.
 async fn read_text_skipping_presence(ws: &mut WsStream) -> String {
     loop {
         let text = read_text_with_timeout(ws).await;
@@ -1090,6 +1071,27 @@ async fn read_text_skipping_presence(ws: &mut WsStream) -> String {
             Err(_) => return text,
         };
         if parsed["type"] == "presence" {
+            continue;
+        }
+        return text;
+    }
+}
+
+/// Read frames, skipping `presence`, `new_message`, and `message_sent`.
+/// Use when the test exercises a downstream event (typing, read_receipt,
+/// key_reset) and the message-fanout chatter would race in late under
+/// tarpaulin/CI pressure.
+async fn read_text_skipping_chatter(ws: &mut WsStream) -> String {
+    loop {
+        let text = read_text_with_timeout(ws).await;
+        let parsed: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(v) => v,
+            Err(_) => return text,
+        };
+        if matches!(
+            parsed["type"].as_str(),
+            Some("presence") | Some("new_message") | Some("message_sent")
+        ) {
             continue;
         }
         return text;

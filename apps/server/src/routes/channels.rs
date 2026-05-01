@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::db;
-use crate::error::AppError;
+use crate::error::{AppError, DbErrCtx};
 use crate::types::{ChannelKind, ConversationKind, Role};
 
 use super::AppState;
@@ -78,10 +78,7 @@ async fn ensure_group_member(
 ) -> Result<(), AppError> {
     let kind = db::groups::get_conversation_kind(&state.pool, group_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in ensure_group_member/get_kind: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("ensure_group_member/get_kind")?
         .ok_or_else(|| AppError::bad_request("Group not found"))?;
 
     if ConversationKind::from_str_opt(&kind) != Some(ConversationKind::Group) {
@@ -90,10 +87,7 @@ async fn ensure_group_member(
 
     let is_member = db::groups::is_member(&state.pool, group_id, user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in ensure_group_member/is_member: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("ensure_group_member/is_member")?;
 
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this group"));
@@ -110,10 +104,7 @@ async fn ensure_group_admin(
 ) -> Result<(), AppError> {
     let role = db::groups::get_member_role(&state.pool, group_id, user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in ensure_group_admin/get_role: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("ensure_group_admin/get_role")?;
     match role.as_deref().and_then(Role::from_str_opt) {
         Some(r) if r.is_admin_or_above() => Ok(()),
         _ => Err(AppError::unauthorized(
@@ -129,10 +120,7 @@ async fn ensure_channel_in_group(
 ) -> Result<db::channels::ChannelRow, AppError> {
     let channel = db::channels::get_channel(&state.pool, channel_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in ensure_channel_in_group/get_channel: {e:?}");
-            AppError::internal("Database error")
-        })?
+        .db_ctx("ensure_channel_in_group/get_channel")?
         .ok_or_else(|| AppError::bad_request("Channel not found"))?;
 
     if channel.conversation_id != group_id {
@@ -163,10 +151,7 @@ pub async fn list_channels(
 
     let rows = db::channels::list_channels(&state.pool, group_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in list_channels: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("list_channels")?;
 
     let channels: Vec<ChannelResponse> = rows
         .into_iter()
@@ -214,10 +199,7 @@ pub async fn create_channel(
         Some(_) => return Err(AppError::bad_request("Position must be non-negative")),
         None => db::channels::next_channel_position(&state.pool, group_id, &kind)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in create_channel/next_position: {e:?}");
-                AppError::internal("Database error")
-            })?,
+            .db_ctx("create_channel/next_position")?,
     };
 
     let created = db::channels::create_channel(
@@ -374,10 +356,7 @@ pub async fn list_voice_sessions(
 
     let rows = db::channels::list_voice_sessions(&state.pool, channel.id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in list_voice_sessions: {e:?}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("list_voice_sessions")?;
 
     let sessions: Vec<VoiceSessionResponse> = rows
         .into_iter()

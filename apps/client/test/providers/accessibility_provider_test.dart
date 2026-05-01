@@ -1,7 +1,12 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:echo_app/src/providers/accessibility_provider.dart';
+
+/// Pump enough microtasks for the build()-fired _load() to settle.
+Future<void> _flushLoad() =>
+    Future<void>.delayed(const Duration(milliseconds: 100));
 
 void main() {
   group('AccessibilityState', () {
@@ -32,20 +37,22 @@ void main() {
     });
   });
 
-  group('AccessibilityNotifier', () {
+  group('Accessibility (Notifier)', () {
     setUp(() {
       SharedPreferences.setMockInitialValues({});
     });
 
     test('loads defaults from empty SharedPreferences', () async {
-      final notifier = AccessibilityNotifier();
-      // Allow async _load() to complete.
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-
-      expect(notifier.state.fontScale, 1.0);
-      expect(notifier.state.reducedMotion, isFalse);
-      expect(notifier.state.highContrast, isFalse);
-      notifier.dispose();
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final state = container.read(accessibilityProvider);
+      expect(state.fontScale, 1.0);
+      expect(state.reducedMotion, isFalse);
+      expect(state.highContrast, isFalse);
+      // After _load() resolves, state stays at defaults (no persisted values).
+      await _flushLoad();
+      final after = container.read(accessibilityProvider);
+      expect(after.fontScale, 1.0);
     });
 
     test('loads persisted values from SharedPreferences', () async {
@@ -55,52 +62,59 @@ void main() {
         kAccessibilityHighContrast: true,
       });
 
-      final notifier = AccessibilityNotifier();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      // Trigger build().
+      container.read(accessibilityProvider);
+      await _flushLoad();
 
-      expect(notifier.state.fontScale, 1.5);
-      expect(notifier.state.reducedMotion, isTrue);
-      expect(notifier.state.highContrast, isTrue);
-      notifier.dispose();
+      final after = container.read(accessibilityProvider);
+      expect(after.fontScale, 1.5);
+      expect(after.reducedMotion, isTrue);
+      expect(after.highContrast, isTrue);
     });
 
     test('setFontScale updates state and persists', () async {
-      SharedPreferences.setMockInitialValues({});
-      final notifier = AccessibilityNotifier();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(accessibilityProvider);
+      await _flushLoad();
 
-      await notifier.setFontScale(1.75);
-      expect(notifier.state.fontScale, 1.75);
+      await container.read(accessibilityProvider.notifier).setFontScale(1.75);
+      expect(container.read(accessibilityProvider).fontScale, 1.75);
 
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getDouble(kAccessibilityFontScale), 1.75);
-      notifier.dispose();
     });
 
     test('setReducedMotion updates state and persists', () async {
-      SharedPreferences.setMockInitialValues({});
-      final notifier = AccessibilityNotifier();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(accessibilityProvider);
+      await _flushLoad();
 
-      await notifier.setReducedMotion(true);
-      expect(notifier.state.reducedMotion, isTrue);
+      await container
+          .read(accessibilityProvider.notifier)
+          .setReducedMotion(true);
+      expect(container.read(accessibilityProvider).reducedMotion, isTrue);
 
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool(kAccessibilityReducedMotion), isTrue);
-      notifier.dispose();
     });
 
     test('setHighContrast updates state and persists', () async {
-      SharedPreferences.setMockInitialValues({});
-      final notifier = AccessibilityNotifier();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      container.read(accessibilityProvider);
+      await _flushLoad();
 
-      await notifier.setHighContrast(true);
-      expect(notifier.state.highContrast, isTrue);
+      await container
+          .read(accessibilityProvider.notifier)
+          .setHighContrast(true);
+      expect(container.read(accessibilityProvider).highContrast, isTrue);
 
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool(kAccessibilityHighContrast), isTrue);
-      notifier.dispose();
     });
   });
 }

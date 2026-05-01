@@ -46,10 +46,10 @@ void main() {
     });
 
     test('copyWith preserves unchanged fields', () {
-      final state = ChannelsState(
+      final state = const ChannelsState(
         channelsByConversation: {
           'conv-1': [
-            const GroupChannel(
+            GroupChannel(
               id: 'ch-1',
               conversationId: 'conv-1',
               name: 'general',
@@ -59,7 +59,7 @@ void main() {
             ),
           ],
         },
-        loadingConversations: const {'conv-2'},
+        loadingConversations: {'conv-2'},
       );
 
       final copied = state.copyWith(error: 'test error');

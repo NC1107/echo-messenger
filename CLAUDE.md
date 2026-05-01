@@ -117,7 +117,7 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - **Server required env**: `DATABASE_URL` and `JWT_SECRET` (≥32 chars, panics without them). Optional: `SERVER_HOST` (default `0.0.0.0`), `SERVER_PORT` (default `8080`), `CORS_ORIGINS` for allowed origins, `RUST_LOG` for log filtering (e.g. `echo_server=debug`). Legacy `HOST`/`PORT` are still accepted but emit a deprecation warning at startup (#532).
 - **Traefik routing**: API priority 100, Web priority 1 (API routes must take precedence).
 - **Message wire format**: Initial V2 (with OTP) = `[0xEC, 0x02] + identity_pub(32) + ephemeral_pub(32) + otp_id(4 LE) + ratchet_wire`; Initial V1 (no OTP) = `[0xEC, 0x01] + identity_pub(32) + ephemeral_pub(32) + ratchet_wire`; Normal = `header_len(4 LE) + header(40) + nonce(12) + ciphertext + tag(16)`. All base64-wrapped over WebSocket.
-- **Soft deletes**: Messages use `is_deleted` flag, not hard deletes.
+- **Soft deletes**: Messages use a `deleted_at TIMESTAMPTZ NULL` column; queries filter with `deleted_at IS NULL`. Hard deletes only happen during `cleanup_expired_messages` (disappearing TTL) and `delete_group_dependents`.
 - **Refresh tokens (web)**: HttpOnly + Secure + SameSite=Strict cookie scoped to `/api/auth`; mobile/desktop continue to use the JSON body. `/refresh` accepts either; cookie wins. CORS requires explicit origins (not `*`) when cookie auth is enabled.
 
 ## Commit Style
@@ -155,5 +155,5 @@ Three compose files in `infra/docker/`:
 
 1. Session keys cached in memory with 24h idle TTL + 200-entry LRU cap; evicted entries have key material zeroed and reload from secure storage on demand.
 2. Multi-device: key-level revoke + last_seen + platform metadata work end-to-end; refresh tokens are not yet bound per device, so "logout all others" only kicks connected sessions via WS and truly offline sessions get blocked at next key operation.
-3. `core/rust-core/src/api.rs` has `todo!()` stubs (FFI bridge not integrated)
+3. `core/rust-core` ships Signal Protocol primitives only (X3DH, Double Ratchet, key types). The originally-planned FFI bridge to a Dart-side runtime never landed; the Dart client re-implements the protocol in pure Dart and the rust-core code path is exercised only by Rust integration tests. A few transitive deps (`rusqlite`, `tokio-tungstenite`, `reqwest`) sit in `Cargo.toml` from that abandoned design and could be pruned.
 4. Rate limiting is in-memory only (resets on server restart)

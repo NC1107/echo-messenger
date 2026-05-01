@@ -128,11 +128,10 @@ pub async fn search_users(
     exclude_user_id: Uuid,
 ) -> Result<Vec<UserProfileRow>, sqlx::Error> {
     let escaped = query
-        .to_lowercase()
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_");
-    let pattern = format!("{escaped}%");
+    let pattern = format!("%{escaped}%");
     sqlx::query_as::<_, UserProfileRow>(
         "SELECT id, username, display_name, avatar_url, bio, status_message, \
          timezone, pronouns, website, \
@@ -141,9 +140,9 @@ pub async fn search_users(
          created_at \
          FROM users \
          WHERE id != $2 AND searchable = true AND ( \
-           LOWER(username) LIKE $1 ESCAPE '\\' \
-           OR (email_discoverable AND LOWER(email) LIKE $1 ESCAPE '\\') \
-           OR (phone_discoverable AND phone LIKE $1 ESCAPE '\\') \
+           username ILIKE $1 ESCAPE '\\' \
+           OR (email_discoverable AND email ILIKE $1 ESCAPE '\\') \
+           OR (phone_discoverable AND phone ILIKE $1 ESCAPE '\\') \
          ) \
          ORDER BY username \
          LIMIT 10",

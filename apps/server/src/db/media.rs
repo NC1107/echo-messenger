@@ -1,5 +1,7 @@
 //! Media metadata database queries.
 
+use std::collections::HashSet;
+
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -47,6 +49,13 @@ pub async fn get_media(pool: &PgPool, id: Uuid) -> Result<Option<MediaRow>, sqlx
     .bind(id)
     .fetch_optional(pool)
     .await
+}
+
+pub async fn all_media_ids(pool: &PgPool) -> Result<HashSet<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as("SELECT id FROM media")
+        .fetch_all(pool)
+        .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
 /// Check whether a user can access a media file.

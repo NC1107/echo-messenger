@@ -21,14 +21,11 @@ void main() {
 
   group('CanvasStroke', () {
     test('pen stroke round-trips through JSON', () {
-      final stroke = CanvasStroke(
+      final stroke = const CanvasStroke(
         id: 'stroke-1',
         color: '#FF0000',
         width: 4.0,
-        points: const [
-          CanvasPoint(x: 0.1, y: 0.2),
-          CanvasPoint(x: 0.3, y: 0.4),
-        ],
+        points: [CanvasPoint(x: 0.1, y: 0.2), CanvasPoint(x: 0.3, y: 0.4)],
         kind: StrokeKind.pen,
       );
 
@@ -43,11 +40,11 @@ void main() {
     });
 
     test('eraser stroke preserves kind', () {
-      final stroke = CanvasStroke(
+      final stroke = const CanvasStroke(
         id: 'e-1',
         color: '#00000000',
         width: 10.0,
-        points: const [CanvasPoint(x: 0.5, y: 0.5)],
+        points: [CanvasPoint(x: 0.5, y: 0.5)],
         kind: StrokeKind.eraser,
       );
       final json = stroke.toJson();
@@ -135,7 +132,7 @@ void main() {
       final updated = state.copyWith(
         isLoaded: true,
         selectedTool: CanvasTool.eraser,
-        currentColor: Color(0xFFFF0000),
+        currentColor: const Color(0xFFFF0000),
         strokeWidth: 8.0,
       );
       expect(updated.isLoaded, isTrue);
@@ -152,11 +149,11 @@ void main() {
 
     test('copyWith strokes appends correctly', () {
       const state = CanvasState();
-      final stroke = CanvasStroke(
+      final stroke = const CanvasStroke(
         id: 's1',
         color: '#00FF00',
         width: 3.0,
-        points: const [CanvasPoint(x: 0.0, y: 0.0)],
+        points: [CanvasPoint(x: 0.0, y: 0.0)],
       );
       final updated = state.copyWith(strokes: [stroke]);
       expect(updated.strokes.length, 1);

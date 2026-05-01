@@ -1,5 +1,7 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+part 'accessibility_provider.g.dart';
 
 const kAccessibilityFontScale = 'accessibility_font_scale';
 const kAccessibilityReducedMotion = 'accessibility_reduced_motion';
@@ -29,9 +31,22 @@ class AccessibilityState {
   }
 }
 
-class AccessibilityNotifier extends StateNotifier<AccessibilityState> {
-  AccessibilityNotifier() : super(const AccessibilityState()) {
+/// Migrated from `StateNotifier` to `@riverpod`-annotated `Notifier` (audit
+/// 2026-04-30, Riverpod modernization slice). The exported provider symbol
+/// `accessibilityProvider` is preserved so the ~12 existing call sites do
+/// not change.
+///
+/// `keepAlive: true` matches the original `StateNotifierProvider` semantics
+/// -- the singleton lives for the whole app session so we don't re-run
+/// `_load()` (a SharedPreferences read) every time a widget re-watches.
+@Riverpod(keepAlive: true)
+class Accessibility extends _$Accessibility {
+  @override
+  AccessibilityState build() {
+    // Fire and forget: load persisted prefs and overwrite `state` once
+    // the future resolves. Matches the legacy StateNotifier behaviour.
     _load();
+    return const AccessibilityState();
   }
 
   Future<void> _load() async {
@@ -61,8 +76,3 @@ class AccessibilityNotifier extends StateNotifier<AccessibilityState> {
     await prefs.setBool(kAccessibilityHighContrast, value);
   }
 }
-
-final accessibilityProvider =
-    StateNotifierProvider<AccessibilityNotifier, AccessibilityState>((ref) {
-      return AccessibilityNotifier();
-    });

@@ -4,7 +4,6 @@
 set -euo pipefail
 
 SERVER_URL="http://localhost:8080"
-WS_URL="ws://localhost:8080"
 APP_BINARY="apps/client/build/linux/x64/release/bundle/echo_app"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -38,7 +37,7 @@ sleep 1
 echo "[3/6] Starting server..."
 source "$HOME/.cargo/env" 2>/dev/null || true
 DATABASE_URL="postgres://echo:dev_password@localhost:5432/echo_dev" \
-JWT_SECRET="dev-secret" \
+JWT_SECRET="dev-jwt-secret-must-be-at-least-32-chars-long" \
 RUST_LOG="echo_server=info" \
 "$PROJECT_DIR/target/debug/echo-server" &
 SERVER_PID=$!

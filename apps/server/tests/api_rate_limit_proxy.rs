@@ -94,6 +94,58 @@ async fn rate_limit_honours_x_real_ip_from_trusted_proxy() {
 }
 
 // ---------------------------------------------------------------------------
+// Trusted vs untrusted: single combined assertion (#524)
+// ---------------------------------------------------------------------------
+
+/// X-Real-IP is honoured when the peer is in trusted_proxies and ignored when
+/// it is not.  Two servers are started so the two behaviours are tested in the
+/// same function against the same endpoint (login).
+#[tokio::test]
+async fn x_real_ip_trusted_proxy_honoured_untrusted_ignored() {
+    let loopback: IpAddr = "127.0.0.1".parse().unwrap();
+
+    // Server A: loopback is a trusted proxy -- X-Real-IP should be the key.
+    let base_trusted = common::spawn_server_with_trusted_proxies(vec![loopback]).await;
+    // Server B: no trusted proxies -- X-Real-IP must be ignored.
+    let base_untrusted = common::spawn_server().await;
+
+    let client = Client::new();
+
+    // --- trusted path: exhaust the bucket for X-Real-IP 10.1.1.1 ---
+    for _ in 0..5 {
+        let s = try_login(&client, &base_trusted, "x-real-ip", "10.1.1.1").await;
+        assert_ne!(s, 429, "trusted: bucket not full yet");
+    }
+    let s = try_login(&client, &base_trusted, "x-real-ip", "10.1.1.1").await;
+    assert_eq!(
+        s, 429,
+        "trusted: 6th attempt for 10.1.1.1 must be rate-limited"
+    );
+
+    // A fresh X-Real-IP on the trusted server should still be allowed.
+    let s = try_login(&client, &base_trusted, "x-real-ip", "10.2.2.2").await;
+    assert_ne!(
+        s, 429,
+        "trusted: different X-Real-IP must have its own bucket"
+    );
+
+    // --- untrusted path: exhaust the bucket using the peer IP (127.0.0.1) ---
+    // The X-Real-IP header is sent but must not influence the key.
+    for _ in 0..5 {
+        let s = try_login(&client, &base_untrusted, "x-real-ip", "10.3.3.3").await;
+        assert_ne!(s, 429, "untrusted: bucket not full yet");
+    }
+    // Sixth attempt from the same peer (127.0.0.1) must be rate-limited even
+    // though it carries a different X-Real-IP header.
+    let s = try_login(&client, &base_untrusted, "x-real-ip", "10.4.4.4").await;
+    assert_eq!(
+        s, 429,
+        "untrusted: 6th request from 127.0.0.1 must be rate-limited \
+         regardless of X-Real-IP header value"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // With trusted proxy: X-Forwarded-For is honoured as fallback
 // ---------------------------------------------------------------------------
 

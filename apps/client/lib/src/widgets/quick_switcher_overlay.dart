@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/conversation.dart';
 import '../providers/conversations_provider.dart';
 import '../theme/echo_theme.dart';
+import '../utils/fuzzy_score.dart';
 
 /// A Ctrl+K quick-switcher overlay for searching conversations, contacts,
 /// and groups. Shows as a centered floating card with a search input.
@@ -35,12 +36,19 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
     final conversations = ref.read(conversationsProvider).conversations;
     if (_query.isEmpty) return conversations.take(8).toList();
 
-    final q = _query.toLowerCase();
-    return conversations.where((c) {
-      final title = (c.name ?? '').toLowerCase();
-      final members = c.members.map((m) => m.username.toLowerCase()).join(' ');
-      return title.contains(q) || members.contains(q);
-    }).toList();
+    final q = _query;
+    final scored = <({Conversation conv, double score})>[];
+    for (final c in conversations) {
+      final title = c.name ?? '';
+      double best = fuzzyScore(q, title);
+      for (final m in c.members) {
+        final s = fuzzyScore(q, m.username);
+        if (s > best) best = s;
+      }
+      if (best > 0.2) scored.add((conv: c, score: best));
+    }
+    scored.sort((a, b) => b.score.compareTo(a.score));
+    return scored.map((e) => e.conv).toList();
   }
 
   void _selectCurrent(List<Conversation> results) {
@@ -152,7 +160,7 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
       child: GestureDetector(
         onTap: () => Navigator.of(context).pop(),
         child: Material(
-          color: Colors.black54,
+          color: context.mainBg.withValues(alpha: 0.54),
           child: Center(
             child: GestureDetector(
               onTap: () {}, // prevent backdrop tap
@@ -165,7 +173,7 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
                   border: Border.all(color: context.border),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.4),
+                      color: context.mainBg.withValues(alpha: 0.4),
                       blurRadius: 24,
                       offset: const Offset(0, 8),
                     ),
