@@ -40,6 +40,7 @@ const ALLOWED_MIME_TYPES: &[&str] = &[
     "image/heif",
     // Video
     "video/mp4",
+    "video/x-m4v",
     "video/quicktime",
     "video/webm",
     "video/x-msvideo",
@@ -74,7 +75,7 @@ fn extension_for_mime(mime: &str) -> &str {
         "image/gif" => "gif",
         "image/webp" => "webp",
         "image/heic" | "image/heif" => "heic",
-        "video/mp4" => "mp4",
+        "video/mp4" | "video/x-m4v" => "mp4",
         "video/quicktime" => "mov",
         "video/webm" => "webm",
         "video/x-msvideo" => "avi",
@@ -761,6 +762,31 @@ mod tests {
 
     // Minimal ELF header (magic 7F 45 4C 46).
     const ELF_BYTES: &[u8] = b"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+
+    // Minimal M4V header -- ftyp box with "M4V " brand, padded to 512 bytes.
+    // Apple M4V files use this brand; infer detects them as "video/x-m4v".
+    // These were rejected before the fix because "video/x-m4v" was missing
+    // from ALLOWED_MIME_TYPES (#411).
+    fn make_m4v_head() -> Vec<u8> {
+        let mut v = vec![
+            0x00, 0x00, 0x00, 0x14, // box size = 20
+            b'f', b't', b'y', b'p', // box type = "ftyp"
+            b'M', b'4', b'V', b' ', // major brand = "M4V "
+            0x00, 0x00, 0x00, 0x00, // minor version
+            b'M', b'4', b'V', b' ', // compatible brand
+        ];
+        v.resize(512, 0);
+        v
+    }
+
+    #[test]
+    fn validate_bytes_accepts_m4v_as_video_x_m4v() {
+        // Regression for #411: Apple M4V files (ftyp brand "M4V ") were
+        // rejected because "video/x-m4v" was absent from ALLOWED_MIME_TYPES.
+        let head = make_m4v_head();
+        let mime = validate_bytes(&head, "video/mp4").expect("M4V magic bytes should be accepted");
+        assert_eq!(mime, "video/x-m4v");
+    }
 
     #[test]
     fn validate_bytes_accepts_pdf() {

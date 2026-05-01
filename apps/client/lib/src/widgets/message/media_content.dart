@@ -599,8 +599,12 @@ class MediaContentState extends State<MediaContent> {
             : null);
     if (videoUrl != null) {
       final rawUrl = videoUrl;
+      // Build thumbUrl from rawUrl (not the already-resolved videoUrl) so that
+      // on web the ?ticket= is appended after /thumb, not before it (#411).
+      final rawThumbUrl = '$rawUrl/thumb';
       return InlineVideoPlayer(
         videoUrl: _resolveUrl(rawUrl),
+        thumbUrl: _resolveUrl(rawThumbUrl),
         rawUrl: rawUrl,
         headers: _headers(),
         surface: context.surface,
@@ -705,6 +709,7 @@ class MediaContentState extends State<MediaContent> {
 /// disposes it when removed from the tree.
 class InlineVideoPlayer extends StatefulWidget {
   final String videoUrl;
+  final String thumbUrl;
   final String rawUrl;
   final Map<String, String> headers;
   final Color surface;
@@ -718,6 +723,7 @@ class InlineVideoPlayer extends StatefulWidget {
   const InlineVideoPlayer({
     super.key,
     required this.videoUrl,
+    required this.thumbUrl,
     required this.rawUrl,
     required this.headers,
     required this.surface,
@@ -806,7 +812,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     // Server generates a JPEG first-frame thumbnail at upload time (#561).
     // If that endpoint 404s (older upload, ffmpeg missing, etc.), the
     // CachedNetworkImage's errorWidget falls back to the previous solid tile.
-    final thumbUrl = '${widget.videoUrl}/thumb';
+    // Use the pre-resolved thumbUrl from the widget so that query params
+    // (e.g. ?ticket= on web) appear after /thumb, not before it (#411).
+    final thumbUrl = widget.thumbUrl;
     // Inline thumbnail is 170px tall; cap decode height at 170 * DPR so
     // we don't hold a 4K still-frame in RAM for a thumbnail (#639).
     final dpr = MediaQuery.devicePixelRatioOf(context);

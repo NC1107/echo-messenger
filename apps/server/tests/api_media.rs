@@ -459,3 +459,54 @@ async fn streaming_upload_oversized_returns_400() {
         "oversized upload should be rejected with 400 or 413, got {status}: body = {body}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// M4V regression test -- #411
+// ---------------------------------------------------------------------------
+
+/// Build a minimal M4V ftyp box padded to 3 MB so Axum's default 2 MB body
+/// limit is also exercised (ensuring the route's DefaultBodyLimit override is
+/// in effect for M4V as well).
+fn make_minimal_m4v(size: usize) -> Vec<u8> {
+    let mut data = vec![
+        0x00, 0x00, 0x00, 0x14, // box size = 20
+        b'f', b't', b'y', b'p', // box type = "ftyp"
+        b'M', b'4', b'V', b' ', // major brand = "M4V "
+        0x00, 0x00, 0x00, 0x00, // minor version
+        b'M', b'4', b'V', b' ', // compatible brand
+    ];
+    data.resize(size, 0);
+    data
+}
+
+#[tokio::test]
+async fn upload_m4v_returns_201() {
+    // Regression for #411: Apple M4V files (ftyp brand "M4V ") were rejected
+    // with 400 "Detected file type 'video/x-m4v' is not allowed" because
+    // "video/x-m4v" was missing from the server's ALLOWED_MIME_TYPES list.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _, _) = common::register_and_login(&client, &base, "media_m4v").await;
+
+    let m4v_bytes = make_minimal_m4v(SYNTHETIC_MP4_SIZE);
+    let part = Part::bytes(m4v_bytes)
+        .file_name("clip.m4v")
+        .mime_str("video/mp4")
+        .unwrap();
+    let form = Form::new().part("file", part);
+
+    let resp = client
+        .post(format!("{base}/api/media/upload"))
+        .header("Authorization", format!("Bearer {token}"))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status().as_u16(),
+        201,
+        "M4V upload should succeed: body = {}",
+        resp.text().await.unwrap_or_default()
+    );
+}

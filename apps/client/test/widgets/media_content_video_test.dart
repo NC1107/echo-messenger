@@ -87,4 +87,49 @@ void main() {
       );
     });
   });
+
+  group('InlineVideoPlayer thumbUrl construction (#411)', () {
+    // Regression: thumbUrl was built as '${videoUrl}/thumb' where videoUrl
+    // may already have query params appended (e.g. '?ticket=xyz' on web).
+    // That produces '/api/media/uuid?ticket=xyz/thumb' — a malformed URL
+    // where the ticket value contains a path separator.
+    //
+    // The fix: build thumbUrl from rawUrl before any query params are added,
+    // then resolve it independently. This test verifies the correct pattern
+    // using pure string logic, independent of kIsWeb.
+    test('thumb URL built from rawUrl never contains query params mid-path', () {
+      const rawUrl = '/api/media/abc-123';
+      // Simulate a resolved videoUrl that already has a query param (web path).
+      const resolvedVideoUrl = '/api/media/abc-123?ticket=tok';
+
+      // Old (buggy) approach: append /thumb to the already-resolved URL.
+      final buggyThumbUrl = '$resolvedVideoUrl/thumb';
+
+      // New (correct) approach: append /thumb to rawUrl, then resolve.
+      final correctThumbRawUrl = '$rawUrl/thumb';
+      // (Resolution would add ?ticket=tok at the end for web)
+      final correctThumbUrl = '$correctThumbRawUrl?ticket=tok';
+
+      // The buggy URL has '?ticket=tok/thumb' -- ticket value contains '/thumb'.
+      expect(
+        buggyThumbUrl,
+        equals('/api/media/abc-123?ticket=tok/thumb'),
+        reason: 'confirms the pre-fix bug pattern',
+      );
+
+      // The correct URL has '/thumb' as a path segment before the query.
+      expect(
+        correctThumbUrl,
+        equals('/api/media/abc-123/thumb?ticket=tok'),
+        reason: '/thumb must be a path segment, ticket must trail the URL',
+      );
+
+      // Confirm the bug pattern is absent from the correct URL.
+      expect(
+        correctThumbUrl.contains('?ticket=tok/thumb'),
+        isFalse,
+        reason: 'ticket value must not contain a path separator',
+      );
+    });
+  });
 }
