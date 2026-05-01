@@ -33,8 +33,9 @@ class MessageCache {
 
   /// Strings that represent decryption failures. These must never be cached
   /// because doing so permanently replaces the real ciphertext and blocks
-  /// future decrypt retries.
-  static const List<String> _failureSentinels = [
+  /// future decrypt retries. Also used by [ConversationsNotifier] to reject
+  /// failure strings from being stored as conversation previews (#664).
+  static const List<String> failureSentinels = [
     '[Message encrypted - history unavailable]',
     '[Encrypted history]',
     '[Could not decrypt - encryption keys may be out of sync]',
@@ -80,7 +81,7 @@ class MessageCache {
     final entries = <String, Map<dynamic, dynamic>>{};
     for (final msg in messages) {
       if (msg.id.startsWith('pending_')) continue;
-      if (_failureSentinels.contains(msg.content)) continue;
+      if (failureSentinels.contains(msg.content)) continue;
       entries[msg.id] = msg.toJson();
     }
     if (entries.isEmpty) return;
@@ -146,7 +147,12 @@ class MessageCache {
           json['created_at'] as String? ?? json['timestamp'] as String? ?? '';
       if (latestTimestamp == null || ts.compareTo(latestTimestamp) > 0) {
         latestTimestamp = ts;
-        latest = json['content'] as String?;
+        final content = json['content'] as String?;
+        // Skip failure sentinels written before the guard was introduced;
+        // they must not surface as conversation previews (#664).
+        latest = (content != null && failureSentinels.contains(content))
+            ? null
+            : content;
       }
     }
     return latest;

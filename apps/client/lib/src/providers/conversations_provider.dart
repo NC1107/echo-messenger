@@ -185,8 +185,10 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     bool incrementUnread = true,
   }) {
     // Cache the decrypted preview (content passed here is already decrypted
-    // by the websocket provider)
-    _decryptedPreviews[conversationId] = content;
+    // by the websocket provider). Guard against failure sentinels (#664).
+    if (!MessageCache.failureSentinels.contains(content)) {
+      _decryptedPreviews[conversationId] = content;
+    }
 
     final conversations = state.conversations;
     final index = conversations.indexWhere((c) => c.id == conversationId);
@@ -229,14 +231,21 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
       // message, but updating the preview is harmless either way since the
       // next real message will overwrite it.
       updated[index] = conv.copyWith(lastMessage: newContent);
-      _decryptedPreviews[conversationId] = newContent;
+      if (!MessageCache.failureSentinels.contains(newContent)) {
+        _decryptedPreviews[conversationId] = newContent;
+      }
       state = state.copyWith(conversations: updated);
     }
   }
 
   /// Store a decrypted preview for a conversation so the conversation list
   /// shows the decrypted text instead of "Encrypted message".
+  ///
+  /// Silently ignores failure-sentinel strings so a temporary decrypt failure
+  /// never overwrites a good cached preview and never surfaces in the
+  /// conversation list (#664).
   void updateDecryptedPreview(String conversationId, String content) {
+    if (MessageCache.failureSentinels.contains(content)) return;
     _decryptedPreviews[conversationId] = content;
   }
 
