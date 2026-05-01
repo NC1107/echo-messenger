@@ -300,6 +300,58 @@ async fn legacy_token_param_works() {
     assert_eq!(bytes.as_ref(), MINIMAL_PNG);
 }
 
+// ---------------------------------------------------------------------------
+// Ticket auth-flow coverage -- #539
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn ticket_endpoint_without_auth_returns_401() {
+    // POST /api/media/ticket requires a valid JWT; unauthenticated callers
+    // must be rejected so anonymous clients can't pre-mint tickets.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let resp = client
+        .post(format!("{base}/api/media/ticket"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status().as_u16(), 401);
+}
+
+#[tokio::test]
+async fn ticket_issued_to_user_a_cannot_download_media_owned_by_user_b() {
+    // Cross-user ticket isolation: a ticket minted for user A should not
+    // grant access to media that user B uploaded and that A has no ACL on.
+    // (The server ACL check runs after ticket validation.)
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    // User A uploads a file.
+    let (token_a, _, _) = common::register_and_login(&client, &base, "media_xuser_a").await;
+    let (id_a, _) = upload_png(&client, &base, &token_a).await;
+
+    // User B gets a ticket (valid, but scoped to B's session).
+    let (token_b, _, _) = common::register_and_login(&client, &base, "media_xuser_b").await;
+    let ticket_b = get_media_ticket(&client, &base, &token_b).await;
+
+    // B's ticket must not grant access to A's private media (no shared contact).
+    let resp = client
+        .get(format!("{base}/api/media/{id_a}?ticket={ticket_b}"))
+        .send()
+        .await
+        .unwrap();
+
+    // The server returns 404 (not 403) to avoid revealing that the file
+    // exists to an unauthorized caller -- security by obscurity, by design.
+    assert!(
+        matches!(resp.status().as_u16(), 401 | 403 | 404),
+        "cross-user ticket download should be denied (401/403/404), got {}",
+        resp.status()
+    );
+}
+
 #[tokio::test]
 async fn upload_video_larger_than_2mb_returns_201() {
     // Regression test: Axum's default body limit is 2 MB, but the server's

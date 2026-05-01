@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import 'package:echo_app/src/services/push_token_service.dart';
 
@@ -63,6 +65,67 @@ void main() {
         serverUrl: 'http://localhost:8080',
         authToken: 'token-b',
         onWake: () {},
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // HTTP-layer coverage for deregister -- #539
+  // ---------------------------------------------------------------------------
+
+  group('PushTokenService.deregister -- HTTP paths', () {
+    test('calls DELETE /api/push/token and completes on 200', () async {
+      var hitCount = 0;
+
+      await http.runWithClient(
+        () async {
+          await PushTokenService.instance.deregister(
+            serverUrl: 'http://localhost:8080',
+            authToken: 'jwt-token',
+          );
+          expect(
+            hitCount,
+            1,
+            reason: 'exactly one DELETE request should be sent',
+          );
+        },
+        () => MockClient((req) async {
+          expect(req.method, 'DELETE');
+          expect(req.url.path, '/api/push/token');
+          expect(req.headers['Authorization'], 'Bearer jwt-token');
+          hitCount++;
+          return http.Response('{"status":"ok"}', 200);
+        }),
+      );
+    });
+
+    test('swallows network errors and completes without throwing', () async {
+      await http.runWithClient(() async {
+        // Should not throw even when the network is unavailable.
+        await expectLater(
+          PushTokenService.instance.deregister(
+            serverUrl: 'http://localhost:8080',
+            authToken: 'jwt-token',
+          ),
+          completes,
+        );
+      }, () => MockClient((_) async => throw Exception('connection refused')));
+    });
+
+    test('is a no-op when serverUrl is empty', () async {
+      var hitCount = 0;
+      await http.runWithClient(
+        () async {
+          await PushTokenService.instance.deregister(
+            serverUrl: '',
+            authToken: 'tok',
+          );
+          expect(hitCount, 0, reason: 'no HTTP call when serverUrl is empty');
+        },
+        () => MockClient((_) async {
+          hitCount++;
+          return http.Response('', 200);
+        }),
       );
     });
   });
