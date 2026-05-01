@@ -724,8 +724,8 @@ mod offline_replay_557 {
         // and has no per-device row.
         let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
         let mut alice_ws = connect_ws_with_ticket(&base, &alice_ticket).await;
-        tokio::time::sleep(Duration::from_millis(150)).await;
-        let _ = collect_text_frames(&mut alice_ws, 4).await; // drain presence
+        // drain presence — collect_text_frames already polls with its own 1500ms timeout
+        let _ = collect_text_frames(&mut alice_ws, 4).await;
 
         let alice_wire = common::dummy_ciphertext("rs1_alice_wire");
         let bob_d11_ct = common::dummy_ciphertext("rs1_bob_d11");
@@ -793,7 +793,7 @@ mod offline_replay_557 {
         let alice_ticket =
             common::get_ws_ticket_for_device(&client, &base, &alice_token, alice_device_id).await;
         let mut alice_ws = connect_ws_with_ticket(&base, &alice_ticket).await;
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        // drain presence — collect_text_frames already polls with its own 1500ms timeout
         let _ = collect_text_frames(&mut alice_ws, 4).await;
 
         let canonical = common::dummy_ciphertext("rs2_canonical");
@@ -893,10 +893,8 @@ mod history_device_aware_557 {
                 .await
                 .expect("WS connect failed");
 
-        tokio::time::sleep(Duration::from_millis(150)).await;
-        while let Ok(Some(Ok(_))) =
-            tokio::time::timeout(Duration::from_millis(100), alice_ws.next()).await
-        {}
+        // drain presence — drain_pending polls with its own 150ms timeout per frame
+        common::drain_pending(&mut alice_ws).await;
 
         let canon_ct = common::dummy_ciphertext("hist_canon");
         let ct_d11 = common::dummy_ciphertext("hist_d11");
