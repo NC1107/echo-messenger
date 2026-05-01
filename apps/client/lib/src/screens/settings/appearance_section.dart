@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/gif_playback_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
+import 'advanced_theme_section.dart';
 
 /// SharedPreferences key for GIF autoplay setting.
 const kGifAutoplayKey = 'gif_autoplay_enabled';
@@ -271,6 +272,27 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
               value: ref.watch(gifPlaybackProvider).autoplayEnabled,
               onChanged: _setGifAutoplay,
             ),
+            const SizedBox(height: 32),
+            // Advanced color overrides (issue #613)
+            Text(
+              'Advanced',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Override the active theme\'s primary and accent colors.',
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const AdvancedThemeInline(),
           ],
         ),
       ),

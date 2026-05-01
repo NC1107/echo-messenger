@@ -4,6 +4,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 part 'theme_provider.g.dart';
 
+// ---------------------------------------------------------------------------
+// Custom color override persistence keys (issue #613)
+// ---------------------------------------------------------------------------
+const kCustomPrimaryColorKey = 'theme.primary_color';
+const kCustomAccentColorKey = 'theme.accent_color';
+
 enum AppThemeSelection {
   system,
   dark,
@@ -103,3 +109,69 @@ class MessageLayoutNotifier extends _$MessageLayoutNotifier {
 /// short names.
 final themeProvider = appThemeProvider;
 final messageLayoutProvider = messageLayoutNotifierProvider;
+
+// ---------------------------------------------------------------------------
+// Custom color overrides: user-selectable primary and accent (issue #613)
+// ---------------------------------------------------------------------------
+
+/// Immutable state for user-chosen color overrides.
+/// Null fields mean "use the current theme's default".
+@immutable
+class CustomColorsState {
+  final Color? primaryColor;
+  final Color? accentColor;
+
+  const CustomColorsState({this.primaryColor, this.accentColor});
+
+  bool get hasOverrides => primaryColor != null || accentColor != null;
+
+  CustomColorsState copyWith({
+    Color? primaryColor,
+    Color? accentColor,
+    bool clearPrimary = false,
+    bool clearAccent = false,
+  }) {
+    return CustomColorsState(
+      primaryColor: clearPrimary ? null : primaryColor ?? this.primaryColor,
+      accentColor: clearAccent ? null : accentColor ?? this.accentColor,
+    );
+  }
+}
+
+@Riverpod(keepAlive: true)
+class CustomColors extends _$CustomColors {
+  @override
+  CustomColorsState build() {
+    _load();
+    return const CustomColorsState();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final primaryVal = prefs.getInt(kCustomPrimaryColorKey);
+    final accentVal = prefs.getInt(kCustomAccentColorKey);
+    state = CustomColorsState(
+      primaryColor: primaryVal != null ? Color(primaryVal) : null,
+      accentColor: accentVal != null ? Color(accentVal) : null,
+    );
+  }
+
+  Future<void> setPrimaryColor(Color color) async {
+    state = state.copyWith(primaryColor: color);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(kCustomPrimaryColorKey, color.toARGB32());
+  }
+
+  Future<void> setAccentColor(Color color) async {
+    state = state.copyWith(accentColor: color);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(kCustomAccentColorKey, color.toARGB32());
+  }
+
+  Future<void> resetColors() async {
+    state = const CustomColorsState();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(kCustomPrimaryColorKey);
+    await prefs.remove(kCustomAccentColorKey);
+  }
+}
