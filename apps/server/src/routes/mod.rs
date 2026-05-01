@@ -299,7 +299,16 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         .route(
             "/{id}/avatar",
             put(groups::upload_group_avatar).get(groups::get_group_avatar),
-        );
+        )
+        .route(
+            "/{id}/invites",
+            post(groups::create_invite).get(groups::list_invites),
+        )
+        .route("/{id}/invites/{token}", delete(groups::revoke_invite));
+
+    let invite_routes = Router::new()
+        .route("/{token}", get(groups::get_invite_preview))
+        .route("/{token}/accept", post(groups::accept_invite));
 
     let user_routes = Router::new()
         .route("/me", delete(users::delete_account))
@@ -331,6 +340,7 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         .nest("/api/contacts", contact_routes)
         .nest("/api/keys", key_routes)
         .nest("/api/groups", group_routes)
+        .nest("/api/invites", invite_routes)
         .nest("/api/users", user_routes)
         .nest("/api/media", media_routes)
         .nest("/api/push", push_routes)

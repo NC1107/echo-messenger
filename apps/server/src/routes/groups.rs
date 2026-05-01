@@ -1001,11 +1001,11 @@ pub async fn create_invite(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("create_invite/get_role")?
-        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
+        .ok_or_else(|| AppError::forbidden("Not a member of this group"))?;
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
-        return Err(AppError::unauthorized(
+        return Err(AppError::forbidden(
             "Only owners and admins can create invite links",
         ));
     }
