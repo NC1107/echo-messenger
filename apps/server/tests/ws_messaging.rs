@@ -280,21 +280,21 @@ async fn group_message_fanout() {
         .await
         .expect("Alice group send failed");
 
-    // Alice should get message_sent
-    let alice_event = read_text_with_timeout(&mut alice_ws).await;
+    // Alice should get message_sent (skip presence_list snapshot from #436).
+    let alice_event = read_text_skipping_presence(&mut alice_ws).await;
     let alice_msg: Value = serde_json::from_str(&alice_event).unwrap();
     assert_eq!(alice_msg["type"], "message_sent");
 
-    // Bob should get new_message
-    let bob_event = read_text_with_timeout(&mut bob_ws).await;
+    // Bob should get new_message (skip presence_list snapshot from #436).
+    let bob_event = read_text_skipping_presence(&mut bob_ws).await;
     let bob_msg: Value = serde_json::from_str(&bob_event).unwrap();
     assert_eq!(bob_msg["type"], "new_message");
     assert_eq!(bob_msg["content"], "hello group");
     assert_eq!(bob_msg["from_username"], alice_name.as_str());
     assert_eq!(bob_msg["conversation_id"], group_id.as_str());
 
-    // Charlie should get new_message
-    let charlie_event = read_text_with_timeout(&mut charlie_ws).await;
+    // Charlie should get new_message (skip presence_list snapshot from #436).
+    let charlie_event = read_text_skipping_presence(&mut charlie_ws).await;
     let charlie_msg: Value = serde_json::from_str(&charlie_event).unwrap();
     assert_eq!(charlie_msg["type"], "new_message");
     assert_eq!(charlie_msg["content"], "hello group");
