@@ -25,6 +25,7 @@ import '../providers/voice_settings_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/settings/privacy_section.dart'
     show readPreserveOriginalFilenames;
+import '../services/slash_commands.dart';
 import '../services/toast_service.dart';
 import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
@@ -428,6 +429,23 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
     final text = caption;
     if (text.isEmpty) return;
+
+    // Slash-command interception: parse before encrypting/sending.
+    final slashCmd = parseSlashCommand(text);
+    if (slashCmd != null) {
+      final handled = await dispatchSlashCommand(
+        slashCmd,
+        widget.conversation,
+        ref,
+        context,
+      );
+      if (handled) {
+        _messageController.clear();
+        _saveDraftImmediate(widget.conversation.id, '');
+        return;
+      }
+      // Unknown command — fall through and send as plain text.
+    }
 
     await _doSend(text);
     _messageController.clear();
