@@ -79,7 +79,7 @@ jobs:
         with:
           files: apps/client/coverage/lcov.info
           flags: flutter
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
           token: ${{ secrets.CODECOV_TOKEN }}
 
   smoke-linux:

@@ -43,7 +43,10 @@ async fn read_text_skipping_noise(ws: &mut WsStream) -> String {
             Ok(Some(Ok(Message::Text(text)))) => {
                 let s = text.to_string();
                 if let Ok(v) = serde_json::from_str::<Value>(&s)
-                    && matches!(v["type"].as_str(), Some("presence") | Some("new_message"))
+                    && matches!(
+                        v["type"].as_str(),
+                        Some("presence") | Some("presence_list") | Some("new_message")
+                    )
                 {
                     continue;
                 }
