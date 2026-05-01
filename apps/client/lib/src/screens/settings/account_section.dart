@@ -13,6 +13,7 @@ import '../../providers/server_url_provider.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../utils/friendly_error.dart';
+import '../../widgets/avatar_crop_dialog.dart';
 import '../../widgets/avatar_utils.dart' show resolveAvatarUrl;
 
 class _CountryCode {
@@ -307,10 +308,23 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     final file = result.files.first;
     if (file.bytes == null) return;
 
+    // Show the crop dialog; fall through with original bytes if cancelled.
+    final croppedBytes = mounted
+        ? await showAvatarCropDialog(context, file.bytes!)
+        : null;
+    if (croppedBytes == null) return; // user cancelled
+
     final serverUrl = ref.read(serverUrlProvider);
 
+    // Wrap cropped bytes in a PlatformFile-like object for _sendAvatarWithRetry.
+    final croppedFile = PlatformFile(
+      name: 'avatar.jpg',
+      size: croppedBytes.length,
+      bytes: croppedBytes,
+    );
+
     try {
-      await _sendAvatarWithRetry(serverUrl, file);
+      await _sendAvatarWithRetry(serverUrl, croppedFile);
     } catch (e) {
       debugPrint('[Account] avatar upload failed: $e');
       if (mounted) {

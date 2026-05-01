@@ -52,6 +52,7 @@ dependencies:
   # so taps don't reach it. PointerInterceptor lets pointer events pass
   # through to the underlying iframe element. No-op on native platforms.
   pointer_interceptor: ^0.10.1+2
+  image: ^4.8.0
 
 dev_dependencies:
   flutter_test:

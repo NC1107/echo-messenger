@@ -19,6 +19,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/media_ticket_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../utils/fuzzy_score.dart';
+import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
 
 const _kJsonHeaders = {'Content-Type': 'application/json'};
@@ -550,6 +551,12 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final file = result.files.first;
     if (file.bytes == null) return;
 
+    // Show the crop dialog; fall through with original bytes if cancelled.
+    final croppedBytes = mounted
+        ? await showAvatarCropDialog(context, file.bytes!)
+        : null;
+    if (croppedBytes == null) return; // user cancelled
+
     final serverUrl = ref.read(serverUrlProvider);
     final token = ref.read(authProvider).token;
     if (token == null) return;
@@ -562,9 +569,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       ..files.add(
         http.MultipartFile.fromBytes(
           'avatar',
-          file.bytes!,
-          filename: file.name,
-          contentType: _mimeFromFilename(file.name),
+          croppedBytes,
+          filename: 'avatar.jpg',
+          contentType: MediaType('image', 'jpeg'),
         ),
       );
 
@@ -598,16 +605,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         ToastService.show(context, 'Upload error: $e', type: ToastType.error);
       }
     }
-  }
-
-  static MediaType _mimeFromFilename(String name) {
-    final ext = name.split('.').last.toLowerCase();
-    return switch (ext) {
-      'jpg' || 'jpeg' => MediaType('image', 'jpeg'),
-      'webp' => MediaType('image', 'webp'),
-      'gif' => MediaType('image', 'gif'),
-      _ => MediaType('image', 'png'),
-    };
   }
 
   String? _parseErrorBody(String body) {
