@@ -8,12 +8,17 @@ import '../models/chat_message.dart' show MessageStatus;
 import '../models/conversation.dart';
 import '../providers/chat_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/theme_provider.dart'
+    show MessageLayout, messageLayoutProvider;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import 'avatar_utils.dart';
 
-/// Fixed height of a single conversation list item (excluding margin).
+/// Fixed height of a single conversation list item in normal mode.
 const double kConversationItemHeight = 68.0;
+
+/// Tighter height for compact (Discord-style) layout (#427).
+const double kConversationItemHeightCompact = 52.0;
 
 /// Return the dot color for a peer presence status.
 Color presenceStatusDotColor(
@@ -294,6 +299,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     final displayName = conv.displayName(widget.myUserId);
     final hasUnread = conv.unreadCount > 0;
     final snippet = _resolveSnippet();
+    final isCompact = ref.watch(messageLayoutProvider) == MessageLayout.compact;
 
     return Semantics(
       label: composeConversationItemSemanticsLabel(
@@ -315,27 +321,35 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
           },
           onLongPress: _enableLongPressMenu ? _showMuteSheet : null,
           child: Container(
-            height: kConversationItemHeight,
+            height: isCompact
+                ? kConversationItemHeightCompact
+                : kConversationItemHeight,
             margin: const EdgeInsets.symmetric(vertical: 1),
             decoration: BoxDecoration(
               color: _resolveBackgroundColor(context),
               borderRadius: BorderRadius.circular(10),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 12),
             // Visual children re-announce muted/unread/timestamp via
             // their own Semantics nodes; suppress those so the composed
             // outer label is the single announcement (#631).
             child: ExcludeSemantics(
               child: Row(
                 children: [
-                  _buildAvatarStack(context, conv, displayName),
-                  const SizedBox(width: 12),
+                  _buildAvatarStack(
+                    context,
+                    conv,
+                    displayName,
+                    isCompact: isCompact,
+                  ),
+                  SizedBox(width: isCompact ? 8 : 12),
                   _buildNameAndSnippet(
                     context,
                     displayName: displayName,
                     snippet: snippet,
                     hasUnread: hasUnread,
                     conv: conv,
+                    isCompact: isCompact,
                   ),
                 ],
               ),
@@ -355,17 +369,22 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
   Widget _buildAvatarStack(
     BuildContext context,
     Conversation conv,
-    String displayName,
-  ) {
+    String displayName, {
+    bool isCompact = false,
+  }) {
+    // Compact: 14px radius (28px diameter); normal: 20px radius (40px diameter).
+    final double avatarRadius = isCompact ? 14 : 20;
+    final double dotSize = isCompact ? 10 : 12;
+    final double groupIconSize = isCompact ? 14.0 : 18.0;
     return Stack(
       children: [
         buildAvatar(
           name: displayName,
-          radius: 20,
+          radius: avatarRadius,
           imageUrl: conv.isGroup ? widget.groupIconUrl : widget.peerAvatarUrl,
           bgColor: conv.isGroup ? groupAvatarColor(displayName) : null,
           fallbackIcon: conv.isGroup
-              ? const Icon(Icons.group, size: 18, color: Colors.white)
+              ? Icon(Icons.group, size: groupIconSize, color: Colors.white)
               : null,
         ),
         if (!conv.isGroup)
@@ -374,8 +393,8 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
             right: 0,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 400),
-              width: 12,
-              height: 12,
+              width: dotSize,
+              height: dotSize,
               decoration: BoxDecoration(
                 color: presenceStatusDotColor(
                   context,
@@ -397,6 +416,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     required String? snippet,
     required bool hasUnread,
     required Conversation conv,
+    bool isCompact = false,
   }) {
     final peer = conv.isGroup
         ? null
@@ -408,18 +428,27 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _buildNameRow(context, displayName, hasUnread),
+          _buildNameRow(context, displayName, hasUnread, isCompact: isCompact),
           if (statusText != null && statusText.isNotEmpty) ...[
             const SizedBox(height: 1),
             Text(
               statusText,
-              style: GoogleFonts.inter(fontSize: 11, color: context.textMuted),
+              style: GoogleFonts.inter(
+                fontSize: isCompact ? 10 : 11,
+                color: context.textMuted,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ] else if (snippet != null) ...[
-            const SizedBox(height: 4),
-            _buildSnippetRow(context, snippet, hasUnread, conv),
+            SizedBox(height: isCompact ? 1 : 4),
+            _buildSnippetRow(
+              context,
+              snippet,
+              hasUnread,
+              conv,
+              isCompact: isCompact,
+            ),
           ],
         ],
       ),
@@ -429,8 +458,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
   Widget _buildNameRow(
     BuildContext context,
     String displayName,
-    bool hasUnread,
-  ) {
+    bool hasUnread, {
+    bool isCompact = false,
+  }) {
     // On desktop (non-web, non-mobile), show a ... button on hover so users
     // who don't right-click can still discover the context menu.
     final showMoreButton =
@@ -504,7 +534,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                   style: GoogleFonts.inter(
-                    fontSize: 14,
+                    fontSize: isCompact ? 13 : 14,
                     fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w500,
                     color: context.textPrimary,
                   ),
@@ -592,10 +622,13 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     BuildContext context,
     String snippet,
     bool hasUnread,
-    Conversation conv,
-  ) {
+    Conversation conv, {
+    bool isCompact = false,
+  }) {
     final showDraft = _draft != null && !hasUnread;
     final snippetWeight = hasUnread ? FontWeight.w500 : FontWeight.normal;
+    // Compact: 11px snippet; normal: 13px.
+    final double snippetFontSize = isCompact ? 11 : 13;
     return Row(
       children: [
         Expanded(
@@ -608,7 +641,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                       TextSpan(
                         text: 'Draft: ',
                         style: GoogleFonts.inter(
-                          fontSize: 13,
+                          fontSize: snippetFontSize,
                           color: EchoTheme.warning,
                           fontWeight: FontWeight.w600,
                         ),
@@ -616,7 +649,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                       TextSpan(
                         text: _draft,
                         style: GoogleFonts.inter(
-                          fontSize: 13,
+                          fontSize: snippetFontSize,
                           color: context.textMuted,
                         ),
                       ),
@@ -628,7 +661,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
-                    fontSize: 13,
+                    fontSize: snippetFontSize,
                     color: context.textMuted,
                     fontWeight: snippetWeight,
                   ),

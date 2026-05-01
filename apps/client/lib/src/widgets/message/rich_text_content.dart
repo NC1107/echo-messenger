@@ -50,12 +50,18 @@ class RichTextContent extends StatefulWidget {
   final Color accentHoverColor;
   final Color textSecondaryColor;
 
+  /// When true, uses tighter font size (13) and line height (1.35) to match
+  /// Slack/Discord compact density. User font-scale from #632 still applies
+  /// via MediaQuery.textScaler above this widget.
+  final bool compact;
+
   const RichTextContent({
     super.key,
     required this.text,
     required this.textColor,
     required this.accentHoverColor,
     required this.textSecondaryColor,
+    this.compact = false,
   });
 
   @override
@@ -75,10 +81,11 @@ class _RichTextContentState extends State<RichTextContent> {
 
   /// Base text style used throughout message rendering.
   /// Ligatures are disabled ("calt" 0) so user text reads without code ligatures.
+  /// Compact mode shrinks to 13pt / 1.35 line-height (Slack/Discord density).
   TextStyle _baseStyle() => TextStyle(
-    fontSize: 15,
+    fontSize: widget.compact ? 13 : 15,
     color: widget.textColor,
-    height: 1.47,
+    height: widget.compact ? 1.35 : 1.47,
     fontFeatures: const [FontFeature.disable('calt')],
   );
 
@@ -116,10 +123,10 @@ class _RichTextContentState extends State<RichTextContent> {
         TextSpan(
           text: match.group(0),
           style: TextStyle(
-            fontSize: 15,
+            fontSize: widget.compact ? 13 : 15,
             color: widget.accentHoverColor,
             fontWeight: FontWeight.w600,
-            height: 1.47,
+            height: widget.compact ? 1.35 : 1.47,
           ),
         ),
       );
@@ -201,11 +208,11 @@ class _RichTextContentState extends State<RichTextContent> {
     ({int start, int end, String tag, RegExpMatch match}) e,
   ) {
     final linkStyle = TextStyle(
-      fontSize: 15,
+      fontSize: widget.compact ? 13 : 15,
       color: widget.accentHoverColor,
       decoration: TextDecoration.underline,
       decorationColor: widget.accentHoverColor,
-      height: 1.47,
+      height: widget.compact ? 1.35 : 1.47,
     );
     switch (e.tag) {
       case 'bold':
@@ -295,10 +302,10 @@ class _RichTextContentState extends State<RichTextContent> {
             child: Text(
               code,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: widget.compact ? 12 : 14,
                 fontFamily: 'monospace',
                 color: widget.textColor,
-                height: 1.47,
+                height: widget.compact ? 1.35 : 1.47,
               ),
             ),
           ),

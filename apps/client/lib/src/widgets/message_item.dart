@@ -1272,6 +1272,7 @@ class _MessageItemState extends State<MessageItem>
       textColor: textColor,
       accentHoverColor: context.accentHover,
       textSecondaryColor: context.textSecondary,
+      compact: widget.compactLayout,
     );
 
     final embeddedImages = extractEmbeddedImageUrls(displayContent);
@@ -1568,11 +1569,11 @@ class _MessageItemState extends State<MessageItem>
             ? () => widget.onAvatarTap!(msg.fromUserId)
             : null,
         child: SizedBox(
-          width: 28,
+          width: widget.compactLayout ? 24 : 28,
           child: showAvatar
               ? buildAvatar(
                   name: msg.fromUsername,
-                  radius: 14,
+                  radius: widget.compactLayout ? 12 : 14,
                   bgColor: _getAvatarColor(msg.fromUserId),
                   imageUrl: avatarImageUrl,
                 )
@@ -1963,7 +1964,7 @@ class _MessageItemState extends State<MessageItem>
     // reduced so the conversation reads as a single stream.
     final double topPad;
     if (widget.showHeader) {
-      topPad = widget.compactLayout ? 4 : 8;
+      topPad = widget.compactLayout ? 3 : 8;
     } else {
       topPad = widget.compactLayout ? 1 : 2;
     }
