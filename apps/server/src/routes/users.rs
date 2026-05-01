@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::db;
-use crate::error::{AppError, DbErrCtx};
+use crate::error::{AppError, DbErrCtx, ErrorCode};
 
 use super::AppState;
 
@@ -696,6 +696,7 @@ pub async fn get_avatar(
         .ok_or_else(|| AppError {
             status: StatusCode::NOT_FOUND,
             message: "No avatar set for this user".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         })?;
 
@@ -705,6 +706,7 @@ pub async fn get_avatar(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "No avatar set for this user".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         });
     }
@@ -726,6 +728,7 @@ pub async fn get_avatar(
     Err(AppError {
         status: StatusCode::NOT_FOUND,
         message: "Avatar file not found on disk".to_string(),
+        code: ErrorCode::NotFound,
         body: None,
     })
 }

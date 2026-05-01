@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::db;
-use crate::error::{AppError, DbErrCtx};
+use crate::error::{AppError, DbErrCtx, ErrorCode};
 use crate::types::{ConversationKind, Role};
 use crate::ws::typing_service::invalidate_member_cache;
 
@@ -284,7 +284,10 @@ pub async fn get_messages(
         .db_ctx("get_messages/is_member")?;
 
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this conversation",
+        ));
     }
 
     if let Some(channel_id) = params.channel_id {
@@ -497,7 +500,10 @@ pub async fn get_thread_replies(
         .db_ctx("get_thread_replies/is_member")?;
 
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this conversation",
+        ));
     }
 
     let limit = params.limit.unwrap_or(50).min(100);
@@ -535,7 +541,10 @@ pub async fn search_messages(
         .await
         .db_ctx("search_messages/is_member")?;
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this conversation",
+        ));
     }
 
     let messages = db::messages::search_messages(
@@ -609,7 +618,10 @@ pub async fn leave_conversation(
         .db_ctx("leave_conversation/remove_member")?;
 
     if !removed {
-        return Err(AppError::bad_request("Not a member of this conversation"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this conversation",
+        ));
     }
 
     invalidate_member_cache(conversation_id);
@@ -648,7 +660,10 @@ pub async fn toggle_mute(
             .db_ctx("toggle_mute")?;
 
     if !updated {
-        return Err(AppError::bad_request("Not a member of this conversation"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this conversation",
+        ));
     }
 
     Ok(Json(serde_json::json!({
@@ -682,7 +697,10 @@ pub async fn set_disappearing_ttl(
         .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
 
     if !ctx.is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this conversation",
+        ));
     }
 
     if ConversationKind::from_str_opt(&ctx.kind) == Some(ConversationKind::Group) {
@@ -727,7 +745,10 @@ pub async fn pin_message(
         .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
 
     if !ctx.is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this conversation",
+        ));
     }
 
     if ConversationKind::from_str_opt(&ctx.kind) == Some(ConversationKind::Group) {
@@ -801,7 +822,10 @@ pub async fn unpin_message(
         .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
 
     if !ctx.is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this conversation",
+        ));
     }
 
     if ConversationKind::from_str_opt(&ctx.kind) == Some(ConversationKind::Group) {
@@ -857,7 +881,10 @@ pub async fn get_pinned_messages(
         .await
         .db_ctx("get_pinned_messages/is_member")?;
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this conversation"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this conversation",
+        ));
     }
 
     let pinned = db::messages::get_pinned_messages(&state.pool, conversation_id)

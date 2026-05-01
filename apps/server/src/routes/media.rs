@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::auth::{jwt, middleware::AuthUser};
 use crate::db;
-use crate::error::{AppError, DbErrCtx};
+use crate::error::{AppError, DbErrCtx, ErrorCode};
 
 use super::AppState;
 
@@ -200,6 +200,7 @@ pub async fn upload(
                 return Err(AppError {
                     status: StatusCode::FORBIDDEN,
                     message: "Not a member of this conversation".to_string(),
+                    code: ErrorCode::Forbidden,
                     body: None,
                 });
             }
@@ -379,6 +380,7 @@ pub async fn download(
         .ok_or_else(|| AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         })?;
 
@@ -392,6 +394,7 @@ pub async fn download(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         });
     }
@@ -408,6 +411,7 @@ pub async fn download(
         AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media file not found on disk".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         }
     })?;
@@ -476,6 +480,7 @@ pub async fn download(
         AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media file not found on disk".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         }
     })?;
@@ -525,6 +530,7 @@ pub async fn download_thumb(
         .ok_or_else(|| AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         })?;
 
@@ -535,6 +541,7 @@ pub async fn download_thumb(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         });
     }
@@ -545,6 +552,7 @@ pub async fn download_thumb(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "Thumbnail not available".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         });
     }
@@ -553,6 +561,7 @@ pub async fn download_thumb(
     let data = fs::read(&thumb_path).await.map_err(|_| AppError {
         status: StatusCode::NOT_FOUND,
         message: "Thumbnail not available".to_string(),
+        code: ErrorCode::NotFound,
         body: None,
     })?;
 

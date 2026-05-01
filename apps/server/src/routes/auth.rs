@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::auth::middleware::AuthUser;
 use crate::auth::{jwt, password};
 use crate::db;
-use crate::error::{AppError, DbErrCtx};
+use crate::error::{AppError, DbErrCtx, ErrorCode};
 
 use super::AppState;
 
@@ -143,7 +143,10 @@ pub async fn register(
     Json(body): Json<AuthRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     if !crate::config::registration_open() {
-        return Err(AppError::forbidden("Registration is closed on this server"));
+        return Err(AppError::with_code(
+            ErrorCode::RegistrationDisabled,
+            "Registration is closed on this server",
+        ));
     }
 
     validate_username(&body.username)?;
@@ -200,7 +203,12 @@ pub async fn login(
 
     let user = match maybe_user {
         Some(u) if valid => u,
-        _ => return Err(AppError::unauthorized("Invalid username or password")),
+        _ => {
+            return Err(AppError::with_code(
+                ErrorCode::WrongPassword,
+                "Invalid username or password",
+            ));
+        }
     };
 
     let access_token = jwt::create_token(user.id, &state.jwt_secret)?;
@@ -290,14 +298,20 @@ pub async fn refresh(
             .db_ctx("refresh/revoke_family_theft")?;
         }
         tx.commit().await.db_ctx("refresh/commit_theft")?;
-        return Err(AppError::unauthorized("Refresh token has been revoked"));
+        return Err(AppError::with_code(
+            ErrorCode::TokenRevoked,
+            "Refresh token has been revoked",
+        ));
     }
 
     if row.expires_at < chrono::Utc::now() {
         // Release the FOR UPDATE row lock immediately rather than waiting for
         // tx Drop to do an implicit rollback.
         let _ = tx.rollback().await;
-        return Err(AppError::unauthorized("Refresh token has expired"));
+        return Err(AppError::with_code(
+            ErrorCode::TokenExpired,
+            "Refresh token has expired",
+        ));
     }
 
     // Sentinel revoke: only one transaction can flip `revoked` from false to
@@ -329,7 +343,10 @@ pub async fn refresh(
             .db_ctx("refresh/revoke_family_concurrent")?;
         }
         tx.commit().await.db_ctx("refresh/commit_concurrent")?;
-        return Err(AppError::unauthorized("Refresh token has been revoked"));
+        return Err(AppError::with_code(
+            ErrorCode::TokenRevoked,
+            "Refresh token has been revoked",
+        ));
     }
 
     // Issue the rotated token in the same family.

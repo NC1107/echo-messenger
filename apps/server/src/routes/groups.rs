@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::db;
-use crate::error::{AppError, DbErrCtx};
+use crate::error::{AppError, DbErrCtx, ErrorCode};
 use crate::types::{ConversationKind, Role};
 use crate::ws::typing_service::invalidate_member_cache;
 
@@ -225,7 +225,10 @@ pub async fn get_group(
         .db_ctx("get_group/is_member")?;
 
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this group"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this group",
+        ));
     }
 
     let group = db::groups::get_group(&state.pool, group_id)
@@ -268,7 +271,7 @@ pub async fn add_member(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("add_member/get_caller_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     // Verify it's a group conversation
     let kind = db::groups::get_conversation_kind(&state.pool, group_id)
@@ -313,7 +316,10 @@ pub async fn add_member(
         .await
         .db_ctx("add_member/is_member")?;
     if already_member {
-        return Err(AppError::conflict("User is already a member"));
+        return Err(AppError::with_code(
+            ErrorCode::AlreadyMember,
+            "User is already a member",
+        ));
     }
 
     let added = db::groups::add_member(&state.pool, group_id, body.user_id)
@@ -321,7 +327,10 @@ pub async fn add_member(
         .db_ctx("add_member/insert")?;
 
     if !added {
-        return Err(AppError::conflict("User is already a member"));
+        return Err(AppError::with_code(
+            ErrorCode::AlreadyMember,
+            "User is already a member",
+        ));
     }
 
     invalidate_member_cache(group_id);
@@ -338,7 +347,7 @@ pub async fn remove_member(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("remove_member/get_caller_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     // If removing someone else, must be owner or admin
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
@@ -473,7 +482,10 @@ pub async fn join_group(
         .await
         .db_ctx("join_group/is_member")?;
     if already_member {
-        return Err(AppError::conflict("Already a member of this group"));
+        return Err(AppError::with_code(
+            ErrorCode::AlreadyMember,
+            "Already a member of this group",
+        ));
     }
 
     let joined = db::groups::join_public_group(&state.pool, group_id, auth.user_id)
@@ -515,7 +527,10 @@ pub async fn leave_group(
         .db_ctx("leave_group/remove_member")?;
 
     if !removed {
-        return Err(AppError::bad_request("Not a member of this group"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this group",
+        ));
     }
 
     invalidate_member_cache(group_id);
@@ -564,7 +579,7 @@ pub async fn update_group(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("update_group/get_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
@@ -604,7 +619,7 @@ pub async fn ban_member(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("ban_member/get_caller_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
@@ -662,7 +677,7 @@ pub async fn unban_member(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("unban_member/get_caller_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
@@ -725,7 +740,7 @@ pub async fn upload_group_avatar(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("upload_group_avatar/get_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
@@ -817,6 +832,7 @@ pub async fn get_group_avatar(
         .ok_or_else(|| AppError {
             status: StatusCode::NOT_FOUND,
             message: "No avatar set for this group".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         })?;
 
@@ -825,6 +841,7 @@ pub async fn get_group_avatar(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "No avatar set for this group".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         });
     }
@@ -845,6 +862,7 @@ pub async fn get_group_avatar(
     Err(AppError {
         status: StatusCode::NOT_FOUND,
         message: "Avatar file not found on disk".to_string(),
+        code: ErrorCode::NotFound,
         body: None,
     })
 }

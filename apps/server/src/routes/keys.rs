@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::db;
-use crate::error::{AppError, DbErrCtx};
+use crate::error::{AppError, DbErrCtx, ErrorCode};
 
 use super::AppState;
 
@@ -456,6 +456,7 @@ pub async fn revoke_device(
         return Err(AppError {
             status: axum::http::StatusCode::NOT_FOUND,
             message: "Device not found".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         });
     }
