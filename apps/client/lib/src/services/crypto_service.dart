@@ -390,15 +390,7 @@ class CryptoService {
 
       // Load or generate a unique device ID for this installation.
       final storedDeviceId = await readWithFallback(_deviceIdPref);
-      if (storedDeviceId != null) {
-        _deviceId = int.tryParse(storedDeviceId) ?? 0;
-      } else {
-        // Generate a random positive device ID (1..2^30) to avoid collision
-        // with legacy device_id=0 from single-device era.
-        _deviceId = Random.secure().nextInt(1 << 30) + 1;
-        await store.write(_deviceIdPref, _deviceId.toString());
-        debugPrint('[Crypto] Generated new device_id: $_deviceId');
-      }
+      await _loadOrGenerateDeviceId(store, storedDeviceId);
 
       final storedPrivate = await readWithFallback(_identityKeyPref);
 
@@ -409,42 +401,66 @@ class CryptoService {
           readKey: readWithFallback,
         );
       } else {
-        // Generate all keys fresh.
-        // Only flag as "regenerated" when prior keys existed (device ID was
-        // already assigned). On a true first install there is nothing to
-        // regenerate, so suppress the misleading warning.
-        final isFirstInstall = storedDeviceId == null;
-        _keysWereRegenerated = !isFirstInstall;
-        _identityKeyPair = await _x25519.newKeyPair();
-        _signingKeyPair = await _ed25519.newKeyPair();
-        _signedPrekeyPair = await _x25519.newKeyPair();
-
-        final privateBytes = await (_identityKeyPair as SimpleKeyPairData)
-            .extractPrivateKeyBytes();
-        final publicKey = await _identityKeyPair!.extractPublicKey();
-
-        await store.write(_identityKeyPref, base64Encode(privateBytes));
-        await store.write(_identityPubKeyPref, base64Encode(publicKey.bytes));
-        await _saveSigningKey(store);
-        await _saveSignedPrekey(store);
-        await store.write(
-          _signedPrekeyCreatedAtPref,
-          DateTime.now().toIso8601String(),
-        );
-
-        _keysAreFresh = true;
-        _needsOtpReplenishment = true; // Fresh install needs OTP keys
-
-        // Purge any stale sessions from storage — they reference the old keys.
-        final allEntries = await store.readAll();
-        for (final key in allEntries.keys) {
-          if (key.startsWith(_sessionPrefix)) {
-            await store.delete(key);
-          }
-        }
+        await _generateFreshKeys(store, isFirstInstall: storedDeviceId == null);
       }
     } catch (e) {
       rethrow;
+    }
+  }
+
+  /// Load an existing device ID from [storedDeviceId] or generate a new one.
+  Future<void> _loadOrGenerateDeviceId(
+    SecureKeyStore store,
+    String? storedDeviceId,
+  ) async {
+    if (storedDeviceId != null) {
+      _deviceId = int.tryParse(storedDeviceId) ?? 0;
+    } else {
+      // Generate a random positive device ID (1..2^30) to avoid collision
+      // with legacy device_id=0 from single-device era.
+      _deviceId = Random.secure().nextInt(1 << 30) + 1;
+      await store.write(_deviceIdPref, _deviceId.toString());
+      debugPrint('[Crypto] Generated new device_id: $_deviceId');
+    }
+  }
+
+  /// Generate all identity/signing/prekey key pairs for a fresh installation
+  /// (no stored private key found). Purges any stale sessions that reference
+  /// the old keys.
+  Future<void> _generateFreshKeys(
+    SecureKeyStore store, {
+    required bool isFirstInstall,
+  }) async {
+    // Only flag as "regenerated" when prior keys existed (device ID was
+    // already assigned). On a true first install there is nothing to
+    // regenerate, so suppress the misleading warning.
+    _keysWereRegenerated = !isFirstInstall;
+    _identityKeyPair = await _x25519.newKeyPair();
+    _signingKeyPair = await _ed25519.newKeyPair();
+    _signedPrekeyPair = await _x25519.newKeyPair();
+
+    final privateBytes = await (_identityKeyPair as SimpleKeyPairData)
+        .extractPrivateKeyBytes();
+    final publicKey = await _identityKeyPair!.extractPublicKey();
+
+    await store.write(_identityKeyPref, base64Encode(privateBytes));
+    await store.write(_identityPubKeyPref, base64Encode(publicKey.bytes));
+    await _saveSigningKey(store);
+    await _saveSignedPrekey(store);
+    await store.write(
+      _signedPrekeyCreatedAtPref,
+      DateTime.now().toIso8601String(),
+    );
+
+    _keysAreFresh = true;
+    _needsOtpReplenishment = true; // Fresh install needs OTP keys
+
+    // Purge any stale sessions from storage — they reference the old keys.
+    final allEntries = await store.readAll();
+    for (final key in allEntries.keys) {
+      if (key.startsWith(_sessionPrefix)) {
+        await store.delete(key);
+      }
     }
   }
 

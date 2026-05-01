@@ -269,6 +269,133 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
     );
   }
 
+  List<Widget> _buildAppLockSection(
+    BuildContext context,
+    BiometricState biometric,
+  ) {
+    return [
+      Text(
+        'App Lock',
+        style: TextStyle(
+          color: context.textPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'Require biometric authentication when opening Echo.',
+        style: TextStyle(
+          color: context.textSecondary,
+          fontSize: 13,
+          height: 1.5,
+        ),
+      ),
+      const SizedBox(height: 12),
+      if (biometric.isLoading)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: LinearProgressIndicator(),
+        )
+      else if (!biometric.isAvailable)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            'Biometric authentication is not available on this device.',
+            style: TextStyle(color: context.textMuted, fontSize: 13),
+          ),
+        )
+      else
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            'Require Biometric to Open App',
+            style: TextStyle(color: context.textPrimary, fontSize: 14),
+          ),
+          subtitle: Text(
+            'Lock Echo when it goes to the background. '
+            'Use Face ID, fingerprint, or device PIN to unlock.',
+            style: TextStyle(color: context.textMuted, fontSize: 12),
+          ),
+          value: biometric.enabled,
+          onChanged: _toggleBiometric,
+        ),
+    ];
+  }
+
+  List<Widget> _buildMessagingPrivacySection(
+    BuildContext context,
+    PrivacyState privacy,
+  ) {
+    return [
+      Text(
+        'Messaging Privacy',
+        style: TextStyle(
+          color: context.textPrimary,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        'Control read receipts for your direct messages.',
+        style: TextStyle(
+          color: context.textSecondary,
+          fontSize: 13,
+          height: 1.5,
+        ),
+      ),
+      const SizedBox(height: 12),
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          'Send Read Receipts',
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+        ),
+        subtitle: Text(
+          'When off, others will not see when you read messages.',
+          style: TextStyle(color: context.textMuted, fontSize: 12),
+        ),
+        value: privacy.readReceiptsEnabled,
+        onChanged: privacy.isLoading
+            ? null
+            : (value) => ref
+                  .read(privacyProvider.notifier)
+                  .setReadReceiptsEnabled(value),
+      ),
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          'Show Online Status',
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+        ),
+        subtitle: Text(
+          'When off, you will appear offline to other users.',
+          style: TextStyle(color: context.textMuted, fontSize: 12),
+        ),
+        value: privacy.showOnlineStatus,
+        onChanged: privacy.isLoading
+            ? null
+            : (value) =>
+                  ref.read(privacyProvider.notifier).setShowOnlineStatus(value),
+      ),
+      SwitchListTile.adaptive(
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          'Preserve Original Filenames',
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+        ),
+        subtitle: Text(
+          'When off, uploads are sent as media.{ext} so recipients see a '
+          'generic filename on download. File contents are unchanged.',
+          style: TextStyle(color: context.textMuted, fontSize: 12),
+        ),
+        value: _preserveFilenames,
+        onChanged: _setPreserveFilenames,
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final privacy = ref.watch(privacyProvider);
@@ -287,121 +414,11 @@ class _PrivacySectionState extends ConsumerState<PrivacySection> {
               style: const TextStyle(color: EchoTheme.danger, fontSize: 12),
             ),
           ),
-        Text(
-          'App Lock',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Require biometric authentication when opening Echo.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 13,
-            height: 1.5,
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (biometric.isLoading)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: LinearProgressIndicator(),
-          )
-        else if (!biometric.isAvailable)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              'Biometric authentication is not available on this device.',
-              style: TextStyle(color: context.textMuted, fontSize: 13),
-            ),
-          )
-        else
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              'Require Biometric to Open App',
-              style: TextStyle(color: context.textPrimary, fontSize: 14),
-            ),
-            subtitle: Text(
-              'Lock Echo when it goes to the background. '
-              'Use Face ID, fingerprint, or device PIN to unlock.',
-              style: TextStyle(color: context.textMuted, fontSize: 12),
-            ),
-            value: biometric.enabled,
-            onChanged: _toggleBiometric,
-          ),
+        ..._buildAppLockSection(context, biometric),
         const SizedBox(height: 24),
         const Divider(),
         const SizedBox(height: 8),
-        Text(
-          'Messaging Privacy',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Control read receipts for your direct messages.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 13,
-            height: 1.5,
-          ),
-        ),
-        const SizedBox(height: 12),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Send Read Receipts',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'When off, others will not see when you read messages.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: privacy.readReceiptsEnabled,
-          onChanged: privacy.isLoading
-              ? null
-              : (value) => ref
-                    .read(privacyProvider.notifier)
-                    .setReadReceiptsEnabled(value),
-        ),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Show Online Status',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'When off, you will appear offline to other users.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: privacy.showOnlineStatus,
-          onChanged: privacy.isLoading
-              ? null
-              : (value) => ref
-                    .read(privacyProvider.notifier)
-                    .setShowOnlineStatus(value),
-        ),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Preserve Original Filenames',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'When off, uploads are sent as media.{ext} so recipients see a '
-            'generic filename on download. File contents are unchanged.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: _preserveFilenames,
-          onChanged: _setPreserveFilenames,
-        ),
+        ..._buildMessagingPrivacySection(context, privacy),
         const SizedBox(height: 24),
         Text(
           'Contact Info Visibility',
