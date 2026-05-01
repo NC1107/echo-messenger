@@ -452,9 +452,7 @@ void main() {
       expect(find.byIcon(Icons.group_outlined), findsOneWidget);
     });
 
-    testWidgets('does not show group icon for DM conversation', (
-      tester,
-    ) async {
+    testWidgets('does not show group icon for DM conversation', (tester) async {
       final conv = _makeConversation(
         members: const [
           ConversationMember(userId: 'peer-id', username: 'alice'),
