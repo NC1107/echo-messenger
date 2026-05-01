@@ -51,21 +51,11 @@ async function login(page: Page, username: string, password: string) {
   await page.goto(APP);
   await waitForFlutter(page);
 
-  // Flutter web exposes text field labels via aria-label matching InputDecoration.labelText
-  const userInput = page.locator('input[aria-label="Username"]');
-  if (await userInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await userInput.focus();
-    await page.keyboard.type(username, { delay: 12 });
-    const passInput = page.locator('input[aria-label="Password"]');
-    await passInput.focus();
-    await page.keyboard.type(password, { delay: 12 });
-    await page
-      .getByRole('button', { name: /login/i })
-      .or(page.getByText(/^log in$/i))
-      .first()
-      .click();
-  } else {
-    // Fallback: viewport-relative coordinates (avoids absolute-pixel brittleness)
+  // Wait explicitly for the login form to be present and visible
+  try {
+    await page.locator('input[aria-label="Username"]').waitFor({ timeout: 15000 });
+  } catch {
+    // Fallback: login screen may not have semantic labels; use viewport-relative coords
     const vp = page.viewportSize()!;
     await page.mouse.click(vp.width / 2, vp.height / 2 - 40);
     await page.waitForTimeout(200);
@@ -76,10 +66,31 @@ async function login(page: Page, username: string, password: string) {
     await page.keyboard.press('Enter');
   }
 
-  await page.waitForTimeout(7000);
+  // Semantic path: fill and submit login form
+  const userInput = page.locator('input[aria-label="Username"]');
+  if (await userInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    await userInput.focus();
+    await page.keyboard.type(username, { delay: 12 });
+    const passInput = page.locator('input[aria-label="Password"]');
+    await passInput.focus();
+    await page.keyboard.type(password, { delay: 12 });
+    await page
+      .getByRole('button', { name: /login/i })
+      .or(page.getByText(/^log in$/i))
+      .first()
+      .click();
+  }
+
+  // Wait for post-login navigation (conversations screen or home)
+  try {
+    await page.waitForSelector('[aria-label*="conversations"], [data-testid="conversations-list"], button[aria-label*="Settings"]', { timeout: 30000 });
+  } catch {
+    // If no semantic marker found, wait a bit for navigation to settle
+    await page.waitForTimeout(3000);
+  }
+
   await dismiss(page);
   await dismissDialogs(page);
-  await page.waitForTimeout(1000);
 }
 
 /**
