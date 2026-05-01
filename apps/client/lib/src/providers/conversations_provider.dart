@@ -14,6 +14,9 @@ import 'chat_provider.dart';
 import 'privacy_provider.dart';
 import 'server_url_provider.dart';
 
+part 'conversations_ws_handlers.dart';
+part 'conversations_http_actions.dart';
+
 class ConversationsState {
   final List<Conversation> conversations;
   final bool isLoading;
@@ -38,10 +41,13 @@ class ConversationsState {
   }
 }
 
-class ConversationsNotifier extends StateNotifier<ConversationsState> {
+class ConversationsNotifier extends StateNotifier<ConversationsState>
+    with _ConversationsWsHandlersMixin, _ConversationsHttpActionsMixin {
+  @override
   final Ref ref;
 
   /// Cache of decrypted message previews by conversationId.
+  @override
   final Map<String, String> _decryptedPreviews = {};
 
   /// Monotonic generation counter for [loadConversations] (#515). Each
@@ -53,9 +59,11 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
 
   ConversationsNotifier(this.ref) : super(const ConversationsState());
 
+  @override
   String get _serverUrl => ref.read(serverUrlProvider);
 
   /// Map raw exceptions to user-friendly error messages.
+  @override
   String _friendlyError(Object error) {
     final msg = error.toString();
     if (msg.contains('SocketException') || msg.contains('Connection refused')) {
@@ -74,6 +82,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   }
 
   /// Extract the `error` field from a JSON response body, or return [fallback].
+  @override
   String _parseServerError(String body, String fallback) {
     try {
       final data = jsonDecode(body);
@@ -84,12 +93,14 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     return fallback;
   }
 
+  @override
   Map<String, String> _headersWithToken(String token) => {
     'Content-Type': 'application/json',
     'Authorization': 'Bearer $token',
   };
 
   /// Compute total unread count and update the browser tab badge.
+  @override
   void _updateTabBadge() {
     final total = state.conversations.fold<int>(
       0,
@@ -99,6 +110,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   }
 
   /// Make an authenticated request with automatic 401 refresh-and-retry.
+  @override
   Future<http.Response> _authenticatedRequest(
     Future<http.Response> Function(String token) requestFn,
   ) async {
@@ -110,6 +122,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
   /// Uses a monotonic generation counter (#515) so a stale in-flight
   /// response cannot overwrite fresh state when two reloads overlap
   /// (e.g. WS reconnect racing pull-to-refresh).  Latest call wins.
+  @override
   Future<void> loadConversations() async {
     state = state.copyWith(isLoading: true, error: null);
     final gen = ++_loadGen;
@@ -173,115 +186,6 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     }
   }
 
-  /// Update a conversation when a new message is received.
-  ///
-  /// Set [incrementUnread] to false for the sender's own messages so the
-  /// unread badge is not bumped for messages the user just sent.
-  void onNewMessage({
-    required String conversationId,
-    required String content,
-    required String timestamp,
-    required String senderUsername,
-    bool incrementUnread = true,
-  }) {
-    // System sentinel messages (#663) must not appear in the conversation
-    // preview or increment the unread badge.
-    if (content.startsWith('__system__:')) return;
-
-    // Cache the decrypted preview (content passed here is already decrypted
-    // by the websocket provider). Guard against failure sentinels (#664).
-    if (!MessageCache.failureSentinels.contains(content)) {
-      _decryptedPreviews[conversationId] = content;
-    }
-
-    final conversations = state.conversations;
-    final index = conversations.indexWhere((c) => c.id == conversationId);
-
-    if (index >= 0) {
-      final conv = conversations[index];
-      final updatedConv = conv.copyWith(
-        lastMessage: content,
-        lastMessageTimestamp: timestamp,
-        lastMessageSender: senderUsername,
-        unreadCount: incrementUnread ? conv.unreadCount + 1 : conv.unreadCount,
-      );
-
-      // Build new list updating only the changed conversation and moving
-      // it to the top, avoiding a full List.from() copy when possible.
-      final updated = [
-        updatedConv,
-        for (var i = 0; i < conversations.length; i++)
-          if (i != index) conversations[i],
-      ];
-
-      state = state.copyWith(conversations: updated);
-      _updateTabBadge();
-    } else {
-      // New conversation we don't have locally -- reload from server
-      loadConversations();
-    }
-  }
-
-  /// Update the conversation preview if an edited message was the last one.
-  void onMessageEdited({
-    required String conversationId,
-    required String newContent,
-  }) {
-    final updated = List<Conversation>.from(state.conversations);
-    final index = updated.indexWhere((c) => c.id == conversationId);
-    if (index >= 0) {
-      final conv = updated[index];
-      // Only update preview -- we can't cheaply tell if this was the last
-      // message, but updating the preview is harmless either way since the
-      // next real message will overwrite it.
-      updated[index] = conv.copyWith(lastMessage: newContent);
-      if (!MessageCache.failureSentinels.contains(newContent)) {
-        _decryptedPreviews[conversationId] = newContent;
-      }
-      state = state.copyWith(conversations: updated);
-    }
-  }
-
-  /// Store a decrypted preview for a conversation so the conversation list
-  /// shows the decrypted text instead of "Encrypted message".
-  ///
-  /// Silently ignores failure-sentinel strings so a temporary decrypt failure
-  /// never overwrites a good cached preview and never surfaces in the
-  /// conversation list (#664).
-  void updateDecryptedPreview(String conversationId, String content) {
-    if (MessageCache.failureSentinels.contains(content)) return;
-    _decryptedPreviews[conversationId] = content;
-  }
-
-  /// Update the encryption flag for a conversation locally.
-  void updateEncryption(String conversationId, bool isEncrypted) {
-    final updated = List<Conversation>.from(state.conversations);
-    final index = updated.indexWhere((c) => c.id == conversationId);
-    if (index >= 0) {
-      updated[index] = updated[index].copyWith(isEncrypted: isEncrypted);
-      // Clear cached plaintext preview so it doesn't leak after toggling
-      // encryption on. The next message will repopulate the preview.
-      _decryptedPreviews.remove(conversationId);
-      state = state.copyWith(conversations: updated);
-    }
-  }
-
-  /// Append a new member to a group conversation's member list in-place.
-  ///
-  /// Called by the WS `member_added` handler (#660) so the members panel
-  /// updates without a full server round-trip. Silently no-ops when the
-  /// conversation is unknown or the member is already present.
-  void addGroupMember(String conversationId, ConversationMember member) {
-    final updated = List<Conversation>.from(state.conversations);
-    final index = updated.indexWhere((c) => c.id == conversationId);
-    if (index < 0) return;
-    final conv = updated[index];
-    final alreadyPresent = conv.members.any((m) => m.userId == member.userId);
-    if (alreadyPresent) return;
-    updated[index] = conv.copyWith(members: [...conv.members, member]);
-    state = state.copyWith(conversations: updated);
-  }
-
   /// Mark a conversation as read (reset unread count).
   void markAsRead(String conversationId) {
     final updated = List<Conversation>.from(state.conversations);
@@ -331,311 +235,6 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
           _updateTabBadge();
         }
       }
-    }
-  }
-
-  /// Find an existing DM with a peer, or create one by sending a greeting.
-  ///
-  /// Returns the conversation on success. Throws a [DmException] with a
-  /// user-readable message when the server rejects the request (e.g.
-  /// "Not a contact") or when a network error occurs.
-  Future<Conversation> getOrCreateDm(
-    String peerUserId,
-    String peerUsername,
-  ) async {
-    // Search existing conversations for a non-group with that peer.
-    // The server list is limited to 50 entries, so older/message-less DMs
-    // might not be loaded yet -- we fall through to the API in that case.
-    for (final conv in state.conversations) {
-      if (!conv.isGroup) {
-        final hasPeer = conv.members.any((m) => m.userId == peerUserId);
-        if (hasPeer) return conv;
-      }
-    }
-
-    // Not found -- create (or locate) the DM conversation via the server.
-    try {
-      final response = await _authenticatedRequest(
-        (token) => http.post(
-          Uri.parse('$_serverUrl/api/conversations/dm'),
-          headers: _headersWithToken(token),
-          body: jsonEncode({'peer_user_id': peerUserId}),
-        ),
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final convId = data['conversation_id'] as String?;
-        if (convId != null && convId.isNotEmpty) {
-          await loadConversations();
-
-          // The server sorts conversations by last-message time (LIMIT 50).
-          // A brand-new DM with no messages sorts last and may be excluded.
-          // If it is not in the refreshed list, add a minimal entry so the
-          // caller can navigate to it immediately; subsequent activity will
-          // populate the full data.
-          final found = state.conversations
-              .where((c) => c.id == convId && !c.isGroup)
-              .firstOrNull;
-          if (found != null) return found;
-
-          final newConv = Conversation(
-            id: convId,
-            isGroup: false,
-            members: [
-              ConversationMember(userId: peerUserId, username: peerUsername),
-            ],
-          );
-          state = state.copyWith(
-            conversations: [newConv, ...state.conversations],
-          );
-          DebugLogService.instance.log(
-            LogLevel.info,
-            'Conversations',
-            'Created DM $convId with $peerUsername (not in top-50 list, added locally)',
-          );
-          return newConv;
-        }
-      } else {
-        final errMsg = _parseServerError(
-          response.body,
-          'Could not start conversation',
-        );
-        DebugLogService.instance.log(
-          LogLevel.error,
-          'Conversations',
-          'getOrCreateDm failed (HTTP ${response.statusCode}): $errMsg',
-        );
-        throw DmException(errMsg);
-      }
-    } on DmException {
-      rethrow;
-    } catch (e) {
-      debugPrint('[Conversations] getOrCreateDm failed for $peerUserId: $e');
-      DebugLogService.instance.log(
-        LogLevel.error,
-        'Conversations',
-        'getOrCreateDm error for $peerUsername: $e',
-      );
-      throw DmException(_friendlyError(e));
-    }
-
-    // Unreachable: all paths either return a Conversation or throw.
-    throw const DmException('Could not start conversation');
-  }
-
-  /// Toggle mute state for a conversation.
-  /// Leave/delete a conversation. Removes the user's membership so it
-  /// disappears from their conversation list. Messages are not deleted.
-  Future<bool> leaveConversation(String conversationId) async {
-    try {
-      final response = await _authenticatedRequest(
-        (token) => http.post(
-          Uri.parse('$_serverUrl/api/conversations/$conversationId/leave'),
-          headers: _headersWithToken(token),
-        ),
-      );
-      if (response.statusCode == 200) {
-        final updated = state.conversations
-            .where((c) => c.id != conversationId)
-            .toList();
-        state = state.copyWith(conversations: updated);
-        // Clear cached messages so stale data doesn't linger in memory.
-        ref.read(chatProvider.notifier).clearConversation(conversationId);
-        return true;
-      }
-    } catch (e) {
-      debugPrint('[Conversations] leaveConversation failed: $e');
-      DebugLogService.instance.log(
-        LogLevel.error,
-        'Conversations',
-        'leaveConversation error: $e',
-      );
-    }
-    return false;
-  }
-
-  Future<bool> toggleMute(String conversationId) async {
-    final conv = state.conversations
-        .where((c) => c.id == conversationId)
-        .firstOrNull;
-    if (conv == null) return false;
-    return setMuted(conversationId, !conv.isMuted);
-  }
-
-  /// Set the explicit mute state for a conversation. Optimistically updates
-  /// local state, then PUTs `/api/conversations/:id/mute`. Returns true on
-  /// success; on failure the optimistic update is reverted and false is
-  /// returned so the caller can surface a toast.
-  Future<bool> setMuted(String conversationId, bool isMuted) async {
-    final index = state.conversations.indexWhere((c) => c.id == conversationId);
-    if (index < 0) return false;
-
-    final conv = state.conversations[index];
-    if (conv.isMuted == isMuted) return true; // no-op success
-    final previousMuted = conv.isMuted;
-
-    // Optimistically update local state.
-    final updated = List<Conversation>.from(state.conversations);
-    updated[index] = conv.copyWith(isMuted: isMuted);
-    state = state.copyWith(conversations: updated);
-
-    bool success = false;
-    try {
-      final response = await _authenticatedRequest(
-        (token) => http.put(
-          Uri.parse('$_serverUrl/api/conversations/$conversationId/mute'),
-          headers: _headersWithToken(token),
-          body: jsonEncode({'is_muted': isMuted}),
-        ),
-      );
-      success = response.statusCode == 200;
-      if (!success) {
-        debugPrint(
-          '[Conversations] setMuted got HTTP ${response.statusCode} '
-          'for $conversationId',
-        );
-      }
-    } catch (e) {
-      debugPrint('[Conversations] setMuted failed for $conversationId: $e');
-      DebugLogService.instance.log(
-        LogLevel.error,
-        'Conversations',
-        'setMuted error for $conversationId: $e',
-      );
-    }
-
-    if (!success) {
-      // Revert the optimistic update.
-      final reverted = List<Conversation>.from(state.conversations);
-      final idx = reverted.indexWhere((c) => c.id == conversationId);
-      if (idx >= 0) {
-        reverted[idx] = reverted[idx].copyWith(isMuted: previousMuted);
-        state = state.copyWith(conversations: reverted);
-      }
-    }
-    return success;
-  }
-
-  /// Toggle pin state for a conversation, syncing with the server.
-  /// Returns true on success. On failure the optimistic update is reverted.
-  Future<bool> setPinned(String conversationId, bool pinned) async {
-    final index = state.conversations.indexWhere((c) => c.id == conversationId);
-    if (index < 0) return false;
-
-    final conv = state.conversations[index];
-    if (conv.isPinned == pinned) return true;
-    final previousPinned = conv.isPinned;
-
-    final updated = List<Conversation>.from(state.conversations);
-    updated[index] = conv.copyWith(isPinned: pinned);
-    state = state.copyWith(conversations: updated);
-
-    bool success = false;
-    try {
-      final response = await _authenticatedRequest(
-        (token) => pinned
-            ? http.put(
-                Uri.parse('$_serverUrl/api/conversations/$conversationId/pin'),
-                headers: _headersWithToken(token),
-              )
-            : http.delete(
-                Uri.parse('$_serverUrl/api/conversations/$conversationId/pin'),
-                headers: _headersWithToken(token),
-              ),
-      );
-      success = response.statusCode == 204 || response.statusCode == 200;
-      if (!success) {
-        debugPrint(
-          '[Conversations] setPinned got HTTP ${response.statusCode} '
-          'for $conversationId',
-        );
-      }
-    } catch (e) {
-      debugPrint('[Conversations] setPinned failed for $conversationId: $e');
-    }
-
-    if (!success) {
-      final reverted = List<Conversation>.from(state.conversations);
-      final idx = reverted.indexWhere((c) => c.id == conversationId);
-      if (idx >= 0) {
-        reverted[idx] = reverted[idx].copyWith(isPinned: previousPinned);
-        state = state.copyWith(conversations: reverted);
-      }
-    }
-    return success;
-  }
-
-  /// Leave a group conversation and remove it from local state.
-  /// Returns true on success, false on failure.
-  Future<bool> leaveGroup(String groupId) async {
-    try {
-      final response = await _authenticatedRequest(
-        (token) => http.post(
-          Uri.parse('$_serverUrl/api/groups/$groupId/leave'),
-          headers: _headersWithToken(token),
-        ),
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        final updated = state.conversations
-            .where((c) => c.id != groupId)
-            .toList();
-        state = state.copyWith(conversations: updated);
-        return true;
-      }
-      return false;
-    } catch (e) {
-      debugPrint('[Conversations] leaveGroup failed for $groupId: $e');
-      DebugLogService.instance.log(
-        LogLevel.error,
-        'Conversations',
-        'leaveGroup error for $groupId: $e',
-      );
-      return false;
-    }
-  }
-
-  /// Create a new group conversation.
-  Future<String?> createGroup(
-    String name,
-    List<String> memberIds, {
-    String? description,
-    bool isPublic = false,
-  }) async {
-    try {
-      final body = <String, dynamic>{
-        'name': name,
-        'member_ids': memberIds,
-        'is_public': isPublic,
-      };
-      if (description != null) {
-        body['description'] = description;
-      }
-      final response = await _authenticatedRequest(
-        (token) => http.post(
-          Uri.parse('$_serverUrl/api/groups'),
-          headers: _headersWithToken(token),
-          body: jsonEncode(body),
-        ),
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final conversationId =
-            data['conversation_id'] as String? ?? data['id'] as String? ?? '';
-        await loadConversations();
-        return conversationId;
-      } else {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        state = state.copyWith(
-          error: data['error'] as String? ?? 'Failed to create group',
-        );
-        return null;
-      }
-    } catch (e) {
-      state = state.copyWith(error: _friendlyError(e));
-      return null;
     }
   }
 }
