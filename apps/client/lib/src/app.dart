@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers/accessibility_provider.dart';
+import 'providers/locale_provider.dart';
 import 'providers/theme_provider.dart';
 import 'router/app_router.dart';
 import 'theme/echo_theme.dart';
@@ -44,6 +45,7 @@ class EchoApp extends ConsumerWidget {
     final themeSelection = ref.watch(themeProvider);
     final accessibility = ref.watch(accessibilityProvider);
     final customColors = ref.watch(customColorsProvider);
+    final locale = ref.watch(localeProvider);
 
     final themeMode = switch (themeSelection) {
       AppThemeSelection.system => ThemeMode.system,
@@ -81,6 +83,8 @@ class EchoApp extends ConsumerWidget {
 
     return MaterialApp.router(
       title: 'Echo',
+      locale: locale,
+      supportedLocales: supportedFlutterLocales,
       theme: lightTheme,
       darkTheme: darkTheme,
       themeMode: themeMode,

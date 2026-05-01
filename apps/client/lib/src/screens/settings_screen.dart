@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
+import '../providers/locale_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
@@ -19,14 +20,15 @@ import 'settings/account_section.dart';
 import 'settings/appearance_section.dart';
 import 'settings/data_storage_section.dart';
 import 'settings/devices_section.dart';
+import 'settings/language_section.dart';
 import 'settings/notification_section.dart';
 import 'settings/privacy_section.dart';
 
 /// Section identifiers for the redesigned settings layout.
 ///
 /// Groups (visual):
-///   ACCOUNT PREFERENCES → appearance, notifications, voiceVideo, privacy,
-///                         devices, dataStorage
+///   ACCOUNT PREFERENCES → appearance, language, notifications, voiceVideo,
+///                         privacy, devices, dataStorage, accessibility
 ///   ECHO                → about (+ Log out, handled separately)
 ///
 /// `profile` has no row in the list — it's reached only via the
@@ -34,6 +36,7 @@ import 'settings/privacy_section.dart';
 enum SettingsSection {
   profile,
   appearance,
+  language,
   notifications,
   voiceVideo,
   privacy,
@@ -50,6 +53,8 @@ String settingsSectionLabel(SettingsSection section) {
       return 'Profile';
     case SettingsSection.appearance:
       return 'Appearance';
+    case SettingsSection.language:
+      return 'Language';
     case SettingsSection.notifications:
       return 'Notifications';
     case SettingsSection.voiceVideo:
@@ -87,6 +92,8 @@ class SettingsContent extends StatelessWidget {
         return const AccountSection();
       case SettingsSection.appearance:
         return const AppearanceSection();
+      case SettingsSection.language:
+        return const LanguageSection();
       case SettingsSection.notifications:
         return const NotificationSection();
       case SettingsSection.voiceVideo:
@@ -127,6 +134,8 @@ class SettingsRootView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeSelection = ref.watch(themeProvider);
     final appearanceTrailing = _themeLabel(themeSelection);
+    final currentLocale = ref.watch(localeProvider);
+    final languageTrailing = localeDisplayName(currentLocale.languageCode);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
@@ -143,6 +152,13 @@ class SettingsRootView extends ConsumerWidget {
                 iconColor: const Color(0xFF8B5CF6),
                 section: SettingsSection.appearance,
                 trailing: appearanceTrailing,
+              ),
+              _row(
+                context,
+                icon: Icons.language_outlined,
+                iconColor: const Color(0xFF0EA5E9),
+                section: SettingsSection.language,
+                trailing: languageTrailing,
               ),
               _row(
                 context,
