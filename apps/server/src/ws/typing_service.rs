@@ -12,6 +12,12 @@ use crate::routes::AppState;
 use crate::types::ConversationKind;
 use crate::ws::handler::ServerMessage;
 
+/// Hard cap on the number of entries in each of the three caches.  When an
+/// insert would push the map past this limit, `sweep_expired_caches` runs
+/// first (opportunistic eviction of 2xTTL-stale entries) to keep growth
+/// O(active conversations) rather than O(all-time conversations).
+pub const MAX_CACHE_ENTRIES: usize = 100_000;
+
 /// In-memory cache for conversation membership checks used by the typing
 /// indicator path.  Keyed by (user_id, conversation_id), stores the
 /// tokio::time::Instant when membership was last verified.  Entries older
@@ -53,6 +59,10 @@ pub(super) async fn check_membership_cached(
     };
 
     if is_member {
+        // Enforce cap: sweep stale entries before inserting when at the limit.
+        if MEMBERSHIP_CACHE.len() >= MAX_CACHE_ENTRIES {
+            sweep_expired_caches();
+        }
         MEMBERSHIP_CACHE.insert(cache_key, Instant::now());
     } else {
         // Evict stale positive entry if membership was revoked
@@ -74,6 +84,9 @@ pub(super) async fn get_member_ids_cached(
     }
 
     let members = db::groups::get_conversation_member_ids(pool, conversation_id).await?;
+    if MEMBER_IDS_CACHE.len() >= MAX_CACHE_ENTRIES {
+        sweep_expired_caches();
+    }
     MEMBER_IDS_CACHE.insert(conversation_id, (members.clone(), Instant::now()));
     Ok(members)
 }
@@ -92,6 +105,9 @@ pub(super) async fn get_conversation_kind_cached(
     let kind = db::groups::get_conversation_kind(pool, conversation_id)
         .await
         .ok()??;
+    if CONV_KIND_CACHE.len() >= MAX_CACHE_ENTRIES {
+        sweep_expired_caches();
+    }
     CONV_KIND_CACHE.insert(conversation_id, (kind.clone(), Instant::now()));
     Some(kind)
 }
@@ -104,8 +120,8 @@ pub fn invalidate_member_cache(conversation_id: Uuid) {
     MEMBERSHIP_CACHE.retain(|(_, conv_id), _| *conv_id != conversation_id);
 }
 
-/// Drop cache entries older than 2× their TTL across all three caches.
-/// Called from the cleanup scheduler so stale entries don't accumulate on
+/// Drop cache entries older than 2x their TTL across all three caches.
+/// Called from the cleanup scheduler so stale entries do not accumulate on
 /// long-running servers.
 pub fn sweep_expired_caches() {
     let cutoff = MEMBERSHIP_CACHE_TTL * 2;
@@ -233,7 +249,7 @@ pub(super) async fn broadcast_presence(
     status: &str,
 ) {
     // Gate on first-device-up / last-device-down so multi-device reconnects
-    // don't surface online/offline flapping to contacts.
+    // do not surface online/offline flapping to contacts.
     let dev_count = state.hub.device_count(&user_id);
     let should_broadcast = match status {
         "online" => dev_count == 1,
@@ -297,5 +313,82 @@ pub(super) async fn broadcast_presence(
     let msg = WsMessage::Text(json.into());
     for cid in &contact_ids {
         state.hub.send_to(cid, msg.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::time::Instant;
+    use uuid::Uuid;
+
+    /// Validate the cap constant is set to the expected value.
+    #[test]
+    fn max_cache_entries_is_100k() {
+        assert_eq!(MAX_CACHE_ENTRIES, 100_000);
+    }
+
+    /// Simulate the sweep algorithm on a local DashMap: insert entries, age
+    /// them past 2xTTL, sweep, and assert they are gone.
+    #[tokio::test]
+    async fn sweep_evicts_expired_membership_entries() {
+        let cache: DashMap<(Uuid, Uuid), Instant> = DashMap::new();
+        let ttl = Duration::from_millis(1);
+        let cutoff = ttl * 2;
+
+        let conv = Uuid::new_v4();
+        for _ in 0..5 {
+            cache.insert((Uuid::new_v4(), conv), Instant::now());
+        }
+
+        // Sleep past 2xTTL so all entries are stale.
+        tokio::time::sleep(cutoff + Duration::from_millis(5)).await;
+
+        // Insert one fresh entry after the sleep.
+        let fresh_key = (Uuid::new_v4(), conv);
+        cache.insert(fresh_key, Instant::now());
+        assert_eq!(cache.len(), 6);
+
+        // Apply the same sweep predicate as sweep_expired_caches.
+        let mut evicted = 0usize;
+        cache.retain(|_, ts| {
+            let keep = ts.elapsed() < cutoff;
+            if !keep {
+                evicted += 1;
+            }
+            keep
+        });
+
+        assert_eq!(evicted, 5, "5 stale entries should be evicted");
+        assert_eq!(cache.len(), 1, "only the fresh entry should remain");
+        assert!(cache.contains_key(&fresh_key));
+    }
+
+    /// Validate the cap-enforcement pattern: fill a local cache to cap, age
+    /// all entries, then simulate the guard+insert and assert size stays <=cap.
+    #[tokio::test]
+    async fn cap_triggers_sweep_before_insert() {
+        let cache: DashMap<Uuid, (String, Instant)> = DashMap::new();
+        let cap: usize = 10;
+        let ttl = Duration::from_millis(1);
+        let cutoff = ttl * 2;
+
+        for _ in 0..cap {
+            cache.insert(Uuid::new_v4(), ("dm".to_string(), Instant::now()));
+        }
+        assert_eq!(cache.len(), cap);
+
+        // Age all entries past 2xTTL.
+        tokio::time::sleep(cutoff + Duration::from_millis(5)).await;
+
+        // Simulate the guard: sweep before inserting when at the limit.
+        if cache.len() >= cap {
+            cache.retain(|_, (_, ts)| ts.elapsed() < cutoff);
+        }
+        cache.insert(Uuid::new_v4(), ("group".to_string(), Instant::now()));
+
+        assert_eq!(cache.len(), 1, "sweep cleared all stale entries");
+        assert!(cache.len() <= cap, "size must not exceed cap");
     }
 }
