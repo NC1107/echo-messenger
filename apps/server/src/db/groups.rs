@@ -61,20 +61,31 @@ pub async fn create_group_with_visibility(
     .execute(&mut *tx)
     .await?;
 
+    // Track how many member rows we actually insert so we can set member_count.
+    let mut inserted: i64 = 1; // creator
+
     // Add other members
     for member_id in member_ids {
         if *member_id == creator_id {
             continue;
         }
-        sqlx::query(
-            "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'member') \
-             ON CONFLICT DO NOTHING",
+        let result = sqlx::query(
+            "INSERT INTO conversation_members (conversation_id, user_id, role) \
+             VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING",
         )
         .bind(group.id)
         .bind(member_id)
         .execute(&mut *tx)
         .await?;
+        inserted += result.rows_affected() as i64;
     }
+
+    // Set the denormalized counter to the actual number inserted.
+    sqlx::query("UPDATE conversations SET member_count = $1 WHERE id = $2")
+        .bind(inserted)
+        .bind(group.id)
+        .execute(&mut *tx)
+        .await?;
 
     tx.commit().await?;
     Ok(group)
@@ -90,6 +101,10 @@ pub struct PublicGroupRow {
 }
 
 /// List public groups, optionally filtered by title search, with pagination.
+///
+/// Uses the denormalized `member_count` column (#640) to avoid a GROUP BY
+/// aggregation over `conversation_members` on every request. Membership is
+/// checked with a single LEFT JOIN instead of a correlated EXISTS subquery.
 pub async fn list_public_groups(
     pool: &PgPool,
     user_id: Uuid,
@@ -106,17 +121,16 @@ pub async fn list_public_groups(
             let pattern = format!("%{escaped}%");
             sqlx::query_as::<_, PublicGroupRow>(
                 "SELECT c.id, c.title, \
-                 COUNT(cm.user_id) AS member_count, c.created_at, \
-                 EXISTS(SELECT 1 FROM conversation_members cm2 \
-                        WHERE cm2.conversation_id = c.id \
-                        AND cm2.user_id = $2 AND cm2.is_removed = false) AS is_member \
+                 c.member_count::BIGINT, c.created_at, \
+                 (cm_me.user_id IS NOT NULL) AS is_member \
                  FROM conversations c \
-                 LEFT JOIN conversation_members cm \
-                   ON cm.conversation_id = c.id AND cm.is_removed = false \
+                 LEFT JOIN conversation_members cm_me \
+                   ON cm_me.conversation_id = c.id \
+                   AND cm_me.user_id = $2 \
+                   AND cm_me.is_removed = false \
                  WHERE c.is_public = true AND c.kind = 'group' \
                    AND c.title ILIKE $1 ESCAPE '\\' \
-                 GROUP BY c.id \
-                 ORDER BY c.created_at DESC \
+                 ORDER BY c.member_count DESC \
                  LIMIT $3 OFFSET $4",
             )
             .bind(pattern)
@@ -129,16 +143,15 @@ pub async fn list_public_groups(
         None => {
             sqlx::query_as::<_, PublicGroupRow>(
                 "SELECT c.id, c.title, \
-                 COUNT(cm.user_id) AS member_count, c.created_at, \
-                 EXISTS(SELECT 1 FROM conversation_members cm2 \
-                        WHERE cm2.conversation_id = c.id \
-                        AND cm2.user_id = $1 AND cm2.is_removed = false) AS is_member \
+                 c.member_count::BIGINT, c.created_at, \
+                 (cm_me.user_id IS NOT NULL) AS is_member \
                  FROM conversations c \
-                 LEFT JOIN conversation_members cm \
-                   ON cm.conversation_id = c.id AND cm.is_removed = false \
+                 LEFT JOIN conversation_members cm_me \
+                   ON cm_me.conversation_id = c.id \
+                   AND cm_me.user_id = $1 \
+                   AND cm_me.is_removed = false \
                  WHERE c.is_public = true AND c.kind = 'group' \
-                 GROUP BY c.id \
-                 ORDER BY c.created_at DESC \
+                 ORDER BY c.member_count DESC \
                  LIMIT $2 OFFSET $3",
             )
             .bind(user_id)
@@ -153,26 +166,40 @@ pub async fn list_public_groups(
 /// Join a public group. Returns an error if the group is not public.
 ///
 /// Uses a single atomic INSERT ... SELECT to avoid a TOCTOU race between
-/// checking `is_public` and inserting the membership row.
+/// checking `is_public` and inserting the membership row. Increments
+/// `member_count` on the conversation when a new (or previously removed)
+/// member row is written (#640).
 pub async fn join_public_group(
     pool: &PgPool,
     group_id: Uuid,
     user_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
     let result = sqlx::query(
         "INSERT INTO conversation_members (conversation_id, user_id, role) \
          SELECT $1, $2, 'member' \
          FROM conversations \
          WHERE id = $1 AND kind = 'group' AND is_public = true \
          ON CONFLICT (conversation_id, user_id) DO UPDATE \
-           SET is_removed = false, removed_at = NULL, role = 'member'",
+           SET is_removed = false, removed_at = NULL, role = 'member' \
+           WHERE conversation_members.is_removed = true",
     )
     .bind(group_id)
     .bind(user_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
-    Ok(result.rows_affected() > 0)
+    let joined = result.rows_affected() > 0;
+    if joined {
+        sqlx::query("UPDATE conversations SET member_count = member_count + 1 WHERE id = $1")
+            .bind(group_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+    Ok(joined)
 }
 
 /// Get group info by conversation ID.
@@ -243,27 +270,46 @@ pub async fn get_member_role(
 ///
 /// Returns `true` when a row was inserted or a soft-removed membership was
 /// reactivated, and `false` when the user is already an active member.
+/// Increments `member_count` on the conversation when a row is actually written
+/// (#640).
 pub async fn add_member(pool: &PgPool, group_id: Uuid, user_id: Uuid) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query(
-                "INSERT INTO conversation_members (conversation_id, user_id, role) VALUES ($1, $2, 'member') \
-                 ON CONFLICT (conversation_id, user_id) DO UPDATE \
-                     SET is_removed = false, removed_at = NULL, role = 'member' \
-                 WHERE conversation_members.is_removed = true",
-        )
-        .bind(group_id)
-        .bind(user_id)
-        .execute(pool)
-        .await?;
+    let mut tx = pool.begin().await?;
 
-    Ok(result.rows_affected() > 0)
+    let result = sqlx::query(
+        "INSERT INTO conversation_members (conversation_id, user_id, role) \
+         VALUES ($1, $2, 'member') \
+         ON CONFLICT (conversation_id, user_id) DO UPDATE \
+             SET is_removed = false, removed_at = NULL, role = 'member' \
+         WHERE conversation_members.is_removed = true",
+    )
+    .bind(group_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let added = result.rows_affected() > 0;
+    if added {
+        sqlx::query("UPDATE conversations SET member_count = member_count + 1 WHERE id = $1")
+            .bind(group_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+    Ok(added)
 }
 
-/// Remove a member from a group.
+/// Remove a member from a group (soft-delete).
+///
+/// Decrements `member_count` on the conversation when a row is actually
+/// soft-deleted (#640).
 pub async fn remove_member(
     pool: &PgPool,
     group_id: Uuid,
     user_id: Uuid,
 ) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
     let result = sqlx::query(
         "UPDATE conversation_members \
          SET is_removed = true, removed_at = NOW() \
@@ -271,9 +317,22 @@ pub async fn remove_member(
     )
     .bind(group_id)
     .bind(user_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
-    Ok(result.rows_affected() > 0)
+
+    let removed = result.rows_affected() > 0;
+    if removed {
+        sqlx::query(
+            "UPDATE conversations \
+             SET member_count = GREATEST(member_count - 1, 0) WHERE id = $1",
+        )
+        .bind(group_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(removed)
 }
 
 /// Get all member user IDs for a conversation (works for both DMs and groups).
@@ -288,10 +347,12 @@ where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
 {
     let rows: Vec<(Uuid,)> =
-        sqlx::query_as("SELECT user_id FROM conversation_members WHERE conversation_id = $1 AND is_removed = false")
-            .bind(conversation_id)
-            .fetch_all(executor)
-            .await?;
+        sqlx::query_as(
+            "SELECT user_id FROM conversation_members WHERE conversation_id = $1 AND is_removed = false",
+        )
+        .bind(conversation_id)
+        .fetch_all(executor)
+        .await?;
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
@@ -432,6 +493,9 @@ pub struct GroupPreviewRow {
 /// Returns data for **public** groups even if the caller is not a member.
 /// For private groups the caller must already be a member; otherwise `None`
 /// is returned.
+///
+/// Uses the denormalized `member_count` column (#640) and a single LEFT JOIN
+/// for the membership check to avoid GROUP BY and correlated EXISTS subqueries.
 pub async fn get_group_preview(
     pool: &PgPool,
     group_id: Uuid,
@@ -439,19 +503,15 @@ pub async fn get_group_preview(
 ) -> Result<Option<GroupPreviewRow>, sqlx::Error> {
     sqlx::query_as::<_, GroupPreviewRow>(
         "SELECT c.id, c.title, c.description, c.icon_url, c.is_public, \
-         COUNT(cm.user_id) AS member_count, \
-         EXISTS(SELECT 1 FROM conversation_members cm2 \
-                WHERE cm2.conversation_id = c.id AND cm2.user_id = $2 \
-                  AND cm2.is_removed = false) AS is_member \
+         c.member_count::BIGINT, \
+         (cm_me.user_id IS NOT NULL) AS is_member \
          FROM conversations c \
-         LEFT JOIN conversation_members cm ON cm.conversation_id = c.id \
-           AND cm.is_removed = false \
+         LEFT JOIN conversation_members cm_me \
+           ON cm_me.conversation_id = c.id \
+           AND cm_me.user_id = $2 \
+           AND cm_me.is_removed = false \
          WHERE c.id = $1 AND c.kind = 'group' \
-           AND (c.is_public = true OR EXISTS( \
-                SELECT 1 FROM conversation_members cm3 \
-                WHERE cm3.conversation_id = c.id AND cm3.user_id = $2 \
-                  AND cm3.is_removed = false)) \
-         GROUP BY c.id",
+           AND (c.is_public = true OR cm_me.user_id IS NOT NULL)",
     )
     .bind(group_id)
     .bind(user_id)
@@ -506,6 +566,9 @@ pub async fn update_group_description(
 }
 
 /// Ban a member: remove from group + add to banned_members table.
+///
+/// Decrements `member_count` when the membership row is actually soft-deleted
+/// (#640).
 pub async fn ban_member(
     pool: &PgPool,
     group_id: Uuid,
@@ -515,7 +578,7 @@ pub async fn ban_member(
     let mut tx = pool.begin().await?;
 
     // Remove from conversation_members (soft-delete)
-    sqlx::query(
+    let removed = sqlx::query(
         "UPDATE conversation_members SET is_removed = true, removed_at = NOW() \
          WHERE conversation_id = $1 AND user_id = $2 AND is_removed = false",
     )
@@ -523,6 +586,16 @@ pub async fn ban_member(
     .bind(user_id)
     .execute(&mut *tx)
     .await?;
+
+    if removed.rows_affected() > 0 {
+        sqlx::query(
+            "UPDATE conversations \
+             SET member_count = GREATEST(member_count - 1, 0) WHERE id = $1",
+        )
+        .bind(group_id)
+        .execute(&mut *tx)
+        .await?;
+    }
 
     // Insert into banned_members (upsert to handle re-ban)
     let result = sqlx::query(

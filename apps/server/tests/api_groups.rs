@@ -249,7 +249,9 @@ async fn public_group_appears_in_list() {
     assert_eq!(resp.status().as_u16(), 201);
 
     let list_resp = client
-        .get(format!("{base}/api/groups/public"))
+        .get(format!(
+            "{base}/api/groups/public?search={unique_name}&limit=100"
+        ))
         .header("Authorization", format!("Bearer {token}"))
         .send()
         .await
