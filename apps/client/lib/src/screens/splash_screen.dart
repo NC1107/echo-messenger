@@ -17,6 +17,7 @@ import '../services/update_service.dart' as update_svc;
 import '../router/app_router.dart' show pendingDeepLink;
 import '../screens/onboarding_wizard.dart' show kOnboardingCompletedKey;
 import '../theme/echo_theme.dart';
+import '../widgets/auth/animated_gradient_background.dart';
 import '../widgets/echo_logo_icon.dart';
 import '../version.dart';
 
@@ -343,40 +344,45 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
     return Scaffold(
       backgroundColor: context.mainBg,
-      body: Center(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const EchoLogoIcon(size: 72),
-              const SizedBox(height: 16),
-              Text(
-                'Echo',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
-                  color: context.accent,
-                ),
+      body: Stack(
+        children: [
+          const AnimatedGradientBackground(),
+          Center(
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const EchoLogoIcon(size: 72),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Echo',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                      color: context.accent,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: context.accent.withValues(alpha: 0.6),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    _statusText,
+                    style: TextStyle(fontSize: 13, color: context.textMuted),
+                  ),
+                ],
               ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: context.accent.withValues(alpha: 0.6),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _statusText,
-                style: TextStyle(fontSize: 13, color: context.textMuted),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
