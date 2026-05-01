@@ -2,6 +2,15 @@
 //!
 //! Spins up a real Echo server against a live PostgreSQL database.
 //! Tests fail fast when `DATABASE_URL` / `TEST_DATABASE_URL` is not set.
+//!
+//! # Test isolation contract
+//!
+//! All tests share one database (migrations run once per process via
+//! [`MIGRATIONS`]).  Row-state isolation is achieved exclusively through
+//! unique identifiers: every test that creates a user **must** obtain its
+//! username from [`unique_username`] (or the [`register_and_login`] wrapper
+//! which calls it automatically).  Hard-coded usernames that could collide
+//! across parallel test workers are forbidden.  No `TRUNCATE` between tests.
 
 #![allow(dead_code)]
 

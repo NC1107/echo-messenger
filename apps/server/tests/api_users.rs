@@ -328,14 +328,18 @@ async fn search_users_returns_results() {
     let base = common::spawn_server().await;
     let client = Client::new();
     let searcher_name = common::unique_username("searcher");
-    let target_name = format!("findme_{}", &uuid::Uuid::new_v4().simple().to_string()[..4]);
+    // Use full unique_username so the search query is specific enough to stay
+    // within the LIMIT 10 result window even when prior test runs left stale
+    // rows with the same prefix in the shared database (#699).
+    let target_name = common::unique_username("srchtgt");
 
     common::register(&client, &base, &searcher_name, "password123").await;
     common::register(&client, &base, &target_name, "password123").await;
     let (token, _) = common::login(&client, &base, &searcher_name, "password123").await;
 
+    // Search by the full unique username so at most one row matches.
     let resp = client
-        .get(format!("{base}/api/users/search?q=findme"))
+        .get(format!("{base}/api/users/search?q={target_name}"))
         .header("Authorization", format!("Bearer {token}"))
         .send()
         .await

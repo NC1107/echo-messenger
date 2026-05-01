@@ -307,6 +307,59 @@ pub async fn get_conversation_kind(
     Ok(row.map(|(kind,)| kind))
 }
 
+/// Combined membership + conversation-kind context returned in a single DB round-trip.
+///
+/// Replaces the `is_member` + `get_conversation_kind` + `get_member_role` triple
+/// that previously appeared in every group route handler (see issue #691).
+///
+/// Returns `None` when the conversation does not exist.
+#[derive(Debug)]
+pub struct MemberContext {
+    /// `true` when the user is an active (non-removed) member.
+    pub is_member: bool,
+    /// The conversation kind string (`"group"` or `"direct"`).
+    pub kind: String,
+    /// The user's role string (`"owner"`, `"admin"`, `"member"`) when they are
+    /// an active member, `None` otherwise.
+    pub role: Option<String>,
+    /// Whether the conversation is public.
+    pub is_public: bool,
+}
+
+/// Fetch conversation kind, membership status, and member role in one query.
+///
+/// Used by group route handlers to replace the previous triple round-trip of
+/// `is_member` + `get_conversation_kind` + `get_member_role` (issue #691).
+pub async fn get_member_context(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<MemberContext>, sqlx::Error> {
+    let row: Option<(String, bool, Option<String>, Option<bool>)> = sqlx::query_as(
+        "SELECT c.kind, c.is_public, cm.role, \
+                (cm.user_id IS NOT NULL AND cm.is_removed = false) \
+         FROM conversations c \
+         LEFT JOIN conversation_members cm \
+               ON cm.conversation_id = c.id AND cm.user_id = $2 \
+         WHERE c.id = $1",
+    )
+    .bind(conversation_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|(kind, is_public, role, active)| {
+        let is_member = active.unwrap_or(false);
+        let role = if is_member { role } else { None };
+        MemberContext {
+            is_member,
+            kind,
+            role,
+            is_public,
+        }
+    }))
+}
+
 /// Check if a user already owns a public group with the given title.
 pub async fn user_has_public_group_named(
     pool: &PgPool,

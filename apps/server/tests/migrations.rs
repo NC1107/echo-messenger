@@ -11,9 +11,9 @@
 //! land inside it, run `sqlx::migrate!` against a pool pinned to that
 //! schema, then drop the schema on teardown.
 //!
-//! NOTE: this exercises only schema-creation idempotency. The harder gap --
-//! per-test row-state isolation across the rest of the suite -- is still
-//! open and tracked separately in #699.
+//! NOTE: this exercises schema-creation idempotency. Per-test row-state
+//! isolation across the rest of the suite is handled by the `unique_username`
+//! convention documented in `common/mod.rs` (see #699).
 
 use sqlx::Connection;
 use sqlx::Executor;
