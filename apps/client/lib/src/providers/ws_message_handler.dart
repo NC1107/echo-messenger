@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/chat_message.dart';
+import '../models/conversation.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
 import '../services/debug_log_service.dart';
@@ -225,6 +226,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleCallStarted(json);
       case 'canvas_event':
         _handleCanvasEvent(json);
+      case 'member_added':
+        _handleMemberAdded(json);
       default:
         DebugLogService.instance.log(
           LogLevel.warning,
@@ -893,6 +896,25 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   void _handlePresenceList(Map<String, dynamic> json) {
     final users = (json['users'] as List?)?.cast<String>() ?? [];
     state = state.copyWith(onlineUsers: users.toSet());
+  }
+
+  /// #660 — Insert the newly-joined member into the local conversations state
+  /// so the members panel refreshes in real time without a manual reload.
+  void _handleMemberAdded(Map<String, dynamic> json) {
+    final conversationId = json['conversation_id'] as String? ?? '';
+    final userId = json['user_id'] as String? ?? '';
+    final username = json['username'] as String? ?? '';
+    if (conversationId.isEmpty || userId.isEmpty || username.isEmpty) return;
+
+    final member = ConversationMember(
+      userId: userId,
+      username: username,
+      role: json['role'] as String? ?? 'member',
+      avatarUrl: json['avatar_url'] as String?,
+    );
+    ref
+        .read(conversationsProvider.notifier)
+        .addGroupMember(conversationId, member);
   }
 
   void _handleCanvasEvent(Map<String, dynamic> json) {

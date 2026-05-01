@@ -262,6 +262,22 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     }
   }
 
+  /// Append a new member to a group conversation's member list in-place.
+  ///
+  /// Called by the WS `member_added` handler (#660) so the members panel
+  /// updates without a full server round-trip. Silently no-ops when the
+  /// conversation is unknown or the member is already present.
+  void addGroupMember(String conversationId, ConversationMember member) {
+    final updated = List<Conversation>.from(state.conversations);
+    final index = updated.indexWhere((c) => c.id == conversationId);
+    if (index < 0) return;
+    final conv = updated[index];
+    final alreadyPresent = conv.members.any((m) => m.userId == member.userId);
+    if (alreadyPresent) return;
+    updated[index] = conv.copyWith(members: [...conv.members, member]);
+    state = state.copyWith(conversations: updated);
+  }
+
   /// Mark a conversation as read (reset unread count).
   void markAsRead(String conversationId) {
     final updated = List<Conversation>.from(state.conversations);

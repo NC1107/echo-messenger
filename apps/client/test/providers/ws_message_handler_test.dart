@@ -80,6 +80,23 @@ class _FakeConversationsNotifier extends ConversationsNotifier {
             ConversationMember(userId: 'my-user-id', username: 'testuser'),
           ],
         ),
+        Conversation(
+          id: 'group-1',
+          isGroup: true,
+          name: 'Test Group',
+          members: [
+            ConversationMember(
+              userId: 'my-user-id',
+              username: 'testuser',
+              role: 'owner',
+            ),
+            ConversationMember(
+              userId: 'peer-1',
+              username: 'alice',
+              role: 'member',
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -731,6 +748,58 @@ void main() {
       handler.handleServerMessage({
         'type': 'completely_unknown_type',
       }, _myUserId);
+    });
+  });
+
+  // #660 — group member list real-time update via WS
+  group('handleServerMessage: member_added', () {
+    test('appends new member to group conversation', () {
+      handler.handleServerMessage({
+        'type': 'member_added',
+        'conversation_id': 'group-1',
+        'user_id': 'peer-2',
+        'username': 'charlie',
+        'avatar_url': null,
+        'role': 'member',
+      }, _myUserId);
+
+      final convs = container.read(conversationsProvider).conversations;
+      final group = convs.firstWhere((c) => c.id == 'group-1');
+      expect(group.members.map((m) => m.userId), contains('peer-2'));
+      expect(
+        group.members.firstWhere((m) => m.userId == 'peer-2').username,
+        'charlie',
+      );
+    });
+
+    test('does not duplicate an existing member', () {
+      // alice (peer-1) is already in group-1
+      handler.handleServerMessage({
+        'type': 'member_added',
+        'conversation_id': 'group-1',
+        'user_id': 'peer-1',
+        'username': 'alice',
+        'role': 'member',
+      }, _myUserId);
+
+      final convs = container.read(conversationsProvider).conversations;
+      final group = convs.firstWhere((c) => c.id == 'group-1');
+      expect(group.members.where((m) => m.userId == 'peer-1'), hasLength(1));
+    });
+
+    test('ignores event with missing conversation_id', () {
+      // Should not throw and should leave state unchanged.
+      handler.handleServerMessage({
+        'type': 'member_added',
+        'conversation_id': '',
+        'user_id': 'peer-3',
+        'username': 'dave',
+        'role': 'member',
+      }, _myUserId);
+
+      final convs = container.read(conversationsProvider).conversations;
+      final group = convs.firstWhere((c) => c.id == 'group-1');
+      expect(group.members, hasLength(2)); // unchanged
     });
   });
 }
