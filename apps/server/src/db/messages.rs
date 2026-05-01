@@ -339,6 +339,31 @@ pub async fn get_conversation_ttl(
     Ok(row.and_then(|(v,)| v).map(|v| v as i64))
 }
 
+/// Insert a system-event message row.
+///
+/// System messages use a sentinel content prefix `__system__:` so the client
+/// can detect and render them as in-chat event pills rather than normal bubbles.
+/// `sender_id` is set to the acting user so the row passes the FK constraint;
+/// the client recognises system events via the sentinel prefix (#663).
+pub async fn insert_system_message(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    sender_id: Uuid,
+    content: &str,
+) -> Result<MessageRow, sqlx::Error> {
+    sqlx::query_as::<_, MessageRow>(
+        "INSERT INTO messages (conversation_id, sender_id, content, delivered) \
+         VALUES ($1, $2, $3, true) \
+         RETURNING id, conversation_id, channel_id, sender_id, sender_device_id, \
+                   content, created_at, delivered, reply_to_id, expires_at",
+    )
+    .bind(conversation_id)
+    .bind(sender_id)
+    .bind(content)
+    .fetch_one(pool)
+    .await
+}
+
 pub async fn mark_delivered(pool: &PgPool, message_ids: &[Uuid]) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE messages SET delivered = true WHERE id = ANY($1)")
         .bind(message_ids)

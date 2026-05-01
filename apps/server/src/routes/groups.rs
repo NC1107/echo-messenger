@@ -358,6 +358,32 @@ pub async fn add_member(
             .broadcast_json(&existing_members, &s, Some(body.user_id));
     }
 
+    // Persist a system message and broadcast as new_message so all members see
+    // an in-chat "X joined" pill in real time (#663).
+    let sentinel = format!(
+        "__system__:member_joined:{}:{}",
+        body.user_id, new_user.username
+    );
+    if let Ok(sys_msg) =
+        db::messages::insert_system_message(&state.pool, group_id, body.user_id, &sentinel).await
+    {
+        let all_members = db::groups::get_conversation_member_ids(&state.pool, group_id)
+            .await
+            .unwrap_or_default();
+        let ws_event = serde_json::json!({
+            "type": "new_message",
+            "message_id": sys_msg.id,
+            "from_user_id": body.user_id,
+            "from_username": new_user.username,
+            "conversation_id": group_id,
+            "content": sentinel,
+            "timestamp": sys_msg.created_at,
+        });
+        if let Ok(s) = serde_json::to_string(&ws_event) {
+            state.hub.broadcast_json(&all_members, &s, None);
+        }
+    }
+
     Ok(Json(serde_json::json!({ "status": "added" })))
 }
 
@@ -545,6 +571,33 @@ pub async fn join_group(
             state
                 .hub
                 .broadcast_json(&existing_members, &s, Some(auth.user_id));
+        }
+
+        // Persist a system message and broadcast as new_message so all
+        // members see an in-chat "X joined" pill in real time (#663).
+        let sentinel = format!(
+            "__system__:member_joined:{}:{}",
+            auth.user_id, joiner_user.username
+        );
+        if let Ok(sys_msg) =
+            db::messages::insert_system_message(&state.pool, group_id, auth.user_id, &sentinel)
+                .await
+        {
+            let all_members = db::groups::get_conversation_member_ids(&state.pool, group_id)
+                .await
+                .unwrap_or_default();
+            let ws_event = serde_json::json!({
+                "type": "new_message",
+                "message_id": sys_msg.id,
+                "from_user_id": auth.user_id,
+                "from_username": joiner_user.username,
+                "conversation_id": group_id,
+                "content": sentinel,
+                "timestamp": sys_msg.created_at,
+            });
+            if let Ok(s) = serde_json::to_string(&ws_event) {
+                state.hub.broadcast_json(&all_members, &s, None);
+            }
         }
     }
 

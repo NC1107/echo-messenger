@@ -388,6 +388,26 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     }
   }
 
+  /// Sentinel prefix used by system messages (#663).
+  static const _systemPrefix = '__system__:';
+
+  /// Parse a `__system__:member_joined:<uuid>:<username>` sentinel and emit
+  /// an in-chat system event pill. No preview update, no unread increment.
+  void _handleSystemSentinel(String sentinel, String conversationId) {
+    if (conversationId.isEmpty) return;
+    const joinedTag = '__system__:member_joined:';
+    if (sentinel.startsWith(joinedTag)) {
+      final rest = sentinel.substring(joinedTag.length);
+      final colonIdx = rest.indexOf(':');
+      final username = colonIdx >= 0 ? rest.substring(colonIdx + 1) : rest;
+      if (username.isNotEmpty) {
+        ref
+            .read(chatProvider.notifier)
+            .addSystemEvent(conversationId, '$username joined the group');
+      }
+    }
+  }
+
   void _handleNewMessage(Map<String, dynamic> json, String myUserId) {
     final rawContent = json['content'] as String;
     final fromUserId = json['from_user_id'] as String;
@@ -395,6 +415,14 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     final conversationId = json['conversation_id'] as String;
     final timestamp = json['timestamp'] as String;
     final senderUsername = json['from_username'] as String;
+
+    // System message sentinel -- render as an in-chat event pill and skip the
+    // normal decrypt/preview pipeline entirely (#663).
+    if (rawContent.startsWith(_systemPrefix)) {
+      _handleSystemSentinel(rawContent, conversationId);
+      return;
+    }
+
     final cryptoState = ref.read(cryptoProvider);
 
     // Check if this conversation is already known locally

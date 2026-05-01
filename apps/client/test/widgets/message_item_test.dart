@@ -746,4 +746,68 @@ void main() {
       },
     );
   });
+
+  // #663 — system message when a member joins a group
+  group('MessageItem: system event pill', () {
+    testWidgets('renders member-joined system event as centered pill', (
+      tester,
+    ) async {
+      await mockNetworkImagesFor(() async {
+        const msg = ChatMessage(
+          id: 'sys-1',
+          fromUserId: ChatMessage.systemUserId,
+          fromUsername: '',
+          conversationId: 'group-1',
+          content: 'alice joined the group',
+          timestamp: '2026-01-15T10:30:00Z',
+          isMine: false,
+        );
+
+        await tester.pumpApp(
+          const MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('alice joined the group'), findsOneWidget);
+        expect(find.byType(Center), findsWidgets);
+      });
+    });
+
+    testWidgets('system event pill has no reply or delete actions', (
+      tester,
+    ) async {
+      await mockNetworkImagesFor(() async {
+        var replyCalled = false;
+
+        const msg = ChatMessage(
+          id: 'sys-2',
+          fromUserId: ChatMessage.systemUserId,
+          fromUsername: '',
+          conversationId: 'group-1',
+          content: 'bob joined the group',
+          timestamp: '2026-01-15T10:31:00Z',
+          isMine: false,
+        );
+
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+            onReply: (_) => replyCalled = true,
+          ),
+        );
+        await tester.pump();
+
+        expect(replyCalled, isFalse);
+        expect(find.text('Delete'), findsNothing);
+      });
+    });
+  });
 }

@@ -184,6 +184,10 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
     required String senderUsername,
     bool incrementUnread = true,
   }) {
+    // System sentinel messages (#663) must not appear in the conversation
+    // preview or increment the unread badge.
+    if (content.startsWith('__system__:')) return;
+
     // Cache the decrypted preview (content passed here is already decrypted
     // by the websocket provider). Guard against failure sentinels (#664).
     if (!MessageCache.failureSentinels.contains(content)) {

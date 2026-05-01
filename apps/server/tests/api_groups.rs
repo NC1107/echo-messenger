@@ -462,3 +462,47 @@ async fn non_owner_cannot_delete_group() {
         .unwrap();
     assert_eq!(resp.status().as_u16(), 401);
 }
+
+// ---------------------------------------------------------------------------
+// #663 — system message created when a member is added
+// ---------------------------------------------------------------------------
+
+async fn get_system_message_count(group_id: &str) -> i64 {
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("DATABASE_URL must be set");
+    let pool = echo_server::db::create_pool(&database_url).await;
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM messages \
+         WHERE conversation_id = $1 \
+           AND content LIKE '__system__:member_joined:%' \
+           AND deleted_at IS NULL",
+    )
+    .bind(uuid::Uuid::parse_str(group_id).unwrap())
+    .fetch_one(&pool)
+    .await
+    .expect("system message count query failed");
+    row.0
+}
+
+#[tokio::test]
+async fn add_member_creates_system_message() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (owner_token, _) = register_and_login(&client, &base, "sysmsgown").await;
+    let (_, new_member_id) = register_and_login(&client, &base, "sysmsgnew").await;
+
+    let group_id = create_group(&client, &base, &owner_token, "SysMsgGroup").await;
+
+    let resp = client
+        .post(format!("{base}/api/groups/{group_id}/members"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .json(&serde_json::json!({ "user_id": new_member_id }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+
+    let count = get_system_message_count(&group_id).await;
+    assert_eq!(count, 1, "expected one system message row after add_member");
+}

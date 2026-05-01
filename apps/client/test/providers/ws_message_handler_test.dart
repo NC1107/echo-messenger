@@ -802,4 +802,55 @@ void main() {
       expect(group.members, hasLength(2)); // unchanged
     });
   });
+
+  // #663 — system message when member joins group
+  group('handleServerMessage: new_message with system sentinel', () {
+    test('member_joined sentinel creates system event, no preview update', () {
+      final convsNotifier = container.read(conversationsProvider.notifier);
+      // Seed a real message so we can verify the preview is NOT replaced.
+      convsNotifier.onNewMessage(
+        conversationId: 'group-1',
+        content: 'hello world',
+        senderUsername: 'alice',
+        timestamp: '2026-01-01T10:00:00Z',
+      );
+
+      handler.handleServerMessage({
+        'type': 'new_message',
+        'message_id': 'sys-1',
+        'from_user_id': 'peer-2',
+        'from_username': 'charlie',
+        'conversation_id': 'group-1',
+        'content': '__system__:member_joined:peer-2:charlie',
+        'timestamp': '2026-01-01T10:01:00Z',
+      }, _myUserId);
+
+      final chatNotifier = container.read(chatProvider.notifier);
+      final msgs = chatNotifier.state.messagesForConversation('group-1');
+      expect(msgs, hasLength(1));
+      expect(msgs.first.isSystemEvent, isTrue);
+      expect(msgs.first.content, 'charlie joined the group');
+
+      // Preview must not have been updated by the sentinel.
+      final convs = container.read(conversationsProvider).conversations;
+      final group = convs.firstWhere((c) => c.id == 'group-1');
+      expect(group.lastMessage, 'hello world');
+    });
+
+    test('sentinel with empty username is ignored gracefully', () {
+      handler.handleServerMessage({
+        'type': 'new_message',
+        'message_id': 'sys-2',
+        'from_user_id': 'peer-2',
+        'from_username': 'charlie',
+        'conversation_id': 'group-1',
+        'content': '__system__:member_joined:peer-2:',
+        'timestamp': '2026-01-01T10:02:00Z',
+      }, _myUserId);
+
+      final chatNotifier = container.read(chatProvider.notifier);
+      final msgs = chatNotifier.state.messagesForConversation('group-1');
+      expect(msgs, isEmpty);
+    });
+  });
 }
