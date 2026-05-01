@@ -83,7 +83,7 @@ The action defaults to scanning a single commit (or the working tree) on `push` 
 - **HIGH-8** List endpoints lack `LIMIT` — `db/contacts.rs:86-103,118-138,181-195`, `db/groups.rs:180-194,268-278`. Unbounded responses.
 - **HIGH-9** `delete_group_dependents` is 9-statement non-transactional — `apps/server/src/main.rs:224-241`. Use `force_delete_conversation` + cascade FKs.
 - **HIGH-10** `mpsc(256)` outbound queue silently drops on full — `ws/hub.rs:109-129`, `handler.rs:194`. Stuck consumer never disconnected.
-- **HIGH-11** `get_undelivered LIMIT 200` truncates large offline backlogs — `db/messages.rs:226-252`. No continuation cursor.
+- **HIGH-11** ~~`get_undelivered LIMIT 200` truncates large offline backlogs — `db/messages.rs:226-252`. No continuation cursor.~~ **Fixed**: cursor-paginated loop in `deliver_undelivered_messages`; `UNDELIVERED_PAGE_SIZE = 100`.
 
 ### Performance
 - **HIGH-12** Per-recipient JSON re-serialization clones full body N times in fanout — `ws/message_service.rs:704-738,756`, `ws/typing_service.rs:246`, `main.rs:128,217`. `WsMessage::Text` is `Bytes`-backed; clone the message, not the String.

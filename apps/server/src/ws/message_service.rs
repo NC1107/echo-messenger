@@ -964,7 +964,7 @@ pub(super) async fn fanout_message(
 pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid, device_id: i32) {
     // Cursor-paginated replay; cap iterations against pathological pool errors.
     // Composite (created_at, id) cursor handles same-tick ties.
-    const MAX_ITERATIONS: usize = 50; // 50 * 200 = 10 000 messages per reconnect
+    const MAX_ITERATIONS: usize = 50; // 50 * 100 = 5 000 messages per reconnect
     let mut after_cursor: Option<(chrono::DateTime<chrono::Utc>, Uuid)> = None;
     for _iter in 0..MAX_ITERATIONS {
         let batch = match db::messages::get_undelivered(

@@ -1333,6 +1333,103 @@ async fn recv_new_message(ws: &mut WsStream) -> Value {
 }
 
 // ---------------------------------------------------------------------------
+// Offline-replay pagination regression (#634)
+// ---------------------------------------------------------------------------
+
+/// Regression test for the `get_undelivered LIMIT N` truncation bug (HIGH-11).
+///
+/// Prior to the fix, `deliver_undelivered_messages` called `get_undelivered`
+/// exactly once on WS reconnect; any messages beyond `UNDELIVERED_PAGE_SIZE`
+/// were stuck as `delivered=false` until the next reconnect.
+///
+/// The fix loops with a composite `(created_at, id)` cursor until the last
+/// page is smaller than `UNDELIVERED_PAGE_SIZE`.  This test inserts
+/// `UNDELIVERED_PAGE_SIZE + 5` messages directly into the DB (bypassing the
+/// WS rate-limiter) and verifies that Bob receives every one of them on
+/// reconnect.
+#[tokio::test]
+async fn offline_replay_delivers_beyond_one_page() {
+    use echo_server::db::messages::UNDELIVERED_PAGE_SIZE;
+
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("TEST_DATABASE_URL or DATABASE_URL must be set");
+    let pool = echo_server::db::create_pool(&database_url).await;
+
+    let (alice_token, alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "pgalice").await;
+    let (bob_token, bob_id, _bob_name) = common::register_and_login(&client, &base, "pgbob").await;
+
+    // Use a plaintext group so no per-device ciphertext wiring is needed.
+    let group_id =
+        common::create_group(&client, &base, &alice_token, "OfflineReplayPagination").await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
+
+    let alice_uuid = uuid::Uuid::parse_str(&alice_id).unwrap();
+    let group_uuid = uuid::Uuid::parse_str(&group_id).unwrap();
+
+    // Insert UNDELIVERED_PAGE_SIZE + 5 messages directly to bypass WS rate limiting.
+    let total_messages = (UNDELIVERED_PAGE_SIZE + 5) as usize;
+    for i in 0..total_messages {
+        echo_server::db::messages::store_message(
+            &pool,
+            group_uuid,
+            None,
+            alice_uuid,
+            None,
+            &format!("offline-replay-msg-{i}"),
+            None,
+            None,
+        )
+        .await
+        .expect("store_message failed");
+    }
+
+    // Bob reconnects — offline replay must deliver ALL messages across
+    // multiple pages (first page: UNDELIVERED_PAGE_SIZE, second page: 5).
+    let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
+    let ws_base = base.replace("http://", "ws://");
+    let (mut bob_ws, _) =
+        tokio_tungstenite::connect_async(format!("{ws_base}/ws?ticket={bob_ticket}"))
+            .await
+            .expect("Bob WS connect failed");
+
+    let mut received = 0usize;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        match tokio::time::timeout(remaining, bob_ws.next()).await {
+            Ok(Some(Ok(Message::Text(text)))) => {
+                let v: Value = serde_json::from_str(&text).expect("JSON parse");
+                if v["type"] == "new_message" {
+                    received += 1;
+                    if received == total_messages {
+                        break;
+                    }
+                }
+            }
+            Ok(Some(Ok(Message::Ping(_) | Message::Pong(_)))) => {}
+            Ok(Some(Ok(Message::Close(_)))) | Ok(None) => break,
+            Ok(Some(Ok(_))) => {}
+            Ok(Some(Err(_))) | Err(_) => break,
+        }
+    }
+
+    assert_eq!(
+        received, total_messages,
+        "Bob should receive all {total_messages} offline messages; got {received}"
+    );
+
+    let _ = bob_ws.close(None).await;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

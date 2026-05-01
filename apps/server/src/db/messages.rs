@@ -258,7 +258,7 @@ pub async fn get_messages(
 /// Page size for offline-replay batches.  Picked so a single batch fits
 /// comfortably in the WS outbound mpsc(256) without immediate backpressure
 /// (#634), while still exercising the ack queue under realistic backlogs.
-pub const UNDELIVERED_PAGE_SIZE: i64 = 200;
+pub const UNDELIVERED_PAGE_SIZE: i64 = 100;
 
 /// Fetch undelivered messages for a specific device, optionally after a
 /// `(created_at, id)` cursor.  Composite cursor handles ties when multiple
