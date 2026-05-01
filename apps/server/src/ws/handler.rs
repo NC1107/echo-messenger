@@ -27,11 +27,8 @@ enum ClientMessage {
         to_user_id: Option<Uuid>,
         content: String,
         reply_to_id: Option<Uuid>,
-        /// Recipient-scoped per-device ciphertexts:
-        /// `recipient_user_id (UUID string) -> { device_id (i32 string) -> base64 ciphertext }`.
-        /// JSON object keys are strings on the wire; conversion to typed
-        /// `(Uuid, i32)` happens at the storage and fanout boundaries. Recipient
-        /// scoping is required because per-user device IDs collide across users.
+        /// Per-device ciphertexts keyed by `recipient_user_id -> { device_id -> base64 ciphertext }`.
+        /// Recipient scoping is required because per-user device IDs collide across users.
         #[serde(default)]
         recipient_device_contents: Option<HashMap<String, HashMap<String, String>>>,
         /// Optional TTL in seconds. When Some, overrides the conversation-level
@@ -57,11 +54,8 @@ enum ClientMessage {
     KeyReset { conversation_id: Uuid },
     #[serde(rename = "call_started")]
     CallStarted { conversation_id: Uuid },
-    /// Voice-lounge canvas event.  Relayed to all conversation members and
-    /// persisted for strokes/images (avatar moves are ephemeral).
-    ///
-    /// `kind` is one of: "stroke", "clear", "image_add", "image_move",
-    ///                    "image_remove", "avatar_move"
+    /// Voice-lounge canvas event. Relayed to all members; persisted for strokes/images;
+    /// `kind`: "stroke", "clear", "image_add", "image_move", "image_remove", "avatar_move".
     #[serde(rename = "canvas_event")]
     CanvasEvent {
         channel_id: Uuid,
@@ -93,11 +87,8 @@ pub enum ServerMessage {
         reply_to_username: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         expires_at: Option<DateTime<Utc>>,
-        /// Set to `true` when the server cannot deliver per-device ciphertext
-        /// for this recipient (e.g. offline-replay where the message predates
-        /// multi-device fanout, or no row exists for this device). The client
-        /// should render an undecryptable placeholder rather than attempting
-        /// to decrypt foreign ciphertext.
+        /// True when the server can't deliver per-device ciphertext for this recipient;
+        /// client should render an undecryptable placeholder instead of attempting decrypt.
         #[serde(skip_serializing_if = "Option::is_none")]
         undecryptable: Option<bool>,
     },
@@ -193,14 +184,10 @@ pub async fn handle_socket(
     let (mut sender, mut receiver) = socket.split();
     let (tx, mut rx) = mpsc::channel::<WsMessage>(256);
 
-    // Register in hub (multi-device: keyed by user_id + device_id)
     state.hub.register(user_id, device_id, tx);
-
-    // Broadcast online presence to contacts
     typing_service::broadcast_presence(&state, user_id, &username, "online").await;
 
-    // Forward hub -> sink. Both halves are select!-linked below so neither
-    // outlives the other; rx returned for post-shutdown drain.
+    // Forward hub messages to the WS sink; returns (sink, rx) when the send side closes.
     let send_fut = async move {
         while let Some(msg) = rx.recv().await {
             if sender.send(msg).await.is_err() {
@@ -211,31 +198,24 @@ pub async fn handle_socket(
     };
     tokio::pin!(send_fut);
 
-    // Task: send heartbeat every 30 seconds to keep the connection alive
-    // through reverse-proxy (Traefik/Cloudflare) idle timeouts.
-    //
-    // We send BOTH a WebSocket protocol Ping (for proxy keepalive) and an
-    // application-level JSON heartbeat. Browser WebSocket APIs handle
-    // Ping/Pong transparently without surfacing them to JavaScript, so the
-    // client's heartbeat monitor would never see protocol Pings.  The JSON
-    // heartbeat triggers the browser's onMessage callback, letting the
-    // client know the connection is still alive.
+    // Send both a WS protocol Ping (proxy keepalive) and a JSON heartbeat every 30s.
+    // Browsers don't surface protocol Pings to JS, so the JSON heartbeat is needed
+    // to trigger the client's onMessage callback.
     let ping_hub = state.hub.clone();
     let ping_user_id = user_id;
     let ping_device_id = device_id;
     let ping_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
-        // The first tick fires immediately; skip it.
-        interval.tick().await;
+        interval.tick().await; // skip immediate first tick
         loop {
             interval.tick().await;
-            // Protocol-level Ping (proxy keepalive; invisible to browsers).
+            // Protocol Ping for proxy keepalive; invisible to browser JS.
             ping_hub.send_to_device(
                 &ping_user_id,
                 ping_device_id,
                 WsMessage::Ping(vec![].into()),
             );
-            // Application-level heartbeat (visible to all clients).
+            // Application-level heartbeat visible to all clients (browsers don't surface WS Pings).
             let hb = r#"{"type":"heartbeat"}"#.to_string();
             if !ping_hub.send_to_device(&ping_user_id, ping_device_id, WsMessage::Text(hb.into())) {
                 break;
@@ -243,8 +223,7 @@ pub async fn handle_socket(
         }
     });
 
-    // Update device last_seen so the management UI reflects recent activity.
-    // Fire-and-forget: the connection must not block on a DB write here.
+    // Fire-and-forget: update device last_seen; must not block the WS connection.
     {
         let pool = state.pool.clone();
         tokio::spawn(async move {
@@ -258,34 +237,21 @@ pub async fn handle_socket(
 
     message_service::deliver_undelivered_messages(&state, user_id, device_id).await;
 
-    // Run receive + send concurrently. Whichever finishes first triggers the
-    // tear-down; the other half is awaited (or dropped) in the cleanup arm.
     let recv_fut = run_receive_loop(&mut receiver, user_id, device_id, &username, &state);
     tokio::pin!(recv_fut);
 
     let leftover_rx: Option<mpsc::Receiver<WsMessage>> = tokio::select! {
         _ = &mut recv_fut => {
-            // Receive loop ended -- the send half might still have pending
-            // frames in `rx`. Unregister so no new ones land, then attempt a
-            // brief drain (50ms) to flush what's already buffered.
+            // Recv ended: unregister, then briefly drain buffered outbound frames.
             state.hub.unregister(user_id, device_id);
-            // Pull the sink + rx back out of the send future by polling
-            // it once with a tight timeout. If the channel was already
-            // closed by `unregister` (which dropped the tx) the future
-            // resolves immediately; otherwise the timeout caps it.
             match tokio::time::timeout(Duration::from_millis(50), &mut send_fut).await {
                 Ok((_sender, rx)) => Some(rx),
                 Err(_) => None,
             }
         }
         (_sender, rx) = &mut send_fut => {
-            // Send half ended (peer TCP died, or rx was closed). Stop
-            // accepting new inbound frames by unregistering, then let the
-            // recv future complete naturally as the underlying socket
-            // surfaces the error.
+            // Send ended (TCP died or rx closed): unregister, let recv observe socket close.
             state.hub.unregister(user_id, device_id);
-            // Best-effort: give the recv loop a moment to observe the
-            // socket close before we drop it.
             let _ = tokio::time::timeout(Duration::from_millis(50), &mut recv_fut).await;
             Some(rx)
         }
@@ -295,18 +261,13 @@ pub async fn handle_socket(
 
     cleanup_user_voice_sessions(&state, user_id).await;
 
-    // Broadcast offline presence to contacts
     typing_service::broadcast_presence(&state, user_id, &username, "offline").await;
 
     tracing::info!("WebSocket disconnected: {} ({})", username, user_id);
 }
 
 /// Rate-limited WebSocket receive loop.
-///
-/// Uses a token bucket algorithm: 30 messages per 10-second window
-/// (refill rate = 3 tokens/sec, burst cap = 30). A byte-rate bucket
-/// caps throughput at 100 KB/s to prevent bandwidth abuse. After 3
-/// consecutive rate-limit violations the connection is closed.
+/// Token bucket: 30 msgs/10s window, 100 KB/s byte rate. Closes after 3 consecutive violations.
 async fn run_receive_loop(
     receiver: &mut futures_util::stream::SplitStream<WebSocket>,
     user_id: Uuid,
@@ -314,17 +275,11 @@ async fn run_receive_loop(
     username: &str,
     state: &AppState,
 ) {
-    /// Tokens added per second (30 messages / 10 seconds).
     const REFILL_RATE: f64 = 3.0;
-    /// Maximum tokens the bucket can hold (== window size).
     const BUCKET_CAPACITY: f64 = 30.0;
-    /// Maximum payload size for a single message (64 KB).
     const MAX_MESSAGE_BYTES: usize = 64 * 1024;
-    /// Byte-rate bucket capacity (100 KB).
     const BYTE_BUCKET_CAPACITY: f64 = 100.0 * 1024.0;
-    /// Byte-rate refill (100 KB/s).
     const BYTE_REFILL_RATE: f64 = 100.0 * 1024.0;
-    /// Consecutive violations before forced disconnect.
     const MAX_CONSECUTIVE_VIOLATIONS: u32 = 3;
 
     let mut tokens: f64 = BUCKET_CAPACITY;
@@ -333,7 +288,6 @@ async fn run_receive_loop(
     let mut consecutive_violations: u32 = 0;
 
     while let Some(Ok(msg)) = receiver.next().await {
-        // Refill tokens based on elapsed time.
         let now = Instant::now();
         let elapsed = now.duration_since(last_refill).as_secs_f64();
         tokens = (tokens + elapsed * REFILL_RATE).min(BUCKET_CAPACITY);
@@ -344,7 +298,6 @@ async fn run_receive_loop(
             WsMessage::Text(text) => {
                 let msg_len = text.len();
 
-                // Reject oversized messages immediately.
                 if msg_len > MAX_MESSAGE_BYTES {
                     tracing::warn!(
                         user_id = %user_id,
@@ -366,7 +319,6 @@ async fn run_receive_loop(
                     continue;
                 }
 
-                // Check message-rate bucket.
                 if tokens < 1.0 {
                     tracing::warn!(
                         user_id = %user_id,
@@ -387,7 +339,6 @@ async fn run_receive_loop(
                     continue;
                 }
 
-                // Check byte-rate bucket.
                 let cost = msg_len as f64;
                 if byte_tokens < cost {
                     tracing::warn!(
@@ -415,8 +366,7 @@ async fn run_receive_loop(
                 handle_text_message(&text, user_id, device_id, username, state).await;
             }
             WsMessage::Close(_) => break,
-            // Binary/Ping/Pong frames: count bytes toward the rate limit to
-            // prevent abuse via non-text frames.
+            // Count bytes for non-text frames toward the byte-rate limit.
             other => {
                 let cost = match &other {
                     WsMessage::Binary(b) => b.len() as f64,

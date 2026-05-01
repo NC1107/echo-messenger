@@ -20,22 +20,10 @@ use crate::ws::typing_service::invalidate_member_cache;
 
 use super::AppState;
 
-/// Rotate the group key after a member loses access.
-///
-/// On encrypted groups, bump the conversation's `key_version`, purge every
-/// existing per-member envelope (so the kicked user can no longer decrypt
-/// future ciphertext, and so a stale envelope cannot be replayed), and
-/// broadcast a `group_key_rotation_requested` event to every remaining member.
-///
-/// The remaining members race to upload the next envelope batch. The
-/// `(conversation_id, key_version)` UNIQUE constraint on `group_keys` ensures
-/// only the first writer wins; everyone else gets a 409 and falls back to
-/// fetching whatever the winner produced.
-///
-/// MVP scope: no leader election, no atomicity beyond the per-row
-/// transaction inside `bump_key_version_and_purge_envelopes`. If the chosen
-/// member crashes mid-rotation the group will surface as undecryptable until
-/// any other live member reuploads the next version.
+/// Rotate group key after a member loses access (kick/ban/leave).
+/// Bumps key_version, purges all envelopes, and broadcasts `group_key_rotation_requested`.
+/// Members race to upload the next envelope batch; the UNIQUE constraint on (conversation_id,
+/// key_version) ensures only the first writer wins.
 async fn rotate_group_key_after_member_loss(state: &Arc<AppState>, group_id: Uuid) {
     let encrypted = match db::groups::is_encrypted(&state.pool, group_id).await {
         Ok(v) => v,
@@ -141,7 +129,6 @@ pub async fn create_group(
         ));
     }
 
-    // Prevent duplicate public group names per creator
     if body.is_public {
         let already_exists =
             db::groups::user_has_public_group_named(&state.pool, auth.user_id, &body.name)
@@ -165,7 +152,6 @@ pub async fn create_group(
     .await
     .db_ctx("create_group/create")?;
 
-    // Seed default channels for new groups.
     db::channels::create_channel(
         &state.pool,
         group.id,
@@ -219,7 +205,6 @@ pub async fn get_group(
     State(state): State<Arc<AppState>>,
     Path(group_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify membership
     let is_member = db::groups::is_member(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("get_group/is_member")?;
@@ -264,13 +249,11 @@ pub async fn add_member(
     Path(group_id): Path<Uuid>,
     Json(body): Json<AddMemberRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify caller is a member and get their role
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("add_member/get_caller_role")?
         .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
-    // Verify it's a group conversation
     let kind = db::groups::get_conversation_kind(&state.pool, group_id)
         .await
         .db_ctx("add_member/get_conversation_kind")?;
@@ -279,7 +262,6 @@ pub async fn add_member(
         return Err(AppError::bad_request("Not a group conversation"));
     }
 
-    // For private groups, only owner or admin can add members
     let is_public = db::groups::is_public(&state.pool, group_id)
         .await
         .db_ctx("add_member/is_public")?;
@@ -291,7 +273,6 @@ pub async fn add_member(
         ));
     }
 
-    // Verify target user exists
     let user_exists = db::users::find_by_id(&state.pool, body.user_id)
         .await
         .db_ctx("add_member/find_user")?;
@@ -300,7 +281,6 @@ pub async fn add_member(
         return Err(AppError::bad_request("User not found"));
     }
 
-    // Check if target user is banned
     let banned = db::groups::is_banned(&state.pool, group_id, body.user_id)
         .await
         .db_ctx("add_member/is_banned")?;
@@ -308,7 +288,6 @@ pub async fn add_member(
         return Err(AppError::bad_request("User is banned from this group"));
     }
 
-    // Check if already an active member
     let already_member = db::groups::is_member(&state.pool, group_id, body.user_id)
         .await
         .db_ctx("add_member/is_member")?;
@@ -334,13 +313,11 @@ pub async fn remove_member(
     State(state): State<Arc<AppState>>,
     Path((group_id, target_user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify caller is a member and get their role
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("remove_member/get_caller_role")?
         .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
-    // If removing someone else, must be owner or admin
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if target_user_id != auth.user_id && !caller_role_enum.is_admin_or_above() {
         return Err(AppError::unauthorized(
@@ -348,7 +325,6 @@ pub async fn remove_member(
         ));
     }
 
-    // Prevent removing the owner
     if target_user_id != auth.user_id {
         let target_role = db::groups::get_member_role(&state.pool, group_id, target_user_id)
             .await
@@ -368,7 +344,6 @@ pub async fn remove_member(
 
     invalidate_member_cache(group_id);
 
-    // Auto-delete group if no members remain
     let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
         .await
         .map_err(|e| tracing::error!("Failed to get member IDs for broadcast: {e:?}"))
@@ -377,7 +352,6 @@ pub async fn remove_member(
         let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;
         tracing::info!("Auto-deleted empty group {group_id}");
     } else {
-        // Rotate group key so the removed member can no longer decrypt future messages.
         rotate_group_key_after_member_loss(&state, group_id).await;
     }
 
@@ -417,11 +391,7 @@ pub async fn list_public_groups(
     Ok(Json(response))
 }
 
-/// GET /api/groups/:id/preview -- Public group preview for invite links.
-///
-/// Returns group metadata (title, description, avatar, member count,
-/// first 5 members) without requiring membership in the group.
-/// Private groups return 404 unless the caller is already a member.
+/// GET /api/groups/:id/preview -- Public group preview. Private groups return 404 unless member.
 pub async fn get_group_preview(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
@@ -467,7 +437,6 @@ pub async fn join_group(
         return Err(AppError::bad_request("You are banned from this group"));
     }
 
-    // Check if already a member
     let already_member = db::groups::is_member(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("join_group/is_member")?;
@@ -494,7 +463,7 @@ pub async fn leave_group(
     State(state): State<Arc<AppState>>,
     Path(group_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Owners must transfer ownership before leaving (unless they're the last member)
+    // Owners must transfer ownership before leaving unless they're the last member.
     let role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("leave_group/get_role")?;
@@ -519,17 +488,14 @@ pub async fn leave_group(
 
     invalidate_member_cache(group_id);
 
-    // Auto-delete group if no members remain
     let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
         .await
         .map_err(|e| tracing::error!("Failed to get member IDs for broadcast: {e:?}"))
         .unwrap_or_default();
     if remaining.is_empty() {
-        // delete_group checks owner, but we just need a raw delete for empty groups
         let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;
         tracing::info!("Auto-deleted empty group {group_id}");
     } else {
-        // Rotate group key so the leaver loses access to future ciphertext.
         rotate_group_key_after_member_loss(&state, group_id).await;
     }
 

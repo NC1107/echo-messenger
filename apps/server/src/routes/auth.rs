@@ -15,14 +15,8 @@ use crate::error::{AppError, DbErrCtx};
 
 use super::AppState;
 
-// ---------------------------------------------------------------------------
-// Refresh token cookie helpers
-//
-// The web client stores the refresh token in an HttpOnly + Secure +
-// SameSite=Strict cookie scoped to `/api/auth`. Mobile/desktop continue to
-// receive the token in the JSON body for backward compatibility. `/refresh`
-// accepts either; cookie wins when both are present.
-// ---------------------------------------------------------------------------
+// Web client stores the refresh token in an HttpOnly+Secure+SameSite=Strict cookie scoped to
+// `/api/auth`. Mobile/desktop receive it in the JSON body. `/refresh` accepts either; cookie wins.
 
 const REFRESH_COOKIE_NAME: &str = "echo_refresh";
 const REFRESH_COOKIE_MAX_AGE_SECS: i64 = 7 * 24 * 60 * 60;
@@ -46,10 +40,6 @@ fn clear_refresh_cookie() -> Cookie<'static> {
         .max_age(time::Duration::ZERO)
         .build()
 }
-
-// ---------------------------------------------------------------------------
-// Request / response types
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
 pub struct AuthRequest {
@@ -82,10 +72,6 @@ pub struct WsTicketResponse {
     pub ticket: String,
 }
 
-// ---------------------------------------------------------------------------
-// Validation helpers
-// ---------------------------------------------------------------------------
-
 fn validate_username(username: &str) -> Result<(), AppError> {
     if username.len() < 3 || username.len() > 32 {
         return Err(AppError::bad_request(
@@ -117,11 +103,7 @@ fn validate_password(password: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Refresh token helper (issue + persist)
-// ---------------------------------------------------------------------------
-
-/// Issue a new refresh token with a new family (used on login/register).
+/// Issue a new refresh token (new family) and persist it. Used on login/register.
 async fn issue_refresh_token(
     pool: &sqlx::PgPool,
     user_id: uuid::Uuid,
@@ -132,10 +114,6 @@ async fn issue_refresh_token(
     let family_id = db::tokens::store_refresh_token(pool, user_id, &token_hash, expires_at).await?;
     Ok((raw_token, family_id))
 }
-
-// ---------------------------------------------------------------------------
-// POST /api/auth/register
-// ---------------------------------------------------------------------------
 
 pub async fn register(
     State(state): State<Arc<AppState>>,
@@ -157,7 +135,7 @@ pub async fn register(
     let access_token = jwt::create_token(user_id, &state.jwt_secret)?;
     let (refresh_token, _family_id) = issue_refresh_token(&state.pool, user_id).await?;
 
-    // Web clients consume the cookie; mobile/desktop still read the JSON body.
+    // Cookie set for web; body token still present for mobile/desktop clients.
     let jar = jar.add(build_refresh_cookie(refresh_token.clone()));
 
     let response = AuthResponse {
@@ -170,20 +148,13 @@ pub async fn register(
     Ok((StatusCode::CREATED, jar, Json(response)))
 }
 
-// ---------------------------------------------------------------------------
-// POST /api/auth/login
-// ---------------------------------------------------------------------------
-
 pub async fn login(
     State(state): State<Arc<AppState>>,
     jar: CookieJar,
     Json(body): Json<AuthRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Pre-computed Argon2id hash of a random string. Used when the requested
-    // user does not exist so that the response latency is indistinguishable
-    // from a wrong-password attempt (prevents username enumeration via timing).
-    // The 32-byte output (43 base64 chars) matches Argon2::default() output
-    // length to avoid measurable timing differences in the finalization pass.
+    // Pre-computed dummy hash used when the user doesn't exist, so response
+    // latency is indistinguishable from a wrong-password attempt (prevents timing enumeration).
     const DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$bm9uZXhpc3RlbnQ$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
     let maybe_user = db::users::find_by_username(&state.pool, &body.username).await?;
@@ -218,27 +189,12 @@ pub async fn login(
     Ok((jar, Json(response)))
 }
 
-// ---------------------------------------------------------------------------
-// POST /api/auth/refresh
-// ---------------------------------------------------------------------------
-
-/// Atomically validate and rotate a refresh token.
-///
-/// The whole flow — SELECT (with row lock), revoke-old, INSERT-new — runs in a
-/// single transaction so two concurrent requests presenting the same refresh
-/// token cannot both succeed.  The first to reach the sentinel UPDATE wins;
-/// the second gets `None` from the conditional UPDATE, treats it as
-/// concurrent reuse, family-revokes, and returns 401.  This prevents the race
-/// where both callers observed `revoked = false` in the old non-transactional
-/// code path.
 pub async fn refresh(
     State(state): State<Arc<AppState>>,
     jar: CookieJar,
     body: Option<Json<RefreshRequest>>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Cookie wins when both are present so the web client's HttpOnly cookie
-    // can never be silently overridden by a malicious JSON body. Mobile/desktop
-    // clients keep sending the token in the body and that path still works.
+    // Cookie takes precedence; a malicious JSON body cannot override it.
     let cookie_token = jar
         .get(REFRESH_COOKIE_NAME)
         .map(|c| c.value().to_string())
@@ -254,8 +210,8 @@ pub async fn refresh(
 
     let mut tx = state.pool.begin().await.db_ctx("refresh/begin_tx")?;
 
-    // Lock the refresh-token row for the duration of the transaction so a
-    // concurrent rotation request must wait until we commit (or rolls back).
+    // FOR UPDATE locks the row for the transaction so concurrent rotation
+    // requests must queue; only the first one succeeds.
     let row: Option<db::tokens::RefreshTokenRow> =
         sqlx::query_as::<_, db::tokens::RefreshTokenRow>(
             "SELECT id, user_id, token_hash, expires_at, created_at, revoked, family_id \
@@ -267,13 +223,11 @@ pub async fn refresh(
         .db_ctx("refresh/fetch_token")?;
 
     let Some(row) = row else {
-        // Drop the (read-only) tx implicitly.
         return Err(AppError::unauthorized("Invalid refresh token"));
     };
 
     if row.revoked {
-        // TOKEN THEFT DETECTED: a revoked token was reused.  Revoke the rest
-        // of the family inside the same tx so the response is consistent.
+        // Revoked token reuse = theft detected; revoke the whole family.
         if let Some(family_id) = row.family_id {
             tracing::warn!(
                 "Refresh token theft detected for user {} (family {})",
@@ -294,15 +248,12 @@ pub async fn refresh(
     }
 
     if row.expires_at < chrono::Utc::now() {
-        // Release the FOR UPDATE row lock immediately rather than waiting for
-        // tx Drop to do an implicit rollback.
         let _ = tx.rollback().await;
         return Err(AppError::unauthorized("Refresh token has expired"));
     }
 
-    // Sentinel revoke: only one transaction can flip `revoked` from false to
-    // true.  If `fetch_optional` returns `None`, another request beat us to
-    // it — treat as concurrent reuse and revoke the family.
+    // Sentinel UPDATE: only one transaction can flip revoked=false→true; None means
+    // another request beat us here — treat as concurrent reuse and revoke the family.
     let revoked: Option<(uuid::Uuid,)> = sqlx::query_as::<_, (uuid::Uuid,)>(
         "UPDATE refresh_tokens SET revoked = true \
          WHERE id = $1 AND revoked = false RETURNING id",
@@ -332,7 +283,7 @@ pub async fn refresh(
         return Err(AppError::unauthorized("Refresh token has been revoked"));
     }
 
-    // Issue the rotated token in the same family.
+    // Issue rotated token in the same family.
     let family_id = row.family_id.unwrap_or_else(uuid::Uuid::new_v4);
     let new_raw_token = jwt::create_refresh_token();
     let new_token_hash = jwt::hash_refresh_token(&new_raw_token);
@@ -365,10 +316,6 @@ pub async fn refresh(
     ))
 }
 
-// ---------------------------------------------------------------------------
-// POST /api/auth/logout
-// ---------------------------------------------------------------------------
-
 pub async fn logout(
     State(state): State<Arc<AppState>>,
     jar: CookieJar,
@@ -376,13 +323,8 @@ pub async fn logout(
 ) -> Result<impl IntoResponse, AppError> {
     db::tokens::revoke_all_user_tokens(&state.pool, auth_user.user_id).await?;
     let jar = jar.add(clear_refresh_cookie());
-    // Convention: StatusCode first, then CookieJar, matching register/login.
     Ok((StatusCode::NO_CONTENT, jar))
 }
-
-// ---------------------------------------------------------------------------
-// POST /api/auth/ws-ticket
-// ---------------------------------------------------------------------------
 
 /// Optional device_id in ws-ticket request body.
 #[derive(Debug, Deserialize, Default)]
@@ -407,13 +349,11 @@ pub async fn ws_ticket(
     const TICKET_TTL: Duration = Duration::from_secs(30);
     const MAX_TICKETS: usize = 10_000;
 
-    // Clean up expired tickets to bound memory
     let now = Instant::now();
     state
         .ticket_store
         .retain(|_, (_, _, ts)| now.duration_since(*ts) < TICKET_TTL);
 
-    // Cap total tickets to prevent memory exhaustion
     if state.ticket_store.len() >= MAX_TICKETS {
         return Err(AppError::bad_request(
             "Too many pending tickets, try again later",

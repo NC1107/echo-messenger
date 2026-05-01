@@ -9,27 +9,19 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
-    // Load .env file
     dotenvy::dotenv().ok();
-
-    // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
-
     tracing::info!("Starting Echo server v{}", env!("CARGO_PKG_VERSION"));
 
-    // Ensure upload directories exist (Docker volume mounts may override build-time mkdir)
+    // Docker volume mounts may not create subdirs at build time.
     std::fs::create_dir_all("./uploads/avatars").expect("Failed to create uploads directory");
 
-    // Load configuration
     let config = config::Config::from_env();
-
-    // Create database pool and run migrations
     let pool = db::create_pool(&config.database_url).await;
     db::run_migrations(&pool).await;
 
-    // Build app state and router
     let hub = ws::hub::Hub::new();
     let state = Arc::new(routes::AppState {
         pool: pool.clone(),
@@ -87,8 +79,7 @@ async fn main() {
         }
     });
 
-    // Evict stale entries from the typing_service membership/member-ID/conv-kind
-    // caches; without this, entries accumulate unboundedly on long-running servers.
+    // Evict stale entries from the typing_service caches to prevent unbounded growth.
     spawn_periodic(
         "cache_sweep",
         std::time::Duration::from_secs(300),
@@ -99,7 +90,6 @@ async fn main() {
 
     let app = routes::create_router(state, config.trusted_proxies);
 
-    // Start server
     let addr: SocketAddr = format!("{}:{}", config.host, config.port)
         .parse()
         .expect("Invalid address");
@@ -109,7 +99,6 @@ async fn main() {
         .await
         .expect("Failed to bind");
 
-    // Graceful shutdown via Ctrl+C
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.ok();
@@ -128,7 +117,7 @@ async fn main() {
     .expect("Server error");
 }
 
-/// Periodic task with panic recovery. `make_fut` is a stateless re-creator;
+/// Periodic task runner with panic recovery. `make_fut` is a stateless re-creator;
 /// captured `Arc` clones make `AssertUnwindSafe` sound.
 fn spawn_periodic<F, Fut>(name: &'static str, period: std::time::Duration, mut make_fut: F)
 where
@@ -138,14 +127,12 @@ where
     use futures_util::FutureExt;
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(period);
-        // Skip the immediate-fire first tick so we don't pile work onto
-        // server boot, when the pool may still be warming.
+        // Skip first tick to avoid piling work onto a warming pool at boot.
         interval.tick().await;
         loop {
             interval.tick().await;
             let fut = make_fut();
-            // catch_unwind requires Unpin; box-pin the future so we can
-            // call AssertUnwindSafe + catch_unwind on it.
+            // Box-pin required: catch_unwind needs Unpin, and the future may not be.
             let result = std::panic::AssertUnwindSafe(Box::pin(fut))
                 .catch_unwind()
                 .await;
@@ -165,8 +152,7 @@ where
 }
 
 /// Remove voice sessions not updated within 2 minutes and broadcast leave events.
-async fn cleanup_stale_voice_sessions(pool: &PgPool, hub: &ws::hub::Hub) {
-    let removed = match db::channels::cleanup_stale_voice_sessions(pool, 120).await {
+async fn cleanup_stale_voice_sessions(pool: &PgPool, hub: &ws::hub::Hub) {    let removed = match db::channels::cleanup_stale_voice_sessions(pool, 120).await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!("Voice session cleanup error: {e}");
@@ -180,7 +166,6 @@ async fn cleanup_stale_voice_sessions(pool: &PgPool, hub: &ws::hub::Hub) {
     }
 }
 
-/// Broadcast a voice_session_left event to all members of a conversation.
 async fn broadcast_voice_session_left(
     pool: &PgPool,
     hub: &ws::hub::Hub,
@@ -208,8 +193,7 @@ async fn broadcast_voice_session_left(
 }
 
 /// Delete empty groups (zero members) and all their dependent rows.
-async fn cleanup_empty_groups(pool: &PgPool) {
-    let empty_group_ids: Vec<(uuid::Uuid,)> = sqlx::query_as(
+async fn cleanup_empty_groups(pool: &PgPool) {    let empty_group_ids: Vec<(uuid::Uuid,)> = sqlx::query_as(
         "SELECT id FROM conversations WHERE kind = 'group' \
          AND id NOT IN (SELECT DISTINCT conversation_id FROM conversation_members)",
     )
@@ -223,8 +207,7 @@ async fn cleanup_empty_groups(pool: &PgPool) {
 }
 
 /// Remove expired or revoked refresh tokens to prevent unbounded table growth.
-async fn cleanup_expired_tokens(pool: &PgPool) {
-    let result = sqlx::query(
+async fn cleanup_expired_tokens(pool: &PgPool) {    let result = sqlx::query(
         "DELETE FROM refresh_tokens \
          WHERE expires_at < now() - interval '7 days' \
             OR (revoked = true AND created_at < now() - interval '1 day')",
@@ -244,7 +227,7 @@ async fn cleanup_expired_tokens(pool: &PgPool) {
     }
 }
 
-/// Remove consumed one-time prekeys that are no longer needed.
+/// Remove consumed one-time prekeys.
 async fn cleanup_used_prekeys(pool: &PgPool) {
     let result = sqlx::query("DELETE FROM one_time_prekeys WHERE used = true")
         .execute(pool)
@@ -259,8 +242,7 @@ async fn cleanup_used_prekeys(pool: &PgPool) {
     }
 }
 
-/// Delete messages whose `expires_at` has passed and broadcast `message_expired`
-/// events to all online members of each affected conversation.
+/// Delete expired messages and notify online members of each affected conversation.
 async fn cleanup_expired_messages(pool: &PgPool, hub: &ws::hub::Hub) {
     let expired = match db::messages::cleanup_expired_messages(pool).await {
         Ok(rows) => rows,
@@ -277,7 +259,6 @@ async fn cleanup_expired_messages(pool: &PgPool, hub: &ws::hub::Hub) {
     tracing::info!("Cleaned {} expired messages", expired.len());
 
     for (message_id, conversation_id) in expired {
-        // Notify all online members of the conversation.
         let member_ids = match db::groups::get_conversation_member_ids(pool, conversation_id).await
         {
             Ok(ids) => ids,
@@ -297,9 +278,8 @@ async fn cleanup_expired_messages(pool: &PgPool, hub: &ws::hub::Hub) {
     }
 }
 
-/// Scan `./uploads/` and remove files whose name UUID is absent from the
-/// `media` table. Files younger than 5 minutes are skipped so in-flight
-/// uploads not yet committed to the DB are never reaped.
+/// Scan `./uploads/` and remove files whose UUID is absent from the `media` table.
+/// Skips files younger than 5 minutes so in-flight uploads aren't reaped before commit.
 async fn cleanup_orphan_media_files(pool: &PgPool) {
     let known_ids = match db::media::all_media_ids(pool).await {
         Ok(ids) => ids,
@@ -356,8 +336,7 @@ async fn cleanup_orphan_media_files(pool: &PgPool) {
             None => continue,
         };
 
-        // Thumbnails are stored as `{uuid}.thumb.jpg`; strip the `.thumb` suffix
-        // to resolve back to the owning UUID.
+        // Thumbnails use {uuid}.thumb.jpg; strip ".thumb" to get the owning UUID.
         let uuid_str = stem.trim_end_matches(".thumb");
 
         let file_uuid = match uuid::Uuid::parse_str(uuid_str) {
@@ -370,8 +349,7 @@ async fn cleanup_orphan_media_files(pool: &PgPool) {
         }
 
         // Skip files that may still be part of an in-flight upload.
-        let too_new = entry
-            .metadata()
+        let too_new = entry            .metadata()
             .await
             .and_then(|m| m.modified())
             .map(|mtime| mtime > cutoff)
@@ -393,10 +371,8 @@ async fn cleanup_orphan_media_files(pool: &PgPool) {
     }
 }
 
-/// Delete all dependent rows for a group conversation, then the conversation
-/// itself, atomically. Migration 20260412000000 added ON DELETE CASCADE on
-/// a subset of child tables; the rest are cleaned explicitly until a
-/// follow-up migration extends CASCADE.
+/// Delete all dependent rows for a group conversation, then the conversation itself.
+/// Some child tables have ON DELETE CASCADE; the rest are cleaned explicitly here.
 async fn delete_group_dependents(pool: &PgPool, gid: uuid::Uuid) {
     let mut tx = match pool.begin().await {
         Ok(tx) => tx,

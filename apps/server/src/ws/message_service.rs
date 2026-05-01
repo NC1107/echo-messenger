@@ -20,20 +20,15 @@ use echo_core::signal::protocol::{
     WIRE_INITIAL_V2 as ECHO_WIRE_INITIAL_V2, WIRE_MAGIC as ECHO_WIRE_MAGIC,
 };
 
-/// Validate that a base64-encoded payload is shaped like an Echo
-/// ciphertext wire frame. We do NOT decrypt or otherwise validate
-/// authenticity here — this is a belt-and-suspenders shape gate that
-/// prevents a malicious or buggy client from storing/relaying
-/// plaintext on conversations marked `is_encrypted = true`.
+/// Check that a base64 payload has the shape of an Echo ciphertext wire frame.
+/// Does NOT decrypt — this is a belt-and-suspenders gate to prevent plaintext
+/// storage on `is_encrypted` conversations.
 pub(super) fn is_valid_ciphertext_shape(b64: &str) -> bool {
     let Ok(bytes) = BASE64.decode(b64.as_bytes()) else {
         return false;
     };
 
-    // Initial-message wires (V1 / V2) start with the 0xEC magic byte plus
-    // a known version. We require the keys+ratchet wire to follow but only
-    // gate the prefix here; full structural validation lives in the crypto
-    // layer.
+    // Initial wires (V1/V2) start with 0xEC magic + version byte.
     if bytes.len() >= 2
         && bytes[0] == ECHO_WIRE_MAGIC
         && (bytes[1] == ECHO_WIRE_INITIAL_V1 || bytes[1] == ECHO_WIRE_INITIAL_V2)
@@ -69,17 +64,10 @@ pub(super) fn validate_message_length(state: &AppState, sender_id: Uuid, content
     true
 }
 
-/// Reject inbound messages on encrypted conversations whose payload isn't
-/// shaped like an Echo ciphertext wire frame.
-///
-/// - Direct (DM): `recipient_device_contents` MUST be non-empty and every
-///   per-device ciphertext MUST pass `is_valid_ciphertext_shape`.
-/// - Group: the canonical `content` field carries the group-key envelope
-///   wire and MUST pass `is_valid_ciphertext_shape`.
-///
-/// Returns `true` when the payload is acceptable. On rejection the helper
-/// emits a `tracing::warn!` (so we can observe attempts) and sends a
-/// targeted error frame back to the sender.
+/// Enforce ciphertext shape on encrypted conversations.
+/// DM: `recipient_device_contents` must be non-empty and every entry must pass shape check.
+/// Group: `content` carries the group-key envelope and must pass shape check.
+/// Returns true when acceptable; sends an error frame to the sender on rejection.
 pub(super) fn validate_encrypted_payload(
     state: &AppState,
     sender_id: Uuid,
@@ -90,10 +78,8 @@ pub(super) fn validate_encrypted_payload(
 ) -> bool {
     match conv_kind {
         Some(ConversationKind::Direct) => {
-            // The canonical content field is persisted and relayed in
-            // NewMessage events, so it must be ciphertext-shaped — otherwise
-            // a client could pass valid recipient_device_contents while
-            // smuggling plaintext in `content`.
+            // `content` is persisted and relayed, so it must be ciphertext-shaped even when
+            // recipient_device_contents is valid — prevents smuggling plaintext via content.
             if !is_valid_ciphertext_shape(content) {
                 tracing::warn!(
                     conversation_id = %conversation_id,
@@ -239,12 +225,8 @@ pub(super) async fn validate_conversation_security(
     Some((conv_security, conv_kind, resolved_channel_id))
 }
 
-/// Recipient-scoped per-device ciphertexts as carried on the wire:
-/// `recipient_user_id (UUID string) -> { device_id (i32 string) -> ciphertext }`.
-/// Per-user device IDs collide across users, so the storage and fanout
-/// addressing must include the recipient. Conversion to typed
-/// `(Uuid, i32)` happens at the storage/fanout boundaries; rows that fail to
-/// parse are logged and skipped.
+/// Per-device ciphertexts keyed by `recipient_user_id -> { device_id -> ciphertext }`.
+/// Recipient scoping is required because per-user device IDs collide across users.
 pub(super) type RecipientDeviceContents = HashMap<String, HashMap<String, String>>;
 
 #[allow(clippy::too_many_arguments)]
@@ -276,10 +258,7 @@ pub(super) async fn handle_send_message(
         return;
     };
 
-    // Belt-and-suspenders ciphertext shape gate. When a conversation is marked
-    // `is_encrypted`, the server must refuse any payload that isn't shaped like
-    // an Echo wire frame (initial V1/V2 or normal-message header). This closes
-    // the confidentiality hole left open by client-only enforcement.
+    // Enforce ciphertext shape on encrypted conversations (server-side enforcement).
     if conv_security.is_encrypted
         && !validate_encrypted_payload(
             state,
@@ -296,7 +275,7 @@ pub(super) async fn handle_send_message(
     let (reply_content, reply_username) =
         lookup_reply_context(&state.pool, reply_to_id, conv_id).await;
 
-    // Store message, send confirmation, and deliver to sender's other devices.
+    // Store, confirm, and deliver to sender's other devices.
     let Some(stored) = store_and_confirm(
         state,
         sender_id,
@@ -342,10 +321,8 @@ pub(super) async fn handle_send_message(
     .await;
 }
 
-/// Persist the message to the database, store per-device ciphertexts, send
-/// a `message_sent` confirmation to the originating device, and relay the
-/// message to the sender's other devices.  Returns the stored message row
-/// on success, or `None` after sending an error to the client.
+/// Store the message, send a `message_sent` confirmation, and relay to the sender's other devices.
+/// Returns the stored row, or `None` after sending an error to the client.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn store_and_confirm(
     state: &AppState,
@@ -358,8 +335,7 @@ pub(super) async fn store_and_confirm(
     recipient_device_contents: &Option<RecipientDeviceContents>,
     ttl_seconds: Option<i64>,
 ) -> Option<db::messages::MessageRow> {
-    // Resolve TTL: use per-message override first, then fall back to conversation setting.
-    // Clamp to valid range: 5 seconds to 1 year. Reject non-positive values.
+    // Per-message TTL overrides conversation-level setting; clamp to 5s–1yr.
     let ttl_seconds = ttl_seconds.filter(|&s| (5..=31_536_000).contains(&s));
     let effective_ttl = if ttl_seconds.is_some() {
         ttl_seconds
@@ -369,10 +345,7 @@ pub(super) async fn store_and_confirm(
             .unwrap_or(None)
     };
 
-    // Store message in DB. `RowNotFound` from `store_message` means the
-    // requested `reply_to_id` does not refer to a message in this conversation
-    // (cross-conversation reply, deleted parent, or non-existent id). Surface
-    // a targeted error to the sender instead of a generic store failure.
+    // RowNotFound from store_message means reply_to_id is invalid in this conversation.
     let stored = match db::messages::store_message(
         &state.pool,
         conv_id,
@@ -406,8 +379,7 @@ pub(super) async fn store_and_confirm(
         }
     };
 
-    // Store per-device ciphertexts if present. Per-user device IDs collide
-    // across users, so each entry is keyed by (recipient_user_id, device_id).
+    // Store per-device ciphertexts keyed by (recipient_user_id, device_id).
     if let Some(rdc) = recipient_device_contents {
         let entries: Vec<(Uuid, i32, &str)> = rdc
             .iter()
@@ -430,7 +402,6 @@ pub(super) async fn store_and_confirm(
         }
     }
 
-    // Send confirmation to sender's device
     let confirm = ServerMessage::MessageSent {
         message_id: stored.id,
         conversation_id: conv_id,
@@ -444,8 +415,7 @@ pub(super) async fn store_and_confirm(
             .send_to_device(&sender_id, sender_device_id, WsMessage::Text(json.into()));
     }
 
-    // Self-device delivery: notify sender's OTHER devices about outgoing message.
-    // Only the sender's own slice of recipient_device_contents is relevant here.
+    // Relay to sender's OTHER devices using their own per-device ciphertext slice.
     if let Some(rdc) = recipient_device_contents
         && let Some(self_devices) = rdc.get(&sender_id.to_string())
     {
@@ -476,8 +446,7 @@ pub(super) async fn store_and_confirm(
     Some(stored)
 }
 
-/// Resolve the target conversation from either an explicit conversation_id or a to_user_id.
-/// Returns None and sends an error to the sender on failure.
+/// Resolve conversation from `conversation_id` or `to_user_id`.
 pub(super) async fn resolve_conversation(
     state: &AppState,
     sender_id: Uuid,
@@ -485,7 +454,6 @@ pub(super) async fn resolve_conversation(
     to_user_id: Option<Uuid>,
 ) -> Option<Uuid> {
     if let Some(cid) = conversation_id {
-        // Verify sender is a member of this conversation
         match db::groups::is_member(&state.pool, cid, sender_id).await {
             Ok(true) => Some(cid),
             Ok(false) => {

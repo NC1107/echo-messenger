@@ -1,7 +1,4 @@
-//! WebSocket connection hub for routing messages to online users.
-//!
-//! Supports multiple simultaneous connections per user (multi-device).
-//! Each connection is keyed by `(user_id, device_id)`.
+//! WebSocket connection hub. Each connection is keyed by `(user_id, device_id)`.
 
 use axum::extract::ws::Message as WsMessage;
 use dashmap::DashMap;
@@ -27,9 +24,7 @@ pub struct Hub {
 struct HubInner {
     /// user_id -> (device_id -> sender channel)
     connections: DashMap<Uuid, DashMap<i32, WsTx>>,
-    /// Per-(user, device) counter of consecutive `try_send` Full results.
-    /// Reset on any successful send.  When the counter exceeds the threshold
-    /// inside the rolling window, the device is unregistered.
+    /// Consecutive `try_send` Full counters per (user, device). Reset on any success.
     full_counters: DashMap<(Uuid, i32), FullCounter>,
 }
 
@@ -51,7 +46,7 @@ impl Hub {
             .entry(user_id)
             .or_default()
             .insert(device_id, tx);
-        // Wipe any stale slow-consumer counter from a previous session.
+        // Clear stale slow-consumer counter from a previous session.
         self.inner.full_counters.remove(&(user_id, device_id));
     }
 
@@ -61,14 +56,13 @@ impl Hub {
             devices.remove(&device_id);
             if devices.is_empty() {
                 drop(devices);
-                // Re-check after dropping the ref to avoid race
+                // Re-check after dropping the ref to avoid a race on the remove.
                 self.inner
                     .connections
                     .remove_if(&user_id, |_, devs| devs.is_empty());
             }
         }
-        // Drop the slow-consumer counter alongside the connection so a future
-        // reconnect from the same device gets a clean slate.
+        // Clear slow-consumer counter so a reconnect from the same device starts clean.
         self.inner.full_counters.remove(&(user_id, device_id));
     }
 
@@ -85,11 +79,8 @@ impl Hub {
             .collect()
     }
 
-    /// Number of devices currently registered for `user_id`.  Used by the
-    /// presence broadcaster to gate `online`/`offline` events on
-    /// first-device-up / last-device-down so a user with three devices
-    /// reconnecting after a flaky network blip doesn't make contacts see
-    /// online/offline/online/offline per device.
+    /// Gates `online`/`offline` presence events on first-device-up / last-device-down
+    /// so multi-device users don't cause presence flapping on reconnect.
     pub fn device_count(&self, user_id: &Uuid) -> usize {
         self.inner
             .connections
@@ -98,14 +89,10 @@ impl Hub {
             .unwrap_or(0)
     }
 
-    /// Send a message to ALL connected devices of a user.
-    /// Returns true if at least one device's outbound queue accepted the
-    /// message. Full/closed queues are logged separately so beta-test
-    /// telemetry distinguishes saturation from disconnect cleanup.
+    /// Send to all connected devices of a user. Returns true if at least one accepted.
     pub fn send_to_user(&self, user_id: &Uuid, msg: WsMessage) -> bool {
-        // Snapshot the device IDs while holding the read ref so we can
-        // mutate `connections` (via `unregister`) without re-entrant locks
-        // on the slow-consumer eviction path below.
+        // Snapshot device IDs before iterating so we can call unregister (via
+        // try_send_tracked) without holding a read ref on connections.
         let device_ids: Vec<(i32, WsTx)> = {
             let Some(devices) = self.inner.connections.get(user_id) else {
                 return false;
@@ -125,9 +112,8 @@ impl Hub {
         any_sent
     }
 
-    /// Send a message to a specific device of a user. Returns true only when
-    /// the message was actually enqueued — callers in the replay path rely
-    /// on this to avoid prematurely marking messages as delivered.
+    /// Send to a specific device. Returns true only when enqueued; callers in the
+    /// replay path use the return value to avoid premature delivery marking.
     pub fn send_to_device(&self, user_id: &Uuid, device_id: i32, msg: WsMessage) -> bool {
         let tx_opt: Option<WsTx> = self
             .inner
@@ -145,12 +131,8 @@ impl Hub {
         self.send_to_user(user_id, msg)
     }
 
-    /// Broadcast a JSON event to all members of a conversation, optionally excluding one user.
-    ///
-    /// The JSON string is converted to a `WsMessage` once. Subsequent sends clone the
-    /// `WsMessage`, which is O(1) because `axum`'s `Message::Text` is backed by
-    /// `bytes::Bytes` (reference-counted). This avoids one `String` allocation per
-    /// recipient compared to constructing a new message inside the loop.
+    /// Broadcast JSON to all members, optionally skipping one. Cloning `WsMessage::Text`
+    /// is O(1) (backed by `bytes::Bytes`), so we build it once and clone per recipient.
     pub fn broadcast_json(&self, member_ids: &[Uuid], json: &str, exclude: Option<Uuid>) {
         let msg = WsMessage::Text(json.into());
         for member_id in member_ids {
@@ -163,12 +145,10 @@ impl Hub {
 }
 
 impl Hub {
-    /// `try_send` plus slow-consumer tracking. Force-unregisters once the
-    /// threshold trips so a stalled tab can't starve itself indefinitely.
+    /// `try_send` with slow-consumer tracking. Unregisters once the threshold trips.
     fn try_send_tracked(&self, user_id: Uuid, device_id: i32, tx: &WsTx, msg: WsMessage) -> bool {
         match tx.try_send(msg) {
             Ok(()) => {
-                // Reset the counter on any success.
                 self.inner.full_counters.remove(&(user_id, device_id));
                 true
             }
@@ -197,18 +177,14 @@ impl Hub {
                     device_id,
                     "WS outbound queue closed -- recipient disconnected"
                 );
-                // Closed (rather than Full) indicates the receiver is gone --
-                // no point keeping the counter.
                 self.inner.full_counters.remove(&(user_id, device_id));
                 false
             }
         }
     }
 
-    /// Increment the failure counter for `(user_id, device_id)`.  Returns
-    /// `true` when the threshold has just been reached and the caller should
-    /// unregister the device.  The window is rolling: if the first failure
-    /// is older than `SLOW_CONSUMER_WINDOW`, the counter resets.
+    /// Increment the Full counter for a device. Returns true when the rolling-window
+    /// threshold is reached (caller should unregister).
     fn record_full(&self, user_id: Uuid, device_id: i32) -> bool {
         let counter = self
             .inner
@@ -326,7 +302,6 @@ mod tests {
             _ => panic!("Expected Text message"),
         }
 
-        // Device 1 should NOT have a message
         assert!(rx1.try_recv().is_err());
     }
 
@@ -347,7 +322,6 @@ mod tests {
         let members = [user1, user2, user3];
         hub.broadcast_json(&members, r#"{"type":"test"}"#, Some(user2));
 
-        // user1 and user3 receive the message
         let msg1 = rx1.recv().await.unwrap();
         let msg3 = rx3.recv().await.unwrap();
         match (msg1, msg3) {
@@ -358,7 +332,6 @@ mod tests {
             _ => panic!("Expected Text messages"),
         }
 
-        // user2 (excluded) should not have received anything
         assert!(rx2.try_recv().is_err());
     }
 
@@ -386,7 +359,6 @@ mod tests {
     async fn test_send_returns_false_when_queue_full() {
         let hub = Hub::new();
         let user_id = Uuid::new_v4();
-        // Capacity 1, no receiver consumption: second send must fail.
         let (tx, _rx) = mpsc::channel(1);
         hub.register(user_id, 1, tx);
 
@@ -419,10 +391,7 @@ mod tests {
         let (tx, _rx) = mpsc::channel(1);
         hub.register(user_id, 1, tx);
 
-        // First send fits in the cap-1 queue.
         assert!(hub.send_to_device(&user_id, 1, WsMessage::Text("first".into())));
-        // Subsequent sends fail (queue is full and we're not consuming) but
-        // the device stays registered until the threshold is crossed.
         for i in 0..(SLOW_CONSUMER_FULL_THRESHOLD - 1) {
             assert!(
                 !hub.send_to_device(&user_id, 1, WsMessage::Text("blocked".into())),
@@ -433,7 +402,7 @@ mod tests {
                 "iteration {i}: device should still be registered"
             );
         }
-        // The next failure trips the threshold and unregisters the device.
+        // Threshold trip: next failure unregisters the device.
         assert!(!hub.send_to_device(&user_id, 1, WsMessage::Text("kicker".into())));
         assert!(
             !hub.inner.connections.contains_key(&user_id),
@@ -441,8 +410,6 @@ mod tests {
         );
     }
 
-    /// Successful sends reset the consecutive-Full counter so a brief burst
-    /// of contention doesn't accumulate toward eviction.
     #[tokio::test]
     async fn test_full_counter_resets_on_success() {
         let hub = Hub::new();
@@ -450,12 +417,11 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(1);
         hub.register(user_id, 1, tx);
 
-        // Half-fill the failure budget without consuming.
         assert!(hub.send_to_device(&user_id, 1, WsMessage::Text("ok".into())));
         for _ in 0..10 {
             assert!(!hub.send_to_device(&user_id, 1, WsMessage::Text("full".into())));
         }
-        // Drain the receiver and send again -- counter must reset.
+        // Drain and re-send; counter must reset.
         let _ = rx.recv().await;
         assert!(hub.send_to_device(&user_id, 1, WsMessage::Text("recovered".into())));
         assert!(
@@ -476,14 +442,12 @@ mod tests {
 
         // Pre-fill device 1's queue.
         tx_full.try_send(WsMessage::Text("filler".into())).unwrap();
-
         let any_sent = hub.send_to_user(&user_id, WsMessage::Text("payload".into()));
         assert!(
             any_sent,
             "send_to_user should report true when at least one device accepts"
         );
 
-        // Device 2 should still receive it.
         match rx_ok.recv().await.unwrap() {
             WsMessage::Text(t) => assert_eq!(t.as_str(), "payload"),
             _ => panic!("Expected Text"),
