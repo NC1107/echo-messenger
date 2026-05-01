@@ -260,14 +260,21 @@ pub async fn get_messages(
 /// (#634), while still exercising the ack queue under realistic backlogs.
 pub const UNDELIVERED_PAGE_SIZE: i64 = 200;
 
-/// Fetch undelivered messages, optionally after a `(created_at, id)` cursor.
-/// Composite cursor handles ties when multiple messages share a timestamp;
-/// using `created_at` alone would skip same-tick siblings on the next page.
-/// Callers loop with the cursor until the batch returns
-/// < UNDELIVERED_PAGE_SIZE rows.
+/// Fetch undelivered messages for a specific device, optionally after a
+/// `(created_at, id)` cursor.  Composite cursor handles ties when multiple
+/// messages share a timestamp; using `created_at` alone would skip same-tick
+/// siblings on the next page.  Callers loop with the cursor until the batch
+/// returns < UNDELIVERED_PAGE_SIZE rows.
+///
+/// The per-device delivery ledger (`message_deliveries`) is consulted so that
+/// each `(message, recipient_user, device)` triple is replayed at most once.
+/// This prevents undecryptable placeholder frames from being re-sent on every
+/// reconnect (#584): the message stays `delivered = false` globally (so sibling
+/// devices can still pick it up), but this device won't see it again.
 pub async fn get_undelivered(
     pool: &PgPool,
     user_id: Uuid,
+    device_id: i32,
     after_cursor: Option<(DateTime<Utc>, Uuid)>,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     let (after_ts, after_id): (Option<DateTime<Utc>>, Option<Uuid>) = match after_cursor {
@@ -277,6 +284,11 @@ pub async fn get_undelivered(
     // reply_count is computed via a single aggregating subquery joined once
     // (O(N+M)) rather than a LATERAL correlated subquery that re-executes for
     // every returned row (O(N*M)).  Fixes #638.
+    //
+    // The NOT EXISTS guard filters messages that were already pushed to THIS
+    // device (either successfully decryptable or as an undecryptable marker).
+    // Without it a device that can't decrypt a frame would receive the same
+    // placeholder on every reconnect (#584).
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -298,16 +310,73 @@ pub async fn get_undelivered(
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
                   AND cm.is_removed = false \
          WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
-                  AND ($2::timestamptz IS NULL OR (m.created_at, m.id) > ($2, $3)) \
+                  AND NOT EXISTS ( \
+                      SELECT 1 FROM message_deliveries md \
+                      WHERE md.message_id = m.id \
+                        AND md.recipient_user_id = $1 \
+                        AND md.device_id = $2 \
+                  ) \
+                  AND ($3::timestamptz IS NULL OR (m.created_at, m.id) > ($3, $4)) \
          ORDER BY m.created_at ASC, m.id ASC \
-         LIMIT $4",
+         LIMIT $5",
     )
     .bind(user_id)
+    .bind(device_id)
     .bind(after_ts)
     .bind(after_id)
     .bind(UNDELIVERED_PAGE_SIZE)
     .fetch_all(pool)
     .await
+}
+
+/// Record that a specific device has received (or been shown a placeholder for)
+/// a message.  Idempotent via ON CONFLICT DO NOTHING.
+///
+/// This is the write side of the per-device delivery ledger (#584).  Call this
+/// regardless of whether the frame was decryptable; in both cases the device
+/// has already seen the message and must not receive it again on reconnect.
+pub async fn mark_device_delivered(
+    pool: &PgPool,
+    message_id: Uuid,
+    recipient_user_id: Uuid,
+    device_id: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO message_deliveries (message_id, recipient_user_id, device_id) \
+         VALUES ($1, $2, $3) \
+         ON CONFLICT (message_id, recipient_user_id, device_id) DO NOTHING",
+    )
+    .bind(message_id)
+    .bind(recipient_user_id)
+    .bind(device_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Record that a specific device has received a batch of messages.
+/// Idempotent via ON CONFLICT DO NOTHING.  Used during offline replay to bulk-
+/// insert ledger entries for all messages pushed in a single batch.
+pub async fn mark_device_delivered_batch(
+    pool: &PgPool,
+    message_ids: &[Uuid],
+    recipient_user_id: Uuid,
+    device_id: i32,
+) -> Result<(), sqlx::Error> {
+    if message_ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        "INSERT INTO message_deliveries (message_id, recipient_user_id, device_id) \
+         SELECT unnest($1::uuid[]), $2, $3 \
+         ON CONFLICT (message_id, recipient_user_id, device_id) DO NOTHING",
+    )
+    .bind(message_ids)
+    .bind(recipient_user_id)
+    .bind(device_id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// Delete all messages whose `expires_at` is in the past.

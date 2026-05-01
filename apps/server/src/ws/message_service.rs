@@ -932,7 +932,14 @@ pub(super) async fn deliver_undelivered_messages(state: &AppState, user_id: Uuid
     const MAX_ITERATIONS: usize = 50; // 50 * 200 = 10 000 messages per reconnect
     let mut after_cursor: Option<(chrono::DateTime<chrono::Utc>, Uuid)> = None;
     for _iter in 0..MAX_ITERATIONS {
-        let batch = match db::messages::get_undelivered(&state.pool, user_id, after_cursor).await {
+        let batch = match db::messages::get_undelivered(
+            &state.pool,
+            user_id,
+            device_id,
+            after_cursor,
+        )
+        .await
+        {
             Ok(msgs) => msgs,
             Err(e) => {
                 tracing::error!(?e, %user_id, "deliver_undelivered: db error -- aborting replay loop");
@@ -987,6 +994,12 @@ async fn deliver_one_batch(
     let mut delivered_ids: Vec<Uuid> = Vec::with_capacity(undelivered.len());
     let mut delivered_msgs: Vec<&db::messages::MessageWithSender> =
         Vec::with_capacity(undelivered.len());
+    // #584: per-device ledger — ALL frames that were successfully enqueued
+    // (decryptable AND undecryptable placeholders) must be recorded so this
+    // device doesn't see them again on the next reconnect.  messages.delivered
+    // stays false for undecryptable frames so sibling devices can still pick
+    // them up, but the per-device ledger prevents re-replay to THIS device.
+    let mut ledger_ids: Vec<Uuid> = Vec::with_capacity(undelivered.len());
 
     for msg in &undelivered {
         // #557: encrypted DMs MUST be replayed using the per-device ciphertext.
@@ -1038,19 +1051,29 @@ async fn deliver_one_batch(
             continue;
         }
         if undecryptable.unwrap_or(false) {
-            // Don't mark as delivered: another device of the same user may
-            // still have a per-device row and should be able to replay it.
+            // Don't mark messages.delivered = true: another device of the same
+            // user may still have a per-device row and should be able to replay
+            // it.  But DO record into the per-device ledger so this device
+            // doesn't re-receive the same undecryptable placeholder on the next
+            // reconnect (#584).
             tracing::warn!(
                 message_id = %msg.id,
                 user_id = %user_id,
                 device_id = device_id,
-                "replay: no per-device ciphertext, sent undecryptable marker (not marking delivered)"
+                "replay: no per-device ciphertext, sent undecryptable marker"
             );
+            ledger_ids.push(msg.id);
             continue;
         }
         delivered_ids.push(msg.id);
+        ledger_ids.push(msg.id);
         delivered_msgs.push(msg);
     }
+
+    // Bulk-insert per-device ledger entries for every frame accepted by the hub
+    // (both decryptable and undecryptable).  Idempotent via ON CONFLICT DO NOTHING.
+    let _ = db::messages::mark_device_delivered_batch(&state.pool, &ledger_ids, user_id, device_id)
+        .await;
 
     if delivered_ids.is_empty() {
         return;
