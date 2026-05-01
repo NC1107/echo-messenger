@@ -496,15 +496,30 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
         // Expanded forces the name to fill all remaining space so the right
         // side (badge + timestamp) is naturally anchored at the row edge.
         Expanded(
-          child: Text(
-            displayName,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w500,
-              color: context.textPrimary,
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  displayName,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w500,
+                    color: context.textPrimary,
+                  ),
+                ),
+              ),
+              if (conv.isGroup)
+                Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Icon(
+                    Icons.group_outlined,
+                    size: 14,
+                    color: context.textSecondary,
+                  ),
+                ),
+            ],
           ),
         ),
         if (showGroupOnline)

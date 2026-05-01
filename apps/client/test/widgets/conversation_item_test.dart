@@ -425,6 +425,57 @@ void main() {
 
       expect(find.textContaining('You:'), findsOneWidget);
     });
+
+    testWidgets('shows group icon for group conversation', (tester) async {
+      final conv = _makeConversation(
+        name: 'Dev Team',
+        isGroup: true,
+        members: const [
+          ConversationMember(userId: 'u1', username: 'alice'),
+          ConversationMember(userId: 'u2', username: 'bob'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:30',
+          onTap: () {},
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byIcon(Icons.group_outlined), findsOneWidget);
+    });
+
+    testWidgets('does not show group icon for DM conversation', (
+      tester,
+    ) async {
+      final conv = _makeConversation(
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:30',
+          onTap: () {},
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byIcon(Icons.group_outlined), findsNothing);
+    });
   });
 
   group('ConversationItem semantics label (#631)', () {
