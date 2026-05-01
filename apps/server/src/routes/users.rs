@@ -437,7 +437,7 @@ pub async fn change_password(
 
     // Argon2 verify takes ~50-150ms of pure CPU. Without spawn_blocking it
     // stalls a tokio worker for the whole duration -- login/register already
-    // do this; change_password was missing it (#697).
+    // do this; change_password was missing it.
     let stored_hash = user.password_hash.clone();
     let current_password = body.current_password.clone();
     let valid = tokio::task::spawn_blocking(move || {

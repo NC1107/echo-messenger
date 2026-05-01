@@ -19,7 +19,7 @@ pub struct TokenRequest {
     pub channel_id: Option<String>,
     /// Conversation context -- the room name is derived from this so the
     /// LiveKit grant cannot be steered to a conversation the caller is not
-    /// a member of (CRIT-1, audit 2026-04-30).
+    /// a member of.
     pub conversation_id: Option<String>,
 }
 
@@ -84,7 +84,7 @@ pub async fn generate_token(
     // Earlier code accepted a separate `body.room` that was used as the JWT
     // claim while membership was checked against `conversation_id`, so a
     // member of conv A could request `{room: "<victim>", conversation_id: "<A>"}`
-    // and receive a token granting access to the victim's room (CRIT-1).
+    // and receive a token granting access to the victim's room.
     let conversation_id_str = body.conversation_id.or(body.channel_id).ok_or_else(|| {
         AppError::bad_request("conversation_id or channel_id is required for voice token")
     })?;

@@ -20,7 +20,7 @@ use crate::ws::typing_service::invalidate_member_cache;
 
 use super::AppState;
 
-/// #656 — Rotate the group key after a member loses access.
+/// Rotate the group key after a member loses access.
 ///
 /// On encrypted groups, bump the conversation's `key_version`, purge every
 /// existing per-member envelope (so the kicked user can no longer decrypt
@@ -32,10 +32,10 @@ use super::AppState;
 /// only the first writer wins; everyone else gets a 409 and falls back to
 /// fetching whatever the winner produced.
 ///
-/// MVP scope (#656): no leader election, no atomicity beyond the per-row
+/// MVP scope: no leader election, no atomicity beyond the per-row
 /// transaction inside `bump_key_version_and_purge_envelopes`. If the chosen
 /// member crashes mid-rotation the group will surface as undecryptable until
-/// any other live member reuploads the next version. Tracked in #658.
+/// any other live member reuploads the next version.
 async fn rotate_group_key_after_member_loss(state: &Arc<AppState>, group_id: Uuid) {
     let encrypted = match db::groups::is_encrypted(&state.pool, group_id).await {
         Ok(v) => v,
@@ -377,8 +377,7 @@ pub async fn remove_member(
         let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;
         tracing::info!("Auto-deleted empty group {group_id}");
     } else {
-        // #656 — kick a fresh group-key rotation so the removed member can no
-        // longer decrypt future messages with the AES key they still hold.
+        // Rotate group key so the removed member can no longer decrypt future messages.
         rotate_group_key_after_member_loss(&state, group_id).await;
     }
 
@@ -530,7 +529,7 @@ pub async fn leave_group(
         let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;
         tracing::info!("Auto-deleted empty group {group_id}");
     } else {
-        // #656 — rotate so the leaver loses access to future ciphertext.
+        // Rotate group key so the leaver loses access to future ciphertext.
         rotate_group_key_after_member_loss(&state, group_id).await;
     }
 
@@ -643,7 +642,7 @@ pub async fn ban_member(
         let _ = db::groups::force_delete_conversation(&state.pool, group_id).await;
         tracing::info!("Auto-deleted empty group {group_id}");
     } else {
-        // #656 — rotate so the banned member loses future-message access.
+        // Rotate group key so the banned member loses access to future ciphertext.
         rotate_group_key_after_member_loss(&state, group_id).await;
     }
 

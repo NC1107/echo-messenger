@@ -271,7 +271,7 @@ pub async fn remove_member(
 /// Get all member user IDs for a conversation (works for both DMs and groups).
 ///
 /// Generic over `Executor` so callers can reuse the existing tx during
-/// upload_group_key validation (#686).
+/// upload_group_key validation.
 pub async fn get_conversation_member_ids<'e, E>(
     executor: E,
     conversation_id: Uuid,
@@ -547,7 +547,7 @@ pub async fn unban_member(
 }
 
 // ---------------------------------------------------------------------------
-// Group key rotation (#656)
+// Group key rotation
 // ---------------------------------------------------------------------------
 
 /// Returns true when the conversation row has `is_encrypted = true`.

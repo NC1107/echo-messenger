@@ -22,8 +22,8 @@ use echo_core::signal::protocol::{
 
 /// Validate that a base64-encoded payload is shaped like an Echo
 /// ciphertext wire frame. We do NOT decrypt or otherwise validate
-/// authenticity here — this is a belt-and-suspenders shape gate (#591)
-/// that prevents a malicious or buggy client from storing/relaying
+/// authenticity here — this is a belt-and-suspenders shape gate that
+/// prevents a malicious or buggy client from storing/relaying
 /// plaintext on conversations marked `is_encrypted = true`.
 pub(super) fn is_valid_ciphertext_shape(b64: &str) -> bool {
     let Ok(bytes) = BASE64.decode(b64.as_bytes()) else {
@@ -70,7 +70,7 @@ pub(super) fn validate_message_length(state: &AppState, sender_id: Uuid, content
 }
 
 /// Reject inbound messages on encrypted conversations whose payload isn't
-/// shaped like an Echo ciphertext wire (#455 / #591).
+/// shaped like an Echo ciphertext wire frame.
 ///
 /// - Direct (DM): `recipient_device_contents` MUST be non-empty and every
 ///   per-device ciphertext MUST pass `is_valid_ciphertext_shape`.
@@ -93,7 +93,7 @@ pub(super) fn validate_encrypted_payload(
             // The canonical content field is persisted and relayed in
             // NewMessage events, so it must be ciphertext-shaped — otherwise
             // a client could pass valid recipient_device_contents while
-            // smuggling plaintext in `content` (PR #659 reviewer catch).
+            // smuggling plaintext in `content`.
             if !is_valid_ciphertext_shape(content) {
                 tracing::warn!(
                     conversation_id = %conversation_id,
@@ -242,7 +242,7 @@ pub(super) async fn validate_conversation_security(
 /// Recipient-scoped per-device ciphertexts as carried on the wire:
 /// `recipient_user_id (UUID string) -> { device_id (i32 string) -> ciphertext }`.
 /// Per-user device IDs collide across users, so the storage and fanout
-/// addressing must include the recipient (#522). Conversion to typed
+/// addressing must include the recipient. Conversion to typed
 /// `(Uuid, i32)` happens at the storage/fanout boundaries; rows that fail to
 /// parse are logged and skipped.
 pub(super) type RecipientDeviceContents = HashMap<String, HashMap<String, String>>;
@@ -276,11 +276,10 @@ pub(super) async fn handle_send_message(
         return;
     };
 
-    // #455 / #591: belt-and-suspenders ciphertext shape gate. When a
-    // conversation is marked `is_encrypted`, the server must refuse any
-    // payload that isn't shaped like an Echo wire frame (initial V1/V2 or
-    // normal-message header). This closes the confidentiality hole left
-    // open by client-only enforcement.
+    // Belt-and-suspenders ciphertext shape gate. When a conversation is marked
+    // `is_encrypted`, the server must refuse any payload that isn't shaped like
+    // an Echo wire frame (initial V1/V2 or normal-message header). This closes
+    // the confidentiality hole left open by client-only enforcement.
     if conv_security.is_encrypted
         && !validate_encrypted_payload(
             state,
@@ -373,7 +372,7 @@ pub(super) async fn store_and_confirm(
     // Store message in DB. `RowNotFound` from `store_message` means the
     // requested `reply_to_id` does not refer to a message in this conversation
     // (cross-conversation reply, deleted parent, or non-existent id). Surface
-    // a targeted error to the sender instead of a generic store failure. #519
+    // a targeted error to the sender instead of a generic store failure.
     let stored = match db::messages::store_message(
         &state.pool,
         conv_id,
@@ -407,7 +406,8 @@ pub(super) async fn store_and_confirm(
         }
     };
 
-    // Store per-device ciphertexts if present, scoped by recipient (#522).
+    // Store per-device ciphertexts if present. Per-user device IDs collide
+    // across users, so each entry is keyed by (recipient_user_id, device_id).
     if let Some(rdc) = recipient_device_contents {
         let entries: Vec<(Uuid, i32, &str)> = rdc
             .iter()
@@ -604,7 +604,7 @@ pub(super) async fn resolve_default_text_channel(
 }
 
 /// Look up reply context (content and username) for a given reply_to_id,
-/// scoped to the conversation the new message will live in. #519
+/// scoped to the conversation the new message will live in.
 /// Returns `None` (with a `warn!`) when the parent is missing, deleted,
 /// or belongs to a different conversation.
 pub(super) async fn lookup_reply_context(
@@ -694,7 +694,7 @@ impl NewMessageFields {
 
 /// Pre-serialize per-device JSON messages once for each recipient to avoid
 /// re-serializing the same message for every member in the fanout loop.
-/// Outer key is `recipient_user_id`, inner is `device_id -> JSON` (#522).
+/// Outer key is `recipient_user_id`, inner is `device_id -> JSON`.
 pub(super) fn build_per_device_json(
     fields: &NewMessageFields,
     recipient_device_contents: &RecipientDeviceContents,
@@ -742,9 +742,8 @@ pub(super) fn deliver_to_member(
     if let Some(by_recipient) = per_recipient_json
         && let Some(device_jsons) = by_recipient.get(member_id)
     {
-        // #557: deliver to ALL recipient devices. `Iterator::any` short-circuits
-        // on the first `true`, so a successful send to device #1 would skip
-        // device #2 entirely. Walk every device and OR-accumulate instead.
+        // Deliver to ALL recipient devices; OR-accumulate instead of short-circuiting
+        // so a successful send to device #1 doesn't skip device #2.
         let mut any_sent = false;
         for (did, json) in device_jsons {
             if hub.send_to_device(member_id, *did, WsMessage::Text(json.clone().into())) {
@@ -942,11 +941,10 @@ async fn deliver_one_batch(
             .await
             .unwrap_or_default();
 
-    // #557: messages that have a per-device row for SOME device of this user
-    // but not for the connecting device are undecryptable on this device.
-    // Distinguishing this from "no per-device fanout at all" (groups,
-    // plaintext, legacy rows) prevents us from shipping the wrong wire and
-    // losing the message permanently.
+    // Messages that have a per-device row for SOME device of this user but not
+    // for the connecting device are undecryptable on this device. Distinguishing
+    // this from "no per-device fanout at all" (groups, plaintext, legacy rows)
+    // prevents shipping the wrong wire and permanently losing the message.
     let has_any_device_row =
         db::messages::message_ids_with_any_device_content(&state.pool, &all_ids, user_id)
             .await
@@ -954,20 +952,18 @@ async fn deliver_one_batch(
 
     // Track only IDs that the hub actually accepted into the recipient's
     // outbound queue. Marking a message delivered without confirmed enqueue
-    // loses it forever if the queue was full or the socket had just closed (#523).
+    // loses it if the queue was full or the socket had just closed.
     let mut delivered_ids: Vec<Uuid> = Vec::with_capacity(undelivered.len());
     let mut delivered_msgs: Vec<&db::messages::MessageWithSender> =
         Vec::with_capacity(undelivered.len());
 
     for msg in &undelivered {
-        // #557: encrypted DMs MUST be replayed using the per-device ciphertext.
+        // Encrypted DMs MUST be replayed using the per-device ciphertext.
         // Falling back to `msg.content` (the originating device's wire) ships
-        // the wrong ratchet's ciphertext and the recipient device cannot
-        // decrypt it. When no per-device row exists we instead emit an
-        // explicit `undecryptable` marker so the client can render a
-        // placeholder, and we leave the message as `delivered = false` so a
-        // future reconnect (e.g. on a device that does have a row) still gets
-        // a shot at it.
+        // the wrong ratchet's ciphertext and the recipient device cannot decrypt
+        // it. When no per-device row exists we emit an explicit `undecryptable`
+        // marker so the client can render a placeholder, and we leave the message
+        // as `delivered = false` so a future reconnect still gets a shot at it.
         let device_content = device_ct_map.get(&msg.id);
         let needs_per_device = has_any_device_row.contains(&msg.id);
         let (content, undecryptable) = match device_content {
@@ -979,8 +975,8 @@ async fn deliver_one_batch(
         let server_msg = ServerMessage::NewMessage {
             message_id: msg.id,
             from_user_id: msg.sender_id,
-            // #557: propagate the originating device so the client can pick
-            // the correct per-device ratchet on decrypt.
+            // Propagate the originating device so the client can pick the
+            // correct per-device ratchet on decrypt.
             from_device_id: msg.sender_device_id,
             from_username: msg.sender_username.clone(),
             conversation_id: msg.conversation_id,

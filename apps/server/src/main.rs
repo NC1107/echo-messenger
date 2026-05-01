@@ -87,9 +87,8 @@ async fn main() {
         }
     });
 
-    // Cache eviction sweep on the membership/typing/conv-kind caches in
-    // typing_service.  Bounded growth without this -- the audit (#692) found
-    // entries never expire after 24h on a busy server.
+    // Evict stale entries from the typing_service membership/member-ID/conv-kind
+    // caches; without this, entries accumulate unboundedly on long-running servers.
     spawn_periodic(
         "cache_sweep",
         std::time::Duration::from_secs(300),
