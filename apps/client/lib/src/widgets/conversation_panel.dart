@@ -11,12 +11,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
+import '../providers/conversation_filter_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
-import '../utils/fuzzy_score.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart';
 import 'conversation_item.dart';
@@ -26,8 +26,6 @@ import 'skeleton_loader.dart';
 // Re-export avatar utilities so existing `show` imports keep working.
 export 'avatar_utils.dart'
     show buildAvatar, avatarColor, groupAvatarColor, resolveAvatarUrl;
-
-enum _ConversationFilter { all, dms, groups }
 
 class ConversationPanel extends ConsumerStatefulWidget {
   final String? selectedConversationId;
@@ -74,23 +72,16 @@ class ConversationPanel extends ConsumerStatefulWidget {
 }
 
 class _ConversationPanelState extends ConsumerState<ConversationPanel> {
-  String _searchQuery = '';
   bool _isSearching = false;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   final _keyboardListenerFocusNode = FocusNode();
   // Timer removed -- HomeScreen handles pending contacts polling
 
-  /// Active conversation type filter.
-  _ConversationFilter _filter = _ConversationFilter.all;
-
   /// True after the user manually dismisses the "session replaced" banner.
   /// Resets on next reconnect (the websocket clears `wasReplaced`, and we
   /// re-show the banner if a future replacement happens).
   bool _replacedBannerDismissed = false;
-
-  /// Pinned conversation IDs
-  Set<String> _pinnedIds = {};
 
   /// Debounce timer for the search field. Delays the fuzzy-score recompute
   /// so we don't run it on every keystroke.
@@ -115,8 +106,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     // selected conversation is visible and highlighted.
     if (widget.selectedConversationId != null &&
         widget.selectedConversationId != oldWidget.selectedConversationId &&
-        _filter != _ConversationFilter.all) {
-      setState(() => _filter = _ConversationFilter.all);
+        ref.read(conversationFilterTypeProvider) !=
+            ConversationFilterType.all) {
+      ref.read(conversationFilterTypeProvider.notifier).state =
+          ConversationFilterType.all;
     }
   }
 
@@ -137,7 +130,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 150), () {
       if (!mounted) return;
-      setState(() => _searchQuery = trimmed);
+      ref.read(conversationSearchQueryProvider.notifier).state = trimmed;
     });
   }
 
@@ -150,9 +143,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     }
   }
 
-  void _onFilterChanged(_ConversationFilter filter) {
-    if (_filter == filter) return;
-    setState(() => _filter = filter);
+  void _onFilterChanged(ConversationFilterType filter) {
+    if (ref.read(conversationFilterTypeProvider) == filter) return;
+    ref.read(conversationFilterTypeProvider.notifier).state = filter;
   }
 
   void _onExternalSearchFocus() {
@@ -180,57 +173,39 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           .where((c) => c.isPinned)
           .map((c) => c.id)
           .toSet();
-      setState(() => _pinnedIds = {...pinned.toSet(), ...serverPinned});
+      ref.read(pinnedConversationIdsProvider.notifier).state = {
+        ...pinned.toSet(),
+        ...serverPinned,
+      };
     }
   }
 
   Future<void> _savePinnedIds() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('pinned_conversation_ids', _pinnedIds.toList());
+    final ids = ref.read(pinnedConversationIdsProvider);
+    await prefs.setStringList('pinned_conversation_ids', ids.toList());
   }
 
   void _togglePin(String conversationId) {
-    final isPinned = _pinnedIds.contains(conversationId);
-    setState(() {
-      if (isPinned) {
-        _pinnedIds.remove(conversationId);
-      } else {
-        _pinnedIds.add(conversationId);
-      }
-    });
+    final current = ref.read(pinnedConversationIdsProvider);
+    final isPinned = current.contains(conversationId);
+    final updated = Set<String>.from(current);
+    if (isPinned) {
+      updated.remove(conversationId);
+    } else {
+      updated.add(conversationId);
+    }
+    ref.read(pinnedConversationIdsProvider.notifier).state = updated;
     _savePinnedIds();
     ref
         .read(conversationsProvider.notifier)
         .setPinned(conversationId, !isPinned);
   }
 
-  /// Sort conversations: pinned first, then by last message timestamp.
-  /// Both groups are sorted by most recent message descending.
-  List<Conversation> _sortConversations(List<Conversation> conversations) {
-    final pinned = <Conversation>[];
-    final unpinned = <Conversation>[];
-    for (final conv in conversations) {
-      if (_pinnedIds.contains(conv.id)) {
-        pinned.add(conv);
-      } else {
-        unpinned.add(conv);
-      }
-    }
-    int byTimestamp(Conversation a, Conversation b) {
-      final ta = a.lastMessageTimestamp ?? '';
-      final tb = b.lastMessageTimestamp ?? '';
-      return tb.compareTo(ta); // descending — newest first
-    }
-
-    pinned.sort(byTimestamp);
-    unpinned.sort(byTimestamp);
-    return [...pinned, ...unpinned];
-  }
-
   void _clearSearch() {
     _searchDebounce?.cancel();
+    ref.read(conversationSearchQueryProvider.notifier).state = '';
     setState(() {
-      _searchQuery = '';
       _isSearching = false;
       _searchController.clear();
     });
@@ -241,7 +216,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     Conversation conv,
     Offset position,
   ) {
-    final isPinned = _pinnedIds.contains(conv.id);
+    final pinnedIds = ref.read(pinnedConversationIdsProvider);
+    final isPinned = pinnedIds.contains(conv.id) || conv.isPinned;
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
 
     showMenu<String>(
@@ -506,7 +482,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
     final pendingCount = contactsState.pendingRequests.length;
 
-    final conversations = _filterConversations(allConversations, userId);
+    // Derived list is precomputed by sortedConversationsProvider — no
+    // sort/filter work happens here in the build path.
+    final conversations = ref.watch(sortedConversationsProvider);
 
     return Container(
       color: context.sidebarBg,
@@ -578,46 +556,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ),
       ),
     );
-  }
-
-  List<Conversation> _filterConversations(
-    List<Conversation> allConversations,
-    String myUserId,
-  ) {
-    var result = allConversations;
-
-    // Apply type filter.
-    switch (_filter) {
-      case _ConversationFilter.dms:
-        result = result.where((c) => !c.isGroup).toList();
-      case _ConversationFilter.groups:
-        result = result.where((c) => c.isGroup).toList();
-      case _ConversationFilter.all:
-        break;
-    }
-
-    // Apply search filter using fuzzy scoring so typos/abbreviations still
-    // match and the best match appears first.
-    if (_searchQuery.isNotEmpty) {
-      final query = _searchQuery;
-      final scored = <({Conversation conv, double score})>[];
-      for (final conv in result) {
-        final name = conv.displayName(myUserId);
-        final lastMsg = conv.lastMessage ?? '';
-        final nameScore = fuzzyScore(query, name);
-        final msgScore = fuzzyScore(query, lastMsg);
-        // Weighted sum normalised back into [0, 1] so the threshold is
-        // meaningful. Raw weights were nameScore*2 + msgScore (max 3).
-        final score = (nameScore * 2 + msgScore) / 3;
-        if (score > 0.2) {
-          scored.add((conv: conv, score: score));
-        }
-      }
-      scored.sort((a, b) => b.score.compareTo(a.score));
-      result = scored.map((e) => e.conv).toList();
-    }
-
-    return result;
   }
 
   Widget _buildLogoHeader(BuildContext context, int pendingCount) {
@@ -850,6 +788,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Widget _buildActiveSearchBar(BuildContext context) {
+    final searchQuery = ref.watch(conversationSearchQueryProvider);
     return KeyboardListener(
       focusNode: _keyboardListenerFocusNode,
       onKeyEvent: (event) {
@@ -882,7 +821,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               onChanged: _onSearchChanged,
             ),
           ),
-          if (_searchQuery.isNotEmpty)
+          if (searchQuery.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.close, size: 16),
               color: context.textMuted,
@@ -915,21 +854,24 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Widget _buildFilterChips() {
+    final activeFilter = ref.watch(conversationFilterTypeProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
-          _buildChip('All', _ConversationFilter.all),
+          _buildChip('All', ConversationFilterType.all, activeFilter),
           const SizedBox(width: 6),
           _buildChip(
             'DMs',
-            _ConversationFilter.dms,
+            ConversationFilterType.dms,
+            activeFilter,
             icon: Icons.person_outline,
           ),
           const SizedBox(width: 6),
           _buildChip(
             'Groups',
-            _ConversationFilter.groups,
+            ConversationFilterType.groups,
+            activeFilter,
             icon: Icons.groups_outlined,
           ),
         ],
@@ -939,10 +881,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
   Widget _buildChip(
     String label,
-    _ConversationFilter filter, {
+    ConversationFilterType filter,
+    ConversationFilterType activeFilter, {
     IconData? icon,
   }) {
-    final isSelected = _filter == filter;
+    final isSelected = activeFilter == filter;
     // Selected chip bg is always `context.accent` (a saturated indigo across
     // every theme variant), so white reads cleanly. The previous reliance on
     // `colorScheme.onPrimary` broke on themes where onPrimary resolves dark
@@ -1245,11 +1188,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         child: _buildChatsEmptyState(),
       );
     } else {
-      final sorted = _sortConversations(conversations);
+      // conversations is already sorted + filtered by sortedConversationsProvider.
       child = KeyedSubtree(
         key: const ValueKey('list'),
         child: _buildConversationList(
-          sorted,
+          conversations,
           myUserId,
           serverUrl,
           wsOnlineUsers,
@@ -1263,7 +1206,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Widget _buildChatsEmptyState() {
-    if (_searchQuery.isNotEmpty) {
+    final searchQuery = ref.watch(conversationSearchQueryProvider);
+    if (searchQuery.isNotEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -1277,7 +1221,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               ),
               const SizedBox(height: 16),
               Text(
-                "No results found for '$_searchQuery'",
+                "No results found for '$searchQuery'",
                 style: TextStyle(
                   color: context.textSecondary,
                   fontSize: 14,
@@ -1400,7 +1344,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       final conv = sorted[convIndex];
       return _buildConversationTile(
         conv,
-        _pinnedIds.contains(conv.id),
+        conv.isPinned ||
+            ref.read(pinnedConversationIdsProvider).contains(conv.id),
         myUserId,
         serverUrl,
         wsOnlineUsers,
@@ -1410,7 +1355,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final conv = sorted[index];
     return _buildConversationTile(
       conv,
-      _pinnedIds.contains(conv.id),
+      conv.isPinned ||
+          ref.read(pinnedConversationIdsProvider).contains(conv.id),
       myUserId,
       serverUrl,
       wsOnlineUsers,
@@ -1424,7 +1370,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     Set<String> wsOnlineUsers,
   ) {
     // Count how many pinned items are at the front of the sorted list.
-    final pinnedCount = sorted.where((c) => _pinnedIds.contains(c.id)).length;
+    final pinnedIds = ref.watch(pinnedConversationIdsProvider);
+    final pinnedCount = sorted
+        .where((c) => pinnedIds.contains(c.id) || c.isPinned)
+        .length;
     // Extra items: section header for pinned (if any) + divider after pinned.
     final extraItems = pinnedCount > 0 ? 2 : 0;
 
