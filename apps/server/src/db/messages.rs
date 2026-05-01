@@ -271,6 +271,9 @@ pub async fn get_undelivered(
         Some((ts, id)) => (Some(ts), Some(id)),
         None => (None, None),
     };
+    // reply_count is computed via a single aggregating subquery joined once
+    // (O(N+M)) rather than a LATERAL correlated subquery that re-executes for
+    // every returned row (O(N*M)).  Fixes #638.
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -278,15 +281,17 @@ pub async fn get_undelivered(
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                COALESCE(rc.cnt, 0) AS reply_count \
+                COALESCE(rc.reply_count, 0) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
-         LEFT JOIN LATERAL ( \
-             SELECT COUNT(*) AS cnt FROM messages r \
-             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
-         ) rc ON true \
+         LEFT JOIN ( \
+             SELECT reply_to_id, COUNT(*) AS reply_count \
+             FROM messages \
+             WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL \
+             GROUP BY reply_to_id \
+         ) rc ON rc.reply_to_id = m.id \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
                   AND cm.is_removed = false \
          WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
