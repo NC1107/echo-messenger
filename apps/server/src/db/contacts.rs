@@ -21,6 +21,9 @@ pub struct ContactRow {
     pub avatar_url: Option<String>,
     pub status: String,
     pub created_at: DateTime<Utc>,
+    /// Most recent device activity for this contact. `None` if the contact has
+    /// never connected or has set their presence to "invisible".
+    pub last_seen: Option<DateTime<Utc>>,
 }
 
 /// Create a contact request. Uses a transaction to prevent a TOCTOU race
@@ -99,7 +102,12 @@ pub async fn list_contacts(pool: &PgPool, user_id: Uuid) -> Result<Vec<ContactRo
                 u.display_name, \
                 u.avatar_url, \
                 c.status, \
-                c.created_at \
+                c.created_at, \
+                CASE WHEN u.presence_status = 'invisible' THEN NULL \
+                     ELSE (SELECT MAX(ik.last_seen) \
+                           FROM identity_keys ik \
+                           WHERE ik.user_id = u.id AND ik.revoked_at IS NULL) \
+                END AS last_seen \
          FROM contacts c \
          JOIN users u ON u.id = CASE WHEN c.requester_id = $1 THEN c.target_id ELSE c.requester_id END \
          WHERE (c.requester_id = $1 OR c.target_id = $1) AND c.status = 'accepted' \
@@ -136,7 +144,8 @@ pub async fn list_pending_requests(
                 u.display_name, \
                 u.avatar_url, \
                 c.status, \
-                c.created_at \
+                c.created_at, \
+                NULL::TIMESTAMPTZ AS last_seen \
          FROM contacts c \
          JOIN users u ON u.id = c.requester_id \
          WHERE c.target_id = $1 AND c.status = 'pending' \
