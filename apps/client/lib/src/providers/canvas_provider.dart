@@ -30,6 +30,9 @@ class CanvasNotifier extends StateNotifier<CanvasState> {
   Timer? _imageThrottle;
   Map<String, dynamic>? _pendingImageMove;
 
+  /// Events buffered while [_channelId] is not yet set (attach race window).
+  final List<Map<String, dynamic>> _pendingEvents = [];
+
   CanvasNotifier(this.ref) : super(const CanvasState());
 
   // -------------------------------------------------------------------------
@@ -43,6 +46,13 @@ class CanvasNotifier extends StateNotifier<CanvasState> {
     state = const CanvasState(); // reset while loading
 
     await _fetchCanvas(conversationId, channelId);
+
+    // Flush any canvas events that arrived before _channelId was set.
+    final buffered = List<Map<String, dynamic>>.from(_pendingEvents);
+    _pendingEvents.clear();
+    for (final event in buffered) {
+      handleCanvasEvent(event);
+    }
   }
 
   /// Detach from the current channel (called when the voice session ends).
@@ -53,6 +63,7 @@ class CanvasNotifier extends StateNotifier<CanvasState> {
     _imageThrottle?.cancel();
     _imageThrottle = null;
     _pendingImageMove = null;
+    _pendingEvents.clear();
     _channelId = null;
     state = const CanvasState();
   }
@@ -265,6 +276,12 @@ class CanvasNotifier extends StateNotifier<CanvasState> {
 
   void handleCanvasEvent(Map<String, dynamic> json) {
     final channelId = json['channel_id'] as String?;
+    // Buffer events that arrive before attach() has set _channelId.  They
+    // will be replayed once attach() completes and _channelId is known.
+    if (_channelId == null) {
+      _pendingEvents.add(json);
+      return;
+    }
     if (channelId != _channelId) return; // event for a different channel
 
     final kind = json['kind'] as String?;
