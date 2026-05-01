@@ -564,14 +564,13 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           'avatar',
           file.bytes!,
           filename: file.name,
-          contentType: MediaType('image', 'png'),
+          contentType: _mimeFromFilename(file.name),
         ),
       );
 
     try {
       final streamedResponse = await request.send();
-      // Drain the response body to close the stream.
-      await streamedResponse.stream.bytesToString();
+      final body = await streamedResponse.stream.bytesToString();
       if (!mounted) return;
 
       if (streamedResponse.statusCode == 200) {
@@ -585,9 +584,11 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           );
         }
       } else {
+        final serverMsg = _parseErrorBody(body);
         ToastService.show(
           context,
-          'Failed to upload avatar (${streamedResponse.statusCode})',
+          serverMsg ??
+              'Failed to upload avatar (${streamedResponse.statusCode})',
           type: ToastType.error,
         );
       }
@@ -597,6 +598,25 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         ToastService.show(context, 'Upload error: $e', type: ToastType.error);
       }
     }
+  }
+
+  static MediaType _mimeFromFilename(String name) {
+    final ext = name.split('.').last.toLowerCase();
+    return switch (ext) {
+      'jpg' || 'jpeg' => MediaType('image', 'jpeg'),
+      'webp' => MediaType('image', 'webp'),
+      'gif' => MediaType('image', 'gif'),
+      _ => MediaType('image', 'png'),
+    };
+  }
+
+  String? _parseErrorBody(String body) {
+    try {
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final msg = data['error'] as String?;
+      if (msg != null && msg.isNotEmpty) return msg;
+    } catch (_) {}
+    return null;
   }
 
   Future<void> _showAddChannelDialog() async {

@@ -342,12 +342,22 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
       _tryUpdateAvatarUrl(body);
       ToastService.show(context, 'Avatar updated', type: ToastType.success);
     } else {
+      final serverMsg = _parseErrorMessage(body);
       ToastService.show(
         context,
-        friendlyError(Exception('Avatar upload failed $statusCode')),
+        serverMsg ?? 'Avatar upload failed ($statusCode)',
         type: ToastType.error,
       );
     }
+  }
+
+  String? _parseErrorMessage(String body) {
+    try {
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final msg = data['error'] as String?;
+      if (msg != null && msg.isNotEmpty) return msg;
+    } catch (_) {}
+    return null;
   }
 
   void _tryUpdateAvatarUrl(String body) {

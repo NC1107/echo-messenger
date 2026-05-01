@@ -404,7 +404,7 @@ pub async fn delete_account(
     }
 
     // Clean up avatar files from disk
-    for ext in &["jpg", "png", "webp"] {
+    for ext in &["jpg", "png", "webp", "gif"] {
         let path = format!("./uploads/avatars/{}.{}", auth.user_id, ext);
         let _ = fs::remove_file(&path).await;
     }
@@ -583,8 +583,8 @@ pub async fn resolve_username_invite(
 /// Maximum avatar size: 2 MB.
 const MAX_AVATAR_SIZE: usize = 2 * 1024 * 1024;
 
-/// Allowed avatar MIME types.
-const ALLOWED_AVATAR_TYPES: &[&str] = &["image/jpeg", "image/png", "image/webp"];
+/// Allowed avatar MIME types (validated via magic bytes, not client-supplied Content-Type).
+const ALLOWED_AVATAR_TYPES: &[&str] = &["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 /// Derive a file extension from a MIME type.
 fn extension_for_mime(mime: &str) -> &str {
@@ -592,6 +592,7 @@ fn extension_for_mime(mime: &str) -> &str {
         "image/jpeg" => "jpg",
         "image/png" => "png",
         "image/webp" => "webp",
+        "image/gif" => "gif",
         _ => "bin",
     }
 }
@@ -602,6 +603,7 @@ fn mime_for_extension(ext: &str) -> &str {
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
         "webp" => "image/webp",
+        "gif" => "image/gif",
         _ => "application/octet-stream",
     }
 }
@@ -609,6 +611,7 @@ fn mime_for_extension(ext: &str) -> &str {
 /// PUT /api/users/me/avatar
 ///
 /// Accepts multipart form data with an `avatar` field.
+/// Validates the file type via magic bytes (ignores client-supplied Content-Type).
 /// Saves the file to `./uploads/avatars/{user_id}.{ext}` and updates the user record.
 pub async fn upload_avatar(
     auth: AuthUser,
@@ -629,18 +632,6 @@ pub async fn upload_avatar(
             continue;
         }
 
-        let mime_type = field
-            .content_type()
-            .unwrap_or("application/octet-stream")
-            .to_string();
-
-        if !ALLOWED_AVATAR_TYPES.contains(&mime_type.as_str()) {
-            return Err(AppError::bad_request(format!(
-                "Avatar type '{mime_type}' is not allowed. Allowed types: {}",
-                ALLOWED_AVATAR_TYPES.join(", ")
-            )));
-        }
-
         let data = field
             .bytes()
             .await
@@ -653,12 +644,34 @@ pub async fn upload_avatar(
             )));
         }
 
+        // Validate via magic bytes, not client-declared Content-Type.
+        let mime_type = match infer::get(&data) {
+            Some(inferred) => inferred.mime_type().to_string(),
+            None => {
+                return Err(AppError::with_code(
+                    ErrorCode::UnsupportedMediaType,
+                    "Could not determine avatar file type from content",
+                ));
+            }
+        };
+
+        if !ALLOWED_AVATAR_TYPES.contains(&mime_type.as_str()) {
+            return Err(AppError::with_code(
+                ErrorCode::UnsupportedMediaType,
+                format!(
+                    "Avatar type '{mime_type}' is not allowed. \
+                     Allowed: {}",
+                    ALLOWED_AVATAR_TYPES.join(", ")
+                ),
+            ));
+        }
+
         let ext = extension_for_mime(&mime_type);
         let disk_filename = format!("{}.{}", auth.user_id, ext);
         let disk_path = format!("./uploads/avatars/{disk_filename}");
 
         // Remove any old avatar files for this user (different extensions)
-        for old_ext in &["jpg", "png", "webp"] {
+        for old_ext in &["jpg", "png", "webp", "gif"] {
             let old_path = format!("./uploads/avatars/{}.{}", auth.user_id, old_ext);
             let _ = fs::remove_file(&old_path).await;
         }
@@ -712,7 +725,7 @@ pub async fn get_avatar(
     }
 
     // Try to find the avatar file on disk
-    for ext in &["jpg", "png", "webp"] {
+    for ext in &["jpg", "png", "webp", "gif"] {
         let disk_path = format!("./uploads/avatars/{}.{}", user_id, ext);
         if let Ok(data) = fs::read(&disk_path).await {
             let mime = mime_for_extension(ext);
