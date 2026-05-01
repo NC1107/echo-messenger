@@ -176,8 +176,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
   String get _serverUrl => ref.read(serverUrlProvider);
 
   /// Load cached messages from Hive for instant display before server fetch.
-  void loadFromCache(String conversationId, String myUserId) {
-    final cached = MessageCache.getCachedMessages(conversationId, myUserId);
+  Future<void> loadFromCache(String conversationId, String myUserId) async {
+    final cached = await MessageCache.getCachedMessages(
+      conversationId,
+      myUserId,
+    );
     if (cached.isEmpty) return;
     _mergeMessages(conversationId, cached);
   }
@@ -610,7 +613,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // cannot be re-derived, so previously decrypted messages must come from
     // the cache rather than re-decryption.
     if (conversationId != null) {
-      final cached = MessageCache.getCachedMessage(
+      final cached = await MessageCache.getCachedMessage(
         conversationId,
         msg.id,
         myUserId,

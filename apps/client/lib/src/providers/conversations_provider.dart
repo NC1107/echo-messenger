@@ -141,7 +141,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState> {
           if (conv.lastMessage != null && looksEncrypted(conv.lastMessage!)) {
             var cached = _decryptedPreviews[conv.id];
             if (cached == null) {
-              cached = MessageCache.getLatestCachedPreview(conv.id);
+              cached = await MessageCache.getLatestCachedPreview(conv.id);
               if (cached != null) _decryptedPreviews[conv.id] = cached;
             }
             conversations[i] = conv.copyWith(
