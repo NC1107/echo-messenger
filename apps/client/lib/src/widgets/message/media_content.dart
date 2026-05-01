@@ -1,5 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -889,6 +889,12 @@ class FullscreenVideoPlayer extends StatefulWidget {
   /// wired to the same launcher the bubble's Download button uses.
   final VoidCallback onLaunchExternal;
 
+  /// Overrides the Linux platform check. `null` (default) reads
+  /// [defaultTargetPlatform] at runtime. Pass `true` / `false` in widget
+  /// tests to exercise each code path without running on Linux hardware (#620).
+  @visibleForTesting
+  final bool? isLinuxOverride;
+
   const FullscreenVideoPlayer({
     super.key,
     required this.videoUrl,
@@ -897,6 +903,7 @@ class FullscreenVideoPlayer extends StatefulWidget {
     required this.accent,
     required this.textMuted,
     required this.onLaunchExternal,
+    this.isLinuxOverride,
   });
 
   @override
@@ -915,6 +922,24 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
   }
 
   Future<void> _init() async {
+    // video_player has no Linux desktop implementation — calling initialize()
+    // on Linux throws UnimplementedError before any player state is set up
+    // (#620). Detect this ahead-of-time and show the graceful fallback so the
+    // user can still open the video externally.
+    final isLinux =
+        widget.isLinuxOverride ??
+        (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux);
+    if (isLinux) {
+      if (mounted) {
+        setState(() {
+          _initFailed = true;
+          _errorMessage =
+              'Video playback is not supported on Linux desktop. '
+              'Use "Open externally" to watch with your system player.';
+        });
+      }
+      return;
+    }
     try {
       final controller = VideoPlayerController.networkUrl(
         Uri.parse(widget.videoUrl),
