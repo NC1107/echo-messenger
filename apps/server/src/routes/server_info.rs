@@ -12,7 +12,7 @@ use serde::Serialize;
 use std::sync::Arc;
 
 use crate::config::registration_open;
-use crate::error::AppError;
+use crate::error::{AppError, DbErrCtx};
 use crate::routes::AppState;
 
 #[derive(Debug, Serialize)]
@@ -39,13 +39,13 @@ pub async fn server_info(
     sqlx::query("INSERT INTO server_metadata (singleton) VALUES (TRUE) ON CONFLICT DO NOTHING")
         .execute(&state.pool)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .db_ctx("server_info/insert_singleton")?;
 
     let (server_id,): (uuid::Uuid,) =
         sqlx::query_as("SELECT id FROM server_metadata WHERE singleton = TRUE LIMIT 1")
             .fetch_one(&state.pool)
             .await
-            .map_err(|_| AppError::internal("Database error"))?;
+            .db_ctx("server_info/fetch_id")?;
 
     Ok(Json(ServerInfoResponse {
         name: env!("CARGO_PKG_NAME"),

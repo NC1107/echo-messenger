@@ -318,10 +318,7 @@ pub async fn delete_channel(
 
     let deleted = db::channels::soft_delete_channel(&state.pool, channel.id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in delete_channel: {e:?}");
-            AppError::internal("Failed to delete channel")
-        })?;
+        .db_ctx("delete_channel")?;
 
     if !deleted {
         return Err(AppError::bad_request("Channel not found"));
@@ -392,10 +389,7 @@ pub async fn join_voice_channel(
     let (removed_channel_ids, joined) =
         db::channels::leave_and_join_voice_channel(&state.pool, group_id, channel.id, auth.user_id)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in join_voice_channel: {e:?}");
-                AppError::internal("Failed to join voice channel")
-            })?;
+            .db_ctx("join_voice_channel")?;
 
     for old_channel_id in removed_channel_ids {
         if old_channel_id == channel.id {
@@ -447,10 +441,7 @@ pub async fn leave_voice_channel(
 
     let removed = db::channels::leave_voice_channel(&state.pool, channel.id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in leave_voice_channel: {e:?}");
-            AppError::internal("Failed to leave voice channel")
-        })?;
+        .db_ctx("leave_voice_channel")?;
 
     if !removed {
         return Ok(Json(serde_json::json!({ "status": "already_left" })));
@@ -494,10 +485,7 @@ pub async fn update_voice_state(
         body.push_to_talk,
     )
     .await
-    .map_err(|e| {
-        tracing::error!("DB error in update_voice_state: {e:?}");
-        AppError::internal("Failed to update voice state")
-    })?
+    .db_ctx("update_voice_state")?
     .ok_or_else(|| AppError::bad_request("Voice session not found"))?;
 
     broadcast_to_group(

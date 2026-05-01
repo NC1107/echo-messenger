@@ -176,13 +176,7 @@ pub async fn upload_group_key(
             &envelope.encrypted_key,
         )
         .await
-        .map_err(|e| {
-            tracing::error!(
-                "DB error storing envelope for user {}: {e:?}",
-                envelope.user_id
-            );
-            AppError::internal("Failed to store group key envelope")
-        })?;
+        .db_ctx("upload_group_key/store_envelope")?;
     }
 
     tx.commit().await.db_ctx("upload_group_key/commit")?;

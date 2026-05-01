@@ -62,10 +62,7 @@ pub async fn add_reaction(
 
     let reaction = db::reactions::add_reaction(&state.pool, message_id, auth.user_id, &body.emoji)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in add_reaction: {e:?}");
-            AppError::internal("Failed to add reaction")
-        })?;
+        .db_ctx("add_reaction/insert")?;
 
     // Look up username for broadcast
     let user = db::users::find_by_id(&state.pool, auth.user_id)
@@ -115,10 +112,7 @@ pub async fn remove_reaction(
 
     let removed = db::reactions::remove_reaction(&state.pool, message_id, auth.user_id, &emoji)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in remove_reaction: {e:?}");
-            AppError::internal("Failed to remove reaction")
-        })?;
+        .db_ctx("remove_reaction/delete")?;
 
     if !removed {
         return Err(AppError::bad_request("Reaction not found"));
@@ -175,10 +169,7 @@ pub async fn mark_read(
 
     db::reactions::mark_read(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in mark_read: {e:?}");
-            AppError::internal("Failed to mark as read")
-        })?;
+        .db_ctx("mark_read/update")?;
 
     Ok(Json(serde_json::json!({ "status": "read" })))
 }

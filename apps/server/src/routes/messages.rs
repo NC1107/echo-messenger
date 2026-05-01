@@ -237,10 +237,7 @@ pub async fn list_conversations(
     .bind(auth.user_id)
     .fetch_all(&state.pool)
     .await
-    .map_err(|e| {
-        tracing::error!("list_conversations query error: {e}");
-        AppError::internal("Database error")
-    })?;
+    .db_ctx("list_conversations")?;
 
     let mut result = Vec::with_capacity(rows.len());
 
@@ -356,10 +353,7 @@ pub async fn create_dm(
     let conversation_id =
         db::messages::find_or_create_dm_conversation(&state.pool, auth.user_id, req.peer_user_id)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in create_dm/find_or_create: {e:?}");
-                AppError::internal("Failed to create conversation")
-            })?;
+            .db_ctx("create_dm/find_or_create")?;
     Ok(Json(
         serde_json::json!({ "conversation_id": conversation_id }),
     ))
@@ -551,10 +545,7 @@ pub async fn search_messages(
         params.limit.min(50),
     )
     .await
-    .map_err(|e| {
-        tracing::error!("DB error in search_messages: {e:?}");
-        AppError::internal("Search failed")
-    })?;
+    .db_ctx("search_messages")?;
 
     Ok(Json(messages))
 }
@@ -584,10 +575,7 @@ pub async fn search_messages_global(
 
     let results = db::messages::search_messages_global(&state.pool, auth.user_id, q, limit)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in search_messages_global: {e:?}");
-            AppError::internal("Search failed")
-        })?;
+        .db_ctx("search_messages_global")?;
 
     Ok(Json(results))
 }
@@ -618,10 +606,7 @@ pub async fn leave_conversation(
 
     let removed = db::groups::remove_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in leave_conversation: {e:?}");
-            AppError::internal("Failed to leave conversation")
-        })?;
+        .db_ctx("leave_conversation/remove_member")?;
 
     if !removed {
         return Err(AppError::bad_request("Not a member of this conversation"));
@@ -693,7 +678,7 @@ pub async fn set_disappearing_ttl(
     // Verify membership
     let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .db_ctx("set_disappearing_ttl/is_member")?;
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
     }
@@ -701,13 +686,13 @@ pub async fn set_disappearing_ttl(
     // For groups, require admin/owner role
     let kind = db::groups::get_conversation_kind(&state.pool, conversation_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .db_ctx("set_disappearing_ttl/get_kind")?
         .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
 
     if ConversationKind::from_str_opt(&kind) == Some(ConversationKind::Group) {
         let role_str = db::groups::get_member_role(&state.pool, conversation_id, auth.user_id)
             .await
-            .map_err(|_| AppError::internal("Database error"))?;
+            .db_ctx("set_disappearing_ttl/get_role")?;
         let role = role_str
             .and_then(|r| Role::from_str_opt(&r))
             .unwrap_or(Role::Member);
@@ -723,7 +708,7 @@ pub async fn set_disappearing_ttl(
         .bind(conversation_id)
         .execute(&state.pool)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .db_ctx("set_disappearing_ttl/update")?;
 
     Ok(Json(serde_json::json!({
         "conversation_id": conversation_id,
