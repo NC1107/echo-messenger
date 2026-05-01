@@ -4,131 +4,108 @@ import '../models/chat_message.dart';
 import '../utils/debug_log.dart';
 import 'secure_key_store.dart';
 
+/// Per-conversation Hive message cache.
+///
+/// One Hive box is opened lazily per conversation:
+///   echo_msg_userScope_c_convId
+///
+/// This keeps reads O(messages_in_conv) instead of O(total_messages). The
+/// old single-box layout (echo_messages_scope) is dropped on the first
+/// initForUser call because the cache is a performance optimisation, not a
+/// source of truth -- messages reload from the server automatically.
 class MessageCache {
-  static const _boxName = 'echo_messages';
-  static Box<Map>? _box;
+  /// Current user-scoped prefix, e.g. echo_msg_user1_example_com.
+  static String? _userPrefix;
 
-  /// Name of the currently-open Hive box, used to make [initForUser]
-  /// idempotent (skip close/reopen when the target box is already active).
-  static String? _currentBoxName;
+  /// Open per-conversation boxes, keyed by conversationId.
+  static final Map<String, Box<Map>> _convBoxes = {};
+
+  /// Encryption key bytes for the current session, or null for no encryption.
+  static List<int>? _encKeyBytes;
+
+  /// Maximum messages kept per conversation. Oldest entries are evicted when
+  /// the limit is exceeded to bound box size.
+  static const int _maxPerConv = 500;
+
+  /// Compaction: compact a conversation box after 50 deleted entries.
+  static CompactionStrategy get _compactionStrategy =>
+      (entries, deletedEntries) => deletedEntries > 50;
 
   /// Strings that represent decryption failures. These must never be cached
   /// because doing so permanently replaces the real ciphertext and blocks
-  /// future decrypt retries.
-  static const List<String> _failureSentinels = [
+  /// future decrypt retries. Also used by [ConversationsNotifier] to reject
+  /// failure strings from being stored as conversation previews (#664).
+  static const List<String> failureSentinels = [
     '[Message encrypted - history unavailable]',
     '[Encrypted history]',
     '[Could not decrypt - encryption keys may be out of sync]',
   ];
 
   static Future<void> init() async {
-    final keyBytes = await _getEncryptionKey();
-    if (keyBytes != null) {
-      _box = await _openEncryptedBox(_boxName, keyBytes);
-    } else {
-      // Encryption key unavailable (e.g. secure storage not ready pre-login).
-      // Fall back to unencrypted so the app can still start.
-      _box = await Hive.openBox<Map>(_boxName);
-    }
-    _currentBoxName = _boxName;
+    // Pre-fetch the encryption key so it is ready for _openBox calls.
+    _encKeyBytes = await _getEncryptionKey();
   }
 
-  /// Re-initialize with a user-scoped Hive box.
+  /// Re-initialize with a user-scoped prefix.
   /// Call after login to isolate message cache per user.
   ///
-  /// Idempotent: returns immediately if the target box is already open.
-  /// Retries up to 3 times on failure (web IndexedDB can be flaky during
-  /// page refresh). Falls back to the generic shared box on total failure
-  /// so the session can still cache newly-decrypted messages, then throws
-  /// [MessageCacheException] to let the caller log the issue.
+  /// Idempotent: returns immediately if the target prefix is already active.
+  /// Closes previously-open per-conv boxes and drops the legacy single-box
+  /// (echo_messages_scope) -- the cache is regenerable from the server.
   static Future<void> initForUser(String userId, String serverHost) async {
     final sanitized = '${userId}_$serverHost'.replaceAll(RegExp(r'[^\w]'), '_');
-    final targetName = 'echo_messages_$sanitized';
+    final newPrefix = 'echo_msg_$sanitized';
 
-    // Already open on the correct box -- nothing to do.
-    if (_currentBoxName == targetName && _box?.isOpen == true) return;
+    if (_userPrefix == newPrefix) return; // already active
 
-    // Close the previous box if it is open and belongs to a different user.
-    if (_box != null && _box!.isOpen && _currentBoxName != targetName) {
-      try {
-        await _box!.close();
-      } catch (_) {
-        // Close failures on web are non-fatal; the new open will handle it.
-      }
-    }
+    await _closeAllConvBoxes();
+    _userPrefix = newPrefix;
+    _encKeyBytes ??= await _getEncryptionKey();
 
-    final keyBytes = await _getEncryptionKey();
-
-    Object? lastError;
-    for (var attempt = 0; attempt < 3; attempt++) {
-      try {
-        if (keyBytes != null) {
-          _box = await _openEncryptedBox(targetName, keyBytes);
-        } else {
-          _box = await Hive.openBox<Map>(targetName);
-        }
-        _currentBoxName = targetName;
-        return;
-      } catch (e) {
-        lastError = e;
-        await Future<void>.delayed(Duration(milliseconds: 100 * (attempt + 1)));
-      }
-    }
-
-    // All attempts failed -- fall back to generic box so this session can
-    // still cache newly-decrypted messages. Historical cache may be
-    // unavailable.
+    // Drop the legacy single-box so old-format files do not linger on disk.
     try {
-      if (keyBytes != null) {
-        _box = await _openEncryptedBox(_boxName, keyBytes);
-      } else {
-        _box = await Hive.openBox<Map>(_boxName);
-      }
-      _currentBoxName = _boxName;
-    } catch (_) {
-      _box = null;
-      _currentBoxName = null;
-    }
-    throw MessageCacheException(
-      'Failed to open user-scoped Hive box after 3 attempts: $lastError',
-    );
+      await Hive.deleteBoxFromDisk('echo_messages_$sanitized');
+    } catch (_) {}
   }
+
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
 
   static Future<void> cacheMessages(
     String conversationId,
     List<ChatMessage> messages,
   ) async {
-    final box = _box;
+    final box = await _boxForConv(conversationId);
     if (box == null) return;
-    // Build the entries map in one pass so we can flush them all with a
-    // single Hive transaction — N awaited puts caused #636. Same skip
-    // filters and same key/value shape as the previous loop.
     final entries = <String, Map<dynamic, dynamic>>{};
     for (final msg in messages) {
       if (msg.id.startsWith('pending_')) continue;
-      // Skip failure sentinels -- caching these would permanently replace the
-      // real ciphertext and block future retries.
-      if (_failureSentinels.contains(msg.content)) continue;
-      entries['$conversationId:${msg.id}'] = msg.toJson();
+      if (failureSentinels.contains(msg.content)) continue;
+      entries[msg.id] = msg.toJson();
     }
     if (entries.isEmpty) return;
     await box.putAll(entries);
+    // Evict oldest entries when the box exceeds _maxPerConv.
+    if (box.length > _maxPerConv) {
+      final excess = box.length - _maxPerConv;
+      final keysToDelete = box.keys.take(excess).toList();
+      await box.deleteAll(keysToDelete);
+    }
   }
 
-  static List<ChatMessage> getCachedMessages(
+  static Future<List<ChatMessage>> getCachedMessages(
     String conversationId,
     String myUserId,
-  ) {
-    final box = _box;
+  ) async {
+    final box = await _boxForConv(conversationId);
     if (box == null) return [];
     final messages = <ChatMessage>[];
     for (final key in box.keys) {
-      if ((key as String).startsWith('$conversationId:')) {
-        final raw = box.get(key);
-        if (raw != null) {
-          final json = Map<String, dynamic>.from(raw);
-          messages.add(ChatMessage.fromServerJson(json, myUserId));
-        }
+      final raw = box.get(key);
+      if (raw != null) {
+        final json = Map<String, dynamic>.from(raw);
+        messages.add(ChatMessage.fromServerJson(json, myUserId));
       }
     }
     messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -137,33 +114,36 @@ class MessageCache {
 
   /// Look up a single cached message by conversation and message ID.
   ///
-  /// Returns null if the message is not in the cache.  Used by the history
+  /// Returns null if the message is not in the cache. Used by the history
   /// decryption path to avoid re-decrypting messages that were already
   /// decrypted and cached (Double Ratchet keys are consumed once and cannot
   /// be re-derived).
-  static ChatMessage? getCachedMessage(
+  static Future<ChatMessage?> getCachedMessage(
     String conversationId,
     String messageId,
     String myUserId,
-  ) {
-    final box = _box;
+  ) async {
+    final box = await _boxForConv(conversationId);
     if (box == null) return null;
-    final raw = box.get('$conversationId:$messageId');
+    final raw = box.get(messageId);
     if (raw == null) return null;
     final json = Map<String, dynamic>.from(raw);
     return ChatMessage.fromServerJson(json, myUserId);
   }
 
-  /// Return the content of the most recent cached message for a conversation.
-  /// Used by loadConversations() to show decrypted previews for messages that
-  /// were decrypted in a previous session and stored in the Hive cache.
-  static String? getLatestCachedPreview(String conversationId) {
-    final box = _box;
+  /// Return the most recent cached [ChatMessage] for a conversation, or null.
+  ///
+  /// Used by [ChatNotifier.hydrateStatusFromCache] to populate the in-memory
+  /// status map on cold start before any WS read_receipt events arrive (#573).
+  static Future<ChatMessage?> getLatestCachedMessage(
+    String conversationId,
+    String myUserId,
+  ) async {
+    final box = await _boxForConv(conversationId);
     if (box == null) return null;
-    String? latest;
     String? latestTimestamp;
+    ChatMessage? latestMsg;
     for (final key in box.keys) {
-      if (!(key as String).startsWith('$conversationId:')) continue;
       final raw = box.get(key);
       if (raw == null) continue;
       final json = Map<String, dynamic>.from(raw);
@@ -171,7 +151,34 @@ class MessageCache {
           json['created_at'] as String? ?? json['timestamp'] as String? ?? '';
       if (latestTimestamp == null || ts.compareTo(latestTimestamp) > 0) {
         latestTimestamp = ts;
-        latest = json['content'] as String?;
+        latestMsg = ChatMessage.fromServerJson(json, myUserId);
+      }
+    }
+    return latestMsg;
+  }
+
+  /// Return the content of the most recent cached message for a conversation.
+  /// Used by loadConversations() to show decrypted previews for messages that
+  /// were decrypted in a previous session and stored in the Hive cache.
+  static Future<String?> getLatestCachedPreview(String conversationId) async {
+    final box = await _boxForConv(conversationId);
+    if (box == null) return null;
+    String? latest;
+    String? latestTimestamp;
+    for (final key in box.keys) {
+      final raw = box.get(key);
+      if (raw == null) continue;
+      final json = Map<String, dynamic>.from(raw);
+      final ts =
+          json['created_at'] as String? ?? json['timestamp'] as String? ?? '';
+      if (latestTimestamp == null || ts.compareTo(latestTimestamp) > 0) {
+        latestTimestamp = ts;
+        final content = json['content'] as String?;
+        // Skip failure sentinels written before the guard was introduced;
+        // they must not surface as conversation previews (#664).
+        latest = (content != null && failureSentinels.contains(content))
+            ? null
+            : content;
       }
     }
     return latest;
@@ -182,37 +189,90 @@ class MessageCache {
     String conversationId,
     String messageId,
   ) async {
-    await _box?.delete('$conversationId:$messageId');
+    final box = await _boxForConv(conversationId);
+    await box?.delete(messageId);
   }
 
   static Future<void> clearAll() async {
-    await _box?.clear();
-  }
-
-  /// Delete the on-disk Hive box for a (user, server) pair. Used by the
-  /// "Forget server" flow in settings (#PR-2). Idempotent: missing boxes
-  /// are a no-op. Best-effort: deletion failures are swallowed because the
-  /// caller is already wiping a wider scope.
-  static Future<void> dropForServer(String userId, String serverHost) async {
-    final sanitized = '${userId}_$serverHost'.replaceAll(RegExp(r'[^\w]'), '_');
-    final targetName = 'echo_messages_$sanitized';
-    try {
-      // Close it if it happens to be the active box, otherwise this throws.
-      if (_currentBoxName == targetName && _box?.isOpen == true) {
-        try {
-          await _box!.close();
-        } catch (_) {}
-        _box = null;
-        _currentBoxName = null;
-      }
-      await Hive.deleteBoxFromDisk(targetName);
-    } catch (e) {
-      debugLog('dropForServer($targetName) failed: $e', 'MessageCache');
+    final names = _convBoxes.keys.map((c) => _boxName(c)).toList();
+    await _closeAllConvBoxes();
+    for (final name in names) {
+      try {
+        await Hive.deleteBoxFromDisk(name);
+      } catch (_) {}
     }
   }
 
-  /// Number of cached message entries (conversations x messages).
-  static int entryCount() => _box?.length ?? 0;
+  /// Delete all on-disk Hive boxes for a (user, server) pair. Used by the
+  /// 'Forget server' flow in settings. Idempotent: missing boxes are a no-op.
+  static Future<void> dropForServer(String userId, String serverHost) async {
+    final sanitized = '${userId}_$serverHost'.replaceAll(RegExp(r'[^\w]'), '_');
+    final prefix = 'echo_msg_$sanitized';
+    if (_userPrefix == prefix) {
+      final toClose = _convBoxes.keys.toList();
+      for (final convId in toClose) {
+        final box = _convBoxes.remove(convId);
+        try {
+          await box?.close();
+        } catch (_) {}
+        try {
+          await Hive.deleteBoxFromDisk(_boxNameFor(prefix, convId));
+        } catch (_) {}
+      }
+      _userPrefix = null;
+    }
+    try {
+      await Hive.deleteBoxFromDisk('echo_messages_$sanitized');
+    } catch (_) {}
+  }
+
+  /// Total number of cached message entries across all open conv boxes.
+  static int entryCount() =>
+      _convBoxes.values.fold(0, (sum, box) => sum + box.length);
+
+  /// IDs of all conversations that have an open cache box in this session.
+  /// Used by [ExportService] to iterate over cached data.
+  static List<String> get openConversationIds =>
+      List<String>.unmodifiable(_convBoxes.keys);
+
+  // ---------------------------------------------------------------------------
+  // Internals
+  // ---------------------------------------------------------------------------
+
+  static String _boxName(String conversationId) =>
+      _boxNameFor(_userPrefix ?? 'echo_msg_default', conversationId);
+
+  static String _boxNameFor(String prefix, String conversationId) {
+    final safeConv = conversationId.replaceAll(RegExp(r'[^\w]'), '_');
+    return '${prefix}_c_$safeConv';
+  }
+
+  /// Return the box for [conversationId], opening it lazily if necessary.
+  static Future<Box<Map>?> _boxForConv(String conversationId) async {
+    final existing = _convBoxes[conversationId];
+    if (existing != null && existing.isOpen) return existing;
+    if (_userPrefix == null) return null;
+    try {
+      final box = await _openBox(_boxName(conversationId));
+      _convBoxes[conversationId] = box;
+      return box;
+    } catch (e) {
+      debugLog(
+        'MessageCache: failed to open box for $conversationId: $e',
+        'MessageCache',
+      );
+      return null;
+    }
+  }
+
+  static Future<void> _closeAllConvBoxes() async {
+    for (final box in _convBoxes.values) {
+      try {
+        await box.close();
+      } catch (_) {}
+    }
+    _convBoxes.clear();
+  }
 
   /// Retrieve the Hive encryption key from secure storage, or null if
   /// secure storage is not available yet (e.g. before first login).
@@ -225,6 +285,15 @@ class MessageCache {
     }
   }
 
+  /// Open a Hive box (encrypted if a key is available, plain otherwise).
+  static Future<Box<Map>> _openBox(String name) async {
+    final keyBytes = _encKeyBytes;
+    if (keyBytes != null) {
+      return _openEncryptedBox(name, keyBytes);
+    }
+    return Hive.openBox<Map>(name, compactionStrategy: _compactionStrategy);
+  }
+
   /// Open a Hive box with AES encryption. If the box was previously stored
   /// unencrypted (or with a different key), the open will fail with a cipher
   /// mismatch. In that case, delete the old box and recreate it -- the cache
@@ -235,7 +304,11 @@ class MessageCache {
   ) async {
     final cipher = HiveAesCipher(keyBytes);
     try {
-      return await Hive.openBox<Map>(name, encryptionCipher: cipher);
+      return await Hive.openBox<Map>(
+        name,
+        encryptionCipher: cipher,
+        compactionStrategy: _compactionStrategy,
+      );
     } catch (e) {
       // Cipher mismatch with an existing unencrypted box -- delete and retry.
       debugLog(
@@ -247,7 +320,11 @@ class MessageCache {
       } catch (_) {
         // Best-effort deletion; openBox below will overwrite anyway.
       }
-      return await Hive.openBox<Map>(name, encryptionCipher: cipher);
+      return await Hive.openBox<Map>(
+        name,
+        encryptionCipher: cipher,
+        compactionStrategy: _compactionStrategy,
+      );
     }
   }
 }

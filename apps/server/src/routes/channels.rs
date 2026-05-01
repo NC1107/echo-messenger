@@ -71,25 +71,24 @@ fn normalize_channel_name(name: &str) -> String {
     name.trim().to_lowercase().replace(' ', "-")
 }
 
+/// Verify that the user is an active member of a group conversation.
+///
+/// Uses `get_member_context` for a single round-trip (kind + membership).
 async fn ensure_group_member(
     state: &AppState,
     group_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), AppError> {
-    let kind = db::groups::get_conversation_kind(&state.pool, group_id)
+    let ctx = db::groups::get_member_context(&state.pool, group_id, user_id)
         .await
-        .db_ctx("ensure_group_member/get_kind")?
+        .db_ctx("ensure_group_member/get_ctx")?
         .ok_or_else(|| AppError::bad_request("Group not found"))?;
 
-    if ConversationKind::from_str_opt(&kind) != Some(ConversationKind::Group) {
+    if ConversationKind::from_str_opt(&ctx.kind) != Some(ConversationKind::Group) {
         return Err(AppError::bad_request("Conversation is not a group"));
     }
 
-    let is_member = db::groups::is_member(&state.pool, group_id, user_id)
-        .await
-        .db_ctx("ensure_group_member/is_member")?;
-
-    if !is_member {
+    if !ctx.is_member {
         return Err(AppError::unauthorized("Not a member of this group"));
     }
 
@@ -97,15 +96,25 @@ async fn ensure_group_member(
 }
 
 /// Verify that the user is an owner or admin of the group.
+///
+/// Uses `get_member_context` for a single round-trip (kind + membership + role).
+/// Callers that previously called `ensure_group_member` + `ensure_group_admin`
+/// can now call only this function since it checks both conditions.
 async fn ensure_group_admin(
     state: &AppState,
     group_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), AppError> {
-    let role = db::groups::get_member_role(&state.pool, group_id, user_id)
+    let ctx = db::groups::get_member_context(&state.pool, group_id, user_id)
         .await
-        .db_ctx("ensure_group_admin/get_role")?;
-    match role.as_deref().and_then(Role::from_str_opt) {
+        .db_ctx("ensure_group_admin/get_ctx")?
+        .ok_or_else(|| AppError::bad_request("Group not found"))?;
+
+    if !ctx.is_member {
+        return Err(AppError::unauthorized("Not a member of this group"));
+    }
+
+    match ctx.role.as_deref().and_then(Role::from_str_opt) {
         Some(r) if r.is_admin_or_above() => Ok(()),
         _ => Err(AppError::unauthorized(
             "Only group owners and admins can manage channels",
@@ -177,7 +186,7 @@ pub async fn create_channel(
     Path(group_id): Path<Uuid>,
     Json(body): Json<CreateChannelRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    ensure_group_member(&state, group_id, auth.user_id).await?;
+    // Single round-trip: ensure_group_admin checks kind + membership + role.
     ensure_group_admin(&state, group_id, auth.user_id).await?;
 
     let kind = body.kind.trim().to_lowercase();
@@ -251,7 +260,7 @@ pub async fn update_channel(
     Path((group_id, channel_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<UpdateChannelRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    ensure_group_member(&state, group_id, auth.user_id).await?;
+    // Single round-trip: ensure_group_admin checks kind + membership + role.
     ensure_group_admin(&state, group_id, auth.user_id).await?;
     let channel = ensure_channel_in_group(&state, group_id, channel_id).await?;
 
@@ -312,7 +321,7 @@ pub async fn delete_channel(
     State(state): State<Arc<AppState>>,
     Path((group_id, channel_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    ensure_group_member(&state, group_id, auth.user_id).await?;
+    // Single round-trip: ensure_group_admin checks kind + membership + role.
     ensure_group_admin(&state, group_id, auth.user_id).await?;
     let channel = ensure_channel_in_group(&state, group_id, channel_id).await?;
 

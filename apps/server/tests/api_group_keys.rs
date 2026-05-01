@@ -302,3 +302,60 @@ async fn get_version_returns_correct_envelope() {
     assert_eq!(body["encrypted_key"], "v2-key");
     assert_eq!(body["key_version"], 2);
 }
+
+// ---------------------------------------------------------------------------
+// #686 + #687: non-member recipient rejected; no partial state written
+// ---------------------------------------------------------------------------
+
+/// An admin uploading envelopes that include a non-member user_id must get 400
+/// and no envelope rows must be written (transactional rollback, #687).
+#[tokio::test]
+async fn upload_group_key_non_member_recipient_rejected_and_no_partial_state() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (owner_token, owner_id, _) = common::register_and_login(&client, &base, "gknrpown").await;
+    // Stranger is a real user but never added to the group.
+    let (_stranger_token, stranger_id, _) =
+        common::register_and_login(&client, &base, "gknrpstr").await;
+
+    let group_id = common::create_group(&client, &base, &owner_token, "GKNonRecip").await;
+
+    // Envelope list: one valid (owner) + one invalid (stranger non-member).
+    let body = serde_json::json!({
+        "key_version": 1,
+        "envelopes": [
+            { "user_id": owner_id,   "encrypted_key": "owner-envelope" },
+            { "user_id": stranger_id, "encrypted_key": "stranger-envelope" }
+        ]
+    });
+
+    let resp = client
+        .post(format!("{base}/api/groups/{group_id}/keys"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+
+    // Must be rejected (400) -- #686
+    assert_eq!(
+        resp.status().as_u16(),
+        400,
+        "non-member envelope must return 400"
+    );
+
+    // Verify no envelope was persisted for the owner either -- full rollback (#687).
+    let resp = client
+        .get(format!("{base}/api/groups/{group_id}/keys/latest"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .send()
+        .await
+        .unwrap();
+    // 400 == no key exists for this group at all (upload rolled back entirely)
+    assert_eq!(
+        resp.status().as_u16(),
+        400,
+        "no envelope row should have been committed (transaction must have rolled back)"
+    );
+}

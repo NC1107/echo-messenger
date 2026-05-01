@@ -6,10 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 
 import '../models/conversation.dart';
 import '../services/toast_service.dart';
+import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
@@ -19,7 +19,9 @@ import '../providers/conversations_provider.dart';
 import '../providers/media_ticket_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../utils/fuzzy_score.dart';
+import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/profile_sheets.dart';
 
 const _kJsonHeaders = {'Content-Type': 'application/json'};
 const _kGroupInfoTitle = 'Group Info';
@@ -28,6 +30,12 @@ class GroupInfoScreen extends ConsumerStatefulWidget {
   final String conversationId;
 
   const GroupInfoScreen({super.key, required this.conversationId});
+
+  /// Open the group info overlay. Delegates to [showGroupProfileSheet] which
+  /// chooses dialog (desktop) or bottom sheet (mobile) automatically.
+  static void show(BuildContext context, WidgetRef ref, String conversationId) {
+    showGroupProfileSheet(context, ref, conversationId);
+  }
 
   @override
   ConsumerState<GroupInfoScreen> createState() => _GroupInfoScreenState();
@@ -38,6 +46,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   bool _isLoading = true;
   bool _isEditingName = false;
   bool _isEditingDescription = false;
+  bool _isGeneratingInvite = false;
   int? _disappearingTtl; // null = off
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -550,31 +559,28 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final file = result.files.first;
     if (file.bytes == null) return;
 
-    final serverUrl = ref.read(serverUrlProvider);
-    final token = ref.read(authProvider).token;
-    if (token == null) return;
+    // Show the crop dialog; fall through with original bytes if cancelled.
+    final croppedBytes = mounted
+        ? await showAvatarCropDialog(context, file.bytes!)
+        : null;
+    if (croppedBytes == null) return; // user cancelled
 
-    final uri = Uri.parse(
-      '$serverUrl/api/groups/${widget.conversationId}/avatar',
-    );
-    final request = http.MultipartRequest('PUT', uri)
-      ..headers['Authorization'] = 'Bearer $token'
-      ..files.add(
-        http.MultipartFile.fromBytes(
-          'avatar',
-          file.bytes!,
-          filename: file.name,
-          contentType: MediaType('image', 'png'),
-        ),
-      );
+    final serverUrl = ref.read(serverUrlProvider);
 
     try {
-      final streamedResponse = await request.send();
-      // Drain the response body to close the stream.
-      await streamedResponse.stream.bytesToString();
+      final uploader = UploadClient(ref.read(authProvider.notifier));
+      final result = await uploader.uploadFile(
+        serverUrl: serverUrl,
+        path: '/api/groups/${widget.conversationId}/avatar',
+        bytes: croppedBytes,
+        fileName: 'avatar.jpg',
+        mimeType: 'image/jpeg',
+        method: 'PUT',
+        fieldName: 'avatar',
+      );
       if (!mounted) return;
 
-      if (streamedResponse.statusCode == 200) {
+      if (result.ok) {
         await ref.read(conversationsProvider.notifier).loadConversations();
         await _loadGroupInfo(force: true);
         if (mounted) {
@@ -587,7 +593,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       } else {
         ToastService.show(
           context,
-          'Failed to upload avatar (${streamedResponse.statusCode})',
+          result.errorMessage ??
+              'Failed to upload avatar (${result.statusCode})',
           type: ToastType.error,
         );
       }
@@ -1160,6 +1167,61 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     );
   }
 
+  /// Calls `POST /api/groups/:id/invites` to generate a fresh invite token,
+  /// then copies the returned URL to the clipboard.
+  Future<void> _generateAndCopyInviteLink() async {
+    setState(() => _isGeneratingInvite = true);
+    final serverUrl = ref.read(serverUrlProvider);
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.post(
+              Uri.parse(
+                '$serverUrl/api/groups/${widget.conversationId}/invites',
+              ),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: '{}',
+            ),
+          );
+      if (!mounted) return;
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final url = data['url'] as String? ?? '';
+        await Clipboard.setData(ClipboardData(text: url));
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Invite link copied to clipboard',
+            type: ToastType.success,
+          );
+        }
+      } else {
+        String msg = 'Failed to generate invite link';
+        try {
+          final body = jsonDecode(response.body) as Map<String, dynamic>;
+          msg = body['error'] as String? ?? msg;
+        } catch (_) {}
+        if (mounted) {
+          ToastService.show(context, msg, type: ToastType.error);
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Could not reach server',
+          type: ToastType.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isGeneratingInvite = false);
+    }
+  }
+
   List<Widget> _buildActionButtons({required String myRole}) {
     return [
       const Divider(),
@@ -1167,17 +1229,14 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: OutlinedButton.icon(
-          onPressed: () {
-            final link =
-                'https://echo-messenger.us/#/join/${widget.conversationId}';
-            Clipboard.setData(ClipboardData(text: link));
-            ToastService.show(
-              context,
-              'Invite link copied to clipboard',
-              type: ToastType.success,
-            );
-          },
-          icon: const Icon(Icons.link_outlined),
+          onPressed: _isGeneratingInvite ? null : _generateAndCopyInviteLink,
+          icon: _isGeneratingInvite
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.link_outlined),
           label: const Text('Copy Invite Link'),
         ),
       ),

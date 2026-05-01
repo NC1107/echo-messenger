@@ -11,7 +11,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/chat_message.dart';
@@ -26,10 +25,13 @@ import '../providers/voice_settings_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/settings/privacy_section.dart'
     show readPreserveOriginalFilenames;
+import '../services/slash_commands.dart';
 import '../services/toast_service.dart';
+import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../utils/clipboard_image_helper.dart';
+import 'input/markdown_toolbar.dart';
 import 'input/pending_attachments_strip.dart';
 import 'input/input_status_bar.dart';
 import 'input/mention_autocomplete.dart';
@@ -429,6 +431,23 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final text = caption;
     if (text.isEmpty) return;
 
+    // Slash-command interception: parse before encrypting/sending.
+    final slashCmd = parseSlashCommand(text);
+    if (slashCmd != null) {
+      final handled = await dispatchSlashCommand(
+        slashCmd,
+        widget.conversation,
+        ref,
+        context,
+      );
+      if (handled) {
+        _messageController.clear();
+        _saveDraftImmediate(widget.conversation.id, '');
+        return;
+      }
+      // Unknown command — fall through and send as plain text.
+    }
+
     await _doSend(text);
     _messageController.clear();
     _saveDraftImmediate(widget.conversation.id, '');
@@ -729,71 +748,9 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     }
   }
 
-  /// Upload media with automatic 401→token-refresh→retry.
+  /// Upload media with automatic 401→token-refresh→retry via [UploadClient].
   ///
-  /// MultipartRequest streams are consumed on send, so we rebuild the request
-  /// on retry rather than replaying the same object.
-  /// Build a multipart upload request for the given file data.
-  http.MultipartRequest _buildUploadRequest({
-    required String serverUrl,
-    required String token,
-    required List<int> bytes,
-    required String fileName,
-    required String mimeType,
-    void Function(int sent, int total)? onProgress,
-  }) {
-    final request = http.MultipartRequest(
-      'POST',
-      Uri.parse('$serverUrl/api/media/upload'),
-    );
-    request.headers['Authorization'] = 'Bearer $token';
-    request.fields['conversation_id'] = widget.conversation.id;
-
-    final parts = mimeType.split('/');
-    final mediaType = parts.length == 2
-        ? MediaType(parts[0], parts[1])
-        : MediaType('application', _kOctetStream);
-
-    if (onProgress == null) {
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: fileName,
-          contentType: mediaType,
-        ),
-      );
-    } else {
-      // Wrap the byte payload in a chunked async stream so we can report
-      // upload progress per chunk. The numbers reflect *stream emission*
-      // rather than wire-level progress (the OS socket buffers some bytes),
-      // but for files >1 MB the progress is reasonably accurate after the
-      // buffer fills.
-      const chunkSize = 64 * 1024;
-      final total = bytes.length;
-      Stream<List<int>> chunked() async* {
-        var offset = 0;
-        while (offset < total) {
-          final end = (offset + chunkSize).clamp(0, total);
-          yield bytes.sublist(offset, end);
-          offset = end;
-          onProgress(offset, total);
-        }
-      }
-
-      request.files.add(
-        http.MultipartFile(
-          'file',
-          chunked(),
-          total,
-          filename: fileName,
-          contentType: mediaType,
-        ),
-      );
-    }
-    return request;
-  }
-
+  /// Returns the server-assigned URL on success, or null on failure.
   Future<String?> _uploadWithAuthRetry({
     required String serverUrl,
     required List<int> bytes,
@@ -807,43 +764,25 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final preserve = await readPreserveOriginalFilenames();
     final uploadFileName = preserve ? fileName : _genericFilename(fileName);
 
-    for (var attempt = 0; attempt < 2; attempt++) {
-      final token = ref.read(authProvider).token;
-      if (token == null) return null;
+    final uploader = UploadClient(ref.read(authProvider.notifier));
+    final result = await uploader.uploadFile(
+      serverUrl: serverUrl,
+      path: '/api/media/upload',
+      bytes: bytes,
+      fileName: uploadFileName,
+      mimeType: mimeType,
+      extraFields: {'conversation_id': widget.conversation.id},
+      onProgress: onProgress,
+    );
 
-      final request = _buildUploadRequest(
-        serverUrl: serverUrl,
-        token: token,
-        bytes: bytes,
-        fileName: uploadFileName,
-        mimeType: mimeType,
-        onProgress: onProgress,
+    if (result.ok) return result.url;
+
+    if (mounted && !result.ok) {
+      ToastService.show(
+        context,
+        'Upload failed (${result.statusCode})',
+        type: ToastType.error,
       );
-
-      final response = await request.send();
-      final body = await response.stream.bytesToString();
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(body);
-        return data['url'] as String?;
-      }
-
-      if (response.statusCode == 401 && attempt == 0) {
-        final refreshed = await ref
-            .read(authProvider.notifier)
-            .refreshAccessToken();
-        if (!refreshed) return null;
-        continue;
-      }
-
-      if (mounted) {
-        ToastService.show(
-          context,
-          'Upload failed (${response.statusCode})',
-          type: ToastType.error,
-        );
-      }
-      return null;
     }
     return null;
   }
@@ -1903,6 +1842,74 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     return _sendMessage;
   }
 
+  // ---------------------------------------------------------------------------
+  // Markdown toolbar
+  // ---------------------------------------------------------------------------
+
+  Future<void> _showLinkDialog() async {
+    final urlController = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Insert link'),
+        content: TextField(
+          controller: urlController,
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(hintText: 'https://…'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, urlController.text.trim()),
+            child: const Text('Insert'),
+          ),
+        ],
+      ),
+    );
+    urlController.dispose();
+    if (url == null || url.isEmpty) return;
+    if (!mounted) return;
+
+    final sel = _messageController.selection;
+    final text = _messageController.text;
+    final hasSelection = sel.isValid && sel.start != sel.end;
+    final label = hasSelection ? text.substring(sel.start, sel.end) : 'link';
+
+    if (hasSelection) {
+      // Replace selection with [label](url)
+      final newText =
+          '${text.substring(0, sel.start)}[$label]($url)${text.substring(sel.end)}';
+      _messageController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(
+          offset: sel.start + newText.length - text.substring(sel.end).length,
+        ),
+      );
+    } else {
+      // Insert at cursor
+      final pos = sel.isValid ? sel.start : text.length;
+      final inserted = '[$label]($url)';
+      final newText = text.substring(0, pos) + inserted + text.substring(pos);
+      _messageController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: pos + inserted.length),
+      );
+    }
+    _inputFocusNode.requestFocus();
+  }
+
+  Widget _buildMarkdownToolbar() {
+    return MarkdownToolbar(
+      controller: _messageController,
+      onLinkTap: _showLinkDialog,
+    );
+  }
+
   Widget _buildSendButton() {
     final hasContent = !_isTextEmpty || _allPendingAttachmentsReady;
 
@@ -2185,6 +2192,9 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                       attachments: _pendingAttachments,
                       onCancel: _removePendingAttachment,
                     ),
+                  // Markdown formatting toolbar (bold, italic, strike, code,
+                  // quote, link) — always visible above the input row.
+                  _buildMarkdownToolbar(),
                   _buildInputRow(
                     showMediaPicker: showMediaPicker,
                     isMobileLayout: isMobileLayout,

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/chat_message.dart';
+import '../models/conversation.dart';
 import '../models/reaction.dart';
 import '../services/crypto_service.dart';
 import '../services/debug_log_service.dart';
@@ -126,6 +127,15 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   /// Drained by [drainPendingDecryptQueue] once crypto is ready.
   final List<Map<String, dynamic>> _pendingDecryptQueue = [];
 
+  /// Clear all online-user state on disconnect so reconnect snapshot starts clean.
+  ///
+  /// Called by the connection lifecycle (onDone/onError) before scheduling a
+  /// reconnect. The server sends a `presence_list` snapshot immediately on
+  /// reconnect which repopulates the map with accurate data (#436).
+  void clearOnlineUsers() {
+    state = state.copyWith(onlineUsers: const {}, presenceStatuses: const {});
+  }
+
   /// Decrypt queued messages that arrived before crypto init completed.
   void drainPendingDecryptQueue(String myUserId) {
     if (_pendingDecryptQueue.isEmpty) return;
@@ -225,6 +235,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
         _handleCallStarted(json);
       case 'canvas_event':
         _handleCanvasEvent(json);
+      case 'member_added':
+        _handleMemberAdded(json);
       default:
         DebugLogService.instance.log(
           LogLevel.warning,
@@ -385,6 +397,26 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     }
   }
 
+  /// Sentinel prefix used by system messages (#663).
+  static const _systemPrefix = '__system__:';
+
+  /// Parse a `__system__:member_joined:<uuid>:<username>` sentinel and emit
+  /// an in-chat system event pill. No preview update, no unread increment.
+  void _handleSystemSentinel(String sentinel, String conversationId) {
+    if (conversationId.isEmpty) return;
+    const joinedTag = '__system__:member_joined:';
+    if (sentinel.startsWith(joinedTag)) {
+      final rest = sentinel.substring(joinedTag.length);
+      final colonIdx = rest.indexOf(':');
+      final username = colonIdx >= 0 ? rest.substring(colonIdx + 1) : rest;
+      if (username.isNotEmpty) {
+        ref
+            .read(chatProvider.notifier)
+            .addSystemEvent(conversationId, '$username joined the group');
+      }
+    }
+  }
+
   void _handleNewMessage(Map<String, dynamic> json, String myUserId) {
     final rawContent = json['content'] as String;
     final fromUserId = json['from_user_id'] as String;
@@ -392,6 +424,14 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     final conversationId = json['conversation_id'] as String;
     final timestamp = json['timestamp'] as String;
     final senderUsername = json['from_username'] as String;
+
+    // System message sentinel -- render as an in-chat event pill and skip the
+    // normal decrypt/preview pipeline entirely (#663).
+    if (rawContent.startsWith(_systemPrefix)) {
+      _handleSystemSentinel(rawContent, conversationId);
+      return;
+    }
+
     final cryptoState = ref.read(cryptoProvider);
 
     // Check if this conversation is already known locally
@@ -890,9 +930,56 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     );
   }
 
+  /// Replace the local online-set from a server-sent `presence_list` snapshot.
+  ///
+  /// The server emits this event right after a WS connect so the client can
+  /// reconcile stale presence state in one shot (#436).
+  ///
+  /// Supports two payload shapes:
+  ///   • object list: `[{"user_id":"…","status":"…"}, …]`  (new format, post-#436)
+  ///   • string list: `["uuid1", "uuid2", …]`              (legacy, treat all as "online")
   void _handlePresenceList(Map<String, dynamic> json) {
-    final users = (json['users'] as List?)?.cast<String>() ?? [];
-    state = state.copyWith(onlineUsers: users.toSet());
+    final rawUsers = json['users'] as List? ?? [];
+    final newOnline = <String>{};
+    final newStatuses = <String, String>{};
+
+    for (final entry in rawUsers) {
+      if (entry is String) {
+        // Legacy format: plain ID list.
+        newOnline.add(entry);
+        newStatuses[entry] = 'online';
+      } else if (entry is Map<String, dynamic>) {
+        final userId = entry['user_id'] as String? ?? '';
+        final status = entry['status'] as String? ?? 'online';
+        if (userId.isEmpty) continue;
+        newOnline.add(userId);
+        newStatuses[userId] = status;
+      }
+    }
+
+    state = state.copyWith(
+      onlineUsers: newOnline,
+      presenceStatuses: newStatuses,
+    );
+  }
+
+  /// #660 — Insert the newly-joined member into the local conversations state
+  /// so the members panel refreshes in real time without a manual reload.
+  void _handleMemberAdded(Map<String, dynamic> json) {
+    final conversationId = json['conversation_id'] as String? ?? '';
+    final userId = json['user_id'] as String? ?? '';
+    final username = json['username'] as String? ?? '';
+    if (conversationId.isEmpty || userId.isEmpty || username.isEmpty) return;
+
+    final member = ConversationMember(
+      userId: userId,
+      username: username,
+      role: json['role'] as String? ?? 'member',
+      avatarUrl: json['avatar_url'] as String?,
+    );
+    ref
+        .read(conversationsProvider.notifier)
+        .addGroupMember(conversationId, member);
   }
 
   void _handleCanvasEvent(Map<String, dynamic> json) {

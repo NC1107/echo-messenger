@@ -13,17 +13,10 @@ import '../providers/canvas_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+import 'voice_speaking_ring.dart';
 
 const double _kAvatarSize = 48.0;
 const double _kAvatarHalfSize = _kAvatarSize / 2;
-
-// ---------------------------------------------------------------------------
-// VoiceCanvas
-// ---------------------------------------------------------------------------
 
 /// Interactive voice-lounge canvas.
 ///
@@ -58,7 +51,6 @@ class VoiceCanvas extends ConsumerStatefulWidget {
 class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
   final _canvasKey = GlobalKey();
 
-  // Clipboard paste listener
   late final FocusNode _focusNode;
 
   @override
@@ -94,10 +86,6 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     super.dispose();
   }
 
-  // -------------------------------------------------------------------------
-  // Coordinate helpers
-  // -------------------------------------------------------------------------
-
   Size _canvasSize() {
     final box = _canvasKey.currentContext?.findRenderObject() as RenderBox?;
     return box?.size ?? const Size(400, 300);
@@ -116,10 +104,6 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     return Offset(norm.x * size.width, norm.y * size.height);
   }
 
-  // -------------------------------------------------------------------------
-  // Build
-  // -------------------------------------------------------------------------
-
   @override
   Widget build(BuildContext context) {
     final canvas = ref.watch(canvasProvider);
@@ -133,16 +117,13 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
       onKeyEvent: (node, event) => _handleKeyEvent(event),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        // Paste shortcut handled via keyboard, clipboard handled via toolbar
         child: Column(
           children: [
-            // Canvas area
             Expanded(
               child: ClipRect(
                 child: Stack(
                   key: _canvasKey,
                   children: [
-                    // 1. Drawing layer (CustomPaint + gesture input)
                     Positioned.fill(
                       child: _DrawingLayer(
                         canvas: canvas,
@@ -170,11 +151,7 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
                         },
                       ),
                     ),
-
-                    // 2. Images layer
                     ..._buildImages(canvas, authState),
-
-                    // 3. Avatars layer
                     ..._buildAvatars(canvas, myUserId, authState),
                   ],
                 ),
@@ -186,10 +163,6 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     );
   }
 
-  // -------------------------------------------------------------------------
-  // Avatar widgets
-  // -------------------------------------------------------------------------
-
   List<Widget> _buildAvatars(
     CanvasState canvas,
     String myUserId,
@@ -200,10 +173,8 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     final voiceState = widget.voiceState;
     final size = _canvasSize();
 
-    // Collect all participants
     final participants = <_ParticipantInfo>[];
 
-    // Local user -- resolve camera video track
     final localName = authState.username ?? 'You';
     lk.VideoTrack? localVideoTrack;
     if (room != null && voiceState.isVideoEnabled) {
@@ -217,14 +188,13 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
         userId: myUserId,
         name: localName,
         avatarUrl: widget.localAvatarUrl,
-        isSpeaking: voiceState.localAudioLevel > 0.05,
+        audioLevel: voiceState.localAudioLevel,
         isLocal: true,
         videoTrack: localVideoTrack,
         mirror: true,
       ),
     );
 
-    // Remote participants from LiveKit room
     if (room != null) {
       for (final p in room.remoteParticipants.values) {
         final uid = p.identity;
@@ -243,7 +213,7 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
             userId: uid,
             name: participantDisplayName(p),
             avatarUrl: null,
-            isSpeaking: level > 0.05,
+            audioLevel: level,
             isLocal: false,
             videoTrack: remoteVideo,
           ),
@@ -321,10 +291,6 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     );
   }
 
-  // -------------------------------------------------------------------------
-  // Image widgets
-  // -------------------------------------------------------------------------
-
   List<Widget> _buildImages(CanvasState canvas, AuthState authState) {
     final size = _canvasSize();
     final token = authState.token;
@@ -346,7 +312,6 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
           image: img,
           httpHeaders: httpHeaders,
           onMove: (dx, dy) {
-            // Read current position from provider state to avoid stale closure
             final current = ref
                 .read(canvasProvider)
                 .images
@@ -376,10 +341,6 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     }).toList();
   }
 
-  // -------------------------------------------------------------------------
-  // Keyboard / clipboard
-  // -------------------------------------------------------------------------
-
   KeyEventResult _handleKeyEvent(KeyEvent event) {
     if (event is KeyDownEvent) {
       final isCtrl =
@@ -396,7 +357,6 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
   Future<void> _handlePasteImage() async {
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
-      // If clipboard text looks like a URL, add it as an image
       final text = data?.text ?? '';
       if (text.startsWith('http://') || text.startsWith('https://')) {
         _addImageFromUrl(text);
@@ -409,7 +369,6 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
 
   void _addImageFromUrl(String url) {
     final rng = math.Random();
-    // Place image near center with some randomness
     final img = CanvasImage(
       id: newCanvasId(),
       url: url,
@@ -421,10 +380,6 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
     ref.read(canvasProvider.notifier).addImage(img);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Drawing layer
-// ---------------------------------------------------------------------------
 
 class _DrawingLayer extends StatelessWidget {
   final CanvasState canvas;
@@ -441,8 +396,6 @@ class _DrawingLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // When no drawing tool is active, defer hit testing to children so that
-    // avatar drag gestures underneath the canvas layer are not blocked.
     final behavior = canvas.selectedTool == CanvasTool.none
         ? HitTestBehavior.deferToChild
         : HitTestBehavior.translucent;
@@ -468,10 +421,6 @@ class _DrawingLayer extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// CustomPainter
-// ---------------------------------------------------------------------------
-
 class _CanvasPainter extends CustomPainter {
   final CanvasState canvas;
 
@@ -479,8 +428,6 @@ class _CanvasPainter extends CustomPainter {
 
   @override
   void paint(Canvas c, Size size) {
-    // Wrap everything in a single saveLayer so eraser BlendMode.clear
-    // can erase pixels drawn by earlier pen strokes in the same layer.
     c.saveLayer(Offset.zero & size, Paint());
 
     for (final stroke in canvas.strokes) {
@@ -524,7 +471,6 @@ class _CanvasPainter extends CustomPainter {
 
     final first = stroke.points.first;
 
-    // Single-point tap: draw a dot.
     if (stroke.points.length == 1) {
       c.drawCircle(
         Offset(first.x * size.width, first.y * size.height),
@@ -561,24 +507,22 @@ class _CanvasPainter extends CustomPainter {
       old.canvas.activePoints != canvas.activePoints;
 }
 
-// ---------------------------------------------------------------------------
-// Draggable avatar
-// ---------------------------------------------------------------------------
-
 class _ParticipantInfo {
   final String userId;
   final String name;
   final String? avatarUrl;
-  final bool isSpeaking;
+  final double audioLevel;
   final bool isLocal;
   final lk.VideoTrack? videoTrack;
   final bool mirror;
+
+  bool get isSpeaking => audioLevel > 0.05;
 
   const _ParticipantInfo({
     required this.userId,
     required this.name,
     required this.avatarUrl,
-    required this.isSpeaking,
+    required this.audioLevel,
     required this.isLocal,
     this.videoTrack,
     this.mirror = false,
@@ -615,8 +559,6 @@ class _DraggableAvatar extends StatefulWidget {
 }
 
 class _DraggableAvatarState extends State<_DraggableAvatar> {
-  /// Tracks the live drag position so `onPanEnd` commits the latest value
-  /// instead of the stale `widget.currentPos` prop from before the drag.
   CanvasPoint? _localPos;
 
   @override
@@ -626,10 +568,6 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
     final avatarColor = HSLColor.fromAHSL(1.0, hue, 0.5, 0.35).toColor();
     final initial = info.name.isNotEmpty ? info.name[0].toUpperCase() : '?';
 
-    final speakRingColor = info.isSpeaking
-        ? EchoTheme.online
-        : Colors.transparent;
-    final ringWidth = info.isSpeaking ? 3.5 : 2.0;
     final scale = info.isSpeaking ? 1.12 : 1.0;
 
     final hasVideo = info.videoTrack != null;
@@ -652,7 +590,7 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
           )
         : _initialsWidget(initial);
 
-    Widget tile = Container(
+    final tile = Container(
       width: _kAvatarSize,
       height: _kAvatarSize,
       decoration: BoxDecoration(
@@ -667,36 +605,35 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
           : Stack(
               fit: StackFit.expand,
               children: [
-                // Solid semi-transparent fill instead of a per-tile
-                // BackdropFilter -- avoids N GPU blur passes per frame.
                 Container(color: avatarColor.withValues(alpha: 0.55)),
                 innerContent,
               ],
             ),
     );
 
-    Widget avatar = AnimatedScale(
+    final avatar = AnimatedScale(
       scale: scale,
       duration: const Duration(milliseconds: 150),
-      child: Container(
-        width: _kAvatarSize,
-        height: _kAvatarSize,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: speakRingColor, width: ringWidth),
-          boxShadow: [
-            BoxShadow(
-              color: context.mainBg.withValues(alpha: 0.35),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
+      child: VoiceSpeakingRing(
+        audioLevel: info.audioLevel,
+        child: Container(
+          width: _kAvatarSize,
+          height: _kAvatarSize,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: context.mainBg.withValues(alpha: 0.35),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: tile,
         ),
-        child: tile,
       ),
     );
 
-    // Username label below avatar
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -760,10 +697,6 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
     ),
   );
 }
-
-// ---------------------------------------------------------------------------
-// Canvas image widget
-// ---------------------------------------------------------------------------
 
 class _CanvasImageWidget extends StatefulWidget {
   final CanvasImage image;

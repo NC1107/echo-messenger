@@ -1,16 +1,12 @@
-import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
-import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
 import '../models/canvas_models.dart';
@@ -22,11 +18,13 @@ import '../providers/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/voice_settings_provider.dart';
+import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
 import '../widgets/lounge_drawing_canvas.dart' hide CanvasImage;
 import '../widgets/vertex_mesh_background.dart';
 import '../widgets/voice_canvas.dart';
+import '../widgets/voice_speaking_ring.dart';
 
 const _kScreenshareLocal = 'screenshare-local';
 
@@ -842,11 +840,11 @@ class _ParticipantGrid extends StatelessWidget {
   Widget _buildGridLayout(List<Widget> tiles) {
     return Center(
       child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
+        spacing: 8,
+        runSpacing: 8,
         alignment: WrapAlignment.center,
         children: tiles
-            .map((t) => SizedBox(width: 96, height: 128, child: t))
+            .map((t) => SizedBox(width: 112, height: 136, child: t))
             .toList(),
       ),
     );
@@ -916,29 +914,35 @@ class _ParticipantTile extends StatelessWidget {
               : null,
         ),
         clipBehavior: Clip.antiAlias,
-        child: Container(
-          color: context.surface.withValues(alpha: kIsWeb ? 0.65 : 0.45),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Video or avatar
-              if (hasVideo && videoTrack != null)
-                lk.VideoTrackRenderer(
-                  videoTrack!,
-                  fit: lk.VideoViewFit.cover,
-                  mirrorMode: mirror
-                      ? lk.VideoViewMirrorMode.mirror
-                      : lk.VideoViewMirrorMode.off,
-                )
-              else
-                _AvatarCircle(
-                  name: name,
-                  avatarUrl: avatarUrl,
-                  isSpeaking: isSpeaking,
-                  authToken: authToken,
-                ),
-              _buildNameLabel(context),
-            ],
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(15),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              color: context.surface.withValues(alpha: 0.30),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Video or avatar
+                  if (hasVideo && videoTrack != null)
+                    lk.VideoTrackRenderer(
+                      videoTrack!,
+                      fit: lk.VideoViewFit.cover,
+                      mirrorMode: mirror
+                          ? lk.VideoViewMirrorMode.mirror
+                          : lk.VideoViewMirrorMode.off,
+                    )
+                  else
+                    _AvatarCircle(
+                      name: name,
+                      avatarUrl: avatarUrl,
+                      audioLevel: audioLevel,
+                      authToken: authToken,
+                    ),
+                  _buildNameLabel(context),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -1036,13 +1040,13 @@ class _ParticipantTile extends StatelessWidget {
 class _AvatarCircle extends StatelessWidget {
   final String name;
   final String? avatarUrl;
-  final bool isSpeaking;
+  final double audioLevel;
   final String? authToken;
 
   const _AvatarCircle({
     required this.name,
     this.avatarUrl,
-    required this.isSpeaking,
+    required this.audioLevel,
     this.authToken,
   });
 
@@ -1054,51 +1058,47 @@ class _AvatarCircle extends StatelessWidget {
     final hue = (name.hashCode % 360).abs().toDouble();
     final avatarColor = HSLColor.fromAHSL(1.0, hue, 0.5, 0.35).toColor();
 
-    return Center(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: avatarColor,
-          border: Border.all(
-            color: isSpeaking ? EchoTheme.online : Colors.transparent,
-            width: 2,
-          ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: avatarUrl != null
-            ? Image.network(
-                avatarUrl!,
-                headers: authToken != null
-                    ? {'Authorization': 'Bearer $authToken'}
-                    : null,
-                fit: BoxFit.cover,
-                width: 48,
-                height: 48,
-                errorBuilder: (_, _, _) => Center(
-                  child: Text(
-                    initial,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              )
-            : Center(
+    const double avatarSize = 80;
+
+    final circle = Container(
+      width: avatarSize,
+      height: avatarSize,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: avatarColor),
+      clipBehavior: Clip.antiAlias,
+      child: avatarUrl != null
+          ? Image.network(
+              avatarUrl!,
+              headers: authToken != null
+                  ? {'Authorization': 'Bearer $authToken'}
+                  : null,
+              fit: BoxFit.cover,
+              width: avatarSize,
+              height: avatarSize,
+              errorBuilder: (_, _, _) => Center(
                 child: Text(
                   initial,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 18,
+                    fontSize: 28,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-      ),
+            )
+          : Center(
+              child: Text(
+                initial,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+    );
+
+    return Center(
+      child: VoiceSpeakingRing(audioLevel: audioLevel, child: circle),
     );
   }
 }
@@ -2296,7 +2296,6 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
     // state is disposed while the file picker or upload is in progress.
     final conversationId = widget.conversationId;
     final serverUrl = ref.read(serverUrlProvider);
-    final token = ref.read(authProvider).token;
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.image,
@@ -2314,40 +2313,21 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
         return;
       }
 
-      if (token == null) {
-        if (ctx.mounted) {
-          ScaffoldMessenger.of(ctx).showSnackBar(
-            const SnackBar(content: Text('Sign in required to upload image')),
-          );
-        }
-        return;
-      }
-
       final ext = file.extension?.toLowerCase() ?? 'png';
       final mimeType = _mimeForExtension(ext);
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$serverUrl/api/media/upload'),
+      final uploader = UploadClient(ref.read(authProvider.notifier));
+      final uploadResult = await uploader.uploadFile(
+        serverUrl: serverUrl,
+        path: '/api/media/upload',
+        bytes: bytes,
+        fileName: file.name,
+        mimeType: mimeType,
+        extraFields: {'conversation_id': conversationId},
       );
-      request.headers['Authorization'] = 'Bearer $token';
-      request.fields['conversation_id'] = conversationId;
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: file.name,
-          contentType: MediaType.parse(mimeType),
-        ),
-      );
-
-      final response = await request.send();
-      if (!mounted) return;
-      final body = await response.stream.bytesToString();
       if (!mounted) return;
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(body) as Map<String, dynamic>;
-        final relUrl = data['url'] as String? ?? '';
+      if (uploadResult.ok) {
+        final relUrl = uploadResult.url ?? '';
         final absUrl = relUrl.startsWith('http') ? relUrl : '$serverUrl$relUrl';
         _addImageByUrl(absUrl);
       } else {

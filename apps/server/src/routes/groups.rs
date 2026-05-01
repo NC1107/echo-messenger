@@ -6,6 +6,8 @@ use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
@@ -14,7 +16,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::db;
-use crate::error::{AppError, DbErrCtx};
+use crate::error::{AppError, DbErrCtx, ErrorCode};
 use crate::types::{ConversationKind, Role};
 use crate::ws::typing_service::invalidate_member_cache;
 
@@ -95,6 +97,7 @@ pub struct PublicGroupsQuery {
 pub struct PublicGroupResponse {
     pub id: Uuid,
     pub title: Option<String>,
+    pub description: Option<String>,
     pub member_count: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub is_member: bool,
@@ -225,7 +228,10 @@ pub async fn get_group(
         .db_ctx("get_group/is_member")?;
 
     if !is_member {
-        return Err(AppError::unauthorized("Not a member of this group"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this group",
+        ));
     }
 
     let group = db::groups::get_group(&state.pool, group_id)
@@ -268,7 +274,7 @@ pub async fn add_member(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("add_member/get_caller_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     // Verify it's a group conversation
     let kind = db::groups::get_conversation_kind(&state.pool, group_id)
@@ -313,7 +319,10 @@ pub async fn add_member(
         .await
         .db_ctx("add_member/is_member")?;
     if already_member {
-        return Err(AppError::conflict("User is already a member"));
+        return Err(AppError::with_code(
+            ErrorCode::AlreadyMember,
+            "User is already a member",
+        ));
     }
 
     let added = db::groups::add_member(&state.pool, group_id, body.user_id)
@@ -321,10 +330,62 @@ pub async fn add_member(
         .db_ctx("add_member/insert")?;
 
     if !added {
-        return Err(AppError::conflict("User is already a member"));
+        return Err(AppError::with_code(
+            ErrorCode::AlreadyMember,
+            "User is already a member",
+        ));
     }
 
     invalidate_member_cache(group_id);
+
+    // Notify existing members that someone was added so their member list
+    // updates in real time without a manual refresh (#660).
+    let new_user = user_exists.unwrap(); // already checked is_some above
+    let existing_members = db::groups::get_conversation_member_ids(&state.pool, group_id)
+        .await
+        .unwrap_or_default();
+    let event = serde_json::json!({
+        "type": "member_added",
+        "conversation_id": group_id,
+        "user_id": body.user_id,
+        "username": new_user.username,
+        "avatar_url": new_user.avatar_url,
+        "role": "member",
+    });
+    if let Ok(s) = serde_json::to_string(&event) {
+        // Exclude the newly-added user; they get the group via their own
+        // loadConversations call after the HTTP 200.
+        state
+            .hub
+            .broadcast_json(&existing_members, &s, Some(body.user_id));
+    }
+
+    // Persist a system message and broadcast as new_message so all members see
+    // an in-chat "X joined" pill in real time (#663).
+    let sentinel = format!(
+        "__system__:member_joined:{}:{}",
+        body.user_id, new_user.username
+    );
+    if let Ok(sys_msg) =
+        db::messages::insert_system_message(&state.pool, group_id, body.user_id, &sentinel).await
+    {
+        let all_members = db::groups::get_conversation_member_ids(&state.pool, group_id)
+            .await
+            .unwrap_or_default();
+        let ws_event = serde_json::json!({
+            "type": "new_message",
+            "message_id": sys_msg.id,
+            "from_user_id": body.user_id,
+            "from_username": new_user.username,
+            "conversation_id": group_id,
+            "content": sentinel,
+            "timestamp": sys_msg.created_at,
+        });
+        if let Ok(s) = serde_json::to_string(&ws_event) {
+            state.hub.broadcast_json(&all_members, &s, None);
+        }
+    }
+
     Ok(Json(serde_json::json!({ "status": "added" })))
 }
 
@@ -338,7 +399,7 @@ pub async fn remove_member(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("remove_member/get_caller_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     // If removing someone else, must be owner or admin
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
@@ -409,6 +470,7 @@ pub async fn list_public_groups(
         .map(|g| PublicGroupResponse {
             id: g.id,
             title: g.title,
+            description: g.description,
             member_count: g.member_count,
             created_at: g.created_at,
             is_member: g.is_member,
@@ -473,7 +535,10 @@ pub async fn join_group(
         .await
         .db_ctx("join_group/is_member")?;
     if already_member {
-        return Err(AppError::conflict("Already a member of this group"));
+        return Err(AppError::with_code(
+            ErrorCode::AlreadyMember,
+            "Already a member of this group",
+        ));
     }
 
     let joined = db::groups::join_public_group(&state.pool, group_id, auth.user_id)
@@ -485,6 +550,58 @@ pub async fn join_group(
     }
 
     invalidate_member_cache(group_id);
+
+    // Notify existing members of the new joiner so their member list updates
+    // in real time (#660).
+    let joiner = db::users::find_by_id(&state.pool, auth.user_id)
+        .await
+        .unwrap_or_default();
+    let existing_members = db::groups::get_conversation_member_ids(&state.pool, group_id)
+        .await
+        .unwrap_or_default();
+    if let Some(joiner_user) = joiner {
+        let event = serde_json::json!({
+            "type": "member_added",
+            "conversation_id": group_id,
+            "user_id": auth.user_id,
+            "username": joiner_user.username,
+            "avatar_url": joiner_user.avatar_url,
+            "role": "member",
+        });
+        if let Ok(s) = serde_json::to_string(&event) {
+            // Exclude the joiner; they reload their own conversation list.
+            state
+                .hub
+                .broadcast_json(&existing_members, &s, Some(auth.user_id));
+        }
+
+        // Persist a system message and broadcast as new_message so all
+        // members see an in-chat "X joined" pill in real time (#663).
+        let sentinel = format!(
+            "__system__:member_joined:{}:{}",
+            auth.user_id, joiner_user.username
+        );
+        if let Ok(sys_msg) =
+            db::messages::insert_system_message(&state.pool, group_id, auth.user_id, &sentinel)
+                .await
+        {
+            let all_members = db::groups::get_conversation_member_ids(&state.pool, group_id)
+                .await
+                .unwrap_or_default();
+            let ws_event = serde_json::json!({
+                "type": "new_message",
+                "message_id": sys_msg.id,
+                "from_user_id": auth.user_id,
+                "from_username": joiner_user.username,
+                "conversation_id": group_id,
+                "content": sentinel,
+                "timestamp": sys_msg.created_at,
+            });
+            if let Ok(s) = serde_json::to_string(&ws_event) {
+                state.hub.broadcast_json(&all_members, &s, None);
+            }
+        }
+    }
 
     Ok(Json(serde_json::json!({ "status": "joined" })))
 }
@@ -515,7 +632,10 @@ pub async fn leave_group(
         .db_ctx("leave_group/remove_member")?;
 
     if !removed {
-        return Err(AppError::bad_request("Not a member of this group"));
+        return Err(AppError::with_code(
+            ErrorCode::NotMember,
+            "Not a member of this group",
+        ));
     }
 
     invalidate_member_cache(group_id);
@@ -564,7 +684,7 @@ pub async fn update_group(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("update_group/get_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
@@ -604,7 +724,7 @@ pub async fn ban_member(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("ban_member/get_caller_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
@@ -662,7 +782,7 @@ pub async fn unban_member(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("unban_member/get_caller_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
@@ -689,14 +809,15 @@ pub async fn unban_member(
 /// Maximum group avatar size: 2 MB.
 const MAX_GROUP_AVATAR_SIZE: usize = 2 * 1024 * 1024;
 
-/// Allowed group avatar MIME types.
-const ALLOWED_GROUP_AVATAR_TYPES: &[&str] = &["image/jpeg", "image/png", "image/webp"];
+/// Allowed group avatar MIME types (validated via magic bytes, not client-supplied Content-Type).
+const ALLOWED_GROUP_AVATAR_TYPES: &[&str] = &["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 fn avatar_extension_for_mime(mime: &str) -> &str {
     match mime {
         "image/jpeg" => "jpg",
         "image/png" => "png",
         "image/webp" => "webp",
+        "image/gif" => "gif",
         _ => "bin",
     }
 }
@@ -706,6 +827,7 @@ fn avatar_mime_for_extension(ext: &str) -> &str {
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
         "webp" => "image/webp",
+        "gif" => "image/gif",
         _ => "application/octet-stream",
     }
 }
@@ -725,7 +847,7 @@ pub async fn upload_group_avatar(
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("upload_group_avatar/get_role")?
-        .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
     if !caller_role_enum.is_admin_or_above() {
@@ -757,18 +879,22 @@ pub async fn upload_group_avatar(
         let mime_type = match infer::get(&data) {
             Some(inferred) => inferred.mime_type().to_string(),
             None => {
-                return Err(AppError::bad_request(
+                return Err(AppError::with_code(
+                    ErrorCode::UnsupportedMediaType,
                     "Could not determine avatar file type from content",
                 ));
             }
         };
 
         if !ALLOWED_GROUP_AVATAR_TYPES.contains(&mime_type.as_str()) {
-            return Err(AppError::bad_request(format!(
-                "Avatar type '{mime_type}' is not allowed. \
-                 Allowed: {}",
-                ALLOWED_GROUP_AVATAR_TYPES.join(", ")
-            )));
+            return Err(AppError::with_code(
+                ErrorCode::UnsupportedMediaType,
+                format!(
+                    "Avatar type '{mime_type}' is not allowed. \
+                     Allowed: {}",
+                    ALLOWED_GROUP_AVATAR_TYPES.join(", ")
+                ),
+            ));
         }
 
         if data.len() > MAX_GROUP_AVATAR_SIZE {
@@ -783,7 +909,7 @@ pub async fn upload_group_avatar(
         let disk_path = format!("./uploads/avatars/{disk_filename}");
 
         // Remove old avatar files for this group (different extensions)
-        for old_ext in &["jpg", "png", "webp"] {
+        for old_ext in &["jpg", "png", "webp", "gif"] {
             let old = format!("./uploads/avatars/group_{group_id}.{old_ext}");
             let _ = fs::remove_file(&old).await;
         }
@@ -817,6 +943,7 @@ pub async fn get_group_avatar(
         .ok_or_else(|| AppError {
             status: StatusCode::NOT_FOUND,
             message: "No avatar set for this group".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         })?;
 
@@ -825,11 +952,12 @@ pub async fn get_group_avatar(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "No avatar set for this group".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         });
     }
 
-    for ext in &["jpg", "png", "webp"] {
+    for ext in &["jpg", "png", "webp", "gif"] {
         let disk_path = format!("./uploads/avatars/group_{group_id}.{ext}");
         if let Ok(data) = fs::read(&disk_path).await {
             let mime = avatar_mime_for_extension(ext);
@@ -845,6 +973,303 @@ pub async fn get_group_avatar(
     Err(AppError {
         status: StatusCode::NOT_FOUND,
         message: "Avatar file not found on disk".to_string(),
+        code: ErrorCode::NotFound,
         body: None,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Group invite link endpoints (#579)
+// ---------------------------------------------------------------------------
+
+/// Optional body for invite creation (both fields accepted; UI deferred to follow-up).
+#[derive(Debug, Deserialize, Default)]
+pub struct CreateInviteRequest {
+    pub expires_in_seconds: Option<i64>,
+    pub max_uses: Option<i32>,
+}
+
+/// POST /api/groups/:id/invites — generate an invite token (admin/owner only).
+pub async fn create_invite(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<Uuid>,
+    body: Option<Json<CreateInviteRequest>>,
+) -> Result<impl IntoResponse, AppError> {
+    let body = body.map(|b| b.0).unwrap_or_default();
+
+    let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+        .await
+        .db_ctx("create_invite/get_role")?
+        .ok_or_else(|| AppError::forbidden("Not a member of this group"))?;
+
+    let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
+    if !caller_role_enum.is_admin_or_above() {
+        return Err(AppError::forbidden(
+            "Only owners and admins can create invite links",
+        ));
+    }
+
+    let expires_at = body
+        .expires_in_seconds
+        .map(|secs| chrono::Utc::now() + chrono::Duration::seconds(secs));
+
+    // 16 bytes → 22 URL-safe base64 chars (no padding).
+    let token = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 16]>());
+
+    let invite = db::groups::create_invite_token(
+        &state.pool,
+        &token,
+        group_id,
+        auth.user_id,
+        expires_at,
+        body.max_uses,
+    )
+    .await
+    .db_ctx("create_invite/insert")?;
+
+    let url = format!("https://echo-messenger.us/invite/t/{}", invite.token);
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "token": invite.token,
+            "url": url,
+            "conversation_id": invite.conversation_id,
+            "created_at": invite.created_at,
+            "expires_at": invite.expires_at,
+            "max_uses": invite.max_uses,
+            "use_count": invite.use_count,
+        })),
+    ))
+}
+
+/// GET /api/groups/:id/invites — list active invite tokens (admin/owner only).
+pub async fn list_invites(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(group_id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+        .await
+        .db_ctx("list_invites/get_role")?
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
+
+    let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
+    if !caller_role_enum.is_admin_or_above() {
+        return Err(AppError::unauthorized(
+            "Only owners and admins can view invite links",
+        ));
+    }
+
+    let tokens = db::groups::list_invite_tokens(&state.pool, group_id)
+        .await
+        .db_ctx("list_invites/query")?;
+
+    let response: Vec<serde_json::Value> = tokens
+        .into_iter()
+        .map(|t| {
+            let url = format!("https://echo-messenger.us/invite/t/{}", t.token);
+            json!({
+                "token": t.token,
+                "url": url,
+                "created_at": t.created_at,
+                "expires_at": t.expires_at,
+                "max_uses": t.max_uses,
+                "use_count": t.use_count,
+            })
+        })
+        .collect();
+
+    Ok(Json(response))
+}
+
+/// GET /api/invites/:token — lightweight preview of a group (auth required).
+///
+/// Returns group metadata so the client can show a "Join {name}?" dialog
+/// before the user commits. Does not require group membership.
+pub async fn get_invite_preview(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(token): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let invite = db::groups::get_invite_token(&state.pool, &token)
+        .await
+        .db_ctx("get_invite_preview/lookup")?
+        .ok_or_else(|| AppError::not_found("Invite link not found"))?;
+
+    if invite
+        .expires_at
+        .is_some_and(|exp| chrono::Utc::now() > exp)
+    {
+        return Err(AppError::not_found("Invite link has expired"));
+    }
+    if invite.max_uses.is_some_and(|max| invite.use_count >= max) {
+        return Err(AppError::bad_request(
+            "Invite link has reached its use limit",
+        ));
+    }
+
+    let preview = db::groups::get_group_preview(&state.pool, invite.conversation_id, auth.user_id)
+        .await
+        .db_ctx("get_invite_preview/group")?
+        .ok_or_else(|| AppError::not_found("Group not found"))?;
+
+    let members = db::groups::get_group_member_previews(&state.pool, invite.conversation_id, 5)
+        .await
+        .db_ctx("get_invite_preview/members")?;
+
+    Ok(Json(json!({
+        "token": invite.token,
+        "group": {
+            "id": preview.id,
+            "title": preview.title,
+            "description": preview.description,
+            "icon_url": preview.icon_url,
+            "member_count": preview.member_count,
+            "is_member": preview.is_member,
+            "members": members.iter().map(|m| json!({
+                "user_id": m.user_id,
+                "username": m.username,
+                "avatar_url": m.avatar_url,
+            })).collect::<Vec<_>>(),
+        },
+    })))
+}
+
+/// POST /api/invites/:token/accept — join the group via an invite token.
+pub async fn accept_invite(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(token): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let invite = db::groups::get_invite_token(&state.pool, &token)
+        .await
+        .db_ctx("accept_invite/lookup")?
+        .ok_or_else(|| AppError::not_found("Invite link not found"))?;
+
+    if invite
+        .expires_at
+        .is_some_and(|exp| chrono::Utc::now() > exp)
+    {
+        return Err(AppError::not_found("Invite link has expired"));
+    }
+    if invite.max_uses.is_some_and(|max| invite.use_count >= max) {
+        return Err(AppError::bad_request(
+            "Invite link has reached its use limit",
+        ));
+    }
+
+    let banned = db::groups::is_banned(&state.pool, invite.conversation_id, auth.user_id)
+        .await
+        .db_ctx("accept_invite/is_banned")?;
+    if banned {
+        return Err(AppError::bad_request("You are banned from this group"));
+    }
+
+    let already_member = db::groups::is_member(&state.pool, invite.conversation_id, auth.user_id)
+        .await
+        .db_ctx("accept_invite/is_member")?;
+
+    if already_member {
+        return Ok(Json(json!({
+            "status": "already_member",
+            "conversation_id": invite.conversation_id,
+        })));
+    }
+
+    db::groups::accept_invite_token(&state.pool, &token, auth.user_id)
+        .await
+        .db_ctx("accept_invite/insert")?;
+
+    invalidate_member_cache(invite.conversation_id);
+
+    // Broadcast member_added + system message, same pattern as join_group.
+    let joiner = db::users::find_by_id(&state.pool, auth.user_id)
+        .await
+        .unwrap_or_default();
+    let existing_members =
+        db::groups::get_conversation_member_ids(&state.pool, invite.conversation_id)
+            .await
+            .unwrap_or_default();
+
+    if let Some(joiner_user) = joiner {
+        let event = json!({
+            "type": "member_added",
+            "conversation_id": invite.conversation_id,
+            "user_id": auth.user_id,
+            "username": joiner_user.username,
+            "avatar_url": joiner_user.avatar_url,
+            "role": "member",
+        });
+        if let Ok(s) = serde_json::to_string(&event) {
+            state
+                .hub
+                .broadcast_json(&existing_members, &s, Some(auth.user_id));
+        }
+
+        let sentinel = format!(
+            "__system__:member_joined:{}:{}",
+            auth.user_id, joiner_user.username
+        );
+        if let Ok(sys_msg) = db::messages::insert_system_message(
+            &state.pool,
+            invite.conversation_id,
+            auth.user_id,
+            &sentinel,
+        )
+        .await
+        {
+            let all_members =
+                db::groups::get_conversation_member_ids(&state.pool, invite.conversation_id)
+                    .await
+                    .unwrap_or_default();
+            let ws_event = json!({
+                "type": "new_message",
+                "message_id": sys_msg.id,
+                "from_user_id": auth.user_id,
+                "from_username": joiner_user.username,
+                "conversation_id": invite.conversation_id,
+                "content": sentinel,
+                "timestamp": sys_msg.created_at,
+            });
+            if let Ok(s) = serde_json::to_string(&ws_event) {
+                state.hub.broadcast_json(&all_members, &s, None);
+            }
+        }
+    }
+
+    Ok(Json(json!({
+        "status": "joined",
+        "conversation_id": invite.conversation_id,
+    })))
+}
+
+/// DELETE /api/groups/:id/invites/:token — revoke an invite token (admin/owner).
+pub async fn revoke_invite(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path((group_id, token)): Path<(Uuid, String)>,
+) -> Result<impl IntoResponse, AppError> {
+    let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
+        .await
+        .db_ctx("revoke_invite/get_role")?
+        .ok_or_else(|| AppError::with_code(ErrorCode::NotMember, "Not a member of this group"))?;
+
+    let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
+    if !caller_role_enum.is_admin_or_above() {
+        return Err(AppError::unauthorized(
+            "Only owners and admins can revoke invite links",
+        ));
+    }
+
+    let deleted = db::groups::delete_invite_token(&state.pool, &token, group_id)
+        .await
+        .db_ctx("revoke_invite/delete")?;
+
+    if !deleted {
+        return Err(AppError::not_found("Invite token not found"));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }

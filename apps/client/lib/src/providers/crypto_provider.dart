@@ -365,6 +365,24 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
     final crypto = ref.read(cryptoServiceProvider);
     return crypto.safetyNumberFor(peerUserId);
   }
+
+  // -----------------------------------------------------------------------
+  // Quarantined session recovery
+  // -----------------------------------------------------------------------
+
+  /// Whether [peerUserId]'s session was quarantined due to repeated decrypt
+  /// failures. When true the caller should surface a recovery banner.
+  bool hasCorruptedSession(String peerUserId) {
+    final crypto = ref.read(cryptoServiceProvider);
+    return crypto.hasCorruptedSession(peerUserId);
+  }
+
+  /// Force-clear the quarantined session for [peerUserId] so that the next
+  /// outbound message triggers a fresh X3DH exchange.
+  Future<void> forceResetSession(String peerUserId) async {
+    final crypto = ref.read(cryptoServiceProvider);
+    await crypto.forceResetSession(peerUserId);
+  }
 }
 
 final cryptoProvider = StateNotifierProvider<CryptoNotifier, CryptoState>((

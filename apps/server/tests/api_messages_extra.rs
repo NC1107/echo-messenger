@@ -724,8 +724,8 @@ mod offline_replay_557 {
         // and has no per-device row.
         let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
         let mut alice_ws = connect_ws_with_ticket(&base, &alice_ticket).await;
-        tokio::time::sleep(Duration::from_millis(150)).await;
-        let _ = collect_text_frames(&mut alice_ws, 4).await; // drain presence
+        // drain presence — collect_text_frames already polls with its own 1500ms timeout
+        let _ = collect_text_frames(&mut alice_ws, 4).await;
 
         let alice_wire = common::dummy_ciphertext("rs1_alice_wire");
         let bob_d11_ct = common::dummy_ciphertext("rs1_bob_d11");
@@ -793,7 +793,7 @@ mod offline_replay_557 {
         let alice_ticket =
             common::get_ws_ticket_for_device(&client, &base, &alice_token, alice_device_id).await;
         let mut alice_ws = connect_ws_with_ticket(&base, &alice_ticket).await;
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        // drain presence — collect_text_frames already polls with its own 1500ms timeout
         let _ = collect_text_frames(&mut alice_ws, 4).await;
 
         let canonical = common::dummy_ciphertext("rs2_canonical");
@@ -830,6 +830,245 @@ mod offline_replay_557 {
 
         let _ = alice_ws.close(None).await;
         let _ = bob_ws.close(None).await;
+    }
+
+    // -----------------------------------------------------------------------
+    // Per-device delivery ledger tests (#584)
+    // -----------------------------------------------------------------------
+
+    /// #584 — a device that receives an undecryptable placeholder must NOT
+    /// receive the same placeholder again when it reconnects.  Before the
+    /// ledger, the message stayed `delivered = false` (so sibling devices could
+    /// still pick it up) which caused the placeholder to be re-replayed on
+    /// every reconnect.
+    #[tokio::test]
+    async fn test_undecryptable_placeholder_not_replayed_on_reconnect() {
+        let base = common::spawn_server().await;
+        let client = Client::new();
+
+        let (alice_token, _alice_id, _alice_name) =
+            common::register_and_login(&client, &base, "ld1_alice").await;
+        let (bob_token, bob_id, bob_name) =
+            common::register_and_login(&client, &base, "ld1_bob").await;
+
+        common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+        // Alice sends a message with a per-device ciphertext for Bob's device
+        // 11 ONLY.  Bob's device 22 has no row and will receive an undecryptable
+        // placeholder on first connect.
+        let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
+        let mut alice_ws = connect_ws_with_ticket(&base, &alice_ticket).await;
+        let _ = collect_text_frames(&mut alice_ws, 4).await;
+
+        let alice_wire = common::dummy_ciphertext("ld1_alice_wire");
+        let bob_d11_ct = common::dummy_ciphertext("ld1_bob_d11");
+        alice_ws
+            .send(WsMsg::Text(
+                serde_json::json!({
+                    "type": "send_message",
+                    "to_user_id": bob_id,
+                    "content": alice_wire,
+                    "recipient_device_contents": {
+                        bob_id.to_string(): { "11": bob_d11_ct },
+                    },
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .unwrap();
+        let _ = collect_text_frames(&mut alice_ws, 2).await;
+        let _ = alice_ws.close(None).await;
+
+        // Bob device 22 connects for the first time — receives the placeholder.
+        let bob_d22_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 22).await;
+        let mut bob_d22 = connect_ws_with_ticket(&base, &bob_d22_ticket).await;
+        let frames = collect_text_frames(&mut bob_d22, 4).await;
+        let new_msgs: Vec<&Value> = frames
+            .iter()
+            .filter(|v| v["type"] == "new_message")
+            .collect();
+        assert_eq!(
+            new_msgs.len(),
+            1,
+            "device 22 should receive exactly one replay frame on first connect"
+        );
+        assert_eq!(
+            new_msgs[0]["undecryptable"], true,
+            "device 22 placeholder must be marked undecryptable"
+        );
+        let _ = bob_d22.close(None).await;
+
+        // Bob device 22 reconnects — must NOT see the same placeholder again.
+        let bob_d22_ticket2 =
+            common::get_ws_ticket_for_device(&client, &base, &bob_token, 22).await;
+        let mut bob_d22b = connect_ws_with_ticket(&base, &bob_d22_ticket2).await;
+        let frames2 = collect_text_frames(&mut bob_d22b, 4).await;
+        let new_msgs2: Vec<&Value> = frames2
+            .iter()
+            .filter(|v| v["type"] == "new_message")
+            .collect();
+        assert_eq!(
+            new_msgs2.len(),
+            0,
+            "device 22 must NOT receive the undecryptable placeholder again on reconnect (#584)"
+        );
+        let _ = bob_d22b.close(None).await;
+    }
+
+    /// #584 — a device that successfully receives and decrypts a message must
+    /// not receive it again after reconnect (regression guard: ledger also
+    /// covers the decryptable path, not just undecryptable frames).
+    #[tokio::test]
+    async fn test_decryptable_message_not_replayed_on_reconnect() {
+        let base = common::spawn_server().await;
+        let client = Client::new();
+
+        let (alice_token, _alice_id, _alice_name) =
+            common::register_and_login(&client, &base, "ld2_alice").await;
+        let (bob_token, bob_id, bob_name) =
+            common::register_and_login(&client, &base, "ld2_bob").await;
+
+        common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+        // Alice sends a per-device frame for Bob's device 5.
+        let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
+        let mut alice_ws = connect_ws_with_ticket(&base, &alice_ticket).await;
+        let _ = collect_text_frames(&mut alice_ws, 4).await;
+
+        let alice_wire = common::dummy_ciphertext("ld2_alice_wire");
+        let bob_d5_ct = common::dummy_ciphertext("ld2_bob_d5");
+        alice_ws
+            .send(WsMsg::Text(
+                serde_json::json!({
+                    "type": "send_message",
+                    "to_user_id": bob_id,
+                    "content": alice_wire,
+                    "recipient_device_contents": {
+                        bob_id.to_string(): { "5": bob_d5_ct.clone() },
+                    },
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .unwrap();
+        let _ = collect_text_frames(&mut alice_ws, 2).await;
+        let _ = alice_ws.close(None).await;
+
+        // Bob device 5 connects and receives the decryptable ciphertext.
+        let bob_d5_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 5).await;
+        let mut bob_d5 = connect_ws_with_ticket(&base, &bob_d5_ticket).await;
+        let frames = collect_text_frames(&mut bob_d5, 4).await;
+        let new_msgs: Vec<&Value> = frames
+            .iter()
+            .filter(|v| v["type"] == "new_message")
+            .collect();
+        assert_eq!(
+            new_msgs.len(),
+            1,
+            "device 5 should receive the message once"
+        );
+        assert_eq!(new_msgs[0]["content"], bob_d5_ct);
+        assert_ne!(
+            new_msgs[0]["undecryptable"], true,
+            "device 5 has a per-device row — must not be undecryptable"
+        );
+        let _ = bob_d5.close(None).await;
+
+        // Bob device 5 reconnects — must not receive the message again.
+        let bob_d5_ticket2 = common::get_ws_ticket_for_device(&client, &base, &bob_token, 5).await;
+        let mut bob_d5b = connect_ws_with_ticket(&base, &bob_d5_ticket2).await;
+        let frames2 = collect_text_frames(&mut bob_d5b, 4).await;
+        let new_msgs2: Vec<&Value> = frames2
+            .iter()
+            .filter(|v| v["type"] == "new_message")
+            .collect();
+        assert_eq!(
+            new_msgs2.len(),
+            0,
+            "device 5 must not receive the message again after reconnect"
+        );
+        let _ = bob_d5b.close(None).await;
+    }
+
+    /// #584 — sibling device isolation: device A receiving an undecryptable
+    /// placeholder must not affect device B, which has a proper per-device row
+    /// and should still receive the decryptable ciphertext.
+    #[tokio::test]
+    async fn test_sibling_device_still_receives_after_other_device_gets_placeholder() {
+        let base = common::spawn_server().await;
+        let client = Client::new();
+
+        let (alice_token, _alice_id, _alice_name) =
+            common::register_and_login(&client, &base, "ld3_alice").await;
+        let (bob_token, bob_id, bob_name) =
+            common::register_and_login(&client, &base, "ld3_bob").await;
+
+        common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+        // Alice sends a per-device frame for Bob's device 30 ONLY.
+        // Device 31 has no row and will get an undecryptable placeholder.
+        let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
+        let mut alice_ws = connect_ws_with_ticket(&base, &alice_ticket).await;
+        let _ = collect_text_frames(&mut alice_ws, 4).await;
+
+        let alice_wire = common::dummy_ciphertext("ld3_alice_wire");
+        let bob_d30_ct = common::dummy_ciphertext("ld3_bob_d30");
+        alice_ws
+            .send(WsMsg::Text(
+                serde_json::json!({
+                    "type": "send_message",
+                    "to_user_id": bob_id,
+                    "content": alice_wire,
+                    "recipient_device_contents": {
+                        bob_id.to_string(): { "30": bob_d30_ct.clone() },
+                    },
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .unwrap();
+        let _ = collect_text_frames(&mut alice_ws, 2).await;
+        let _ = alice_ws.close(None).await;
+
+        // Device 31 connects first — gets the undecryptable placeholder and
+        // the per-device ledger records it.
+        let bob_d31_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 31).await;
+        let mut bob_d31 = connect_ws_with_ticket(&base, &bob_d31_ticket).await;
+        let frames31 = collect_text_frames(&mut bob_d31, 4).await;
+        assert!(
+            frames31
+                .iter()
+                .any(|v| v["type"] == "new_message" && v["undecryptable"] == true),
+            "device 31 should get undecryptable placeholder"
+        );
+        let _ = bob_d31.close(None).await;
+
+        // Device 30 connects — must receive its decryptable ciphertext,
+        // unaffected by device 31's ledger entry.
+        let bob_d30_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 30).await;
+        let mut bob_d30 = connect_ws_with_ticket(&base, &bob_d30_ticket).await;
+        let frames30 = collect_text_frames(&mut bob_d30, 4).await;
+        let new_msgs30: Vec<&Value> = frames30
+            .iter()
+            .filter(|v| v["type"] == "new_message")
+            .collect();
+        assert_eq!(
+            new_msgs30.len(),
+            1,
+            "device 30 should still receive the decryptable message"
+        );
+        assert_eq!(
+            new_msgs30[0]["content"], bob_d30_ct,
+            "device 30 must get its own ciphertext"
+        );
+        assert_ne!(
+            new_msgs30[0]["undecryptable"], true,
+            "device 30 has a row — must not be marked undecryptable"
+        );
+        let _ = bob_d30.close(None).await;
     }
 }
 
@@ -893,10 +1132,8 @@ mod history_device_aware_557 {
                 .await
                 .expect("WS connect failed");
 
-        tokio::time::sleep(Duration::from_millis(150)).await;
-        while let Ok(Some(Ok(_))) =
-            tokio::time::timeout(Duration::from_millis(100), alice_ws.next()).await
-        {}
+        // drain presence — drain_pending polls with its own 150ms timeout per frame
+        common::drain_pending(&mut alice_ws).await;
 
         let canon_ct = common::dummy_ciphertext("hist_canon");
         let ct_d11 = common::dummy_ciphertext("hist_d11");

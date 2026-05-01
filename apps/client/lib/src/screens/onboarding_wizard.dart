@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,6 +13,7 @@ import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
+import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
 import '../utils/friendly_error.dart';
 import '../widgets/echo_logo_icon.dart';
@@ -158,52 +158,32 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     await _uploadAvatar(file);
   }
 
-  static MediaType _mimeFromFilename(String name) {
-    final ext = name.split('.').last.toLowerCase();
-    return switch (ext) {
-      'jpg' || 'jpeg' => MediaType('image', 'jpeg'),
-      'webp' => MediaType('image', 'webp'),
-      'gif' => MediaType('image', 'gif'),
-      _ => MediaType('image', 'png'),
-    };
-  }
-
   Future<void> _uploadAvatar(PlatformFile file) async {
     final serverUrl = ref.read(serverUrlProvider);
-    final token = ref.read(authProvider).token;
-    if (token == null) return;
 
     setState(() => _uploadingAvatar = true);
     try {
-      final uri = Uri.parse('$serverUrl/api/users/me/avatar');
-      final request = http.MultipartRequest('PUT', uri)
-        ..headers['Authorization'] = 'Bearer $token'
-        ..files.add(
-          http.MultipartFile.fromBytes(
-            'avatar',
-            file.bytes!,
-            filename: file.name,
-            contentType: _mimeFromFilename(file.name),
-          ),
-        );
-
-      final streamedResponse = await request.send();
-      final body = await streamedResponse.stream.bytesToString();
+      final uploader = UploadClient(ref.read(authProvider.notifier));
+      final result = await uploader.uploadFile(
+        serverUrl: serverUrl,
+        path: '/api/users/me/avatar',
+        bytes: file.bytes!,
+        fileName: file.name,
+        mimeType: 'image/jpeg',
+        method: 'PUT',
+        fieldName: 'avatar',
+      );
       if (!mounted) return;
 
-      if (streamedResponse.statusCode == 200) {
-        try {
-          final data = jsonDecode(body) as Map<String, dynamic>;
-          final avatarUrl = data['avatar_url'] as String?;
-          if (avatarUrl != null) {
-            ref.read(authProvider.notifier).updateAvatarUrl(avatarUrl);
-          }
-        } catch (_) {}
+      if (result.ok) {
+        if (result.url != null) {
+          ref.read(authProvider.notifier).updateAvatarUrl(result.url!);
+        }
         ToastService.show(context, 'Avatar uploaded', type: ToastType.success);
       } else {
         ToastService.show(
           context,
-          'Avatar upload failed (${streamedResponse.statusCode})',
+          result.errorMessage ?? 'Avatar upload failed (${result.statusCode})',
           type: ToastType.error,
         );
       }

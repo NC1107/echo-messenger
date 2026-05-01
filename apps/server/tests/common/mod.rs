@@ -2,6 +2,15 @@
 //!
 //! Spins up a real Echo server against a live PostgreSQL database.
 //! Tests fail fast when `DATABASE_URL` / `TEST_DATABASE_URL` is not set.
+//!
+//! # Test isolation contract
+//!
+//! All tests share one database (migrations run once per process via
+//! [`MIGRATIONS`]).  Row-state isolation is achieved exclusively through
+//! unique identifiers: every test that creates a user **must** obtain its
+//! username from [`unique_username`] (or the [`register_and_login`] wrapper
+//! which calls it automatically).  Hard-coded usernames that could collide
+//! across parallel test workers are forbidden.  No `TRUNCATE` between tests.
 
 #![allow(dead_code)]
 
@@ -451,6 +460,15 @@ pub async fn upload_prekey_bundle(
         signed_prekey_id,
         otp_key_ids,
     }
+}
+
+/// Return a direct DB pool for tests that need to inspect DB state (e.g.
+/// read a generated reset token that the server only logs, not returns).
+pub async fn test_pool() -> sqlx::PgPool {
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("TEST_DATABASE_URL or DATABASE_URL must be set for integration tests");
+    db::create_pool(&database_url).await
 }
 
 /// Upload an additional device bundle reusing the identity key from a previous upload.

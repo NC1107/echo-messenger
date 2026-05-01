@@ -41,6 +41,7 @@ import 'voice_lounge_screen.dart';
 import 'create_group_screen.dart';
 import 'discover_groups_screen.dart';
 import 'settings_screen.dart';
+import '../widgets/profile_sheets.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final String? initialConversationId;
@@ -476,7 +477,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void _showGroupInfo() {
     final conv = _selectedConversation;
     if (conv == null || !conv.isGroup) return;
-    context.push('/group-info/${conv.id}');
+    showGroupProfileSheet(context, ref, conv.id);
   }
 
   void _toggleMembers() {
@@ -595,6 +596,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       onGlobalSearch: _showGlobalSearch,
       onMessageContact: _messageContact,
       externalSearchFocusNode: _searchFocusNode,
+      onNavigateToLounge: () => setState(() {
+        _showingLounge = true;
+        _userDismissedLounge = false;
+      }),
     );
   }
 

@@ -390,15 +390,7 @@ class CryptoService {
 
       // Load or generate a unique device ID for this installation.
       final storedDeviceId = await readWithFallback(_deviceIdPref);
-      if (storedDeviceId != null) {
-        _deviceId = int.tryParse(storedDeviceId) ?? 0;
-      } else {
-        // Generate a random positive device ID (1..2^30) to avoid collision
-        // with legacy device_id=0 from single-device era.
-        _deviceId = Random.secure().nextInt(1 << 30) + 1;
-        await store.write(_deviceIdPref, _deviceId.toString());
-        debugPrint('[Crypto] Generated new device_id: $_deviceId');
-      }
+      await _loadOrGenerateDeviceId(store, storedDeviceId);
 
       final storedPrivate = await readWithFallback(_identityKeyPref);
 
@@ -409,42 +401,66 @@ class CryptoService {
           readKey: readWithFallback,
         );
       } else {
-        // Generate all keys fresh.
-        // Only flag as "regenerated" when prior keys existed (device ID was
-        // already assigned). On a true first install there is nothing to
-        // regenerate, so suppress the misleading warning.
-        final isFirstInstall = storedDeviceId == null;
-        _keysWereRegenerated = !isFirstInstall;
-        _identityKeyPair = await _x25519.newKeyPair();
-        _signingKeyPair = await _ed25519.newKeyPair();
-        _signedPrekeyPair = await _x25519.newKeyPair();
-
-        final privateBytes = await (_identityKeyPair as SimpleKeyPairData)
-            .extractPrivateKeyBytes();
-        final publicKey = await _identityKeyPair!.extractPublicKey();
-
-        await store.write(_identityKeyPref, base64Encode(privateBytes));
-        await store.write(_identityPubKeyPref, base64Encode(publicKey.bytes));
-        await _saveSigningKey(store);
-        await _saveSignedPrekey(store);
-        await store.write(
-          _signedPrekeyCreatedAtPref,
-          DateTime.now().toIso8601String(),
-        );
-
-        _keysAreFresh = true;
-        _needsOtpReplenishment = true; // Fresh install needs OTP keys
-
-        // Purge any stale sessions from storage — they reference the old keys.
-        final allEntries = await store.readAll();
-        for (final key in allEntries.keys) {
-          if (key.startsWith(_sessionPrefix)) {
-            await store.delete(key);
-          }
-        }
+        await _generateFreshKeys(store, isFirstInstall: storedDeviceId == null);
       }
     } catch (e) {
       rethrow;
+    }
+  }
+
+  /// Load an existing device ID from [storedDeviceId] or generate a new one.
+  Future<void> _loadOrGenerateDeviceId(
+    SecureKeyStore store,
+    String? storedDeviceId,
+  ) async {
+    if (storedDeviceId != null) {
+      _deviceId = int.tryParse(storedDeviceId) ?? 0;
+    } else {
+      // Generate a random positive device ID (1..2^30) to avoid collision
+      // with legacy device_id=0 from single-device era.
+      _deviceId = Random.secure().nextInt(1 << 30) + 1;
+      await store.write(_deviceIdPref, _deviceId.toString());
+      debugPrint('[Crypto] Generated new device_id: $_deviceId');
+    }
+  }
+
+  /// Generate all identity/signing/prekey key pairs for a fresh installation
+  /// (no stored private key found). Purges any stale sessions that reference
+  /// the old keys.
+  Future<void> _generateFreshKeys(
+    SecureKeyStore store, {
+    required bool isFirstInstall,
+  }) async {
+    // Only flag as "regenerated" when prior keys existed (device ID was
+    // already assigned). On a true first install there is nothing to
+    // regenerate, so suppress the misleading warning.
+    _keysWereRegenerated = !isFirstInstall;
+    _identityKeyPair = await _x25519.newKeyPair();
+    _signingKeyPair = await _ed25519.newKeyPair();
+    _signedPrekeyPair = await _x25519.newKeyPair();
+
+    final privateBytes = await (_identityKeyPair as SimpleKeyPairData)
+        .extractPrivateKeyBytes();
+    final publicKey = await _identityKeyPair!.extractPublicKey();
+
+    await store.write(_identityKeyPref, base64Encode(privateBytes));
+    await store.write(_identityPubKeyPref, base64Encode(publicKey.bytes));
+    await _saveSigningKey(store);
+    await _saveSignedPrekey(store);
+    await store.write(
+      _signedPrekeyCreatedAtPref,
+      DateTime.now().toIso8601String(),
+    );
+
+    _keysAreFresh = true;
+    _needsOtpReplenishment = true; // Fresh install needs OTP keys
+
+    // Purge any stale sessions from storage — they reference the old keys.
+    final allEntries = await store.readAll();
+    for (final key in allEntries.keys) {
+      if (key.startsWith(_sessionPrefix)) {
+        await store.delete(key);
+      }
     }
   }
 
@@ -1421,6 +1437,11 @@ class CryptoService {
   }
 
   /// Decrypt a normal (non-initial) message using an existing session.
+  ///
+  /// The pure Double Ratchet crypto runs in a Flutter [compute] isolate so the
+  /// UI thread is never blocked.  Session state is serialised to a plain Map
+  /// before entering the isolate and the updated state is deserialised and
+  /// applied back on the main thread after [_decryptNormalInIsolate] returns.
   Future<String> _decryptNormalMessage({
     required Uint8List fullWire,
     required String sessionKey,
@@ -1434,14 +1455,28 @@ class CryptoService {
         'Awaiting new X3DH initial message from peer.',
       );
     }
-    // Write-ahead: save before mutation so crash recovery replays correctly
+    // Serialise session state before any mutation (write-ahead for crash
+    // recovery) and before passing into the isolate.
+    final sessionJsonBefore = await session.toJson();
     await _saveSession(sessionKey, session);
     try {
-      final plainBytes = await session.decrypt(fullWire);
-      await _saveSession(sessionKey, session);
-      // Refresh LRU ordering after in-place mutation.
-      _sessions.put(sessionKey, session);
-      return utf8.decode(plainBytes);
+      // Run pure Double Ratchet crypto off the UI thread.  The isolate
+      // receives a snapshot of the session state and the wire bytes; it
+      // returns the decrypted plaintext bytes and the mutated session state.
+      // No Hive boxes, SecureKeyStore handles, or singletons are touched
+      // inside the isolate -- it is a pure input → output computation.
+      final result = await compute(_decryptNormalInIsolate, {
+        'session': sessionJsonBefore,
+        'wire': fullWire,
+      });
+      // Apply the updated ratchet state returned from the isolate.
+      final updatedSession = SignalSession.fromJson(
+        result['session'] as Map<String, dynamic>,
+      );
+      await _saveSession(sessionKey, updatedSession);
+      // Refresh LRU ordering after state update.
+      _sessions.put(sessionKey, updatedSession);
+      return utf8.decode(result['plaintext'] as Uint8List);
     } catch (e) {
       // Session is stale/corrupted — clear it. The next incoming initial
       // message from this peer will establish a fresh session via X3DH.
@@ -1618,7 +1653,7 @@ class CryptoService {
     final resp = await http.post(
       Uri.parse('$serverUrl/api/keys/reset_device'),
       headers: {
-        'Content-Type': 'application/json',
+        _contentTypeHeader: _applicationJson,
         'Authorization': 'Bearer $_token',
       },
       body: jsonEncode({'password': password, 'device_id': _deviceId}),
@@ -2167,4 +2202,34 @@ class CryptoService {
     final plaintext = await _aesGcm.decrypt(box, secretKey: aesKey);
     return Uint8List.fromList(plaintext);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Isolate entry-point for normal Double Ratchet decryption
+// ---------------------------------------------------------------------------
+
+/// Top-level function required by [compute] — must not capture any non-sendable
+/// state.  Receives a plain [Map] with two entries:
+///   - `'session'` → `Map<String, dynamic>` from [SignalSession.toJson]
+///   - `'wire'`    → [Uint8List] ciphertext wire bytes
+///
+/// Returns a [Map] with:
+///   - `'plaintext'` → [Uint8List] decoded plaintext bytes
+///   - `'session'`   → `Map<String, dynamic>` updated ratchet state from
+///                      [SignalSession.toJson] after decryption
+///
+/// All crypto is pure Dart (the `cryptography` package).  No Hive boxes,
+/// SecureKeyStore, or platform channels are touched — this is safe to run on a
+/// background isolate.
+Future<Map<String, dynamic>> _decryptNormalInIsolate(
+  Map<String, dynamic> payload,
+) async {
+  final sessionJson = payload['session'] as Map<String, dynamic>;
+  final wire = payload['wire'] as Uint8List;
+
+  final session = SignalSession.fromJson(sessionJson);
+  final plainBytes = await session.decrypt(wire);
+  final updatedJson = await session.toJson();
+
+  return {'plaintext': Uint8List.fromList(plainBytes), 'session': updatedJson};
 }

@@ -6,6 +6,17 @@ const _sentinel = Object();
 
 enum MessageStatus { sending, sent, delivered, read, failed }
 
+/// Parse a [MessageStatus] from its [name] string (Hive cache round-trip).
+/// Falls back to [MessageStatus.sent] for unknown or absent values so that
+/// server-originated JSON (which has no status field) degrades gracefully.
+MessageStatus _statusFromJson(String? raw) {
+  if (raw == null) return MessageStatus.sent;
+  return MessageStatus.values.firstWhere(
+    (s) => s.name == raw,
+    orElse: () => MessageStatus.sent,
+  );
+}
+
 bool _listEquals<T>(List<T> a, List<T> b) {
   if (identical(a, b)) return true;
   if (a.length != b.length) return false;
@@ -107,7 +118,7 @@ class ChatMessage {
       content: content,
       timestamp: timestamp,
       isMine: fromUserId == myUserId,
-      status: MessageStatus.sent,
+      status: _statusFromJson(json['status'] as String?),
       reactions: reactionsList,
       editedAt: json['edited_at'] as String?,
       replyToId: json['reply_to_id'] as String?,
@@ -141,6 +152,7 @@ class ChatMessage {
       'pinned_at': pinnedAt?.toIso8601String(),
       'expires_at': expiresAt?.toIso8601String(),
       'reactions': reactions.map((r) => r.toJson()).toList(),
+      'status': status.name,
     };
   }
 

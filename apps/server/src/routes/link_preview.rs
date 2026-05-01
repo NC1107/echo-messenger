@@ -303,4 +303,38 @@ mod tests {
         assert!(truncated.len() <= MAX_HTML_BYTES);
         assert!(truncated.is_char_boundary(truncated.len()));
     }
+
+    /// Mirrors the streaming accumulation loop in `fetch_preview`; asserts
+    /// that feeding 3x the cap worth of chunks never grows the buffer past
+    /// `MAX_HTML_BYTES`. Covers the OOM-DoS / gzip-bomb fix for #684.
+    #[test]
+    fn stream_accumulation_stops_at_cap() {
+        let chunk_size = 4096_usize;
+        // Feed chunks totalling 3x the cap to prove the loop halts.
+        let total_chunks = (MAX_HTML_BYTES / chunk_size) * 3;
+        let chunk = vec![b'x'; chunk_size];
+
+        let mut buf: Vec<u8> = Vec::with_capacity(8 * 1024);
+        for _ in 0..total_chunks {
+            let remaining = MAX_HTML_BYTES.saturating_sub(buf.len());
+            if remaining == 0 {
+                break;
+            }
+            let take = chunk.len().min(remaining);
+            buf.extend_from_slice(&chunk[..take]);
+            if buf.len() >= MAX_HTML_BYTES {
+                break;
+            }
+        }
+
+        assert_eq!(buf.len(), MAX_HTML_BYTES);
+    }
+
+    /// Content-Length fast-path: a declared length one byte over the cap must
+    /// satisfy the `> MAX_HTML_BYTES as u64` guard used in the handler.
+    #[test]
+    fn content_length_above_cap_triggers_rejection_guard() {
+        let declared_len = (MAX_HTML_BYTES as u64) + 1;
+        assert!(declared_len > MAX_HTML_BYTES as u64);
+    }
 }

@@ -7,26 +7,36 @@ const kAccessibilityFontScale = 'accessibility_font_scale';
 const kAccessibilityReducedMotion = 'accessibility_reduced_motion';
 const kAccessibilityHighContrast = 'accessibility_high_contrast';
 
+/// SharedPreferences key for the "hide undecryptable messages" toggle (#668).
+const kChatHideUndecryptable = 'chat.hide_undecryptable_messages';
+
 class AccessibilityState {
   final double fontScale;
   final bool reducedMotion;
   final bool highContrast;
 
+  /// When true, messages that cannot be decrypted are hidden entirely instead
+  /// of showing the lock-icon pill (#668).
+  final bool hideUndecryptable;
+
   const AccessibilityState({
     this.fontScale = 1.0,
     this.reducedMotion = false,
     this.highContrast = false,
+    this.hideUndecryptable = false,
   });
 
   AccessibilityState copyWith({
     double? fontScale,
     bool? reducedMotion,
     bool? highContrast,
+    bool? hideUndecryptable,
   }) {
     return AccessibilityState(
       fontScale: fontScale ?? this.fontScale,
       reducedMotion: reducedMotion ?? this.reducedMotion,
       highContrast: highContrast ?? this.highContrast,
+      hideUndecryptable: hideUndecryptable ?? this.hideUndecryptable,
     );
   }
 }
@@ -55,6 +65,7 @@ class Accessibility extends _$Accessibility {
       fontScale: prefs.getDouble(kAccessibilityFontScale) ?? 1.0,
       reducedMotion: prefs.getBool(kAccessibilityReducedMotion) ?? false,
       highContrast: prefs.getBool(kAccessibilityHighContrast) ?? false,
+      hideUndecryptable: prefs.getBool(kChatHideUndecryptable) ?? false,
     );
   }
 
@@ -74,5 +85,11 @@ class Accessibility extends _$Accessibility {
     state = state.copyWith(highContrast: value);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(kAccessibilityHighContrast, value);
+  }
+
+  Future<void> setHideUndecryptable(bool value) async {
+    state = state.copyWith(hideUndecryptable: value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kChatHideUndecryptable, value);
   }
 }

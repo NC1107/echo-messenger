@@ -283,6 +283,134 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
     }
   }
 
+  Widget _buildDeviceListBody(BuildContext context, int? myDeviceId) {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 48),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _error!,
+                style: TextStyle(color: context.textSecondary, fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              FilledButton(onPressed: _loadDevices, child: const Text('Retry')),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_devices.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 48),
+        child: Center(
+          child: Text(
+            'No devices found.',
+            style: TextStyle(color: context.textSecondary, fontSize: 14),
+          ),
+        ),
+      );
+    }
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: _devices.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, index) {
+        final device = _devices[index];
+        final isThisDevice = device.deviceId == myDeviceId;
+        return _buildDeviceTile(context, device, isThisDevice);
+      },
+    );
+  }
+
+  Widget _buildDeviceTile(
+    BuildContext context,
+    _Device device,
+    bool isThisDevice,
+  ) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+      leading: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(
+            _deviceIcon(isThisDevice),
+            color: isThisDevice ? context.accent : context.textSecondary,
+          ),
+          if (isThisDevice)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: EchoTheme.online,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: context.surface, width: 1.5),
+                ),
+              ),
+            ),
+        ],
+      ),
+      title: Row(
+        children: [
+          Text(
+            isThisDevice ? _currentPlatformName() : device.displayLabel,
+            style: TextStyle(
+              color: context.textPrimary,
+              fontWeight: FontWeight.w500,
+              fontSize: 14,
+            ),
+          ),
+          if (isThisDevice) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: context.accentLight,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'This device',
+                style: TextStyle(
+                  color: context.accent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+      subtitle: Text(
+        'Last seen: ${_formatLastSeen(device.lastSeen)}',
+        style: TextStyle(color: context.textSecondary, fontSize: 13),
+      ),
+      trailing: isThisDevice
+          ? null
+          : OutlinedButton.icon(
+              onPressed: () => _revokeDevice(device),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: EchoTheme.danger,
+                side: const BorderSide(color: EchoTheme.danger),
+              ),
+              icon: const Icon(Icons.remove_circle_outline, size: 16),
+              label: const Text('Revoke'),
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final myDeviceId = ref.watch(cryptoServiceProvider).isInitialized
@@ -327,140 +455,7 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
           ),
         ),
         const Divider(height: 1),
-        if (_loading)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 48),
-            child: Center(child: CircularProgressIndicator()),
-          )
-        else if (_error != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 48),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _error!,
-                    style: TextStyle(
-                      color: context.textSecondary,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: _loadDevices,
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
-            ),
-          )
-        else if (_devices.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 48),
-            child: Center(
-              child: Text(
-                'No devices found.',
-                style: TextStyle(color: context.textSecondary, fontSize: 14),
-              ),
-            ),
-          )
-        else
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: _devices.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final device = _devices[index];
-              final isThisDevice = device.deviceId == myDeviceId;
-              return ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 4,
-                ),
-                leading: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Icon(
-                      _deviceIcon(isThisDevice),
-                      color: isThisDevice
-                          ? context.accent
-                          : context.textSecondary,
-                    ),
-                    if (isThisDevice)
-                      Positioned(
-                        right: -2,
-                        bottom: -2,
-                        child: Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: EchoTheme.online,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: context.surface,
-                              width: 1.5,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                title: Row(
-                  children: [
-                    Text(
-                      isThisDevice
-                          ? _currentPlatformName()
-                          : device.displayLabel,
-                      style: TextStyle(
-                        color: context.textPrimary,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 14,
-                      ),
-                    ),
-                    if (isThisDevice) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: context.accentLight,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'This device',
-                          style: TextStyle(
-                            color: context.accent,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                subtitle: Text(
-                  'Last seen: ${_formatLastSeen(device.lastSeen)}',
-                  style: TextStyle(color: context.textSecondary, fontSize: 13),
-                ),
-                trailing: isThisDevice
-                    ? null
-                    : OutlinedButton.icon(
-                        onPressed: () => _revokeDevice(device),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: EchoTheme.danger,
-                          side: const BorderSide(color: EchoTheme.danger),
-                        ),
-                        icon: const Icon(Icons.remove_circle_outline, size: 16),
-                        label: const Text('Revoke'),
-                      ),
-              );
-            },
-          ),
+        _buildDeviceListBody(context, myDeviceId),
         if (!_loading &&
             _error == null &&
             myDeviceId != null &&

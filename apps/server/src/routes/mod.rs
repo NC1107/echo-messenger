@@ -111,7 +111,13 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
     let revoke_others_limit =
         rate_limit::make_rate_limit_layer(rate_limit::revoke_others_limiter(Arc::clone(&proxies)));
     let edit_message_limit =
-        rate_limit::make_rate_limit_layer(rate_limit::edit_message_limiter(proxies));
+        rate_limit::make_rate_limit_layer(rate_limit::edit_message_limiter(Arc::clone(&proxies)));
+
+    let forgot_pw_limit = rate_limit::make_rate_limit_layer(rate_limit::forgot_password_limiter(
+        Arc::clone(&proxies),
+    ));
+    let reset_pw_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::reset_password_limiter(proxies));
 
     let auth_routes = Router::new()
         .route(
@@ -130,6 +136,14 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         .route(
             "/ws-ticket",
             post(auth::ws_ticket).layer(middleware::from_fn(ticket_limit)),
+        )
+        .route(
+            "/forgot-password",
+            post(auth::forgot_password).layer(middleware::from_fn(forgot_pw_limit)),
+        )
+        .route(
+            "/reset-password",
+            post(auth::reset_password).layer(middleware::from_fn(reset_pw_limit)),
         );
 
     let contact_routes = Router::new()
@@ -285,7 +299,16 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         .route(
             "/{id}/avatar",
             put(groups::upload_group_avatar).get(groups::get_group_avatar),
-        );
+        )
+        .route(
+            "/{id}/invites",
+            post(groups::create_invite).get(groups::list_invites),
+        )
+        .route("/{id}/invites/{token}", delete(groups::revoke_invite));
+
+    let invite_routes = Router::new()
+        .route("/{token}", get(groups::get_invite_preview))
+        .route("/{token}/accept", post(groups::accept_invite));
 
     let user_routes = Router::new()
         .route("/me", delete(users::delete_account))
@@ -317,6 +340,7 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         .nest("/api/contacts", contact_routes)
         .nest("/api/keys", key_routes)
         .nest("/api/groups", group_routes)
+        .nest("/api/invites", invite_routes)
         .nest("/api/users", user_routes)
         .nest("/api/media", media_routes)
         .nest("/api/push", push_routes)

@@ -509,3 +509,93 @@ async fn refresh_cookie_rotation_invalidates_prior_body_token() {
         "body token must be invalidated by cookie-path rotation"
     );
 }
+
+// ---------------------------------------------------------------------------
+// ErrorCode field assertions (#633)
+// ---------------------------------------------------------------------------
+
+/// Login with wrong password should return code="wrong-password".
+#[tokio::test]
+async fn login_wrong_password_returns_wrong_password_code() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("ecode_login");
+
+    common::register(&client, &base, &username, "password123").await;
+
+    let resp = common::login_raw(&client, &base, &username, "wrong_password").await;
+    assert_eq!(resp.status().as_u16(), 401);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["code"].as_str(),
+        Some("wrong-password"),
+        "wrong-password error must carry code=wrong-password; got: {body}"
+    );
+    // Original "error" field still present for backward compat.
+    assert!(
+        body["error"].as_str().is_some(),
+        "error field must still be present"
+    );
+}
+
+/// Registering a duplicate username should return code="username-taken".
+#[tokio::test]
+async fn register_duplicate_returns_username_taken_code() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("ecode_dup");
+
+    common::register(&client, &base, &username, "password123").await;
+    let resp = common::register_raw(&client, &base, &username, "password123").await;
+    assert_eq!(resp.status().as_u16(), 409);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["code"].as_str(),
+        Some("username-taken"),
+        "duplicate username must carry code=username-taken; got: {body}"
+    );
+}
+
+/// Reusing a revoked refresh token should return code="token-revoked".
+#[tokio::test]
+async fn refresh_replay_returns_token_revoked_code() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let username = common::unique_username("ecode_tok");
+
+    common::register(&client, &base, &username, "password123").await;
+    let login_body: serde_json::Value = client
+        .post(format!("{base}/api/auth/login"))
+        .json(&serde_json::json!({ "username": username, "password": "password123" }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    let refresh_token = login_body["refresh_token"].as_str().unwrap();
+
+    // Consume the token once.
+    client
+        .post(format!("{base}/api/auth/refresh"))
+        .json(&serde_json::json!({ "refresh_token": refresh_token }))
+        .send()
+        .await
+        .unwrap();
+
+    // Replay must be rejected with token-revoked code.
+    let resp = client
+        .post(format!("{base}/api/auth/refresh"))
+        .json(&serde_json::json!({ "refresh_token": refresh_token }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 401);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["code"].as_str(),
+        Some("token-revoked"),
+        "replayed token must return code=token-revoked; got: {body}"
+    );
+}

@@ -24,6 +24,7 @@ import '../providers/theme_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/safety_number_screen.dart';
 import '../screens/user_profile_screen.dart';
+import '../providers/accessibility_provider.dart';
 import '../services/message_cache.dart';
 import '../services/saved_messages_service.dart';
 import '../services/toast_service.dart';
@@ -33,6 +34,7 @@ import 'skeleton_loader.dart';
 import 'channel_bar.dart';
 import 'chat_header_bar.dart';
 import 'chat_input_bar.dart';
+import 'chat/session_corrupted_banner.dart';
 import 'connection_status_banner.dart';
 import 'crypto_degraded_banner.dart';
 import 'identity_key_changed_banner.dart';
@@ -1781,6 +1783,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             mediaTicket: mediaTicket,
             senderAvatarUrl: senderAvatarUrl,
             layout: ref.watch(messageLayoutProvider),
+            hideUndecryptable: ref
+                .watch(accessibilityProvider)
+                .hideUndecryptable,
             onReactionTap: _showReactionPicker,
             onReactionSelect: (message, emoji) {
               final alreadyReacted = message.reactions.any(
@@ -2371,6 +2376,20 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               const ConnectionStatusBanner(),
               const CryptoDegradedBanner(),
               if (!conv.isGroup) IdentityKeyChangedBanner(conversation: conv),
+              if (!conv.isGroup)
+                Builder(
+                  builder: (ctx) {
+                    final peer = conv.members
+                        .where((m) => m.userId != myUserId)
+                        .firstOrNull;
+                    if (peer == null) return const SizedBox.shrink();
+                    return SessionCorruptedBanner(
+                      conversationId: conv.id,
+                      peerUserId: peer.userId,
+                      peerName: peer.username,
+                    );
+                  },
+                ),
 
               Expanded(
                 child: GestureDetector(

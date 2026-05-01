@@ -14,12 +14,13 @@ use std::io::SeekFrom;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::fs;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::auth::{jwt, middleware::AuthUser};
 use crate::db;
-use crate::error::{AppError, DbErrCtx};
+use crate::error::{AppError, DbErrCtx, ErrorCode};
 
 use super::AppState;
 
@@ -39,6 +40,7 @@ const ALLOWED_MIME_TYPES: &[&str] = &[
     "image/heif",
     // Video
     "video/mp4",
+    "video/x-m4v",
     "video/quicktime",
     "video/webm",
     "video/x-msvideo",
@@ -73,7 +75,7 @@ fn extension_for_mime(mime: &str) -> &str {
         "image/gif" => "gif",
         "image/webp" => "webp",
         "image/heic" | "image/heif" => "heic",
-        "video/mp4" => "mp4",
+        "video/mp4" | "video/x-m4v" => "mp4",
         "video/quicktime" => "mov",
         "video/webm" => "webm",
         "video/x-msvideo" => "avi",
@@ -102,6 +104,10 @@ fn extension_for_mime(mime: &str) -> &str {
 /// type. `text/plain` is special-cased because text files have no magic-byte
 /// signature -- we accept it only when the client declared text/plain AND
 /// the content is valid UTF-8.
+///
+/// Used by unit tests; production code uses `validate_head` + the streaming
+/// byte counter in `stream_field_to_temp`.
+#[cfg(test)]
 fn validate_bytes(data: &[u8], declared_mime: &str) -> Result<String, AppError> {
     if data.len() > MAX_FILE_SIZE {
         return Err(AppError::bad_request(format!(
@@ -141,21 +147,120 @@ fn validate_bytes(data: &[u8], declared_mime: &str) -> Result<String, AppError> 
     }
 }
 
-/// Read the file field, validate size and magic-byte content type.
-async fn validate_and_read_file(
-    field: axum::extract::multipart::Field<'_>,
-) -> Result<(String, String, Vec<u8>), AppError> {
+/// Stream the multipart file field to a temp file, enforcing `MAX_FILE_SIZE`.
+///
+/// Returns `(original_filename, detected_mime, temp_path, file_size_bytes)`.
+/// The temp file lives in `./uploads/` and must be renamed by the caller once
+/// the final UUID-based filename is known.
+///
+/// # Streaming strategy
+/// - First 512 bytes are accumulated in a small head buffer so `infer::get`
+///   can detect the MIME type from magic bytes without buffering the whole
+///   file.
+/// - All chunks (including the head bytes) are written to a `tokio::fs::File`
+///   as they arrive; peak RAM is O(chunk) rather than O(file).
+/// - A running byte counter rejects the upload the moment it exceeds
+///   `MAX_FILE_SIZE` — the connection is dropped before the full payload
+///   lands on disk.
+async fn stream_field_to_temp(
+    mut field: axum::extract::multipart::Field<'_>,
+) -> Result<(String, String, String, i64), AppError> {
     let original_filename = field.file_name().unwrap_or("upload").to_string();
     let declared_mime = field.content_type().unwrap_or("").to_string();
 
-    let data = field
-        .bytes()
+    // Write to a hidden temp file; renamed to the final path after validation.
+    let temp_name = format!("./uploads/.tmp-{}", Uuid::new_v4());
+    let mut tmp_file = fs::File::create(&temp_name)
         .await
-        .map_err(|e| AppError::bad_request(format!("Failed to read file data: {e}")))?
-        .to_vec();
+        .map_err(|e| AppError::internal(format!("Failed to create temp upload file: {e}")))?;
 
-    let mime_type = validate_bytes(&data, &declared_mime)?;
-    Ok((original_filename, mime_type, data))
+    // First 512 bytes collected for MIME sniffing; infer only needs ~261.
+    const SNIFF_LEN: usize = 512;
+    let mut head: Vec<u8> = Vec::with_capacity(SNIFF_LEN);
+    let mut total_bytes: usize = 0;
+
+    loop {
+        let chunk = field
+            .chunk()
+            .await
+            .map_err(|e| AppError::bad_request(format!("Failed to read upload chunk: {e}")))?;
+
+        let Some(bytes) = chunk else { break };
+        if bytes.is_empty() {
+            continue;
+        }
+
+        total_bytes += bytes.len();
+        if total_bytes > MAX_FILE_SIZE {
+            // Clean up the partial temp file before returning.
+            drop(tmp_file);
+            let _ = fs::remove_file(&temp_name).await;
+            return Err(AppError::bad_request(format!(
+                "File too large. Maximum size is {MAX_FILE_SIZE} bytes"
+            )));
+        }
+
+        // Fill the head buffer up to SNIFF_LEN from the first chunk(s).
+        if head.len() < SNIFF_LEN {
+            let need = SNIFF_LEN - head.len();
+            head.extend_from_slice(&bytes[..bytes.len().min(need)]);
+        }
+
+        tmp_file.write_all(&bytes).await.map_err(|e| {
+            AppError::internal(format!("Failed to write upload chunk to disk: {e}"))
+        })?;
+    }
+
+    tmp_file
+        .flush()
+        .await
+        .map_err(|e| AppError::internal(format!("Failed to flush upload file: {e}")))?;
+    drop(tmp_file);
+
+    // MIME detection uses the head bytes only; no full-file buffering needed.
+    let mime_type = validate_head(&head, &declared_mime).inspect_err(|_| {
+        // Best-effort cleanup on MIME rejection; ignore removal errors.
+        let temp = temp_name.clone();
+        tokio::spawn(async move {
+            let _ = fs::remove_file(temp).await;
+        });
+    })?;
+
+    Ok((original_filename, mime_type, temp_name, total_bytes as i64))
+}
+
+/// Validate the magic bytes from the head buffer against the allowed MIME
+/// types.  Mirrors `validate_bytes` but accepts a head slice rather than
+/// requiring the whole file in RAM.
+fn validate_head(head: &[u8], declared_mime: &str) -> Result<String, AppError> {
+    match infer::get(head) {
+        Some(inferred) => {
+            let m = inferred.mime_type();
+            // M4A audio files share the same MP4 container magic bytes as video/mp4.
+            let effective = if m == "video/mp4"
+                && matches!(declared_mime, "audio/mp4" | "audio/x-m4a" | "audio/aac")
+            {
+                declared_mime
+            } else {
+                m
+            };
+            if !ALLOWED_MIME_TYPES.contains(&effective) {
+                return Err(AppError::bad_request(format!(
+                    "Detected file type '{m}' is not allowed"
+                )));
+            }
+            Ok(effective.to_string())
+        }
+        None => {
+            if declared_mime == "text/plain" && std::str::from_utf8(head).is_ok() {
+                Ok("text/plain".to_string())
+            } else {
+                Err(AppError::bad_request(
+                    "Could not detect file type from content. Upload a supported format.",
+                ))
+            }
+        }
+    }
 }
 
 /// POST /api/media/upload
@@ -173,7 +278,8 @@ pub async fn upload(
         .await
         .map_err(|e| AppError::internal(format!("Failed to create uploads directory: {e}")))?;
 
-    let mut file_data: Option<(String, String, Vec<u8>)> = None;
+    // (original_filename, mime_type, temp_path, file_size)
+    let mut file_data: Option<(String, String, String, i64)> = None;
     let mut conversation_id: Option<Uuid> = None;
 
     while let Some(field) = multipart
@@ -200,6 +306,7 @@ pub async fn upload(
                 return Err(AppError {
                     status: StatusCode::FORBIDDEN,
                     message: "Not a member of this conversation".to_string(),
+                    code: ErrorCode::Forbidden,
                     body: None,
                 });
             }
@@ -211,10 +318,10 @@ pub async fn upload(
             continue;
         }
 
-        file_data = Some(validate_and_read_file(field).await?);
+        file_data = Some(stream_field_to_temp(field).await?);
     }
 
-    let (original_filename, mime_type, data) = file_data
+    let (original_filename, mime_type, temp_path, file_size) = file_data
         .ok_or_else(|| AppError::bad_request("Missing 'file' field in multipart form data"))?;
 
     let ext = extension_for_mime(&mime_type);
@@ -222,9 +329,14 @@ pub async fn upload(
     let disk_filename = format!("{file_uuid}.{ext}");
     let disk_path = format!("./uploads/{disk_filename}");
 
-    fs::write(&disk_path, &data)
-        .await
-        .map_err(|e| AppError::internal(format!("Failed to save file: {e}")))?;
+    // Atomically rename temp -> final path; no extra copy needed.
+    fs::rename(&temp_path, &disk_path).await.map_err(|e| {
+        let tmp = temp_path.clone();
+        tokio::spawn(async move {
+            let _ = fs::remove_file(tmp).await;
+        });
+        AppError::internal(format!("Failed to save file: {e}"))
+    })?;
 
     let row = db::media::create_media(
         &state.pool,
@@ -232,7 +344,7 @@ pub async fn upload(
         auth.user_id,
         &original_filename,
         &mime_type,
-        data.len() as i64,
+        file_size,
         conversation_id,
     )
     .await?;
@@ -379,6 +491,7 @@ pub async fn download(
         .ok_or_else(|| AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         })?;
 
@@ -392,6 +505,7 @@ pub async fn download(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         });
     }
@@ -408,6 +522,7 @@ pub async fn download(
         AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media file not found on disk".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         }
     })?;
@@ -468,25 +583,27 @@ pub async fn download(
         }
     }
 
-    // No Range header — return the full body but advertise that we'd serve
-    // a partial response on demand. AVFoundation uses the presence of
-    // `Accept-Ranges: bytes` to decide whether to attempt streaming.
-    let data = fs::read(&disk_path).await.map_err(|e| {
-        tracing::error!("Failed to read media file {}: {}", disk_path, e);
+    // No Range header — stream the full file without buffering it into RAM.
+    // `ReaderStream` wraps the `tokio::fs::File` and yields chunks as they
+    // are read from disk; peak RAM is O(chunk) regardless of file size.
+    let file = fs::File::open(&disk_path).await.map_err(|e| {
+        tracing::error!("Failed to open media file {}: {}", disk_path, e);
         AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media file not found on disk".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         }
     })?;
 
+    let stream = ReaderStream::new(file);
     let response = Response::builder()
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, &row.mime_type)
         .header(CONTENT_DISPOSITION, &disposition)
         .header(ACCEPT_RANGES, "bytes")
         .header(CONTENT_LENGTH, total_size)
-        .body(Body::from(data))
+        .body(Body::from_stream(stream))
         .map_err(|e| AppError::internal(format!("Failed to build response: {e}")))?;
 
     Ok(response)
@@ -525,6 +642,7 @@ pub async fn download_thumb(
         .ok_or_else(|| AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         })?;
 
@@ -535,6 +653,7 @@ pub async fn download_thumb(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "Media not found".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         });
     }
@@ -545,6 +664,7 @@ pub async fn download_thumb(
         return Err(AppError {
             status: StatusCode::NOT_FOUND,
             message: "Thumbnail not available".to_string(),
+            code: ErrorCode::NotFound,
             body: None,
         });
     }
@@ -553,6 +673,7 @@ pub async fn download_thumb(
     let data = fs::read(&thumb_path).await.map_err(|_| AppError {
         status: StatusCode::NOT_FOUND,
         message: "Thumbnail not available".to_string(),
+        code: ErrorCode::NotFound,
         body: None,
     })?;
 
@@ -641,6 +762,31 @@ mod tests {
 
     // Minimal ELF header (magic 7F 45 4C 46).
     const ELF_BYTES: &[u8] = b"\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+
+    // Minimal M4V header -- ftyp box with "M4V " brand, padded to 512 bytes.
+    // Apple M4V files use this brand; infer detects them as "video/x-m4v".
+    // These were rejected before the fix because "video/x-m4v" was missing
+    // from ALLOWED_MIME_TYPES (#411).
+    fn make_m4v_head() -> Vec<u8> {
+        let mut v = vec![
+            0x00, 0x00, 0x00, 0x14, // box size = 20
+            b'f', b't', b'y', b'p', // box type = "ftyp"
+            b'M', b'4', b'V', b' ', // major brand = "M4V "
+            0x00, 0x00, 0x00, 0x00, // minor version
+            b'M', b'4', b'V', b' ', // compatible brand
+        ];
+        v.resize(512, 0);
+        v
+    }
+
+    #[test]
+    fn validate_bytes_accepts_m4v_as_video_x_m4v() {
+        // Regression for #411: Apple M4V files (ftyp brand "M4V ") were
+        // rejected because "video/x-m4v" was absent from ALLOWED_MIME_TYPES.
+        let head = make_m4v_head();
+        let mime = validate_bytes(&head, "video/mp4").expect("M4V magic bytes should be accepted");
+        assert_eq!(mime, "video/x-m4v");
+    }
 
     #[test]
     fn validate_bytes_accepts_pdf() {

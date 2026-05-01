@@ -80,6 +80,23 @@ class _FakeConversationsNotifier extends ConversationsNotifier {
             ConversationMember(userId: 'my-user-id', username: 'testuser'),
           ],
         ),
+        Conversation(
+          id: 'group-1',
+          isGroup: true,
+          name: 'Test Group',
+          members: [
+            ConversationMember(
+              userId: 'my-user-id',
+              username: 'testuser',
+              role: 'owner',
+            ),
+            ConversationMember(
+              userId: 'peer-1',
+              username: 'alice',
+              role: 'member',
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -281,7 +298,7 @@ void main() {
   });
 
   group('handleServerMessage: presence_list', () {
-    test('replaces onlineUsers set', () {
+    test('replaces onlineUsers set -- legacy string format', () {
       handler.handleServerMessage({
         'type': 'presence_list',
         'users': ['u1', 'u2', 'u3'],
@@ -297,6 +314,108 @@ void main() {
       }, _myUserId);
 
       expect(handler.state.onlineUsers, isEmpty);
+    });
+
+    // --- #436 presence_list snapshot (object format) ---
+
+    test('object format populates onlineUsers and presenceStatuses', () {
+      handler.handleServerMessage({
+        'type': 'presence_list',
+        'users': [
+          {'user_id': 'alice-id', 'status': 'online'},
+          {'user_id': 'bob-id', 'status': 'away'},
+        ],
+      }, _myUserId);
+
+      expect(handler.state.onlineUsers, containsAll(['alice-id', 'bob-id']));
+      expect(handler.state.presenceStatuses['alice-id'], 'online');
+      expect(handler.state.presenceStatuses['bob-id'], 'away');
+    });
+
+    test('object format replaces stale entries from previous session', () {
+      // Seed some stale presence from before a disconnect.
+      handler.handleServerMessage({
+        'type': 'presence',
+        'user_id': 'stale-user',
+        'status': 'online',
+      }, _myUserId);
+      expect(handler.state.onlineUsers, contains('stale-user'));
+
+      // Snapshot arrives on reconnect with a different set.
+      handler.handleServerMessage({
+        'type': 'presence_list',
+        'users': [
+          {'user_id': 'fresh-user', 'status': 'online'},
+        ],
+      }, _myUserId);
+
+      expect(
+        handler.state.onlineUsers,
+        isNot(contains('stale-user')),
+        reason: 'stale entry must be evicted by the snapshot',
+      );
+      expect(handler.state.onlineUsers, contains('fresh-user'));
+    });
+
+    test('skips entries with empty user_id', () {
+      handler.handleServerMessage({
+        'type': 'presence_list',
+        'users': [
+          {'user_id': '', 'status': 'online'},
+          {'user_id': 'valid-id', 'status': 'online'},
+        ],
+      }, _myUserId);
+
+      expect(handler.state.onlineUsers, {'valid-id'});
+    });
+  });
+
+  // --- #436 clearOnlineUsers ---
+  group('clearOnlineUsers', () {
+    test('clears onlineUsers and presenceStatuses on disconnect', () {
+      // Populate some presence state first.
+      handler.handleServerMessage({
+        'type': 'presence_list',
+        'users': [
+          {'user_id': 'peer-1', 'status': 'online'},
+          {'user_id': 'peer-2', 'status': 'away'},
+        ],
+      }, _myUserId);
+      expect(handler.state.onlineUsers, hasLength(2));
+
+      // Simulate disconnect.
+      handler.clearOnlineUsers();
+
+      expect(handler.state.onlineUsers, isEmpty);
+      expect(handler.state.presenceStatuses, isEmpty);
+    });
+
+    test('is idempotent when already empty', () {
+      handler.clearOnlineUsers();
+      handler.clearOnlineUsers();
+      expect(handler.state.onlineUsers, isEmpty);
+    });
+
+    test('snapshot after clearOnlineUsers reflects correct state', () {
+      // Disconnect clears state.
+      handler.handleServerMessage({
+        'type': 'presence',
+        'user_id': 'peer-1',
+        'status': 'online',
+      }, _myUserId);
+      handler.clearOnlineUsers();
+      expect(handler.state.onlineUsers, isEmpty);
+
+      // Reconnect snapshot arrives.
+      handler.handleServerMessage({
+        'type': 'presence_list',
+        'users': [
+          {'user_id': 'peer-1', 'status': 'online'},
+        ],
+      }, _myUserId);
+
+      expect(handler.state.onlineUsers, {'peer-1'});
+      expect(handler.state.presenceStatuses['peer-1'], 'online');
     });
   });
 
@@ -731,6 +850,109 @@ void main() {
       handler.handleServerMessage({
         'type': 'completely_unknown_type',
       }, _myUserId);
+    });
+  });
+
+  // #660 — group member list real-time update via WS
+  group('handleServerMessage: member_added', () {
+    test('appends new member to group conversation', () {
+      handler.handleServerMessage({
+        'type': 'member_added',
+        'conversation_id': 'group-1',
+        'user_id': 'peer-2',
+        'username': 'charlie',
+        'avatar_url': null,
+        'role': 'member',
+      }, _myUserId);
+
+      final convs = container.read(conversationsProvider).conversations;
+      final group = convs.firstWhere((c) => c.id == 'group-1');
+      expect(group.members.map((m) => m.userId), contains('peer-2'));
+      expect(
+        group.members.firstWhere((m) => m.userId == 'peer-2').username,
+        'charlie',
+      );
+    });
+
+    test('does not duplicate an existing member', () {
+      // alice (peer-1) is already in group-1
+      handler.handleServerMessage({
+        'type': 'member_added',
+        'conversation_id': 'group-1',
+        'user_id': 'peer-1',
+        'username': 'alice',
+        'role': 'member',
+      }, _myUserId);
+
+      final convs = container.read(conversationsProvider).conversations;
+      final group = convs.firstWhere((c) => c.id == 'group-1');
+      expect(group.members.where((m) => m.userId == 'peer-1'), hasLength(1));
+    });
+
+    test('ignores event with missing conversation_id', () {
+      // Should not throw and should leave state unchanged.
+      handler.handleServerMessage({
+        'type': 'member_added',
+        'conversation_id': '',
+        'user_id': 'peer-3',
+        'username': 'dave',
+        'role': 'member',
+      }, _myUserId);
+
+      final convs = container.read(conversationsProvider).conversations;
+      final group = convs.firstWhere((c) => c.id == 'group-1');
+      expect(group.members, hasLength(2)); // unchanged
+    });
+  });
+
+  // #663 — system message when member joins group
+  group('handleServerMessage: new_message with system sentinel', () {
+    test('member_joined sentinel creates system event, no preview update', () {
+      final convsNotifier = container.read(conversationsProvider.notifier);
+      // Seed a real message so we can verify the preview is NOT replaced.
+      convsNotifier.onNewMessage(
+        conversationId: 'group-1',
+        content: 'hello world',
+        senderUsername: 'alice',
+        timestamp: '2026-01-01T10:00:00Z',
+      );
+
+      handler.handleServerMessage({
+        'type': 'new_message',
+        'message_id': 'sys-1',
+        'from_user_id': 'peer-2',
+        'from_username': 'charlie',
+        'conversation_id': 'group-1',
+        'content': '__system__:member_joined:peer-2:charlie',
+        'timestamp': '2026-01-01T10:01:00Z',
+      }, _myUserId);
+
+      final chatNotifier = container.read(chatProvider.notifier);
+      final msgs = chatNotifier.state.messagesForConversation('group-1');
+      expect(msgs, hasLength(1));
+      expect(msgs.first.isSystemEvent, isTrue);
+      expect(msgs.first.content, 'charlie joined the group');
+
+      // Preview must not have been updated by the sentinel.
+      final convs = container.read(conversationsProvider).conversations;
+      final group = convs.firstWhere((c) => c.id == 'group-1');
+      expect(group.lastMessage, 'hello world');
+    });
+
+    test('sentinel with empty username is ignored gracefully', () {
+      handler.handleServerMessage({
+        'type': 'new_message',
+        'message_id': 'sys-2',
+        'from_user_id': 'peer-2',
+        'from_username': 'charlie',
+        'conversation_id': 'group-1',
+        'content': '__system__:member_joined:peer-2:',
+        'timestamp': '2026-01-01T10:02:00Z',
+      }, _myUserId);
+
+      final chatNotifier = container.read(chatProvider.notifier);
+      final msgs = chatNotifier.state.messagesForConversation('group-1');
+      expect(msgs, isEmpty);
     });
   });
 }

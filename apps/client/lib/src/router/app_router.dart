@@ -6,12 +6,15 @@ import '../providers/auth_provider.dart';
 import '../screens/contacts_screen.dart';
 import '../screens/create_group_screen.dart';
 import '../screens/discover_groups_screen.dart';
+import '../screens/forgot_password_screen.dart';
 import '../screens/group_info_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/join_group_screen.dart';
+import '../screens/token_join_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/onboarding_wizard.dart';
 import '../screens/register_screen.dart';
+import '../screens/reset_password_screen.dart';
 import '../screens/safety_number_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/splash_screen.dart';
@@ -60,7 +63,9 @@ String? _authRedirect(Ref ref, GoRouterState state) {
   final isSplash = state.matchedLocation == _routeSplash;
   final isAuthRoute =
       state.matchedLocation == _routeLogin ||
-      state.matchedLocation == '/register';
+      state.matchedLocation == '/register' ||
+      state.matchedLocation == '/forgot-password' ||
+      state.matchedLocation == '/reset-password';
   final isOnboarding = state.matchedLocation == '/onboarding';
   final isJoinRoute =
       state.matchedLocation.startsWith('/join') ||
@@ -175,6 +180,16 @@ final routerProvider = Provider<GoRouter>((ref) {
             _fadePage(key: state.pageKey, child: const RegisterScreen()),
       ),
       GoRoute(
+        path: '/forgot-password',
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const ForgotPasswordScreen()),
+      ),
+      GoRoute(
+        path: '/reset-password',
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const ResetPasswordScreen()),
+      ),
+      GoRoute(
         path: '/onboarding',
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const OnboardingWizard()),
@@ -261,6 +276,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => _fadePage(
           key: state.pageKey,
           child: JoinGroupScreen(groupId: state.pathParameters['groupId']!),
+        ),
+      ),
+      GoRoute(
+        path: '/invite/t/:token',
+        pageBuilder: (context, state) => _fadePage(
+          key: state.pageKey,
+          child: TokenJoinScreen(token: state.pathParameters['token']!),
         ),
       ),
       ..._profileRoutes(),

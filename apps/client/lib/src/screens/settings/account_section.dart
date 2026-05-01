@@ -5,14 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../services/toast_service.dart';
+import '../../services/upload_client.dart';
 import '../../theme/echo_theme.dart';
 import '../../utils/friendly_error.dart';
+import '../../widgets/avatar_crop_dialog.dart';
 import '../../widgets/avatar_utils.dart' show resolveAvatarUrl;
 
 class _CountryCode {
@@ -200,16 +201,6 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     }
   }
 
-  static MediaType _mimeFromFilename(String name) {
-    final ext = name.split('.').last.toLowerCase();
-    return switch (ext) {
-      'jpg' || 'jpeg' => MediaType('image', 'jpeg'),
-      'webp' => MediaType('image', 'webp'),
-      'gif' => MediaType('image', 'gif'),
-      _ => MediaType('image', 'png'),
-    };
-  }
-
   Future<void> _changePassword() async {
     final serverUrl = ref.read(serverUrlProvider);
 
@@ -272,29 +263,36 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     return '?';
   }
 
-  /// Send the avatar upload request, retrying once on 401.
+  /// Send the avatar upload request via [UploadClient], retrying once on 401.
   Future<bool> _sendAvatarWithRetry(String serverUrl, PlatformFile file) async {
-    for (var attempt = 0; attempt < 2; attempt++) {
-      final token = ref.read(authProvider).token;
-      if (token == null) return false;
-
-      final request = _buildAvatarRequest(serverUrl, token, file);
-      final streamedResponse = await request.send();
-      final body = await streamedResponse.stream.bytesToString();
-      if (!mounted) return false;
-
-      if (streamedResponse.statusCode == 401 && attempt == 0) {
-        final refreshed = await ref
-            .read(authProvider.notifier)
-            .refreshAccessToken();
-        if (!refreshed) return false;
-        continue;
+    final uploader = UploadClient(ref.read(authProvider.notifier));
+    final result = await uploader.uploadFile(
+      serverUrl: serverUrl,
+      path: '/api/users/me/avatar',
+      bytes: file.bytes!,
+      fileName: file.name,
+      mimeType: 'image/jpeg',
+      method: 'PUT',
+      fieldName: 'avatar',
+    );
+    if (!mounted) return false;
+    if (result.ok) {
+      if (result.url != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ref.read(authProvider.notifier).updateAvatarUrl(result.url!);
+          }
+        });
       }
-
-      _handleAvatarResponse(streamedResponse.statusCode, body);
-      return true;
+      ToastService.show(context, 'Avatar updated', type: ToastType.success);
+    } else {
+      ToastService.show(
+        context,
+        result.errorMessage ?? 'Avatar upload failed (${result.statusCode})',
+        type: ToastType.error,
+      );
     }
-    return false;
+    return result.ok;
   }
 
   Future<void> _uploadAvatar() async {
@@ -307,61 +305,29 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     final file = result.files.first;
     if (file.bytes == null) return;
 
+    // Show the crop dialog; fall through with original bytes if cancelled.
+    final croppedBytes = mounted
+        ? await showAvatarCropDialog(context, file.bytes!)
+        : null;
+    if (croppedBytes == null) return; // user cancelled
+
     final serverUrl = ref.read(serverUrlProvider);
 
+    // Wrap cropped bytes in a PlatformFile-like object for _sendAvatarWithRetry.
+    final croppedFile = PlatformFile(
+      name: 'avatar.jpg',
+      size: croppedBytes.length,
+      bytes: croppedBytes,
+    );
+
     try {
-      await _sendAvatarWithRetry(serverUrl, file);
+      await _sendAvatarWithRetry(serverUrl, croppedFile);
     } catch (e) {
       debugPrint('[Account] avatar upload failed: $e');
       if (mounted) {
         ToastService.show(context, friendlyError(e), type: ToastType.error);
       }
     }
-  }
-
-  http.MultipartRequest _buildAvatarRequest(
-    String serverUrl,
-    String token,
-    PlatformFile file,
-  ) {
-    final uri = Uri.parse('$serverUrl/api/users/me/avatar');
-    return http.MultipartRequest('PUT', uri)
-      ..headers['Authorization'] = 'Bearer $token'
-      ..files.add(
-        http.MultipartFile.fromBytes(
-          'avatar',
-          file.bytes!,
-          filename: file.name,
-          contentType: _mimeFromFilename(file.name),
-        ),
-      );
-  }
-
-  void _handleAvatarResponse(int statusCode, String body) {
-    if (statusCode == 200) {
-      _tryUpdateAvatarUrl(body);
-      ToastService.show(context, 'Avatar updated', type: ToastType.success);
-    } else {
-      ToastService.show(
-        context,
-        friendlyError(Exception('Avatar upload failed $statusCode')),
-        type: ToastType.error,
-      );
-    }
-  }
-
-  void _tryUpdateAvatarUrl(String body) {
-    try {
-      final data = jsonDecode(body) as Map<String, dynamic>;
-      final avatarUrl = data['avatar_url'] as String?;
-      if (avatarUrl != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            ref.read(authProvider.notifier).updateAvatarUrl(avatarUrl);
-          }
-        });
-      }
-    } catch (_) {}
   }
 
   void _copyInviteLink() {

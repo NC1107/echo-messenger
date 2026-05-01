@@ -85,6 +85,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   AuthNotifier(this.ref) : super(const AuthState());
 
+  /// Public token accessor for non-StateNotifier callers (e.g. UploadClient).
+  String? get currentToken => state.token;
+
   static const _keyAccessToken = 'echo_auth_access_token';
   static const _keyRefreshToken = 'echo_auth_refresh_token';
   static const _keyUserId = 'echo_auth_user_id';

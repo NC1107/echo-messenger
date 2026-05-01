@@ -3,26 +3,18 @@ import 'package:flutter/material.dart';
 
 import '../../theme/echo_theme.dart';
 import '../../version.dart';
+import 'animated_gradient_background.dart';
 
-/// Subtle radial gradient that fills the otherwise-empty scaffold so the
-/// auth forms (login, register) do not float in a flat black void.
+/// Animated linear-gradient background for auth screens (login, register).
+///
+/// Delegates to [AnimatedGradientBackground], which automatically respects
+/// the user's reduce-motion accessibility setting.
 class AuthBackground extends StatelessWidget {
   const AuthBackground({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Positioned.fill(
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: RadialGradient(
-            center: Alignment.topCenter,
-            radius: 1.4,
-            colors: [context.accent.withValues(alpha: 0.06), context.mainBg],
-            stops: const [0.0, 0.6],
-          ),
-        ),
-      ),
-    );
+    return const AnimatedGradientBackground();
   }
 }
 

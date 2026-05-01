@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:echo_app/src/models/chat_message.dart';
 import 'package:echo_app/src/models/conversation.dart';
+import 'package:echo_app/src/providers/chat_provider.dart';
+import 'package:echo_app/src/theme/echo_theme.dart';
 import 'package:echo_app/src/widgets/conversation_item.dart';
 
 import '../helpers/pump_app.dart';
@@ -425,6 +429,55 @@ void main() {
 
       expect(find.textContaining('You:'), findsOneWidget);
     });
+
+    testWidgets('shows group icon for group conversation', (tester) async {
+      final conv = _makeConversation(
+        name: 'Dev Team',
+        isGroup: true,
+        members: const [
+          ConversationMember(userId: 'u1', username: 'alice'),
+          ConversationMember(userId: 'u2', username: 'bob'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:30',
+          onTap: () {},
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byIcon(Icons.group_outlined), findsOneWidget);
+    });
+
+    testWidgets('does not show group icon for DM conversation', (tester) async {
+      final conv = _makeConversation(
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:30',
+          onTap: () {},
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byIcon(Icons.group_outlined), findsNothing);
+    });
   });
 
   group('ConversationItem semantics label (#631)', () {
@@ -547,4 +600,106 @@ void main() {
       },
     );
   });
+
+  group('ConversationItem selector rebuild isolation (#578)', () {
+    testWidgets('unrelated conversation message does not rebuild this tile', (
+      tester,
+    ) async {
+      ChatMessage makeMsg(String id, String convId) => ChatMessage(
+        id: id,
+        fromUserId: 'my-id',
+        fromUsername: 'me',
+        conversationId: convId,
+        content: 'hello',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: true,
+        status: MessageStatus.sent,
+      );
+
+      final initialState = ChatState(
+        messagesByConversation: {
+          'conv-a': [makeMsg('msg-1', 'conv-a')],
+        },
+        messageIdIndex: {
+          'conv-a': {'msg-1'},
+        },
+      );
+
+      // Hold a reference so we can push state changes after mount.
+      _MutableChatNotifier? capturedNotifier;
+
+      int buildCount = 0;
+
+      final conv = _makeConversation(
+        id: 'conv-a',
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            chatProvider.overrideWith((ref) {
+              final n = _MutableChatNotifier(ref, initialState);
+              capturedNotifier = n;
+              return n;
+            }),
+          ],
+          child: MaterialApp(
+            theme: EchoTheme.darkTheme,
+            darkTheme: EchoTheme.darkTheme,
+            themeMode: ThemeMode.dark,
+            home: Scaffold(
+              body: Builder(
+                builder: (ctx) {
+                  buildCount++;
+                  return ConversationItem(
+                    conversation: conv,
+                    myUserId: 'my-id',
+                    isSelected: false,
+                    isPinned: false,
+                    isPeerOnline: false,
+                    timestamp: '10:00',
+                    onTap: () {},
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(capturedNotifier, isNotNull);
+      final buildsAfterInit = buildCount;
+
+      // Push a message for a completely different conversation (conv-b).
+      // With the selector fix, conv-a's tile must not rebuild.
+      capturedNotifier!.addMessage(makeMsg('msg-99', 'conv-b'));
+      await tester.pump();
+
+      expect(
+        buildCount,
+        equals(buildsAfterInit),
+        reason:
+            'ConversationItem for conv-a rebuilt when only conv-b changed '
+            '— selector not applied',
+      );
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ChatNotifier subclass that exposes direct state mutation for tests.
+// Skips all network/cache operations so tests stay hermetic.
+// ---------------------------------------------------------------------------
+class _MutableChatNotifier extends ChatNotifier {
+  _MutableChatNotifier(super.ref, ChatState initial) {
+    state = initial;
+  }
+
+  @override
+  void addMessage(ChatMessage msg) => state = state.withMessage(msg);
 }

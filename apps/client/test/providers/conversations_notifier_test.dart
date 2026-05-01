@@ -6,6 +6,7 @@ import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/providers/conversations_provider.dart';
 import 'package:echo_app/src/providers/privacy_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
+import 'package:echo_app/src/services/message_cache.dart';
 
 ConversationsNotifier _createNotifier({List<Conversation> initial = const []}) {
   final container = ProviderContainer(
@@ -145,6 +146,73 @@ void main() {
 
       final conv = notifier.state.conversations.first;
       expect(conv.isEncrypted, isFalse);
+    });
+  });
+
+  // Regression tests for #664: sentinel strings must never surface as previews.
+  group('ConversationsNotifier – decrypt-failure sentinel filter (#664)', () {
+    test('genuine plaintext preview is stored normally', () {
+      final notifier = _createNotifier(initial: [_conv1]);
+      expect(
+        () => notifier.updateDecryptedPreview('conv-1', 'Hello world'),
+        returnsNormally,
+      );
+    });
+
+    test('updateDecryptedPreview silently ignores failure sentinels', () {
+      final notifier = _createNotifier(initial: [_conv1]);
+      // Establish a good preview first.
+      notifier.updateDecryptedPreview('conv-1', 'Last good message');
+      // Simulate a decrypt failure writing each sentinel.
+      for (final sentinel in MessageCache.failureSentinels) {
+        notifier.updateDecryptedPreview('conv-1', sentinel);
+      }
+      // Good preview must not have been overwritten; a real WS message wins.
+      notifier.onNewMessage(
+        conversationId: 'conv-1',
+        content: 'New real message',
+        timestamp: '2026-01-16T10:00:00Z',
+        senderUsername: 'alice',
+      );
+      final conv = notifier.state.conversations.firstWhere(
+        (c) => c.id == 'conv-1',
+      );
+      expect(conv.lastMessage, 'New real message');
+      expect(MessageCache.failureSentinels.contains(conv.lastMessage), isFalse);
+    });
+
+    test('onNewMessage does not cache failure sentinel in preview map', () {
+      final notifier = _createNotifier(initial: [_conv1]);
+      for (final sentinel in MessageCache.failureSentinels) {
+        notifier.onNewMessage(
+          conversationId: 'conv-1',
+          content: sentinel,
+          timestamp: '2026-01-16T10:00:00Z',
+          senderUsername: 'alice',
+        );
+        // A subsequent good preview must still be accepted (sentinel did not
+        // poison the cache and cause the good value to be rejected).
+        expect(
+          () => notifier.updateDecryptedPreview('conv-1', 'Still good'),
+          returnsNormally,
+        );
+      }
+    });
+
+    test('onMessageEdited does not cache failure sentinel in preview map', () {
+      final notifier = _createNotifier(initial: [_conv1]);
+      notifier.updateDecryptedPreview('conv-1', 'Original message');
+      for (final sentinel in MessageCache.failureSentinels) {
+        notifier.onMessageEdited(
+          conversationId: 'conv-1',
+          newContent: sentinel,
+        );
+      }
+      // Good preview must still be accepted after sentinel edits.
+      expect(
+        () => notifier.updateDecryptedPreview('conv-1', 'Good preview'),
+        returnsNormally,
+      );
     });
   });
 

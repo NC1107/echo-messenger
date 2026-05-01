@@ -199,6 +199,10 @@ pub async fn handle_socket(
     // Broadcast online presence to contacts
     typing_service::broadcast_presence(&state, user_id, &username, "online").await;
 
+    // Send a presence_list snapshot to the newly-connected user so it can
+    // replace any stale online-set from before the reconnect (#436).
+    typing_service::send_presence_snapshot(&state, user_id).await;
+
     // Forward hub -> sink. Both halves are select!-linked below so neither
     // outlives the other; rx returned for post-shutdown drain.
     let send_fut = async move {
@@ -353,14 +357,12 @@ async fn run_receive_loop(
                         "WebSocket message exceeds size limit, dropping"
                     );
                     send_error(state, user_id, "Message too large (max 64 KB)");
-                    consecutive_violations += 1;
-                    if consecutive_violations >= MAX_CONSECUTIVE_VIOLATIONS {
-                        tracing::warn!(
-                            user_id = %user_id,
-                            "Disconnecting after {} consecutive violations",
-                            consecutive_violations
-                        );
-                        send_error(state, user_id, "Too many violations, disconnecting");
+                    if record_violation(
+                        state,
+                        user_id,
+                        &mut consecutive_violations,
+                        MAX_CONSECUTIVE_VIOLATIONS,
+                    ) {
                         break;
                     }
                     continue;
@@ -374,14 +376,12 @@ async fn run_receive_loop(
                         "WebSocket rate limit exceeded, dropping message"
                     );
                     send_error(state, user_id, "Rate limit exceeded, please slow down");
-                    consecutive_violations += 1;
-                    if consecutive_violations >= MAX_CONSECUTIVE_VIOLATIONS {
-                        tracing::warn!(
-                            user_id = %user_id,
-                            "Disconnecting after {} consecutive violations",
-                            consecutive_violations
-                        );
-                        send_error(state, user_id, "Too many violations, disconnecting");
+                    if record_violation(
+                        state,
+                        user_id,
+                        &mut consecutive_violations,
+                        MAX_CONSECUTIVE_VIOLATIONS,
+                    ) {
                         break;
                     }
                     continue;
@@ -396,14 +396,12 @@ async fn run_receive_loop(
                         "WebSocket byte-rate limit exceeded, dropping message"
                     );
                     send_error(state, user_id, "Byte-rate limit exceeded, please slow down");
-                    consecutive_violations += 1;
-                    if consecutive_violations >= MAX_CONSECUTIVE_VIOLATIONS {
-                        tracing::warn!(
-                            user_id = %user_id,
-                            "Disconnecting after {} consecutive violations",
-                            consecutive_violations
-                        );
-                        send_error(state, user_id, "Too many violations, disconnecting");
+                    if record_violation(
+                        state,
+                        user_id,
+                        &mut consecutive_violations,
+                        MAX_CONSECUTIVE_VIOLATIONS,
+                    ) {
                         break;
                     }
                     continue;
@@ -425,8 +423,12 @@ async fn run_receive_loop(
                 };
                 if cost > 0.0 {
                     if byte_tokens < cost {
-                        consecutive_violations += 1;
-                        if consecutive_violations >= MAX_CONSECUTIVE_VIOLATIONS {
+                        if record_violation(
+                            state,
+                            user_id,
+                            &mut consecutive_violations,
+                            MAX_CONSECUTIVE_VIOLATIONS,
+                        ) {
                             break;
                         }
                         continue;
@@ -437,6 +439,28 @@ async fn run_receive_loop(
             }
         }
     }
+}
+
+/// Record a rate-limit violation and send a disconnect notice when the
+/// threshold is reached.  Returns `true` when the caller should break the
+/// receive loop, `false` when it should only `continue`.
+fn record_violation(
+    state: &AppState,
+    user_id: Uuid,
+    consecutive_violations: &mut u32,
+    max_violations: u32,
+) -> bool {
+    *consecutive_violations += 1;
+    if *consecutive_violations >= max_violations {
+        tracing::warn!(
+            user_id = %user_id,
+            "Disconnecting after {} consecutive violations",
+            consecutive_violations
+        );
+        send_error(state, user_id, "Too many violations, disconnecting");
+        return true;
+    }
+    false
 }
 
 /// Clean up stale voice sessions for a disconnecting user and broadcast

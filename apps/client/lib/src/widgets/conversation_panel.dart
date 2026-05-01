@@ -11,23 +11,24 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
+import '../providers/conversation_filter_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
-import '../utils/fuzzy_score.dart';
+import '../providers/theme_provider.dart'
+    show MessageLayout, messageLayoutProvider;
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart';
 import 'conversation_item.dart';
 import 'echo_logo_icon.dart';
 import 'skeleton_loader.dart';
+import 'voice_footer.dart';
 
 // Re-export avatar utilities so existing `show` imports keep working.
 export 'avatar_utils.dart'
     show buildAvatar, avatarColor, groupAvatarColor, resolveAvatarUrl;
-
-enum _ConversationFilter { all, dms, groups }
 
 class ConversationPanel extends ConsumerStatefulWidget {
   final String? selectedConversationId;
@@ -52,6 +53,9 @@ class ConversationPanel extends ConsumerStatefulWidget {
   /// Optional external focus node for the search bar (e.g. for Ctrl+K shortcut).
   final FocusNode? externalSearchFocusNode;
 
+  /// Called when the user taps the voice footer body to navigate to the lounge.
+  final VoidCallback? onNavigateToLounge;
+
   const ConversationPanel({
     super.key,
     this.selectedConversationId,
@@ -67,6 +71,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
     this.onScanQr,
     this.onMessageContact,
     this.externalSearchFocusNode,
+    this.onNavigateToLounge,
   });
 
   @override
@@ -74,23 +79,16 @@ class ConversationPanel extends ConsumerStatefulWidget {
 }
 
 class _ConversationPanelState extends ConsumerState<ConversationPanel> {
-  String _searchQuery = '';
   bool _isSearching = false;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   final _keyboardListenerFocusNode = FocusNode();
   // Timer removed -- HomeScreen handles pending contacts polling
 
-  /// Active conversation type filter.
-  _ConversationFilter _filter = _ConversationFilter.all;
-
   /// True after the user manually dismisses the "session replaced" banner.
   /// Resets on next reconnect (the websocket clears `wasReplaced`, and we
   /// re-show the banner if a future replacement happens).
   bool _replacedBannerDismissed = false;
-
-  /// Pinned conversation IDs
-  Set<String> _pinnedIds = {};
 
   /// Debounce timer for the search field. Delays the fuzzy-score recompute
   /// so we don't run it on every keystroke.
@@ -115,8 +113,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     // selected conversation is visible and highlighted.
     if (widget.selectedConversationId != null &&
         widget.selectedConversationId != oldWidget.selectedConversationId &&
-        _filter != _ConversationFilter.all) {
-      setState(() => _filter = _ConversationFilter.all);
+        ref.read(conversationFilterTypeProvider) !=
+            ConversationFilterType.all) {
+      ref.read(conversationFilterTypeProvider.notifier).state =
+          ConversationFilterType.all;
     }
   }
 
@@ -137,7 +137,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 150), () {
       if (!mounted) return;
-      setState(() => _searchQuery = trimmed);
+      ref.read(conversationSearchQueryProvider.notifier).state = trimmed;
     });
   }
 
@@ -150,9 +150,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     }
   }
 
-  void _onFilterChanged(_ConversationFilter filter) {
-    if (_filter == filter) return;
-    setState(() => _filter = filter);
+  void _onFilterChanged(ConversationFilterType filter) {
+    if (ref.read(conversationFilterTypeProvider) == filter) return;
+    ref.read(conversationFilterTypeProvider.notifier).state = filter;
   }
 
   void _onExternalSearchFocus() {
@@ -180,57 +180,39 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           .where((c) => c.isPinned)
           .map((c) => c.id)
           .toSet();
-      setState(() => _pinnedIds = {...pinned.toSet(), ...serverPinned});
+      ref.read(pinnedConversationIdsProvider.notifier).state = {
+        ...pinned.toSet(),
+        ...serverPinned,
+      };
     }
   }
 
   Future<void> _savePinnedIds() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('pinned_conversation_ids', _pinnedIds.toList());
+    final ids = ref.read(pinnedConversationIdsProvider);
+    await prefs.setStringList('pinned_conversation_ids', ids.toList());
   }
 
   void _togglePin(String conversationId) {
-    final isPinned = _pinnedIds.contains(conversationId);
-    setState(() {
-      if (isPinned) {
-        _pinnedIds.remove(conversationId);
-      } else {
-        _pinnedIds.add(conversationId);
-      }
-    });
+    final current = ref.read(pinnedConversationIdsProvider);
+    final isPinned = current.contains(conversationId);
+    final updated = Set<String>.from(current);
+    if (isPinned) {
+      updated.remove(conversationId);
+    } else {
+      updated.add(conversationId);
+    }
+    ref.read(pinnedConversationIdsProvider.notifier).state = updated;
     _savePinnedIds();
     ref
         .read(conversationsProvider.notifier)
         .setPinned(conversationId, !isPinned);
   }
 
-  /// Sort conversations: pinned first, then by last message timestamp.
-  /// Both groups are sorted by most recent message descending.
-  List<Conversation> _sortConversations(List<Conversation> conversations) {
-    final pinned = <Conversation>[];
-    final unpinned = <Conversation>[];
-    for (final conv in conversations) {
-      if (_pinnedIds.contains(conv.id)) {
-        pinned.add(conv);
-      } else {
-        unpinned.add(conv);
-      }
-    }
-    int byTimestamp(Conversation a, Conversation b) {
-      final ta = a.lastMessageTimestamp ?? '';
-      final tb = b.lastMessageTimestamp ?? '';
-      return tb.compareTo(ta); // descending — newest first
-    }
-
-    pinned.sort(byTimestamp);
-    unpinned.sort(byTimestamp);
-    return [...pinned, ...unpinned];
-  }
-
   void _clearSearch() {
     _searchDebounce?.cancel();
+    ref.read(conversationSearchQueryProvider.notifier).state = '';
     setState(() {
-      _searchQuery = '';
       _isSearching = false;
       _searchController.clear();
     });
@@ -241,7 +223,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     Conversation conv,
     Offset position,
   ) {
-    final isPinned = _pinnedIds.contains(conv.id);
+    final pinnedIds = ref.read(pinnedConversationIdsProvider);
+    final isPinned = pinnedIds.contains(conv.id) || conv.isPinned;
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
 
     showMenu<String>(
@@ -491,8 +474,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       isLoading: convIsLoading,
       error: convError,
     );
-    final (myUserId, myUsername, myAvatarUrl) = ref.watch(
-      authProvider.select((s) => (s.userId, s.username, s.avatarUrl)),
+    final (myUserId, myUsername, myAvatarUrl, myPresenceStatus) = ref.watch(
+      authProvider.select(
+        (s) => (s.userId, s.username, s.avatarUrl, s.presenceStatus),
+      ),
     );
     final userId = myUserId ?? '';
     final username = myUsername ?? 'User';
@@ -506,7 +491,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
     final pendingCount = contactsState.pendingRequests.length;
 
-    final conversations = _filterConversations(allConversations, userId);
+    // Derived list is precomputed by sortedConversationsProvider — no
+    // sort/filter work happens here in the build path.
+    final conversations = ref.watch(sortedConversationsProvider);
 
     return Container(
       color: context.sidebarBg,
@@ -529,6 +516,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                   wsOnlineUsers,
                 ),
               ),
+              VoiceFooter(onNavigateToLounge: widget.onNavigateToLounge),
               // Hide the status bar on mobile narrow — redundant with the
               // bottom tab bar that already exposes Settings + identity.
               if (MediaQuery.sizeOf(context).width >= 600)
@@ -539,6 +527,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                   avatarUrl: myAvatarUrl,
                   wsConnected: wsConnected,
                   wsReplaced: wsReplaced,
+                  presenceStatus: myPresenceStatus,
                 ),
             ],
           ),
@@ -578,46 +567,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ),
       ),
     );
-  }
-
-  List<Conversation> _filterConversations(
-    List<Conversation> allConversations,
-    String myUserId,
-  ) {
-    var result = allConversations;
-
-    // Apply type filter.
-    switch (_filter) {
-      case _ConversationFilter.dms:
-        result = result.where((c) => !c.isGroup).toList();
-      case _ConversationFilter.groups:
-        result = result.where((c) => c.isGroup).toList();
-      case _ConversationFilter.all:
-        break;
-    }
-
-    // Apply search filter using fuzzy scoring so typos/abbreviations still
-    // match and the best match appears first.
-    if (_searchQuery.isNotEmpty) {
-      final query = _searchQuery;
-      final scored = <({Conversation conv, double score})>[];
-      for (final conv in result) {
-        final name = conv.displayName(myUserId);
-        final lastMsg = conv.lastMessage ?? '';
-        final nameScore = fuzzyScore(query, name);
-        final msgScore = fuzzyScore(query, lastMsg);
-        // Weighted sum normalised back into [0, 1] so the threshold is
-        // meaningful. Raw weights were nameScore*2 + msgScore (max 3).
-        final score = (nameScore * 2 + msgScore) / 3;
-        if (score > 0.2) {
-          scored.add((conv: conv, score: score));
-        }
-      }
-      scored.sort((a, b) => b.score.compareTo(a.score));
-      result = scored.map((e) => e.conv).toList();
-    }
-
-    return result;
   }
 
   Widget _buildLogoHeader(BuildContext context, int pendingCount) {
@@ -717,14 +666,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 widget.onSavedMessages?.call();
             }
           },
-          itemBuilder: (context) => [
-            // ignore: prefer_const_constructors
+          itemBuilder: (context) => const [
             PopupMenuItem(
-              // TODO(#674): cannot const due to ConstrainedBox child
               value: 'chat',
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 200),
-                child: const Row(
+              child: SizedBox(
+                width: 200,
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.person_add_outlined, size: 18),
@@ -736,13 +683,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 ),
               ),
             ),
-            // ignore: prefer_const_constructors
             PopupMenuItem(
-              // TODO(#674): cannot const due to ConstrainedBox child
               value: 'group',
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 200),
-                child: const Row(
+              child: SizedBox(
+                width: 200,
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.group_add_outlined, size: 18),
@@ -754,13 +699,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 ),
               ),
             ),
-            // ignore: prefer_const_constructors
             PopupMenuItem(
-              // TODO(#674): cannot const due to ConstrainedBox child
               value: 'discover',
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 200),
-                child: const Row(
+              child: SizedBox(
+                width: 200,
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.explore_outlined, size: 18),
@@ -775,13 +718,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 ),
               ),
             ),
-            // ignore: prefer_const_constructors
             PopupMenuItem(
-              // TODO(#674): cannot const due to ConstrainedBox child
               value: 'saved',
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 200),
-                child: const Row(
+              child: SizedBox(
+                width: 200,
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.bookmark_border_outlined, size: 18),
@@ -858,6 +799,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Widget _buildActiveSearchBar(BuildContext context) {
+    final searchQuery = ref.watch(conversationSearchQueryProvider);
     return KeyboardListener(
       focusNode: _keyboardListenerFocusNode,
       onKeyEvent: (event) {
@@ -890,7 +832,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               onChanged: _onSearchChanged,
             ),
           ),
-          if (_searchQuery.isNotEmpty)
+          if (searchQuery.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.close, size: 16),
               color: context.textMuted,
@@ -923,21 +865,24 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Widget _buildFilterChips() {
+    final activeFilter = ref.watch(conversationFilterTypeProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
-          _buildChip('All', _ConversationFilter.all),
+          _buildChip('All', ConversationFilterType.all, activeFilter),
           const SizedBox(width: 6),
           _buildChip(
             'DMs',
-            _ConversationFilter.dms,
+            ConversationFilterType.dms,
+            activeFilter,
             icon: Icons.person_outline,
           ),
           const SizedBox(width: 6),
           _buildChip(
             'Groups',
-            _ConversationFilter.groups,
+            ConversationFilterType.groups,
+            activeFilter,
             icon: Icons.groups_outlined,
           ),
         ],
@@ -947,10 +892,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
   Widget _buildChip(
     String label,
-    _ConversationFilter filter, {
+    ConversationFilterType filter,
+    ConversationFilterType activeFilter, {
     IconData? icon,
   }) {
-    final isSelected = _filter == filter;
+    final isSelected = activeFilter == filter;
     // Selected chip bg is always `context.accent` (a saturated indigo across
     // every theme variant), so white reads cleanly. The previous reliance on
     // `colorScheme.onPrimary` broke on themes where onPrimary resolves dark
@@ -1098,6 +1044,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     required String? avatarUrl,
     required bool wsConnected,
     required bool wsReplaced,
+    required String presenceStatus,
   }) {
     return Container(
       height: 56,
@@ -1114,6 +1061,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             serverUrl,
             avatarUrl,
             wsConnected,
+            presenceStatus,
           ),
           const SizedBox(width: 10),
           _buildUserNameAndStatus(context, myUsername, wsConnected, wsReplaced),
@@ -1130,35 +1078,83 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     );
   }
 
+  static Color _presenceColor(String status) => switch (status) {
+    'away' => EchoTheme.warning,
+    'dnd' => EchoTheme.danger,
+    'invisible' => const Color(0xFF6B6B6F),
+    _ => EchoTheme.online,
+  };
+
   Widget _buildUserAvatar(
     BuildContext context,
     String myUsername,
     String serverUrl,
     String? avatarUrl,
     bool wsConnected,
+    String presenceStatus,
   ) {
-    return Stack(
-      children: [
-        buildAvatar(
-          name: myUsername,
-          radius: 16,
-          bgColor: context.accent,
-          imageUrl: resolveAvatarUrl(avatarUrl, serverUrl),
-        ),
-        Positioned(
-          bottom: 0,
-          right: 0,
-          child: Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: wsConnected ? EchoTheme.online : EchoTheme.warning,
-              shape: BoxShape.circle,
-              border: Border.all(color: context.mainBg, width: 2),
+    final dotColor = wsConnected
+        ? _presenceColor(presenceStatus)
+        : EchoTheme.warning;
+
+    return Semantics(
+      label: 'Status: $presenceStatus. Tap to change.',
+      button: true,
+      child: PopupMenuButton<String>(
+        key: const Key('status-picker'),
+        tooltip: 'Change status',
+        offset: const Offset(0, -160),
+        onSelected: (status) {
+          ref.read(authProvider.notifier).setPresenceStatus(status);
+        },
+        itemBuilder: (_) => const [
+          PopupMenuItem(
+            value: 'online',
+            child: _StatusMenuItem(label: 'Online', color: EchoTheme.online),
+          ),
+          PopupMenuItem(
+            value: 'away',
+            child: _StatusMenuItem(label: 'Away', color: EchoTheme.warning),
+          ),
+          PopupMenuItem(
+            value: 'dnd',
+            child: _StatusMenuItem(
+              label: 'Do Not Disturb',
+              color: EchoTheme.danger,
             ),
           ),
+          PopupMenuItem(
+            value: 'invisible',
+            child: _StatusMenuItem(
+              label: 'Invisible',
+              color: Color(0xFF6B6B6F),
+            ),
+          ),
+        ],
+        child: Stack(
+          children: [
+            buildAvatar(
+              name: myUsername,
+              radius: 16,
+              bgColor: context.accent,
+              imageUrl: resolveAvatarUrl(avatarUrl, serverUrl),
+            ),
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: dotColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: context.mainBg, width: 2),
+                ),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -1253,11 +1249,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         child: _buildChatsEmptyState(),
       );
     } else {
-      final sorted = _sortConversations(conversations);
+      // conversations is already sorted + filtered by sortedConversationsProvider.
       child = KeyedSubtree(
         key: const ValueKey('list'),
         child: _buildConversationList(
-          sorted,
+          conversations,
           myUserId,
           serverUrl,
           wsOnlineUsers,
@@ -1271,7 +1267,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
   }
 
   Widget _buildChatsEmptyState() {
-    if (_searchQuery.isNotEmpty) {
+    final searchQuery = ref.watch(conversationSearchQueryProvider);
+    if (searchQuery.isNotEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -1285,7 +1282,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               ),
               const SizedBox(height: 16),
               Text(
-                "No results found for '$_searchQuery'",
+                "No results found for '$searchQuery'",
                 style: TextStyle(
                   color: context.textSecondary,
                   fontSize: 14,
@@ -1408,7 +1405,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       final conv = sorted[convIndex];
       return _buildConversationTile(
         conv,
-        _pinnedIds.contains(conv.id),
+        conv.isPinned ||
+            ref.read(pinnedConversationIdsProvider).contains(conv.id),
         myUserId,
         serverUrl,
         wsOnlineUsers,
@@ -1418,7 +1416,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final conv = sorted[index];
     return _buildConversationTile(
       conv,
-      _pinnedIds.contains(conv.id),
+      conv.isPinned ||
+          ref.read(pinnedConversationIdsProvider).contains(conv.id),
       myUserId,
       serverUrl,
       wsOnlineUsers,
@@ -1432,7 +1431,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     Set<String> wsOnlineUsers,
   ) {
     // Count how many pinned items are at the front of the sorted list.
-    final pinnedCount = sorted.where((c) => _pinnedIds.contains(c.id)).length;
+    final pinnedIds = ref.watch(pinnedConversationIdsProvider);
+    final pinnedCount = sorted
+        .where((c) => pinnedIds.contains(c.id) || c.isPinned)
+        .length;
     // Extra items: section header for pinned (if any) + divider after pinned.
     final extraItems = pinnedCount > 0 ? 2 : 0;
 
@@ -1446,7 +1448,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           // Use fixed itemExtent when no section headers/dividers for faster layout.
-          itemExtent: extraItems == 0 ? kConversationItemHeight : null,
+          // Compact mode uses tighter rows to match Slack/Discord density (#427).
+          itemExtent: extraItems == 0
+              ? (ref.watch(messageLayoutProvider) == MessageLayout.compact
+                    ? kConversationItemHeightCompact
+                    : kConversationItemHeight)
+              : null,
           itemCount: sorted.length + extraItems,
           itemBuilder: (context, index) => _buildListItem(
             index: index,
@@ -1541,6 +1548,32 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ],
       ),
       child: item,
+    );
+  }
+}
+
+/// Row widget used inside the status picker popup menu.
+///
+/// Each entry shows a coloured presence dot and a label, matching the visual
+/// language used in conversation list items and user profile screens.
+class _StatusMenuItem extends StatelessWidget {
+  const _StatusMenuItem({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 10),
+        Text(label),
+      ],
     );
   }
 }

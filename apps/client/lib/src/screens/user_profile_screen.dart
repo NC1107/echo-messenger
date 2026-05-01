@@ -14,48 +14,20 @@ import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/profile_sheets.dart';
 import 'safety_number_screen.dart';
 
 /// Shows a user profile. On desktop (>=900px) opens as a dialog; on mobile as
-/// a full screen page.
+/// a bottom sheet so chat context is preserved.
 class UserProfileScreen extends ConsumerStatefulWidget {
   final String userId;
 
   const UserProfileScreen({super.key, required this.userId});
 
-  /// Open the profile as a dialog on desktop or push a full-screen route on
-  /// mobile.
+  /// Open the profile overlay. Delegates to [showUserProfileSheet] which
+  /// chooses dialog (desktop) or bottom sheet (mobile) automatically.
   static void show(BuildContext context, WidgetRef ref, String userId) {
-    final width = MediaQuery.of(context).size.width;
-    if (width >= 900) {
-      showDialog(
-        context: context,
-        builder: (_) => Dialog(
-          backgroundColor: context.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: context.border),
-          ),
-          child: SizedBox(
-            width: 400,
-            height: 500,
-            child: UserProfileScreen(userId: userId),
-          ),
-        ),
-      );
-    } else {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => Scaffold(
-            appBar: AppBar(
-              title: const Text('Profile'),
-              backgroundColor: context.surface,
-            ),
-            body: UserProfileScreen(userId: userId),
-          ),
-        ),
-      );
-    }
+    showUserProfileSheet(context, ref, userId);
   }
 
   @override

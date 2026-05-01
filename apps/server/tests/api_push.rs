@@ -249,3 +249,99 @@ async fn unregister_nonexistent_token_still_returns_200() {
 
     assert_eq!(resp.status().as_u16(), 200);
 }
+
+// ---------------------------------------------------------------------------
+// Upsert (duplicate token) -- #539
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn register_duplicate_token_upserts_no_constraint_violation() {
+    // Registering the same (user, token) pair twice must not produce a 5xx
+    // constraint violation -- the server upserts (ON CONFLICT DO UPDATE).
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _, _) = common::register_and_login(&client, &base, "push_dup").await;
+
+    let payload = serde_json::json!({
+        "token": "device-token-duplicate-test",
+        "platform": "apns",
+    });
+
+    // First registration.
+    let r1 = client
+        .post(format!("{base}/api/push/register"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&payload)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r1.status().as_u16(), 200, "first register must be 200");
+
+    // Second registration with identical (user_id, token) -- should upsert.
+    let r2 = client
+        .post(format!("{base}/api/push/register"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&payload)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        r2.status().as_u16(),
+        200,
+        "duplicate register must also be 200 (upsert)"
+    );
+
+    let body: Value = r2.json().await.unwrap();
+    assert_eq!(body["status"], "ok");
+}
+
+// ---------------------------------------------------------------------------
+// Logout cleanup -- #539
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn push_token_cleared_on_logout_then_reregisterable() {
+    // Full lifecycle: register token → delete-all (logout cleanup) → register
+    // the same token again after logout.  Verifies that delete-all doesn't
+    // leave a dangling unique-constraint row that blocks re-registration.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _, _) = common::register_and_login(&client, &base, "push_logout").await;
+
+    let device_token = "device-token-logout-flow";
+
+    // Register.
+    let r1 = client
+        .post(format!("{base}/api/push/register"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "token": device_token, "platform": "apns" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r1.status().as_u16(), 200);
+
+    // Simulate logout -- bulk-delete all tokens.
+    let del = client
+        .delete(format!("{base}/api/push/token"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(del.status().as_u16(), 200, "logout cleanup must be 200");
+
+    // Re-register (same token) after re-login should succeed.
+    let r2 = client
+        .post(format!("{base}/api/push/register"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "token": device_token, "platform": "apns" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        r2.status().as_u16(),
+        200,
+        "re-register after logout must be 200"
+    );
+    let body: Value = r2.json().await.unwrap();
+    assert_eq!(body["status"], "ok");
+}

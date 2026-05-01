@@ -34,6 +34,7 @@ void main() {
     test('returns correct label for each section', () {
       expect(settingsSectionLabel(SettingsSection.profile), 'Profile');
       expect(settingsSectionLabel(SettingsSection.appearance), 'Appearance');
+      expect(settingsSectionLabel(SettingsSection.language), 'Language');
       expect(
         settingsSectionLabel(SettingsSection.notifications),
         'Notifications',
@@ -42,23 +43,29 @@ void main() {
       expect(settingsSectionLabel(SettingsSection.privacy), 'Privacy');
       expect(settingsSectionLabel(SettingsSection.devices), 'Devices');
       expect(settingsSectionLabel(SettingsSection.dataStorage), 'Storage');
+      expect(
+        settingsSectionLabel(SettingsSection.accessibility),
+        'Accessibility',
+      );
       expect(settingsSectionLabel(SettingsSection.about), 'About');
     });
   });
 
   group('SettingsSection enum', () {
     test('contains expected sections', () {
-      expect(SettingsSection.values, hasLength(8));
+      expect(SettingsSection.values, hasLength(10));
       expect(
         SettingsSection.values,
         containsAll([
           SettingsSection.profile,
           SettingsSection.appearance,
+          SettingsSection.language,
           SettingsSection.notifications,
           SettingsSection.voiceVideo,
           SettingsSection.privacy,
           SettingsSection.devices,
           SettingsSection.dataStorage,
+          SettingsSection.accessibility,
           SettingsSection.about,
         ]),
       );
@@ -82,6 +89,7 @@ void main() {
       // Profile is reached via the UserHeaderCard at the top, not a row.
       // Encryption keys is gone (was redundant with Privacy).
       expect(find.text('Appearance'), findsOneWidget);
+      expect(find.text('Language'), findsOneWidget);
       expect(find.text('Notifications'), findsOneWidget);
       expect(find.text('Voice & Video'), findsOneWidget);
       expect(find.text('Privacy'), findsOneWidget);

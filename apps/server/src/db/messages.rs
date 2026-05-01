@@ -211,8 +211,9 @@ pub async fn get_messages(
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     // Single query handles both cursor and non-cursor cases via optional $3 param.
     // #557: when device_id is supplied, COALESCE per-device ciphertext over
-    // the canonical content. reply_count via LEFT JOIN LATERAL matches the
-    // shape used by search_messages / get_thread_replies.
+    // the canonical content. reply_count is computed via a single aggregating
+    // subquery joined once (O(N+M)) instead of a LATERAL correlated subquery
+    // that re-executes per row (O(N*M)). Fixes #678.
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -221,15 +222,17 @@ pub async fn get_messages(
                 m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                COALESCE(rc.cnt, 0) AS reply_count \
+                COALESCE(rc.reply_count, 0) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
-         LEFT JOIN LATERAL ( \
-             SELECT COUNT(*) AS cnt FROM messages r \
-             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
-         ) rc ON true \
+         LEFT JOIN ( \
+             SELECT reply_to_id, COUNT(*) AS reply_count \
+             FROM messages \
+             WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL \
+             GROUP BY reply_to_id \
+         ) rc ON rc.reply_to_id = m.id \
          LEFT JOIN message_device_contents mdc \
                 ON $5::int IS NOT NULL \
                AND mdc.message_id = m.id \
@@ -257,14 +260,21 @@ pub async fn get_messages(
 /// (#634), while still exercising the ack queue under realistic backlogs.
 pub const UNDELIVERED_PAGE_SIZE: i64 = 100;
 
-/// Fetch undelivered messages, optionally after a `(created_at, id)` cursor.
-/// Composite cursor handles ties when multiple messages share a timestamp;
-/// using `created_at` alone would skip same-tick siblings on the next page.
-/// Callers loop with the cursor until the batch returns
-/// < UNDELIVERED_PAGE_SIZE rows.
+/// Fetch undelivered messages for a specific device, optionally after a
+/// `(created_at, id)` cursor.  Composite cursor handles ties when multiple
+/// messages share a timestamp; using `created_at` alone would skip same-tick
+/// siblings on the next page.  Callers loop with the cursor until the batch
+/// returns < UNDELIVERED_PAGE_SIZE rows.
+///
+/// The per-device delivery ledger (`message_deliveries`) is consulted so that
+/// each `(message, recipient_user, device)` triple is replayed at most once.
+/// This prevents undecryptable placeholder frames from being re-sent on every
+/// reconnect (#584): the message stays `delivered = false` globally (so sibling
+/// devices can still pick it up), but this device won't see it again.
 pub async fn get_undelivered(
     pool: &PgPool,
     user_id: Uuid,
+    device_id: i32,
     after_cursor: Option<(DateTime<Utc>, Uuid)>,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     let (after_ts, after_id): (Option<DateTime<Utc>>, Option<Uuid>) = match after_cursor {
@@ -274,6 +284,11 @@ pub async fn get_undelivered(
     // reply_count is computed via a single aggregating subquery joined once
     // (O(N+M)) rather than a LATERAL correlated subquery that re-executes for
     // every returned row (O(N*M)).  Fixes #638.
+    //
+    // The NOT EXISTS guard filters messages that were already pushed to THIS
+    // device (either successfully decryptable or as an undecryptable marker).
+    // Without it a device that can't decrypt a frame would receive the same
+    // placeholder on every reconnect (#584).
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -295,16 +310,73 @@ pub async fn get_undelivered(
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
                   AND cm.is_removed = false \
          WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
-                  AND ($2::timestamptz IS NULL OR (m.created_at, m.id) > ($2, $3)) \
+                  AND NOT EXISTS ( \
+                      SELECT 1 FROM message_deliveries md \
+                      WHERE md.message_id = m.id \
+                        AND md.recipient_user_id = $1 \
+                        AND md.device_id = $2 \
+                  ) \
+                  AND ($3::timestamptz IS NULL OR (m.created_at, m.id) > ($3, $4)) \
          ORDER BY m.created_at ASC, m.id ASC \
-         LIMIT $4",
+         LIMIT $5",
     )
     .bind(user_id)
+    .bind(device_id)
     .bind(after_ts)
     .bind(after_id)
     .bind(UNDELIVERED_PAGE_SIZE)
     .fetch_all(pool)
     .await
+}
+
+/// Record that a specific device has received (or been shown a placeholder for)
+/// a message.  Idempotent via ON CONFLICT DO NOTHING.
+///
+/// This is the write side of the per-device delivery ledger (#584).  Call this
+/// regardless of whether the frame was decryptable; in both cases the device
+/// has already seen the message and must not receive it again on reconnect.
+pub async fn mark_device_delivered(
+    pool: &PgPool,
+    message_id: Uuid,
+    recipient_user_id: Uuid,
+    device_id: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO message_deliveries (message_id, recipient_user_id, device_id) \
+         VALUES ($1, $2, $3) \
+         ON CONFLICT (message_id, recipient_user_id, device_id) DO NOTHING",
+    )
+    .bind(message_id)
+    .bind(recipient_user_id)
+    .bind(device_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Record that a specific device has received a batch of messages.
+/// Idempotent via ON CONFLICT DO NOTHING.  Used during offline replay to bulk-
+/// insert ledger entries for all messages pushed in a single batch.
+pub async fn mark_device_delivered_batch(
+    pool: &PgPool,
+    message_ids: &[Uuid],
+    recipient_user_id: Uuid,
+    device_id: i32,
+) -> Result<(), sqlx::Error> {
+    if message_ids.is_empty() {
+        return Ok(());
+    }
+    sqlx::query(
+        "INSERT INTO message_deliveries (message_id, recipient_user_id, device_id) \
+         SELECT unnest($1::uuid[]), $2, $3 \
+         ON CONFLICT (message_id, recipient_user_id, device_id) DO NOTHING",
+    )
+    .bind(message_ids)
+    .bind(recipient_user_id)
+    .bind(device_id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// Delete all messages whose `expires_at` is in the past.
@@ -334,6 +406,31 @@ pub async fn get_conversation_ttl(
             .fetch_optional(pool)
             .await?;
     Ok(row.and_then(|(v,)| v).map(|v| v as i64))
+}
+
+/// Insert a system-event message row.
+///
+/// System messages use a sentinel content prefix `__system__:` so the client
+/// can detect and render them as in-chat event pills rather than normal bubbles.
+/// `sender_id` is set to the acting user so the row passes the FK constraint;
+/// the client recognises system events via the sentinel prefix (#663).
+pub async fn insert_system_message(
+    pool: &PgPool,
+    conversation_id: Uuid,
+    sender_id: Uuid,
+    content: &str,
+) -> Result<MessageRow, sqlx::Error> {
+    sqlx::query_as::<_, MessageRow>(
+        "INSERT INTO messages (conversation_id, sender_id, content, delivered) \
+         VALUES ($1, $2, $3, true) \
+         RETURNING id, conversation_id, channel_id, sender_id, sender_device_id, \
+                   content, created_at, delivered, reply_to_id, expires_at",
+    )
+    .bind(conversation_id)
+    .bind(sender_id)
+    .bind(content)
+    .fetch_one(pool)
+    .await
 }
 
 pub async fn mark_delivered(pool: &PgPool, message_ids: &[Uuid]) -> Result<(), sqlx::Error> {

@@ -544,73 +544,13 @@ class ChatHeaderBar extends ConsumerWidget {
     );
   }
 
-  /// Show a warning banner when the peer's session is corrupted, with a
-  /// one-tap repair action.
+  // Session-corruption recovery is surfaced by the standalone
+  // SessionCorruptedBanner widget mounted in chat_panel.dart.
   Widget _buildCorruptionBanner(
     BuildContext context,
     WidgetRef ref,
     Conversation conv,
-  ) {
-    if (conv.isGroup) return const SizedBox.shrink();
-
-    final peerId = conv.members
-        .where((m) => m.userId != myUserId)
-        .firstOrNull
-        ?.userId;
-    if (peerId == null) return const SizedBox.shrink();
-
-    final crypto = ref.watch(cryptoServiceProvider);
-    if (!crypto.isInitialized || !crypto.hasCorruptedSession(peerId)) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: context.surface,
-        border: Border.all(color: EchoTheme.warning.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.warning_amber, size: 14, color: EchoTheme.warning),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Encryption issues detected',
-              style: GoogleFonts.inter(fontSize: 11, color: EchoTheme.warning),
-            ),
-          ),
-          Semantics(
-            label: 'reset encryption keys',
-            button: true,
-            child: GestureDetector(
-              onTap: () => _resetPeerKeys(context, ref, conv, myUserId),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: EchoTheme.warning.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: EchoTheme.warning.withValues(alpha: 0.4),
-                  ),
-                ),
-                child: Text(
-                  'Repair',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: EchoTheme.warning,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  ) => const SizedBox.shrink();
 
   void _openSharedMedia(BuildContext context, Conversation conv) {
     showModalBottomSheet<void>(

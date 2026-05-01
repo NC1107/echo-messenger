@@ -31,7 +31,11 @@ GoRouter _buildRouter({required AuthState authState}) {
 Widget _buildApp({AuthState authState = const AuthState()}) {
   final router = _buildRouter(authState: authState);
   return ProviderScope(
-    overrides: [authOverride(authState), serverUrlOverride()],
+    overrides: [
+      authOverride(authState),
+      serverUrlOverride(),
+      accessibilityOverride(),
+    ],
     child: MaterialApp.router(
       theme: EchoTheme.darkTheme,
       darkTheme: EchoTheme.darkTheme,

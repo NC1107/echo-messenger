@@ -284,6 +284,18 @@ pub fn edit_message_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(30, 60, trusted_proxies)
 }
 
+/// Forgot-password rate limiter: 3 requests per 300 seconds per IP.
+/// Tight limit to slow brute-force username enumeration attempts.
+pub fn forgot_password_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+    RateLimiter::with_shared_proxies(3, 300, trusted_proxies)
+}
+
+/// Reset-password rate limiter: 5 requests per 300 seconds per IP.
+/// Limits token-guessing without blocking legitimate multi-tab usage.
+pub fn reset_password_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+    RateLimiter::with_shared_proxies(5, 300, trusted_proxies)
+}
+
 /// Check whether an IP is in a private/reserved range (RFC 1918, link-local, ULA).
 fn is_private(ip: IpAddr) -> bool {
     match ip {

@@ -1,5 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -599,8 +599,12 @@ class MediaContentState extends State<MediaContent> {
             : null);
     if (videoUrl != null) {
       final rawUrl = videoUrl;
+      // Build thumbUrl from rawUrl (not the already-resolved videoUrl) so that
+      // on web the ?ticket= is appended after /thumb, not before it (#411).
+      final rawThumbUrl = '$rawUrl/thumb';
       return InlineVideoPlayer(
         videoUrl: _resolveUrl(rawUrl),
+        thumbUrl: _resolveUrl(rawThumbUrl),
         rawUrl: rawUrl,
         headers: _headers(),
         surface: context.surface,
@@ -705,6 +709,7 @@ class MediaContentState extends State<MediaContent> {
 /// disposes it when removed from the tree.
 class InlineVideoPlayer extends StatefulWidget {
   final String videoUrl;
+  final String thumbUrl;
   final String rawUrl;
   final Map<String, String> headers;
   final Color surface;
@@ -718,6 +723,7 @@ class InlineVideoPlayer extends StatefulWidget {
   const InlineVideoPlayer({
     super.key,
     required this.videoUrl,
+    required this.thumbUrl,
     required this.rawUrl,
     required this.headers,
     required this.surface,
@@ -806,7 +812,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
     // Server generates a JPEG first-frame thumbnail at upload time (#561).
     // If that endpoint 404s (older upload, ffmpeg missing, etc.), the
     // CachedNetworkImage's errorWidget falls back to the previous solid tile.
-    final thumbUrl = '${widget.videoUrl}/thumb';
+    // Use the pre-resolved thumbUrl from the widget so that query params
+    // (e.g. ?ticket= on web) appear after /thumb, not before it (#411).
+    final thumbUrl = widget.thumbUrl;
     // Inline thumbnail is 170px tall; cap decode height at 170 * DPR so
     // we don't hold a 4K still-frame in RAM for a thumbnail (#639).
     final dpr = MediaQuery.devicePixelRatioOf(context);
@@ -889,6 +897,12 @@ class FullscreenVideoPlayer extends StatefulWidget {
   /// wired to the same launcher the bubble's Download button uses.
   final VoidCallback onLaunchExternal;
 
+  /// Overrides the Linux platform check. `null` (default) reads
+  /// [defaultTargetPlatform] at runtime. Pass `true` / `false` in widget
+  /// tests to exercise each code path without running on Linux hardware (#620).
+  @visibleForTesting
+  final bool? isLinuxOverride;
+
   const FullscreenVideoPlayer({
     super.key,
     required this.videoUrl,
@@ -897,6 +911,7 @@ class FullscreenVideoPlayer extends StatefulWidget {
     required this.accent,
     required this.textMuted,
     required this.onLaunchExternal,
+    this.isLinuxOverride,
   });
 
   @override
@@ -915,6 +930,24 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
   }
 
   Future<void> _init() async {
+    // video_player has no Linux desktop implementation — calling initialize()
+    // on Linux throws UnimplementedError before any player state is set up
+    // (#620). Detect this ahead-of-time and show the graceful fallback so the
+    // user can still open the video externally.
+    final isLinux =
+        widget.isLinuxOverride ??
+        (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux);
+    if (isLinux) {
+      if (mounted) {
+        setState(() {
+          _initFailed = true;
+          _errorMessage =
+              'Video playback is not supported on Linux desktop. '
+              'Use "Open externally" to watch with your system player.';
+        });
+      }
+      return;
+    }
     try {
       final controller = VideoPlayerController.networkUrl(
         Uri.parse(widget.videoUrl),
@@ -1261,4 +1294,37 @@ class _PausedGifPlaceholder extends StatelessWidget {
       ),
     );
   }
+}
+
+// Added by Claude
+
+/// The kind of attachment a message content string represents.
+enum ReplyAttachmentKind { image, gif, video, audio, file, none }
+
+/// Classifies content into a ReplyAttachmentKind.
+ReplyAttachmentKind replyAttachmentKind(String content) {
+  final trimmed = content.trim();
+  if (trimmed.startsWith("[img:")) {
+    final url = _imgRegex.firstMatch(trimmed)?.group(1) ?? "";
+    if (url.toLowerCase().endsWith(".gif")) return ReplyAttachmentKind.gif;
+    return ReplyAttachmentKind.image;
+  }
+  if (trimmed.startsWith("[video:")) return ReplyAttachmentKind.video;
+  if (trimmed.startsWith("[audio:")) return ReplyAttachmentKind.audio;
+  if (trimmed.startsWith("[file:")) return ReplyAttachmentKind.file;
+  final mediaUrl = extractMediaUrl(trimmed);
+  if (mediaUrl != null) {
+    final ext = urlExtension(mediaUrl);
+    if (ext == "gif") return ReplyAttachmentKind.gif;
+    if (_imageExtensions.contains(ext)) return ReplyAttachmentKind.image;
+    if (_videoExtensions.contains(ext)) return ReplyAttachmentKind.video;
+    if (_audioExtensions.contains(ext)) return ReplyAttachmentKind.audio;
+    if (_fileExtensions.contains(ext)) return ReplyAttachmentKind.file;
+    if (mediaUrl.contains("/api/media/")) return ReplyAttachmentKind.image;
+  }
+  // Bare /api/media/ URL without a recognised extension (no marker).
+  if (trimmed.startsWith("http") && trimmed.contains("/api/media/")) {
+    return ReplyAttachmentKind.image;
+  }
+  return ReplyAttachmentKind.none;
 }
