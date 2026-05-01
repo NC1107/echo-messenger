@@ -271,14 +271,16 @@ test('Full feature test', async ({ browser }) => {
   await p1.waitForTimeout(1500);
   await ss(p1, '17-back-from-settings');
 
-  // DB encryption check
-  try {
-    const db = execSync('docker exec docker-postgres-1 psql -U echo -d echo_dev -t -c "SELECT content FROM messages ORDER BY created_at DESC LIMIT 3;"').toString().trim();
-    const lines = db.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    const allEncrypted = lines.every(l => /^[A-Za-z0-9+/=]{20,}$/.test(l));
-    // Note: messages sent via websocat are plaintext, UI messages may be encrypted
-    check('DB messages exist', lines.length > 0, `${lines.length} messages`);
-  } catch (_) { check('DB check', false, 'docker exec failed'); }
+  // DB encryption check via the local docker-compose container. CI runs
+  // postgres as a GitHub Actions service (no docker-compose container by
+  // that name), so this check is local-only.
+  if (!process.env.CI) {
+    try {
+      const db = execSync('docker exec docker-postgres-1 psql -U echo -d echo_dev -t -c "SELECT content FROM messages ORDER BY created_at DESC LIMIT 3;"').toString().trim();
+      const lines = db.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      check('DB messages exist', lines.length > 0, `${lines.length} messages`);
+    } catch (_) { check('DB check', false, 'docker exec failed'); }
+  }
 
   // Final
   await ss(p1, '18-final-u1');

@@ -32,7 +32,10 @@ async fn drain_pending(ws: &mut WsStream) {
     {}
 }
 
-/// Read text frames, skipping presence events, until a non-presence frame arrives.
+/// Read text frames, skipping `presence` and `new_message` events.
+/// `new_message` arrives asynchronously when the server replays undelivered
+/// messages on WS connect; tests that exercise reactions/deletes/edits don't
+/// care about it and would otherwise race with `drain_pending`.
 async fn read_text_skipping_noise(ws: &mut WsStream) -> String {
     let timeout = std::time::Duration::from_secs(5);
     loop {
@@ -40,7 +43,7 @@ async fn read_text_skipping_noise(ws: &mut WsStream) -> String {
             Ok(Some(Ok(Message::Text(text)))) => {
                 let s = text.to_string();
                 if let Ok(v) = serde_json::from_str::<Value>(&s)
-                    && v["type"] == "presence"
+                    && matches!(v["type"].as_str(), Some("presence") | Some("new_message"))
                 {
                     continue;
                 }

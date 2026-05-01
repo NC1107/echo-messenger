@@ -110,7 +110,7 @@ async fn typing_indicator_broadcast() {
         .expect("Alice typing send failed");
 
     // Bob should receive typing event
-    let bob_event = read_text_with_timeout(&mut bob_ws).await;
+    let bob_event = read_text_skipping_chatter(&mut bob_ws).await;
     let event: Value = serde_json::from_str(&bob_event).expect("Bob typing JSON parse failed");
     assert_eq!(event["type"], "typing", "Bob should get typing event");
     assert_eq!(event["conversation_id"], conv_id);
@@ -177,7 +177,7 @@ async fn read_receipt_broadcast() {
         .expect("Bob read_receipt send failed");
 
     // Alice should receive read_receipt
-    let alice_event = read_text_with_timeout(&mut alice_ws).await;
+    let alice_event = read_text_skipping_chatter(&mut alice_ws).await;
     let event: Value =
         serde_json::from_str(&alice_event).expect("Alice read_receipt JSON parse failed");
     assert_eq!(
@@ -227,7 +227,7 @@ async fn key_reset_broadcast() {
         .expect("Alice key_reset send failed");
 
     // Bob should receive key_reset
-    let bob_event = read_text_with_timeout(&mut bob_ws).await;
+    let bob_event = read_text_skipping_chatter(&mut bob_ws).await;
     let event: Value = serde_json::from_str(&bob_event).expect("Bob key_reset JSON parse failed");
     assert_eq!(event["type"], "key_reset", "Bob should get key_reset");
     assert_eq!(event["conversation_id"], conv_id);
@@ -1061,10 +1061,8 @@ async fn drain_pending(ws: &mut WsStream) {
     {}
 }
 
-/// Read frames from the socket, skipping any `presence` events, until a
-/// non-presence text frame arrives. Presence events can race in late under
-/// slower runtimes (tarpaulin coverage instrumentation, CI pressure) and
-/// should not cause flakes in tests that assert other event types.
+/// Read frames, skipping `presence` events. Use when the test expects a
+/// non-presence non-new_message frame.
 async fn read_text_skipping_presence(ws: &mut WsStream) -> String {
     loop {
         let text = read_text_with_timeout(ws).await;
@@ -1073,6 +1071,27 @@ async fn read_text_skipping_presence(ws: &mut WsStream) -> String {
             Err(_) => return text,
         };
         if parsed["type"] == "presence" {
+            continue;
+        }
+        return text;
+    }
+}
+
+/// Read frames, skipping `presence`, `new_message`, and `message_sent`.
+/// Use when the test exercises a downstream event (typing, read_receipt,
+/// key_reset) and the message-fanout chatter would race in late under
+/// tarpaulin/CI pressure.
+async fn read_text_skipping_chatter(ws: &mut WsStream) -> String {
+    loop {
+        let text = read_text_with_timeout(ws).await;
+        let parsed: serde_json::Value = match serde_json::from_str(&text) {
+            Ok(v) => v,
+            Err(_) => return text,
+        };
+        if matches!(
+            parsed["type"].as_str(),
+            Some("presence") | Some("new_message") | Some("message_sent")
+        ) {
             continue;
         }
         return text;
