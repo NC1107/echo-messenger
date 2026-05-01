@@ -47,7 +47,7 @@ dotenvy = "0.15"
 base64 = "0.22"
 
 # Crypto (refresh tokens)
-sha2 = "0.10"
+sha2 = "0.11"
 rand = "0.10"
 
 # Signal Protocol signature verification
