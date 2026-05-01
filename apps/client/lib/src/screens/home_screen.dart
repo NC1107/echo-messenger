@@ -596,6 +596,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       onGlobalSearch: _showGlobalSearch,
       onMessageContact: _messageContact,
       externalSearchFocusNode: _searchFocusNode,
+      onNavigateToLounge: () => setState(() {
+        _showingLounge = true;
+        _userDismissedLounge = false;
+      }),
     );
   }
 

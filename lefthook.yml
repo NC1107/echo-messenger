@@ -9,6 +9,7 @@ pre-commit:
       run: cargo clippy --workspace --all-targets -- -D warnings
     dart-format:
       glob: "*.dart"
+      no_args: true
       run: |
         FLUTTER_BIN=$(dirname "$(which flutter 2>/dev/null || echo "$HOME/.flutter/bin/flutter")")
         export PATH="$FLUTTER_BIN:$PATH"

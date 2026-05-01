@@ -22,6 +22,7 @@ import 'avatar_utils.dart';
 import 'conversation_item.dart';
 import 'echo_logo_icon.dart';
 import 'skeleton_loader.dart';
+import 'voice_footer.dart';
 
 // Re-export avatar utilities so existing `show` imports keep working.
 export 'avatar_utils.dart'
@@ -50,6 +51,9 @@ class ConversationPanel extends ConsumerStatefulWidget {
   /// Optional external focus node for the search bar (e.g. for Ctrl+K shortcut).
   final FocusNode? externalSearchFocusNode;
 
+  /// Called when the user taps the voice footer body to navigate to the lounge.
+  final VoidCallback? onNavigateToLounge;
+
   const ConversationPanel({
     super.key,
     this.selectedConversationId,
@@ -65,6 +69,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
     this.onScanQr,
     this.onMessageContact,
     this.externalSearchFocusNode,
+    this.onNavigateToLounge,
   });
 
   @override
@@ -507,6 +512,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                   wsOnlineUsers,
                 ),
               ),
+              VoiceFooter(onNavigateToLounge: widget.onNavigateToLounge),
               // Hide the status bar on mobile narrow — redundant with the
               // bottom tab bar that already exposes Settings + identity.
               if (MediaQuery.sizeOf(context).width >= 600)
