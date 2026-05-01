@@ -211,8 +211,9 @@ pub async fn get_messages(
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     // Single query handles both cursor and non-cursor cases via optional $3 param.
     // #557: when device_id is supplied, COALESCE per-device ciphertext over
-    // the canonical content. reply_count via LEFT JOIN LATERAL matches the
-    // shape used by search_messages / get_thread_replies.
+    // the canonical content. reply_count is computed via a single aggregating
+    // subquery joined once (O(N+M)) instead of a LATERAL correlated subquery
+    // that re-executes per row (O(N*M)). Fixes #678.
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -221,15 +222,17 @@ pub async fn get_messages(
                 m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                COALESCE(rc.cnt, 0) AS reply_count \
+                COALESCE(rc.reply_count, 0) AS reply_count \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
-         LEFT JOIN LATERAL ( \
-             SELECT COUNT(*) AS cnt FROM messages r \
-             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
-         ) rc ON true \
+         LEFT JOIN ( \
+             SELECT reply_to_id, COUNT(*) AS reply_count \
+             FROM messages \
+             WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL \
+             GROUP BY reply_to_id \
+         ) rc ON rc.reply_to_id = m.id \
          LEFT JOIN message_device_contents mdc \
                 ON $5::int IS NOT NULL \
                AND mdc.message_id = m.id \
