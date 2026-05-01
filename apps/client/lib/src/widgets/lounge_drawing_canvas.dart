@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
+import '../theme/echo_theme.dart';
+
 /// A single stroke drawn on the canvas.
 class DrawingStroke {
   final List<Offset> points;
@@ -57,7 +59,7 @@ class LoungeDrawingCanvasState extends State<LoungeDrawingCanvas> {
   /// (avoids O(n) list copy on every pointer move). Wrapped in a DrawingStroke
   /// only when the stroke is finalized on pointer up.
   List<Offset>? _activePoints;
-  Color _activeColor = Colors.white;
+  Color _activeColor = EchoTheme.textPrimary;
   double _activeWidth = 3.0;
   bool _activeIsEraser = false;
 
@@ -66,7 +68,7 @@ class LoungeDrawingCanvasState extends State<LoungeDrawingCanvas> {
   Offset _dragStart = Offset.zero;
 
   DrawingTool _tool = DrawingTool.pen;
-  Color _penColor = Colors.white;
+  Color _penColor = EchoTheme.textPrimary;
   double _penSize = 3.0;
   static const double _eraserSize = 20.0;
 

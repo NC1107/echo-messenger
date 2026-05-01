@@ -552,7 +552,7 @@ class _CanvasPainter extends CustomPainter {
     if (s.length == 6) {
       return Color(0xFF000000 | int.parse(s, radix: 16));
     }
-    return Colors.white;
+    return EchoTheme.textPrimary;
   }
 
   @override
