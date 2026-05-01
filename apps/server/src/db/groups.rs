@@ -95,6 +95,7 @@ pub async fn create_group_with_visibility(
 pub struct PublicGroupRow {
     pub id: Uuid,
     pub title: Option<String>,
+    pub description: Option<String>,
     pub member_count: i64,
     pub created_at: DateTime<Utc>,
     pub is_member: bool,
@@ -120,7 +121,7 @@ pub async fn list_public_groups(
                 .replace('_', "\\_");
             let pattern = format!("%{escaped}%");
             sqlx::query_as::<_, PublicGroupRow>(
-                "SELECT c.id, c.title, \
+                "SELECT c.id, c.title, c.description, \
                  c.member_count::BIGINT, c.created_at, \
                  (cm_me.user_id IS NOT NULL) AS is_member \
                  FROM conversations c \
@@ -142,7 +143,7 @@ pub async fn list_public_groups(
         }
         None => {
             sqlx::query_as::<_, PublicGroupRow>(
-                "SELECT c.id, c.title, \
+                "SELECT c.id, c.title, c.description, \
                  c.member_count::BIGINT, c.created_at, \
                  (cm_me.user_id IS NOT NULL) AS is_member \
                  FROM conversations c \

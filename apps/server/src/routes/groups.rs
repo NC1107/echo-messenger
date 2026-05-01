@@ -95,6 +95,7 @@ pub struct PublicGroupsQuery {
 pub struct PublicGroupResponse {
     pub id: Uuid,
     pub title: Option<String>,
+    pub description: Option<String>,
     pub member_count: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub is_member: bool,
@@ -334,6 +335,29 @@ pub async fn add_member(
     }
 
     invalidate_member_cache(group_id);
+
+    // Notify existing members that someone was added so their member list
+    // updates in real time without a manual refresh (#660).
+    let new_user = user_exists.unwrap(); // already checked is_some above
+    let existing_members = db::groups::get_conversation_member_ids(&state.pool, group_id)
+        .await
+        .unwrap_or_default();
+    let event = serde_json::json!({
+        "type": "member_added",
+        "conversation_id": group_id,
+        "user_id": body.user_id,
+        "username": new_user.username,
+        "avatar_url": new_user.avatar_url,
+        "role": "member",
+    });
+    if let Ok(s) = serde_json::to_string(&event) {
+        // Exclude the newly-added user; they get the group via their own
+        // loadConversations call after the HTTP 200.
+        state
+            .hub
+            .broadcast_json(&existing_members, &s, Some(body.user_id));
+    }
+
     Ok(Json(serde_json::json!({ "status": "added" })))
 }
 
@@ -418,6 +442,7 @@ pub async fn list_public_groups(
         .map(|g| PublicGroupResponse {
             id: g.id,
             title: g.title,
+            description: g.description,
             member_count: g.member_count,
             created_at: g.created_at,
             is_member: g.is_member,
@@ -497,6 +522,31 @@ pub async fn join_group(
     }
 
     invalidate_member_cache(group_id);
+
+    // Notify existing members of the new joiner so their member list updates
+    // in real time (#660).
+    let joiner = db::users::find_by_id(&state.pool, auth.user_id)
+        .await
+        .unwrap_or_default();
+    let existing_members = db::groups::get_conversation_member_ids(&state.pool, group_id)
+        .await
+        .unwrap_or_default();
+    if let Some(joiner_user) = joiner {
+        let event = serde_json::json!({
+            "type": "member_added",
+            "conversation_id": group_id,
+            "user_id": auth.user_id,
+            "username": joiner_user.username,
+            "avatar_url": joiner_user.avatar_url,
+            "role": "member",
+        });
+        if let Ok(s) = serde_json::to_string(&event) {
+            // Exclude the joiner; they reload their own conversation list.
+            state
+                .hub
+                .broadcast_json(&existing_members, &s, Some(auth.user_id));
+        }
+    }
 
     Ok(Json(serde_json::json!({ "status": "joined" })))
 }
@@ -704,14 +754,15 @@ pub async fn unban_member(
 /// Maximum group avatar size: 2 MB.
 const MAX_GROUP_AVATAR_SIZE: usize = 2 * 1024 * 1024;
 
-/// Allowed group avatar MIME types.
-const ALLOWED_GROUP_AVATAR_TYPES: &[&str] = &["image/jpeg", "image/png", "image/webp"];
+/// Allowed group avatar MIME types (validated via magic bytes, not client-supplied Content-Type).
+const ALLOWED_GROUP_AVATAR_TYPES: &[&str] = &["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 fn avatar_extension_for_mime(mime: &str) -> &str {
     match mime {
         "image/jpeg" => "jpg",
         "image/png" => "png",
         "image/webp" => "webp",
+        "image/gif" => "gif",
         _ => "bin",
     }
 }
@@ -721,6 +772,7 @@ fn avatar_mime_for_extension(ext: &str) -> &str {
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
         "webp" => "image/webp",
+        "gif" => "image/gif",
         _ => "application/octet-stream",
     }
 }
@@ -772,18 +824,22 @@ pub async fn upload_group_avatar(
         let mime_type = match infer::get(&data) {
             Some(inferred) => inferred.mime_type().to_string(),
             None => {
-                return Err(AppError::bad_request(
+                return Err(AppError::with_code(
+                    ErrorCode::UnsupportedMediaType,
                     "Could not determine avatar file type from content",
                 ));
             }
         };
 
         if !ALLOWED_GROUP_AVATAR_TYPES.contains(&mime_type.as_str()) {
-            return Err(AppError::bad_request(format!(
-                "Avatar type '{mime_type}' is not allowed. \
-                 Allowed: {}",
-                ALLOWED_GROUP_AVATAR_TYPES.join(", ")
-            )));
+            return Err(AppError::with_code(
+                ErrorCode::UnsupportedMediaType,
+                format!(
+                    "Avatar type '{mime_type}' is not allowed. \
+                     Allowed: {}",
+                    ALLOWED_GROUP_AVATAR_TYPES.join(", ")
+                ),
+            ));
         }
 
         if data.len() > MAX_GROUP_AVATAR_SIZE {
@@ -798,7 +854,7 @@ pub async fn upload_group_avatar(
         let disk_path = format!("./uploads/avatars/{disk_filename}");
 
         // Remove old avatar files for this group (different extensions)
-        for old_ext in &["jpg", "png", "webp"] {
+        for old_ext in &["jpg", "png", "webp", "gif"] {
             let old = format!("./uploads/avatars/group_{group_id}.{old_ext}");
             let _ = fs::remove_file(&old).await;
         }
@@ -846,7 +902,7 @@ pub async fn get_group_avatar(
         });
     }
 
-    for ext in &["jpg", "png", "webp"] {
+    for ext in &["jpg", "png", "webp", "gif"] {
         let disk_path = format!("./uploads/avatars/group_{group_id}.{ext}");
         if let Ok(data) = fs::read(&disk_path).await {
             let mime = avatar_mime_for_extension(ext);
