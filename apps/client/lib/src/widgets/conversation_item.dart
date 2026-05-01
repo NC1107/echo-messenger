@@ -569,8 +569,13 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
   /// pre-existing layout in that case.
   Widget? _buildOwnStatusTick(BuildContext context) {
     final conv = widget.conversation;
-    final messages = ref.watch(chatProvider).messagesForConversation(conv.id);
-    final last = messages.isEmpty ? null : messages.last;
+    // Selector: only watch the last message of *this* conversation so that
+    // messages arriving in other conversations don't trigger a rebuild here
+    // (#578). The spread-copy fix in #676 keeps unaffected list references
+    // stable, so select() equality holds for untouched conversations.
+    final last = ref.watch(
+      chatProvider.select((s) => s.messagesByConversation[conv.id]?.lastOrNull),
+    );
     if (last == null || last.fromUserId != widget.myUserId) return null;
 
     final (icon, color) = switch (last.status) {
