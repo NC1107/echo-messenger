@@ -62,9 +62,9 @@ jobs:
           print(f"Line coverage: {pct:.1f}% ({hit}/{found} lines)")
 
           # Ratcheting baseline (last bumped 2026-04-30). Current Flutter coverage
-          # is ~41.2%; raising floor prevents regression. Bump threshold as coverage
-          # improves, never regress below current measured percentage.
-          threshold = 39.0
+          # is ~41.2%; raise the floor as coverage actually improves so we never
+          # regress below where we are today.
+          threshold = 41.0
           if pct < threshold:
               print(
                   f"::error::Coverage {pct:.1f}% is below the required "
