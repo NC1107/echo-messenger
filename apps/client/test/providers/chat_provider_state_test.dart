@@ -378,6 +378,61 @@ void main() {
       );
     });
 
+    // -----------------------------------------------------------------------
+    // #676: withMessage must keep OTHER conversations reference-equal so that
+    // Riverpod selectors watching a different conv don't rebuild on every
+    // incoming message.
+    // -----------------------------------------------------------------------
+    test('withMessage keeps unaffected conversation lists reference-equal '
+        '(#676)', () {
+      const conv1Msg = ChatMessage(
+        id: 'a-1',
+        fromUserId: 'u1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'hi',
+        timestamp: '2026-01-01T00:00:00Z',
+        isMine: false,
+      );
+      const conv2Msg = ChatMessage(
+        id: 'b-1',
+        fromUserId: 'u2',
+        fromUsername: 'bob',
+        conversationId: 'conv-2',
+        content: 'hey',
+        timestamp: '2026-01-01T00:01:00Z',
+        isMine: false,
+      );
+      const newMsg = ChatMessage(
+        id: 'a-2',
+        fromUserId: 'u1',
+        fromUsername: 'alice',
+        conversationId: 'conv-1',
+        content: 'world',
+        timestamp: '2026-01-01T00:02:00Z',
+        isMine: false,
+      );
+
+      final initial = const ChatState()
+          .withMessage(conv1Msg)
+          .withMessage(conv2Msg);
+
+      // Capture the reference to conv-2's list before adding a conv-1 message.
+      final conv2ListBefore = initial.messagesByConversation['conv-2'];
+
+      final after = initial.withMessage(newMsg);
+
+      // conv-1 list must have grown.
+      expect(after.messagesForConversation('conv-1'), hasLength(2));
+
+      // conv-2's list reference must be identical — no unnecessary copy.
+      expect(
+        identical(after.messagesByConversation['conv-2'], conv2ListBefore),
+        isTrue,
+        reason: 'unaffected conversation list must stay reference-equal',
+      );
+    });
+
     test('copyWith preserves unchanged fields', () {
       const msg = ChatMessage(
         id: 'msg-1',

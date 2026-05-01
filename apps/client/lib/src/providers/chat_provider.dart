@@ -93,45 +93,47 @@ class ChatState {
   }
 
   ChatState withMessage(ChatMessage msg) {
-    final updatedConv = Map<String, List<ChatMessage>>.from(
-      messagesByConversation,
-    );
-    final updatedIndex = Map<String, Set<String>>.from(_messageIdIndex);
+    // Work with the current per-conversation data only; other entries stay
+    // reference-equal so Riverpod selectors for unaffected convs don't rebuild.
+    var updatedConvMap = messagesByConversation;
+    var updatedIndexMap = _messageIdIndex;
+
     if (msg.conversationId.isNotEmpty) {
       final ids = Set<String>.from(
-        updatedIndex[msg.conversationId] ?? <String>{},
+        updatedIndexMap[msg.conversationId] ?? <String>{},
       );
       // O(1) deduplicate by ID
       if (!ids.contains(msg.id)) {
-        final existing = updatedConv[msg.conversationId] ?? [];
+        final existing = updatedConvMap[msg.conversationId] ?? [];
         var updated = [...existing, msg];
         // Trim to cap, keeping newest messages.
         if (updated.length > _maxMessagesPerConv) {
           updated = updated.sublist(updated.length - _maxMessagesPerConv);
         }
-        updatedConv[msg.conversationId] = updated;
         ids.add(msg.id);
         // Rebuild index from trimmed list to stay consistent.
-        updatedIndex[msg.conversationId] = updated.map((m) => m.id).toSet();
+        final newIds = updated.map((m) => m.id).toSet();
+        updatedConvMap = {...updatedConvMap, msg.conversationId: updated};
+        updatedIndexMap = {...updatedIndexMap, msg.conversationId: newIds};
       } else {
         // Id collision: existing entry might be a decrypt-pending
         // placeholder (#430).  Replace it in place when isEncrypted
         // and the content matches a known placeholder string.  The
         // index already contains msg.id so no map mutation is needed.
-        final existing = updatedConv[msg.conversationId] ?? const [];
+        final existing = updatedConvMap[msg.conversationId] ?? const [];
         final idx = existing.indexWhere((m) => m.id == msg.id);
         if (idx >= 0 &&
             existing[idx].isEncrypted &&
             _isPlaceholderContent(existing[idx].content)) {
           final replaced = [...existing]..[idx] = msg;
-          updatedConv[msg.conversationId] = replaced;
+          updatedConvMap = {...updatedConvMap, msg.conversationId: replaced};
         }
       }
     }
 
     return ChatState(
-      messagesByConversation: updatedConv,
-      messageIdIndex: updatedIndex,
+      messagesByConversation: updatedConvMap,
+      messageIdIndex: updatedIndexMap,
       loadingHistory: loadingHistory,
       hasMore: hasMore,
       replyToMessage: replyToMessage,
@@ -285,11 +287,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final updated = parent.copyWith(replyCount: parent.replyCount + 1);
     final newList = List<ChatMessage>.from(messages);
     newList[idx] = updated;
-    final newMap = Map<String, List<ChatMessage>>.from(
-      s.messagesByConversation,
+    return s.copyWith(
+      messagesByConversation: {
+        ...s.messagesByConversation,
+        conversationId: newList,
+      },
     );
-    newMap[conversationId] = newList;
-    return s.copyWith(messagesByConversation: newMap);
   }
 
   /// Transition a pending message to failed status after send timeout.
@@ -311,11 +314,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
     final updatedList = List<ChatMessage>.from(messages);
     updatedList[idx] = updated;
-    final updatedConv = Map<String, List<ChatMessage>>.from(
-      state.messagesByConversation,
+    state = state.copyWith(
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        conversationId: updatedList,
+      },
     );
-    updatedConv[conversationId] = updatedList;
-    state = state.copyWith(messagesByConversation: updatedConv);
   }
 
   void confirmSent(
@@ -327,14 +331,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }) {
     // Replace the most recent pending/sending message in this conversation
     // with the server-assigned ID so that delivery receipts can match it.
-    final updatedConv = Map<String, List<ChatMessage>>.from(
-      state.messagesByConversation,
-    );
-    final messages = updatedConv[conversationId];
+    // Only clone the affected conversation's list; other entries stay
+    // reference-equal so Riverpod selectors for unaffected convs don't rebuild.
+    final messages = state.messagesByConversation[conversationId];
     if (messages != null) {
-      final replacedPendingId = _replacePendingMessage(
-        updatedConv,
-        conversationId,
+      final (replacedPendingId, updatedMessages) = _replacePendingMessage(
         messages,
         messageId,
         timestamp,
@@ -346,17 +347,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
       if (replacedPendingId != null) {
         _sendTimeouts.remove(replacedPendingId)?.cancel();
       }
-    }
 
-    // Rebuild the index for this conversation since a pending ID was replaced.
-    final updatedIndex = Map<String, Set<String>>.from(state._messageIdIndex);
-    updatedIndex[conversationId] = (updatedConv[conversationId] ?? [])
-        .map((m) => m.id)
-        .toSet();
-    state = state.copyWith(
-      messagesByConversation: updatedConv,
-      messageIdIndex: updatedIndex,
-    );
+      if (updatedMessages != null) {
+        // Rebuild the index incrementally: swap old pending ID for new one.
+        final newIds = updatedMessages.map((m) => m.id).toSet();
+        state = state.copyWith(
+          messagesByConversation: {
+            ...state.messagesByConversation,
+            conversationId: updatedMessages,
+          },
+          messageIdIndex: {...state._messageIdIndex, conversationId: newIds},
+        );
+      }
+    }
 
     // Cache the confirmed message
     final confirmed = state
@@ -373,10 +376,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// Uses FIFO order (oldest first) so that when multiple messages are sent
   /// in rapid succession (e.g. attachment + caption), server confirmations
   /// match the correct pending message regardless of arrival timing.
-  /// Returns the original pending ID so the caller can cancel its timer.
-  String? _replacePendingMessage(
-    Map<String, List<ChatMessage>> updatedConv,
-    String conversationId,
+  /// Returns a record of (pendingId, updatedList); both are null when no
+  /// pending message was found.
+  (String?, List<ChatMessage>?) _replacePendingMessage(
     List<ChatMessage> messages,
     String messageId,
     String timestamp,
@@ -398,11 +400,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
           channelId: channelId ?? msg.channelId,
           expiresAt: expiresAt ?? msg.expiresAt,
         );
-        updatedConv[conversationId] = updatedMessages;
-        return pendingId;
+        return (pendingId, updatedMessages);
       }
     }
-    return null;
+    return (null, null);
   }
 
   /// Load history with the user's own ID for isMine determination.
@@ -652,10 +653,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     List<ChatMessage> newMessages, {
     String? channelId,
   }) {
-    final updatedConv = Map<String, List<ChatMessage>>.from(
-      state.messagesByConversation,
-    );
-    final existing = updatedConv[conversationId] ?? [];
+    // Only clone the affected conversation's list; other entries stay
+    // reference-equal so Riverpod selectors for unaffected convs don't rebuild.
+    final existing = state.messagesByConversation[conversationId] ?? [];
     final existingIds = existing.map((m) => m.id).toSet();
 
     final deduped = newMessages
@@ -668,32 +668,28 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (merged.length > _maxMessagesPerConv) {
       merged = merged.sublist(merged.length - _maxMessagesPerConv);
     }
-    updatedConv[conversationId] = merged;
 
-    final updatedHasMore = Map<String, bool>.from(state.hasMore);
-    updatedHasMore['$conversationId:${channelId ?? ''}'] =
-        newMessages.length >= 50;
-
-    // Rebuild index for this conversation after merge.
-    final updatedIndex = Map<String, Set<String>>.from(state._messageIdIndex);
-    updatedIndex[conversationId] = merged.map((m) => m.id).toSet();
+    final hasMoreKey = '$conversationId:${channelId ?? ''}';
 
     state = state.copyWith(
-      messagesByConversation: updatedConv,
-      messageIdIndex: updatedIndex,
-      hasMore: updatedHasMore,
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        conversationId: merged,
+      },
+      messageIdIndex: {
+        ...state._messageIdIndex,
+        conversationId: merged.map((m) => m.id).toSet(),
+      },
+      hasMore: {...state.hasMore, hasMoreKey: newMessages.length >= 50},
     );
   }
 
   /// Add a reaction to a message.
   void addReaction(String conversationId, Reaction reaction) {
-    final updatedConv = Map<String, List<ChatMessage>>.from(
-      state.messagesByConversation,
-    );
-    final messages = updatedConv[conversationId];
+    final messages = state.messagesByConversation[conversationId];
     if (messages == null) return;
 
-    updatedConv[conversationId] = messages.map((msg) {
+    final updated = messages.map((msg) {
       if (msg.id == reaction.messageId) {
         final reactions = List<Reaction>.from(msg.reactions);
         // Remove existing reaction from same user with same emoji (toggle)
@@ -706,7 +702,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return msg;
     }).toList();
 
-    state = state.copyWith(messagesByConversation: updatedConv);
+    state = state.copyWith(
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        conversationId: updated,
+      },
+    );
   }
 
   /// Remove a reaction from a message.
@@ -716,13 +717,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String userId,
     String emoji,
   ) {
-    final updatedConv = Map<String, List<ChatMessage>>.from(
-      state.messagesByConversation,
-    );
-    final messages = updatedConv[conversationId];
+    final messages = state.messagesByConversation[conversationId];
     if (messages == null) return;
 
-    updatedConv[conversationId] = messages.map((msg) {
+    final updated = messages.map((msg) {
       if (msg.id == messageId) {
         final reactions = List<Reaction>.from(msg.reactions);
         reactions.removeWhere((r) => r.userId == userId && r.emoji == emoji);
@@ -731,7 +729,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return msg;
     }).toList();
 
-    state = state.copyWith(messagesByConversation: updatedConv);
+    state = state.copyWith(
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        conversationId: updated,
+      },
+    );
   }
 
   /// Update message status (sent, delivered).
@@ -740,31 +743,30 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String messageId,
     MessageStatus status,
   ) {
-    final updatedConv = Map<String, List<ChatMessage>>.from(
-      state.messagesByConversation,
-    );
-    final messages = updatedConv[conversationId];
+    final messages = state.messagesByConversation[conversationId];
     if (messages == null) return;
 
-    updatedConv[conversationId] = messages.map((msg) {
+    final updated = messages.map((msg) {
       if (msg.id == messageId) {
         return msg.copyWith(status: status);
       }
       return msg;
     }).toList();
 
-    state = state.copyWith(messagesByConversation: updatedConv);
+    state = state.copyWith(
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        conversationId: updated,
+      },
+    );
   }
 
   /// Mark all of my sent/delivered messages in a conversation as read.
   void markConversationRead(String conversationId) {
-    final updatedConv = Map<String, List<ChatMessage>>.from(
-      state.messagesByConversation,
-    );
-    final messages = updatedConv[conversationId];
+    final messages = state.messagesByConversation[conversationId];
     if (messages == null) return;
 
-    updatedConv[conversationId] = messages.map((msg) {
+    final updated = messages.map((msg) {
       if (msg.isMine &&
           (msg.status == MessageStatus.sent ||
               msg.status == MessageStatus.delivered)) {
@@ -773,43 +775,36 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return msg;
     }).toList();
 
-    state = state.copyWith(messagesByConversation: updatedConv);
+    state = state.copyWith(
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        conversationId: updated,
+      },
+    );
   }
 
   /// Delete a message from local state.
   void deleteMessage(String conversationId, String messageId) {
-    final updatedConv = Map<String, List<ChatMessage>>.from(
-      state.messagesByConversation,
-    );
-    final messages = updatedConv[conversationId];
+    final messages = state.messagesByConversation[conversationId];
     if (messages == null) return;
 
-    updatedConv[conversationId] = messages
-        .where((msg) => msg.id != messageId)
-        .toList();
+    final updated = messages.where((msg) => msg.id != messageId).toList();
 
-    // Remove the deleted ID from the index.
-    final updatedIndex = Map<String, Set<String>>.from(state._messageIdIndex);
-    final ids = Set<String>.from(updatedIndex[conversationId] ?? <String>{});
-    ids.remove(messageId);
-    updatedIndex[conversationId] = ids;
+    // Remove the deleted ID from the index incrementally.
+    final existingIds = state._messageIdIndex[conversationId] ?? const {};
+    final newIds = Set<String>.from(existingIds)..remove(messageId);
 
     state = state.copyWith(
-      messagesByConversation: updatedConv,
-      messageIdIndex: updatedIndex,
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        conversationId: updated,
+      },
+      messageIdIndex: {...state._messageIdIndex, conversationId: newIds},
     );
   }
 
   /// Remove all cached messages for a conversation (e.g. after leaving it).
   void clearConversation(String conversationId) {
-    final updatedConv = Map<String, List<ChatMessage>>.from(
-      state.messagesByConversation,
-    );
-    updatedConv.remove(conversationId);
-
-    final updatedIndex = Map<String, Set<String>>.from(state._messageIdIndex);
-    updatedIndex.remove(conversationId);
-
     // Cancel any pending send timers for this conversation.
     final pending = state
         .messagesForConversation(conversationId)
@@ -818,9 +813,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
       _sendTimeouts.remove(m.id)?.cancel();
     }
 
+    // Remove the conversation entry from both maps via full copies (removal
+    // cannot be expressed with spread syntax); this path is infrequent
+    // (leave/clear) so the cost is acceptable.
+    final newConvMap = Map<String, List<ChatMessage>>.from(
+      state.messagesByConversation,
+    )..remove(conversationId);
+    final newIndexMap = Map<String, Set<String>>.from(state._messageIdIndex)
+      ..remove(conversationId);
+
     state = state.copyWith(
-      messagesByConversation: updatedConv,
-      messageIdIndex: updatedIndex,
+      messagesByConversation: newConvMap,
+      messageIdIndex: newIndexMap,
     );
   }
 
@@ -831,13 +835,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String newContent, {
     String? editedAt,
   }) {
-    final updatedConv = Map<String, List<ChatMessage>>.from(
-      state.messagesByConversation,
-    );
-    final messages = updatedConv[conversationId];
+    final messages = state.messagesByConversation[conversationId];
     if (messages == null) return;
 
-    updatedConv[conversationId] = messages.map((msg) {
+    final updated = messages.map((msg) {
       if (msg.id == messageId) {
         return msg.copyWith(
           content: newContent,
@@ -847,13 +848,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return msg;
     }).toList();
 
-    state = state.copyWith(messagesByConversation: updatedConv);
+    state = state.copyWith(
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        conversationId: updated,
+      },
+    );
 
     // Persist the edit to the local Hive cache so it survives app restart.
-    final edited = updatedConv[conversationId]
-        ?.where((m) => m.id == messageId)
-        .toList();
-    if (edited != null && edited.isNotEmpty) {
+    final edited = updated.where((m) => m.id == messageId).toList();
+    if (edited.isNotEmpty) {
       MessageCache.cacheMessages(conversationId, edited);
     }
   }
@@ -865,20 +869,22 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String? pinnedById,
     DateTime? pinnedAt,
   ) {
-    final updatedConv = Map<String, List<ChatMessage>>.from(
-      state.messagesByConversation,
-    );
-    final messages = updatedConv[conversationId];
+    final messages = state.messagesByConversation[conversationId];
     if (messages == null) return;
 
-    updatedConv[conversationId] = messages.map((msg) {
+    final updated = messages.map((msg) {
       if (msg.id == messageId) {
         return msg.copyWith(pinnedById: pinnedById, pinnedAt: pinnedAt);
       }
       return msg;
     }).toList();
 
-    state = state.copyWith(messagesByConversation: updatedConv);
+    state = state.copyWith(
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        conversationId: updated,
+      },
+    );
   }
 
   /// Forward a message to a different conversation.
