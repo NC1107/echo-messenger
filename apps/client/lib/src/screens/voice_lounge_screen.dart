@@ -25,6 +25,7 @@ import '../utils/canvas_utils.dart';
 import '../widgets/lounge_drawing_canvas.dart' hide CanvasImage;
 import '../widgets/vertex_mesh_background.dart';
 import '../widgets/voice_canvas.dart';
+import '../widgets/voice_speaking_ring.dart';
 
 const _kScreenshareLocal = 'screenshare-local';
 
@@ -932,7 +933,7 @@ class _ParticipantTile extends StatelessWidget {
                 _AvatarCircle(
                   name: name,
                   avatarUrl: avatarUrl,
-                  isSpeaking: isSpeaking,
+                  audioLevel: audioLevel,
                   authToken: authToken,
                 ),
               _buildNameLabel(context),
@@ -1034,13 +1035,13 @@ class _ParticipantTile extends StatelessWidget {
 class _AvatarCircle extends StatelessWidget {
   final String name;
   final String? avatarUrl;
-  final bool isSpeaking;
+  final double audioLevel;
   final String? authToken;
 
   const _AvatarCircle({
     required this.name,
     this.avatarUrl,
-    required this.isSpeaking,
+    required this.audioLevel,
     this.authToken,
   });
 
@@ -1052,41 +1053,21 @@ class _AvatarCircle extends StatelessWidget {
     final hue = (name.hashCode % 360).abs().toDouble();
     final avatarColor = HSLColor.fromAHSL(1.0, hue, 0.5, 0.35).toColor();
 
-    return Center(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: avatarColor,
-          border: Border.all(
-            color: isSpeaking ? EchoTheme.online : Colors.transparent,
-            width: 2,
-          ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: avatarUrl != null
-            ? Image.network(
-                avatarUrl!,
-                headers: authToken != null
-                    ? {'Authorization': 'Bearer $authToken'}
-                    : null,
-                fit: BoxFit.cover,
-                width: 48,
-                height: 48,
-                errorBuilder: (_, _, _) => Center(
-                  child: Text(
-                    initial,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              )
-            : Center(
+    final circle = Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: avatarColor),
+      clipBehavior: Clip.antiAlias,
+      child: avatarUrl != null
+          ? Image.network(
+              avatarUrl!,
+              headers: authToken != null
+                  ? {'Authorization': 'Bearer $authToken'}
+                  : null,
+              fit: BoxFit.cover,
+              width: 48,
+              height: 48,
+              errorBuilder: (_, _, _) => Center(
                 child: Text(
                   initial,
                   style: const TextStyle(
@@ -1096,7 +1077,21 @@ class _AvatarCircle extends StatelessWidget {
                   ),
                 ),
               ),
-      ),
+            )
+          : Center(
+              child: Text(
+                initial,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+    );
+
+    return Center(
+      child: VoiceSpeakingRing(audioLevel: audioLevel, child: circle),
     );
   }
 }

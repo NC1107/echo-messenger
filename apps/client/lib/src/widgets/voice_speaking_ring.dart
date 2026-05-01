@@ -57,7 +57,14 @@ class VoiceSpeakingRingState extends State<VoiceSpeakingRing>
     super.initState();
     _pulse = AnimationController(vsync: this, duration: widget.pulseDuration)
       ..addStatusListener(_onStatus);
-    if (widget.audioLevel > widget.threshold) _pulse.forward();
+    // Defer the first start so MediaQuery (reduce-motion) is available.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (widget.audioLevel > widget.threshold &&
+          !MediaQuery.of(context).disableAnimations) {
+        _pulse.forward();
+      }
+    });
   }
 
   void _onStatus(AnimationStatus status) {
