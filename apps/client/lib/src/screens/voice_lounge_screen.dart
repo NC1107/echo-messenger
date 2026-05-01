@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -841,11 +840,11 @@ class _ParticipantGrid extends StatelessWidget {
   Widget _buildGridLayout(List<Widget> tiles) {
     return Center(
       child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
+        spacing: 8,
+        runSpacing: 8,
         alignment: WrapAlignment.center,
         children: tiles
-            .map((t) => SizedBox(width: 96, height: 128, child: t))
+            .map((t) => SizedBox(width: 112, height: 136, child: t))
             .toList(),
       ),
     );
@@ -915,29 +914,35 @@ class _ParticipantTile extends StatelessWidget {
               : null,
         ),
         clipBehavior: Clip.antiAlias,
-        child: Container(
-          color: context.surface.withValues(alpha: kIsWeb ? 0.65 : 0.45),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Video or avatar
-              if (hasVideo && videoTrack != null)
-                lk.VideoTrackRenderer(
-                  videoTrack!,
-                  fit: lk.VideoViewFit.cover,
-                  mirrorMode: mirror
-                      ? lk.VideoViewMirrorMode.mirror
-                      : lk.VideoViewMirrorMode.off,
-                )
-              else
-                _AvatarCircle(
-                  name: name,
-                  avatarUrl: avatarUrl,
-                  audioLevel: audioLevel,
-                  authToken: authToken,
-                ),
-              _buildNameLabel(context),
-            ],
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(15),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              color: context.surface.withValues(alpha: 0.30),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Video or avatar
+                  if (hasVideo && videoTrack != null)
+                    lk.VideoTrackRenderer(
+                      videoTrack!,
+                      fit: lk.VideoViewFit.cover,
+                      mirrorMode: mirror
+                          ? lk.VideoViewMirrorMode.mirror
+                          : lk.VideoViewMirrorMode.off,
+                    )
+                  else
+                    _AvatarCircle(
+                      name: name,
+                      avatarUrl: avatarUrl,
+                      audioLevel: audioLevel,
+                      authToken: authToken,
+                    ),
+                  _buildNameLabel(context),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -1053,9 +1058,11 @@ class _AvatarCircle extends StatelessWidget {
     final hue = (name.hashCode % 360).abs().toDouble();
     final avatarColor = HSLColor.fromAHSL(1.0, hue, 0.5, 0.35).toColor();
 
+    const double avatarSize = 80;
+
     final circle = Container(
-      width: 48,
-      height: 48,
+      width: avatarSize,
+      height: avatarSize,
       decoration: BoxDecoration(shape: BoxShape.circle, color: avatarColor),
       clipBehavior: Clip.antiAlias,
       child: avatarUrl != null
@@ -1065,14 +1072,14 @@ class _AvatarCircle extends StatelessWidget {
                   ? {'Authorization': 'Bearer $authToken'}
                   : null,
               fit: BoxFit.cover,
-              width: 48,
-              height: 48,
+              width: avatarSize,
+              height: avatarSize,
               errorBuilder: (_, _, _) => Center(
                 child: Text(
                   initial,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 18,
+                    fontSize: 28,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1083,7 +1090,7 @@ class _AvatarCircle extends StatelessWidget {
                 initial,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 18,
+                  fontSize: 28,
                   fontWeight: FontWeight.w600,
                 ),
               ),
