@@ -11,7 +11,7 @@ use std::sync::Arc;
 use crate::auth::middleware::AuthUser;
 use crate::auth::{jwt, password};
 use crate::db;
-use crate::error::AppError;
+use crate::error::{AppError, DbErrCtx};
 
 use super::AppState;
 
@@ -252,11 +252,7 @@ pub async fn refresh(
 
     let token_hash = jwt::hash_refresh_token(&raw_token);
 
-    let mut tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(|_| AppError::internal("Database error"))?;
+    let mut tx = state.pool.begin().await.db_ctx("refresh/begin_tx")?;
 
     // Lock the refresh-token row for the duration of the transaction so a
     // concurrent rotation request must wait until we commit (or rolls back).
@@ -268,7 +264,7 @@ pub async fn refresh(
         .bind(&token_hash)
         .fetch_optional(&mut *tx)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .db_ctx("refresh/fetch_token")?;
 
     let Some(row) = row else {
         // Drop the (read-only) tx implicitly.
@@ -291,11 +287,9 @@ pub async fn refresh(
             .bind(family_id)
             .execute(&mut *tx)
             .await
-            .map_err(|_| AppError::internal("Database error"))?;
+            .db_ctx("refresh/revoke_family_theft")?;
         }
-        tx.commit()
-            .await
-            .map_err(|_| AppError::internal("Database error"))?;
+        tx.commit().await.db_ctx("refresh/commit_theft")?;
         return Err(AppError::unauthorized("Refresh token has been revoked"));
     }
 
@@ -316,7 +310,7 @@ pub async fn refresh(
     .bind(row.id)
     .fetch_optional(&mut *tx)
     .await
-    .map_err(|_| AppError::internal("Database error"))?;
+    .db_ctx("refresh/sentinel_revoke")?;
 
     if revoked.is_none() {
         if let Some(family_id) = row.family_id {
@@ -332,11 +326,9 @@ pub async fn refresh(
             .bind(family_id)
             .execute(&mut *tx)
             .await
-            .map_err(|_| AppError::internal("Database error"))?;
+            .db_ctx("refresh/revoke_family_concurrent")?;
         }
-        tx.commit()
-            .await
-            .map_err(|_| AppError::internal("Database error"))?;
+        tx.commit().await.db_ctx("refresh/commit_concurrent")?;
         return Err(AppError::unauthorized("Refresh token has been revoked"));
     }
 
@@ -356,11 +348,9 @@ pub async fn refresh(
     .bind(family_id)
     .execute(&mut *tx)
     .await
-    .map_err(|_| AppError::internal("Database error"))?;
+    .db_ctx("refresh/insert_new_token")?;
 
-    tx.commit()
-        .await
-        .map_err(|_| AppError::internal("Database error"))?;
+    tx.commit().await.db_ctx("refresh/commit")?;
 
     let access_token = jwt::create_token(row.user_id, &state.jwt_secret)?;
 

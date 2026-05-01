@@ -1077,10 +1077,11 @@ async fn read_text_skipping_presence(ws: &mut WsStream) -> String {
     }
 }
 
-/// Read frames, skipping `presence`, `new_message`, and `message_sent`.
-/// Use when the test exercises a downstream event (typing, read_receipt,
-/// key_reset) and the message-fanout chatter would race in late under
-/// tarpaulin/CI pressure.
+/// Read frames, skipping ambient chatter so the test can wait for a
+/// specific downstream event. `delivered` is included because the server
+/// emits it back to the sender once the recipient's WS handler observes
+/// `new_message`, and that ack often races past `drain_pending`'s 100ms
+/// window under tarpaulin/CI pressure.
 async fn read_text_skipping_chatter(ws: &mut WsStream) -> String {
     loop {
         let text = read_text_with_timeout(ws).await;
@@ -1090,7 +1091,7 @@ async fn read_text_skipping_chatter(ws: &mut WsStream) -> String {
         };
         if matches!(
             parsed["type"].as_str(),
-            Some("presence") | Some("new_message") | Some("message_sent")
+            Some("presence") | Some("new_message") | Some("message_sent") | Some("delivered")
         ) {
             continue;
         }

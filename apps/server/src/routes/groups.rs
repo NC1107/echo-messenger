@@ -146,10 +146,7 @@ pub async fn create_group(
         let already_exists =
             db::groups::user_has_public_group_named(&state.pool, auth.user_id, &body.name)
                 .await
-                .map_err(|e| {
-                    tracing::error!("Failed to check duplicate group name: {:?}", e);
-                    AppError::internal("Failed to check duplicate group name")
-                })?;
+                .db_ctx("create_group/check_dup_name")?;
         if already_exists {
             return Err(AppError::conflict(
                 "You already own a public group with this name",
@@ -166,10 +163,7 @@ pub async fn create_group(
         body.description.as_deref(),
     )
     .await
-    .map_err(|e| {
-        tracing::error!("Failed to create group: {:?}", e);
-        AppError::internal("Failed to create group")
-    })?;
+    .db_ctx("create_group/create")?;
 
     // Seed default channels for new groups.
     db::channels::create_channel(
@@ -182,10 +176,7 @@ pub async fn create_group(
         Some("Text Channels"),
     )
     .await
-    .map_err(|e| {
-        tracing::error!("DB error in create_group/create_text_channel: {e:?}");
-        AppError::internal("Failed to create default text channel")
-    })?;
+    .db_ctx("create_group/create_text_channel")?;
     db::channels::create_channel(
         &state.pool,
         group.id,
@@ -196,17 +187,11 @@ pub async fn create_group(
         Some("Voice Channels"),
     )
     .await
-    .map_err(|e| {
-        tracing::error!("DB error in create_group/create_voice_channel: {e:?}");
-        AppError::internal("Failed to create default voice channel")
-    })?;
+    .db_ctx("create_group/create_voice_channel")?;
 
     let members = db::groups::get_group_members(&state.pool, group.id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in create_group/get_members: {e:?}");
-            AppError::internal("Failed to fetch group members")
-        })?;
+        .db_ctx("create_group/get_members")?;
 
     let response = GroupResponse {
         id: group.id,
@@ -333,7 +318,7 @@ pub async fn add_member(
 
     let added = db::groups::add_member(&state.pool, group_id, body.user_id)
         .await
-        .map_err(|_| AppError::internal("Failed to add member"))?;
+        .db_ctx("add_member/insert")?;
 
     if !added {
         return Err(AppError::conflict("User is already a member"));
@@ -375,10 +360,7 @@ pub async fn remove_member(
 
     let removed = db::groups::remove_member(&state.pool, group_id, target_user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in remove_member: {e:?}");
-            AppError::internal("Failed to remove member")
-        })?;
+        .db_ctx("remove_member/delete")?;
 
     if !removed {
         return Err(AppError::bad_request("User is not a member of this group"));
@@ -420,10 +402,7 @@ pub async fn list_public_groups(
         offset,
     )
     .await
-    .map_err(|e| {
-        tracing::error!("Failed to list public groups: {:?}", e);
-        AppError::internal("Failed to list public groups")
-    })?;
+    .db_ctx("list_public_groups")?;
 
     let response: Vec<PublicGroupResponse> = groups
         .into_iter()
@@ -499,10 +478,7 @@ pub async fn join_group(
 
     let joined = db::groups::join_public_group(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("Failed to join group: {:?}", e);
-            AppError::internal("Failed to join group")
-        })?;
+        .db_ctx("join_group/insert")?;
 
     if !joined {
         return Err(AppError::bad_request("Group not found or is not public"));
@@ -536,10 +512,7 @@ pub async fn leave_group(
 
     let removed = db::groups::remove_member(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in leave_group/remove_member: {e:?}");
-            AppError::internal("Failed to leave group")
-        })?;
+        .db_ctx("leave_group/remove_member")?;
 
     if !removed {
         return Err(AppError::bad_request("Not a member of this group"));
@@ -572,10 +545,7 @@ pub async fn delete_group(
 ) -> Result<impl IntoResponse, AppError> {
     let deleted = db::groups::delete_group(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in delete_group: {e:?}");
-            AppError::internal("Failed to delete group")
-        })?;
+        .db_ctx("delete_group")?;
     if !deleted {
         return Err(AppError::unauthorized(
             "Only the group owner can delete this group",
@@ -593,10 +563,7 @@ pub async fn update_group(
 ) -> Result<impl IntoResponse, AppError> {
     let caller_role = db::groups::get_member_role(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in update_group/get_role: {e:?}");
-            AppError::internal("Failed to check role")
-        })?
+        .db_ctx("update_group/get_role")?
         .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
 
     let caller_role_enum = Role::from_str_opt(&caller_role).unwrap_or(Role::Member);
@@ -613,19 +580,13 @@ pub async fn update_group(
         }
         db::groups::update_group_title(&state.pool, group_id, trimmed)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in update_group/title: {e:?}");
-                AppError::internal("Failed to update group title")
-            })?;
+            .db_ctx("update_group/title")?;
     }
 
     if let Some(ref desc) = body.description {
         db::groups::update_group_description(&state.pool, group_id, desc)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in update_group/description: {e:?}");
-                AppError::internal("Failed to update description")
-            })?;
+            .db_ctx("update_group/description")?;
     }
 
     Ok(Json(serde_json::json!({ "status": "updated" })))
@@ -669,10 +630,7 @@ pub async fn ban_member(
 
     db::groups::ban_member(&state.pool, group_id, target_user_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in ban_member: {e:?}");
-            AppError::internal("Failed to ban member")
-        })?;
+        .db_ctx("ban_member/insert")?;
 
     invalidate_member_cache(group_id);
 
@@ -715,10 +673,7 @@ pub async fn unban_member(
 
     let unbanned = db::groups::unban_member(&state.pool, group_id, target_user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in unban_member: {e:?}");
-            AppError::internal("Failed to unban member")
-        })?;
+        .db_ctx("unban_member/delete")?;
 
     if !unbanned {
         return Err(AppError::bad_request("User is not banned from this group"));
@@ -840,10 +795,7 @@ pub async fn upload_group_avatar(
         let icon_url = format!("/api/groups/{group_id}/avatar");
         db::groups::update_group_icon_url(&state.pool, group_id, &icon_url)
             .await
-            .map_err(|e| {
-                tracing::error!("DB error in upload_group_avatar/set_icon: {e:?}");
-                AppError::internal("Failed to update group avatar")
-            })?;
+            .db_ctx("upload_group_avatar/set_icon")?;
 
         return Ok((StatusCode::OK, Json(json!({ "avatar_url": icon_url }))));
     }

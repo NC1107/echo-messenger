@@ -385,10 +385,7 @@ pub async fn download(
     // ACL: verify the requesting user can access this media
     let allowed = db::media::can_user_access_media(&state.pool, id, user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("Media ACL check failed: {e}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("download/acl_check")?;
 
     if !allowed {
         // Return 404 (not 403) to avoid revealing whether the file exists.
@@ -533,10 +530,7 @@ pub async fn download_thumb(
 
     let allowed = db::media::can_user_access_media(&state.pool, id, user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("Media ACL check failed: {e}");
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("thumbnail/acl_check")?;
     if !allowed {
         return Err(AppError {
             status: StatusCode::NOT_FOUND,

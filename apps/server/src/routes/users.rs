@@ -119,10 +119,7 @@ pub async fn update_my_privacy(
     };
     let updated = db::users::update_privacy_preferences(&state.pool, auth.user_id, &prefs)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in update_my_privacy: {e:?}");
-            AppError::internal("Failed to update privacy settings")
-        })?;
+        .db_ctx("update_my_privacy")?;
 
     Ok(Json(PrivacyPreferencesResponse {
         read_receipts_enabled: updated.read_receipts_enabled,
@@ -310,7 +307,7 @@ pub async fn update_presence_status(
     // Fetch username for the presence payload.
     let user = db::users::find_by_id(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .db_ctx("update_presence_status/find_user")?
         .ok_or_else(|| AppError::internal("User not found"))?;
 
     broadcast_presence_with_status(
@@ -392,10 +389,7 @@ pub async fn delete_account(
     // Revoke all refresh tokens
     db::tokens::revoke_all_user_tokens(&state.pool, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in delete_account/revoke_tokens: {e:?}");
-            AppError::internal("Failed to revoke tokens")
-        })?;
+        .db_ctx("delete_account/revoke_tokens")?;
 
     // Disconnect from WebSocket hub if online
     state.hub.unregister_all(auth.user_id);
@@ -403,10 +397,7 @@ pub async fn delete_account(
     // Delete user row (CASCADE handles related tables)
     let deleted = db::users::delete_user(&state.pool, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in delete_account/delete_user: {e:?}");
-            AppError::internal("Failed to delete account")
-        })?;
+        .db_ctx("delete_account/delete_user")?;
 
     if !deleted {
         return Err(AppError::internal("User not found"));
@@ -441,7 +432,7 @@ pub async fn change_password(
     // Verify current password
     let user = db::users::find_by_id(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .db_ctx("change_password/find_user")?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
     // Argon2 verify takes ~50-150ms of pure CPU. Without spawn_blocking it
@@ -465,15 +456,12 @@ pub async fn change_password(
         .map_err(|e| AppError::internal(format!("argon2 join error: {e}")))??;
     db::users::update_password(&state.pool, auth.user_id, &new_hash)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in change_password: {e:?}");
-            AppError::internal("Failed to update password")
-        })?;
+        .db_ctx("change_password/update")?;
 
     // Revoke all refresh tokens so other sessions are logged out
     db::tokens::revoke_all_user_tokens(&state.pool, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .db_ctx("change_password/revoke_tokens")?;
 
     Ok(Json(json!({ "status": "password_changed" })))
 }

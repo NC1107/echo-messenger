@@ -78,10 +78,7 @@ pub async fn decline_request(
 ) -> Result<impl IntoResponse, AppError> {
     let deleted = db::contacts::decline_contact_request(&state.pool, body.contact_id, auth.user_id)
         .await
-        .map_err(|e| {
-            tracing::error!("DB error in decline_request: {:?}", e);
-            AppError::internal("Database error")
-        })?;
+        .db_ctx("decline_request")?;
 
     if !deleted {
         return Err(AppError::bad_request("No pending request found"));

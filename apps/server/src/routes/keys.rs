@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::db;
-use crate::error::AppError;
+use crate::error::{AppError, DbErrCtx};
 
 use super::AppState;
 
@@ -229,10 +229,7 @@ pub async fn upload_bundle(
         .collect::<Result<Vec<_>, AppError>>()?;
 
     // Wrap all key stores in a transaction to prevent partial uploads.
-    let mut tx = state.pool.begin().await.map_err(|e| {
-        tracing::error!("Failed to begin key upload transaction: {e:?}");
-        AppError::internal("Database error")
-    })?;
+    let mut tx = state.pool.begin().await.db_ctx("upload_bundle/begin_tx")?;
 
     db::keys::store_identity_key(
         &mut *tx,
@@ -266,10 +263,7 @@ pub async fn upload_bundle(
             .await?;
     }
 
-    tx.commit().await.map_err(|e| {
-        tracing::error!("Failed to commit key upload transaction: {e:?}");
-        AppError::internal("Database error")
-    })?;
+    tx.commit().await.db_ctx("upload_bundle/commit")?;
 
     tracing::info!(
         "PreKey bundle uploaded for user {} device {} ({} OTPs)",
@@ -457,7 +451,7 @@ pub async fn revoke_device(
 
     let found = db::keys::revoke_device(&state.pool, auth_user.user_id, device_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .db_ctx("revoke_device")?;
 
     if !found {
         return Err(AppError {
@@ -515,10 +509,7 @@ pub async fn revoke_other_devices(
     let revoked_ids =
         db::keys::revoke_devices_except(&state.pool, auth_user.user_id, body.current_device_id)
             .await
-            .map_err(|e| {
-                tracing::error!("revoke_devices_except failed: {e:?}");
-                AppError::internal("Database error")
-            })?;
+            .db_ctx("revoke_other_devices")?;
 
     for device_id in &revoked_ids {
         let event = ServerMessage::DeviceRevoked {
@@ -565,7 +556,7 @@ pub async fn reset_keys(
 
     let user = db::users::find_by_id(&state.pool, auth_user.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .db_ctx("reset_keys/find_user")?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
     let pw = body.password.clone();
@@ -629,7 +620,7 @@ pub async fn reset_device(
 
     let user = db::users::find_by_id(&state.pool, auth_user.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .db_ctx("reset_device/find_user")?
         .ok_or_else(|| AppError::bad_request("User not found"))?;
 
     let pw = body.password.clone();

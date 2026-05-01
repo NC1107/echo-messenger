@@ -4,6 +4,18 @@ import 'package:flutter/foundation.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
+/// Safely set tray tooltip, catching MissingPluginException on Linux where
+/// libappindicator does not support setToolTip.
+Future<void> _safeSetToolTip(String text) async {
+  try {
+    if (!Platform.isLinux) {
+      await trayManager.setToolTip(text);
+    }
+  } catch (e) {
+    debugPrint('[TrayService] setToolTip failed: $e');
+  }
+}
+
 /// System tray integration for desktop platforms (Linux, Windows, macOS).
 ///
 /// Initialise once after login with [TrayService.init]. Updates the tray
@@ -59,11 +71,7 @@ class TrayService with TrayListener, WindowListener {
       debugPrint('[TrayService] setIcon failed: $e');
     }
 
-    try {
-      await trayManager.setToolTip('Echo');
-    } catch (e) {
-      debugPrint('[TrayService] setToolTip failed: $e');
-    }
+    await _safeSetToolTip('Echo');
 
     // Attach listener before menu so taps work even if menu install fails.
     trayManager.addListener(this);
@@ -97,7 +105,7 @@ class TrayService with TrayListener, WindowListener {
     final label = unreadCount > 0
         ? 'Echo - $unreadCount unread message${unreadCount == 1 ? '' : 's'}'
         : 'Echo';
-    await trayManager.setToolTip(label);
+    await _safeSetToolTip(label);
   }
 
   // ── WindowListener: minimise to tray on close ─────────────────────────────

@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
 use crate::db;
-use crate::error::AppError;
+use crate::error::{AppError, DbErrCtx};
 
 use super::AppState;
 
@@ -37,7 +37,7 @@ pub async fn get_canvas(
 ) -> Result<Json<CanvasResponse>, AppError> {
     let is_member = db::groups::is_member(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .db_ctx("get_canvas/is_member")?;
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this group"));
     }
@@ -45,7 +45,7 @@ pub async fn get_canvas(
     // Verify the channel belongs to this group.
     let channel = db::channels::get_channel(&state.pool, channel_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .db_ctx("get_canvas/get_channel")?
         .ok_or_else(|| AppError::bad_request("Channel not found"))?;
     if channel.conversation_id != group_id {
         return Err(AppError::bad_request(
@@ -55,7 +55,7 @@ pub async fn get_canvas(
 
     let row = db::canvas::get(&state.pool, channel_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .db_ctx("get_canvas/get")?;
 
     Ok(Json(CanvasResponse {
         channel_id: row.channel_id,
@@ -77,14 +77,14 @@ pub async fn clear_canvas(
 ) -> Result<StatusCode, AppError> {
     let is_member = db::groups::is_member(&state.pool, group_id, auth.user_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .db_ctx("clear_canvas/is_member")?;
     if !is_member {
         return Err(AppError::unauthorized("Not a member of this group"));
     }
 
     let channel = db::channels::get_channel(&state.pool, channel_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?
+        .db_ctx("clear_canvas/get_channel")?
         .ok_or_else(|| AppError::bad_request("Channel not found"))?;
     if channel.conversation_id != group_id {
         return Err(AppError::bad_request(
@@ -94,7 +94,7 @@ pub async fn clear_canvas(
 
     db::canvas::clear_all(&state.pool, channel_id)
         .await
-        .map_err(|_| AppError::internal("Database error"))?;
+        .db_ctx("clear_canvas/clear_all")?;
 
     Ok(StatusCode::NO_CONTENT)
 }
