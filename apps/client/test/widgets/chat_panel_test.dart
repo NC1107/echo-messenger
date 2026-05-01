@@ -11,7 +11,6 @@ import 'package:echo_app/src/providers/livekit_voice_provider.dart';
 import 'package:echo_app/src/providers/voice_settings_provider.dart';
 import 'package:echo_app/src/services/crypto_service.dart';
 import 'package:echo_app/src/services/group_crypto_service.dart';
-import 'package:echo_app/src/theme/echo_theme.dart';
 import 'package:echo_app/src/widgets/chat_panel.dart';
 
 import '../helpers/mock_providers.dart';
@@ -267,31 +266,23 @@ void main() {
 
   // ---------------------------------------------------------------------------
   // State mutation tests: delete, pin, rollback
+  //
+  // These tests verify ChatNotifier state directly via a bare ProviderContainer
+  // (no widget pump). Using plain test() avoids fake-async timer leaks from
+  // WebSocketNotifier's periodic typing-cleanup timer, which is started by the
+  // fake websocket override's super-constructor and cancelled only on dispose.
+  // ChatPanel's AnimatedSwitcher also keeps the outgoing child visible during
+  // its 200 ms crossfade, making widget finders unreliable for optimistic
+  // delete/add cycles. Provider state is the canonical source of truth.
   // ---------------------------------------------------------------------------
 
-  /// Pumps [ChatPanel] using an [UncontrolledProviderScope] so tests can
-  /// mutate the [ProviderContainer] directly and observe widget reactions.
-  Future<ProviderContainer> pumpWithContainer(
-    WidgetTester tester, {
-    required ChatState chatState,
-  }) async {
+  /// Builds a [ProviderContainer] pre-seeded with [chatState] for mutation
+  /// tests that do not need a widget tree.
+  ProviderContainer containerWithChatState(ChatState chatState) {
     final container = ProviderContainer(
       overrides: _chatPanelOverrides(chatState: chatState),
     );
     addTearDown(container.dispose);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp(
-          theme: EchoTheme.darkTheme,
-          darkTheme: EchoTheme.darkTheme,
-          themeMode: ThemeMode.dark,
-          home: const Scaffold(body: ChatPanel(conversation: _dmConversation)),
-        ),
-      ),
-    );
-    await tester.pump();
     return container;
   }
 
@@ -306,47 +297,48 @@ void main() {
       isMine: false,
     );
 
-    // skipped: #670 — state-mutation propagation in widget tests
-    testWidgets('optimistic delete removes message from list', skip: true, (
-      tester,
-    ) async {
-      final chatState = const ChatState(
-        messagesByConversation: {
-          'conv-dm': [testMsg],
-        },
+    test('optimistic delete removes message from list', () {
+      final container = containerWithChatState(
+        const ChatState(
+          messagesByConversation: {
+            'conv-dm': [testMsg],
+          },
+        ),
+      );
+      expect(
+        container.read(chatProvider).messagesForConversation('conv-dm'),
+        hasLength(1),
       );
 
-      final container = await pumpWithContainer(tester, chatState: chatState);
-      expect(find.text('Delete me please'), findsOneWidget);
-
       container.read(chatProvider.notifier).deleteMessage('conv-dm', 'msg-del');
-      await tester.pump();
 
-      expect(find.text('Delete me please'), findsNothing);
+      expect(
+        container.read(chatProvider).messagesForConversation('conv-dm'),
+        isEmpty,
+      );
     });
 
-    // skipped: #670 — state-mutation propagation in widget tests
-    testWidgets('rollback restores message after failed delete', skip: true, (
-      tester,
-    ) async {
-      final chatState = const ChatState(
-        messagesByConversation: {
-          'conv-dm': [testMsg],
-        },
+    test('rollback restores message after failed delete', () {
+      final container = containerWithChatState(
+        const ChatState(
+          messagesByConversation: {
+            'conv-dm': [testMsg],
+          },
+        ),
       );
 
-      final container = await pumpWithContainer(tester, chatState: chatState);
-      expect(find.text('Delete me please'), findsOneWidget);
-
-      // Simulate optimistic remove then rollback (server rejected the delete)
+      // Simulate optimistic remove then rollback (server rejected the delete).
       container.read(chatProvider.notifier).deleteMessage('conv-dm', 'msg-del');
-      await tester.pump();
-      expect(find.text('Delete me please'), findsNothing);
+      expect(
+        container.read(chatProvider).messagesForConversation('conv-dm'),
+        isEmpty,
+      );
 
       container.read(chatProvider.notifier).addMessage(testMsg);
-      await tester.pump();
-
-      expect(find.text('Delete me please'), findsOneWidget);
+      expect(
+        container.read(chatProvider).messagesForConversation('conv-dm'),
+        hasLength(1),
+      );
     });
   });
 
@@ -361,17 +353,14 @@ void main() {
       isMine: false,
     );
 
-    // skipped: #670 — state-mutation propagation in widget tests
-    testWidgets('optimistic pin update is reflected in state', skip: true, (
-      tester,
-    ) async {
-      final chatState = const ChatState(
-        messagesByConversation: {
-          'conv-dm': [testMsg],
-        },
+    test('optimistic pin update is reflected in state', () {
+      final container = containerWithChatState(
+        const ChatState(
+          messagesByConversation: {
+            'conv-dm': [testMsg],
+          },
+        ),
       );
-
-      final container = await pumpWithContainer(tester, chatState: chatState);
 
       // Before pin – pinnedById is null
       final before = container
@@ -385,7 +374,6 @@ void main() {
       container
           .read(chatProvider.notifier)
           .updateMessagePin('conv-dm', 'msg-pin', 'test-user-id', pinTime);
-      await tester.pump();
 
       final after = container
           .read(chatProvider)
@@ -395,17 +383,14 @@ void main() {
       expect(after.pinnedAt, pinTime);
     });
 
-    // skipped: #670 — state-mutation propagation in widget tests
-    testWidgets('rollback clears pin on server failure', skip: true, (
-      tester,
-    ) async {
-      final chatState = const ChatState(
-        messagesByConversation: {
-          'conv-dm': [testMsg],
-        },
+    test('rollback clears pin on server failure', () {
+      final container = containerWithChatState(
+        const ChatState(
+          messagesByConversation: {
+            'conv-dm': [testMsg],
+          },
+        ),
       );
-
-      final container = await pumpWithContainer(tester, chatState: chatState);
 
       // Optimistically pin
       container
@@ -416,13 +401,11 @@ void main() {
             'test-user-id',
             DateTime.now(),
           );
-      await tester.pump();
 
       // Server rejected → revert
       container
           .read(chatProvider.notifier)
           .updateMessagePin('conv-dm', 'msg-pin', null, null);
-      await tester.pump();
 
       final reverted = container
           .read(chatProvider)
