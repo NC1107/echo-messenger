@@ -199,6 +199,10 @@ pub async fn handle_socket(
     // Broadcast online presence to contacts
     typing_service::broadcast_presence(&state, user_id, &username, "online").await;
 
+    // Send a presence_list snapshot to the newly-connected user so it can
+    // replace any stale online-set from before the reconnect (#436).
+    typing_service::send_presence_snapshot(&state, user_id).await;
+
     // Forward hub -> sink. Both halves are select!-linked below so neither
     // outlives the other; rx returned for post-shutdown drain.
     let send_fut = async move {

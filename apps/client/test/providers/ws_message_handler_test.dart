@@ -298,7 +298,7 @@ void main() {
   });
 
   group('handleServerMessage: presence_list', () {
-    test('replaces onlineUsers set', () {
+    test('replaces onlineUsers set -- legacy string format', () {
       handler.handleServerMessage({
         'type': 'presence_list',
         'users': ['u1', 'u2', 'u3'],
@@ -314,6 +314,108 @@ void main() {
       }, _myUserId);
 
       expect(handler.state.onlineUsers, isEmpty);
+    });
+
+    // --- #436 presence_list snapshot (object format) ---
+
+    test('object format populates onlineUsers and presenceStatuses', () {
+      handler.handleServerMessage({
+        'type': 'presence_list',
+        'users': [
+          {'user_id': 'alice-id', 'status': 'online'},
+          {'user_id': 'bob-id', 'status': 'away'},
+        ],
+      }, _myUserId);
+
+      expect(handler.state.onlineUsers, containsAll(['alice-id', 'bob-id']));
+      expect(handler.state.presenceStatuses['alice-id'], 'online');
+      expect(handler.state.presenceStatuses['bob-id'], 'away');
+    });
+
+    test('object format replaces stale entries from previous session', () {
+      // Seed some stale presence from before a disconnect.
+      handler.handleServerMessage({
+        'type': 'presence',
+        'user_id': 'stale-user',
+        'status': 'online',
+      }, _myUserId);
+      expect(handler.state.onlineUsers, contains('stale-user'));
+
+      // Snapshot arrives on reconnect with a different set.
+      handler.handleServerMessage({
+        'type': 'presence_list',
+        'users': [
+          {'user_id': 'fresh-user', 'status': 'online'},
+        ],
+      }, _myUserId);
+
+      expect(
+        handler.state.onlineUsers,
+        isNot(contains('stale-user')),
+        reason: 'stale entry must be evicted by the snapshot',
+      );
+      expect(handler.state.onlineUsers, contains('fresh-user'));
+    });
+
+    test('skips entries with empty user_id', () {
+      handler.handleServerMessage({
+        'type': 'presence_list',
+        'users': [
+          {'user_id': '', 'status': 'online'},
+          {'user_id': 'valid-id', 'status': 'online'},
+        ],
+      }, _myUserId);
+
+      expect(handler.state.onlineUsers, {'valid-id'});
+    });
+  });
+
+  // --- #436 clearOnlineUsers ---
+  group('clearOnlineUsers', () {
+    test('clears onlineUsers and presenceStatuses on disconnect', () {
+      // Populate some presence state first.
+      handler.handleServerMessage({
+        'type': 'presence_list',
+        'users': [
+          {'user_id': 'peer-1', 'status': 'online'},
+          {'user_id': 'peer-2', 'status': 'away'},
+        ],
+      }, _myUserId);
+      expect(handler.state.onlineUsers, hasLength(2));
+
+      // Simulate disconnect.
+      handler.clearOnlineUsers();
+
+      expect(handler.state.onlineUsers, isEmpty);
+      expect(handler.state.presenceStatuses, isEmpty);
+    });
+
+    test('is idempotent when already empty', () {
+      handler.clearOnlineUsers();
+      handler.clearOnlineUsers();
+      expect(handler.state.onlineUsers, isEmpty);
+    });
+
+    test('snapshot after clearOnlineUsers reflects correct state', () {
+      // Disconnect clears state.
+      handler.handleServerMessage({
+        'type': 'presence',
+        'user_id': 'peer-1',
+        'status': 'online',
+      }, _myUserId);
+      handler.clearOnlineUsers();
+      expect(handler.state.onlineUsers, isEmpty);
+
+      // Reconnect snapshot arrives.
+      handler.handleServerMessage({
+        'type': 'presence_list',
+        'users': [
+          {'user_id': 'peer-1', 'status': 'online'},
+        ],
+      }, _myUserId);
+
+      expect(handler.state.onlineUsers, {'peer-1'});
+      expect(handler.state.presenceStatuses['peer-1'], 'online');
     });
   });
 

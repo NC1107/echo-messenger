@@ -242,6 +242,66 @@ pub(super) async fn handle_read_receipt(state: &AppState, sender_id: Uuid, conve
     }
 }
 
+/// Send a `presence_list` snapshot to a newly-connected user.
+///
+/// Finds all accepted contacts of `user_id` that are currently in the hub,
+/// looks up their stored `presence_status`, and delivers a single
+/// `{"type":"presence_list","users":[…]}` event so the client can replace its
+/// stale online-set in one shot instead of waiting for individual presence
+/// ticks (#436).
+///
+/// Invisible contacts are omitted — they appear offline to observers.
+pub(super) async fn send_presence_snapshot(state: &AppState, user_id: Uuid) {
+    let contact_ids = match db::contacts::list_contact_user_ids(&state.pool, user_id).await {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!("presence_snapshot: failed to fetch contacts for {user_id}: {e}");
+            return;
+        }
+    };
+
+    // Intersect contacts with the hub's online set.
+    let online_contacts: Vec<Uuid> = contact_ids
+        .into_iter()
+        .filter(|cid| state.hub.device_count(cid) > 0)
+        .collect();
+
+    if online_contacts.is_empty() {
+        // Still send an empty snapshot so the client clears stale entries.
+        let json = r#"{"type":"presence_list","users":[]}"#;
+        state
+            .hub
+            .send_to(&user_id, axum::extract::ws::Message::Text(json.into()));
+        return;
+    }
+
+    // Build per-user status entries, filtering out invisible contacts.
+    let mut entries: Vec<serde_json::Value> = Vec::with_capacity(online_contacts.len());
+    for cid in &online_contacts {
+        let stored = db::users::get_presence_status(&state.pool, *cid)
+            .await
+            .unwrap_or(None)
+            .unwrap_or_else(|| "online".to_string());
+        if stored == "invisible" {
+            continue; // invisible users appear offline
+        }
+        entries.push(serde_json::json!({
+            "user_id": cid.to_string(),
+            "status": stored,
+        }));
+    }
+
+    let snapshot = serde_json::json!({
+        "type": "presence_list",
+        "users": entries,
+    });
+    if let Ok(json) = serde_json::to_string(&snapshot) {
+        state
+            .hub
+            .send_to(&user_id, axum::extract::ws::Message::Text(json.into()));
+    }
+}
+
 pub(super) async fn broadcast_presence(
     state: &AppState,
     user_id: Uuid,

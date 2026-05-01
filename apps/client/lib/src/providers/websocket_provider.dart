@@ -181,6 +181,9 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
           'WebSocket',
           'Connection closed (onDone)',
         );
+        // Mark all peers offline on disconnect; reconnect will deliver a
+        // fresh presence_list snapshot that reconciles actual state (#436).
+        clearOnlineUsers();
         state = state.copyWith(isConnected: false);
         _scheduleReconnect();
       },
@@ -190,6 +193,8 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
           'WebSocket',
           'Connection error (onError)',
         );
+        // Same as onDone: clear stale presence before reconnect snapshot.
+        clearOnlineUsers();
         state = state.copyWith(isConnected: false);
         _scheduleReconnect();
       },

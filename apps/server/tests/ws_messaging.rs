@@ -438,8 +438,8 @@ async fn offline_delivery_marks_unknown_device_undecryptable() {
     let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
     let mut bob_ws = connect_ws(&base, &bob_ticket).await;
 
-    let bob_event = read_text_with_timeout(&mut bob_ws).await;
-    let bob_msg: Value = serde_json::from_str(&bob_event).expect("Bob JSON parse failed");
+    // Skip the presence_list snapshot that arrives first on connect (#436).
+    let bob_msg = common::recv_until_event(&mut bob_ws, &["new_message"]).await;
     assert_eq!(bob_msg["type"], "new_message", "Bob should get new_message");
     assert_eq!(
         bob_msg["undecryptable"], true,
@@ -1245,8 +1245,8 @@ async fn drain_pending(ws: &mut WsStream) {
     {}
 }
 
-/// Read frames, skipping `presence` events. Use when the test expects a
-/// non-presence non-new_message frame.
+/// Read frames, skipping `presence` and `presence_list` events. Use when the
+/// test expects a non-presence frame.
 async fn read_text_skipping_presence(ws: &mut WsStream) -> String {
     loop {
         let text = read_text_with_timeout(ws).await;
@@ -1254,7 +1254,10 @@ async fn read_text_skipping_presence(ws: &mut WsStream) -> String {
             Ok(v) => v,
             Err(_) => return text,
         };
-        if parsed["type"] == "presence" {
+        if matches!(
+            parsed["type"].as_str(),
+            Some("presence") | Some("presence_list")
+        ) {
             continue;
         }
         return text;
@@ -1275,7 +1278,11 @@ async fn read_text_skipping_chatter(ws: &mut WsStream) -> String {
         };
         if matches!(
             parsed["type"].as_str(),
-            Some("presence") | Some("new_message") | Some("message_sent") | Some("delivered")
+            Some("presence")
+                | Some("presence_list")
+                | Some("new_message")
+                | Some("message_sent")
+                | Some("delivered")
         ) {
             continue;
         }

@@ -127,6 +127,15 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   /// Drained by [drainPendingDecryptQueue] once crypto is ready.
   final List<Map<String, dynamic>> _pendingDecryptQueue = [];
 
+  /// Clear all online-user state on disconnect so reconnect snapshot starts clean.
+  ///
+  /// Called by the connection lifecycle (onDone/onError) before scheduling a
+  /// reconnect. The server sends a `presence_list` snapshot immediately on
+  /// reconnect which repopulates the map with accurate data (#436).
+  void clearOnlineUsers() {
+    state = state.copyWith(onlineUsers: const {}, presenceStatuses: const {});
+  }
+
   /// Decrypt queued messages that arrived before crypto init completed.
   void drainPendingDecryptQueue(String myUserId) {
     if (_pendingDecryptQueue.isEmpty) return;
@@ -921,9 +930,37 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     );
   }
 
+  /// Replace the local online-set from a server-sent `presence_list` snapshot.
+  ///
+  /// The server emits this event right after a WS connect so the client can
+  /// reconcile stale presence state in one shot (#436).
+  ///
+  /// Supports two payload shapes:
+  ///   • object list: `[{"user_id":"…","status":"…"}, …]`  (new format, post-#436)
+  ///   • string list: `["uuid1", "uuid2", …]`              (legacy, treat all as "online")
   void _handlePresenceList(Map<String, dynamic> json) {
-    final users = (json['users'] as List?)?.cast<String>() ?? [];
-    state = state.copyWith(onlineUsers: users.toSet());
+    final rawUsers = json['users'] as List? ?? [];
+    final newOnline = <String>{};
+    final newStatuses = <String, String>{};
+
+    for (final entry in rawUsers) {
+      if (entry is String) {
+        // Legacy format: plain ID list.
+        newOnline.add(entry);
+        newStatuses[entry] = 'online';
+      } else if (entry is Map<String, dynamic>) {
+        final userId = entry['user_id'] as String? ?? '';
+        final status = entry['status'] as String? ?? 'online';
+        if (userId.isEmpty) continue;
+        newOnline.add(userId);
+        newStatuses[userId] = status;
+      }
+    }
+
+    state = state.copyWith(
+      onlineUsers: newOnline,
+      presenceStatuses: newStatuses,
+    );
   }
 
   /// #660 — Insert the newly-joined member into the local conversations state
