@@ -6,10 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 
 import '../models/conversation.dart';
 import '../services/toast_service.dart';
+import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
@@ -558,29 +558,21 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     if (croppedBytes == null) return; // user cancelled
 
     final serverUrl = ref.read(serverUrlProvider);
-    final token = ref.read(authProvider).token;
-    if (token == null) return;
-
-    final uri = Uri.parse(
-      '$serverUrl/api/groups/${widget.conversationId}/avatar',
-    );
-    final request = http.MultipartRequest('PUT', uri)
-      ..headers['Authorization'] = 'Bearer $token'
-      ..files.add(
-        http.MultipartFile.fromBytes(
-          'avatar',
-          croppedBytes,
-          filename: 'avatar.jpg',
-          contentType: MediaType('image', 'jpeg'),
-        ),
-      );
 
     try {
-      final streamedResponse = await request.send();
-      final body = await streamedResponse.stream.bytesToString();
+      final uploader = UploadClient(ref.read(authProvider.notifier));
+      final result = await uploader.uploadFile(
+        serverUrl: serverUrl,
+        path: '/api/groups/${widget.conversationId}/avatar',
+        bytes: croppedBytes,
+        fileName: 'avatar.jpg',
+        mimeType: 'image/jpeg',
+        method: 'PUT',
+        fieldName: 'avatar',
+      );
       if (!mounted) return;
 
-      if (streamedResponse.statusCode == 200) {
+      if (result.ok) {
         await ref.read(conversationsProvider.notifier).loadConversations();
         await _loadGroupInfo(force: true);
         if (mounted) {
@@ -591,11 +583,10 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           );
         }
       } else {
-        final serverMsg = _parseErrorBody(body);
         ToastService.show(
           context,
-          serverMsg ??
-              'Failed to upload avatar (${streamedResponse.statusCode})',
+          result.errorMessage ??
+              'Failed to upload avatar (${result.statusCode})',
           type: ToastType.error,
         );
       }
@@ -605,15 +596,6 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         ToastService.show(context, 'Upload error: $e', type: ToastType.error);
       }
     }
-  }
-
-  String? _parseErrorBody(String body) {
-    try {
-      final data = jsonDecode(body) as Map<String, dynamic>;
-      final msg = data['error'] as String?;
-      if (msg != null && msg.isNotEmpty) return msg;
-    } catch (_) {}
-    return null;
   }
 
   Future<void> _showAddChannelDialog() async {

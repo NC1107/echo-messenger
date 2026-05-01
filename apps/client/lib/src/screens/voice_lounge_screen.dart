@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
@@ -9,8 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
-import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
 
 import '../models/canvas_models.dart';
@@ -22,6 +19,7 @@ import '../providers/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/voice_settings_provider.dart';
+import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
 import '../widgets/lounge_drawing_canvas.dart' hide CanvasImage;
@@ -2296,7 +2294,6 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
     // state is disposed while the file picker or upload is in progress.
     final conversationId = widget.conversationId;
     final serverUrl = ref.read(serverUrlProvider);
-    final token = ref.read(authProvider).token;
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.image,
@@ -2314,40 +2311,21 @@ class _DrawingToolsMenuState extends ConsumerState<_DrawingToolsMenu> {
         return;
       }
 
-      if (token == null) {
-        if (ctx.mounted) {
-          ScaffoldMessenger.of(ctx).showSnackBar(
-            const SnackBar(content: Text('Sign in required to upload image')),
-          );
-        }
-        return;
-      }
-
       final ext = file.extension?.toLowerCase() ?? 'png';
       final mimeType = _mimeForExtension(ext);
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$serverUrl/api/media/upload'),
+      final uploader = UploadClient(ref.read(authProvider.notifier));
+      final uploadResult = await uploader.uploadFile(
+        serverUrl: serverUrl,
+        path: '/api/media/upload',
+        bytes: bytes,
+        fileName: file.name,
+        mimeType: mimeType,
+        extraFields: {'conversation_id': conversationId},
       );
-      request.headers['Authorization'] = 'Bearer $token';
-      request.fields['conversation_id'] = conversationId;
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: file.name,
-          contentType: MediaType.parse(mimeType),
-        ),
-      );
-
-      final response = await request.send();
-      if (!mounted) return;
-      final body = await response.stream.bytesToString();
       if (!mounted) return;
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(body) as Map<String, dynamic>;
-        final relUrl = data['url'] as String? ?? '';
+      if (uploadResult.ok) {
+        final relUrl = uploadResult.url ?? '';
         final absUrl = relUrl.startsWith('http') ? relUrl : '$serverUrl$relUrl';
         _addImageByUrl(absUrl);
       } else {
