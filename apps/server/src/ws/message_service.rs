@@ -694,36 +694,56 @@ impl NewMessageFields {
 
 /// Pre-serialize per-device JSON messages once for each recipient to avoid
 /// re-serializing the same message for every member in the fanout loop.
-/// Outer key is `recipient_user_id`, inner is `device_id -> JSON` (#522).
+/// Outer key is `recipient_user_id`, inner is `device_id -> WsMessage` (#522).
+///
+/// Serialization is hoisted out of the fanout loop (#690):
+/// 1. Serialize a `ServerMessage::NewMessage` with empty content into a
+///    `serde_json::Value` once — this respects all `skip_serializing_if`
+///    attributes and preserves the exact wire format.
+/// 2. Per device, clone the Value, set only the `content` field, and call
+///    `to_string` once.
+/// 3. Store as `WsMessage::Text` (Bytes-backed) so hub clones inside the
+///    fanout loop are O(1) — no string copying per recipient.
 pub(super) fn build_per_device_json(
     fields: &NewMessageFields,
     recipient_device_contents: &RecipientDeviceContents,
-) -> HashMap<Uuid, Vec<(i32, String)>> {
+) -> HashMap<Uuid, Vec<(i32, WsMessage)>> {
+    // Serialize the invariant portion once via serde so skip_serializing_if
+    // is respected for optional fields (channel_id, reply_to_*, expires_at,
+    // undecryptable). The `content` field is replaced per device below.
+    let base_msg = ServerMessage::NewMessage {
+        message_id: fields.message_id,
+        from_user_id: fields.from_user_id,
+        from_device_id: fields.from_device_id,
+        from_username: fields.from_username.clone(),
+        conversation_id: fields.conversation_id,
+        channel_id: fields.channel_id,
+        content: String::new(),
+        timestamp: fields.timestamp,
+        reply_to_id: fields.reply_to_id,
+        reply_to_content: fields.reply_to_content.clone(),
+        reply_to_username: fields.reply_to_username.clone(),
+        expires_at: fields.expires_at,
+        undecryptable: None,
+    };
+    let Ok(base_value) = serde_json::to_value(&base_msg) else {
+        return HashMap::new();
+    };
+
     recipient_device_contents
         .iter()
         .filter_map(|(uid_str, devices)| {
             let recipient_id = Uuid::parse_str(uid_str).ok()?;
-            let entries: Vec<(i32, String)> = devices
+            let entries: Vec<(i32, WsMessage)> = devices
                 .iter()
                 .filter_map(|(did_str, ciphertext)| {
                     let did = did_str.parse::<i32>().ok()?;
-                    let per_device_msg = ServerMessage::NewMessage {
-                        message_id: fields.message_id,
-                        from_user_id: fields.from_user_id,
-                        from_device_id: fields.from_device_id,
-                        from_username: fields.from_username.clone(),
-                        conversation_id: fields.conversation_id,
-                        channel_id: fields.channel_id,
-                        content: ciphertext.clone(),
-                        timestamp: fields.timestamp,
-                        reply_to_id: fields.reply_to_id,
-                        reply_to_content: fields.reply_to_content.clone(),
-                        reply_to_username: fields.reply_to_username.clone(),
-                        expires_at: fields.expires_at,
-                        undecryptable: None,
-                    };
-                    let json = serde_json::to_string(&per_device_msg).ok()?;
-                    Some((did, json))
+                    // Clone the invariant Value and mutate only `content`.
+                    let mut val = base_value.clone();
+                    val["content"] = serde_json::Value::String(ciphertext.clone());
+                    let json = serde_json::to_string(&val).ok()?;
+                    // Wrap as WsMessage::Text (Bytes) once; fanout clones are O(1).
+                    Some((did, WsMessage::Text(json.into())))
                 })
                 .collect();
             Some((recipient_id, entries))
@@ -733,28 +753,32 @@ pub(super) fn build_per_device_json(
 
 /// Deliver a message to a single member via per-device or legacy delivery.
 /// Returns `true` if the member received the message on at least one device.
+///
+/// Both `per_recipient_json` entries and `legacy_msg` are `WsMessage::Text`
+/// (Bytes-backed); cloning inside the loop is O(1) — no string copying (#690).
 pub(super) fn deliver_to_member(
     hub: &crate::ws::hub::Hub,
     member_id: &Uuid,
-    per_recipient_json: Option<&HashMap<Uuid, Vec<(i32, String)>>>,
-    legacy_json: Option<&str>,
+    per_recipient_json: Option<&HashMap<Uuid, Vec<(i32, WsMessage)>>>,
+    legacy_msg: Option<&WsMessage>,
 ) -> bool {
     if let Some(by_recipient) = per_recipient_json
-        && let Some(device_jsons) = by_recipient.get(member_id)
+        && let Some(device_msgs) = by_recipient.get(member_id)
     {
         // #557: deliver to ALL recipient devices. `Iterator::any` short-circuits
         // on the first `true`, so a successful send to device #1 would skip
         // device #2 entirely. Walk every device and OR-accumulate instead.
         let mut any_sent = false;
-        for (did, json) in device_jsons {
-            if hub.send_to_device(member_id, *did, WsMessage::Text(json.clone().into())) {
+        for (did, msg) in device_msgs {
+            // WsMessage::Text is Bytes-backed; clone is O(1).
+            if hub.send_to_device(member_id, *did, msg.clone()) {
                 any_sent = true;
             }
         }
         return any_sent;
     }
-    if let Some(json) = legacy_json {
-        hub.send_to_user(member_id, WsMessage::Text(json.to_owned().into()))
+    if let Some(msg) = legacy_msg {
+        hub.send_to_user(member_id, msg.clone())
     } else {
         false
     }
@@ -845,11 +869,16 @@ pub(super) async fn fanout_message(
         .await
         .unwrap_or_default();
 
-    // Pre-serialize per-recipient device JSON messages and legacy fallback
+    // Pre-build per-recipient WsMessage values and the legacy fallback once
+    // before the fanout loop so no serialization or String allocation happens
+    // per recipient (#690). Both paths store Bytes-backed WsMessage::Text;
+    // clone inside the loop is O(1).
     let per_recipient_json = recipient_device_contents
         .as_ref()
         .map(|rdc| build_per_device_json(&fields, rdc));
-    let legacy_json = serde_json::to_string(message).ok();
+    let legacy_msg = serde_json::to_string(message)
+        .ok()
+        .map(|s| WsMessage::Text(s.into()));
 
     let mut any_delivered = false;
     let mut offline_user_ids = Vec::new();
@@ -863,7 +892,7 @@ pub(super) async fn fanout_message(
             &state.hub,
             member_id,
             per_recipient_json.as_ref(),
-            legacy_json.as_deref(),
+            legacy_msg.as_ref(),
         );
         if delivered {
             any_delivered = true;
