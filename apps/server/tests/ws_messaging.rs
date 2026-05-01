@@ -773,6 +773,190 @@ async fn test_group_fanout_delivers_to_all_devices_of_all_members() {
 }
 
 // ---------------------------------------------------------------------------
+// Group × multi-device fanout — 3-user, asymmetric device counts (#586)
+// ---------------------------------------------------------------------------
+
+/// Stronger regression than `test_group_fanout_delivers_to_all_devices_of_all_members`:
+/// three group members with asymmetric device counts (bob=2, charlie=3) to catch
+/// any short-circuit that skips later members *or* skips the third device of a
+/// single member.  Every WS connection must receive exactly its own per-device
+/// ciphertext — no device receives another device's ciphertext or the canonical
+/// content.  Covers the 3+ member × 2+ device scenario cited in the #586 audit.
+#[tokio::test]
+async fn test_group_fanout_asymmetric_device_counts() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "gasym_alice").await;
+    let (bob_token, bob_id, _bob_name) =
+        common::register_and_login(&client, &base, "gasym_bob").await;
+    let (charlie_token, charlie_id, _charlie_name) =
+        common::register_and_login(&client, &base, "gasym_charlie").await;
+
+    let group_id = common::create_group(&client, &base, &alice_token, "AsymDevFanoutGroup").await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
+
+    // Alice — sender, device 1.
+    let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+
+    // Bob — 2 devices (device 11, 12).
+    let bob_d1_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 11).await;
+    let bob_d2_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 12).await;
+    let mut bob_d1_ws = connect_ws(&base, &bob_d1_ticket).await;
+    let mut bob_d2_ws = connect_ws(&base, &bob_d2_ticket).await;
+
+    // Charlie — 3 devices (device 21, 22, 23). Having 3 devices (not 2) is the
+    // critical difference from the sibling test: a bug that short-circuits after
+    // the second device of a member would skip device 23 silently.
+    let charlie_d1_ticket =
+        common::get_ws_ticket_for_device(&client, &base, &charlie_token, 21).await;
+    let charlie_d2_ticket =
+        common::get_ws_ticket_for_device(&client, &base, &charlie_token, 22).await;
+    let charlie_d3_ticket =
+        common::get_ws_ticket_for_device(&client, &base, &charlie_token, 23).await;
+    let mut charlie_d1_ws = connect_ws(&base, &charlie_d1_ticket).await;
+    let mut charlie_d2_ws = connect_ws(&base, &charlie_d2_ticket).await;
+    let mut charlie_d3_ws = connect_ws(&base, &charlie_d3_ticket).await;
+
+    drain_pending(&mut alice_ws).await;
+    drain_pending(&mut bob_d1_ws).await;
+    drain_pending(&mut bob_d2_ws).await;
+    drain_pending(&mut charlie_d1_ws).await;
+    drain_pending(&mut charlie_d2_ws).await;
+    drain_pending(&mut charlie_d3_ws).await;
+
+    let bob_d1_ct = common::dummy_ciphertext("gasym_bob_d11");
+    let bob_d2_ct = common::dummy_ciphertext("gasym_bob_d12");
+    let charlie_d1_ct = common::dummy_ciphertext("gasym_charlie_d21");
+    let charlie_d2_ct = common::dummy_ciphertext("gasym_charlie_d22");
+    let charlie_d3_ct = common::dummy_ciphertext("gasym_charlie_d23");
+    let alice_d1_ct = common::dummy_ciphertext("gasym_alice_d1");
+    let canonical = common::dummy_ciphertext("gasym_canonical");
+
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "conversation_id": group_id,
+        "content": canonical,
+        "recipient_device_contents": {
+            bob_id.to_string(): {
+                "11": bob_d1_ct.clone(),
+                "12": bob_d2_ct.clone(),
+            },
+            charlie_id.to_string(): {
+                "21": charlie_d1_ct.clone(),
+                "22": charlie_d2_ct.clone(),
+                "23": charlie_d3_ct.clone(),
+            },
+            alice_id.to_string(): {
+                "1": alice_d1_ct.clone(),
+            },
+        },
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("Alice group send failed");
+
+    // Alice — message_sent ack.
+    let ack_text = read_text_skipping_presence(&mut alice_ws).await;
+    let ack: Value = serde_json::from_str(&ack_text).unwrap();
+    assert_eq!(ack["type"], "message_sent", "alice should get message_sent");
+
+    // Bob device 11.
+    let bob1_text = read_text_skipping_presence(&mut bob_d1_ws).await;
+    let bob1: Value = serde_json::from_str(&bob1_text).unwrap();
+    assert_eq!(
+        bob1["type"], "new_message",
+        "bob d11 should get new_message"
+    );
+    assert_eq!(
+        bob1["content"], bob_d1_ct,
+        "bob d11 must receive its own ciphertext"
+    );
+
+    // Bob device 12.
+    let bob2_text = read_text_skipping_presence(&mut bob_d2_ws).await;
+    let bob2: Value = serde_json::from_str(&bob2_text).unwrap();
+    assert_eq!(
+        bob2["type"], "new_message",
+        "bob d12 should get new_message"
+    );
+    assert_eq!(
+        bob2["content"], bob_d2_ct,
+        "bob d12 must receive its own ciphertext"
+    );
+
+    // Charlie device 21.
+    let charlie1_text = read_text_skipping_presence(&mut charlie_d1_ws).await;
+    let charlie1: Value = serde_json::from_str(&charlie1_text).unwrap();
+    assert_eq!(
+        charlie1["type"], "new_message",
+        "charlie d21 should get new_message"
+    );
+    assert_eq!(
+        charlie1["content"], charlie_d1_ct,
+        "charlie d21 must receive its own ciphertext"
+    );
+
+    // Charlie device 22.
+    let charlie2_text = read_text_skipping_presence(&mut charlie_d2_ws).await;
+    let charlie2: Value = serde_json::from_str(&charlie2_text).unwrap();
+    assert_eq!(
+        charlie2["type"], "new_message",
+        "charlie d22 should get new_message"
+    );
+    assert_eq!(
+        charlie2["content"], charlie_d2_ct,
+        "charlie d22 must receive its own ciphertext"
+    );
+
+    // Charlie device 23 — the critical third device. A bug that short-circuits
+    // after the second device of any member would cause this to deadlock here.
+    let charlie3_text = read_text_skipping_presence(&mut charlie_d3_ws).await;
+    let charlie3: Value = serde_json::from_str(&charlie3_text).unwrap();
+    assert_eq!(
+        charlie3["type"], "new_message",
+        "charlie d23 should get new_message"
+    );
+    assert_eq!(
+        charlie3["content"], charlie_d3_ct,
+        "charlie d23 must receive its own ciphertext"
+    );
+
+    // Cross-device and cross-member distinctness.
+    assert_ne!(
+        bob1["content"], bob2["content"],
+        "bob d11 vs d12 must differ"
+    );
+    assert_ne!(
+        charlie1["content"], charlie2["content"],
+        "charlie d21 vs d22 must differ"
+    );
+    assert_ne!(
+        charlie1["content"], charlie3["content"],
+        "charlie d21 vs d23 must differ"
+    );
+    assert_ne!(
+        charlie2["content"], charlie3["content"],
+        "charlie d22 vs d23 must differ"
+    );
+    assert_ne!(
+        bob1["content"], charlie1["content"],
+        "bob vs charlie must differ"
+    );
+
+    let _ = alice_ws.close(None).await;
+    let _ = bob_d1_ws.close(None).await;
+    let _ = bob_d2_ws.close(None).await;
+    let _ = charlie_d1_ws.close(None).await;
+    let _ = charlie_d2_ws.close(None).await;
+    let _ = charlie_d3_ws.close(None).await;
+}
+
+// ---------------------------------------------------------------------------
 // #455 / #591 — server-side ciphertext-shape gate on encrypted conversations
 // ---------------------------------------------------------------------------
 
