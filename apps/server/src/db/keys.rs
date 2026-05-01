@@ -61,8 +61,7 @@ pub async fn clear_identity_key_fingerprint(
     Ok(())
 }
 
-/// Fetch the identity-key fingerprint bound to a specific device, if any
-/// (#664).
+/// Fetch the identity-key fingerprint bound to a specific device, if any.
 ///
 /// Falls back to `None` when the row exists but has no fingerprint yet (newly
 /// uploaded device pre-binding) or the row is missing entirely.
@@ -470,7 +469,7 @@ pub struct GroupKeyRow {
 /// Insert a new group key version.
 ///
 /// Generic over `Executor` so callers can run this against either the pool
-/// or an in-flight transaction.  `upload_group_key` (#687) needs the latter
+/// or an in-flight transaction.  `upload_group_key` needs the latter
 /// so the sentinel row + per-member envelopes commit atomically.
 pub async fn store_group_key<'e, E>(
     executor: E,
@@ -551,7 +550,7 @@ pub struct GroupKeyEnvelopeRow {
 /// Store an encrypted group key envelope for a specific recipient.
 ///
 /// Generic over `Executor` so callers can run this against a transaction
-/// alongside `store_group_key` (#687).
+/// alongside `store_group_key`.
 pub async fn store_group_key_envelope<'e, E>(
     executor: E,
     conversation_id: Uuid,

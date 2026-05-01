@@ -237,7 +237,7 @@ pub async fn upload(
     )
     .await?;
 
-    // Generate a first-frame thumbnail for video uploads (#561). Best-effort:
+    // Generate a first-frame thumbnail for video uploads. Best-effort:
     // we still return success even if ffmpeg is missing or fails — the client
     // falls back to a black tile when /thumb returns 404.
     let mut thumb_url: Option<String> = None;
@@ -267,7 +267,7 @@ pub async fn upload(
 
 /// Run ffmpeg to extract the first frame of a video as a JPEG thumbnail.
 /// Returns `Err` if ffmpeg isn't installed or exits non-zero — the caller
-/// logs a warning and continues without a thumbnail (#561).
+/// logs a warning and continues without a thumbnail.
 async fn generate_video_thumbnail(input: &str, output: &str) -> Result<(), String> {
     let result = tokio::process::Command::new("ffmpeg")
         .args([
@@ -495,7 +495,7 @@ pub async fn download(
 /// GET /api/media/:id/thumb
 ///
 /// Serve the JPEG first-frame thumbnail generated at upload time for
-/// `video/*` media (#561). Same auth gate as `download()`. Returns 404 when
+/// `video/*` media. Same auth gate as `download()`. Returns 404 when
 /// no thumbnail exists (non-video, or ffmpeg unavailable at upload time).
 pub async fn download_thumb(
     State(state): State<Arc<AppState>>,

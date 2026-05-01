@@ -66,7 +66,7 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
     let cors = if cors_origins == "*" {
         // Browsers reject `Access-Control-Allow-Credentials: true` paired with
         // `Access-Control-Allow-Origin: *`, so the wildcard branch CANNOT enable
-        // credentials. The web client's HttpOnly refresh cookie (#342) requires
+        // credentials. The web client's HttpOnly refresh cookie requires
         // explicit origins -- set `CORS_ORIGINS` to a comma-separated list.
         tracing::warn!(
             "CORS_ORIGINS is set to '*' — allowing all origins WITHOUT credentials. \
@@ -87,7 +87,7 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
             .allow_methods(allowed_methods)
             .allow_headers(allowed_headers)
             // Required for the web client to send the HttpOnly refresh cookie
-            // back to /api/auth/refresh and /api/auth/logout (#342).
+            // back to /api/auth/refresh and /api/auth/logout.
             .allow_credentials(true)
     };
 
@@ -386,7 +386,7 @@ pub async fn readyz(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         Ok(Err(e)) => {
             // Log the underlying error server-side; do NOT expose connection
             // details (hostnames, usernames, etc.) on the unauthenticated
-            // /readyz endpoint (PR #659 reviewer catch).
+            // /readyz endpoint.
             tracing::warn!(error = %e, "/readyz: db query failed");
             (
                 StatusCode::SERVICE_UNAVAILABLE,

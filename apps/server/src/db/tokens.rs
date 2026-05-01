@@ -5,7 +5,7 @@
 //! refresh, the entire family is revoked (token theft detection per RFC 6819).
 //!
 //! The `/api/auth/refresh` handler inlines SELECT/UPDATE/INSERT inside a
-//! single transaction so rotation is atomic across concurrent requests (#520).
+//! single transaction so rotation is atomic across concurrent requests.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;

@@ -11,7 +11,7 @@ pub struct MessageRow {
     pub channel_id: Option<Uuid>,
     pub sender_id: Uuid,
     /// Device that originated the message. `None` for legacy rows that
-    /// predate multi-device tracking (#557).
+    /// predate multi-device tracking.
     pub sender_device_id: Option<i32>,
     pub content: String,
     pub created_at: DateTime<Utc>,
@@ -27,7 +27,7 @@ pub struct MessageWithSender {
     pub channel_id: Option<Uuid>,
     pub sender_id: Uuid,
     /// Device that originated the message. `None` for legacy rows that
-    /// predate multi-device tracking (#557).
+    /// predate multi-device tracking.
     pub sender_device_id: Option<i32>,
     pub sender_username: String,
     pub content: String,
@@ -155,7 +155,7 @@ pub async fn find_or_create_dm_conversation(
 
 /// Insert a new message, optionally linked to a parent via `reply_to_id`.
 ///
-/// Contract for `reply_to_id` (#519): when `Some`, the parent message must
+/// Contract for `reply_to_id`: when `Some`, the parent message must
 /// exist in the same conversation **and** not be soft-deleted.  When the
 /// parent is missing, deleted, or belongs to a different conversation, the
 /// INSERT is suppressed and `sqlx::Error::RowNotFound` is returned so the
@@ -210,9 +210,9 @@ pub async fn get_messages(
     requesting_device_id: Option<i32>,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     // Single query handles both cursor and non-cursor cases via optional $3 param.
-    // #557: when device_id is supplied, COALESCE per-device ciphertext over
-    // the canonical content. reply_count via LEFT JOIN LATERAL matches the
-    // shape used by search_messages / get_thread_replies.
+    // When device_id is supplied, COALESCE per-device ciphertext over the canonical
+    // content. reply_count via LEFT JOIN LATERAL matches the shape used by
+    // search_messages / get_thread_replies.
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -253,8 +253,8 @@ pub async fn get_messages(
 }
 
 /// Page size for offline-replay batches.  Picked so a single batch fits
-/// comfortably in the WS outbound mpsc(256) without immediate backpressure
-/// (#634), while still exercising the ack queue under realistic backlogs.
+/// comfortably in the WS outbound mpsc(256) without immediate backpressure,
+/// while still exercising the ack queue under realistic backlogs.
 pub const UNDELIVERED_PAGE_SIZE: i64 = 200;
 
 /// Fetch undelivered messages, optionally after a `(created_at, id)` cursor.
@@ -273,7 +273,7 @@ pub async fn get_undelivered(
     };
     // reply_count is computed via a single aggregating subquery joined once
     // (O(N+M)) rather than a LATERAL correlated subquery that re-executes for
-    // every returned row (O(N*M)).  Fixes #638.
+    // every returned row (O(N*M)).
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -367,7 +367,7 @@ pub async fn delete_message(
 /// Look up the conversation security flags for a message that the caller
 /// claims to own. Returns `None` when the message does not exist, has been
 /// soft-deleted, or was sent by a different user. Used to gate edits on
-/// encrypted conversations (#582) before performing the UPDATE.
+/// encrypted conversations before performing the UPDATE.
 pub async fn get_message_conversation_security(
     pool: &PgPool,
     message_id: Uuid,
@@ -487,7 +487,7 @@ pub async fn search_messages_global(
 /// Look up reply context (content and username) for a given reply_to message ID,
 /// scoped to the supplied `conversation_id`.  Soft-deleted parents return `None`.
 /// Cross-conversation lookups also return `None` so a sender cannot peek at
-/// the content of a message in a different conversation. #519
+/// the content of a message in a different conversation.
 pub async fn lookup_reply_context(
     pool: &PgPool,
     reply_to_id: Uuid,
@@ -653,7 +653,7 @@ pub async fn get_pinned_messages(
 ///
 /// Entries are `(recipient_user_id, device_id, ciphertext)`. Per-user device IDs
 /// collide across users (every user starts at device_id=1), so the storage key
-/// is scoped by recipient (#522).
+/// is scoped by recipient.
 pub async fn store_device_contents(
     pool: &PgPool,
     message_id: Uuid,
@@ -713,7 +713,7 @@ pub async fn get_device_content(
 /// devices.  Used by offline replay to distinguish "no per-device fanout
 /// happened" (legacy/group/plaintext) from "fanout happened but missed this
 /// device", so the latter can be flagged as undecryptable instead of
-/// silently shipping the wrong device's wire (#557).
+/// silently shipping the wrong device's wire.
 pub async fn message_ids_with_any_device_content(
     pool: &PgPool,
     message_ids: &[Uuid],
@@ -768,7 +768,7 @@ pub async fn get_device_contents_batch(
 /// Each reply includes its own reply_count so the client can show nested thread
 /// indicators.
 ///
-/// Scoped to `conversation_id` (#519): even though `reply_to_id` should already
+/// Scoped to `conversation_id`: even though `reply_to_id` should already
 /// only point at messages in the same conversation after the `store_message`
 /// fix, this query enforces it defensively so historical bad data cannot leak
 /// across conversations on read.

@@ -86,7 +86,7 @@ impl Hub {
     }
 
     /// Number of devices currently registered for `user_id`.  Used by the
-    /// presence broadcaster (#436) to gate `online`/`offline` events on
+    /// presence broadcaster to gate `online`/`offline` events on
     /// first-device-up / last-device-down so a user with three devices
     /// reconnecting after a flaky network blip doesn't make contacts see
     /// online/offline/online/offline per device.
@@ -127,7 +127,7 @@ impl Hub {
 
     /// Send a message to a specific device of a user. Returns true only when
     /// the message was actually enqueued — callers in the replay path rely
-    /// on this to avoid prematurely marking messages as delivered (#523).
+    /// on this to avoid prematurely marking messages as delivered.
     pub fn send_to_device(&self, user_id: &Uuid, device_id: i32, msg: WsMessage) -> bool {
         let tx_opt: Option<WsTx> = self
             .inner

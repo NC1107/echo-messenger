@@ -31,7 +31,7 @@ enum ClientMessage {
         /// `recipient_user_id (UUID string) -> { device_id (i32 string) -> base64 ciphertext }`.
         /// JSON object keys are strings on the wire; conversion to typed
         /// `(Uuid, i32)` happens at the storage and fanout boundaries. Recipient
-        /// scoping is required because per-user device IDs collide across users (#522).
+        /// scoping is required because per-user device IDs collide across users.
         #[serde(default)]
         recipient_device_contents: Option<HashMap<String, HashMap<String, String>>>,
         /// Optional TTL in seconds. When Some, overrides the conversation-level
@@ -97,7 +97,7 @@ pub enum ServerMessage {
         /// for this recipient (e.g. offline-replay where the message predates
         /// multi-device fanout, or no row exists for this device). The client
         /// should render an undecryptable placeholder rather than attempting
-        /// to decrypt foreign ciphertext (#557).
+        /// to decrypt foreign ciphertext.
         #[serde(skip_serializing_if = "Option::is_none")]
         undecryptable: Option<bool>,
     },

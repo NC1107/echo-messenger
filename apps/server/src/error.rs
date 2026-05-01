@@ -11,7 +11,7 @@ pub struct AppError {
     /// Optional structured body used in place of the default `{"error": ...}`
     /// envelope. Set via [`AppError::conflict_with_body`] when the client needs
     /// machine-readable detail (e.g. the per-device identity-key conflict
-    /// response in `POST /api/keys/upload` -- #664).
+    /// response in `POST /api/keys/upload`).
     pub body: Option<serde_json::Value>,
 }
 
@@ -127,11 +127,11 @@ impl From<argon2::password_hash::Error> for AppError {
 }
 
 /// Extension trait deduplicating the `Result<_, sqlx::Error>` → `AppError`
-/// boilerplate that previously appeared 120+ times across `routes/*.rs`
-/// (#694).  Callers that need richer error mapping (e.g. distinguishing
-/// 23505 unique-violation conflicts from generic failures) keep using the
-/// explicit `match` form -- this trait is for the dominant case where the
-/// route just wants to log + return 500.
+/// boilerplate that previously appeared across `routes/*.rs`.  Callers that
+/// need richer error mapping (e.g. distinguishing 23505 unique-violation
+/// conflicts from generic failures) keep using the explicit `match` form --
+/// this trait is for the dominant case where the route just wants to log +
+/// return 500.
 ///
 /// Usage:
 /// ```ignore
