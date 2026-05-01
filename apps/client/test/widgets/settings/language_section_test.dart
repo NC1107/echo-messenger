@@ -18,7 +18,7 @@ Widget _wrap(Widget child, {List<Override> overrides = const []}) {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [Locale('en'), Locale('fr')],
+      supportedLocales: supportedFlutterLocales,
       home: Scaffold(body: child),
     ),
   );

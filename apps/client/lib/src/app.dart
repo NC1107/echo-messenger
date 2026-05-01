@@ -86,6 +86,9 @@ class EchoApp extends ConsumerWidget {
       title: 'Echo',
       locale: locale,
       supportedLocales: supportedFlutterLocales,
+      // When app-specific delegates (e.g. AppLocalizations.delegate from
+      // gen_l10n) are added later, they MUST come BEFORE the Global* entries
+      // so user-supplied strings can override Flutter defaults.
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
