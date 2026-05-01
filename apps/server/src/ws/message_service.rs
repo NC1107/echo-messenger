@@ -845,59 +845,6 @@ pub(super) async fn fanout_message(
         .await
         .unwrap_or_default();
 
-    // #657: Filter out revoked devices from recipient_device_contents before
-    // fanout.  A sender may hold a stale bundle cache (5-min TTL) that still
-    // references a device_id the recipient has since revoked.  We cross-check
-    // every (user_id, device_id) pair against identity_keys — revocation
-    // hard-deletes the row — and silently drop entries for unknown/revoked
-    // devices.  If all devices for a recipient are dropped we log a warning
-    // (race between cache expiry and key rotation) but continue; the recipient
-    // will pick up the message via the offline-delivery path on next connect.
-    let recipient_device_contents = if let Some(mut rdc) = recipient_device_contents {
-        // Collect the unique recipient user IDs present in the payload.
-        let recipient_ids: Vec<Uuid> = rdc.keys().filter_map(|s| Uuid::parse_str(s).ok()).collect();
-
-        match db::keys::get_active_device_ids_for_users(&state.pool, &recipient_ids).await {
-            Ok(active_map) => {
-                // For each recipient user, remove device entries not in the active set.
-                rdc.retain(|uid_str, devices| {
-                    let Ok(uid) = Uuid::parse_str(uid_str) else {
-                        return false;
-                    };
-                    let active = active_map.get(&uid);
-                    devices.retain(|did_str, _| {
-                        let Ok(did) = did_str.parse::<i32>() else {
-                            return false;
-                        };
-                        active.is_some_and(|ids| ids.contains(&did))
-                    });
-                    if devices.is_empty() {
-                        tracing::warn!(
-                            recipient_user_id = %uid,
-                            "fanout: all per-device ciphertexts for recipient were revoked; \
-                             skipping per-device delivery (message stored, offline relay intact)"
-                        );
-                        false
-                    } else {
-                        true
-                    }
-                });
-                Some(rdc)
-            }
-            Err(e) => {
-                // DB error: fail open (retain original) to avoid dropping messages,
-                // but log loudly so we can investigate.
-                tracing::error!(
-                    error = ?e,
-                    "fanout: failed to fetch active device IDs; skipping revoked-device filter"
-                );
-                Some(rdc)
-            }
-        }
-    } else {
-        None
-    };
-
     // Pre-serialize per-recipient device JSON messages and legacy fallback
     let per_recipient_json = recipient_device_contents
         .as_ref()

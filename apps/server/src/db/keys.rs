@@ -435,37 +435,6 @@ pub async fn revoke_devices_except(
     Ok(revoked.into_iter().map(|(id,)| id).collect())
 }
 
-/// Fetch the set of active (non-revoked) device IDs for each user in
-/// `user_ids` in a single query.  A device is considered active if it has a
-/// row in `identity_keys`; revocation hard-deletes the row.
-///
-/// Returns a map of `user_id -> Vec<device_id>`.  Users with no registered
-/// devices are omitted from the map (callers treat a missing entry as an empty
-/// set).  Used by the fanout path to strip revoked-device ciphertexts from
-/// `recipient_device_contents` before routing (#657).
-pub async fn get_active_device_ids_for_users(
-    pool: &PgPool,
-    user_ids: &[Uuid],
-) -> Result<std::collections::HashMap<Uuid, Vec<i32>>, sqlx::Error> {
-    if user_ids.is_empty() {
-        return Ok(std::collections::HashMap::new());
-    }
-    let rows: Vec<(Uuid, i32)> = sqlx::query_as(
-        "SELECT user_id, device_id \
-         FROM identity_keys \
-         WHERE user_id = ANY($1)",
-    )
-    .bind(user_ids)
-    .fetch_all(pool)
-    .await?;
-
-    let mut map: std::collections::HashMap<Uuid, Vec<i32>> = std::collections::HashMap::new();
-    for (uid, did) in rows {
-        map.entry(uid).or_default().push(did);
-    }
-    Ok(map)
-}
-
 /// Count available (unused) one-time prekeys for a user's device.
 pub async fn count_one_time_prekeys(
     pool: &PgPool,
