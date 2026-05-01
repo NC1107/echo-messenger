@@ -58,7 +58,7 @@ jobs:
         run: cargo test --workspace
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
-          JWT_SECRET: ${{ format('{0}{1}', github.run_id, github.run_attempt) }}
+          JWT_SECRET: ${{ format('ci-test-secret-{0}-attempt-{1}-padding', github.run_id, github.run_attempt) }}
       - name: Install cargo-tarpaulin
         if: github.event_name == 'push'
         run: cargo install cargo-tarpaulin --locked
@@ -67,7 +67,7 @@ jobs:
         run: cargo tarpaulin --workspace --out lcov --output-dir coverage/rust
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
-          JWT_SECRET: ${{ format('{0}{1}', github.run_id, github.run_attempt) }}
+          JWT_SECRET: ${{ format('ci-test-secret-{0}-attempt-{1}-padding', github.run_id, github.run_attempt) }}
       - name: Upload Rust coverage to Codecov
         if: github.event_name == 'push'
         uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0

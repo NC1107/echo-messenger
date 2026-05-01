@@ -58,7 +58,7 @@ jobs:
           cargo tarpaulin --workspace --out lcov --output-dir coverage/rust
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
-          JWT_SECRET: ${{ format('{0}{1}', github.run_id, github.run_attempt) }}
+          JWT_SECRET: ${{ format('ci-test-secret-{0}-attempt-{1}-padding', github.run_id, github.run_attempt) }}
 
       # -- Flutter coverage --
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0

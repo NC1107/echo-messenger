@@ -90,7 +90,7 @@ jobs:
           curl --retry 10 --retry-delay 2 --retry-connrefused -s http://localhost:8080/api/health
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
-          JWT_SECRET: ${{ format('{0}{1}', github.run_id, github.run_attempt) }}
+          JWT_SECRET: ${{ format('ci-test-secret-{0}-attempt-{1}-padding', github.run_id, github.run_attempt) }}
           RUST_LOG: echo_server=info
           SERVER_HOST: 0.0.0.0
           SERVER_PORT: 8080
@@ -149,7 +149,7 @@ jobs:
         run: npx playwright test --project=smoke --retries=1
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
-          JWT_SECRET: ${{ format('{0}{1}', github.run_id, github.run_attempt) }}
+          JWT_SECRET: ${{ format('ci-test-secret-{0}-attempt-{1}-padding', github.run_id, github.run_attempt) }}
 
       - name: Upload smoke artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -216,7 +216,7 @@ jobs:
           curl --retry 10 --retry-delay 2 --retry-connrefused -s http://localhost:8080/api/health
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
-          JWT_SECRET: ${{ format('{0}{1}', github.run_id, github.run_attempt) }}
+          JWT_SECRET: ${{ format('ci-test-secret-{0}-attempt-{1}-padding', github.run_id, github.run_attempt) }}
           RUST_LOG: echo_server=info
           SERVER_HOST: 0.0.0.0
           SERVER_PORT: 8080
@@ -253,7 +253,7 @@ jobs:
         run: npx playwright test --project=maintained --retries=2
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
-          JWT_SECRET: ${{ format('{0}{1}', github.run_id, github.run_attempt) }}
+          JWT_SECRET: ${{ format('ci-test-secret-{0}-attempt-{1}-padding', github.run_id, github.run_attempt) }}
 
       - name: Upload maintained artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
