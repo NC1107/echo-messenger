@@ -30,6 +30,18 @@ pub struct GroupMember {
     pub avatar_url: Option<String>,
 }
 
+/// A row from `group_invite_tokens` (#579).
+#[derive(Debug, sqlx::FromRow, Serialize)]
+pub struct InviteToken {
+    pub token: String,
+    pub conversation_id: Uuid,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub max_uses: Option<i32>,
+    pub use_count: i32,
+}
+
 /// Create a group conversation with visibility setting and add the creator plus initial members.
 pub async fn create_group_with_visibility(
     pool: &PgPool,
@@ -741,4 +753,127 @@ pub async fn get_key_version(
         .fetch_optional(pool)
         .await?;
     Ok(row.map(|(v,)| v))
+}
+
+// ---------------------------------------------------------------------------
+// Invite token DB helpers (#579)
+// ---------------------------------------------------------------------------
+
+/// Insert a new invite token for a group. Returns the inserted row.
+pub async fn create_invite_token(
+    pool: &PgPool,
+    token: &str,
+    conversation_id: Uuid,
+    created_by: Uuid,
+    expires_at: Option<DateTime<Utc>>,
+    max_uses: Option<i32>,
+) -> Result<InviteToken, sqlx::Error> {
+    sqlx::query_as::<_, InviteToken>(
+        "INSERT INTO group_invite_tokens \
+             (token, conversation_id, created_by, expires_at, max_uses) \
+         VALUES ($1, $2, $3, $4, $5) \
+         RETURNING token, conversation_id, created_by, created_at, expires_at, max_uses, use_count",
+    )
+    .bind(token)
+    .bind(conversation_id)
+    .bind(created_by)
+    .bind(expires_at)
+    .bind(max_uses)
+    .fetch_one(pool)
+    .await
+}
+
+/// Fetch a token row. Returns None when the token does not exist.
+pub async fn get_invite_token(
+    pool: &PgPool,
+    token: &str,
+) -> Result<Option<InviteToken>, sqlx::Error> {
+    sqlx::query_as::<_, InviteToken>(
+        "SELECT token, conversation_id, created_by, created_at, expires_at, max_uses, use_count \
+         FROM group_invite_tokens WHERE token = $1",
+    )
+    .bind(token)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Delete a token. Returns true when a row was actually deleted.
+pub async fn delete_invite_token(
+    pool: &PgPool,
+    token: &str,
+    conversation_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let result =
+        sqlx::query("DELETE FROM group_invite_tokens WHERE token = $1 AND conversation_id = $2")
+            .bind(token)
+            .bind(conversation_id)
+            .execute(pool)
+            .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// List all invite tokens for a group ordered by creation time (newest first).
+pub async fn list_invite_tokens(
+    pool: &PgPool,
+    conversation_id: Uuid,
+) -> Result<Vec<InviteToken>, sqlx::Error> {
+    sqlx::query_as::<_, InviteToken>(
+        "SELECT token, conversation_id, created_by, created_at, expires_at, max_uses, use_count \
+         FROM group_invite_tokens WHERE conversation_id = $1 \
+         ORDER BY created_at DESC",
+    )
+    .bind(conversation_id)
+    .fetch_all(pool)
+    .await
+}
+
+/// Atomically increment use_count and add the user to the group.
+///
+/// Returns `Ok(true)` when the user was added, `Ok(false)` when already a member.
+/// The caller must validate expiry and max_uses before calling this function.
+pub async fn accept_invite_token(
+    pool: &PgPool,
+    token: &str,
+    user_id: Uuid,
+) -> Result<bool, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    // Lock the token row for update so concurrent accepts are serialised.
+    let row: (Uuid,) = sqlx::query_as(
+        "SELECT conversation_id FROM group_invite_tokens WHERE token = $1 FOR UPDATE",
+    )
+    .bind(token)
+    .fetch_one(&mut *tx)
+    .await?;
+    let conversation_id = row.0;
+
+    // Add the member (reactivates soft-removed rows via ON CONFLICT).
+    let result = sqlx::query(
+        "INSERT INTO conversation_members (conversation_id, user_id, role) \
+         VALUES ($1, $2, 'member') \
+         ON CONFLICT (conversation_id, user_id) DO UPDATE \
+             SET is_removed = false, removed_at = NULL, role = 'member' \
+         WHERE conversation_members.is_removed = true",
+    )
+    .bind(conversation_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let added = result.rows_affected() > 0;
+    if added {
+        sqlx::query("UPDATE conversations SET member_count = member_count + 1 WHERE id = $1")
+            .bind(conversation_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    // Increment use_count.
+    sqlx::query("UPDATE group_invite_tokens SET use_count = use_count + 1 WHERE token = $1")
+        .bind(token)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+    Ok(added)
 }

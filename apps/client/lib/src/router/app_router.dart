@@ -9,6 +9,7 @@ import '../screens/discover_groups_screen.dart';
 import '../screens/group_info_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/join_group_screen.dart';
+import '../screens/token_join_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/onboarding_wizard.dart';
 import '../screens/register_screen.dart';
@@ -261,6 +262,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => _fadePage(
           key: state.pageKey,
           child: JoinGroupScreen(groupId: state.pathParameters['groupId']!),
+        ),
+      ),
+      GoRoute(
+        path: '/invite/t/:token',
+        pageBuilder: (context, state) => _fadePage(
+          key: state.pageKey,
+          child: TokenJoinScreen(token: state.pathParameters['token']!),
         ),
       ),
       ..._profileRoutes(),

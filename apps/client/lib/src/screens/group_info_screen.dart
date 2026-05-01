@@ -46,6 +46,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   bool _isLoading = true;
   bool _isEditingName = false;
   bool _isEditingDescription = false;
+  bool _isGeneratingInvite = false;
   int? _disappearingTtl; // null = off
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -1166,6 +1167,61 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     );
   }
 
+  /// Calls `POST /api/groups/:id/invites` to generate a fresh invite token,
+  /// then copies the returned URL to the clipboard.
+  Future<void> _generateAndCopyInviteLink() async {
+    setState(() => _isGeneratingInvite = true);
+    final serverUrl = ref.read(serverUrlProvider);
+    try {
+      final response = await ref
+          .read(authProvider.notifier)
+          .authenticatedRequest(
+            (token) => http.post(
+              Uri.parse(
+                '$serverUrl/api/groups/${widget.conversationId}/invites',
+              ),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: '{}',
+            ),
+          );
+      if (!mounted) return;
+      if (response.statusCode == 201) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final url = data['url'] as String? ?? '';
+        await Clipboard.setData(ClipboardData(text: url));
+        if (mounted) {
+          ToastService.show(
+            context,
+            'Invite link copied to clipboard',
+            type: ToastType.success,
+          );
+        }
+      } else {
+        String msg = 'Failed to generate invite link';
+        try {
+          final body = jsonDecode(response.body) as Map<String, dynamic>;
+          msg = body['error'] as String? ?? msg;
+        } catch (_) {}
+        if (mounted) {
+          ToastService.show(context, msg, type: ToastType.error);
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Could not reach server',
+          type: ToastType.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isGeneratingInvite = false);
+    }
+  }
+
   List<Widget> _buildActionButtons({required String myRole}) {
     return [
       const Divider(),
@@ -1173,17 +1229,14 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: OutlinedButton.icon(
-          onPressed: () {
-            final link =
-                'https://echo-messenger.us/#/join/${widget.conversationId}';
-            Clipboard.setData(ClipboardData(text: link));
-            ToastService.show(
-              context,
-              'Invite link copied to clipboard',
-              type: ToastType.success,
-            );
-          },
-          icon: const Icon(Icons.link_outlined),
+          onPressed: _isGeneratingInvite ? null : _generateAndCopyInviteLink,
+          icon: _isGeneratingInvite
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.link_outlined),
           label: const Text('Copy Invite Link'),
         ),
       ),
