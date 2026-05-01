@@ -810,4 +810,106 @@ void main() {
       });
     });
   });
+
+  // #668 — better display for encrypted message decrypt errors
+  group('MessageItem: decrypt failure display', () {
+    testWidgets(
+      'shows lock icon and italic text for decrypt failure sentinel',
+      (tester) async {
+        await mockNetworkImagesFor(() async {
+          final msg = _makeMessage(
+            content: '[Message encrypted - history unavailable]',
+          );
+          await tester.pumpApp(
+            MessageItem(
+              message: msg,
+              showHeader: false,
+              isLastInGroup: true,
+              myUserId: 'test-user-id',
+            ),
+          );
+          await tester.pump();
+
+          expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+          expect(find.text('Message could not be decrypted'), findsOneWidget);
+        });
+      },
+    );
+
+    testWidgets('shows lock pill for [Could not decrypt prefix', (
+      tester,
+    ) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(
+          content: '[Could not decrypt - encryption keys may be out of sync]',
+        );
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+          ),
+        );
+        await tester.pump();
+
+        expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+        expect(find.text('Message could not be decrypted'), findsOneWidget);
+      });
+    });
+
+    testWidgets('hides message entirely when hideUndecryptable is true', (
+      tester,
+    ) async {
+      await mockNetworkImagesFor(() async {
+        final msg = _makeMessage(
+          content: '[Message encrypted - history unavailable]',
+        );
+        await tester.pumpApp(
+          MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+            hideUndecryptable: true,
+          ),
+        );
+        await tester.pump();
+
+        expect(find.byIcon(Icons.lock_outline), findsNothing);
+        expect(find.text('Message could not be decrypted'), findsNothing);
+        expect(find.byType(SizedBox), findsWidgets);
+      });
+    });
+
+    testWidgets('system sentinel is not classified as decrypt failure', (
+      tester,
+    ) async {
+      await mockNetworkImagesFor(() async {
+        const msg = ChatMessage(
+          id: 'sys-668',
+          fromUserId: ChatMessage.systemUserId,
+          fromUsername: '',
+          conversationId: 'group-1',
+          content: '__system__:member_joined:uuid-1:alice',
+          timestamp: '2026-01-15T10:30:00Z',
+          isMine: false,
+        );
+
+        await tester.pumpApp(
+          const MessageItem(
+            message: msg,
+            showHeader: false,
+            isLastInGroup: true,
+            myUserId: 'test-user-id',
+            hideUndecryptable: true,
+          ),
+        );
+        await tester.pump();
+
+        // System event renders as its pill, not hidden or lock-icon.
+        expect(find.byIcon(Icons.lock_outline), findsNothing);
+      });
+    });
+  });
 }

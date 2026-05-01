@@ -6,7 +6,7 @@ part of 'accessibility_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$accessibilityHash() => r'1d490869342809e9bcd9c32d2e786afe404d2be5';
+String _$accessibilityHash() => r'b0f0f31ec30bc9de4f7b66e511eadb92390364eb';
 
 /// Migrated from `StateNotifier` to `@riverpod`-annotated `Notifier` (audit
 /// 2026-04-30, Riverpod modernization slice). The exported provider symbol

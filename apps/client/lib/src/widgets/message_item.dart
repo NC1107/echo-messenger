@@ -11,6 +11,7 @@ import 'package:photo_manager/photo_manager.dart' show PhotoManager;
 
 import '../models/chat_message.dart';
 import '../providers/theme_provider.dart' show MessageLayout;
+import '../services/message_cache.dart' show MessageCache;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
@@ -93,6 +94,12 @@ class MessageItem extends StatefulWidget {
   /// True for the no-background plain (Slack) layout.
   bool get _isPlain => layout == MessageLayout.plain;
 
+  /// When true, messages whose content matches a decrypt-failure sentinel are
+  /// hidden entirely (render as [SizedBox.shrink]). When false (the default)
+  /// they show the lock-icon pill (#668). Controlled by the
+  /// `chat.hide_undecryptable_messages` SharedPreferences key.
+  final bool hideUndecryptable;
+
   /// Called when an image in this message is tapped, with the resolved URL.
   /// When provided, the gallery viewer in the parent is opened instead of the
   /// single-image dialog inside [MediaContent] / [_showImageViewer].
@@ -126,6 +133,7 @@ class MessageItem extends StatefulWidget {
     this.mediaTicket,
     this.senderAvatarUrl,
     this.layout = MessageLayout.bubbles,
+    this.hideUndecryptable = false,
     this.onImageTap,
   });
 
@@ -1048,34 +1056,43 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  /// Build a friendly decryption failure message with a recovery action.
-  Widget _buildDecryptionFailure() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+  /// Returns true when [content] is a known decrypt-failure sentinel.
+  ///
+  /// Mirrors [MessageCache.failureSentinels] so system sentinels (prefixed
+  /// `__system__:`) are never classified as decrypt failures (#663/#668).
+  static bool _isDecryptFailure(String content) =>
+      MessageCache.failureSentinels.contains(content) ||
+      content.startsWith('[Could not decrypt');
+
+  /// Build a clean lock-icon pill for messages that could not be decrypted.
+  ///
+  /// Replaces the old verbose text with a rounded pill containing a lock icon
+  /// and short italic label so users see a polished affordance (#668).
+  Widget _buildDecryptFailurePill() {
+    return Semantics(
+      label: 'Message could not be decrypted',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: context.textMuted.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lock_clock_outlined, size: 14, color: context.textMuted),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                'Secured message',
-                style: GoogleFonts.inter(
-                  fontStyle: FontStyle.italic,
-                  color: context.textMuted,
-                  fontSize: 13,
-                ),
+            Icon(Icons.lock_outline, size: 16, color: context.textSecondary),
+            const SizedBox(width: 6),
+            Text(
+              'Message could not be decrypted',
+              style: GoogleFonts.inter(
+                fontStyle: FontStyle.italic,
+                color: context.textSecondary,
+                fontSize: 13,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          'Unable to decrypt this message.',
-          style: GoogleFonts.inter(color: context.textMuted, fontSize: 12),
-        ),
-      ],
+      ),
     );
   }
 
@@ -1176,8 +1193,8 @@ class _MessageItemState extends State<MessageItem>
         onImageTap: widget.onImageTap,
       );
     }
-    if (msg.content.startsWith('[Could not decrypt')) {
-      return _buildDecryptionFailure();
+    if (_isDecryptFailure(msg.content)) {
+      return _buildDecryptFailurePill();
     }
 
     final displayContent = msg.content.startsWith(_forwardedPrefix)
@@ -1841,6 +1858,11 @@ class _MessageItemState extends State<MessageItem>
     final isSending = msg.status == MessageStatus.sending;
 
     if (msg.isSystemEvent) return _buildSystemEventPill(msg);
+
+    // Hide undecryptable messages entirely when the user has opted in (#668).
+    if (widget.hideUndecryptable && _isDecryptFailure(msg.content)) {
+      return const SizedBox.shrink();
+    }
 
     final mediaUrl = extractMediaUrl(msg.content);
     final hasMedia = mediaUrl != null;

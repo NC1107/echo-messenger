@@ -24,6 +24,7 @@ import '../providers/theme_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/safety_number_screen.dart';
 import '../screens/user_profile_screen.dart';
+import '../providers/accessibility_provider.dart';
 import '../services/message_cache.dart';
 import '../services/saved_messages_service.dart';
 import '../services/toast_service.dart';
@@ -1781,6 +1782,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             mediaTicket: mediaTicket,
             senderAvatarUrl: senderAvatarUrl,
             layout: ref.watch(messageLayoutProvider),
+            hideUndecryptable: ref
+                .watch(accessibilityProvider)
+                .hideUndecryptable,
             onReactionTap: _showReactionPicker,
             onReactionSelect: (message, emoji) {
               final alreadyReacted = message.reactions.any(

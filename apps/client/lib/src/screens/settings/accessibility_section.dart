@@ -139,6 +139,29 @@ class AccessibilitySection extends ConsumerWidget {
               onChanged: notifier.setHighContrast,
             ),
 
+            const SizedBox(height: 16),
+
+            // ── Hide undecryptable messages (#668) ─────────────────────────
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.lock_outline),
+              title: Text(
+                'Hide undecryptable messages',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              subtitle: Text(
+                'When on, messages that cannot be decrypted are hidden '
+                'entirely instead of showing a lock icon.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: state.hideUndecryptable,
+              onChanged: notifier.setHideUndecryptable,
+            ),
+
             const SizedBox(height: 24),
             Text(
               'OS accessibility preferences (reduce motion, large text) are '
