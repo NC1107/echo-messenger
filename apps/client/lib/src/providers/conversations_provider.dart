@@ -172,6 +172,18 @@ class ConversationsNotifier extends StateNotifier<ConversationsState>
 
         state = state.copyWith(conversations: conversations, isLoading: false);
         _updateTabBadge();
+
+        // Hydrate last-message status from Hive so conversation tiles show
+        // the correct tick on cold start, before WS read_receipt events
+        // arrive (#573). Fire-and-forget: failures are non-fatal.
+        final myUserId = ref.read(authProvider).userId;
+        if (myUserId != null) {
+          final ids = conversations.map((c) => c.id).toList();
+          ref
+              .read(chatProvider.notifier)
+              .hydrateStatusFromCache(ids, myUserId)
+              .ignore();
+        }
       } else {
         state = state.copyWith(
           isLoading: false,

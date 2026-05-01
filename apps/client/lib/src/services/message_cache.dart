@@ -131,6 +131,32 @@ class MessageCache {
     return ChatMessage.fromServerJson(json, myUserId);
   }
 
+  /// Return the most recent cached [ChatMessage] for a conversation, or null.
+  ///
+  /// Used by [ChatNotifier.hydrateStatusFromCache] to populate the in-memory
+  /// status map on cold start before any WS read_receipt events arrive (#573).
+  static Future<ChatMessage?> getLatestCachedMessage(
+    String conversationId,
+    String myUserId,
+  ) async {
+    final box = await _boxForConv(conversationId);
+    if (box == null) return null;
+    String? latestTimestamp;
+    ChatMessage? latestMsg;
+    for (final key in box.keys) {
+      final raw = box.get(key);
+      if (raw == null) continue;
+      final json = Map<String, dynamic>.from(raw);
+      final ts =
+          json['created_at'] as String? ?? json['timestamp'] as String? ?? '';
+      if (latestTimestamp == null || ts.compareTo(latestTimestamp) > 0) {
+        latestTimestamp = ts;
+        latestMsg = ChatMessage.fromServerJson(json, myUserId);
+      }
+    }
+    return latestMsg;
+  }
+
   /// Return the content of the most recent cached message for a conversation.
   /// Used by loadConversations() to show decrypted previews for messages that
   /// were decrypted in a previous session and stored in the Hive cache.

@@ -185,6 +185,30 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _mergeMessages(conversationId, cached);
   }
 
+  /// Hydrate per-conversation last-message status from Hive on cold start.
+  ///
+  /// Reads only the most-recent cached message for each conversation so that
+  /// the conversation tile can show the correct tick (sent/delivered/read)
+  /// before the WS read_receipt stream catches up (#573). Skips conversations
+  /// that already have in-memory messages (e.g. the active chat panel).
+  Future<void> hydrateStatusFromCache(
+    List<String> conversationIds,
+    String myUserId,
+  ) async {
+    for (final convId in conversationIds) {
+      // Skip convs already populated (chat panel opened this session).
+      if (state.messagesByConversation.containsKey(convId)) continue;
+      final latest = await MessageCache.getLatestCachedMessage(
+        convId,
+        myUserId,
+      );
+      if (latest == null) continue;
+      // Only inject our own sent messages — the tick is only shown for isMine.
+      if (!latest.isMine) continue;
+      state = state.withMessage(latest);
+    }
+  }
+
   void addMessage(ChatMessage msg) {
     var newState = state.withMessage(msg);
     // Increment reply count on the parent when an incoming message is a reply.
