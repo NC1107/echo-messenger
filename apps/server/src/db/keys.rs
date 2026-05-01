@@ -320,6 +320,103 @@ pub async fn get_prekey_bundle(
     }))
 }
 
+/// Batch-fetch PreKey bundles for ALL devices of `user_id`.
+///
+/// Reduces the previous 1 + 3xN round-trips to 2 + N (N capped at 10):
+/// two batch queries (identity_keys then signed_prekeys DISTINCT ON) followed
+/// by one OTP UPDATE per qualifying device (kept per-device for atomic SKIP
+/// LOCKED semantics). Devices missing identity or signed-prekey data are
+/// silently skipped, matching the old per-device loop behaviour.
+pub async fn get_all_prekey_bundles(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Vec<(i32, PreKeyBundleRow)>, sqlx::Error> {
+    let identity_rows: Vec<(i32, Vec<u8>, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT device_id, identity_key, signing_key \
+         FROM identity_keys \
+         WHERE user_id = $1 \
+         ORDER BY device_id DESC \
+         LIMIT 10",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    if identity_rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let device_ids: Vec<i32> = identity_rows.iter().map(|(d, _, _)| *d).collect();
+
+    let spk_rows: Vec<(i32, i32, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT DISTINCT ON (device_id) device_id, key_id, public_key, signature \
+         FROM signed_prekeys \
+         WHERE user_id = $1 \
+           AND device_id = ANY($2) \
+           AND (grace_expires_at IS NULL OR grace_expires_at > now()) \
+         ORDER BY device_id, grace_expires_at IS NULL DESC, created_at DESC",
+    )
+    .bind(user_id)
+    .bind(&device_ids)
+    .fetch_all(pool)
+    .await?;
+
+    use std::collections::HashMap;
+    let identity_map: HashMap<i32, (Vec<u8>, Option<Vec<u8>>)> = identity_rows
+        .into_iter()
+        .map(|(dev, ik, sk)| (dev, (ik, sk)))
+        .collect();
+    let spk_map: HashMap<i32, (i32, Vec<u8>, Vec<u8>)> = spk_rows
+        .into_iter()
+        .map(|(dev, kid, pk, sig)| (dev, (kid, pk, sig)))
+        .collect();
+
+    let mut candidates: Vec<i32> = identity_map
+        .keys()
+        .filter(|d| spk_map.contains_key(d))
+        .copied()
+        .collect();
+    candidates.sort_unstable_by(|a, b| b.cmp(a));
+
+    let mut results = Vec::with_capacity(candidates.len());
+    for device_id in candidates {
+        let (identity_key, signing_key) = identity_map[&device_id].clone();
+        let (signed_prekey_id, signed_prekey, signed_prekey_signature) =
+            spk_map[&device_id].clone();
+
+        let otp_row: Option<(i32, Vec<u8>)> = sqlx::query_as(
+            "UPDATE one_time_prekeys SET used = true \
+             WHERE id = ( \
+                 SELECT id FROM one_time_prekeys \
+                 WHERE user_id = $1 AND device_id = $2 AND NOT used \
+                 ORDER BY id ASC LIMIT 1 \
+                 FOR UPDATE SKIP LOCKED \
+             ) RETURNING key_id, public_key",
+        )
+        .bind(user_id)
+        .bind(device_id)
+        .fetch_optional(pool)
+        .await?;
+
+        let one_time_prekey =
+            otp_row.map(|(key_id, public_key)| OneTimePreKeyRow { key_id, public_key });
+
+        results.push((
+            device_id,
+            PreKeyBundleRow {
+                identity_key,
+                signing_key,
+                signed_prekey,
+                signed_prekey_signature,
+                signed_prekey_id,
+                one_time_prekey,
+            },
+        ));
+    }
+
+    Ok(results)
+}
+
 /// Device metadata returned by [`get_user_devices`].
 #[derive(Debug, serde::Serialize, sqlx::FromRow)]
 pub struct DeviceRow {

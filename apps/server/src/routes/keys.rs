@@ -405,34 +405,33 @@ pub struct DeviceBundleResponse {
 ///
 /// Returns bundles for every registered device in a single request,
 /// enabling multi-device encryption without N+1 round trips.
+/// Delegates to [`db::keys::get_all_prekey_bundles`] which reduces the
+/// previous 1 + 3xN round-trips to 2 + N (N devices, capped at 10).
 pub async fn get_all_bundles(
     State(state): State<Arc<AppState>>,
     _auth_user: AuthUser,
     Path(user_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
-    let devices = db::keys::get_user_devices(&state.pool, user_id).await?;
-    let mut bundles = Vec::new();
+    let raw = db::keys::get_all_prekey_bundles(&state.pool, user_id).await?;
+    let mut bundles = Vec::with_capacity(raw.len());
 
-    for device in devices {
-        let device_id = device.device_id;
-        if let Some(bundle) = db::keys::get_prekey_bundle(&state.pool, user_id, device_id).await? {
-            let signing_key = match require_signing_key(&bundle, user_id) {
-                Ok(sk) => sk,
-                Err(_) => continue, // skip devices with legacy bundles missing signing key
-            };
-            bundles.push(DeviceBundleResponse {
-                device_id,
-                identity_key: BASE64.encode(&bundle.identity_key),
-                signing_key,
-                signed_prekey: BASE64.encode(&bundle.signed_prekey),
-                signed_prekey_signature: BASE64.encode(&bundle.signed_prekey_signature),
-                signed_prekey_id: bundle.signed_prekey_id,
-                one_time_prekey: bundle.one_time_prekey.map(|otk| OneTimePreKeyResponse {
-                    key_id: otk.key_id,
-                    public_key: BASE64.encode(&otk.public_key),
-                }),
-            });
-        }
+    for (device_id, bundle) in raw {
+        let signing_key = match require_signing_key(&bundle, user_id) {
+            Ok(sk) => sk,
+            Err(_) => continue, // skip devices with legacy bundles missing signing key
+        };
+        bundles.push(DeviceBundleResponse {
+            device_id,
+            identity_key: BASE64.encode(&bundle.identity_key),
+            signing_key,
+            signed_prekey: BASE64.encode(&bundle.signed_prekey),
+            signed_prekey_signature: BASE64.encode(&bundle.signed_prekey_signature),
+            signed_prekey_id: bundle.signed_prekey_id,
+            one_time_prekey: bundle.one_time_prekey.map(|otk| OneTimePreKeyResponse {
+                key_id: otk.key_id,
+                public_key: BASE64.encode(&otk.public_key),
+            }),
+        });
     }
 
     Ok(Json(serde_json::json!({ "bundles": bundles })))
