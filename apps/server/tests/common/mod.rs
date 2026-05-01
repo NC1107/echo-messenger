@@ -462,6 +462,15 @@ pub async fn upload_prekey_bundle(
     }
 }
 
+/// Return a direct DB pool for tests that need to inspect DB state (e.g.
+/// read a generated reset token that the server only logs, not returns).
+pub async fn test_pool() -> sqlx::PgPool {
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("TEST_DATABASE_URL or DATABASE_URL must be set for integration tests");
+    db::create_pool(&database_url).await
+}
+
 /// Upload an additional device bundle reusing the identity key from a previous upload.
 pub async fn upload_additional_device(
     client: &Client,

@@ -131,7 +131,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           _buildErrorMessage(authState),
                           const SizedBox(height: 24),
                           _buildLoginButton(authState),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 4),
+                          SizedBox(
+                            height: 44,
+                            child: Semantics(
+                              button: true,
+                              label: 'forgot-password',
+                              child: TextButton(
+                                onPressed: () => context.go('/forgot-password'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: context.textSecondary,
+                                ),
+                                child: const Text('Forgot password?'),
+                              ),
+                            ),
+                          ),
                           SizedBox(
                             height: 44,
                             child: Semantics(
