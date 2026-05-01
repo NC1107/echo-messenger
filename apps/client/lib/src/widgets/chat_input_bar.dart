@@ -31,6 +31,7 @@ import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../utils/clipboard_image_helper.dart';
+import 'input/markdown_toolbar.dart';
 import 'input/pending_attachments_strip.dart';
 import 'input/input_status_bar.dart';
 import 'input/mention_autocomplete.dart';
@@ -1841,6 +1842,74 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     return _sendMessage;
   }
 
+  // ---------------------------------------------------------------------------
+  // Markdown toolbar
+  // ---------------------------------------------------------------------------
+
+  Future<void> _showLinkDialog() async {
+    final urlController = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Insert link'),
+        content: TextField(
+          controller: urlController,
+          autofocus: true,
+          keyboardType: TextInputType.url,
+          decoration: const InputDecoration(hintText: 'https://…'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, urlController.text.trim()),
+            child: const Text('Insert'),
+          ),
+        ],
+      ),
+    );
+    urlController.dispose();
+    if (url == null || url.isEmpty) return;
+    if (!mounted) return;
+
+    final sel = _messageController.selection;
+    final text = _messageController.text;
+    final hasSelection = sel.isValid && sel.start != sel.end;
+    final label = hasSelection ? text.substring(sel.start, sel.end) : 'link';
+
+    if (hasSelection) {
+      // Replace selection with [label](url)
+      final newText =
+          '${text.substring(0, sel.start)}[$label]($url)${text.substring(sel.end)}';
+      _messageController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(
+          offset: sel.start + newText.length - text.substring(sel.end).length,
+        ),
+      );
+    } else {
+      // Insert at cursor
+      final pos = sel.isValid ? sel.start : text.length;
+      final inserted = '[$label]($url)';
+      final newText = text.substring(0, pos) + inserted + text.substring(pos);
+      _messageController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: pos + inserted.length),
+      );
+    }
+    _inputFocusNode.requestFocus();
+  }
+
+  Widget _buildMarkdownToolbar() {
+    return MarkdownToolbar(
+      controller: _messageController,
+      onLinkTap: _showLinkDialog,
+    );
+  }
+
   Widget _buildSendButton() {
     final hasContent = !_isTextEmpty || _allPendingAttachmentsReady;
 
@@ -2123,6 +2192,9 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                       attachments: _pendingAttachments,
                       onCancel: _removePendingAttachment,
                     ),
+                  // Markdown formatting toolbar (bold, italic, strike, code,
+                  // quote, link) — always visible above the input row.
+                  _buildMarkdownToolbar(),
                   _buildInputRow(
                     showMediaPicker: showMediaPicker,
                     isMobileLayout: isMobileLayout,
