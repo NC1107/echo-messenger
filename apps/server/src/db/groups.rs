@@ -5,6 +5,12 @@ use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+/// Hard cap on the number of members returned by `get_group_members`.
+/// Groups larger than this limit are unusual but still bounded server-side.
+/// Pagination can be added in a follow-up; for now a single hard cap is
+/// sufficient.
+pub const GET_GROUP_MEMBERS_LIMIT: i64 = 10_000;
+
 #[derive(Debug, sqlx::FromRow, Serialize)]
 pub struct GroupInfo {
     pub id: Uuid,
@@ -180,7 +186,7 @@ pub async fn get_group(pool: &PgPool, group_id: Uuid) -> Result<Option<GroupInfo
     .await
 }
 
-/// Get all members of a group.
+/// Get all members of a group, capped at [`GET_GROUP_MEMBERS_LIMIT`].
 pub async fn get_group_members(
     pool: &PgPool,
     group_id: Uuid,
@@ -190,9 +196,11 @@ pub async fn get_group_members(
          FROM conversation_members cm \
          JOIN users u ON u.id = cm.user_id \
          WHERE cm.conversation_id = $1 AND cm.is_removed = false \
-         ORDER BY cm.joined_at",
+         ORDER BY cm.joined_at \
+         LIMIT $2",
     )
     .bind(group_id)
+    .bind(GET_GROUP_MEMBERS_LIMIT)
     .fetch_all(pool)
     .await
 }

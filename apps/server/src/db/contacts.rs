@@ -4,6 +4,14 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+/// Hard cap on the number of rows returned by contact list queries.
+/// Prevents unbounded memory use when a user has an unusually large contact
+/// list. Pagination can be added in a follow-up; for now a single hard cap
+/// is sufficient for any realistic use-case.
+pub const LIST_CONTACTS_LIMIT: i64 = 1_000;
+pub const LIST_BLOCKED_LIMIT: i64 = 1_000;
+pub const LIST_PENDING_LIMIT: i64 = 1_000;
+
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
 pub struct ContactRow {
     pub id: Uuid,
@@ -95,9 +103,11 @@ pub async fn list_contacts(pool: &PgPool, user_id: Uuid) -> Result<Vec<ContactRo
          FROM contacts c \
          JOIN users u ON u.id = CASE WHEN c.requester_id = $1 THEN c.target_id ELSE c.requester_id END \
          WHERE (c.requester_id = $1 OR c.target_id = $1) AND c.status = 'accepted' \
-         ORDER BY u.username",
+         ORDER BY u.username \
+         LIMIT $2",
     )
     .bind(user_id)
+    .bind(LIST_CONTACTS_LIMIT)
     .fetch_all(pool)
     .await
 }
@@ -130,9 +140,11 @@ pub async fn list_pending_requests(
          FROM contacts c \
          JOIN users u ON u.id = c.requester_id \
          WHERE c.target_id = $1 AND c.status = 'pending' \
-         ORDER BY c.created_at DESC",
+         ORDER BY c.created_at DESC \
+         LIMIT $2",
     )
     .bind(user_id)
+    .bind(LIST_PENDING_LIMIT)
     .fetch_all(pool)
     .await
 }
@@ -187,9 +199,11 @@ pub async fn list_blocked_users(
          FROM blocked_users b \
          JOIN users u ON u.id = b.blocked_id \
          WHERE b.blocker_id = $1 \
-         ORDER BY b.created_at DESC",
+         ORDER BY b.created_at DESC \
+         LIMIT $2",
     )
     .bind(blocker_id)
+    .bind(LIST_BLOCKED_LIMIT)
     .fetch_all(pool)
     .await
 }
