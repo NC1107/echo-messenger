@@ -49,6 +49,12 @@ allow = ["LicenseRef-PolyForm-Noncommercial-1.0.0"]
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Path dependencies can use wildcard versions; they're local-only and never
+# fetched from a registry, so the wildcard ban (which targets unbounded
+# registry deps) doesn't apply. Without this the workspace `echo-core` path
+# dep needs a version pin that has to be sed-rewritten by the release
+# pipeline alongside the package's own version, which is awkward.
+allow-wildcard-paths = true
 highlight = "all"
 
 [sources]

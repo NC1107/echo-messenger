@@ -3,6 +3,7 @@ name = "echo-server"
 version = "0.1.0"
 edition = "2024"
 license = "LicenseRef-PolyForm-Noncommercial-1.0.0"
+publish = false
 
 [dependencies]
 tokio.workspace = true
@@ -50,8 +51,11 @@ rand = "0.10"
 # Signal Protocol signature verification
 ed25519-dalek = { version = "2", features = ["std"] }
 
-# Shared wire-format constants (#700).
-echo-core = { version = "0.1.0", path = "../../core/rust-core" }
+# Shared wire-format constants (#700). Path-only dep; deny.toml's
+# allow-wildcard-paths exempts it from the wildcard ban so we don't need
+# to keep a version pinned here in lockstep with the release pipeline's
+# sed rewrite of core/rust-core/Cargo.toml.
+echo-core = { path = "../../core/rust-core" }
 
 # Tracing
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
