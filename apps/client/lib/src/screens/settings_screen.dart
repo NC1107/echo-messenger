@@ -14,6 +14,7 @@ import '../widgets/settings/card_row.dart';
 import '../widgets/settings/section_header.dart';
 import '../widgets/settings/user_header_card.dart';
 import 'settings/about_section.dart';
+import 'settings/accessibility_section.dart';
 import 'settings/account_section.dart';
 import 'settings/appearance_section.dart';
 import 'settings/data_storage_section.dart';
@@ -38,6 +39,7 @@ enum SettingsSection {
   privacy,
   devices,
   dataStorage,
+  accessibility,
   about,
 }
 
@@ -58,6 +60,8 @@ String settingsSectionLabel(SettingsSection section) {
       return 'Devices';
     case SettingsSection.dataStorage:
       return 'Storage';
+    case SettingsSection.accessibility:
+      return 'Accessibility';
     case SettingsSection.about:
       return 'About';
   }
@@ -93,6 +97,8 @@ class SettingsContent extends StatelessWidget {
         return const DevicesSection();
       case SettingsSection.dataStorage:
         return const DataStorageSection();
+      case SettingsSection.accessibility:
+        return const AccessibilitySection();
       case SettingsSection.about:
         return const AboutSection();
     }
@@ -167,6 +173,12 @@ class SettingsRootView extends ConsumerWidget {
                 icon: Icons.folder_outlined,
                 iconColor: context.textPrimary,
                 section: SettingsSection.dataStorage,
+              ),
+              _row(
+                context,
+                icon: Icons.accessibility_new_outlined,
+                iconColor: const Color(0xFF3B82F6),
+                section: SettingsSection.accessibility,
               ),
             ],
           ),

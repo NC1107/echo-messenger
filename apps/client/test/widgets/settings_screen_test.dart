@@ -42,13 +42,17 @@ void main() {
       expect(settingsSectionLabel(SettingsSection.privacy), 'Privacy');
       expect(settingsSectionLabel(SettingsSection.devices), 'Devices');
       expect(settingsSectionLabel(SettingsSection.dataStorage), 'Storage');
+      expect(
+        settingsSectionLabel(SettingsSection.accessibility),
+        'Accessibility',
+      );
       expect(settingsSectionLabel(SettingsSection.about), 'About');
     });
   });
 
   group('SettingsSection enum', () {
     test('contains expected sections', () {
-      expect(SettingsSection.values, hasLength(8));
+      expect(SettingsSection.values, hasLength(9));
       expect(
         SettingsSection.values,
         containsAll([
@@ -59,6 +63,7 @@ void main() {
           SettingsSection.privacy,
           SettingsSection.devices,
           SettingsSection.dataStorage,
+          SettingsSection.accessibility,
           SettingsSection.about,
         ]),
       );
