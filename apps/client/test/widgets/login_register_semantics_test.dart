@@ -39,7 +39,7 @@ GoRouter _registerRouter() => GoRouter(
 );
 
 Widget _wrapApp(GoRouter router) => ProviderScope(
-  overrides: [authOverride(), serverUrlOverride()],
+  overrides: [authOverride(), serverUrlOverride(), accessibilityOverride()],
   child: MaterialApp.router(
     theme: EchoTheme.darkTheme,
     darkTheme: EchoTheme.darkTheme,

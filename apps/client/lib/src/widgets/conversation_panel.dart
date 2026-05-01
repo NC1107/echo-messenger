@@ -717,14 +717,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 widget.onSavedMessages?.call();
             }
           },
-          itemBuilder: (context) => [
-            // ignore: prefer_const_constructors
+          itemBuilder: (context) => const [
             PopupMenuItem(
-              // TODO(#674): cannot const due to ConstrainedBox child
               value: 'chat',
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 200),
-                child: const Row(
+              child: SizedBox(
+                width: 200,
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.person_add_outlined, size: 18),
@@ -736,13 +734,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 ),
               ),
             ),
-            // ignore: prefer_const_constructors
             PopupMenuItem(
-              // TODO(#674): cannot const due to ConstrainedBox child
               value: 'group',
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 200),
-                child: const Row(
+              child: SizedBox(
+                width: 200,
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.group_add_outlined, size: 18),
@@ -754,13 +750,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 ),
               ),
             ),
-            // ignore: prefer_const_constructors
             PopupMenuItem(
-              // TODO(#674): cannot const due to ConstrainedBox child
               value: 'discover',
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 200),
-                child: const Row(
+              child: SizedBox(
+                width: 200,
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.explore_outlined, size: 18),
@@ -775,13 +769,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                 ),
               ),
             ),
-            // ignore: prefer_const_constructors
             PopupMenuItem(
-              // TODO(#674): cannot const due to ConstrainedBox child
               value: 'saved',
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 200),
-                child: const Row(
+              child: SizedBox(
+                width: 200,
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.bookmark_border_outlined, size: 18),

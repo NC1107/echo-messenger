@@ -59,7 +59,11 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [authOverride(loggedOutAuthState), serverUrlOverride()],
+          overrides: [
+            authOverride(loggedOutAuthState),
+            serverUrlOverride(),
+            accessibilityOverride(),
+          ],
           child: MaterialApp.router(
             theme: EchoTheme.darkTheme,
             darkTheme: EchoTheme.darkTheme,
@@ -84,7 +88,11 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [authOverride(loggedOutAuthState), serverUrlOverride()],
+          overrides: [
+            authOverride(loggedOutAuthState),
+            serverUrlOverride(),
+            accessibilityOverride(),
+          ],
           child: MaterialApp.router(
             theme: EchoTheme.darkTheme,
             darkTheme: EchoTheme.darkTheme,
@@ -103,7 +111,11 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [authOverride(loggedOutAuthState), serverUrlOverride()],
+          overrides: [
+            authOverride(loggedOutAuthState),
+            serverUrlOverride(),
+            accessibilityOverride(),
+          ],
           child: MaterialApp.router(
             theme: EchoTheme.darkTheme,
             darkTheme: EchoTheme.darkTheme,
@@ -122,7 +134,11 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [authOverride(errorAuthState), serverUrlOverride()],
+          overrides: [
+            authOverride(errorAuthState),
+            serverUrlOverride(),
+            accessibilityOverride(),
+          ],
           child: MaterialApp.router(
             theme: EchoTheme.darkTheme,
             darkTheme: EchoTheme.darkTheme,
@@ -141,7 +157,11 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [authOverride(loadingAuthState), serverUrlOverride()],
+          overrides: [
+            authOverride(loadingAuthState),
+            serverUrlOverride(),
+            accessibilityOverride(),
+          ],
           child: MaterialApp.router(
             theme: EchoTheme.darkTheme,
             darkTheme: EchoTheme.darkTheme,
@@ -164,7 +184,11 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [authOverride(loggedOutAuthState), serverUrlOverride()],
+          overrides: [
+            authOverride(loggedOutAuthState),
+            serverUrlOverride(),
+            accessibilityOverride(),
+          ],
           child: MaterialApp.router(
             theme: EchoTheme.darkTheme,
             darkTheme: EchoTheme.darkTheme,
@@ -187,7 +211,11 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [authOverride(loggedOutAuthState), serverUrlOverride()],
+          overrides: [
+            authOverride(loggedOutAuthState),
+            serverUrlOverride(),
+            accessibilityOverride(),
+          ],
           child: MaterialApp.router(
             theme: EchoTheme.darkTheme,
             darkTheme: EchoTheme.darkTheme,
@@ -219,7 +247,11 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [authOverride(loggedOutAuthState), serverUrlOverride()],
+          overrides: [
+            authOverride(loggedOutAuthState),
+            serverUrlOverride(),
+            accessibilityOverride(),
+          ],
           child: MaterialApp.router(
             theme: EchoTheme.darkTheme,
             darkTheme: EchoTheme.darkTheme,
@@ -241,7 +273,11 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [authOverride(loggedOutAuthState), serverUrlOverride()],
+          overrides: [
+            authOverride(loggedOutAuthState),
+            serverUrlOverride(),
+            accessibilityOverride(),
+          ],
           child: MaterialApp.router(
             theme: EchoTheme.darkTheme,
             darkTheme: EchoTheme.darkTheme,
@@ -266,6 +302,7 @@ void main() {
           overrides: [
             authProvider.overrideWith((ref) => _FailingLoginAuthNotifier(ref)),
             serverUrlOverride(),
+            accessibilityOverride(),
           ],
           child: MaterialApp.router(
             theme: EchoTheme.darkTheme,

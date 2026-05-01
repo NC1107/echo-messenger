@@ -1618,7 +1618,7 @@ class CryptoService {
     final resp = await http.post(
       Uri.parse('$serverUrl/api/keys/reset_device'),
       headers: {
-        'Content-Type': 'application/json',
+        _contentTypeHeader: _applicationJson,
         'Authorization': 'Bearer $_token',
       },
       body: jsonEncode({'password': password, 'device_id': _deviceId}),

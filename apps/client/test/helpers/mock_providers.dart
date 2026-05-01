@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:echo_app/src/models/conversation.dart';
+import 'package:echo_app/src/providers/accessibility_provider.dart';
 import 'package:echo_app/src/providers/auth_provider.dart';
 import 'package:echo_app/src/providers/biometric_provider.dart';
 import 'package:echo_app/src/providers/conversations_provider.dart';
@@ -251,6 +252,33 @@ class _FakeBiometric extends Biometric {
 
   @override
   Future<bool> authenticate() async => true;
+}
+
+// ---------------------------------------------------------------------------
+// Accessibility
+// ---------------------------------------------------------------------------
+
+/// Override [accessibilityProvider] with reduced motion enabled.
+///
+/// Use this in widget tests that render screens with [AnimatedGradientBackground]
+/// (login, register, splash) so that [pumpAndSettle] does not time out waiting
+/// for the continuous animation loop to stop.
+Override accessibilityOverride([
+  AccessibilityState initialState = const AccessibilityState(
+    reducedMotion: true,
+  ),
+]) {
+  return accessibilityProvider.overrideWith(
+    () => _FakeAccessibility(initialState),
+  );
+}
+
+class _FakeAccessibility extends Accessibility {
+  _FakeAccessibility(this._initial);
+  final AccessibilityState _initial;
+
+  @override
+  AccessibilityState build() => _initial;
 }
 
 // ---------------------------------------------------------------------------

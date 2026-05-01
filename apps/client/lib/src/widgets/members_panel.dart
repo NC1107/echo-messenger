@@ -364,27 +364,19 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                   child: Row(
                     children: [
                       if (member.role == 'owner') ...[
-                        // ignore: prefer_const_constructors
-                        Semantics(
-                          // TODO(#674): cannot const due to Semantics
-                          label: 'owner',
-                          child: const Icon(
-                            Icons.star_rounded,
-                            size: 14,
-                            color: Colors.amber,
-                          ),
+                        const Icon(
+                          Icons.star_rounded,
+                          size: 14,
+                          color: Colors.amber,
+                          semanticLabel: 'owner',
                         ),
                         const SizedBox(width: 4),
                       ] else if (member.role == 'admin') ...[
-                        // ignore: prefer_const_constructors
-                        Semantics(
-                          // TODO(#674): cannot const due to Semantics
-                          label: 'admin',
-                          child: const Icon(
-                            Icons.shield_rounded,
-                            size: 14,
-                            color: Colors.blue,
-                          ),
+                        const Icon(
+                          Icons.shield_rounded,
+                          size: 14,
+                          color: Colors.blue,
+                          semanticLabel: 'admin',
                         ),
                         const SizedBox(width: 4),
                       ],
