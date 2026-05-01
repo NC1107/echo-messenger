@@ -675,26 +675,21 @@ pub async fn set_disappearing_ttl(
     Path(conversation_id): Path<Uuid>,
     Json(body): Json<SetDisappearingRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify membership
-    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
+    // Single round-trip: kind + membership + role via get_member_context (#691).
+    let ctx = db::groups::get_member_context(&state.pool, conversation_id, auth.user_id)
         .await
-        .db_ctx("set_disappearing_ttl/is_member")?;
-    if !is_member {
+        .db_ctx("set_disappearing_ttl/get_ctx")?
+        .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
+
+    if !ctx.is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
     }
 
-    // For groups, require admin/owner role
-    let kind = db::groups::get_conversation_kind(&state.pool, conversation_id)
-        .await
-        .db_ctx("set_disappearing_ttl/get_kind")?
-        .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
-
-    if ConversationKind::from_str_opt(&kind) == Some(ConversationKind::Group) {
-        let role_str = db::groups::get_member_role(&state.pool, conversation_id, auth.user_id)
-            .await
-            .db_ctx("set_disappearing_ttl/get_role")?;
-        let role = role_str
-            .and_then(|r| Role::from_str_opt(&r))
+    if ConversationKind::from_str_opt(&ctx.kind) == Some(ConversationKind::Group) {
+        let role = ctx
+            .role
+            .as_deref()
+            .and_then(Role::from_str_opt)
             .unwrap_or(Role::Member);
         if !role.is_admin_or_above() {
             return Err(AppError::unauthorized(
@@ -725,27 +720,22 @@ pub async fn pin_message(
     State(state): State<Arc<AppState>>,
     Path((conversation_id, message_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify membership
-    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
+    // Single round-trip: kind + membership + role via get_member_context (#691).
+    let ctx = db::groups::get_member_context(&state.pool, conversation_id, auth.user_id)
         .await
-        .db_ctx("pin_message/is_member")?;
-    if !is_member {
+        .db_ctx("pin_message/get_ctx")?
+        .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
+
+    if !ctx.is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
     }
 
-    // For groups, only admins/owners can pin
-    let kind = db::groups::get_conversation_kind(&state.pool, conversation_id)
-        .await
-        .db_ctx("pin_message/get_kind")?
-        .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
-
-    if ConversationKind::from_str_opt(&kind) == Some(ConversationKind::Group) {
-        let role_str = db::groups::get_member_role(&state.pool, conversation_id, auth.user_id)
-            .await
-            .db_ctx("pin_message/get_role")?
-            .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
-
-        let role = Role::from_str_opt(&role_str).unwrap_or(Role::Member);
+    if ConversationKind::from_str_opt(&ctx.kind) == Some(ConversationKind::Group) {
+        let role = ctx
+            .role
+            .as_deref()
+            .and_then(Role::from_str_opt)
+            .unwrap_or(Role::Member);
         if !role.is_admin_or_above() {
             return Err(AppError::unauthorized(
                 "Only admins and owners can pin messages in groups",
@@ -804,27 +794,22 @@ pub async fn unpin_message(
     State(state): State<Arc<AppState>>,
     Path((conversation_id, message_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Verify membership
-    let is_member = db::groups::is_member(&state.pool, conversation_id, auth.user_id)
+    // Single round-trip: kind + membership + role via get_member_context (#691).
+    let ctx = db::groups::get_member_context(&state.pool, conversation_id, auth.user_id)
         .await
-        .db_ctx("unpin_message/is_member")?;
-    if !is_member {
+        .db_ctx("unpin_message/get_ctx")?
+        .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
+
+    if !ctx.is_member {
         return Err(AppError::unauthorized("Not a member of this conversation"));
     }
 
-    // For groups, only admins/owners can unpin
-    let kind = db::groups::get_conversation_kind(&state.pool, conversation_id)
-        .await
-        .db_ctx("unpin_message/get_kind")?
-        .ok_or_else(|| AppError::bad_request("Conversation not found"))?;
-
-    if ConversationKind::from_str_opt(&kind) == Some(ConversationKind::Group) {
-        let role_str = db::groups::get_member_role(&state.pool, conversation_id, auth.user_id)
-            .await
-            .db_ctx("unpin_message/get_role")?
-            .ok_or_else(|| AppError::unauthorized("Not a member of this group"))?;
-
-        let role = Role::from_str_opt(&role_str).unwrap_or(Role::Member);
+    if ConversationKind::from_str_opt(&ctx.kind) == Some(ConversationKind::Group) {
+        let role = ctx
+            .role
+            .as_deref()
+            .and_then(Role::from_str_opt)
+            .unwrap_or(Role::Member);
         if !role.is_admin_or_above() {
             return Err(AppError::unauthorized(
                 "Only admins and owners can unpin messages in groups",
