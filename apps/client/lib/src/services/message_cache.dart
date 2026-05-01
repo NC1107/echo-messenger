@@ -204,6 +204,11 @@ class MessageCache {
   static int entryCount() =>
       _convBoxes.values.fold(0, (sum, box) => sum + box.length);
 
+  /// IDs of all conversations that have an open cache box in this session.
+  /// Used by [ExportService] to iterate over cached data.
+  static List<String> get openConversationIds =>
+      List<String>.unmodifiable(_convBoxes.keys);
+
   // ---------------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------------
