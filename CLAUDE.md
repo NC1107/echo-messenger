@@ -155,5 +155,5 @@ Three compose files in `infra/docker/`:
 
 1. Session keys cached in memory with 24h idle TTL + 200-entry LRU cap; evicted entries have key material zeroed and reload from secure storage on demand.
 2. Multi-device: key-level revoke + last_seen + platform metadata work end-to-end; refresh tokens are not yet bound per device, so "logout all others" only kicks connected sessions via WS and truly offline sessions get blocked at next key operation.
-3. `core/rust-core` ships Signal Protocol primitives only (X3DH, Double Ratchet, key types). The originally-planned FFI bridge to a Dart-side runtime never landed; the Dart client re-implements the protocol in pure Dart and the rust-core code path is exercised only by Rust integration tests. A few transitive deps (`rusqlite`, `tokio-tungstenite`, `reqwest`) sit in `Cargo.toml` from that abandoned design and could be pruned.
+3. `core/rust-core` ships Signal Protocol primitives only (X3DH, Double Ratchet, key types). The originally-planned FFI bridge to a Dart-side runtime never landed; the Dart client re-implements the protocol in pure Dart and the rust-core code path is exercised only by Rust integration tests. Transitive deps (`rusqlite`, `tokio-tungstenite`, `reqwest`) from the abandoned FFI design remain in `Cargo.toml` and could be pruned.
 4. Rate limiting is in-memory only (resets on server restart)
