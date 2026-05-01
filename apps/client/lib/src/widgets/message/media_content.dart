@@ -1287,3 +1287,36 @@ class _PausedGifPlaceholder extends StatelessWidget {
     );
   }
 }
+
+// Added by Claude
+
+/// The kind of attachment a message content string represents.
+enum ReplyAttachmentKind { image, gif, video, audio, file, none }
+
+/// Classifies content into a ReplyAttachmentKind.
+ReplyAttachmentKind replyAttachmentKind(String content) {
+  final trimmed = content.trim();
+  if (trimmed.startsWith("[img:")) {
+    final url = _imgRegex.firstMatch(trimmed)?.group(1) ?? "";
+    if (url.toLowerCase().endsWith(".gif")) return ReplyAttachmentKind.gif;
+    return ReplyAttachmentKind.image;
+  }
+  if (trimmed.startsWith("[video:")) return ReplyAttachmentKind.video;
+  if (trimmed.startsWith("[audio:")) return ReplyAttachmentKind.audio;
+  if (trimmed.startsWith("[file:")) return ReplyAttachmentKind.file;
+  final mediaUrl = extractMediaUrl(trimmed);
+  if (mediaUrl != null) {
+    final ext = urlExtension(mediaUrl);
+    if (ext == "gif") return ReplyAttachmentKind.gif;
+    if (_imageExtensions.contains(ext)) return ReplyAttachmentKind.image;
+    if (_videoExtensions.contains(ext)) return ReplyAttachmentKind.video;
+    if (_audioExtensions.contains(ext)) return ReplyAttachmentKind.audio;
+    if (_fileExtensions.contains(ext)) return ReplyAttachmentKind.file;
+    if (mediaUrl.contains("/api/media/")) return ReplyAttachmentKind.image;
+  }
+  // Bare /api/media/ URL without a recognised extension (no marker).
+  if (trimmed.startsWith("http") && trimmed.contains("/api/media/")) {
+    return ReplyAttachmentKind.image;
+  }
+  return ReplyAttachmentKind.none;
+}
