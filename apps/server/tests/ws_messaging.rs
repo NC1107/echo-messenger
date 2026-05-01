@@ -504,7 +504,7 @@ async fn device_content_db_roundtrip() {
         .await
         .unwrap();
 
-    let raw = read_text_with_timeout(&mut alice_ws).await;
+    let raw = read_text_skipping_presence(&mut alice_ws).await;
     let ack: Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(ack["type"], "message_sent", "send failed: {raw}");
     let message_id = uuid::Uuid::parse_str(ack["message_id"].as_str().unwrap()).unwrap();
