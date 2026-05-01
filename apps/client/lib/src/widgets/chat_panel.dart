@@ -34,6 +34,7 @@ import 'skeleton_loader.dart';
 import 'channel_bar.dart';
 import 'chat_header_bar.dart';
 import 'chat_input_bar.dart';
+import 'chat/session_corrupted_banner.dart';
 import 'connection_status_banner.dart';
 import 'crypto_degraded_banner.dart';
 import 'identity_key_changed_banner.dart';
@@ -2375,6 +2376,20 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               const ConnectionStatusBanner(),
               const CryptoDegradedBanner(),
               if (!conv.isGroup) IdentityKeyChangedBanner(conversation: conv),
+              if (!conv.isGroup)
+                Builder(
+                  builder: (ctx) {
+                    final peer = conv.members
+                        .where((m) => m.userId != myUserId)
+                        .firstOrNull;
+                    if (peer == null) return const SizedBox.shrink();
+                    return SessionCorruptedBanner(
+                      conversationId: conv.id,
+                      peerUserId: peer.userId,
+                      peerName: peer.username,
+                    );
+                  },
+                ),
 
               Expanded(
                 child: GestureDetector(
