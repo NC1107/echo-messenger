@@ -34,9 +34,10 @@ fn bench_aes_gcm(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
-// X3DH key exchange (crypto module -- simplified)
+// X3DH key exchange (crypto module -- simplified, deprecated)
 // ---------------------------------------------------------------------------
 
+#[allow(deprecated)] // benchmarking deprecated helpers for baseline comparison
 fn bench_x3dh_crypto(c: &mut Criterion) {
     let mut group = c.benchmark_group("x3dh_crypto");
 

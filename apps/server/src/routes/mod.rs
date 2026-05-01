@@ -111,7 +111,13 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
     let revoke_others_limit =
         rate_limit::make_rate_limit_layer(rate_limit::revoke_others_limiter(Arc::clone(&proxies)));
     let edit_message_limit =
-        rate_limit::make_rate_limit_layer(rate_limit::edit_message_limiter(proxies));
+        rate_limit::make_rate_limit_layer(rate_limit::edit_message_limiter(Arc::clone(&proxies)));
+
+    let forgot_pw_limit = rate_limit::make_rate_limit_layer(rate_limit::forgot_password_limiter(
+        Arc::clone(&proxies),
+    ));
+    let reset_pw_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::reset_password_limiter(proxies));
 
     let auth_routes = Router::new()
         .route(
@@ -130,6 +136,14 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         .route(
             "/ws-ticket",
             post(auth::ws_ticket).layer(middleware::from_fn(ticket_limit)),
+        )
+        .route(
+            "/forgot-password",
+            post(auth::forgot_password).layer(middleware::from_fn(forgot_pw_limit)),
+        )
+        .route(
+            "/reset-password",
+            post(auth::reset_password).layer(middleware::from_fn(reset_pw_limit)),
         );
 
     let contact_routes = Router::new()

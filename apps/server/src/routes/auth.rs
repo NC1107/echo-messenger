@@ -1,4 +1,5 @@
-//! Authentication endpoints: register, login, refresh, logout, ws-ticket.
+//! Authentication endpoints: register, login, refresh, logout, ws-ticket,
+//! forgot-password, reset-password.
 
 use axum::Json;
 use axum::extract::State;
@@ -395,6 +396,121 @@ pub async fn logout(
     let jar = jar.add(clear_refresh_cookie());
     // Convention: StatusCode first, then CookieJar, matching register/login.
     Ok((StatusCode::NO_CONTENT, jar))
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/forgot-password
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct ForgotPasswordRequest {
+    pub username: String,
+}
+
+/// Always returns 200 regardless of whether the username exists.
+///
+/// When the user is found a single-use reset token is generated and logged
+/// to stdout via `tracing::info` for admin-mediated relay. No email is sent
+/// (Option A: admin-mediated, no SMTP infra yet -- #476). A follow-up issue
+/// should add SMTP support for production deployments.
+pub async fn forgot_password(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ForgotPasswordRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    // Look up the user. Errors are swallowed so the response is identical
+    // whether the username exists or not (prevents username enumeration).
+    if let Ok(Some(user)) = db::users::find_by_username(&state.pool, &body.username).await {
+        let token: String = {
+            use rand::RngExt as _;
+            let bytes: [u8; 32] = rand::rng().random();
+            bytes
+                .iter()
+                .fold(String::with_capacity(64), |mut s: String, b| {
+                    use std::fmt::Write as _;
+                    let _ = write!(s, "{b:02x}");
+                    s
+                })
+        };
+        let expires_at = chrono::Utc::now() + chrono::Duration::minutes(15);
+
+        if db::password_reset::create_token(&state.pool, &token, user.id, expires_at)
+            .await
+            .is_ok()
+        {
+            // Admin-mediated: log token to stdout for the operator to relay.
+            // WARNING: this token grants full password reset access. Treat
+            // the server logs as sensitive material and rotate promptly.
+            tracing::info!(
+                username = %body.username,
+                user_id  = %user.id,
+                token    = %token,
+                expires  = %expires_at,
+                "[PASSWORD RESET] Single-use reset token issued. \
+                 Relay this token to the user via a trusted out-of-band channel. \
+                 It expires in 15 minutes. No email has been sent.",
+            );
+        }
+    }
+
+    // Always 200 -- do not reveal whether the username exists.
+    Ok(StatusCode::OK)
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/reset-password
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordRequest {
+    pub token: String,
+    pub new_password: String,
+}
+
+pub async fn reset_password(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ResetPasswordRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    validate_password(&body.new_password)?;
+
+    let row = db::password_reset::find_token(&state.pool, &body.token)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?
+        .ok_or_else(|| AppError::bad_request("Invalid or expired reset token"))?;
+
+    if row.used_at.is_some() {
+        return Err(AppError::bad_request("Reset token has already been used"));
+    }
+    if row.expires_at < chrono::Utc::now() {
+        return Err(AppError::bad_request("Reset token has expired"));
+    }
+
+    let pw = body.new_password.clone();
+    let new_hash = tokio::task::spawn_blocking(move || crate::auth::password::hash_password(&pw))
+        .await
+        .map_err(|_| AppError::internal("Password hashing failed"))??;
+
+    db::users::update_password(&state.pool, row.user_id, &new_hash)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
+    // Mark token consumed before revoking sessions so a crash between the
+    // two steps leaves the token unusable rather than sessions valid.
+    db::password_reset::consume_token(&state.pool, &body.token)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
+    // Revoke all existing refresh tokens so any active sessions are
+    // invalidated -- the password change may be the result of a compromise.
+    db::tokens::revoke_all_user_tokens(&state.pool, row.user_id)
+        .await
+        .map_err(|_| AppError::internal("Database error"))?;
+
+    tracing::info!(
+        user_id = %row.user_id,
+        "[PASSWORD RESET] Password successfully reset. All sessions invalidated.",
+    );
+
+    Ok(StatusCode::OK)
 }
 
 // ---------------------------------------------------------------------------

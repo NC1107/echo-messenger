@@ -1,4 +1,12 @@
 //! Simplified X3DH key agreement for session establishment.
+//!
+//! # Deprecation notice
+//!
+//! [`x3dh_initiate`] and [`x3dh_respond`] are **deprecated** because they
+//! accept raw public keys without verifying the recipient's signed-prekey
+//! Ed25519 signature, leaving callers open to MITM attacks. Use the
+//! [`crate::signal::x3dh`] module instead, which enforces signature
+//! verification as part of the initiation handshake.
 
 use hkdf::Hkdf;
 use rand_core::OsRng;
@@ -40,6 +48,19 @@ fn kdf(dh_outputs: &[u8]) -> Result<[u8; 32], CoreError> {
 /// 2. DH(ephemeral, their_identity)
 /// 3. DH(ephemeral, their_signed_prekey)
 /// 4. DH(ephemeral, their_one_time_prekey) -- optional
+///
+/// # Security
+///
+/// This helper accepts raw public keys and **does not verify** the recipient's
+/// signed-prekey signature. An attacker who can substitute `their_signed_prekey`
+/// can perform a man-in-the-middle attack without detection. Use
+/// [`crate::signal::x3dh::initiate`] instead, which verifies the Ed25519
+/// signature on the signed prekey before performing any DH operations.
+#[deprecated(
+    since = "0.4.0",
+    note = "does not verify the SignedPreKey signature — use `signal::x3dh::initiate` which \
+            enforces signature verification and prevents MITM attacks"
+)]
 pub fn x3dh_initiate(
     our_identity: &StaticSecret,
     their_identity: &PublicKey,
@@ -76,6 +97,18 @@ pub fn x3dh_initiate(
 /// Responder completes X3DH key agreement.
 ///
 /// Mirrors the initiator's DH operations from the responder's perspective.
+///
+/// # Security
+///
+/// Signature verification is the initiator's responsibility (see
+/// [`x3dh_initiate`]). Because the initiator side of this pair does not verify
+/// the SignedPreKey signature, this responder function is also deprecated. Use
+/// [`crate::signal::x3dh::respond`] together with
+/// [`crate::signal::x3dh::initiate`] for a fully verified session.
+#[deprecated(
+    since = "0.4.0",
+    note = "pair of the unverified `x3dh_initiate` — use `signal::x3dh::respond` instead"
+)]
 pub fn x3dh_respond(
     our_identity: &StaticSecret,
     our_signed_prekey: &StaticSecret,
@@ -101,6 +134,7 @@ pub fn x3dh_respond(
 }
 
 #[cfg(test)]
+#[allow(deprecated)] // intentionally exercising the deprecated helpers
 mod tests {
     use super::*;
 
@@ -209,5 +243,31 @@ mod tests {
         .unwrap();
 
         assert_ne!(result_alice.shared_secret, result_eve.shared_secret);
+    }
+
+    /// Regression guard: the deprecated helpers must still produce matching
+    /// shared secrets so that any in-flight sessions created before the
+    /// migration are not silently broken. The migration path is to switch
+    /// callers to `signal::x3dh::initiate` / `signal::x3dh::respond`.
+    #[test]
+    fn test_deprecated_helpers_still_agree() {
+        let alice_id = StaticSecret::random_from_rng(OsRng);
+        let alice_id_pub = PublicKey::from(&alice_id);
+
+        let bob_id = StaticSecret::random_from_rng(OsRng);
+        let bob_id_pub = PublicKey::from(&bob_id);
+
+        let bob_spk = StaticSecret::random_from_rng(OsRng);
+        let bob_spk_pub = PublicKey::from(&bob_spk);
+
+        let init = x3dh_initiate(&alice_id, &bob_id_pub, &bob_spk_pub, None).unwrap();
+        let their_eph =
+            PublicKey::from(<[u8; 32]>::try_from(init.ephemeral_public.as_slice()).unwrap());
+        let resp = x3dh_respond(&bob_id, &bob_spk, None, &alice_id_pub, &their_eph).unwrap();
+
+        assert_eq!(
+            init.shared_secret, resp,
+            "deprecated helpers must still derive matching secrets"
+        );
     }
 }
