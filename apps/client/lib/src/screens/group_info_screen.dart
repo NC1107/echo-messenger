@@ -21,6 +21,7 @@ import '../providers/server_url_provider.dart';
 import '../utils/fuzzy_score.dart';
 import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/profile_sheets.dart';
 
 const _kJsonHeaders = {'Content-Type': 'application/json'};
 const _kGroupInfoTitle = 'Group Info';
@@ -29,6 +30,12 @@ class GroupInfoScreen extends ConsumerStatefulWidget {
   final String conversationId;
 
   const GroupInfoScreen({super.key, required this.conversationId});
+
+  /// Open the group info overlay. Delegates to [showGroupProfileSheet] which
+  /// chooses dialog (desktop) or bottom sheet (mobile) automatically.
+  static void show(BuildContext context, WidgetRef ref, String conversationId) {
+    showGroupProfileSheet(context, ref, conversationId);
+  }
 
   @override
   ConsumerState<GroupInfoScreen> createState() => _GroupInfoScreenState();
