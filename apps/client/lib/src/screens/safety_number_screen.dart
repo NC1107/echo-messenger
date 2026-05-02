@@ -14,6 +14,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/crypto_provider.dart';
+import '../services/crypto_service.dart';
 import '../services/safety_number_service.dart';
 import '../services/secure_key_store.dart';
 import '../services/toast_service.dart';
