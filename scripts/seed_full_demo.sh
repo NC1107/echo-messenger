@@ -206,39 +206,156 @@ done
 # ---- Phase 4: messages (8-12 per group, time-ordered) ----------------------
 echo "==> Seeding messages"
 total_msgs=0
+total_replies=0
+total_pins=0
+total_reactions=0
+declare -a UPLOAD_DIR_CANDIDATES=("./uploads" "./apps/server/uploads")
+UPLOADS_DIR=""
+for cand in "${UPLOAD_DIR_CANDIDATES[@]}"; do
+  if [ -d "$cand" ] && [ -w "$cand" ]; then UPLOADS_DIR="$cand"; break; fi
+done
+EMOJIS=("👍" "❤️" "😂" "🔥" "🎉" "👀" "🚀" "💯" "🤔" "✨")
+
 for spec in "${GROUPS[@]}"; do
-  IFS='|' read -r title _ _ members_csv <<<"$spec"
+  IFS='|' read -r title _ owner members_csv <<<"$spec"
   cid=${GROUP_ID[$title]}
+  oid=${USER_ID[$owner]}
   IFS=',' read -r -a member_arr <<<"$members_csv"
   msg_count=$((8 + RANDOM % 5))
-  # Build a multi-row INSERT for one round-trip per group.
+
+  # Build a multi-row INSERT for one round-trip per group, return new ids.
   values=""
+  declare -a senders=()
   for i in $(seq 1 "$msg_count"); do
     sender="${member_arr[$((RANDOM % ${#member_arr[@]}))]}"
     sid=${USER_ID[$sender]}
+    senders+=("$sid")
     template="${MESSAGES[$((RANDOM % ${#MESSAGES[@]}))]}"
-    # PG-escape single quotes in templates.
     body=${template//\'/\'\'}
-    # Stagger created_at over the last hour, oldest first.
     offset=$((msg_count - i))
-    sep=","
-    [ -z "$values" ] && sep=""
+    sep=","; [ -z "$values" ] && sep=""
     values+="$sep('$cid', '$sid', '$body', now() - (interval '1 minute' * $offset))"
   done
-  psql "$DB_URL" -v ON_ERROR_STOP=1 -q <<SQL >/dev/null
-INSERT INTO messages (conversation_id, sender_id, content, created_at) VALUES $values;
+  mapfile -t MSG_IDS < <(psql "$DB_URL" -v ON_ERROR_STOP=1 -At <<SQL
+INSERT INTO messages (conversation_id, sender_id, content, created_at)
+VALUES $values
+RETURNING id;
 SQL
+)
   total_msgs=$((total_msgs + msg_count))
-  printf "   %-16s +%d messages\n" "$title" "$msg_count"
+
+  # 4a. Replies: pick 1-2 messages and have a different sender reply to one
+  # of the earliest messages, threaded.
+  if [ ${#MSG_IDS[@]} -ge 4 ]; then
+    parent_idx=1
+    parent_id="${MSG_IDS[$parent_idx]}"
+    reply_sender="${member_arr[$((RANDOM % ${#member_arr[@]}))]}"
+    reply_sid=${USER_ID[$reply_sender]}
+    reply_body="${MESSAGES[$((RANDOM % ${#MESSAGES[@]}))]}"
+    reply_body=${reply_body//\'/\'\'}
+    psql "$DB_URL" -v ON_ERROR_STOP=1 -q <<SQL >/dev/null
+INSERT INTO messages (conversation_id, sender_id, content, reply_to_id, created_at)
+VALUES ('$cid', '$reply_sid', '$reply_body', '$parent_id', now() - interval '30 seconds');
+SQL
+    total_replies=$((total_replies + 1))
+    total_msgs=$((total_msgs + 1))
+  fi
+
+  # 4b. Pin: pin the second message (a slightly older, more interesting one).
+  if [ ${#MSG_IDS[@]} -ge 2 ]; then
+    pin_id="${MSG_IDS[1]}"
+    psql "$DB_URL" -v ON_ERROR_STOP=1 -q <<SQL >/dev/null
+UPDATE messages SET pinned_at = now(), pinned_by_id = '$oid' WHERE id = '$pin_id';
+SQL
+    total_pins=$((total_pins + 1))
+  fi
+
+  # 4c. Reactions: 5-9 reactions distributed over a few messages.
+  rx_count=$((5 + RANDOM % 5))
+  rx_values=""
+  for r in $(seq 1 "$rx_count"); do
+    target_idx=$((RANDOM % ${#MSG_IDS[@]}))
+    target_id="${MSG_IDS[$target_idx]}"
+    reactor="${member_arr[$((RANDOM % ${#member_arr[@]}))]}"
+    reactor_id=${USER_ID[$reactor]}
+    emoji="${EMOJIS[$((RANDOM % ${#EMOJIS[@]}))]}"
+    sep=","; [ -z "$rx_values" ] && sep=""
+    rx_values+="$sep('$target_id', '$reactor_id', '$emoji')"
+  done
+  psql "$DB_URL" -v ON_ERROR_STOP=1 -q <<SQL >/dev/null
+INSERT INTO reactions (message_id, user_id, emoji)
+VALUES $rx_values
+ON CONFLICT (message_id, user_id, emoji) DO NOTHING;
+SQL
+  # Count actual unique reactions (some collisions on (message,user,emoji)).
+  applied=$(psql "$DB_URL" -At -v ON_ERROR_STOP=1 <<SQL
+SELECT COUNT(*) FROM reactions
+WHERE message_id IN ($(printf "'%s'," "${MSG_IDS[@]}" | sed 's/,$//'));
+SQL
+)
+  total_reactions=$((total_reactions + ${applied:-0}))
+
+  printf "   %-16s +%d msgs (+1 reply, +1 pin, +%s reactions)\n" \
+    "$title" "$msg_count" "${applied:-0}"
 done
+
+# ---- Phase 5: group avatars (icon_url -> stable identicon) -----------------
+echo "==> Setting group icons (dicebear identicons)"
+for spec in "${GROUPS[@]}"; do
+  IFS='|' read -r title _ _ _ <<<"$spec"
+  cid=${GROUP_ID[$title]}
+  # URL-encode the title for the dicebear seed.
+  seed=$(printf '%s' "$title" | jq -sRr @uri)
+  icon="https://api.dicebear.com/7.x/identicon/svg?seed=$seed&backgroundColor=transparent"
+  psql "$DB_URL" -v ON_ERROR_STOP=1 -q <<SQL >/dev/null
+UPDATE conversations SET icon_url = '$icon' WHERE id = '$cid';
+SQL
+done
+
+# ---- Phase 6: attachment (one image-message per group) ---------------------
+# Drops a 1x1 transparent PNG into the server's uploads dir, registers a
+# media row, and posts a message whose content links to the media.  The
+# Flutter client treats /api/media/<uuid> URLs in content as attachments
+# (apps/client/lib/src/widgets/message_item.dart:381).
+total_attachments=0
+if [ -n "$UPLOADS_DIR" ]; then
+  echo "==> Seeding attachments (uploads dir: $UPLOADS_DIR)"
+  PNG_B64="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+  for spec in "${GROUPS[@]}"; do
+    IFS='|' read -r title _ _ members_csv <<<"$spec"
+    cid=${GROUP_ID[$title]}
+    IFS=',' read -r -a member_arr <<<"$members_csv"
+    sender="${member_arr[$((RANDOM % ${#member_arr[@]}))]}"
+    sid=${USER_ID[$sender]}
+    media_uuid=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)
+    media_path="$UPLOADS_DIR/${media_uuid}.png"
+    printf '%s' "$PNG_B64" | base64 -d > "$media_path"
+    size=$(stat -c%s "$media_path" 2>/dev/null || stat -f%z "$media_path")
+    psql "$DB_URL" -v ON_ERROR_STOP=1 -q <<SQL >/dev/null
+INSERT INTO media (id, uploader_id, filename, mime_type, size_bytes, conversation_id)
+VALUES ('$media_uuid', '$sid', 'demo.png', 'image/png', $size, '$cid');
+
+INSERT INTO messages (conversation_id, sender_id, content, created_at)
+VALUES ('$cid', '$sid', '/api/media/$media_uuid', now() - interval '5 seconds');
+SQL
+    total_attachments=$((total_attachments + 1))
+    total_msgs=$((total_msgs + 1))
+  done
+else
+  echo "==> Skipping attachments (no writable ./uploads dir found; run from repo root or apps/server/)"
+fi
 
 cat <<EOF
 
 ==> Done!
 
-   ${#USERS[@]} users        : ${USERS[*]}
-   ${#GROUPS[@]} public groups : ${!GROUP_ID[@]}
+   ${#USERS[@]} users         : ${USERS[*]}
+   ${#GROUPS[@]} public groups: ${!GROUP_ID[@]}
    ${total_msgs} messages
+   ${total_replies} reply chains
+   ${total_pins} pinned messages
+   ${total_reactions} reactions
+   ${total_attachments} attachments
 
 Login credentials (any user):
    password: $PASSWORD
