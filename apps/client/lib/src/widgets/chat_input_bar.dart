@@ -18,7 +18,6 @@ import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/chat_provider.dart';
-import '../providers/crypto_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../providers/voice_settings_provider.dart';
@@ -31,6 +30,11 @@ import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../utils/clipboard_image_helper.dart';
+import 'chat_input_bar/attach_file_button.dart';
+import 'chat_input_bar/attach_option.dart';
+import 'chat_input_bar/media_picker_toggle.dart';
+import 'chat_input_bar/recording_row.dart';
+import 'chat_input_bar/send_button.dart';
 import 'input/markdown_toolbar.dart';
 import 'input/pending_attachments_strip.dart';
 import 'input/input_status_bar.dart';
@@ -1249,117 +1253,9 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     );
   }
 
-  String _formatRecordingDuration(Duration d) {
-    final m = d.inMinutes.remainder(60);
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
-
-  // Recording overlay shown in place of the input row while recording.
-  Widget _buildRecordingRow() {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 44),
-      decoration: BoxDecoration(
-        color: context.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: EchoTheme.danger.withValues(alpha: 0.6),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const SizedBox(width: 12),
-          // Pulsing red dot
-          const _PulsingDot(color: EchoTheme.danger),
-          const SizedBox(width: 8),
-          Text(
-            _formatRecordingDuration(_recordingDuration),
-            style: const TextStyle(
-              color: EchoTheme.danger,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Mini waveform bars (live amplitude)
-          Expanded(child: _LiveWaveformBars(amplitudes: _recordingAmplitudes)),
-          const SizedBox(width: 8),
-          // Cancel button
-          IconButton(
-            icon: Icon(
-              Icons.delete_outline,
-              color: context.textMuted,
-              size: 20,
-            ),
-            tooltip: 'Cancel recording',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            onPressed: () => _stopRecording(cancel: true),
-          ),
-          // Stop / send button
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: GestureDetector(
-              onTap: () => _stopRecording(),
-              child: SizedBox(
-                width: 44,
-                height: 44,
-                child: Center(
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: const BoxDecoration(
-                      color: EchoTheme.danger,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.stop_rounded,
-                      size: 18,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ---------------------------------------------------------------------------
   // Build helpers -- kept in root widget
   // ---------------------------------------------------------------------------
-
-  Widget _buildAttachFileButton() {
-    final isMobile = Responsive.isMobile(context);
-    final onTap = isMobile ? _showMobileAttachMenu : _pickFile;
-    return Tooltip(
-      message: isMobile ? 'Attach' : 'Attach file',
-      child: Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: context.surface,
-              shape: BoxShape.circle,
-              border: Border.all(color: context.border, width: 1),
-            ),
-            alignment: Alignment.center,
-            child: Icon(Icons.add, size: 20, color: context.textSecondary),
-          ),
-        ),
-      ),
-    );
-  }
 
   void _showMobileAttachMenu() {
     showModalBottomSheet<void>(
@@ -1374,7 +1270,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _AttachOption(
+              AttachOption(
                 icon: Icons.photo_library_outlined,
                 label: 'Photos & Videos',
                 onTap: () {
@@ -1382,7 +1278,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                   _pickImageFromGallery();
                 },
               ),
-              _AttachOption(
+              AttachOption(
                 icon: Icons.camera_alt_outlined,
                 label: 'Camera',
                 onTap: () {
@@ -1390,7 +1286,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                   _pickImageFromCamera();
                 },
               ),
-              _AttachOption(
+              AttachOption(
                 icon: Icons.insert_drive_file_outlined,
                 label: 'File',
                 onTap: () {
@@ -1530,46 +1426,27 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     }
   }
 
-  Widget _buildMediaPickerToggle({
-    required bool showMediaPicker,
-    required bool isMobileLayout,
-  }) {
-    return Semantics(
-      toggled: showMediaPicker,
-      label: 'Emoji picker',
-      child: IconButton(
-        icon: Icon(
-          showMediaPicker
-              ? Icons.keyboard_outlined
-              : Icons.sentiment_satisfied_alt_outlined,
-          size: 20,
-          color: showMediaPicker ? context.accent : context.textSecondary,
-        ),
-        tooltip: showMediaPicker ? 'Keyboard' : 'Emoji & GIF',
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-        onPressed: () {
-          if (isMobileLayout) {
-            if (_showInlinePicker) {
-              setState(() => _showInlinePicker = false);
-              _inputFocusNode.requestFocus();
-            } else {
-              _inputFocusNode.unfocus();
-              Future<void>.delayed(const Duration(milliseconds: 300), () {
-                if (mounted) setState(() => _showInlinePicker = true);
-              });
-            }
-            widget.onMediaPickerChanged?.call();
-          } else {
-            setState(() => _showMediaPicker = !_showMediaPicker);
-            widget.onMediaPickerChanged?.call();
-            if (!_showMediaPicker) {
-              _inputFocusNode.requestFocus();
-            }
-          }
-        },
-      ),
-    );
+  /// Toggles the inline (mobile) or overlay (desktop) media picker. Shared
+  /// callback wired into [MediaPickerToggle] from `_buildInputRow`.
+  void _toggleMediaPicker(bool isMobileLayout) {
+    if (isMobileLayout) {
+      if (_showInlinePicker) {
+        setState(() => _showInlinePicker = false);
+        _inputFocusNode.requestFocus();
+      } else {
+        _inputFocusNode.unfocus();
+        Future<void>.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) setState(() => _showInlinePicker = true);
+        });
+      }
+      widget.onMediaPickerChanged?.call();
+    } else {
+      setState(() => _showMediaPicker = !_showMediaPicker);
+      widget.onMediaPickerChanged?.call();
+      if (!_showMediaPicker) {
+        _inputFocusNode.requestFocus();
+      }
+    }
   }
 
   /// Expose inline picker state for ChatPanel layout adjustments.
@@ -1903,109 +1780,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _inputFocusNode.requestFocus();
   }
 
-  Widget _buildMarkdownToolbar() {
-    return MarkdownToolbar(
-      controller: _messageController,
-      onLinkTap: _showLinkDialog,
-    );
-  }
-
-  Widget _buildSendButton() {
-    final hasContent = !_isTextEmpty || _allPendingAttachmentsReady;
-
-    // For DMs, gate on crypto readiness so users can't send before encryption
-    // is initialized (which would fail with a confusing error).
-    final cryptoState = ref.watch(cryptoProvider);
-    final cryptoReady =
-        cryptoState.isInitialized && !cryptoState.keysUploadFailed;
-    final isDm = !widget.conversation.isGroup;
-    final canSend = hasContent && (cryptoReady || !isDm);
-
-    // When there's no content and not editing, show a bordered mic button
-    // (mirrors the design's RoundIcon). It transitions to the filled accent
-    // send button below as soon as content is present.
-    final showMic = !hasContent && !_isEditing && !kIsWeb;
-    if (showMic) {
-      return Semantics(
-        label: 'Record voice message',
-        button: true,
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: _startRecording,
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: context.surface,
-                shape: BoxShape.circle,
-                border: Border.all(color: context.border, width: 1),
-              ),
-              alignment: Alignment.center,
-              child: Icon(
-                Icons.mic_outlined,
-                size: 20,
-                color: context.textSecondary,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    final Color fillColor;
-    if (!canSend) {
-      fillColor = context.surface;
-    } else if (_isEditing) {
-      fillColor = EchoTheme.online;
-    } else {
-      fillColor = context.accent;
-    }
-    final iconColor = canSend ? Colors.white : context.textMuted;
-    final showBorder = !canSend;
-
-    final cryptoBlocked = isDm && !cryptoReady;
-
-    Widget button = Semantics(
-      label: _isEditing ? 'Confirm edit' : 'Send message',
-      button: true,
-      enabled: canSend,
-      child: Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: canSend ? _resolvedSendAction() : null,
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: fillColor,
-              shape: BoxShape.circle,
-              border: showBorder
-                  ? Border.all(color: context.border, width: 1)
-                  : null,
-            ),
-            alignment: Alignment.center,
-            child: Icon(
-              _isEditing ? Icons.check_rounded : Icons.arrow_upward_rounded,
-              size: 20,
-              color: iconColor,
-            ),
-          ),
-        ),
-      ),
-    );
-
-    if (cryptoBlocked) {
-      button = Tooltip(message: 'Encryption unavailable', child: button);
-    }
-
-    return button;
-  }
-
   Widget _buildInputRow({
     required bool showMediaPicker,
     required bool isMobileLayout,
@@ -2014,7 +1788,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }) {
     // While recording, replace the entire input row with the recording UI.
     if (_isRecording) {
-      return _buildRecordingRow();
+      return RecordingRow(
+        recordingDuration: _recordingDuration,
+        recordingAmplitudes: _recordingAmplitudes,
+        onCancel: () => _stopRecording(cancel: true),
+        onStop: () => _stopRecording(),
+      );
     }
 
     // Three-element design: bordered round + button on the left, pill input
@@ -2027,7 +1806,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           ? CrossAxisAlignment.end
           : CrossAxisAlignment.center,
       children: [
-        if (!_isEditing) _buildAttachFileButton(),
+        if (!_isEditing)
+          AttachFileButton(
+            onPickFile: _pickFile,
+            onShowMobileMenu: _showMobileAttachMenu,
+          ),
         if (!_isEditing) const SizedBox(width: 8),
         Expanded(
           child: Container(
@@ -2048,16 +1831,23 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                   voiceSettings: voiceSettings,
                   effectiveActiveVoiceChannelId: effectiveActiveVoiceChannelId,
                 ),
-                _buildMediaPickerToggle(
+                MediaPickerToggle(
                   showMediaPicker: showMediaPicker,
-                  isMobileLayout: isMobileLayout,
+                  onToggle: () => _toggleMediaPicker(isMobileLayout),
                 ),
               ],
             ),
           ),
         ),
         const SizedBox(width: 8),
-        _buildSendButton(),
+        SendButton(
+          isTextEmpty: _isTextEmpty,
+          allPendingAttachmentsReady: _allPendingAttachmentsReady,
+          isEditing: _isEditing,
+          isDm: !widget.conversation.isGroup,
+          onStartRecording: _startRecording,
+          resolveSendAction: _resolvedSendAction,
+        ),
       ],
     );
   }
@@ -2194,7 +1984,10 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                     ),
                   // Markdown formatting toolbar (bold, italic, strike, code,
                   // quote, link) — always visible above the input row.
-                  _buildMarkdownToolbar(),
+                  MarkdownToolbar(
+                    controller: _messageController,
+                    onLinkTap: _showLinkDialog,
+                  ),
                   _buildInputRow(
                     showMediaPicker: showMediaPicker,
                     isMobileLayout: isMobileLayout,
@@ -2273,143 +2066,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       fileName: fileName,
       mimeType: mimeType,
       ext: ext,
-    );
-  }
-}
-
-/// Pulsing red dot shown in the recording row to indicate active recording.
-class _PulsingDot extends StatefulWidget {
-  final Color color;
-  const _PulsingDot({required this.color});
-
-  @override
-  State<_PulsingDot> createState() => _PulsingDotState();
-}
-
-class _PulsingDotState extends State<_PulsingDot>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _opacity;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..repeat(reverse: true);
-    _opacity = Tween<double>(
-      begin: 0.3,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (MediaQuery.of(context).disableAnimations) {
-      // Respect reduced-motion accessibility preference -- show a static dot.
-      return Container(
-        width: 10,
-        height: 10,
-        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
-      );
-    }
-    return FadeTransition(
-      opacity: _opacity,
-      child: Container(
-        width: 10,
-        height: 10,
-        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
-      ),
-    );
-  }
-}
-
-/// Live mini waveform bars that grow as amplitude samples arrive.
-/// Scrolls from right to left, showing the most recent [_kDisplayCount] bars.
-class _LiveWaveformBars extends StatelessWidget {
-  static const _kDisplayCount = 40;
-
-  final List<double> amplitudes;
-
-  const _LiveWaveformBars({required this.amplitudes});
-
-  @override
-  Widget build(BuildContext context) {
-    final bars = amplitudes.length > _kDisplayCount
-        ? amplitudes.sublist(amplitudes.length - _kDisplayCount)
-        : amplitudes;
-
-    return SizedBox(
-      height: 24,
-      child: CustomPaint(
-        painter: _LiveWaveformPainter(bars: bars, color: EchoTheme.danger),
-      ),
-    );
-  }
-}
-
-class _LiveWaveformPainter extends CustomPainter {
-  final List<double> bars;
-  final Color color;
-
-  const _LiveWaveformPainter({required this.bars, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (bars.isEmpty) return;
-    const barGap = 2.0;
-    final count = bars.length;
-    final barWidth = (size.width - barGap * (count - 1)) / count;
-    final paint = Paint()
-      ..color = color.withValues(alpha: 0.7)
-      ..style = PaintingStyle.fill;
-
-    for (var i = 0; i < count; i++) {
-      final h = (bars[i] * size.height).clamp(2.0, size.height);
-      final left = i * (barWidth + barGap);
-      final top = (size.height - h) / 2;
-      canvas.drawRRect(
-        RRect.fromLTRBR(
-          left,
-          top,
-          left + barWidth,
-          top + h,
-          const Radius.circular(2),
-        ),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_LiveWaveformPainter old) => old.bars != bars;
-}
-
-/// A single row in the mobile attachment bottom sheet.
-class _AttachOption extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _AttachOption({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon, color: context.textSecondary),
-      title: Text(label, style: TextStyle(color: context.textPrimary)),
-      onTap: onTap,
     );
   }
 }
