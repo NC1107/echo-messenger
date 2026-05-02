@@ -20,29 +20,23 @@ import '../providers/conversations_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../providers/theme_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../screens/safety_number_screen.dart';
 import '../screens/user_profile_screen.dart';
-import '../providers/accessibility_provider.dart';
 import '../services/message_cache.dart';
 import '../services/saved_messages_service.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
-import 'skeleton_loader.dart';
 import 'channel_bar.dart';
 import 'chat_header_bar.dart';
 import 'chat_input_bar.dart';
 import 'chat/session_corrupted_banner.dart';
-import 'chat_panel/date_divider.dart';
+import 'chat_panel/chat_message_list.dart';
 import 'chat_panel/drop_overlay.dart';
-import 'chat_panel/empty_message_placeholder.dart';
 import 'chat_panel/floating_date_pill.dart';
 import 'chat_panel/new_messages_pill.dart';
 import 'chat_panel/no_conversation_placeholder.dart';
-import 'chat_panel/system_timeline_message.dart';
-import 'chat_panel/unread_divider.dart';
 import 'connection_status_banner.dart';
 import 'crypto_degraded_banner.dart';
 import 'identity_key_changed_banner.dart';
@@ -57,7 +51,7 @@ import 'message/media_content.dart'
         mediaHeaders,
         resolveMediaUrl;
 import '../utils/semantics_preview.dart';
-import 'message_item.dart';
+import 'message_item.dart' show reactionEmojis;
 import 'message_search_overlay.dart';
 import 'thread_view_panel.dart';
 
@@ -1492,34 +1486,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Message list helpers
-  // ---------------------------------------------------------------------------
-
-  bool _isSystemTimelineMessage(ChatMessage msg) {
-    return msg.content.startsWith('[system:');
-  }
-
-  bool _withinGroupingWindow(String ts1, String ts2) {
-    try {
-      final dt1 = DateTime.parse(ts1);
-      final dt2 = DateTime.parse(ts2);
-      return dt2.difference(dt1).inMinutes.abs() < 5;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  bool _differentDay(String ts1, String ts2) {
-    try {
-      final d1 = DateTime.parse(ts1);
-      final d2 = DateTime.parse(ts2);
-      return d1.year != d2.year || d1.month != d2.month || d1.day != d2.day;
-    } catch (_) {
-      return false;
-    }
-  }
-
   String _fullMonthName(int m) {
     const names = [
       '',
@@ -1537,234 +1503,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       'December',
     ];
     return names[m.clamp(1, 12)];
-  }
-
-  // ---------------------------------------------------------------------------
-  // Build helpers
-  // ---------------------------------------------------------------------------
-
-  Widget _buildMessageAtIndex({
-    required int i,
-    required Conversation conv,
-    required List<ChatMessage> messages,
-    required Map<String, String?> memberAvatars,
-    required String myUserId,
-    required String serverUrl,
-    required String authToken,
-    String? mediaTicket,
-  }) {
-    final msg = messages[i];
-
-    if (_isSystemTimelineMessage(msg)) {
-      return SystemTimelineMessage(msg: msg);
-    }
-
-    final needsDateDivider =
-        i == 0 || _differentDay(messages[i - 1].timestamp, msg.timestamp);
-
-    final showHeader =
-        i == 0 ||
-        messages[i - 1].fromUserId != msg.fromUserId ||
-        !_withinGroupingWindow(messages[i - 1].timestamp, msg.timestamp);
-
-    final isLastInGroup =
-        i == messages.length - 1 ||
-        messages[i + 1].fromUserId != msg.fromUserId;
-
-    final senderAvatarUrl = memberAvatars[msg.fromUserId];
-    final isHighlighted = _highlightedMessageId == msg.id;
-
-    final showUnreadDivider = _unreadBoundaryMessageId == msg.id;
-
-    final messageKey = _messageKeys.putIfAbsent(msg.id, () => GlobalKey());
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (needsDateDivider) DateDivider(timestamp: msg.timestamp),
-        if (showUnreadDivider) UnreadDivider(count: _unreadBoundaryCount),
-        AnimatedContainer(
-          key: messageKey,
-          duration: const Duration(milliseconds: 400),
-          color: isHighlighted
-              ? context.accent.withValues(alpha: 0.15)
-              : Colors.transparent,
-          child: MessageItem(
-            message: msg,
-            showHeader: showHeader,
-            isLastInGroup: isLastInGroup,
-            myUserId: myUserId,
-            serverUrl: serverUrl,
-            authToken: authToken,
-            mediaTicket: mediaTicket,
-            senderAvatarUrl: senderAvatarUrl,
-            layout: ref.watch(messageLayoutProvider),
-            hideUndecryptable: ref
-                .watch(accessibilityProvider)
-                .hideUndecryptable,
-            onReactionTap: _showReactionPicker,
-            onReactionSelect: (message, emoji) {
-              final alreadyReacted = message.reactions.any(
-                (r) => r.emoji == emoji && r.userId == myUserId,
-              );
-              _toggleReaction(message, emoji, alreadyReacted);
-            },
-            onMoreReactions: (message) =>
-                _showFullReactionPicker(message, myUserId),
-            onDelete: msg.status == MessageStatus.failed
-                ? _deleteFailed
-                : _confirmDelete,
-            onRetry: msg.status == MessageStatus.failed ? _retryMessage : null,
-            // #582: editing on an encrypted conversation would broadcast
-            // plaintext to every member, breaking E2E. Until per-device
-            // ciphertext fanout for edits ships, suppress the affordance
-            // entirely on encrypted conversations. Server enforces with 409.
-            onEdit: conv.isEncrypted
-                ? null
-                : (msg) {
-                    _chatInputBarKey.currentState?.enterEditMode(msg);
-                  },
-            onReply: (msg) {
-              ref.read(chatProvider.notifier).setReplyTo(msg);
-              _chatInputBarKey.currentState?.requestInputFocus();
-            },
-            onViewThread: (msg) => _openThread(msg),
-            onPin: (msg) => _pinMessage(msg),
-            onUnpin: (msg) => _unpinMessage(msg),
-            onForward: (msg) => _forwardMessage(msg),
-            isSaved:
-                _savedIds.contains(msg.id) ||
-                SavedMessagesService.instance.isMessageSaved(msg.id),
-            onSave: (msg) => _saveMessage(msg),
-            onUnsave: (msg) => _unsaveMessage(msg),
-            onTapReplyQuote: _jumpToReplyQuote,
-            onAvatarTap: (userId) {
-              UserProfileScreen.show(context, ref, userId);
-            },
-            onVerifyIdentity: conv.isGroup
-                ? null
-                : (message) {
-                    final myName = ref.read(authProvider).username ?? 'You';
-                    SafetyNumberScreen.show(
-                      context,
-                      ref,
-                      peerUserId: message.fromUserId,
-                      peerUsername: message.fromUsername,
-                      myUsername: myName,
-                    );
-                  },
-            onImageTap: (resolvedUrl) => _openImageGallery(
-              tappedUrl: resolvedUrl,
-              messages: messages,
-              serverUrl: serverUrl,
-              authToken: authToken,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMessageListView({
-    required Conversation conv,
-    required List<ChatMessage> messages,
-    required ChatState chatState,
-    required Map<String, String?> memberAvatars,
-    required String myUserId,
-    required String serverUrl,
-    required String authToken,
-    String? mediaTicket,
-    String? channelId,
-  }) {
-    return Scrollbar(
-      controller: _scrollController,
-      thumbVisibility: defaultTargetPlatform != TargetPlatform.iOS,
-      child: ListView.builder(
-        controller: _scrollController,
-        padding: const EdgeInsets.only(bottom: 16),
-        itemCount: messages.length + 1,
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            if (chatState.conversationHasMore(conv.id, channelId: channelId)) {
-              return SizedBox(
-                height: 48,
-                child: chatState.isLoadingHistory(conv.id, channelId: channelId)
-                    ? const Center(
-                        child: SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              );
-            }
-            return const SizedBox(height: 8);
-          }
-          return _buildMessageAtIndex(
-            i: index - 1,
-            conv: conv,
-            messages: messages,
-            memberAvatars: memberAvatars,
-            myUserId: myUserId,
-            serverUrl: serverUrl,
-            authToken: authToken,
-            mediaTicket: mediaTicket,
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildMessageListOrEmpty({
-    required Conversation conv,
-    required List<ChatMessage> messages,
-    required bool isLoadingHistory,
-    required String displayName,
-    required ChatState chatState,
-    required Map<String, String?> memberAvatars,
-    required String myUserId,
-    required String serverUrl,
-    required String authToken,
-    String? mediaTicket,
-    String? channelId,
-  }) {
-    final Widget child;
-    if (messages.isEmpty && isLoadingHistory) {
-      child = const SingleChildScrollView(
-        key: ValueKey('skeleton'),
-        child: MessageListSkeleton(),
-      );
-    } else if (messages.isEmpty && !isLoadingHistory) {
-      child = KeyedSubtree(
-        key: const ValueKey('empty'),
-        child: EmptyMessagePlaceholder(
-          displayName: displayName,
-          onSayHi: () {
-            _chatInputBarKey.currentState?.preFillText('Hey! \u{1F44B}');
-          },
-        ),
-      );
-    } else {
-      child = KeyedSubtree(
-        key: const ValueKey('list'),
-        child: _buildMessageListView(
-          conv: conv,
-          messages: messages,
-          chatState: chatState,
-          memberAvatars: memberAvatars,
-          myUserId: myUserId,
-          serverUrl: serverUrl,
-          authToken: authToken,
-          mediaTicket: mediaTicket,
-          channelId: channelId,
-        ),
-      );
-    }
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 200),
-      child: child,
-    );
   }
 
   void _handleKeyboardScroll() {
@@ -2089,11 +1827,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                   onTap: () => FocusScope.of(context).unfocus(),
                   child: Stack(
                     children: [
-                      _buildMessageListOrEmpty(
+                      ChatMessageList(
                         conv: conv,
                         messages: messages,
-                        isLoadingHistory: isLoadingHistory,
-                        displayName: displayName,
                         chatState: chatState,
                         memberAvatars: memberAvatars,
                         myUserId: myUserId,
@@ -2101,6 +1837,64 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                         authToken: authToken,
                         mediaTicket: mediaTicket,
                         channelId: selectedChannelId,
+                        isLoadingHistory: isLoadingHistory,
+                        displayName: displayName,
+                        scrollController: _scrollController,
+                        messageKeys: _messageKeys,
+                        savedIds: _savedIds,
+                        highlightedMessageId: _highlightedMessageId,
+                        unreadBoundaryMessageId: _unreadBoundaryMessageId,
+                        unreadBoundaryCount: _unreadBoundaryCount,
+                        onReactionTap: _showReactionPicker,
+                        onToggleReaction: _toggleReaction,
+                        onMoreReactions: (message) =>
+                            _showFullReactionPicker(message, myUserId),
+                        onDeleteFailed: _deleteFailed,
+                        onConfirmDelete: _confirmDelete,
+                        onRetryMessage: _retryMessage,
+                        onEnterEditMode: (msg) {
+                          _chatInputBarKey.currentState?.enterEditMode(msg);
+                        },
+                        onReply: (msg) {
+                          ref.read(chatProvider.notifier).setReplyTo(msg);
+                          _chatInputBarKey.currentState?.requestInputFocus();
+                        },
+                        onOpenThread: _openThread,
+                        onPin: _pinMessage,
+                        onUnpin: _unpinMessage,
+                        onForward: _forwardMessage,
+                        onSaveMessage: _saveMessage,
+                        onUnsaveMessage: _unsaveMessage,
+                        onJumpToReplyQuote: _jumpToReplyQuote,
+                        onAvatarTap: (userId) {
+                          UserProfileScreen.show(context, ref, userId);
+                        },
+                        onVerifyIdentity: conv.isGroup
+                            ? null
+                            : (message) {
+                                final myName =
+                                    ref.read(authProvider).username ?? 'You';
+                                SafetyNumberScreen.show(
+                                  context,
+                                  ref,
+                                  peerUserId: message.fromUserId,
+                                  peerUsername: message.fromUsername,
+                                  myUsername: myName,
+                                );
+                              },
+                        onImageTap: (resolvedUrl) => _openImageGallery(
+                          tappedUrl: resolvedUrl,
+                          messages: messages,
+                          serverUrl: serverUrl,
+                          authToken: authToken,
+                        ),
+                        isMessageSaved: (id) =>
+                            SavedMessagesService.instance.isMessageSaved(id),
+                        onSayHi: () {
+                          _chatInputBarKey.currentState?.preFillText(
+                            'Hey! \u{1F44B}',
+                          );
+                        },
                       ),
                       if (_floatingDate != null)
                         FloatingDatePill(
