@@ -155,6 +155,7 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
       peerConnectionStates: const {},
     );
 
+    String? attemptedUrl;
     try {
       // 1. Fetch a LiveKit JWT from the Echo server.
       final tokenResult = await _fetchLiveKitToken(conversationId, channelId);
@@ -168,6 +169,12 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
 
       final livekitUrl = tokenResult.url;
       final livekitToken = tokenResult.token;
+      attemptedUrl = livekitUrl;
+      DebugLogService.instance.log(
+        LogLevel.info,
+        'LiveKitVoice',
+        'Connecting to $livekitUrl (token len=${livekitToken.length})',
+      );
 
       // 2. Create and connect a LiveKit Room.
       final voiceSettings = ref.read(voiceSettingsProvider);
@@ -228,11 +235,14 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState> {
         'Joined room for channel $channelId',
       );
     } catch (e) {
-      debugPrint('[LiveKitVoice] join failed: $e');
+      // Surface the URL we tried so a 404 / DNS failure points ops at the
+      // exact subdomain that needs DNS or Traefik attention (#721).
+      final tried = attemptedUrl ?? '<token-fetch>';
+      debugPrint('[LiveKitVoice] join failed at $tried: $e');
       DebugLogService.instance.log(
         LogLevel.error,
         'LiveKitVoice',
-        'Join failed: $e',
+        'Join failed at $tried: $e',
       );
       await _cleanupRoom();
       state = state.copyWith(

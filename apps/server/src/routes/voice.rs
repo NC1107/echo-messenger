@@ -26,6 +26,12 @@ pub struct TokenRequest {
 #[derive(Debug, Serialize)]
 pub struct TokenResponse {
     pub token: String,
+    /// LiveKit signaling URL the client should connect to.  Returned only
+    /// when `LIVEKIT_URL` is configured on the server, so ops can point the
+    /// client at a managed LiveKit (e.g. `wss://*.livekit.cloud`) or a
+    /// non-default subdomain without a client release (#721).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 /// LiveKit video grant claims.
@@ -140,7 +146,14 @@ pub async fn generate_token(
         AppError::internal("Failed to generate voice token")
     })?;
 
-    Ok(Json(TokenResponse { token }))
+    // Optional explicit URL — lets ops redirect to a managed LiveKit or a
+    // non-default subdomain without a client release.  When unset the client
+    // falls back to deriving `wss://livekit.<server-host>`.
+    let url = std::env::var("LIVEKIT_URL")
+        .ok()
+        .filter(|u| !u.trim().is_empty());
+
+    Ok(Json(TokenResponse { token, url }))
 }
 
 #[cfg(test)]
@@ -198,5 +211,26 @@ mod tests {
         assert_eq!(json["video"]["roomJoin"], true);
         assert_eq!(json["video"]["canPublish"], true);
         assert_eq!(json["video"]["canSubscribe"], true);
+    }
+
+    #[test]
+    fn token_response_omits_url_when_none() {
+        let resp = TokenResponse {
+            token: "jwt".into(),
+            url: None,
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["token"], "jwt");
+        assert!(json.get("url").is_none(), "url must be omitted when None");
+    }
+
+    #[test]
+    fn token_response_includes_url_when_set() {
+        let resp = TokenResponse {
+            token: "jwt".into(),
+            url: Some("wss://livekit.example.com".into()),
+        };
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["url"], "wss://livekit.example.com");
     }
 }
