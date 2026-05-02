@@ -35,6 +35,14 @@ import 'channel_bar.dart';
 import 'chat_header_bar.dart';
 import 'chat_input_bar.dart';
 import 'chat/session_corrupted_banner.dart';
+import 'chat_panel/date_divider.dart';
+import 'chat_panel/drop_overlay.dart';
+import 'chat_panel/empty_message_placeholder.dart';
+import 'chat_panel/floating_date_pill.dart';
+import 'chat_panel/new_messages_pill.dart';
+import 'chat_panel/no_conversation_placeholder.dart';
+import 'chat_panel/system_timeline_message.dart';
+import 'chat_panel/unread_divider.dart';
 import 'connection_status_banner.dart';
 import 'crypto_degraded_banner.dart';
 import 'identity_key_changed_banner.dart';
@@ -1492,34 +1500,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     return msg.content.startsWith('[system:');
   }
 
-  Widget _buildSystemTimelineMessage(ChatMessage msg) {
-    final text = msg.content.replaceFirst('[system:', '').replaceFirst(']', '');
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: context.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: context.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.lock_outline, size: 14, color: context.textMuted),
-              const SizedBox(width: 6),
-              Text(
-                text.trim(),
-                style: TextStyle(fontSize: 12, color: context.textMuted),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   bool _withinGroupingWindow(String ts1, String ts2) {
     try {
       final dt1 = DateTime.parse(ts1);
@@ -1538,76 +1518,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     } catch (_) {
       return false;
     }
-  }
-
-  Widget _buildDateDivider(String timestamp) {
-    try {
-      final dt = DateTime.parse(timestamp).toLocal();
-      final now = DateTime.now();
-      final yesterday = now.subtract(const Duration(days: 1));
-      String label;
-      if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-        label = 'Today';
-      } else if (dt.year == yesterday.year &&
-          dt.month == yesterday.month &&
-          dt.day == yesterday.day) {
-        label = 'Yesterday';
-      } else {
-        label = '${_fullMonthName(dt.month)} ${dt.day}, ${dt.year}';
-      }
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-        child: Row(
-          children: [
-            Expanded(
-              child: Container(
-                height: 1,
-                color: context.border.withValues(alpha: 0.5),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                label,
-                style: TextStyle(fontSize: 11, color: context.textMuted),
-              ),
-            ),
-            Expanded(
-              child: Container(
-                height: 1,
-                color: context.border.withValues(alpha: 0.5),
-              ),
-            ),
-          ],
-        ),
-      );
-    } catch (_) {
-      return const SizedBox.shrink();
-    }
-  }
-
-  Widget _buildUnreadDivider(int count) {
-    final noun = count == 1 ? 'message' : 'messages';
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-      child: Row(
-        children: [
-          Expanded(child: Divider(color: context.accent, height: 1)),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Text(
-              '$count new $noun',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: context.accent,
-              ),
-            ),
-          ),
-          Expanded(child: Divider(color: context.accent, height: 1)),
-        ],
-      ),
-    );
   }
 
   String _fullMonthName(int m) {
@@ -1633,100 +1543,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   // Build helpers
   // ---------------------------------------------------------------------------
 
-  Widget _buildNoConversationPlaceholder() {
-    final gradient = context.chatBgGradient;
-    return DecoratedBox(
-      decoration: gradient != null
-          ? BoxDecoration(gradient: gradient)
-          : BoxDecoration(color: context.chatBg),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.forum_rounded,
-              size: 56,
-              color: context.textMuted.withValues(alpha: 0.4),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'No conversation selected',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Choose a conversation from the sidebar or start a new one',
-              style: TextStyle(color: context.textMuted, fontSize: 14),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyMessagePlaceholder(String displayName) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: context.accent,
-            child: Text(
-              displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
-              style: const TextStyle(fontSize: 22, color: Colors.white),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            displayName,
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Start your conversation with $displayName',
-            style: TextStyle(color: context.textMuted, fontSize: 13),
-          ),
-          const SizedBox(height: 16),
-          Semantics(
-            label: 'Say hi to $displayName',
-            button: true,
-            child: TextButton(
-              onPressed: () {
-                _chatInputBarKey.currentState?.preFillText('Hey! \u{1F44B}');
-              },
-              style: TextButton.styleFrom(
-                foregroundColor: context.accent,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  side: BorderSide(
-                    color: context.accent.withValues(alpha: 0.4),
-                  ),
-                ),
-              ),
-              child: const Text(
-                'Say hi \u{1F44B}',
-                style: TextStyle(fontSize: 14),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildMessageAtIndex({
     required int i,
     required Conversation conv,
@@ -1740,7 +1556,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     final msg = messages[i];
 
     if (_isSystemTimelineMessage(msg)) {
-      return _buildSystemTimelineMessage(msg);
+      return SystemTimelineMessage(msg: msg);
     }
 
     final needsDateDivider =
@@ -1765,8 +1581,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (needsDateDivider) _buildDateDivider(msg.timestamp),
-        if (showUnreadDivider) _buildUnreadDivider(_unreadBoundaryCount),
+        if (needsDateDivider) DateDivider(timestamp: msg.timestamp),
+        if (showUnreadDivider) UnreadDivider(count: _unreadBoundaryCount),
         AnimatedContainer(
           key: messageKey,
           duration: const Duration(milliseconds: 400),
@@ -1922,7 +1738,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     } else if (messages.isEmpty && !isLoadingHistory) {
       child = KeyedSubtree(
         key: const ValueKey('empty'),
-        child: _buildEmptyMessagePlaceholder(displayName),
+        child: EmptyMessagePlaceholder(
+          displayName: displayName,
+          onSayHi: () {
+            _chatInputBarKey.currentState?.preFillText('Hey! \u{1F44B}');
+          },
+        ),
       );
     } else {
       child = KeyedSubtree(
@@ -2080,134 +1901,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     }
   }
 
-  /// Overlay shown when dragging a file over the chat panel.
-  Widget _buildDropOverlay() {
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: AnimatedOpacity(
-          opacity: _isDragOver ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 150),
-          child: Container(
-            color: Colors.black.withValues(alpha: 0.45),
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 20,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.75),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.4),
-                    width: 2,
-                  ),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.upload_file_outlined,
-                      size: 40,
-                      color: Colors.white.withValues(alpha: 0.9),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Drop file to send',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.95),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Floating date pill shown at the top while scrolling.
-  Widget _buildFloatingDatePill() {
-    return Positioned(
-      top: 8,
-      left: 0,
-      right: 0,
-      child: Center(
-        child: AnimatedOpacity(
-          opacity: _floatingDateVisible ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 200),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: context.surface.withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.border),
-            ),
-            child: Text(
-              _floatingDate ?? '',
-              style: TextStyle(fontSize: 11, color: context.textMuted),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Floating pill shown when new messages arrive below the scroll viewport.
-  Widget _buildNewMessagesPill() {
-    return Positioned(
-      bottom: 12,
-      right: 24,
-      child: Align(
-        alignment: Alignment.centerRight,
-        child: Semantics(
-          label: 'scroll to new messages',
-          button: true,
-          child: GestureDetector(
-            onTap: () => _scrollToBottom(settleRetries: 2),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: context.accent,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.25),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _newMessagesBannerText(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(
-                    Icons.arrow_downward,
-                    size: 14,
-                    color: Colors.white,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   /// Resolve messages for the current conversation and channel.
   /// Filters out messages the user has deleted locally ("delete for me").
   List<ChatMessage> _resolveMessages(
@@ -2238,7 +1931,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   Widget build(BuildContext context) {
     final conv = widget.conversation;
 
-    if (conv == null) return _buildNoConversationPlaceholder();
+    if (conv == null) return const NoConversationPlaceholder();
 
     // Load on first build + scroll to newest message (or unread boundary)
     if (_loadedHistoryKey == null) {
@@ -2409,8 +2102,16 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                         mediaTicket: mediaTicket,
                         channelId: selectedChannelId,
                       ),
-                      if (_floatingDate != null) _buildFloatingDatePill(),
-                      if (_hasNewMessagesBelow) _buildNewMessagesPill(),
+                      if (_floatingDate != null)
+                        FloatingDatePill(
+                          visible: _floatingDateVisible,
+                          date: _floatingDate,
+                        ),
+                      if (_hasNewMessagesBelow)
+                        NewMessagesPill(
+                          text: _newMessagesBannerText(),
+                          onTap: () => _scrollToBottom(settleRetries: 2),
+                        ),
                       // Live region moved to the outer Stack so its index
                       // in the tree is stable across pill toggles (#630).
                     ],
@@ -2450,7 +2151,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               child: _chatInputBarKey.currentState!.buildMediaPickerPanel(),
             ),
           // Drag-and-drop overlay
-          if (_isDragOver) _buildDropOverlay(),
+          if (_isDragOver) DropOverlay(isDragOver: _isDragOver),
         ],
       ),
     );
