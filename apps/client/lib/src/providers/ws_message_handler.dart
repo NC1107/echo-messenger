@@ -1,3 +1,5 @@
+library;
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -22,6 +24,12 @@ import 'chat_provider.dart';
 import 'conversations_provider.dart';
 import 'crypto_provider.dart';
 import 'server_url_provider.dart';
+
+part 'ws_handlers/message_handlers.dart';
+part 'ws_handlers/typing_reaction_handlers.dart';
+part 'ws_handlers/presence_handlers.dart';
+part 'ws_handlers/voice_handlers.dart';
+part 'ws_handlers/crypto_handlers.dart';
 
 /// State that tracks both connection status and typing indicators.
 class WebSocketState {
@@ -114,6 +122,9 @@ class WebSocketState {
 /// Extracted from [WebSocketNotifier] to keep the coordinator focused on
 /// connection lifecycle and message sending, while this mixin owns the
 /// event dispatch and business logic for each incoming server message type.
+///
+/// The handler implementations are split across feature-grouped part files
+/// in `ws_handlers/` (message, typing/reaction, presence, voice, crypto).
 mixin WsMessageHandler on StateNotifier<WebSocketState> {
   Ref get ref;
   StreamController<Map<String, dynamic>> get voiceSignalController;
@@ -126,6 +137,17 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
   /// Messages received before crypto was initialized.
   /// Drained by [drainPendingDecryptQueue] once crypto is ready.
   final List<Map<String, dynamic>> _pendingDecryptQueue = [];
+
+  /// Library-private state accessors used by the part-file extensions.
+  ///
+  /// `StateNotifier.state` is `@protected`, so accessing it from an
+  /// extension (even one defined in the same library) trips the analyzer's
+  /// `invalid_use_of_protected_member` lint. Reading/writing through these
+  /// instance members keeps the access within a subclass scope where the
+  /// lint is satisfied, while the underscore prefix keeps them private to
+  /// this library.
+  WebSocketState get _state => state;
+  set _state(WebSocketState value) => state = value;
 
   /// Clear all online-user state on disconnect so reconnect snapshot starts clean.
   ///
@@ -246,98 +268,6 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     }
   }
 
-  void _handleVoiceSignal(Map<String, dynamic> json) {
-    voiceSignalController.add(json);
-  }
-
-  void _handleKeyReset(Map<String, dynamic> json) {
-    final fromUserId = json['from_user_id'] as String? ?? '';
-    final fromUsername = json['from_username'] as String? ?? 'Someone';
-    final conversationId = json['conversation_id'] as String? ?? '';
-
-    // Invalidate the local session so the next message re-establishes X3DH.
-    // Also drop any cached prekey bundles so the next outgoing message
-    // re-fetches against the freshly-rotated keys (#662).
-    final crypto = ref.read(cryptoServiceProvider);
-    crypto.invalidateSessionKey(fromUserId);
-    if (fromUserId.isNotEmpty) {
-      crypto.invalidateBundleCache(fromUserId);
-    }
-
-    ref
-        .read(chatProvider.notifier)
-        .addSystemEvent(
-          conversationId,
-          '$fromUsername reset their encryption keys',
-        );
-  }
-
-  /// Server emits `identity_reset` after a /api/keys/reset or
-  /// /api/keys/reset_device. Drop the bundle cache for the affected user so
-  /// the next encrypt-for-peer round fetches the new identity keys (#664).
-  void _handleIdentityReset(Map<String, dynamic> json) {
-    final fromUserId =
-        json['user_id'] as String? ?? json['from_user_id'] as String? ?? '';
-    if (fromUserId.isEmpty) return;
-    ref.read(cryptoServiceProvider).invalidateBundleCache(fromUserId);
-  }
-
-  void _handleCallStarted(Map<String, dynamic> json) {
-    final fromUsername = json['from_username'] as String? ?? 'Someone';
-    final conversationId = json['conversation_id'] as String? ?? '';
-
-    ref
-        .read(chatProvider.notifier)
-        .addSystemEvent(conversationId, '$fromUsername started a voice call');
-
-    // Show notification
-    final myUserId = ref.read(authProvider).userId ?? '';
-    final conversations = ref.read(conversationsProvider).conversations;
-    final conv = conversations.where((c) => c.id == conversationId).firstOrNull;
-    NotificationService().showMessageNotification(
-      senderUsername: fromUsername,
-      body: 'Started a voice call',
-      conversationId: conversationId,
-      conversationName: conv?.displayName(myUserId),
-      isMuted: conv?.isMuted ?? false,
-    );
-  }
-
-  void _handleSessionReplaced(Map<String, dynamic> json) {
-    final reason = json['reason'] as String? ?? 'Signed in on another device';
-    DebugLogService.instance.log(
-      LogLevel.warning,
-      'WebSocket',
-      'Session replaced by another connection: $reason',
-    );
-    state = state.copyWith(wasReplaced: true, isConnected: false);
-  }
-
-  void _handleDeviceRevoked(Map<String, dynamic> json) {
-    // Use `num?` + toInt() so dart2js (web) doesn't blow up when the JSON
-    // number is decoded as a double rather than an int.
-    final revokedDeviceId = (json['device_id'] as num?)?.toInt();
-    final myDeviceId = ref.read(cryptoServiceProvider).isInitialized
-        ? ref.read(cryptoServiceProvider).deviceId
-        : null;
-
-    // Always broadcast so interested UIs (Devices settings) can refresh.
-    deviceRevokedController.add(json);
-
-    if (revokedDeviceId != null &&
-        myDeviceId != null &&
-        revokedDeviceId == myDeviceId) {
-      // This device was revoked -- force logout.
-      DebugLogService.instance.log(
-        LogLevel.warning,
-        'WebSocket',
-        'Current device ($revokedDeviceId) was revoked; logging out.',
-      );
-      state = state.copyWith(isConnected: false);
-      ref.read(authProvider.notifier).logout();
-    }
-  }
-
   void _refreshChannelsFromEvent(Map<String, dynamic> json) {
     final groupId = json['group_id'] as String?;
     if (groupId == null || groupId.isEmpty) return;
@@ -353,174 +283,10 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     notifier.loadVoiceSessions(groupId, channelId);
   }
 
-  void _handleMessageSent(Map<String, dynamic> json) {
-    final messageId = json['message_id'] as String;
-    final conversationId = json['conversation_id'] as String;
-    final channelId = json['channel_id'] as String?;
-    final timestamp = json['timestamp'] as String;
-    final expiresAtRaw = json['expires_at'];
-    final expiresAt = expiresAtRaw is String
-        ? DateTime.tryParse(expiresAtRaw)
-        : null;
-    ref
-        .read(chatProvider.notifier)
-        .confirmSent(
-          messageId,
-          conversationId,
-          timestamp,
-          channelId: channelId,
-          expiresAt: expiresAt,
-        );
-    // Update status to sent
-    ref
-        .read(chatProvider.notifier)
-        .updateMessageStatus(conversationId, messageId, MessageStatus.sent);
-
-    // Update conversation list preview so the sender sees their own message
-    // reflected immediately (e.g. attachment markers, text). Without this the
-    // conversation preview stays stale until the next server fetch.
-    final confirmed = ref
-        .read(chatProvider)
-        .messagesForConversation(conversationId)
-        .where((m) => m.id == messageId)
-        .firstOrNull;
-    if (confirmed != null) {
-      ref
-          .read(conversationsProvider.notifier)
-          .onNewMessage(
-            conversationId: conversationId,
-            content: confirmed.content,
-            timestamp: timestamp,
-            senderUsername: confirmed.fromUsername,
-            incrementUnread: false,
-          );
-    }
-  }
-
-  /// Sentinel prefix used by system messages (#663).
-  static const _systemPrefix = '__system__:';
-
-  /// Parse a `__system__:member_joined:<uuid>:<username>` sentinel and emit
-  /// an in-chat system event pill. No preview update, no unread increment.
-  void _handleSystemSentinel(String sentinel, String conversationId) {
-    if (conversationId.isEmpty) return;
-    const joinedTag = '__system__:member_joined:';
-    if (sentinel.startsWith(joinedTag)) {
-      final rest = sentinel.substring(joinedTag.length);
-      final colonIdx = rest.indexOf(':');
-      final username = colonIdx >= 0 ? rest.substring(colonIdx + 1) : rest;
-      if (username.isNotEmpty) {
-        ref
-            .read(chatProvider.notifier)
-            .addSystemEvent(conversationId, '$username joined the group');
-      }
-    }
-  }
-
-  void _handleNewMessage(Map<String, dynamic> json, String myUserId) {
-    final rawContent = json['content'] as String;
-    final fromUserId = json['from_user_id'] as String;
-    final fromDeviceId = json['from_device_id'] as int?;
-    final conversationId = json['conversation_id'] as String;
-    final timestamp = json['timestamp'] as String;
-    final senderUsername = json['from_username'] as String;
-
-    // System message sentinel -- render as an in-chat event pill and skip the
-    // normal decrypt/preview pipeline entirely (#663).
-    if (rawContent.startsWith(_systemPrefix)) {
-      _handleSystemSentinel(rawContent, conversationId);
-      return;
-    }
-
-    final cryptoState = ref.read(cryptoProvider);
-
-    // Check if this conversation is already known locally
-    final isKnownConversation = ref
-        .read(conversationsProvider)
-        .conversations
-        .any((c) => c.id == conversationId);
-
-    // #557: server marks replay frames `undecryptable: true` when this device
-    // has no per-device ciphertext row.  Render an explicit placeholder
-    // instead of running decrypt over a foreign-device wire (which would
-    // poison the local ratchet state and produce a generic "out of sync"
-    // banner).  Skip the Hive cache write so a future fix-up can replace it.
-    // The literal '[Encrypted for another device of this account]' string is
-    // recognised by chat_provider.dart's `_placeholderContents` (#430).
-    if (json['undecryptable'] == true) {
-      final placeholder = ChatMessage.fromServerJson({
-        ...json,
-        'content': '[Encrypted for another device of this account]',
-      }, myUserId).copyWith(isEncrypted: true);
-      ref.read(chatProvider.notifier).addMessage(placeholder);
-      ref
-          .read(conversationsProvider.notifier)
-          .onNewMessage(
-            conversationId: conversationId,
-            content: 'Encrypted message',
-            timestamp: timestamp,
-            senderUsername: senderUsername,
-          );
-      if (!isKnownConversation) {
-        ref.read(conversationsProvider.notifier).loadConversations();
-      }
-      return;
-    }
-
-    if (cryptoState.isInitialized) {
-      final crypto = ref.read(cryptoServiceProvider);
-      final token = ref.read(authProvider).token ?? '';
-      crypto.setToken(token);
-      _decryptAndDeliverWithPreview(
-        crypto,
-        json,
-        rawContent,
-        fromUserId,
-        myUserId,
-        conversationId,
-        timestamp,
-        senderUsername,
-        fromDeviceId: fromDeviceId,
-      );
-    } else {
-      // Crypto not ready yet — show a placeholder and queue for decryption.
-      // The literal 'Securing message...' string is recognised by
-      // chat_provider.dart's `_placeholderContents` so the decrypted
-      // version replaces it in place when the queue drains (#430).
-      final placeholder = ChatMessage.fromServerJson({
-        ...json,
-        'content': 'Securing message...',
-      }, myUserId).copyWith(isEncrypted: true);
-      ref.read(chatProvider.notifier).addMessage(placeholder);
-
-      // Queue the raw JSON so it can be decrypted once crypto initializes
-      _pendingDecryptQueue.add(json);
-
-      ref
-          .read(conversationsProvider.notifier)
-          .onNewMessage(
-            conversationId: conversationId,
-            content: 'Encrypted message',
-            timestamp: timestamp,
-            senderUsername: senderUsername,
-          );
-    }
-
-    // Only do a full HTTP reload if this is a new conversation we don't have
-    // locally. For existing conversations, onNewMessage() already updates state.
-    if (!isKnownConversation) {
-      ref.read(conversationsProvider.notifier).loadConversations();
-    }
-
-    // When crypto is NOT initialized, notify with raw content (it's plaintext
-    // in that case).  When crypto IS initialized, the notification fires AFTER
-    // decryption inside _decryptAndDeliverWithPreview so users never see
-    // encrypted ciphertext in their notifications.
-    if (!cryptoState.isInitialized && fromUserId != myUserId) {
-      _notifyIfAllowed(conversationId, senderUsername, rawContent);
-    }
-  }
-
+  /// Shared decrypt-and-deliver pipeline used by both [_handleNewMessage]
+  /// (in `message_handlers.dart`) and [drainPendingDecryptQueue]. Lives in
+  /// the shell because it crosses both the live-message and queue-drain
+  /// code paths.
   Future<void> _decryptAndDeliverWithPreview(
     CryptoService crypto,
     Map<String, dynamic> json,
@@ -625,45 +391,8 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
     }
   }
 
-  /// Handle a `self_message` event: an outgoing message sent from another
-  /// device of the current user. Repackage as a new_message from self and
-  /// reuse the standard decrypt-and-deliver pipeline.
-  void _handleSelfMessage(Map<String, dynamic> json, String myUserId) {
-    final rawContent = json['content'] as String? ?? '';
-    final fromDeviceId = json['from_device_id'] as int?;
-    final conversationId = json['conversation_id'] as String? ?? '';
-    final timestamp = json['timestamp'] as String? ?? '';
-
-    if (rawContent.isEmpty) return;
-
-    // Repackage as a new_message so _decryptAndDeliverWithPreview handles it.
-    final syntheticJson = <String, dynamic>{
-      ...json,
-      'from_user_id': myUserId,
-      'from_username': 'Me',
-    };
-
-    final cryptoState = ref.read(cryptoProvider);
-    if (!cryptoState.isInitialized) return;
-
-    final crypto = ref.read(cryptoServiceProvider);
-    final token = ref.read(authProvider).token ?? '';
-    crypto.setToken(token);
-
-    _decryptAndDeliverWithPreview(
-      crypto,
-      syntheticJson,
-      rawContent,
-      myUserId,
-      myUserId,
-      conversationId,
-      timestamp,
-      'Me',
-      fromDeviceId: fromDeviceId,
-    );
-  }
-
   /// Show a notification + play sound if the conversation is not muted.
+  /// Shared between the live and queued decrypt paths.
   void _notifyIfAllowed(
     String conversationId,
     String senderUsername,
@@ -687,299 +416,6 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       isGroup: conv?.isGroup ?? false,
       isMuted: isMuted,
     );
-  }
-
-  void _handleTyping(Map<String, dynamic> json, String myUserId) {
-    final conversationId = json['conversation_id'] as String;
-    final channelId = json['channel_id'] as String?;
-    final fromUserId =
-        (json['from_user_id'] as String?) ?? (json['user_id'] as String?) ?? '';
-    final fromUsername = json['from_username'] as String? ?? 'Someone';
-
-    // Don't show own typing indicator
-    if (fromUserId == myUserId) return;
-
-    final typingKey = '$conversationId:${channelId ?? ''}';
-    final updatedTyping = Map<String, Map<String, DateTime>>.from(
-      state.typingUsers,
-    );
-    final conversationTyping = Map<String, DateTime>.from(
-      updatedTyping[typingKey] ?? {},
-    );
-    conversationTyping[fromUsername] = DateTime.now();
-    updatedTyping[typingKey] = conversationTyping;
-
-    state = state.copyWith(typingUsers: updatedTyping);
-  }
-
-  void _handleReaction(Map<String, dynamic> json) {
-    final conversationId = json['conversation_id'] as String;
-    final reaction = Reaction.fromJson(json);
-    ref.read(chatProvider.notifier).addReaction(conversationId, reaction);
-  }
-
-  void _handleRemoveReaction(Map<String, dynamic> json) {
-    final conversationId = json['conversation_id'] as String;
-    final messageId = json['message_id'] as String;
-    final userId = json['user_id'] as String;
-    final emoji = json['emoji'] as String;
-    ref
-        .read(chatProvider.notifier)
-        .removeReaction(conversationId, messageId, userId, emoji);
-  }
-
-  void _handleDelivered(Map<String, dynamic> json) {
-    final conversationId = json['conversation_id'] as String;
-    final messageId = json['message_id'] as String;
-    ref
-        .read(chatProvider.notifier)
-        .updateMessageStatus(
-          conversationId,
-          messageId,
-          MessageStatus.delivered,
-        );
-  }
-
-  void _handleReadReceipt(Map<String, dynamic> json) {
-    final conversationId = json['conversation_id'] as String;
-    ref.read(chatProvider.notifier).markConversationRead(conversationId);
-  }
-
-  void _handleMessageDeleted(Map<String, dynamic> json) {
-    final conversationId = json['conversation_id'] as String;
-    final messageId = json['message_id'] as String;
-    ref.read(chatProvider.notifier).deleteMessage(conversationId, messageId);
-  }
-
-  void _handleMessageExpired(Map<String, dynamic> json) {
-    final conversationId = json['conversation_id'] as String;
-    final messageId = json['message_id'] as String;
-    ref.read(chatProvider.notifier).deleteMessage(conversationId, messageId);
-  }
-
-  void _handleMessageEdited(Map<String, dynamic> json) {
-    final conversationId = json['conversation_id'] as String;
-    final messageId = json['message_id'] as String;
-    final newContent = json['content'] as String;
-    final editedAt = json['edited_at'] as String?;
-    ref
-        .read(chatProvider.notifier)
-        .editMessage(conversationId, messageId, newContent, editedAt: editedAt);
-    // Update conversation list preview in case this was the last message.
-    ref
-        .read(conversationsProvider.notifier)
-        .onMessageEdited(
-          conversationId: conversationId,
-          newContent: newContent,
-        );
-  }
-
-  void _handleMessagePinned(Map<String, dynamic> json) {
-    final conversationId = json['conversation_id'] as String;
-    final messageId = json['message_id'] as String;
-    final pinnedById = json['pinned_by_id'] as String?;
-    final pinnedAtRaw = json['pinned_at'] as String?;
-    final pinnedAt = pinnedAtRaw != null
-        ? DateTime.tryParse(pinnedAtRaw)
-        : DateTime.now();
-    ref
-        .read(chatProvider.notifier)
-        .updateMessagePin(conversationId, messageId, pinnedById, pinnedAt);
-  }
-
-  void _handleMessageUnpinned(Map<String, dynamic> json) {
-    final conversationId = json['conversation_id'] as String;
-    final messageId = json['message_id'] as String;
-    ref
-        .read(chatProvider.notifier)
-        .updateMessagePin(conversationId, messageId, null, null);
-  }
-
-  void _handleMention(Map<String, dynamic> json, String myUserId) {
-    final fromUsername = json['from_username'] as String? ?? 'Someone';
-    final conversationId = json['conversation_id'] as String? ?? '';
-    final content = json['content'] as String? ?? '';
-
-    // Only show notification if someone else mentions us
-    final fromUserId = json['from_user_id'] as String? ?? '';
-    if (fromUserId == myUserId) return;
-
-    final conversations = ref.read(conversationsProvider).conversations;
-    final conv = conversations.where((c) => c.id == conversationId).firstOrNull;
-    final isMuted = conv?.isMuted ?? false;
-    if (!isMuted) {
-      SoundService().playMessageReceived();
-    }
-    NotificationService().showMessageNotification(
-      senderUsername: '@$fromUsername',
-      body: content.length > 100 ? '${content.substring(0, 100)}...' : content,
-      conversationId: conversationId,
-      conversationName: conv?.displayName(myUserId),
-      isGroup: true, // Mentions are always in group contexts
-      isMuted: isMuted,
-    );
-
-    // Bump unread count for the conversation
-    if (conversationId.isNotEmpty) {
-      ref
-          .read(conversationsProvider.notifier)
-          .onNewMessage(
-            conversationId: conversationId,
-            content: content,
-            timestamp: DateTime.now().toIso8601String(),
-            senderUsername: fromUsername,
-          );
-    }
-  }
-
-  /// Handle group key rotation event -- invalidate cached key so the next
-  /// encrypt/decrypt fetches the fresh version from the server.
-  void _handleGroupKeyRotated(Map<String, dynamic> json) {
-    final conversationId = json['conversation_id'] as String? ?? '';
-    if (conversationId.isEmpty) return;
-
-    final groupCrypto = ref.read(groupCryptoServiceProvider);
-    final token = ref.read(authProvider).token ?? '';
-    groupCrypto.setToken(token);
-    groupCrypto.invalidateCache(conversationId);
-
-    // Pre-fetch the new key so subsequent messages decrypt immediately.
-    groupCrypto.fetchGroupKey(conversationId);
-  }
-
-  /// #656 — server signaled that a member was removed and we (or any other
-  /// remaining member) should regenerate the group AES key for the new
-  /// version. We race other clients; the server enforces single-writer via a
-  /// UNIQUE constraint, so a 409 just means we lost the race.
-  void _handleGroupKeyRotationRequested(Map<String, dynamic> json) {
-    final conversationId = json['conversation_id'] as String? ?? '';
-    final keyVersion = (json['key_version'] as num?)?.toInt();
-    if (conversationId.isEmpty || keyVersion == null) return;
-
-    final auth = ref.read(authProvider);
-    final token = auth.token;
-    if (token == null) return;
-
-    final serverUrl = ref.read(serverUrlProvider);
-    final groupCrypto = ref.read(groupCryptoServiceProvider);
-    final crypto = ref.read(cryptoServiceProvider);
-    groupCrypto.setToken(token);
-
-    unawaited(
-      groupCrypto.performRotation(
-        conversationId,
-        keyVersion,
-        fetchMembers: () async {
-          try {
-            final resp = await http.get(
-              Uri.parse('$serverUrl/api/groups/$conversationId'),
-              headers: {'Authorization': 'Bearer $token'},
-            );
-            if (resp.statusCode != 200) return [];
-            final body = jsonDecode(resp.body) as Map<String, dynamic>;
-            final members = body['members'] as List<dynamic>? ?? [];
-            return members
-                .whereType<Map<String, dynamic>>()
-                .map((m) => {'user_id': m['user_id'] as String? ?? ''})
-                .toList();
-          } catch (e) {
-            DebugLogService.instance.log(
-              LogLevel.warning,
-              'GroupRotation',
-              'Failed to load members for $conversationId: $e',
-            );
-            return [];
-          }
-        },
-        fetchIdentityKey: (userId) => crypto.fetchPeerIdentityKey(userId),
-      ),
-    );
-  }
-
-  void _handlePresence(Map<String, dynamic> json) {
-    final userId = json['user_id'] as String? ?? '';
-    final status = json['status'] as String? ?? '';
-    // presence_status is the raw stored value (may differ from status when
-    // broadcast_status is "offline" due to invisible setting).
-    final presenceStatus = json['presence_status'] as String? ?? status;
-    if (userId.isEmpty) return;
-
-    final updatedOnline = Set<String>.from(state.onlineUsers);
-    final updatedStatuses = Map<String, String>.from(state.presenceStatuses);
-    final updatedLastSeen = Map<String, DateTime>.from(state.lastSeenAt);
-
-    if (status == 'offline') {
-      updatedOnline.remove(userId);
-      updatedStatuses.remove(userId);
-      // Stamp last_seen_at so the chat header can render "last seen <ago>"
-      // for this peer (#503). Server provides RFC3339; fall back to now if
-      // the field is absent (older server).
-      final raw = json['last_seen_at'] as String?;
-      final ts = raw != null ? DateTime.tryParse(raw) : null;
-      updatedLastSeen[userId] = ts ?? DateTime.now().toUtc();
-    } else {
-      updatedOnline.add(userId);
-      updatedStatuses[userId] = presenceStatus;
-      // Don't clear lastSeenAt — preserve the previous value so a brief
-      // online flash doesn't lose the historical timestamp on next offline.
-    }
-    state = state.copyWith(
-      onlineUsers: updatedOnline,
-      presenceStatuses: updatedStatuses,
-      lastSeenAt: updatedLastSeen,
-    );
-  }
-
-  /// Replace the local online-set from a server-sent `presence_list` snapshot.
-  ///
-  /// The server emits this event right after a WS connect so the client can
-  /// reconcile stale presence state in one shot (#436).
-  ///
-  /// Supports two payload shapes:
-  ///   • object list: `[{"user_id":"…","status":"…"}, …]`  (new format, post-#436)
-  ///   • string list: `["uuid1", "uuid2", …]`              (legacy, treat all as "online")
-  void _handlePresenceList(Map<String, dynamic> json) {
-    final rawUsers = json['users'] as List? ?? [];
-    final newOnline = <String>{};
-    final newStatuses = <String, String>{};
-
-    for (final entry in rawUsers) {
-      if (entry is String) {
-        // Legacy format: plain ID list.
-        newOnline.add(entry);
-        newStatuses[entry] = 'online';
-      } else if (entry is Map<String, dynamic>) {
-        final userId = entry['user_id'] as String? ?? '';
-        final status = entry['status'] as String? ?? 'online';
-        if (userId.isEmpty) continue;
-        newOnline.add(userId);
-        newStatuses[userId] = status;
-      }
-    }
-
-    state = state.copyWith(
-      onlineUsers: newOnline,
-      presenceStatuses: newStatuses,
-    );
-  }
-
-  /// #660 — Insert the newly-joined member into the local conversations state
-  /// so the members panel refreshes in real time without a manual reload.
-  void _handleMemberAdded(Map<String, dynamic> json) {
-    final conversationId = json['conversation_id'] as String? ?? '';
-    final userId = json['user_id'] as String? ?? '';
-    final username = json['username'] as String? ?? '';
-    if (conversationId.isEmpty || userId.isEmpty || username.isEmpty) return;
-
-    final member = ConversationMember(
-      userId: userId,
-      username: username,
-      role: json['role'] as String? ?? 'member',
-      avatarUrl: json['avatar_url'] as String?,
-    );
-    ref
-        .read(conversationsProvider.notifier)
-        .addGroupMember(conversationId, member);
   }
 
   void _handleCanvasEvent(Map<String, dynamic> json) {
