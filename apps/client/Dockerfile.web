@@ -20,3 +20,8 @@ RUN chown -R nginx:nginx \
 
 USER nginx
 EXPOSE 80
+
+# Hit the silent /healthz path (nginx.conf disables access logging for it)
+# so the healthcheck doesn't spam the access log every interval.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD wget -q --spider http://localhost/healthz || exit 1
