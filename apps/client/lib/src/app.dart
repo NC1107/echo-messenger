@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers/accessibility_provider.dart';
@@ -85,6 +86,14 @@ class EchoApp extends ConsumerWidget {
       title: 'Echo',
       locale: locale,
       supportedLocales: supportedFlutterLocales,
+      // When app-specific delegates (e.g. AppLocalizations.delegate from
+      // gen_l10n) are added later, they MUST come BEFORE the Global* entries
+      // so user-supplied strings can override Flutter defaults.
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: lightTheme,
       darkTheme: darkTheme,
       themeMode: themeMode,
