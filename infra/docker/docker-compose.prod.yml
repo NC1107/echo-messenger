@@ -10,6 +10,11 @@ services:
       SERVER_PORT: 8080
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      # Optional: explicit LiveKit signaling URL returned to clients on
+      # `POST /api/voice/token`.  When set, clients use this instead of
+      # deriving `wss://livekit.<server-host>`.  Set to your livekit
+      # subdomain or a managed LiveKit Cloud endpoint (#721).
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
       APNS_KEY_ID: ${APNS_KEY_ID}
       APNS_TEAM_ID: ${APNS_TEAM_ID}
       APNS_AUTH_KEY_BASE64: ${APNS_AUTH_KEY_BASE64}
@@ -73,6 +78,11 @@ services:
     # pointing at this host *and* the client's LiveKit URL configured to
     # `wss://livekit.echo-messenger.us`.  Until both are in place, voice/video
     # connectivity will fail.  Reverting to public 7880 must not be done.
+    #
+    # Set `LIVEKIT_URL=wss://livekit.echo-messenger.us` in `.env` so the
+    # echo-server returns it on `POST /api/voice/token` and the client uses
+    # the configured URL instead of deriving `wss://livekit.<host>`.  Override
+    # to a managed LiveKit Cloud endpoint if self-hosting becomes a chore (#721).
     ports:
       - "127.0.0.1:7880:7880"
       - "7881:7881"
