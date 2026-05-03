@@ -16,6 +16,7 @@ import '../providers/websocket_provider.dart';
 import '../screens/safety_number_screen.dart';
 import '../screens/user_profile_screen.dart';
 import '../providers/livekit_voice_provider.dart';
+import '../services/message_cache.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
@@ -1043,14 +1044,27 @@ class _PinnedMessagesDialogState extends ConsumerState<_PinnedMessagesDialog> {
         final list = decoded is List
             ? decoded
             : (decoded['messages'] as List? ?? []);
-        final messages = list
-            .map(
-              (e) => ChatMessage.fromServerJson(
-                e as Map<String, dynamic>,
-                widget.myUserId,
-              ),
-            )
-            .toList();
+        // The /pinned endpoint returns the raw stored content, which is
+        // ciphertext for encrypted DMs.  Re-hydrate from the per-conversation
+        // message cache (which stores the decrypted view) so users see the
+        // plaintext they expect.  Falls back to the server payload if the
+        // message isn't in the cache (e.g. pinned before this device joined
+        // the conversation) -- in that case the user still sees something is
+        // pinned, just as ciphertext, which matches the prior behavior (#724).
+        final messages = <ChatMessage>[];
+        for (final e in list) {
+          final raw = ChatMessage.fromServerJson(
+            e as Map<String, dynamic>,
+            widget.myUserId,
+          );
+          final cached = await MessageCache.getCachedMessage(
+            widget.conversationId,
+            raw.id,
+            widget.myUserId,
+          );
+          messages.add(cached ?? raw);
+        }
+        if (!mounted) return;
         setState(() {
           _pinnedMessages = messages;
           _isLoading = false;

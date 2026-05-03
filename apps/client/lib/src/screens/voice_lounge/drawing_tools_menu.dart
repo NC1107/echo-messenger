@@ -330,12 +330,13 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
 
   void _addImageByUrl(String url) {
     if (!mounted) return;
-    final token = ref.read(authProvider).token;
-    final headers = <String, String>{};
-    if (token != null) {
-      headers['Authorization'] = 'Bearer $token';
-    }
-    _canvas?.addImageFromUrl(url, headers: headers);
+    // Broadcast via canvasProvider so every participant (including this
+    // one, via VoiceCanvas's ref.watch on canvas state) renders the image.
+    // Previously also called _canvas?.addImageFromUrl(...) which placed a
+    // SECOND copy at canvas-center inside LoungeDrawingCanvas's local
+    // _images list -- that copy never broadcast and never moved when the
+    // shared one was dragged, producing the "stuck twin" the user
+    // reported in #752.
     final img = CanvasImage(
       id: newCanvasId(),
       url: url,
