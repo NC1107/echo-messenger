@@ -15,11 +15,9 @@ import '../../providers/server_url_provider.dart';
 import '../../services/upload_client.dart';
 import '../../theme/echo_theme.dart';
 import '../../utils/canvas_utils.dart';
-import '../../widgets/lounge_drawing_canvas.dart' hide CanvasImage;
 
 /// Popup content for the drawing tools menu.
 class DrawingToolsMenu extends ConsumerStatefulWidget {
-  final GlobalKey<LoungeDrawingCanvasState> drawingCanvasKey;
   final VoidCallback onToggleDrawing;
   final bool isDrawing;
   final String conversationId;
@@ -27,7 +25,6 @@ class DrawingToolsMenu extends ConsumerStatefulWidget {
 
   const DrawingToolsMenu({
     super.key,
-    required this.drawingCanvasKey,
     required this.onToggleDrawing,
     required this.isDrawing,
     required this.conversationId,
@@ -39,7 +36,11 @@ class DrawingToolsMenu extends ConsumerStatefulWidget {
 }
 
 class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
-  DrawingTool _selectedTool = DrawingTool.pen;
+  // The menu mirrors a slice of `canvasProvider` state for its own
+  // selected-chip highlighting.  The provider is the source of truth for
+  // actual drawing values; these locals just cache the latest selection
+  // so the chips render synchronously without an extra ref.watch.
+  CanvasTool _selectedTool = CanvasTool.pen;
   Color _selectedColor = Colors.white;
   double _selectedSize = 4.0;
 
@@ -59,17 +60,16 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
 
   static const _penSizes = [2.0, 4.0, 6.0, 10.0, 16.0];
 
-  LoungeDrawingCanvasState? get _canvas => widget.drawingCanvasKey.currentState;
-
   @override
   void initState() {
     super.initState();
-    final canvas = _canvas;
-    if (canvas != null) {
-      _selectedTool = canvas.tool;
-      _selectedColor = canvas.penColor;
-      _selectedSize = canvas.penSize;
-    }
+    // Hydrate from the provider so the menu opens with the current selection.
+    final canvas = ref.read(canvasProvider);
+    _selectedTool = canvas.selectedTool == CanvasTool.eraser
+        ? CanvasTool.eraser
+        : CanvasTool.pen;
+    _selectedColor = canvas.currentColor;
+    _selectedSize = canvas.strokeWidth;
   }
 
   @override
@@ -85,18 +85,18 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
             child: Row(
               children: [
-                _toolChip(context, Icons.edit, 'Draw', DrawingTool.pen),
+                _toolChip(context, Icons.edit, 'Draw', CanvasTool.pen),
                 const SizedBox(width: 8),
                 _toolChip(
                   context,
                   Icons.auto_fix_high,
                   'Erase',
-                  DrawingTool.eraser,
+                  CanvasTool.eraser,
                 ),
               ],
             ),
           ),
-          if (_selectedTool == DrawingTool.pen) ...[
+          if (_selectedTool == CanvasTool.pen) ...[
             const Divider(height: 1),
             // Color picker
             Padding(
@@ -121,7 +121,6 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
                     onTap: () {
                       HapticFeedback.selectionClick();
                       setState(() => _selectedColor = c);
-                      _canvas?.setPenColor(c);
                       ref.read(canvasProvider.notifier).setColor(c);
                     },
                     child: SizedBox(
@@ -182,7 +181,6 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
                       onTap: () {
                         HapticFeedback.selectionClick();
                         setState(() => _selectedSize = s);
-                        _canvas?.setPenSize(s);
                         ref.read(canvasProvider.notifier).setStrokeWidth(s);
                       },
                       child: AnimatedContainer(
@@ -247,7 +245,6 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
                   child: TextButton.icon(
                     onPressed: () {
                       HapticFeedback.mediumImpact();
-                      _canvas?.clearMyDrawings();
                       ref.read(canvasProvider.notifier).clearDrawing();
                       widget.onRequestClose?.call();
                     },
@@ -285,8 +282,16 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
       if (bytes == null) return;
 
       if (conversationId.isEmpty) {
-        // No conversation — display locally only.
-        _canvas?.addImageFromBytes(bytes);
+        // No conversation — image add requires a conversation context for
+        // the upload + broadcast.  Show a snackbar instead of a local-only
+        // preview that wouldn't sync to anyone.
+        if (ctx.mounted) {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            const SnackBar(
+              content: Text('Open a conversation before adding images'),
+            ),
+          );
+        }
         return;
       }
 
@@ -308,12 +313,13 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
         final absUrl = relUrl.startsWith('http') ? relUrl : '$serverUrl$relUrl';
         _addImageByUrl(absUrl);
       } else {
-        // Upload failed — display locally via bytes only.
-        _canvas?.addImageFromBytes(bytes);
+        // Upload failed — surface the error so the user can retry.  We no
+        // longer fall back to a local-only preview because that copy never
+        // synced to other participants and led to a confusing experience.
         if (ctx.mounted) {
           ScaffoldMessenger.of(ctx).showSnackBar(
             const SnackBar(
-              content: Text('Image upload failed; shown locally only'),
+              content: Text('Image upload failed; please try again'),
             ),
           );
         }
@@ -366,7 +372,7 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
     BuildContext context,
     IconData icon,
     String label,
-    DrawingTool tool,
+    CanvasTool tool,
   ) {
     final isSelected = _selectedTool == tool;
     return Expanded(
@@ -374,12 +380,7 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
         onTap: () {
           HapticFeedback.selectionClick();
           setState(() => _selectedTool = tool);
-          _canvas?.setTool(tool);
-          ref
-              .read(canvasProvider.notifier)
-              .setTool(
-                tool == DrawingTool.eraser ? CanvasTool.eraser : CanvasTool.pen,
-              );
+          ref.read(canvasProvider.notifier).setTool(tool);
         },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
