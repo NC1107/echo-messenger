@@ -12,7 +12,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
-import '../widgets/lounge_drawing_canvas.dart' hide CanvasImage;
+import '../widgets/lounge_drawing_canvas.dart';
 import '../widgets/vertex_mesh_background.dart';
 import '../widgets/voice_canvas.dart';
 import 'voice_lounge/dock_submenus.dart';
@@ -42,9 +42,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
 
   /// Whether the drawing canvas overlay is active.
   bool _isDrawing = false;
-
-  /// Global key for the drawing canvas to access its state.
-  final _drawingCanvasKey = GlobalKey<LoungeDrawingCanvasState>();
 
   /// Anchors for dock submenu panels.
   final LayerLink _drawingToolsLayerLink = LayerLink();
@@ -432,7 +429,6 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       case DockSubmenu.draw:
         link = _drawingToolsLayerLink;
         content = DrawingToolsMenu(
-          drawingCanvasKey: _drawingCanvasKey,
           onToggleDrawing: () => setState(() => _isDrawing = !_isDrawing),
           isDrawing: _isDrawing,
           conversationId: conversationId,
@@ -528,10 +524,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
       },
     );
 
-    final drawingOverlay = LoungeDrawingCanvas(
-      key: _drawingCanvasKey,
-      isActive: _isDrawing,
-    );
+    final drawingOverlay = LoungeDrawingCanvas(isActive: _isDrawing);
 
     return OrientationBuilder(
       builder: (context, orientation) {
