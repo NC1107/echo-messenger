@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show File;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -43,13 +44,28 @@ class ExportService {
         .substring(0, 19);
     final fileName = 'echo_chat_export_$ts.json';
 
-    return FilePicker.saveFile(
+    // On web, file_picker writes the bytes itself (browser download).
+    // On native (desktop, Android, iOS), saveFile() only returns the
+    // user-chosen path -- the caller must write the file (#740).
+    if (kIsWeb) {
+      return FilePicker.saveFile(
+        dialogTitle: 'Save chat export',
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        bytes: Uint8List.fromList(bytes),
+      );
+    }
+
+    final path = await FilePicker.saveFile(
       dialogTitle: 'Save chat export',
       fileName: fileName,
       type: FileType.custom,
       allowedExtensions: ['json'],
-      bytes: kIsWeb ? Uint8List.fromList(bytes) : null,
     );
+    if (path == null) return null; // user cancelled
+    await File(path).writeAsBytes(bytes, flush: true);
+    return path;
   }
 
   /// Build the export map without touching the filesystem.
