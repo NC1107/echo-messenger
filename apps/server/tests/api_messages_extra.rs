@@ -1264,4 +1264,63 @@ mod history_device_aware_557 {
             "non-member must not access conversation history (got {status})"
         );
     }
+
+    #[tokio::test]
+    async fn set_disappearing_ttl_bounds() {
+        let base = common::spawn_server().await;
+        let client = Client::new();
+        let (alice_token, _, alice_name) =
+            common::register_and_login(&client, &base, "ttl_alice").await;
+        let (bob_token, bob_id, bob_name) =
+            common::register_and_login(&client, &base, "ttl_bob").await;
+        let conv_id =
+            common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name)
+                .await;
+        let _ = alice_name;
+
+        let put = |ttl: serde_json::Value| {
+            let client = client.clone();
+            let alice_token = alice_token.clone();
+            let base = base.clone();
+            let conv_id = conv_id.clone();
+            async move {
+                client
+                    .put(format!("{base}/api/conversations/{conv_id}/disappearing"))
+                    .header("Authorization", format!("Bearer {alice_token}"))
+                    .json(&serde_json::json!({ "ttl_seconds": ttl }))
+                    .send()
+                    .await
+                    .unwrap()
+                    .status()
+                    .as_u16()
+            }
+        };
+
+        assert_eq!(
+            put(serde_json::json!(-1)).await,
+            400,
+            "negative TTL must 400"
+        );
+        assert_eq!(put(serde_json::json!(0)).await, 400, "zero TTL must 400");
+        assert_eq!(
+            put(serde_json::json!(4)).await,
+            400,
+            "TTL below 5 s must 400"
+        );
+        assert_eq!(
+            put(serde_json::json!(2_592_001)).await,
+            400,
+            "TTL above 30 days must 400"
+        );
+        assert_eq!(
+            put(serde_json::json!(300)).await,
+            200,
+            "valid TTL (5 min) must 200"
+        );
+        assert_eq!(
+            put(serde_json::Value::Null).await,
+            200,
+            "null (disable) must 200"
+        );
+    }
 }

@@ -716,6 +716,17 @@ pub async fn set_disappearing_ttl(
         }
     }
 
+    // 5 seconds minimum, 30 days maximum.
+    const TTL_MIN: i32 = 5;
+    const TTL_MAX: i32 = 30 * 24 * 3600; // 2_592_000
+    if let Some(ttl) = body.ttl_seconds
+        && !(TTL_MIN..=TTL_MAX).contains(&ttl)
+    {
+        return Err(AppError::bad_request(format!(
+            "ttl_seconds must be between {TTL_MIN} and {TTL_MAX}"
+        )));
+    }
+
     sqlx::query("UPDATE conversations SET disappearing_ttl_seconds = $1 WHERE id = $2")
         .bind(body.ttl_seconds)
         .bind(conversation_id)

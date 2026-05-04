@@ -38,8 +38,7 @@ concurrency:
 jobs:
   # -------------------------------------------------------------------------
   # Smoke — fast-fail gate on every push.
-  # Runs local_full.spec.ts (full feature surface).  continue-on-error is
-  # kept until #673 (CanvasKit selector brittleness) fully settles.
+  # Runs local_full.spec.ts (full feature surface).
   # -------------------------------------------------------------------------
   smoke:
     name: Smoke
@@ -142,9 +141,8 @@ jobs:
 
       - name: Run smoke tests
         # Smoke lane: local_full.spec.ts exercises the full feature surface
-        # in a single end-to-end flow.  continue-on-error until #673 settles.
+        # in a single end-to-end flow.
         # `--retries=1` absorbs single-flake noise without masking real failures.
-        continue-on-error: true
         working-directory: tests/e2e
         run: npx playwright test --project=smoke --retries=1
         env:
@@ -165,7 +163,6 @@ jobs:
   # 9 specs: semantics_e2e, group_create_ui, group_messaging_ui,
   # hover_then_type, crypto_dm_test, comprehensive, echo_e2e,
   # qa_comprehensive, ws_check.
-  # continue-on-error until #673 (CanvasKit selector brittleness) settles.
   # -------------------------------------------------------------------------
   maintained:
     name: Maintained Suite
@@ -246,9 +243,8 @@ jobs:
       - name: Run maintained E2E suite
         # 9 specs: semantics_e2e, group_create_ui, group_messaging_ui,
         # hover_then_type, crypto_dm_test, comprehensive, echo_e2e,
-        # qa_comprehensive, ws_check.  continue-on-error until #673 settles.
-        # `--retries=2` reduces noise once the gate flips on.
-        continue-on-error: true
+        # qa_comprehensive, ws_check.
+        # `--retries=2` absorbs single-flake noise.
         working-directory: tests/e2e
         run: npx playwright test --project=maintained --retries=2
         env:
@@ -266,8 +262,8 @@ jobs:
 
   # -------------------------------------------------------------------------
   # Summary gate -- require "E2E Tests / Summary" in branch protection.
-  # Gates on the smoke lane strictly; maintained is advisory (continue-on-error)
-  # until #673 (CanvasKit selector brittleness) is resolved.
+  # Both lanes are strict. Smoke failure blocks the gate; maintained failure
+  # also fails the gate (retries=2 absorbs flakes).
   # -------------------------------------------------------------------------
   summary:
     name: Summary
@@ -275,15 +271,17 @@ jobs:
     needs: [smoke, maintained]
     if: always()
     steps:
-      - name: E2E smoke gate passed
+      - name: E2E gate
         run: |
           smoke_result="${{ needs.smoke.result }}"
           maintained_result="${{ needs.maintained.result }}"
           echo "smoke=${smoke_result} maintained=${maintained_result}"
-          # smoke is continue-on-error so job result is always 'success';
-          # fail only if the job itself was skipped or cancelled.
-          if [ "$smoke_result" = "cancelled" ] || [ "$smoke_result" = "skipped" ]; then
+          if [ "$smoke_result" != "success" ]; then
             echo "::error::Smoke job was ${smoke_result} -- gate failed"
             exit 1
           fi
-          echo "E2E smoke gate passed (maintained is advisory until #673)."
+          if [ "$maintained_result" != "success" ]; then
+            echo "::error::Maintained suite was ${maintained_result} -- gate failed"
+            exit 1
+          fi
+          echo "E2E gate passed."
