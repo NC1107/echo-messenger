@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'screen_share_provider.g.dart';
 
 /// State for screen sharing capture and local preview.
 class ScreenShareState {
@@ -22,9 +24,15 @@ class ScreenShareState {
   static const empty = ScreenShareState();
 }
 
-class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
+@Riverpod(keepAlive: true)
+class ScreenShare extends _$ScreenShare {
   MediaStream? _screenStream;
   RTCVideoRenderer? _screenRenderer;
+
+  /// True after the provider is disposed; gates state writes from
+  /// async callbacks (the StateNotifier `mounted` check has no
+  /// equivalent on Notifier so we track it manually).
+  bool _disposed = false;
 
   /// Expose the screen share stream for peer connection integration.
   MediaStream? get screenStream => _screenStream;
@@ -32,7 +40,15 @@ class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
   /// Expose the renderer so the UI can display a local preview.
   RTCVideoRenderer? get screenRenderer => _screenRenderer;
 
-  ScreenShareNotifier() : super(ScreenShareState.empty);
+  @override
+  ScreenShareState build() {
+    ref.onDispose(() {
+      _disposed = true;
+      // Fire-and-forget cleanup when the provider is torn down.
+      unawaited(stopScreenShare());
+    });
+    return ScreenShareState.empty;
+  }
 
   /// Begin capturing the user's screen via `getDisplayMedia`.
   ///
@@ -48,38 +64,25 @@ class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
         'audio': false,
       });
 
-      // Initialize the renderer for local preview.
-      final renderer = RTCVideoRenderer();
-      await renderer.initialize();
-      renderer.srcObject = stream;
-
       _screenStream = stream;
-      _screenRenderer = renderer;
+      _screenRenderer = RTCVideoRenderer();
+      await _screenRenderer!.initialize();
+      _screenRenderer!.srcObject = stream;
+
+      // Auto-stop on user-cancellation via browser native UI.
+      stream.getVideoTracks().firstOrNull?.onEnded = () {
+        debugPrint('[ScreenShare] track ended (user cancelled)');
+        unawaited(stopScreenShare());
+      };
 
       state = state.copyWith(isScreenSharing: true, error: null);
-
-      // Listen for the user stopping the share via the browser/OS UI
-      // (e.g. clicking "Stop sharing" in Chrome's native bar).
-      final videoTracks = stream.getVideoTracks();
-      if (videoTracks.isNotEmpty) {
-        videoTracks.first.onEnded = () {
-          stopScreenShare();
-        };
-      }
     } catch (e) {
-      // getDisplayMedia can throw for many reasons:
-      // - User cancelled the picker dialog
-      // - Platform does not support screen capture
-      // - HTTPS required but not available
-      final message = _friendlyError(e);
-      state = state.copyWith(isScreenSharing: false, error: message);
       debugPrint('[ScreenShare] getDisplayMedia failed: $e');
+      state = state.copyWith(isScreenSharing: false, error: _friendlyError(e));
     }
   }
 
-  /// Stop screen sharing and release all resources.
-  ///
-  /// Safe to call even if no screen share is active — silently no-ops.
+  /// Stop the active capture, dispose the renderer, and clear state.
   Future<void> stopScreenShare() async {
     final stream = _screenStream;
     final renderer = _screenRenderer;
@@ -87,30 +90,27 @@ class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
     _screenStream = null;
     _screenRenderer = null;
 
-    if (stream != null) {
-      try {
-        for (final track in stream.getTracks()) {
-          track.stop();
-        }
-        await stream.dispose();
-      } catch (e) {
-        // Platform may throw "No active stream to cancel" if the capture
-        // was already released (e.g. getDisplayMedia failed on Linux).
-        debugPrint('[ScreenShare] Error disposing stream: $e');
-      }
-    }
-
     if (renderer != null) {
       try {
         renderer.srcObject = null;
         await renderer.dispose();
       } catch (e) {
-        // Renderer may already be disposed.
-        debugPrint('[ScreenShare] Error disposing renderer: $e');
+        debugPrint('[ScreenShare] renderer dispose failed: $e');
       }
     }
 
-    if (mounted) {
+    if (stream != null) {
+      try {
+        for (final track in stream.getTracks()) {
+          await track.stop();
+        }
+        await stream.dispose();
+      } catch (e) {
+        debugPrint('[ScreenShare] stream dispose failed: $e');
+      }
+    }
+
+    if (!_disposed) {
       state = state.copyWith(isScreenSharing: false, error: null);
     }
   }
@@ -120,13 +120,13 @@ class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
   /// Used when LiveKit SDK manages the capture internally via
   /// [LocalParticipant.setScreenShareEnabled].
   void setLiveKitScreenShareActive(bool active) {
-    if (mounted) {
+    if (!_disposed) {
       state = state.copyWith(isScreenSharing: active, error: null);
     }
   }
 
-  /// Map common exceptions to user-readable messages.
-  static String _friendlyError(Object error) {
+  /// Translate platform errors into actionable user-facing strings.
+  String _friendlyError(Object error) {
     final msg = error.toString().toLowerCase();
     if (msg.contains('notallowederror') || msg.contains('permission')) {
       return 'Screen sharing was cancelled or denied.';
@@ -147,16 +147,4 @@ class ScreenShareNotifier extends StateNotifier<ScreenShareState> {
     }
     return 'Could not start screen sharing: $error';
   }
-
-  @override
-  void dispose() {
-    // Fire-and-forget cleanup; the notifier is being torn down.
-    unawaited(stopScreenShare());
-    super.dispose();
-  }
 }
-
-final screenShareProvider =
-    StateNotifierProvider<ScreenShareNotifier, ScreenShareState>(
-      (ref) => ScreenShareNotifier(),
-    );
