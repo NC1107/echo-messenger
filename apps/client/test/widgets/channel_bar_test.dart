@@ -98,15 +98,16 @@ class _FakeVoiceRtcNotifier extends LiveKitVoiceNotifier {
   }
 }
 
-class _FakeVoiceSettingsNotifier extends VoiceSettingsNotifier {
-  _FakeVoiceSettingsNotifier();
+class _FakeVoiceSettings extends VoiceSettings {
+  @override
+  VoiceSettingsState build() => const VoiceSettingsState();
 }
 
 /// Fake that has confirmBeforeJoinVoice = true so confirmation-dialog tests work.
-class _FakeVoiceSettingsNotifierConfirm extends VoiceSettingsNotifier {
-  _FakeVoiceSettingsNotifierConfirm() {
-    state = state.copyWith(confirmBeforeJoinVoice: true);
-  }
+class _FakeVoiceSettingsConfirm extends VoiceSettings {
+  @override
+  VoiceSettingsState build() =>
+      const VoiceSettingsState(confirmBeforeJoinVoice: true);
 }
 
 void main() {
@@ -132,9 +133,7 @@ void main() {
             fakeVoiceRtc = _FakeVoiceRtcNotifier(ref);
             return fakeVoiceRtc;
           }),
-          voiceSettingsProvider.overrideWith(
-            (ref) => _FakeVoiceSettingsNotifierConfirm(),
-          ),
+          voiceSettingsProvider.overrideWith(_FakeVoiceSettingsConfirm.new),
         ],
       );
       await tester.pumpAndSettle();
@@ -176,9 +175,7 @@ void main() {
             fakeVoiceRtc = _FakeVoiceRtcNotifier(ref);
             return fakeVoiceRtc;
           }),
-          voiceSettingsProvider.overrideWith(
-            (ref) => _FakeVoiceSettingsNotifierConfirm(),
-          ),
+          voiceSettingsProvider.overrideWith(_FakeVoiceSettingsConfirm.new),
         ],
       );
       await tester.pumpAndSettle();
@@ -222,9 +219,7 @@ void main() {
             fakeVoiceRtc = _FakeVoiceRtcNotifier(ref);
             return fakeVoiceRtc;
           }),
-          voiceSettingsProvider.overrideWith(
-            (ref) => _FakeVoiceSettingsNotifier(),
-          ),
+          voiceSettingsProvider.overrideWith(_FakeVoiceSettings.new),
         ],
       );
       await tester.pumpAndSettle();

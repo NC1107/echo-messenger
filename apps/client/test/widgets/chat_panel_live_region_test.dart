@@ -59,10 +59,9 @@ class _FakePrivacy extends Privacy {
   PrivacyState build() => const PrivacyState();
 }
 
-class _FakeVoiceSettingsNotifier extends VoiceSettingsNotifier {
-  _FakeVoiceSettingsNotifier() {
-    state = const VoiceSettingsState();
-  }
+class _FakeVoiceSettings extends VoiceSettings {
+  @override
+  VoiceSettingsState build() => const VoiceSettingsState();
 }
 
 class _FakeVoiceRtcNotifier extends LiveKitVoiceNotifier {
@@ -132,7 +131,7 @@ List<Override> _overrides({
     }),
     channelsProvider.overrideWith((ref) => _FakeChannelsNotifier(ref)),
     privacyProvider.overrideWith(_FakePrivacy.new),
-    voiceSettingsProvider.overrideWith((ref) => _FakeVoiceSettingsNotifier()),
+    voiceSettingsProvider.overrideWith(_FakeVoiceSettings.new),
     voiceRtcProvider.overrideWith((ref) => _FakeVoiceRtcNotifier(ref)),
     appThemeProvider.overrideWith(_FakeTheme.new),
     messageLayoutNotifierProvider.overrideWith(_FakeMessageLayoutNotifier.new),
