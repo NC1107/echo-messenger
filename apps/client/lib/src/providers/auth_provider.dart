@@ -742,10 +742,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await authenticatedRequest(
         (token) => http.patch(
           Uri.parse('$_serverUrl/api/users/me/status'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
+          headers: {..._kJsonHeaders, 'Authorization': 'Bearer $token'},
           body: jsonEncode({'status': status}),
         ),
       );
@@ -778,7 +775,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
             .post(
               Uri.parse('$origin/api/auth/logout'),
               headers: {
-                'Content-Type': 'application/json',
+                ..._kJsonHeaders,
                 if (accessToken != null && accessToken.isNotEmpty)
                   'Authorization': 'Bearer $accessToken',
               },
