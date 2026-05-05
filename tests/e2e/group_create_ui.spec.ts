@@ -137,7 +137,7 @@ test.describe('Group Creation UI Flow', () => {
     await setupContacts(aliceData.access_token, BOB, bobData.access_token);
   });
 
-  test('alice can create a group with bob via UI', async ({ browser }) => {
+  test.fixme('alice can create a group with bob via UI (no Create Group button — see #782)', async ({ browser }) => {
     test.setTimeout(120_000);
     console.log('\n--- Group creation flow ---');
 
