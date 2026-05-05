@@ -6,7 +6,7 @@ part of 'screen_share_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$screenShareHash() => r'2aba7f83789a88d37543ddddf5a55ee439a448f9';
+String _$screenShareHash() => r'968b6b2ef7a0556d69533b5d8bd421d3e046edd6';
 
 /// See also [ScreenShare].
 @ProviderFor(ScreenShare)
