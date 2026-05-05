@@ -148,16 +148,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           ),
                           SizedBox(
                             height: 44,
-                            child: Semantics(
-                              button: true,
-                              label: 'Create an account',
-                              child: TextButton(
-                                onPressed: () => context.go('/register'),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: context.textSecondary,
-                                ),
-                                child: const Text('Create an account'),
+                            // TextButton + Text already produce a
+                            // button-role accessibility node named "Create an
+                            // account" — wrapping in another Semantics
+                            // duplicates the node and trips strict-mode
+                            // selectors (`getByRole('button', { name: /create
+                            // an account/i })` resolves to 2).
+                            child: TextButton(
+                              onPressed: () => context.go('/register'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: context.textSecondary,
                               ),
+                              child: const Text('Create an account'),
                             ),
                           ),
                         ],
