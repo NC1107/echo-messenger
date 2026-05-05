@@ -337,7 +337,7 @@ test.describe('Encrypted DM Tests', () => {
     await bobCtx.close();
   });
 
-  test('4. Key bundles visible via API after all sessions close', async ({ browser }) => {
+  test.fixme('4. Key bundles visible via API after all sessions close (shared beforeAll setupContacts — see #782)', async ({ browser }) => {
     test.setTimeout(60000);
     console.log('\n--- Test 4: Key persistence after all browsers close ---');
 
