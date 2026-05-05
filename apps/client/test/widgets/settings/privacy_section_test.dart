@@ -8,16 +8,16 @@ import 'package:echo_app/src/theme/echo_theme.dart';
 
 import '../../helpers/mock_providers.dart';
 
-Override privacyOverride([PrivacyState state = const PrivacyState()]) {
-  return privacyProvider.overrideWith(
-    (ref) => _FakePrivacyNotifier(ref, state),
-  );
+Override privacyOverride([PrivacyState initial = const PrivacyState()]) {
+  return privacyProvider.overrideWith(() => _FakePrivacy(initial));
 }
 
-class _FakePrivacyNotifier extends PrivacyNotifier {
-  _FakePrivacyNotifier(super.ref, PrivacyState initial) {
-    state = initial;
-  }
+class _FakePrivacy extends Privacy {
+  _FakePrivacy(this._initial);
+  final PrivacyState _initial;
+
+  @override
+  PrivacyState build() => _initial;
 
   @override
   Future<void> load() async {}

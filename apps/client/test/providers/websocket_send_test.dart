@@ -92,6 +92,14 @@ class _SpyCryptoNotifier extends CryptoNotifier {
 // ---------------------------------------------------------------------------
 
 /// GroupCryptoService double whose `getGroupKey` is configurable per test.
+class _SeededPrivacy extends Privacy {
+  _SeededPrivacy(this._initial);
+  final PrivacyState _initial;
+
+  @override
+  PrivacyState build() => _initial;
+}
+
 class _TestGroupCryptoService extends GroupCryptoService {
   _TestGroupCryptoService() : super(serverUrl: 'http://localhost:8080');
 
@@ -164,11 +172,11 @@ ProviderContainer _createContainer({
           final n = _SpyCryptoNotifier(ref, initial: cryptoState);
           return n;
         }),
-      privacyProvider.overrideWith((ref) {
-        final n = PrivacyNotifier(ref);
-        n.state = PrivacyState(readReceiptsEnabled: readReceiptsEnabled);
-        return n;
-      }),
+      privacyProvider.overrideWith(
+        () => _SeededPrivacy(
+          PrivacyState(readReceiptsEnabled: readReceiptsEnabled),
+        ),
+      ),
     ],
   );
   // Seed conversations directly into the StateNotifier's state -- the public

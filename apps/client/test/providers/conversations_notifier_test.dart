@@ -26,11 +26,7 @@ ConversationsNotifier _createNotifier({List<Conversation> initial = const []}) {
         n.state = 'http://localhost:8080';
         return n;
       }),
-      privacyProvider.overrideWith((ref) {
-        final n = PrivacyNotifier(ref);
-        n.state = const PrivacyState();
-        return n;
-      }),
+      privacyProvider.overrideWith(Privacy.new),
     ],
   );
   final notifier = container.read(conversationsProvider.notifier);

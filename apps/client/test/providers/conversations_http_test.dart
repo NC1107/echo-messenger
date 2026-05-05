@@ -47,11 +47,7 @@ void main() {
           n.state = 'http://localhost:8080';
           return n;
         }),
-        privacyProvider.overrideWith((ref) {
-          final n = PrivacyNotifier(ref);
-          n.state = const PrivacyState();
-          return n;
-        }),
+        privacyProvider.overrideWith(Privacy.new),
       ],
     );
   });
