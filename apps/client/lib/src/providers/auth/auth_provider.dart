@@ -79,7 +79,8 @@ class AuthState {
 
 /// Authentication state notifier.
 ///
-/// File layout (god-module split per RIVERPOD_MIGRATION.md):
+/// File layout (god-module split — see #770 / #785 for the broader
+/// refactor backlog):
 /// - This file: facade — state class, notifier shell, public lifecycle
 ///   methods (`register` / `login` / `logout` / `setPresenceStatus`),
 ///   shared private fields the parts read from.
