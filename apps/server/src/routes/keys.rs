@@ -176,7 +176,7 @@ pub async fn upload_bundle(
         .map_err(|_| AppError::bad_request("Invalid base64 for signing_key"))?;
     verify_signed_prekey_signature(&signing_key_bytes, &signed_prekey, &signed_prekey_signature)?;
 
-    // --- Identity binding check (per-device, #664) ---
+    // --- Identity binding check (per-device) ---
     // On first upload for this (user, device) the identity+signing key
     // fingerprint is recorded on the identity_keys row. Subsequent uploads
     // for the same device MUST match or the request is rejected with 409
@@ -186,9 +186,9 @@ pub async fn upload_bundle(
     // (full account).
     //
     // Legacy fallback: if the per-device fingerprint hasn't been bound yet
-    // (e.g. a pre-#664 device 0 row that was created before the migration
-    // backfill), fall back to the legacy per-user fingerprint so existing
-    // single-device users stay enforced during the rollout.
+    // (e.g. a device 0 row created before the migration backfill), fall back
+    // to the legacy per-user fingerprint so existing single-device users
+    // stay enforced during the rollout.
     let new_fingerprint = identity_fingerprint(&identity_key, &signing_key_bytes);
     let device_fp =
         db::keys::get_device_fingerprint(&state.pool, auth_user.user_id, device_id).await?;
@@ -600,7 +600,7 @@ pub struct ResetDeviceRequest {
 }
 
 /// POST /api/keys/reset_device -- Reset the keys for a single device of the
-/// authenticated user (#664). Clears the per-device fingerprint binding and
+/// authenticated user. Clears the per-device fingerprint binding and
 /// drops the identity_keys row + signed prekeys + OTPs so the client can
 /// re-upload a fresh bundle without colliding with siblings.
 ///

@@ -1286,7 +1286,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 child: Semantics(
                   selected: isActive,
                   button: true,
-                  label: tab.label,
+                  // "Chats tab", "Discover tab", etc. The trailing word matches
+                  // the e2e a11y selectors (`getByRole('button', { name: /chats
+                  // tab/i })`) and reads naturally to screen readers.
+                  label: '${tab.label} tab',
                   child: InkWell(
                     onTap: () {
                       if (i == _mobileTabIndex) return;

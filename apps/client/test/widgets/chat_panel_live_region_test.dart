@@ -54,16 +54,14 @@ class _FakeChannelsNotifier extends ChannelsNotifier {
   Future<void> loadChannels(String conversationId) async {}
 }
 
-class _FakePrivacyNotifier extends PrivacyNotifier {
-  _FakePrivacyNotifier(super.ref) {
-    state = const PrivacyState();
-  }
+class _FakePrivacy extends Privacy {
+  @override
+  PrivacyState build() => const PrivacyState();
 }
 
-class _FakeVoiceSettingsNotifier extends VoiceSettingsNotifier {
-  _FakeVoiceSettingsNotifier() {
-    state = const VoiceSettingsState();
-  }
+class _FakeVoiceSettings extends VoiceSettings {
+  @override
+  VoiceSettingsState build() => const VoiceSettingsState();
 }
 
 class _FakeVoiceRtcNotifier extends LiveKitVoiceNotifier {
@@ -132,8 +130,8 @@ List<Override> _overrides({
       return n;
     }),
     channelsProvider.overrideWith((ref) => _FakeChannelsNotifier(ref)),
-    privacyProvider.overrideWith((ref) => _FakePrivacyNotifier(ref)),
-    voiceSettingsProvider.overrideWith((ref) => _FakeVoiceSettingsNotifier()),
+    privacyProvider.overrideWith(_FakePrivacy.new),
+    voiceSettingsProvider.overrideWith(_FakeVoiceSettings.new),
     voiceRtcProvider.overrideWith((ref) => _FakeVoiceRtcNotifier(ref)),
     appThemeProvider.overrideWith(_FakeTheme.new),
     messageLayoutNotifierProvider.overrideWith(_FakeMessageLayoutNotifier.new),

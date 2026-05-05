@@ -732,7 +732,7 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
     }
   }
 
-  Future<void> _capturePushToTalkKey(VoiceSettingsNotifier notifier) async {
+  Future<void> _capturePushToTalkKey(VoiceSettings notifier) async {
     final result = await showDialog<Map<String, String>>(
       context: context,
       builder: (dialogContext) {

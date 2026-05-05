@@ -153,13 +153,12 @@ class _FakeConversationsNotifier extends ConversationsNotifier {
 
 /// Override [contactsProvider] with an empty state.
 Override contactsOverride() {
-  return contactsProvider.overrideWith((ref) => _FakeContactsNotifier(ref));
+  return contactsProvider.overrideWith(_FakeContacts.new);
 }
 
-class _FakeContactsNotifier extends ContactsNotifier {
-  _FakeContactsNotifier(super.ref) {
-    state = const ContactsState();
-  }
+class _FakeContacts extends Contacts {
+  @override
+  ContactsState build() => const ContactsState();
 
   @override
   Future<void> loadContacts() async {}

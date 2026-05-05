@@ -20,14 +20,16 @@ class _FakeChatNotifier extends ChatNotifier {
   }
 }
 
-Override updateOverride([UpdateState state = const UpdateState()]) {
-  return updateProvider.overrideWith((ref) => _FakeUpdateNotifier(state));
+Override updateOverride([UpdateState initial = const UpdateState()]) {
+  return updateProvider.overrideWith(() => _FakeUpdate(initial));
 }
 
-class _FakeUpdateNotifier extends UpdateNotifier {
-  _FakeUpdateNotifier(UpdateState initial) {
-    state = initial;
-  }
+class _FakeUpdate extends Update {
+  _FakeUpdate(this._initial);
+  final UpdateState _initial;
+
+  @override
+  UpdateState build() => _initial;
 
   @override
   Future<void> check({bool force = false}) async {}

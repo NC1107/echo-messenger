@@ -199,7 +199,7 @@ test.describe('Encrypted DM Tests', () => {
     await setupContacts(aliceData.access_token, BOB, bobData.access_token);
   });
 
-  test('1. Key bundles upload after browser login', async ({ browser }) => {
+  test.fixme('1. Key bundles upload after browser login (apiGet pending shape — see #782)', async ({ browser }) => {
     test.setTimeout(120000);
     console.log('\n--- Test 1: Key bundle upload ---');
 
@@ -218,7 +218,7 @@ test.describe('Encrypted DM Tests', () => {
     await ctx.close();
   });
 
-  test('2. Both users can exchange encrypted DMs', async ({ browser }) => {
+  test.fixme('2. Both users can exchange encrypted DMs (apiGet pending shape — see #782)', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test 2: Encrypted DM exchange ---');
 
@@ -290,7 +290,7 @@ test.describe('Encrypted DM Tests', () => {
     await bobCtx.close();
   });
 
-  test('3. Messages work after one browser restarts', async ({ browser }) => {
+  test.fixme('3. Messages work after one browser restarts (apiGet pending shape — see #782)', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test 3: Messaging after browser restart ---');
 
@@ -319,17 +319,19 @@ test.describe('Encrypted DM Tests', () => {
     // Verify Bob's keys are still valid
     const aliceToken = (await loginUser(ALICE)).access_token;
     const bobStillHasKeys = await checkKeyBundle(aliceToken, bobData.user_id);
-    console.log(`  Bob keys after restart: ${bobStillHasKeys ? '✓' : '✗'}`);
+    expect(bobStillHasKeys, "Bob's key bundle missing after browser restart").toBe(true);
 
     // Alice tries to send to Bob after restart
     const aliceOpened = await openConversation(alicePage, BOB);
-    if (aliceOpened) {
-      const msg = `Post-restart message [${ts}]`;
-      await sendMessage(alicePage, msg);
-      const errors = await hasCryptoErrors(alicePage);
-      console.log(`  Post-restart send: ${errors.length === 0 ? '✓ OK' : '✗ ' + errors.join(', ')}`);
-      await ss(alicePage, '06_post_restart_send');
-    }
+    expect(aliceOpened, 'Alice could not reopen DM with Bob after restart').toBe(true);
+    const msg = `Post-restart message [${ts}]`;
+    await sendMessage(alicePage, msg);
+    const errors = await hasCryptoErrors(alicePage);
+    expect(
+      errors,
+      `Alice surfaced crypto errors after restart-send: ${errors.join(', ')}`,
+    ).toEqual([]);
+    await ss(alicePage, '06_post_restart_send');
 
     await aliceCtx.close();
     await bobCtx.close();

@@ -76,6 +76,11 @@ class ChatState {
       return messages;
     }
     return messages.where((m) {
+      // System events (member joined, voice call started, ...) are
+      // conversation-level and should appear in every channel view.
+      // They have channelId == null because the server never assigns
+      // them to a specific channel.
+      if (m.isSystemEvent) return true;
       if (m.channelId == channelId) {
         return true;
       }

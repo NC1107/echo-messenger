@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 
 import 'debug_log_service.dart';
 
+const _kJsonHeaders = {'Content-Type': 'application/json'};
+
 /// Registers the iOS APNs device token with the Echo server so offline
 /// users receive silent push notifications that wake the app.
 ///
@@ -77,7 +79,7 @@ class PushTokenService {
           .delete(
             Uri.parse('$origin/api/push/token'),
             headers: {
-              'Content-Type': 'application/json',
+              ..._kJsonHeaders,
               if (token.isNotEmpty) 'Authorization': 'Bearer $token',
             },
           )
@@ -101,10 +103,7 @@ class PushTokenService {
     try {
       await http.post(
         Uri.parse('$_serverUrl/api/push/unregister'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_authToken',
-        },
+        headers: {..._kJsonHeaders, 'Authorization': 'Bearer $_authToken'},
         body: jsonEncode({'token': token}),
       );
       DebugLogService.instance.log(
@@ -124,10 +123,7 @@ class PushTokenService {
     try {
       final response = await http.post(
         Uri.parse('$_serverUrl/api/push/register'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $_authToken',
-        },
+        headers: {..._kJsonHeaders, 'Authorization': 'Bearer $_authToken'},
         body: jsonEncode({'token': token, 'platform': 'apns'}),
       );
       if (response.statusCode == 200) {

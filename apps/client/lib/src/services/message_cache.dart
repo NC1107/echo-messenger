@@ -31,6 +31,10 @@ class MessageCache {
   static CompactionStrategy get _compactionStrategy =>
       (entries, deletedEntries) => deletedEntries > 50;
 
+  /// Pattern for sanitizing identifiers (user/server/conversation) into
+  /// filesystem-safe Hive box names: any non-`[A-Za-z0-9_]` char becomes `_`.
+  static final RegExp _sanitizePattern = RegExp(r'[^\w]');
+
   /// Strings that represent decryption failures. These must never be cached
   /// because doing so permanently replaces the real ciphertext and blocks
   /// future decrypt retries. Also used by [ConversationsNotifier] to reject
@@ -53,7 +57,7 @@ class MessageCache {
   /// Closes previously-open per-conv boxes and drops the legacy single-box
   /// (echo_messages_scope) -- the cache is regenerable from the server.
   static Future<void> initForUser(String userId, String serverHost) async {
-    final sanitized = '${userId}_$serverHost'.replaceAll(RegExp(r'[^\w]'), '_');
+    final sanitized = '${userId}_$serverHost'.replaceAll(_sanitizePattern, '_');
     final newPrefix = 'echo_msg_$sanitized';
 
     if (_userPrefix == newPrefix) return; // already active
@@ -206,7 +210,7 @@ class MessageCache {
   /// Delete all on-disk Hive boxes for a (user, server) pair. Used by the
   /// 'Forget server' flow in settings. Idempotent: missing boxes are a no-op.
   static Future<void> dropForServer(String userId, String serverHost) async {
-    final sanitized = '${userId}_$serverHost'.replaceAll(RegExp(r'[^\w]'), '_');
+    final sanitized = '${userId}_$serverHost'.replaceAll(_sanitizePattern, '_');
     final prefix = 'echo_msg_$sanitized';
     if (_userPrefix == prefix) {
       final toClose = _convBoxes.keys.toList();
@@ -243,7 +247,7 @@ class MessageCache {
       _boxNameFor(_userPrefix ?? 'echo_msg_default', conversationId);
 
   static String _boxNameFor(String prefix, String conversationId) {
-    final safeConv = conversationId.replaceAll(RegExp(r'[^\w]'), '_');
+    final safeConv = conversationId.replaceAll(_sanitizePattern, '_');
     return '${prefix}_c_$safeConv';
   }
 

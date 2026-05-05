@@ -17,7 +17,7 @@ use crate::error::{AppError, DbErrCtx, ErrorCode};
 use super::AppState;
 
 // ---------------------------------------------------------------------------
-// Refresh token cookie helpers (#342)
+// Refresh token cookie helpers
 //
 // The web client stores the refresh token in an HttpOnly + Secure +
 // SameSite=Strict cookie scoped to `/api/auth`. Mobile/desktop continue to
@@ -231,7 +231,7 @@ pub async fn login(
 // POST /api/auth/refresh
 // ---------------------------------------------------------------------------
 
-/// Atomically validate and rotate a refresh token. #520
+/// Atomically validate and rotate a refresh token.
 ///
 /// The whole flow — SELECT (with row lock), revoke-old, INSERT-new — runs in a
 /// single transaction so two concurrent requests presenting the same refresh

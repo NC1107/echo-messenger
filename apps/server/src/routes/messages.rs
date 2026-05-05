@@ -50,7 +50,7 @@ pub struct MessageQuery {
     pub before: Option<DateTime<Utc>>,
     pub limit: Option<i64>,
     pub channel_id: Option<Uuid>,
-    /// Caller's local device id (#557). When supplied, history rows are
+    /// Caller's local device id. When supplied, history rows are
     /// returned with the device-specific ciphertext joined in, so each
     /// device decrypts its own ratchet wire instead of a sibling's.
     pub device_id: Option<i32>,
@@ -416,12 +416,11 @@ pub async fn edit_message(
         return Err(AppError::bad_request("Content too long"));
     }
 
-    // #582: edits on encrypted conversations would broadcast plaintext to
-    // every member, breaking E2E confidentiality. Reject up front and
-    // surface a 409 so the client can hide / disable the edit affordance.
-    // TODO(#582 follow-up): once the per-device ciphertext fanout for edits
-    // is implemented, replace this guard with the proper edit-with-ciphertext
-    // path. Tracked separately so the beta ships with the hole closed.
+    // Edits on encrypted conversations would broadcast plaintext to every
+    // member, breaking E2E confidentiality. Reject up front and surface a 409
+    // so the client can hide / disable the edit affordance.
+    // TODO: once per-device ciphertext fanout for edits is implemented,
+    // replace this guard with the proper edit-with-ciphertext path.
     let convo_meta =
         db::messages::get_message_conversation_security(&state.pool, message_id, auth.user_id)
             .await
@@ -507,8 +506,8 @@ pub async fn get_thread_replies(
     }
 
     let limit = params.limit.unwrap_or(50).min(100);
-    // #519: scope to the parent's conversation so historical cross-conversation
-    // replies (or any future regression) cannot leak content across DMs.
+    // Scope to the parent's conversation so cross-conversation replies cannot
+    // leak content across DMs.
     let replies = db::messages::get_thread_replies(&state.pool, message_id, conversation_id, limit)
         .await
         .db_ctx("get_thread_replies/fetch")?;
@@ -714,6 +713,17 @@ pub async fn set_disappearing_ttl(
                 "Only admins can change disappearing messages settings",
             ));
         }
+    }
+
+    // 5 seconds minimum, 30 days maximum.
+    const TTL_MIN: i32 = 5;
+    const TTL_MAX: i32 = 30 * 24 * 3600; // 2_592_000
+    if let Some(ttl) = body.ttl_seconds
+        && !(TTL_MIN..=TTL_MAX).contains(&ttl)
+    {
+        return Err(AppError::bad_request(format!(
+            "ttl_seconds must be between {TTL_MIN} and {TTL_MAX}"
+        )));
     }
 
     sqlx::query("UPDATE conversations SET disappearing_ttl_seconds = $1 WHERE id = $2")

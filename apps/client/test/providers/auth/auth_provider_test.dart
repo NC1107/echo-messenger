@@ -14,9 +14,9 @@ import 'package:echo_app/src/providers/server_url_provider.dart';
 import 'package:echo_app/src/services/secure_key_store.dart';
 import 'package:echo_app/src/services/user_data_dir.dart';
 
-import '../helpers/fake_path_provider.dart';
-import '../helpers/fake_secure_key_store.dart';
-import '../helpers/mock_http_client.dart';
+import '../../helpers/fake_path_provider.dart';
+import '../../helpers/fake_secure_key_store.dart';
+import '../../helpers/mock_http_client.dart';
 
 void main() {
   group('AuthState', () {

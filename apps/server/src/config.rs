@@ -65,7 +65,7 @@ impl Config {
 /// existing self-hosted instances; set `REGISTRATION_OPEN=false` (or `0`,
 /// `no`, `off`) to lock down a server.  Used by both `GET /api/server-info`
 /// (which advertises the policy) and `POST /api/auth/register` (which
-/// enforces it -- #685).
+/// enforces it).
 pub fn registration_open() -> bool {
     parse_registration_open(std::env::var("REGISTRATION_OPEN").ok())
 }
@@ -85,7 +85,7 @@ fn parse_registration_open(raw: Option<String>) -> bool {
 /// Resolve the bind host, preferring `SERVER_HOST` and falling back to the
 /// legacy `HOST` (with a deprecation warning) so existing self-hosters using
 /// the bare `HOST=` form keep booting cleanly while new deployments adopt
-/// the namespaced env name.  Defaults to `0.0.0.0` if neither is set (#532).
+/// the namespaced env name.  Defaults to `0.0.0.0` if neither is set.
 fn resolve_host<F: Fn(&str) -> Option<String>>(get: F) -> String {
     if let Some(v) = get("SERVER_HOST") {
         return v;
@@ -100,7 +100,7 @@ fn resolve_host<F: Fn(&str) -> Option<String>>(get: F) -> String {
 /// Resolve the bind port, preferring `SERVER_PORT` and falling back to the
 /// legacy `PORT` (with a deprecation warning).  Unparseable values fall
 /// through to the default `8080` and emit a warning so a typo'd value is
-/// observable rather than silently ignored (#532).
+/// observable rather than silently ignored.
 fn resolve_port<F: Fn(&str) -> Option<String>>(get: F) -> u16 {
     fn parse_port_or_warn(name: &str, raw: &str) -> u16 {
         match raw.parse() {
@@ -172,7 +172,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // #532: SERVER_HOST/SERVER_PORT precedence + legacy HOST/PORT fallback.
+    // SERVER_HOST/SERVER_PORT precedence + legacy HOST/PORT fallback.
     // Closure-based fake env keeps these tests parallel-safe -- no
     // std::env::set_var, which would race against the other test threads.
     // -----------------------------------------------------------------
@@ -238,7 +238,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // #685: REGISTRATION_OPEN parsing rules.
+    // REGISTRATION_OPEN parsing rules.
     // -----------------------------------------------------------------
 
     #[test]

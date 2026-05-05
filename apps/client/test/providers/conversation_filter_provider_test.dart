@@ -55,11 +55,7 @@ ProviderContainer _container({
         n.state = 'http://localhost:8080';
         return n;
       }),
-      privacyProvider.overrideWith((ref) {
-        final n = PrivacyNotifier(ref);
-        n.state = const PrivacyState();
-        return n;
-      }),
+      privacyProvider.overrideWith(Privacy.new),
       conversationSearchQueryProvider.overrideWith((ref) => searchQuery),
       conversationFilterTypeProvider.overrideWith((ref) => filterType),
       pinnedConversationIdsProvider.overrideWith((ref) => pinnedIds),

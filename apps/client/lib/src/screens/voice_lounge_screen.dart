@@ -53,7 +53,9 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
   DockSubmenu? _activeSubmenu;
 
   /// When true, force the spotlight/participant grid instead of the canvas.
-  bool _spotlightMode = false;
+  /// Defaults to true so users land in the familiar grid view; the canvas
+  /// (vertex mesh + draggable pucks) is opt-in via the dock toggle.
+  bool _spotlightMode = true;
 
   String? _buildAvatarUrl() {
     final avatarPath = ref.read(authProvider).avatarUrl;

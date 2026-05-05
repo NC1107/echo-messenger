@@ -43,8 +43,7 @@ final messageLayoutNotifierProvider =
     );
 
 typedef _$MessageLayoutNotifier = Notifier<MessageLayout>;
-
-String _$customColorsHash() => r'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0';
+String _$customColorsHash() => r'8c29d77cdeb45748e1dd87e93287d132534582b8';
 
 /// See also [CustomColors].
 @ProviderFor(CustomColors)

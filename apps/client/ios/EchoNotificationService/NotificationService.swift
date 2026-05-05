@@ -21,8 +21,15 @@ class NotificationService: UNNotificationServiceExtension {
       return
     }
 
-    // Future: decrypt content here using shared Keychain group keys.
-    // For now, pass through the server-provided alert as-is.
+    // Show sender name as the notification title for encrypted messages.
+    // The server redacts the title to "New message" so lock-screen glances
+    // don't leak sender identity via APNs, but the sender_username field in
+    // the custom payload lets us restore it here before display.
+    // Future: full E2E decryption via shared Keychain session keys.
+    if let sender = request.content.userInfo["sender_username"] as? String,
+       !sender.isEmpty {
+      content.title = sender
+    }
 
     contentHandler(content)
   }

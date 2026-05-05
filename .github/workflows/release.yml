@@ -516,7 +516,7 @@ jobs:
         run: |
           mkdir -p echo-server-pkg
           cp target/release/echo-server echo-server-pkg/
-          cp -r apps/server/src/migrations echo-server-pkg/
+          cp -r apps/server/migrations echo-server-pkg/
           cp .env.example echo-server-pkg/
           cd echo-server-pkg && tar czf ${{ github.workspace }}/echo-server-linux-x64.tar.gz .
       - name: Upload server artifact

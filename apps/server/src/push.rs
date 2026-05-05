@@ -291,6 +291,7 @@ async fn send_apns_push(p: ApnsPushParams<'_>) {
         },
         "conversation_id": p.conversation_id.to_string(),
         "message_id": p.message_id.to_string(),
+        "sender_username": p.sender_username,
     });
 
     let result = config

@@ -1,5 +1,0 @@
-ALTER TABLE users
-  ADD COLUMN IF NOT EXISTS read_receipts_enabled BOOLEAN NOT NULL DEFAULT true;
-
-ALTER TABLE users
-  ADD COLUMN IF NOT EXISTS allow_unencrypted_dm BOOLEAN NOT NULL DEFAULT true;

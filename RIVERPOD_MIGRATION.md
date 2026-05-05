@@ -1,8 +1,12 @@
 # Riverpod modernization — migration playbook
 
-Status: **5 of 22 providers migrated** in this PR. The remaining 17 are
-deliberately deferred — they pair with Sprint 4 widget refactors (#512,
-#628, #693) so each consumer surface is edited only once.
+Status: **7 of 22 providers migrated**. Latest additions on `dev` (PR #768):
+
+- `update_provider` — `Update` notifier, leaf, low call-site count.
+- `privacy_provider` — `Privacy` notifier, 8 test call sites updated.
+
+The remaining 15 are deliberately deferred — they pair with Sprint 4 widget
+refactors (#512, #628, #693) so each consumer surface is edited only once.
 
 ## What this is
 
@@ -25,6 +29,8 @@ used the legacy `StateNotifier` API. This PR adopts:
 | `theme_provider` (layout) | `MessageLayoutNotifier` | `messageLayoutNotifierProvider` | `messageLayoutProvider` | `MessageLayout` enum already taken |
 | `biometric_provider` | `Biometric` | `biometricProvider` | n/a | keepAlive for lock-session timer |
 | `media_ticket_provider` | `MediaTicket` | `mediaTicketProvider` | n/a | refresh `Timer` cancelled via `ref.onDispose` |
+| `update_provider` | `Update` | `updateProvider` | n/a | `mounted` flag replaced by `_disposed` bool wired through `ref.onDispose` |
+| `privacy_provider` | `Privacy` | `privacyProvider` | n/a | dropped explicit `Ref ref` field — Notifier base provides it |
 
 ## Not yet migrated (17 providers)
 
@@ -60,10 +66,7 @@ them with related work:
 
 ### Defer to Sprint 4 (medium-priority leaves)
 
-| Provider | Reason |
-|---|---|
-| `privacy_provider` | 224 LoC, persistence-heavy; pairs with settings UI refactors |
-| `update_provider` | 293 LoC; checks for app updates, has its own retry loop |
+_All previously listed leaves now migrated (see "Done" table above)._
 
 ## Migration recipe
 

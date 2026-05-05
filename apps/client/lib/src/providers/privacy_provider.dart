@@ -1,11 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'auth_provider.dart';
 import 'server_url_provider.dart';
+
+part 'privacy_provider.g.dart';
 
 class PrivacyState {
   final bool readReceiptsEnabled;
@@ -55,10 +57,10 @@ class PrivacyState {
   }
 }
 
-class PrivacyNotifier extends StateNotifier<PrivacyState> {
-  final Ref ref;
-
-  PrivacyNotifier(this.ref) : super(const PrivacyState());
+@Riverpod(keepAlive: true)
+class Privacy extends _$Privacy {
+  @override
+  PrivacyState build() => const PrivacyState();
 
   String get _serverUrl => ref.read(serverUrlProvider);
 
@@ -216,9 +218,3 @@ class PrivacyNotifier extends StateNotifier<PrivacyState> {
     await _patch(showOnlineStatus: value);
   }
 }
-
-final privacyProvider = StateNotifierProvider<PrivacyNotifier, PrivacyState>((
-  ref,
-) {
-  return PrivacyNotifier(ref);
-});

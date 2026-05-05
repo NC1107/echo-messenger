@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
@@ -35,6 +34,7 @@ import 'chat/session_corrupted_banner.dart';
 import 'chat_panel/chat_message_list.dart';
 import 'chat_panel/drop_overlay.dart';
 import 'chat_panel/floating_date_pill.dart';
+import 'chat_panel/full_reaction_picker.dart';
 import 'chat_panel/new_messages_pill.dart';
 import 'chat_panel/no_conversation_placeholder.dart';
 import 'connection_status_banner.dart';
@@ -972,59 +972,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   }
 
   void _showFullReactionPicker(ChatMessage message, String myUserId) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: context.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (sheetContext) => SizedBox(
-        height: 380,
-        child: EmojiPicker(
-          onEmojiSelected: (_, emoji) {
-            Navigator.of(sheetContext).pop();
-            final alreadyReacted = message.reactions.any(
-              (r) => r.emoji == emoji.emoji && r.userId == myUserId,
-            );
-            _toggleReaction(message, emoji.emoji, alreadyReacted);
-          },
-          config: Config(
-            height: 380,
-            checkPlatformCompatibility: true,
-            emojiViewConfig: EmojiViewConfig(
-              backgroundColor: context.surface,
-              columns: 9,
-              emojiSizeMax: 28,
-              verticalSpacing: 0,
-              horizontalSpacing: 0,
-              noRecents: Text(
-                'No recents yet.',
-                style: TextStyle(fontSize: 12, color: context.textMuted),
-              ),
-            ),
-            categoryViewConfig: CategoryViewConfig(
-              initCategory: Category.SMILEYS,
-              recentTabBehavior: RecentTabBehavior.RECENT,
-              backgroundColor: context.surface,
-              indicatorColor: context.accent,
-              iconColorSelected: context.accent,
-              iconColor: context.textMuted,
-            ),
-            skinToneConfig: SkinToneConfig(
-              enabled: true,
-              dialogBackgroundColor: context.surface,
-              indicatorColor: context.accent,
-            ),
-            bottomActionBarConfig: const BottomActionBarConfig(enabled: false),
-            searchViewConfig: SearchViewConfig(
-              backgroundColor: context.surface,
-              buttonIconColor: context.textSecondary,
-              hintText: 'Find an emoji...',
-            ),
-          ),
-        ),
-      ),
+    showFullReactionPicker(
+      context,
+      message: message,
+      myUserId: myUserId,
+      onPick: (emoji, alreadyReacted) =>
+          _toggleReaction(message, emoji, alreadyReacted),
     );
   }
 
