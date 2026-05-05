@@ -150,7 +150,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             height: 44,
                             child: Semantics(
                               button: true,
-                              label: 'create-account',
+                              label: 'Create an account',
                               child: TextButton(
                                 onPressed: () => context.go('/register'),
                                 style: TextButton.styleFrom(

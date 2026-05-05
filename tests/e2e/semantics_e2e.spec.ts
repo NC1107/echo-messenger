@@ -150,11 +150,12 @@ test.describe('Flutter Semantics E2E', () => {
     await page.waitForTimeout(500);
     await ss(page, '06-tabs-contacts');
 
-    // Navigate to Groups
-    const groupsTab = page.getByRole('button', { name: /groups tab/i });
-    await groupsTab.click();
+    // Navigate to Discover (the actual tab next to Contacts; Groups isn't
+    // a top-level mobile tab — group discovery lives inside Discover).
+    const discoverTab = page.getByRole('button', { name: /discover tab/i });
+    await discoverTab.click();
     await page.waitForTimeout(500);
-    await ss(page, '07-tabs-groups');
+    await ss(page, '07-tabs-discover');
 
     // Back to Chats
     await chatsTab.click();

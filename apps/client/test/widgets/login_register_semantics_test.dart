@@ -57,14 +57,19 @@ void main() {
       expect(find.bySemanticsLabel('login'), findsOneWidget);
     });
 
-    testWidgets('create-account button has semantics label "create-account"', (
-      tester,
-    ) async {
-      await tester.pumpWidget(_wrapApp(_loginRouter()));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'create-account button has semantics label "Create an account"',
+      (tester) async {
+        await tester.pumpWidget(_wrapApp(_loginRouter()));
+        await tester.pumpAndSettle();
 
-      expect(find.bySemanticsLabel('create-account'), findsOneWidget);
-    });
+        // Match the human-readable label that the e2e a11y suite expects
+        // (`getByRole('button', { name: /create an account/i })`). The label
+        // shows up on both the explicit Semantics wrapper and the inner Text
+        // child (Flutter auto-derives), so accept either via findsWidgets.
+        expect(find.bySemanticsLabel('Create an account'), findsWidgets);
+      },
+    );
   });
 
   group('RegisterScreen semantics labels', () {
