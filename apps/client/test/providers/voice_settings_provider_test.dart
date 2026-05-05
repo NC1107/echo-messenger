@@ -1,7 +1,14 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:echo_app/src/providers/voice_settings_provider.dart';
+
+ProviderContainer _container() {
+  final c = ProviderContainer();
+  addTearDown(c.dispose);
+  return c;
+}
 
 void main() {
   group('VoiceSettingsState', () {
@@ -53,19 +60,21 @@ void main() {
     });
   });
 
-  group('VoiceSettingsNotifier', () {
+  group('VoiceSettings notifier', () {
     setUp(() {
       SharedPreferences.setMockInitialValues({});
     });
 
     test('loads defaults from empty SharedPreferences', () async {
-      final notifier = VoiceSettingsNotifier();
+      final container = _container();
+      // Trigger build() then wait for async _load.
+      container.read(voiceSettingsProvider);
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
-      expect(notifier.state.inputDeviceId, 'default');
-      expect(notifier.state.outputVolume, 1.0);
-      expect(notifier.state.noiseSuppression, isTrue);
-      notifier.dispose();
+      final state = container.read(voiceSettingsProvider);
+      expect(state.inputDeviceId, 'default');
+      expect(state.outputVolume, 1.0);
+      expect(state.noiseSuppression, isTrue);
     });
 
     test('loads persisted values', () async {
@@ -76,84 +85,86 @@ void main() {
         'voice_noise_suppression': false,
       });
 
-      final notifier = VoiceSettingsNotifier();
+      final container = _container();
+      container.read(voiceSettingsProvider);
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
-      expect(notifier.state.inputDeviceId, 'mic-custom');
-      expect(notifier.state.outputVolume, 0.7);
-      expect(notifier.state.selfMuted, isTrue);
-      expect(notifier.state.noiseSuppression, isFalse);
-      notifier.dispose();
+      final state = container.read(voiceSettingsProvider);
+      expect(state.inputDeviceId, 'mic-custom');
+      expect(state.outputVolume, 0.7);
+      expect(state.selfMuted, isTrue);
+      expect(state.noiseSuppression, isFalse);
     });
 
     test('setInputDevice updates state and persists', () async {
-      final notifier = VoiceSettingsNotifier();
+      final container = _container();
+      final notifier = container.read(voiceSettingsProvider.notifier);
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
       await notifier.setInputDevice('mic-new');
-      expect(notifier.state.inputDeviceId, 'mic-new');
+      expect(container.read(voiceSettingsProvider).inputDeviceId, 'mic-new');
 
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('voice_input_device_id'), 'mic-new');
-      notifier.dispose();
     });
 
     test('setOutputVolume updates state and persists', () async {
-      final notifier = VoiceSettingsNotifier();
+      final container = _container();
+      final notifier = container.read(voiceSettingsProvider.notifier);
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
       await notifier.setOutputVolume(0.3);
-      expect(notifier.state.outputVolume, 0.3);
+      expect(container.read(voiceSettingsProvider).outputVolume, 0.3);
 
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getDouble('voice_output_volume'), 0.3);
-      notifier.dispose();
     });
 
     test('setSelfMuted updates state and persists', () async {
-      final notifier = VoiceSettingsNotifier();
+      final container = _container();
+      final notifier = container.read(voiceSettingsProvider.notifier);
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
       await notifier.setSelfMuted(true);
-      expect(notifier.state.selfMuted, isTrue);
-      notifier.dispose();
+      expect(container.read(voiceSettingsProvider).selfMuted, isTrue);
     });
 
     test('setSelfDeafened updates state and persists', () async {
-      final notifier = VoiceSettingsNotifier();
+      final container = _container();
+      final notifier = container.read(voiceSettingsProvider.notifier);
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
       await notifier.setSelfDeafened(true);
-      expect(notifier.state.selfDeafened, isTrue);
-      notifier.dispose();
+      expect(container.read(voiceSettingsProvider).selfDeafened, isTrue);
     });
 
     test('setNoiseSuppression updates state and persists', () async {
-      final notifier = VoiceSettingsNotifier();
+      final container = _container();
+      final notifier = container.read(voiceSettingsProvider.notifier);
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
       await notifier.setNoiseSuppression(false);
-      expect(notifier.state.noiseSuppression, isFalse);
-      notifier.dispose();
+      expect(container.read(voiceSettingsProvider).noiseSuppression, isFalse);
     });
 
     test('setEchoCancellation updates state and persists', () async {
-      final notifier = VoiceSettingsNotifier();
+      final container = _container();
+      final notifier = container.read(voiceSettingsProvider.notifier);
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
       await notifier.setEchoCancellation(false);
-      expect(notifier.state.echoCancellation, isFalse);
-      notifier.dispose();
+      expect(container.read(voiceSettingsProvider).echoCancellation, isFalse);
     });
 
     test('setPushToTalkKey updates both id and label', () async {
-      final notifier = VoiceSettingsNotifier();
+      final container = _container();
+      final notifier = container.read(voiceSettingsProvider.notifier);
       await Future<void>.delayed(const Duration(milliseconds: 100));
 
       await notifier.setPushToTalkKey(keyId: '65', keyLabel: 'A');
-      expect(notifier.state.pushToTalkKeyId, '65');
-      expect(notifier.state.pushToTalkKeyLabel, 'A');
-      notifier.dispose();
+      final state = container.read(voiceSettingsProvider);
+      expect(state.pushToTalkKeyId, '65');
+      expect(state.pushToTalkKeyLabel, 'A');
     });
   });
 }

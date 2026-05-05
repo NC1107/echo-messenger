@@ -45,15 +45,12 @@ class _FakeChatNotifier extends ChatNotifier {
 }
 
 Override _voiceSettingsOverride() {
-  return voiceSettingsProvider.overrideWith(
-    (ref) => _FakeVoiceSettingsNotifier(),
-  );
+  return voiceSettingsProvider.overrideWith(_FakeVoiceSettings.new);
 }
 
-class _FakeVoiceSettingsNotifier extends VoiceSettingsNotifier {
-  _FakeVoiceSettingsNotifier() {
-    state = const VoiceSettingsState();
-  }
+class _FakeVoiceSettings extends VoiceSettings {
+  @override
+  VoiceSettingsState build() => const VoiceSettingsState();
 }
 
 List<Override> _overrides() => [
