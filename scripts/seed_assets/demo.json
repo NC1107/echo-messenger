@@ -1,7 +1,6 @@
 {
   "$schema": "Echo seed dataset. Edit and re-run scripts/seed_full_demo.sh.",
   "password": "demopass123",
-
   "users": [
     {
       "username": "alice",
@@ -44,177 +43,622 @@
       "status_message": "Chasing golden hour."
     }
   ],
-
   "groups": [
     {
       "name": "Tech Talk",
       "description": "Programming, gadgets, and infra nerdery.",
       "owner": "alice",
-      "members": ["alice", "bob", "charlie", "diana", "eve"],
+      "members": [
+        "alice",
+        "bob",
+        "charlie",
+        "diana",
+        "eve"
+      ],
       "messages": [
-        { "from": "alice",   "text": "anyone else moved over to sqlx 0.8 yet? the migration story finally feels solid" },
-        { "from": "charlie", "text": "we did last sprint. the only gotcha was the new query macro hint format" },
-        { "from": "bob",     "text": "I switched a side project, no regrets. their CI is nice now too" },
-        { "from": "eve",     "text": "+1, also the fix for that prepared-statement caching bug landed in 0.8.4" },
-        { "from": "diana",   "text": "tangent: anyone seen the new Tokio scheduler benchmarks?" },
-        { "from": "alice",   "text": "the cooperative scheduling thing? yeah it's a real win for our hot paths" },
-        { "from": "charlie", "text": "we saw a 12% latency drop on the websocket fanout after the upgrade" },
-        { "from": "bob",     "text": "that matches what the post-mortem on their blog claimed" },
-        { "from": "eve",     "text": "I'd love to see a flamegraph before/after if anyone has one handy" },
-        { "from": "alice",   "text": "I'll throw one in here later today" }
+        {
+          "from": "alice",
+          "text": "anyone else moved over to sqlx 0.8 yet? the migration story finally feels solid"
+        },
+        {
+          "from": "charlie",
+          "text": "we did last sprint. the only gotcha was the new query macro hint format"
+        },
+        {
+          "from": "bob",
+          "text": "I switched a side project, no regrets. their CI is nice now too"
+        },
+        {
+          "from": "eve",
+          "text": "+1, also the fix for that prepared-statement caching bug landed in 0.8.4"
+        },
+        {
+          "from": "diana",
+          "text": "tangent: anyone seen the new Tokio scheduler benchmarks?"
+        },
+        {
+          "from": "alice",
+          "text": "the cooperative scheduling thing? yeah it's a real win for our hot paths"
+        },
+        {
+          "from": "charlie",
+          "text": "we saw a 12% latency drop on the websocket fanout after the upgrade"
+        },
+        {
+          "from": "bob",
+          "text": "that matches what the post-mortem on their blog claimed"
+        },
+        {
+          "from": "eve",
+          "text": "I'd love to see a flamegraph before/after if anyone has one handy"
+        },
+        {
+          "from": "alice",
+          "text": "I'll throw one in here later today"
+        }
       ],
       "pin_index": 0,
       "reactions": [
-        { "message_index": 0, "from": "charlie", "emoji": "👍" },
-        { "message_index": 0, "from": "bob",     "emoji": "🚀" },
-        { "message_index": 6, "from": "alice",   "emoji": "🔥" },
-        { "message_index": 6, "from": "diana",   "emoji": "💯" },
-        { "message_index": 9, "from": "eve",     "emoji": "👀" }
+        {
+          "message_index": 0,
+          "from": "charlie",
+          "emoji": "👍"
+        },
+        {
+          "message_index": 0,
+          "from": "bob",
+          "emoji": "🚀"
+        },
+        {
+          "message_index": 6,
+          "from": "alice",
+          "emoji": "🔥"
+        },
+        {
+          "message_index": 6,
+          "from": "diana",
+          "emoji": "💯"
+        },
+        {
+          "message_index": 9,
+          "from": "eve",
+          "emoji": "👀"
+        }
       ],
       "replies": [
-        { "from": "diana", "to_index": 1, "text": "the new hint format threw us off too — tracking issue #2347 has the migration steps" }
+        {
+          "from": "diana",
+          "to_index": 1,
+          "text": "the new hint format threw us off too — tracking issue #2347 has the migration steps"
+        }
+      ],
+      "attachments": [
+        {
+          "from": "alice",
+          "kind": "image",
+          "asset": "logo",
+          "caption": "logo refresh proposal"
+        },
+        {
+          "from": "bob",
+          "kind": "file",
+          "asset": "tiny-pdf",
+          "caption": "draft RFC"
+        }
+      ],
+      "links": [
+        {
+          "from": "eve",
+          "url": "https://docs.flutter.dev/",
+          "lead": "Spec for the upcoming refactor"
+        }
       ]
     },
-
     {
       "name": "Gaming Lounge",
       "description": "LFG, reviews, and esports.",
       "owner": "bob",
-      "members": ["bob", "charlie", "frank", "grace", "henry"],
+      "members": [
+        "bob",
+        "charlie",
+        "frank",
+        "grace",
+        "henry"
+      ],
       "messages": [
-        { "from": "bob",     "text": "anyone up for ranked tonight around 9?" },
-        { "from": "frank",   "text": "in. need to climb out of plat" },
-        { "from": "charlie", "text": "I can do 2 games, then need to call it" },
-        { "from": "grace",   "text": "I'll spectate, working on a deadline" },
-        { "from": "henry",   "text": "did anyone finish the new soulslike yet? worth picking up?" },
-        { "from": "bob",     "text": "boss design is top tier, world's a bit empty mid-game" },
-        { "from": "frank",   "text": "the pvp invasions are killing me, in a good way" },
-        { "from": "charlie", "text": "music's incredible, the boss themes alone justify the price" },
-        { "from": "henry",   "text": "sold. picking it up tonight" }
+        {
+          "from": "bob",
+          "text": "anyone up for ranked tonight around 9?"
+        },
+        {
+          "from": "frank",
+          "text": "in. need to climb out of plat"
+        },
+        {
+          "from": "charlie",
+          "text": "I can do 2 games, then need to call it"
+        },
+        {
+          "from": "grace",
+          "text": "I'll spectate, working on a deadline"
+        },
+        {
+          "from": "henry",
+          "text": "did anyone finish the new soulslike yet? worth picking up?"
+        },
+        {
+          "from": "bob",
+          "text": "boss design is top tier, world's a bit empty mid-game"
+        },
+        {
+          "from": "frank",
+          "text": "the pvp invasions are killing me, in a good way"
+        },
+        {
+          "from": "charlie",
+          "text": "music's incredible, the boss themes alone justify the price"
+        },
+        {
+          "from": "henry",
+          "text": "sold. picking it up tonight"
+        }
       ],
       "pin_index": 0,
       "reactions": [
-        { "message_index": 0, "from": "frank",   "emoji": "🎉" },
-        { "message_index": 4, "from": "bob",     "emoji": "👀" },
-        { "message_index": 5, "from": "charlie", "emoji": "🔥" },
-        { "message_index": 7, "from": "henry",   "emoji": "❤️" },
-        { "message_index": 8, "from": "bob",     "emoji": "👍" }
+        {
+          "message_index": 0,
+          "from": "frank",
+          "emoji": "🎉"
+        },
+        {
+          "message_index": 4,
+          "from": "bob",
+          "emoji": "👀"
+        },
+        {
+          "message_index": 5,
+          "from": "charlie",
+          "emoji": "🔥"
+        },
+        {
+          "message_index": 7,
+          "from": "henry",
+          "emoji": "❤️"
+        },
+        {
+          "message_index": 8,
+          "from": "bob",
+          "emoji": "👍"
+        }
       ],
       "replies": [
-        { "from": "grace", "to_index": 4, "text": "if you like methodical exploration, yes. don't go in expecting open-world fluff" }
+        {
+          "from": "grace",
+          "to_index": 4,
+          "text": "if you like methodical exploration, yes. don't go in expecting open-world fluff"
+        }
+      ],
+      "attachments": [
+        {
+          "from": "frank",
+          "kind": "gif",
+          "asset": "tiny-gif",
+          "caption": "patch notes mood"
+        },
+        {
+          "from": "henry",
+          "kind": "video",
+          "asset": "tiny-mp4",
+          "caption": "clutch highlight"
+        }
+      ],
+      "links": [
+        {
+          "from": "grace",
+          "url": "https://github.com/anthropics/claude-code",
+          "lead": "ai pair programmer"
+        }
       ]
     },
-
     {
       "name": "Music Corner",
       "description": "Share tracks, discover artists, talk theory.",
       "owner": "charlie",
-      "members": ["alice", "charlie", "diana", "grace"],
+      "members": [
+        "alice",
+        "charlie",
+        "diana",
+        "grace"
+      ],
       "messages": [
-        { "from": "charlie", "text": "fell down a rabbit hole on minimal techno from the early 90s last night" },
-        { "from": "alice",   "text": "give me three names to start with" },
-        { "from": "charlie", "text": "Robert Hood, Jeff Mills, Maurizio. start with Hood's Minimal Nation" },
-        { "from": "diana",   "text": "Maurizio is so good. that whole basic channel catalog is pristine" },
-        { "from": "grace",   "text": "anyone been to a Berghain residency? on my bucket list" },
-        { "from": "charlie", "text": "haven't, but a friend went in 2019 and said the soundsystem alone is worth the trip" },
-        { "from": "alice",   "text": "thanks for the recs. queueing them now" },
-        { "from": "diana",   "text": "if you want a softer entry point, try Ricardo Villalobos' Easy Lee" }
+        {
+          "from": "charlie",
+          "text": "fell down a rabbit hole on minimal techno from the early 90s last night"
+        },
+        {
+          "from": "alice",
+          "text": "give me three names to start with"
+        },
+        {
+          "from": "charlie",
+          "text": "Robert Hood, Jeff Mills, Maurizio. start with Hood's Minimal Nation"
+        },
+        {
+          "from": "diana",
+          "text": "Maurizio is so good. that whole basic channel catalog is pristine"
+        },
+        {
+          "from": "grace",
+          "text": "anyone been to a Berghain residency? on my bucket list"
+        },
+        {
+          "from": "charlie",
+          "text": "haven't, but a friend went in 2019 and said the soundsystem alone is worth the trip"
+        },
+        {
+          "from": "alice",
+          "text": "thanks for the recs. queueing them now"
+        },
+        {
+          "from": "diana",
+          "text": "if you want a softer entry point, try Ricardo Villalobos' Easy Lee"
+        }
       ],
       "pin_index": 2,
       "reactions": [
-        { "message_index": 2, "from": "alice", "emoji": "💯" },
-        { "message_index": 2, "from": "diana", "emoji": "🔥" },
-        { "message_index": 3, "from": "grace", "emoji": "❤️" },
-        { "message_index": 7, "from": "alice", "emoji": "✨" }
+        {
+          "message_index": 2,
+          "from": "alice",
+          "emoji": "💯"
+        },
+        {
+          "message_index": 2,
+          "from": "diana",
+          "emoji": "🔥"
+        },
+        {
+          "message_index": 3,
+          "from": "grace",
+          "emoji": "❤️"
+        },
+        {
+          "message_index": 7,
+          "from": "alice",
+          "emoji": "✨"
+        }
       ],
       "replies": [
-        { "from": "alice", "to_index": 2, "text": "Minimal Nation is on right now. this is going on every commute playlist" }
+        {
+          "from": "alice",
+          "to_index": 2,
+          "text": "Minimal Nation is on right now. this is going on every commute playlist"
+        }
+      ],
+      "attachments": [
+        {
+          "from": "charlie",
+          "kind": "image",
+          "asset": "logo",
+          "caption": "cover art draft"
+        }
+      ],
+      "links": [
+        {
+          "from": "alice",
+          "url": "https://www.rust-lang.org/",
+          "lead": "audio dsp in rust"
+        }
       ]
     },
-
     {
       "name": "Movie Club",
       "description": "Recommendations, reviews, and watch parties.",
       "owner": "diana",
-      "members": ["diana", "eve", "frank", "henry"],
+      "members": [
+        "diana",
+        "eve",
+        "frank",
+        "henry"
+      ],
       "messages": [
-        { "from": "diana", "text": "watch party Friday — voting between The Conversation and Memories of Murder" },
-        { "from": "eve",   "text": "Memories of Murder. the tonal shifts are unreal" },
-        { "from": "frank", "text": "Conversation for me, Coppola era is unbeatable" },
-        { "from": "henry", "text": "split vote. flip a coin?" },
-        { "from": "diana", "text": "calling it: Memories of Murder Friday, Conversation the week after. 8pm in the lounge" },
-        { "from": "eve",   "text": "🎉" },
-        { "from": "frank", "text": "I'll bring the wine" },
-        { "from": "henry", "text": "I'll do snacks. anyone gluten free?" }
+        {
+          "from": "diana",
+          "text": "watch party Friday — voting between The Conversation and Memories of Murder"
+        },
+        {
+          "from": "eve",
+          "text": "Memories of Murder. the tonal shifts are unreal"
+        },
+        {
+          "from": "frank",
+          "text": "Conversation for me, Coppola era is unbeatable"
+        },
+        {
+          "from": "henry",
+          "text": "split vote. flip a coin?"
+        },
+        {
+          "from": "diana",
+          "text": "calling it: Memories of Murder Friday, Conversation the week after. 8pm in the lounge"
+        },
+        {
+          "from": "eve",
+          "text": "🎉"
+        },
+        {
+          "from": "frank",
+          "text": "I'll bring the wine"
+        },
+        {
+          "from": "henry",
+          "text": "I'll do snacks. anyone gluten free?"
+        }
       ],
       "pin_index": 4,
       "reactions": [
-        { "message_index": 1, "from": "diana", "emoji": "🔥" },
-        { "message_index": 4, "from": "frank", "emoji": "👍" },
-        { "message_index": 4, "from": "henry", "emoji": "👍" },
-        { "message_index": 7, "from": "diana", "emoji": "❤️" }
+        {
+          "message_index": 1,
+          "from": "diana",
+          "emoji": "🔥"
+        },
+        {
+          "message_index": 4,
+          "from": "frank",
+          "emoji": "👍"
+        },
+        {
+          "message_index": 4,
+          "from": "henry",
+          "emoji": "👍"
+        },
+        {
+          "message_index": 7,
+          "from": "diana",
+          "emoji": "❤️"
+        }
       ],
       "replies": [
-        { "from": "diana", "to_index": 7, "text": "yes, eve is. picking up some rice crackers and dip" }
+        {
+          "from": "diana",
+          "to_index": 7,
+          "text": "yes, eve is. picking up some rice crackers and dip"
+        }
+      ],
+      "attachments": [
+        {
+          "from": "diana",
+          "kind": "image",
+          "asset": "logo",
+          "caption": "next watch poll header"
+        },
+        {
+          "from": "henry",
+          "kind": "gif",
+          "asset": "tiny-gif",
+          "caption": "the reaction"
+        }
+      ],
+      "links": [
+        {
+          "from": "frank",
+          "url": "https://www.criterion.com/",
+          "lead": "criterion sale week"
+        }
       ]
     },
-
     {
       "name": "Random Chat",
       "description": "Off-topic, memes, and general hangout.",
       "owner": "alice",
-      "members": ["alice", "bob", "charlie", "diana", "eve", "frank", "grace", "henry"],
+      "members": [
+        "alice",
+        "bob",
+        "charlie",
+        "diana",
+        "eve",
+        "frank",
+        "grace",
+        "henry"
+      ],
       "messages": [
-        { "from": "frank",   "text": "good morning. who's already on their second coffee" },
-        { "from": "alice",   "text": "third, but who's counting" },
-        { "from": "henry",   "text": "I switched to matcha last week and it's been a journey" },
-        { "from": "bob",     "text": "matcha-pilled. respect" },
-        { "from": "grace",   "text": "fyi, the bookstore on 9th has 30% off all classics this weekend" },
-        { "from": "charlie", "text": "ooh, going on Saturday if anyone wants to make a thing of it" },
-        { "from": "diana",   "text": "in. let's get lunch after?" },
-        { "from": "eve",     "text": "send me the address, will try to swing by" },
-        { "from": "alice",   "text": "anyone seen the bug where the app shows time as 'in 3 minutes' for messages just sent? haunting" },
-        { "from": "bob",     "text": "yes, my client clock was off by 2 minutes. fixed when I synced ntp" },
-        { "from": "alice",   "text": "amazing, thanks. classic clock skew" }
+        {
+          "from": "frank",
+          "text": "good morning. who's already on their second coffee"
+        },
+        {
+          "from": "alice",
+          "text": "third, but who's counting"
+        },
+        {
+          "from": "henry",
+          "text": "I switched to matcha last week and it's been a journey"
+        },
+        {
+          "from": "bob",
+          "text": "matcha-pilled. respect"
+        },
+        {
+          "from": "grace",
+          "text": "fyi, the bookstore on 9th has 30% off all classics this weekend"
+        },
+        {
+          "from": "charlie",
+          "text": "ooh, going on Saturday if anyone wants to make a thing of it"
+        },
+        {
+          "from": "diana",
+          "text": "in. let's get lunch after?"
+        },
+        {
+          "from": "eve",
+          "text": "send me the address, will try to swing by"
+        },
+        {
+          "from": "alice",
+          "text": "anyone seen the bug where the app shows time as 'in 3 minutes' for messages just sent? haunting"
+        },
+        {
+          "from": "bob",
+          "text": "yes, my client clock was off by 2 minutes. fixed when I synced ntp"
+        },
+        {
+          "from": "alice",
+          "text": "amazing, thanks. classic clock skew"
+        }
       ],
       "pin_index": 4,
       "reactions": [
-        { "message_index": 0, "from": "alice",   "emoji": "☕" },
-        { "message_index": 4, "from": "diana",   "emoji": "🎉" },
-        { "message_index": 4, "from": "charlie", "emoji": "📚" },
-        { "message_index": 5, "from": "diana",   "emoji": "✨" },
-        { "message_index": 8, "from": "bob",     "emoji": "👀" },
-        { "message_index": 9, "from": "alice",   "emoji": "🙏" },
-        { "message_index": 10, "from": "henry",  "emoji": "😂" }
+        {
+          "message_index": 0,
+          "from": "alice",
+          "emoji": "☕"
+        },
+        {
+          "message_index": 4,
+          "from": "diana",
+          "emoji": "🎉"
+        },
+        {
+          "message_index": 4,
+          "from": "charlie",
+          "emoji": "📚"
+        },
+        {
+          "message_index": 5,
+          "from": "diana",
+          "emoji": "✨"
+        },
+        {
+          "message_index": 8,
+          "from": "bob",
+          "emoji": "👀"
+        },
+        {
+          "message_index": 9,
+          "from": "alice",
+          "emoji": "🙏"
+        },
+        {
+          "message_index": 10,
+          "from": "henry",
+          "emoji": "😂"
+        }
       ],
       "replies": [
-        { "from": "frank",   "to_index": 4, "text": "any cookbook recs? trying to expand the rotation" },
-        { "from": "grace",   "to_index": 4, "text": "the Diana Henry section is huge right now. Salt Sugar Smoke is my pick" }
+        {
+          "from": "frank",
+          "to_index": 4,
+          "text": "any cookbook recs? trying to expand the rotation"
+        },
+        {
+          "from": "grace",
+          "to_index": 4,
+          "text": "the Diana Henry section is huge right now. Salt Sugar Smoke is my pick"
+        }
+      ],
+      "attachments": [
+        {
+          "from": "alice",
+          "kind": "image",
+          "asset": "logo"
+        },
+        {
+          "from": "bob",
+          "kind": "video",
+          "asset": "tiny-mp4"
+        },
+        {
+          "from": "charlie",
+          "kind": "file",
+          "asset": "tiny-pdf"
+        }
+      ],
+      "links": [
+        {
+          "from": "eve",
+          "url": "https://news.ycombinator.com/",
+          "lead": "tab dump"
+        }
       ]
     },
-
     {
       "name": "Book Worms",
       "description": "Reading lists, reviews, and literary discussion.",
       "owner": "grace",
-      "members": ["alice", "grace", "henry"],
+      "members": [
+        "alice",
+        "grace",
+        "henry"
+      ],
       "messages": [
-        { "from": "grace", "text": "currently reading: Piranesi by Susanna Clarke. anyone else?" },
-        { "from": "alice", "text": "I read it last year, the prose is hypnotic" },
-        { "from": "henry", "text": "on my list. is it as weird as Jonathan Strange?" },
-        { "from": "grace", "text": "different weird. shorter, dreamier, more melancholic" },
-        { "from": "alice", "text": "what's next on the list? I want a recommendation" },
-        { "from": "grace", "text": "Stoner by John Williams. quiet but devastating" },
-        { "from": "henry", "text": "I've heard nothing but good things. ordering it now" }
+        {
+          "from": "grace",
+          "text": "currently reading: Piranesi by Susanna Clarke. anyone else?"
+        },
+        {
+          "from": "alice",
+          "text": "I read it last year, the prose is hypnotic"
+        },
+        {
+          "from": "henry",
+          "text": "on my list. is it as weird as Jonathan Strange?"
+        },
+        {
+          "from": "grace",
+          "text": "different weird. shorter, dreamier, more melancholic"
+        },
+        {
+          "from": "alice",
+          "text": "what's next on the list? I want a recommendation"
+        },
+        {
+          "from": "grace",
+          "text": "Stoner by John Williams. quiet but devastating"
+        },
+        {
+          "from": "henry",
+          "text": "I've heard nothing but good things. ordering it now"
+        }
       ],
       "pin_index": 0,
       "reactions": [
-        { "message_index": 0, "from": "alice", "emoji": "❤️" },
-        { "message_index": 3, "from": "henry", "emoji": "✨" },
-        { "message_index": 5, "from": "alice", "emoji": "👀" }
+        {
+          "message_index": 0,
+          "from": "alice",
+          "emoji": "❤️"
+        },
+        {
+          "message_index": 3,
+          "from": "henry",
+          "emoji": "✨"
+        },
+        {
+          "message_index": 5,
+          "from": "alice",
+          "emoji": "👀"
+        }
       ],
       "replies": [
-        { "from": "henry", "to_index": 5, "text": "putting it next on the queue. love a quiet devastating book" }
+        {
+          "from": "henry",
+          "to_index": 5,
+          "text": "putting it next on the queue. love a quiet devastating book"
+        }
+      ],
+      "attachments": [
+        {
+          "from": "henry",
+          "kind": "image",
+          "asset": "logo",
+          "caption": "last weeks meet"
+        }
+      ],
+      "links": [
+        {
+          "from": "grace",
+          "url": "https://en.wikipedia.org/wiki/Hyperion_(Simmons_novel)",
+          "lead": "currently reading"
+        }
       ]
     }
   ]

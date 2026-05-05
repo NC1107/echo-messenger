@@ -224,6 +224,49 @@ void main() {
       expect(first.hashCode, equals(second.hashCode));
     });
 
+    test(
+      'historical __system__:member_joined sentinel becomes a system event',
+      () {
+        // Server persists the join row with the joiner's UUID as sender_id and
+        // the raw sentinel as content (#663). On HTTP history load we have to
+        // translate it back into a system event so the chat panel renders the
+        // pill instead of a literal-text bubble.
+        final json = {
+          'message_id': 'msg-sys',
+          'from_user_id': '11111111-1111-1111-1111-111111111111',
+          'from_username': 'alice',
+          'conversation_id': 'conv-1',
+          'content':
+              '__system__:member_joined:11111111-1111-1111-1111-111111111111:alice',
+          'timestamp': '2026-04-01T10:00:00Z',
+        };
+
+        final msg = ChatMessage.fromServerJson(json, 'user-me');
+
+        expect(msg.isSystemEvent, isTrue);
+        expect(msg.fromUserId, ChatMessage.systemUserId);
+        expect(msg.content, 'alice joined the group');
+      },
+    );
+
+    test('non-system content is left untouched', () {
+      final json = {
+        'message_id': 'msg-1',
+        'from_user_id': 'user-abc',
+        'from_username': 'alice',
+        'conversation_id': 'conv-1',
+        'content': '__system__:unknown_kind:abc',
+        'timestamp': '2026-04-01T10:00:00Z',
+      };
+
+      final msg = ChatMessage.fromServerJson(json, 'user-me');
+
+      // Unknown sentinels stay untouched so we don't silently drop new
+      // server-side event kinds.
+      expect(msg.isSystemEvent, isFalse);
+      expect(msg.content, '__system__:unknown_kind:abc');
+    });
+
     test('value equality differs when key field changes', () {
       const first = ChatMessage(
         id: 'msg-1',

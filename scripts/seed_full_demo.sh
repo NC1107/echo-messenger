@@ -9,6 +9,8 @@
 #   - Public groups with thematic descriptions and member lists
 #   - Real-world themed messages, with replies and pins
 #   - Reactions on messages
+#   - Attachments (image / gif / video / file) via /api/media/upload
+#   - Link-preview-able URLs in plain messages
 #
 # Usage:
 #   ./scripts/seed_full_demo.sh                                    # localhost
@@ -215,10 +217,13 @@ ws_send_one() {
   fi
   # `--no-close` keeps the socket open after stdin EOF so the server can
   # actually process the frame; we kill the client after a short wait.
+  # The 1.2 s window covers TLS handshake + WS upgrade + frame round-trip
+  # against a remote server (locally, ~0.3 s is enough but prod needs the
+  # extra slack — without it ~30 % of frames are killed before delivery).
   printf '%s' "$payload" \
     | websocat --no-close -E "$WS_BASE/ws?ticket=$ticket" >/dev/null 2>&1 &
   local pid=$!
-  sleep 0.5
+  sleep 1.2
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
 }
@@ -294,6 +299,157 @@ for i in $(seq 0 $((group_count - 1))); do
     "$name" "$msg_count" "$reply_count" "$rx_count" "$pinned"
 done
 
+# ----- Phase 5: attachments + link previews ---------------------------------
+# Uploads sample media (image/gif/video/file) and sends WS messages with the
+# `[img:URL]` / `[video:URL]` / `[file:URL]` markers the client uses to
+# render inline media.  Plain-URL messages are sent for link-preview tests.
+log "==> Phase 5: attachments & link previews"
+total_attachments=0
+total_links=0
+
+ASSETS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/apps/client/assets/images"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+# Materialise the named asset on disk and echo the path. Returns non-zero
+# if the name is unknown.
+make_asset() {
+  case "$1" in
+    logo)
+      printf '%s' "$ASSETS_DIR/echo_logo_white.png" ;;
+    tiny-png)
+      # 1x1 transparent PNG (67 bytes, IHDR + IDAT + IEND).
+      local p="$TMP_DIR/tiny.png"
+      printf '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x00\x00\x00\x00\x3b\x7e\x9b\x55\x00\x00\x00\nIDATx\x9cc\x00\x00\x00\x02\x00\x01\xe2\x21\xbc\x33\x00\x00\x00\x00IEND\xaeB`\x82' \
+        > "$p"
+      printf '%s' "$p" ;;
+    tiny-gif)
+      # 1x1 GIF89a (43 bytes).
+      local p="$TMP_DIR/tiny.gif"
+      printf 'GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02L\x01\x00;' \
+        > "$p"
+      printf '%s' "$p" ;;
+    tiny-mp4)
+      # Minimal MP4 = single ftyp box (32 bytes, isom brand).
+      # Magic bytes at offset 4 ("ftyp") satisfy the server's `infer` check.
+      local p="$TMP_DIR/tiny.mp4"
+      printf '\x00\x00\x00\x20ftypisom\x00\x00\x02\x00isomiso2mp41mp42' \
+        > "$p"
+      printf '%s' "$p" ;;
+    tiny-pdf)
+      # Minimal PDF — magic `%PDF-` + EOF marker. Server validates with
+      # `infer` which only checks the magic, so a structural skeleton is fine.
+      local p="$TMP_DIR/tiny.pdf"
+      cat > "$p" <<'PDF'
+%PDF-1.4
+1 0 obj
+<<>>
+endobj
+xref
+0 2
+0000000000 65535 f
+0000000009 00000 n
+trailer
+<</Size 2/Root 1 0 R>>
+startxref
+30
+%%EOF
+PDF
+      printf '%s' "$p" ;;
+    *)
+      return 1 ;;
+  esac
+}
+
+mime_for_kind() {
+  case "$1" in
+    image) printf 'image/png' ;;
+    gif)   printf 'image/gif' ;;
+    video) printf 'video/mp4' ;;
+    file)  printf 'application/pdf' ;;
+    *)     printf 'application/octet-stream' ;;
+  esac
+}
+
+marker_for_kind() {
+  case "$1" in
+    image|gif) printf '[img:%s]' "$2" ;;
+    video)     printf '[video:%s]' "$2" ;;
+    file)      printf '[file:%s]' "$2" ;;
+    *)         printf '%s' "$2" ;;
+  esac
+}
+
+# POST /api/media/upload (multipart). Echoes the relative URL on success or
+# nothing on failure.
+upload_media() {
+  local token="$1" cid="$2" file="$3" mime="$4"
+  local resp
+  resp=$(curl -sS -m 30 -X POST "$SERVER_URL/api/media/upload" \
+    -H "Authorization: Bearer $token" \
+    -F "conversation_id=$cid" \
+    -F "file=@$file;type=$mime" 2>/dev/null) || return 1
+  printf '%s' "$resp" | jq -r '.url // empty'
+}
+
+for i in $(seq 0 $((group_count - 1))); do
+  name=$(jq -r ".groups[$i].name" "$DATA_FILE")
+  cid="${GROUP_ID[$name]:-}"
+  [ -z "$cid" ] && continue
+
+  att_count=$(jq ".groups[$i].attachments | length // 0" "$DATA_FILE")
+  link_count=$(jq ".groups[$i].links | length // 0" "$DATA_FILE")
+  group_atts=0
+  group_links=0
+
+  for a in $(seq 0 $((att_count - 1))); do
+    [ "$att_count" -eq 0 ] && break
+    afrom=$(jq -r ".groups[$i].attachments[$a].from" "$DATA_FILE")
+    akind=$(jq -r ".groups[$i].attachments[$a].kind" "$DATA_FILE")
+    aasset=$(jq -r ".groups[$i].attachments[$a].asset" "$DATA_FILE")
+    acaption=$(jq -r ".groups[$i].attachments[$a].caption // empty" "$DATA_FILE")
+
+    file=$(make_asset "$aasset" 2>/dev/null) || { echo "WARN: unknown asset '$aasset'" >&2; continue; }
+    mime=$(mime_for_kind "$akind")
+    url=$(upload_media "${USER_TOKEN[$afrom]}" "$cid" "$file" "$mime")
+    if [ -z "$url" ]; then
+      echo "WARN: upload failed for $name ($aasset by $afrom)" >&2
+      continue
+    fi
+
+    marker=$(marker_for_kind "$akind" "$url")
+    body="$marker"
+    [ -n "$acaption" ] && body=$(printf '%s\n%s' "$marker" "$acaption")
+
+    payload=$(jq -nc --arg cid "$cid" --arg t "$body" \
+      '{type:"send_message", conversation_id:$cid, content:$t}')
+    ws_send_one "${USER_TOKEN[$afrom]}" "$payload" || true
+    total_attachments=$((total_attachments + 1))
+    group_atts=$((group_atts + 1))
+  done
+
+  for l in $(seq 0 $((link_count - 1))); do
+    [ "$link_count" -eq 0 ] && break
+    lfrom=$(jq -r ".groups[$i].links[$l].from" "$DATA_FILE")
+    lurl=$(jq -r ".groups[$i].links[$l].url" "$DATA_FILE")
+    llead=$(jq -r ".groups[$i].links[$l].lead // empty" "$DATA_FILE")
+
+    body="$lurl"
+    [ -n "$llead" ] && body=$(printf '%s %s' "$llead" "$lurl")
+
+    payload=$(jq -nc --arg cid "$cid" --arg t "$body" \
+      '{type:"send_message", conversation_id:$cid, content:$t}')
+    ws_send_one "${USER_TOKEN[$lfrom]}" "$payload" || true
+    total_links=$((total_links + 1))
+    group_links=$((group_links + 1))
+  done
+
+  if [ "$group_atts" -gt 0 ] || [ "$group_links" -gt 0 ]; then
+    printf "    %-16s +%d attachments, +%d links\n" \
+      "$name" "$group_atts" "$group_links"
+  fi
+done
+
 cat <<EOF
 
 ==> Done!
@@ -304,6 +460,8 @@ cat <<EOF
    ${total_replies} replies
    ${total_reactions} reactions
    ${total_pins} pinned messages
+   ${total_attachments} attachments
+   ${total_links} link previews
 
 Login with any seeded user:
    password: $PASSWORD

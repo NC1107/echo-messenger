@@ -92,14 +92,28 @@ class ChatMessage {
         [];
 
     final id = (json['message_id'] ?? json['id'] ?? '').toString();
-    final fromUserId = (json['from_user_id'] ?? json['sender_id'] ?? '')
+    var fromUserId = (json['from_user_id'] ?? json['sender_id'] ?? '')
         .toString();
-    final fromUsername =
+    var fromUsername =
         (json['from_username'] ?? json['sender_username'] ?? 'Unknown')
             .toString();
     final conversationId = (json['conversation_id'] ?? '').toString();
     final channelId = (json['channel_id'] as String?)?.trim();
-    final content = (json['content'] ?? '').toString();
+    var content = (json['content'] ?? '').toString();
+
+    // Translate raw `__system__:...` sentinels persisted server-side into
+    // proper system events so historical loads render as in-chat pills
+    // (#663). Without this, the WS path correctly produces system events,
+    // but reloading the app or opening the conversation for the first
+    // time would show the literal sentinel as a regular message bubble.
+    if (content.startsWith('__system__:')) {
+      final translated = _translateSystemSentinel(content);
+      if (translated != null) {
+        content = translated;
+        fromUserId = systemUserId;
+        fromUsername = 'System';
+      }
+    }
     final timestamp =
         (json['timestamp'] ??
                 json['created_at'] ??
@@ -131,6 +145,21 @@ class ChatMessage {
           ? DateTime.tryParse(json['expires_at'] as String)
           : null,
     );
+  }
+
+  /// Convert a `__system__:...` sentinel into a human-readable event line.
+  /// Returns null if the sentinel is malformed or unknown so the caller
+  /// can leave the message untouched.
+  static String? _translateSystemSentinel(String sentinel) {
+    const joinedTag = '__system__:member_joined:';
+    if (sentinel.startsWith(joinedTag)) {
+      final rest = sentinel.substring(joinedTag.length);
+      final colonIdx = rest.indexOf(':');
+      final username = colonIdx >= 0 ? rest.substring(colonIdx + 1) : rest;
+      if (username.isEmpty) return null;
+      return '$username joined the group';
+    }
+    return null;
   }
 
   Map<String, dynamic> toJson() {
