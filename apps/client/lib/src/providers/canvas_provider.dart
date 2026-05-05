@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart' show Color;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/canvas_models.dart';
 import '../services/debug_log_service.dart';
@@ -12,13 +12,14 @@ import 'auth_provider.dart';
 import 'server_url_provider.dart';
 import 'websocket_provider.dart';
 
+part 'canvas_provider.g.dart';
+
 // ---------------------------------------------------------------------------
 // Notifier
 // ---------------------------------------------------------------------------
 
-class CanvasNotifier extends StateNotifier<CanvasState> {
-  final Ref ref;
-
+@Riverpod(keepAlive: true)
+class CanvasController extends _$CanvasController {
   /// The channel this canvas is attached to.
   String? _channelId;
 
@@ -33,7 +34,14 @@ class CanvasNotifier extends StateNotifier<CanvasState> {
   /// Events buffered while [_channelId] is not yet set (attach race window).
   final List<Map<String, dynamic>> _pendingEvents = [];
 
-  CanvasNotifier(this.ref) : super(const CanvasState());
+  @override
+  CanvasState build() {
+    ref.onDispose(() {
+      _avatarThrottle?.cancel();
+      _imageThrottle?.cancel();
+    });
+    return const CanvasState();
+  }
 
   // -------------------------------------------------------------------------
   // Lifecycle
@@ -338,19 +346,9 @@ class CanvasNotifier extends StateNotifier<CanvasState> {
         .read(websocketProvider.notifier)
         .sendCanvasEvent(channelId: cid, kind: kind, payload: payload);
   }
-
-  @override
-  void dispose() {
-    _avatarThrottle?.cancel();
-    _imageThrottle?.cancel();
-    super.dispose();
-  }
 }
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
-
-final canvasProvider = StateNotifierProvider<CanvasNotifier, CanvasState>(
-  (ref) => CanvasNotifier(ref),
-);
+/// Back-compat alias: existing call sites still refer to `canvasProvider`.
+/// The class is named `CanvasController` to avoid shadowing dart:ui.Canvas
+/// inside this library.
+final canvasProvider = canvasControllerProvider;
