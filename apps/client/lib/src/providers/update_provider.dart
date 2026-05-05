@@ -1,12 +1,14 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/update_service.dart' as update_svc;
 import '../version.dart';
+
+part 'update_provider.g.dart';
 
 enum UpdateStatus {
   idle,
@@ -94,8 +96,18 @@ const _releaseApiUrl =
 const _releasesPageUrl =
     'https://github.com/NC1107/echo-messenger/releases/latest';
 
-class UpdateNotifier extends StateNotifier<UpdateState> {
-  UpdateNotifier() : super(const UpdateState());
+@Riverpod(keepAlive: true)
+class Update extends _$Update {
+  /// True after the provider has been disposed; guards async-progress
+  /// callbacks from setting state on a dead notifier (the StateNotifier
+  /// `mounted` flag has no equivalent on Notifier, so we track it manually).
+  bool _disposed = false;
+
+  @override
+  UpdateState build() {
+    ref.onDispose(() => _disposed = true);
+    return const UpdateState();
+  }
 
   Future<void> check({bool force = false}) async {
     if (appVersion == 'dev') return;
@@ -217,7 +229,7 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
       final filePath = await update_svc.downloadFile(assetUrl, assetName, (
         progress,
       ) {
-        if (mounted) {
+        if (!_disposed) {
           state = state.copyWith(downloadProgress: progress);
         }
       });
@@ -287,7 +299,3 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
     return null;
   }
 }
-
-final updateProvider = StateNotifierProvider<UpdateNotifier, UpdateState>(
-  (ref) => UpdateNotifier(),
-);
