@@ -32,6 +32,7 @@ import '../theme/responsive.dart';
 import '../utils/clipboard_image_helper.dart';
 import 'chat_input_bar/attach_file_button.dart';
 import 'chat_input_bar/attach_option.dart';
+import 'chat_input_bar/media_marker_helpers.dart';
 import 'chat_input_bar/media_picker_toggle.dart';
 import 'chat_input_bar/recording_row.dart';
 import 'chat_input_bar/send_button.dart';
@@ -73,7 +74,10 @@ String _formatBytes(int bytes) {
   return '${v.toStringAsFixed(1)} ${units[i]}';
 }
 
-const _kImageGif = 'image/gif';
+// Marker / MIME helpers live in chat_input_bar/media_marker_helpers.dart.
+// Local alias preserves the `_kImageGif` symbol used at three call sites
+// in this file without touching them.
+const _kImageGif = kImageGifMimeType;
 
 /// Extracted chat input bar from ChatPanel (~850 lines).
 ///
@@ -407,7 +411,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _saveDraftImmediate(widget.conversation.id, '');
       for (var i = 0; i < attachments.length; i++) {
         final att = attachments[i];
-        final marker = _buildMediaMarker(
+        final marker = buildMediaMarker(
           extension: att.ext,
           url: att.uploadedUrl!,
         );
@@ -600,51 +604,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   // ---------------------------------------------------------------------------
-  // Media marker helpers
-  // ---------------------------------------------------------------------------
-
-  String _buildMediaMarker({required String extension, required String url}) {
-    const imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
-    const videoExts = {'mp4', 'webm', 'mov'};
-    const audioExts = {'mp3', 'ogg', 'wav', 'm4a', 'aac'};
-
-    final ext = extension.toLowerCase();
-    if (imageExts.contains(ext)) {
-      return '[img:$url]';
-    }
-    if (videoExts.contains(ext)) {
-      return '[video:$url]';
-    }
-    if (audioExts.contains(ext)) {
-      return '[audio:$url]';
-    }
-    return '[file:$url]';
-  }
-
-  String _extensionFromMime(String mimeType) {
-    switch (mimeType.toLowerCase()) {
-      case 'image/jpeg':
-        return 'jpg';
-      case 'image/png':
-        return 'png';
-      case _kImageGif:
-        return 'gif';
-      case 'image/webp':
-        return 'webp';
-      case 'video/mp4':
-        return 'mp4';
-      case 'video/webm':
-        return 'webm';
-      case 'video/quicktime':
-        return 'mov';
-      case 'application/pdf':
-        return 'pdf';
-      default:
-        return 'bin';
-    }
-  }
-
-  // ---------------------------------------------------------------------------
   // Pending attachment helpers (Discord-style preview before send)
   // ---------------------------------------------------------------------------
 
@@ -800,7 +759,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       bytes: image.bytes,
       fileName: image.fileName,
       mimeType: image.mimeType,
-      ext: _extensionFromMime(image.mimeType),
+      ext: extensionFromMime(image.mimeType),
     );
   }
 
@@ -883,7 +842,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       mimeType: mimeType,
     );
     if (!mounted || url == null) return;
-    final marker = _buildMediaMarker(extension: ext, url: url);
+    final marker = buildMediaMarker(extension: ext, url: url);
     await _doSend(marker);
   }
 

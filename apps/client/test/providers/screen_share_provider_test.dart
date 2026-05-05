@@ -1,6 +1,13 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:echo_app/src/providers/screen_share_provider.dart';
+
+ProviderContainer _container() {
+  final c = ProviderContainer();
+  addTearDown(c.dispose);
+  return c;
+}
 
 void main() {
   group('ScreenShareState', () {
@@ -25,44 +32,38 @@ void main() {
     });
   });
 
-  group('ScreenShareNotifier', () {
+  group('ScreenShare notifier', () {
     test('setLiveKitScreenShareActive(true) sets isScreenSharing', () {
-      final notifier = ScreenShareNotifier();
-      expect(notifier.state.isScreenSharing, isFalse);
+      final container = _container();
+      final notifier = container.read(screenShareProvider.notifier);
+      expect(container.read(screenShareProvider).isScreenSharing, isFalse);
 
       notifier.setLiveKitScreenShareActive(true);
-      expect(notifier.state.isScreenSharing, isTrue);
-      expect(notifier.state.error, isNull);
+      expect(container.read(screenShareProvider).isScreenSharing, isTrue);
+      expect(container.read(screenShareProvider).error, isNull);
     });
 
     test('setLiveKitScreenShareActive(false) clears isScreenSharing', () {
-      final notifier = ScreenShareNotifier();
+      final container = _container();
+      final notifier = container.read(screenShareProvider.notifier);
       notifier.setLiveKitScreenShareActive(true);
       notifier.setLiveKitScreenShareActive(false);
-      expect(notifier.state.isScreenSharing, isFalse);
+      expect(container.read(screenShareProvider).isScreenSharing, isFalse);
     });
 
     test('setLiveKitScreenShareActive clears any previous error', () {
-      final notifier = ScreenShareNotifier();
-      // Simulate an error state
+      final container = _container();
+      final notifier = container.read(screenShareProvider.notifier);
       notifier.setLiveKitScreenShareActive(true);
-      expect(notifier.state.error, isNull);
+      expect(container.read(screenShareProvider).error, isNull);
     });
 
     test('stopScreenShare when not sharing is a no-op', () async {
-      final notifier = ScreenShareNotifier();
+      final container = _container();
+      final notifier = container.read(screenShareProvider.notifier);
       // Should not throw
       await notifier.stopScreenShare();
-      expect(notifier.state.isScreenSharing, isFalse);
-    });
-  });
-
-  group('ScreenShareNotifier._friendlyError', () {
-    // _friendlyError is static -- access via the public class
-    test('maps NotAllowedError to user-friendly message', () {
-      // We can't call the private method directly, but we verify the state
-      // patterns it handles by testing the error messages indirectly.
-      // The method is static and private, so this is covered by integration.
+      expect(container.read(screenShareProvider).isScreenSharing, isFalse);
     });
   });
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+part 'voice_settings_provider.g.dart';
 
 class VoiceSettingsState {
   final String inputDeviceId;
@@ -71,9 +73,12 @@ class VoiceSettingsState {
   }
 }
 
-class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
-  VoiceSettingsNotifier() : super(const VoiceSettingsState()) {
+@Riverpod(keepAlive: true)
+class VoiceSettings extends _$VoiceSettings {
+  @override
+  VoiceSettingsState build() {
     _load();
+    return const VoiceSettingsState();
   }
 
   static const _keyInputDevice = 'voice_input_device_id';
@@ -221,8 +226,3 @@ class VoiceSettingsNotifier extends StateNotifier<VoiceSettingsState> {
     await _persist(next);
   }
 }
-
-final voiceSettingsProvider =
-    StateNotifierProvider<VoiceSettingsNotifier, VoiceSettingsState>((ref) {
-      return VoiceSettingsNotifier();
-    });

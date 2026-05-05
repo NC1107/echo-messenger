@@ -45,15 +45,12 @@ class _FakeChatNotifier extends ChatNotifier {
 
 /// Override [voiceSettingsProvider] with default state.
 Override voiceSettingsOverride() {
-  return voiceSettingsProvider.overrideWith(
-    (ref) => _FakeVoiceSettingsNotifier(),
-  );
+  return voiceSettingsProvider.overrideWith(_FakeVoiceSettings.new);
 }
 
-class _FakeVoiceSettingsNotifier extends VoiceSettingsNotifier {
-  _FakeVoiceSettingsNotifier() {
-    state = const VoiceSettingsState();
-  }
+class _FakeVoiceSettings extends VoiceSettings {
+  @override
+  VoiceSettingsState build() => const VoiceSettingsState();
 }
 
 /// Standard overrides for ChatInputBar tests.

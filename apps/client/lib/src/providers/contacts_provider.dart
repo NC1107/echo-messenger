@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/blocked_user.dart';
 import '../models/contact.dart';
@@ -10,6 +10,8 @@ import '../services/debug_log_service.dart';
 import 'auth_provider.dart';
 import 'conversations_provider.dart';
 import 'server_url_provider.dart';
+
+part 'contacts_provider.g.dart';
 
 /// Sentinel used by [ContactsState.copyWith] to distinguish "not provided"
 /// from an explicit `null` (which clears the error).
@@ -51,8 +53,8 @@ class ContactsState {
   }
 }
 
-class ContactsNotifier extends StateNotifier<ContactsState> {
-  final Ref ref;
+@Riverpod(keepAlive: true)
+class Contacts extends _$Contacts {
   bool _isPendingLoadInFlight = false;
   DateTime? _lastPendingLoadedAt;
 
@@ -62,7 +64,16 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
   /// overwriting fresh state when two reloads overlap.
   int _loadGen = 0;
 
-  ContactsNotifier(this.ref) : super(const ContactsState());
+  /// True after the provider has been disposed; gates state writes from
+  /// async callbacks (the StateNotifier `mounted` check has no equivalent
+  /// on Notifier so we track it manually).
+  bool _disposed = false;
+
+  @override
+  ContactsState build() {
+    ref.onDispose(() => _disposed = true);
+    return const ContactsState();
+  }
 
   String get _serverUrl => ref.read(serverUrlProvider);
 
@@ -90,7 +101,7 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
       );
       // Drop a stale response -- a newer call has been issued or the notifier
       // was disposed while awaiting.
-      if (gen != _loadGen || !mounted) return;
+      if (gen != _loadGen || _disposed) return;
 
       if (response.statusCode == 200) {
         final list = (jsonDecode(response.body) as List)
@@ -104,7 +115,7 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
         );
       }
     } catch (e) {
-      if (gen != _loadGen || !mounted) return;
+      if (gen != _loadGen || _disposed) return;
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
@@ -288,9 +299,3 @@ class ContactsNotifier extends StateNotifier<ContactsState> {
     }
   }
 }
-
-final contactsProvider = StateNotifierProvider<ContactsNotifier, ContactsState>(
-  (ref) {
-    return ContactsNotifier(ref);
-  },
-);
