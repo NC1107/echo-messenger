@@ -21,13 +21,14 @@ import '../utils/semantics_preview.dart';
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, avatarColor, senderLabelColor;
 import '../services/media_cache_service.dart';
+import 'message/hover_action_button.dart';
+import 'message/link_preview_card.dart';
 import 'message/media_content.dart';
 import 'message/message_status_icon.dart';
 import 'message/reaction_bar.dart';
 import 'message/reply_quote.dart';
-import 'message/link_preview_card.dart';
-import 'message/youtube_embed.dart';
 import 'message/rich_text_content.dart';
+import 'message/youtube_embed.dart';
 
 /// Common emojis for the reaction picker.
 const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🎉'];
@@ -783,13 +784,13 @@ class _MessageItemState extends State<MessageItem>
             Semantics(
               label: 'Reply to message',
               button: true,
-              child: _HoverActionButton(
+              child: HoverActionButton(
                 icon: Icons.reply_outlined,
                 tooltip: 'Reply',
                 onPressed: () => widget.onReply?.call(msg),
               ),
             ),
-          _HoverActionButton(
+          HoverActionButton(
             icon: Icons.add_reaction_outlined,
             tooltip: 'React',
             onPressed: () {
@@ -2009,50 +2010,4 @@ IconData _systemEventIcon(String content) {
     return Icons.group;
   }
   return Icons.info_outline;
-}
-
-class _HoverActionButton extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-
-  const _HoverActionButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // 44×44 hit target per WCAG 2.5.5 — keyboard, switch, and assistive
-    // pointer users can land on the button even though the visual chip
-    // remains a tight 28×28 to preserve the Discord/Slack-style hover bar.
-    return Semantics(
-      label: tooltip,
-      button: true,
-      child: Tooltip(
-        message: tooltip,
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: InkWell(
-            onTap: onPressed,
-            borderRadius: BorderRadius.circular(6),
-            child: Center(
-              child: SizedBox(
-                width: 28,
-                height: 28,
-                child: Center(
-                  child: Opacity(
-                    opacity: 0.75,
-                    child: Icon(icon, size: 14, color: context.textSecondary),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
