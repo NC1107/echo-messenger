@@ -91,6 +91,51 @@ void main() {
       expect(ch1WithUnchanneled, hasLength(2));
     });
 
+    test(
+      'messagesForConversationChannel exempts system events from channel filter',
+      () {
+        // System events have channelId == null because the server never
+        // assigns them to a specific channel. They should still surface in
+        // every channel view so the user sees "X joined" pills regardless
+        // of which channel is selected (regression test for #663 follow-up).
+        const channelMsg = ChatMessage(
+          id: 'msg-1',
+          fromUserId: 'user-1',
+          fromUsername: 'alice',
+          conversationId: 'conv-1',
+          channelId: 'ch-1',
+          content: 'in channel 1',
+          timestamp: '2026-01-01T00:00:00Z',
+          isMine: false,
+        );
+        const systemMsg = ChatMessage(
+          id: 'msg-sys',
+          fromUserId: ChatMessage.systemUserId,
+          fromUsername: 'System',
+          conversationId: 'conv-1',
+          content: 'alice joined the group',
+          timestamp: '2026-01-01T00:00:30Z',
+          isMine: false,
+        );
+
+        final state = const ChatState(
+          messagesByConversation: {
+            'conv-1': [channelMsg, systemMsg],
+          },
+        );
+
+        final filtered = state.messagesForConversationChannel(
+          'conv-1',
+          channelId: 'ch-1',
+        );
+        expect(filtered, hasLength(2));
+        expect(
+          filtered.where((m) => m.isSystemEvent).map((m) => m.content),
+          contains('alice joined the group'),
+        );
+      },
+    );
+
     test('isLoadingHistory returns correct value', () {
       final state = const ChatState(loadingHistory: {'conv-1:': true});
       expect(state.isLoadingHistory('conv-1'), isTrue);
