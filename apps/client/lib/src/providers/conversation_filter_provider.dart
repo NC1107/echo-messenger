@@ -1,26 +1,47 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/conversation.dart';
 import '../utils/fuzzy_score.dart';
 import 'auth_provider.dart';
 import 'conversations_provider.dart';
 
+part 'conversation_filter_provider.g.dart';
+
 /// Which conversation type to show (all / DM-only / group-only).
 enum ConversationFilterType { all, dms, groups }
 
 /// Current search query entered by the user. Empty string = no search.
-final conversationSearchQueryProvider = StateProvider<String>((ref) => '');
+@riverpod
+class ConversationSearchQuery extends _$ConversationSearchQuery {
+  @override
+  String build() => '';
+
+  /// Replace the current query.
+  void set(String value) => state = value;
+}
 
 /// Active type filter (All / DMs / Groups).
-final conversationFilterTypeProvider = StateProvider<ConversationFilterType>(
-  (ref) => ConversationFilterType.all,
-);
+@riverpod
+class ConversationFilterTypeNotifier extends _$ConversationFilterTypeNotifier {
+  @override
+  ConversationFilterType build() => ConversationFilterType.all;
+
+  /// Replace the current filter selection.
+  void set(ConversationFilterType value) => state = value;
+}
 
 /// Pinned conversation IDs. Loaded from SharedPreferences + merged with
 /// server-side isPinned flag during [ConversationPanel] initialisation.
-final pinnedConversationIdsProvider = StateProvider<Set<String>>(
-  (ref) => const {},
-);
+@riverpod
+class PinnedConversationIds extends _$PinnedConversationIds {
+  @override
+  Set<String> build() => const {};
+
+  /// Replace the entire pinned-ID set (callers compute the new set
+  /// elsewhere and hand it in whole).
+  void set(Set<String> value) => state = value;
+}
 
 /// Derived, memoized list of conversations ready for the list view.
 ///
@@ -34,12 +55,13 @@ final pinnedConversationIdsProvider = StateProvider<Set<String>>(
 /// actually changes, so the O(n log n) work is never duplicated across widget
 /// rebuilds triggered by unrelated state (e.g. WS status toggling, theme
 /// changes, or cursor blink).
-final sortedConversationsProvider = Provider<List<Conversation>>((ref) {
+@riverpod
+List<Conversation> sortedConversations(Ref ref) {
   final conversations = ref.watch(
     conversationsProvider.select((s) => s.conversations),
   );
   final query = ref.watch(conversationSearchQueryProvider);
-  final filterType = ref.watch(conversationFilterTypeProvider);
+  final filterType = ref.watch(conversationFilterTypeNotifierProvider);
   final pinnedIds = ref.watch(pinnedConversationIdsProvider);
   final myUserId = ref.watch(authProvider.select((s) => s.userId)) ?? '';
 
@@ -85,4 +107,10 @@ final sortedConversationsProvider = Provider<List<Conversation>>((ref) {
   pinned.sort(byTimestamp);
   unpinned.sort(byTimestamp);
   return [...pinned, ...unpinned];
-});
+}
+
+/// Backwards-compat alias: callers historically referred to the filter-type
+/// notifier as `conversationFilterTypeProvider`. The codegen suffixes the
+/// generated provider with the class name (`Notifier`), so the alias keeps
+/// the call-site name short.
+final conversationFilterTypeProvider = conversationFilterTypeNotifierProvider;

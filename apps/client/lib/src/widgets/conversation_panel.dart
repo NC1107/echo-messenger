@@ -115,8 +115,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         widget.selectedConversationId != oldWidget.selectedConversationId &&
         ref.read(conversationFilterTypeProvider) !=
             ConversationFilterType.all) {
-      ref.read(conversationFilterTypeProvider.notifier).state =
-          ConversationFilterType.all;
+      ref
+          .read(conversationFilterTypeProvider.notifier)
+          .set(ConversationFilterType.all);
     }
   }
 
@@ -137,7 +138,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 150), () {
       if (!mounted) return;
-      ref.read(conversationSearchQueryProvider.notifier).state = trimmed;
+      ref.read(conversationSearchQueryProvider.notifier).set(trimmed);
     });
   }
 
@@ -152,7 +153,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
   void _onFilterChanged(ConversationFilterType filter) {
     if (ref.read(conversationFilterTypeProvider) == filter) return;
-    ref.read(conversationFilterTypeProvider.notifier).state = filter;
+    ref.read(conversationFilterTypeProvider.notifier).set(filter);
   }
 
   void _onExternalSearchFocus() {
@@ -180,10 +181,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           .where((c) => c.isPinned)
           .map((c) => c.id)
           .toSet();
-      ref.read(pinnedConversationIdsProvider.notifier).state = {
+      ref.read(pinnedConversationIdsProvider.notifier).set({
         ...pinned.toSet(),
         ...serverPinned,
-      };
+      });
     }
   }
 
@@ -202,7 +203,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     } else {
       updated.add(conversationId);
     }
-    ref.read(pinnedConversationIdsProvider.notifier).state = updated;
+    ref.read(pinnedConversationIdsProvider.notifier).set(updated);
     _savePinnedIds();
     ref
         .read(conversationsProvider.notifier)
@@ -211,7 +212,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
 
   void _clearSearch() {
     _searchDebounce?.cancel();
-    ref.read(conversationSearchQueryProvider.notifier).state = '';
+    ref.read(conversationSearchQueryProvider.notifier).set('');
     setState(() {
       _isSearching = false;
       _searchController.clear();
