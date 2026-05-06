@@ -1455,8 +1455,15 @@ class _MessageItemState extends State<MessageItem>
       padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 8);
     }
 
+    // Compact / Plain layouts (#794) flow to the full chat-pane width like
+    // Discord/Slack — no centered-bubble cap. Bubble layout keeps 520px so
+    // bubbles don't stretch awkwardly on wide windows.
+    final bubbleConstraints = widget.compactLayout
+        ? const BoxConstraints()
+        : const BoxConstraints(maxWidth: 520);
+
     return Container(
-      constraints: const BoxConstraints(maxWidth: 520),
+      constraints: bubbleConstraints,
       padding: padding,
       decoration: BoxDecoration(
         color: _bubbleColor(isMine: isMine, isFailed: isFailed),
