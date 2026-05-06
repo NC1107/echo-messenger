@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart' show SemanticsBinding;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:media_kit/media_kit.dart';
 
 import 'src/app.dart';
 import 'src/providers/server_url_provider.dart';
@@ -20,6 +21,10 @@ import 'src/utils/platform_shutdown.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Initialize media_kit's libmpv backend so video playback works on every
+  // platform — including Linux desktop, where Flutter's default video_player
+  // has no implementation (#727).
+  MediaKit.ensureInitialized();
 
   // Cap Flutter's in-memory decoded-image cache: 500 images / 100 MB.
   // The default (1000 images, no byte cap) is too generous for a chat app

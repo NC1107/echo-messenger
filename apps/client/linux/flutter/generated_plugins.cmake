@@ -9,9 +9,12 @@ list(APPEND FLUTTER_PLUGIN_LIST
   flutter_secure_storage_linux
   flutter_webrtc
   livekit_client
+  media_kit_libs_linux
+  media_kit_video
   screen_retriever_linux
   tray_manager
   url_launcher_linux
+  volume_controller
   window_manager
 )
 
