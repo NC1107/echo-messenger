@@ -107,7 +107,7 @@ class ChatMessage {
     // but reloading the app or opening the conversation for the first
     // time would show the literal sentinel as a regular message bubble.
     if (content.startsWith('__system__:')) {
-      final translated = _translateSystemSentinel(content, myUserId: myUserId);
+      final translated = translateSystemSentinel(content, myUserId: myUserId);
       if (translated != null) {
         content = translated;
         fromUserId = systemUserId;
@@ -153,8 +153,9 @@ class ChatMessage {
   ///
   /// Pass [myUserId] to get first-person phrasing ("You joined") when the
   /// acting user is the current user.
-  static String? _translateSystemSentinel(String sentinel, {String? myUserId}) {
-    // Helper: parse `<uuid>:<username>` tail and return (uuid, username) or null.
+  static String? translateSystemSentinel(String sentinel, {String? myUserId}) {
+    // Parse `<uuid>:<username>` tail that follows [tag] in [sentinel].
+    // Returns null when the sentinel is malformed.
     (String, String)? parseUuidUsername(String tag) {
       final rest = sentinel.substring(tag.length);
       final colonIdx = rest.indexOf(':');

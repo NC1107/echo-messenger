@@ -49,76 +49,18 @@ extension MessageHandlersOn on WsMessageHandler {
   }
 
   /// Parse a `__system__:member_*` sentinel and emit an in-chat system event
-  /// pill. No preview update, no unread increment.
+  /// pill. Delegates to [ChatMessage.translateSystemSentinel] for consistent
+  /// text generation. No preview update, no unread increment.
   void _handleSystemSentinel(
     String sentinel,
     String conversationId,
     String myUserId,
   ) {
     if (conversationId.isEmpty) return;
-
-    // Helper: parse `<uuid>:<username>` tail after [tag].
-    // Returns null when the sentinel is malformed.
-    (String, String)? parseUuidUsername(String tag) {
-      final rest = sentinel.substring(tag.length);
-      final colonIdx = rest.indexOf(':');
-      if (colonIdx < 0) return null;
-      final uuid = rest.substring(0, colonIdx);
-      final username = rest.substring(colonIdx + 1);
-      if (username.isEmpty) return null;
-      return (uuid, username);
-    }
-
-    const joinedTag = '__system__:member_joined:';
-    if (sentinel.startsWith(joinedTag)) {
-      final parts = parseUuidUsername(joinedTag);
-      if (parts == null) return;
-      final (uuid, username) = parts;
-      final isMe = uuid == myUserId;
-      ref.read(chatProvider.notifier).addSystemEvent(
-        conversationId,
-        '${isMe ? 'You' : username} joined the group',
-      );
-      return;
-    }
-
-    const leftTag = '__system__:member_left:';
-    if (sentinel.startsWith(leftTag)) {
-      final parts = parseUuidUsername(leftTag);
-      if (parts == null) return;
-      final (uuid, username) = parts;
-      final isMe = uuid == myUserId;
-      ref.read(chatProvider.notifier).addSystemEvent(
-        conversationId,
-        '${isMe ? 'You' : username} left the group',
-      );
-      return;
-    }
-
-    const removedTag = '__system__:member_removed:';
-    if (sentinel.startsWith(removedTag)) {
-      final parts = parseUuidUsername(removedTag);
-      if (parts == null) return;
-      final (uuid, username) = parts;
-      final isMe = uuid == myUserId;
-      ref.read(chatProvider.notifier).addSystemEvent(
-        conversationId,
-        '${isMe ? 'You were' : '$username was'} removed from the group',
-      );
-      return;
-    }
-
-    const bannedTag = '__system__:member_banned:';
-    if (sentinel.startsWith(bannedTag)) {
-      final parts = parseUuidUsername(bannedTag);
-      if (parts == null) return;
-      final (uuid, username) = parts;
-      final isMe = uuid == myUserId;
-      ref.read(chatProvider.notifier).addSystemEvent(
-        conversationId,
-        '${isMe ? 'You were' : '$username was'} banned from the group',
-      );
-      return;
+    final text =
+        ChatMessage.translateSystemSentinel(sentinel, myUserId: myUserId);
+    if (text != null) {
+      ref.read(chatProvider.notifier).addSystemEvent(conversationId, text);
     }
   }
 
