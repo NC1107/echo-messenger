@@ -9,12 +9,14 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'src/app.dart';
 import 'src/providers/server_url_provider.dart';
+import 'src/providers/websocket_provider.dart';
 import 'src/services/debug_log_service.dart';
 import 'src/services/message_cache.dart';
 import 'src/services/notification_service.dart';
 import 'src/services/saved_messages_service.dart';
 import 'src/services/sound_service.dart';
 import 'src/services/user_data_dir.dart';
+import 'src/utils/platform_shutdown.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -91,6 +93,25 @@ Future<void> _initAndRun() async {
   // prompting. The actual permission dialog is shown later from a user
   // gesture (e.g. the notification settings toggle).
   await NotificationService().requestPermission();
+
+  // SIGTERM handler: catches `kill -TERM <pid>` and host shutdown events
+  // (systemd sends SIGTERM before SIGKILL).  Fires cleanup before exit so
+  // the WebSocket gets a proper close frame and Hive writes are flushed.
+  // Web and Windows do not support POSIX signals; handled there via the
+  // AppLifecycleState.detached path in ShutdownHandler.
+  if (!kIsWeb) {
+    registerSigtermHandler(() {
+      try {
+        container.read(websocketProvider.notifier).disconnect();
+      } catch (_) {}
+      try {
+        // Synchronous best-effort flush; the async close continuation
+        // may not complete before exit(0) but avoids corruption on
+        // clean SIGTERM paths where the OS does give us a brief window.
+        Hive.close().ignore();
+      } catch (_) {}
+    });
+  }
 
   // Auto-login + crypto init is handled by SplashScreen
   // Issue #481: Linux GTK resize triangle (bottom-right corner) bleeds
