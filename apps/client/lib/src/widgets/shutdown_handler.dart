@@ -66,4 +66,7 @@ class _ShutdownHandlerState extends ConsumerState<ShutdownHandler>
     //    than an abrupt kill mid-write which would corrupt box files.
     Hive.close().ignore();
   }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
