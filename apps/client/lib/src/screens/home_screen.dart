@@ -90,6 +90,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   double _sidebarWidth = 350;
   static const _sidebarMinWidth = 200.0;
   static const _sidebarMaxWidth = 500.0;
+
+  /// Lower clamp during a resize drag — below `_sidebarMinWidth` so the
+  /// drag-end handler can detect a pull-through and snap into compact mode
+  /// (#739). Stays above 0 so the sidebar never visually vanishes mid-drag.
+  static const _sidebarPullThroughWidth = 100.0;
   static const _sidebarCollapsedWidth = 60.0;
   static const _sidebarDefaultWidth = 350.0;
 
@@ -1034,17 +1039,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         child: GestureDetector(
           onHorizontalDragUpdate: (details) {
             if (_sidebarCollapsed) return;
+            // Allow dragging below `_sidebarMinWidth` so users can pull the
+            // handle through to compact mode and the drag-end handler can
+            // snap to collapsed. The lower clamp keeps the sidebar from
+            // disappearing entirely mid-drag (#739).
             setState(() {
               _sidebarWidth = (_sidebarWidth + details.delta.dx).clamp(
-                _sidebarMinWidth,
+                _sidebarPullThroughWidth,
                 _sidebarMaxWidth,
               );
             });
           },
           onHorizontalDragEnd: (details) {
-            if (_sidebarWidth < 150) {
-              setState(() => _sidebarCollapsed = true);
-            }
+            setState(() {
+              if (_sidebarWidth < _sidebarMinWidth) {
+                // User pulled past the min — snap to compact and restore the
+                // expanded default for the next expand-from-compact toggle.
+                _sidebarCollapsed = true;
+                _sidebarWidth = _sidebarDefaultWidth;
+              }
+            });
           },
           onDoubleTap: () {
             setState(() {
