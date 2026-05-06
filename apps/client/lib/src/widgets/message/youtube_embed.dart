@@ -42,7 +42,17 @@ class YouTubeEmbed extends StatefulWidget {
 class _YouTubeEmbedState extends State<YouTubeEmbed> {
   YoutubePlayerController? _controller;
   StreamSubscription<YoutubePlayerValue>? _subscription;
+  Timer? _loadTimeout;
   bool _useFallback = !youtubeIframeSupported;
+
+  /// Maximum time we wait for the iframe player to reach any known state
+  /// (`cued`, `unstarted`, etc.) before assuming a silent failure and
+  /// swapping to the static fallback card. Some YouTube error states (e.g.
+  /// region/age/embed restrictions that surface as the iframe's branded
+  /// "Video unavailable" UI with codes like 152/153) never fire the JS
+  /// `onError` event, so the explicit-error listener below cannot catch
+  /// them — this timeout is the catch-net for that class of failures.
+  static const _kLoadTimeout = Duration(seconds: 8);
 
   @override
   void initState() {
@@ -59,20 +69,38 @@ class _YouTubeEmbedState extends State<YouTubeEmbed> {
             strictRelatedVideos: true,
           ),
         );
-        // Listen for runtime errors (video unavailable, embedding disabled,
-        // owner removed, etc. — codes 100/101/105/150 plus the catch-all
-        // `unknown` for other YouTube IFrame API errors). When YouTube
-        // reports any non-`none` error, swap to the static fallback card so
-        // the user gets a clean "tap to watch on YouTube" affordance
-        // instead of YouTube's branded inline error UI.
+        // Listen for explicit IFrame-API errors and for the player reaching
+        // a usable state (which cancels the load-timeout fallback). The two
+        // signals together cover most failure modes:
+        //   - JS `onError` codes 100/101/105/150 + catch-all `unknown`
+        //     (handled here via `value.error`).
+        //   - Silent failures where YouTube renders its branded error UI
+        //     inside the iframe without firing onError (handled via the
+        //     load timeout below).
         _subscription = controller.listen((value) {
           if (!mounted || _useFallback) return;
           if (value.error != YoutubeError.none) {
             debugPrint(
               '[YouTubeEmbed] runtime error ${value.error}, falling back',
             );
+            _loadTimeout?.cancel();
             setState(() => _useFallback = true);
+            return;
           }
+          // Cancel the timeout once the iframe reports any usable state —
+          // anything past `unknown` means YouTube's player is alive.
+          if (value.playerState != PlayerState.unknown) {
+            _loadTimeout?.cancel();
+          }
+        });
+        _loadTimeout = Timer(_kLoadTimeout, () {
+          if (!mounted || _useFallback) return;
+          debugPrint(
+            '[YouTubeEmbed] iframe never reached a usable state in '
+            '${_kLoadTimeout.inSeconds}s, falling back '
+            '(likely region/embed/age restriction)',
+          );
+          setState(() => _useFallback = true);
         });
         _controller = controller;
       } catch (e) {
@@ -84,6 +112,7 @@ class _YouTubeEmbedState extends State<YouTubeEmbed> {
 
   @override
   void dispose() {
+    _loadTimeout?.cancel();
     _subscription?.cancel();
     _controller?.close();
     super.dispose();
