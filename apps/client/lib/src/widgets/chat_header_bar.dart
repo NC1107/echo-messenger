@@ -313,17 +313,86 @@ class ChatHeaderBar extends ConsumerWidget {
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
       ),
-      _buildOverflowMenu(context, ref, conv, pinnedCount),
+      _buildOverflowMenu(context, ref, conv, pinnedCount, isWide: false),
     ];
   }
 
-  /// Overflow 3-dot menu for narrow layouts.
+  /// Overflow 3-dot menu.
+  ///
+  /// In wide layout the inline action row already exposes pins, search, media,
+  /// safety-number (DMs) and members (groups), so the overflow only carries
+  /// the advanced actions that don't have inline equivalents. When wide and
+  /// no advanced actions apply (e.g. unencrypted group), the menu is hidden
+  /// entirely (#738).
   Widget _buildOverflowMenu(
     BuildContext context,
     WidgetRef ref,
     Conversation conv,
-    int pinnedCount,
-  ) {
+    int pinnedCount, {
+    required bool isWide,
+  }) {
+    final items = <PopupMenuEntry<String>>[
+      if (!isWide && !conv.isGroup)
+        PopupMenuItem<String>(
+          value: 'safety',
+          child: _overflowItem(
+            context,
+            icon: Icons.lock_outlined,
+            label: 'Verify safety number',
+            color: EchoTheme.online,
+          ),
+        ),
+      if (!conv.isGroup && conv.isEncrypted)
+        PopupMenuItem<String>(
+          value: 'reset_keys',
+          child: _overflowItem(
+            context,
+            icon: Icons.healing,
+            label: 'Fix encryption issues',
+          ),
+        ),
+      if (!isWide)
+        PopupMenuItem<String>(
+          value: 'pins',
+          child: _overflowItem(
+            context,
+            icon: Icons.push_pin_outlined,
+            label: pinnedCount > 0
+                ? 'Pinned ($pinnedCount)'
+                : 'Pinned messages',
+          ),
+        ),
+      if (!isWide)
+        PopupMenuItem<String>(
+          value: 'media',
+          child: _overflowItem(
+            context,
+            icon: Icons.photo_library_outlined,
+            label: 'Shared media',
+          ),
+        ),
+      if (!isWide && conv.isGroup && onMembersToggle != null)
+        PopupMenuItem<String>(
+          value: 'members',
+          child: _overflowItem(
+            context,
+            icon: Icons.people_outline,
+            label: 'Members',
+          ),
+        ),
+      if (!conv.isGroup)
+        PopupMenuItem<String>(
+          value: 'disappearing',
+          child: _overflowItem(
+            context,
+            icon: Icons.timer_outlined,
+            label: _disappearingMessagesLabel,
+          ),
+        ),
+    ];
+
+    if (items.isEmpty) return const SizedBox.shrink();
+
     return PopupMenuButton<String>(
       icon: Icon(Icons.more_vert, size: 20, color: context.textSecondary),
       tooltip: 'More options',
@@ -348,63 +417,7 @@ class ChatHeaderBar extends ConsumerWidget {
             _showDisappearingDialog(context, ref, conv);
         }
       },
-      itemBuilder: (ctx) => [
-        if (!conv.isGroup)
-          PopupMenuItem<String>(
-            value: 'safety',
-            child: _overflowItem(
-              ctx,
-              icon: Icons.lock_outlined,
-              label: 'Verify safety number',
-              color: EchoTheme.online,
-            ),
-          ),
-        if (!conv.isGroup && conv.isEncrypted)
-          PopupMenuItem<String>(
-            value: 'reset_keys',
-            child: _overflowItem(
-              ctx,
-              icon: Icons.healing,
-              label: 'Fix encryption issues',
-            ),
-          ),
-        PopupMenuItem<String>(
-          value: 'pins',
-          child: _overflowItem(
-            ctx,
-            icon: Icons.push_pin_outlined,
-            label: pinnedCount > 0
-                ? 'Pinned ($pinnedCount)'
-                : 'Pinned messages',
-          ),
-        ),
-        PopupMenuItem<String>(
-          value: 'media',
-          child: _overflowItem(
-            ctx,
-            icon: Icons.photo_library_outlined,
-            label: 'Shared media',
-          ),
-        ),
-        if (conv.isGroup && onMembersToggle != null)
-          PopupMenuItem<String>(
-            value: 'members',
-            child: _overflowItem(
-              ctx,
-              icon: Icons.people_outline,
-              label: 'Members',
-            ),
-          ),
-        if (!conv.isGroup)
-          PopupMenuItem<String>(
-            value: 'disappearing',
-            child: _overflowItem(
-              ctx,
-              icon: Icons.timer_outlined,
-              label: _disappearingMessagesLabel,
-            ),
-          ),
-      ],
+      itemBuilder: (_) => items,
     );
   }
 
@@ -427,15 +440,7 @@ class ChatHeaderBar extends ConsumerWidget {
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
       IconButton(
-        icon: Badge(
-          isLabelVisible: pinnedCount > 0,
-          label: Text(
-            '$pinnedCount',
-            style: const TextStyle(fontSize: 9, color: Colors.white),
-          ),
-          backgroundColor: context.accent,
-          child: const Icon(Icons.push_pin_outlined, size: 20),
-        ),
+        icon: const Icon(Icons.push_pin_outlined, size: 20),
         color: context.textSecondary,
         tooltip: 'Pinned messages',
         onPressed: () => _showPinnedMessagesDialog(context, ref, conv),
@@ -476,7 +481,7 @@ class ChatHeaderBar extends ConsumerWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
-      _buildOverflowMenu(context, ref, conv, pinnedCount),
+      _buildOverflowMenu(context, ref, conv, pinnedCount, isWide: true),
     ];
   }
 

@@ -14,17 +14,22 @@ import '../../theme/echo_theme.dart';
 import '../../utils/download_helper.dart';
 import 'voice_message_widget.dart';
 
+// Markers may be followed by a newline + caption (the seed script and the
+// chat input both produce `[img:URL]\nCaption`), so the regex is anchored at
+// the start, uses a lazy capture, and does NOT require the closing `]` to
+// be at end-of-string. See #795.
+
 /// Regex for detecting image markers: [img:URL]
-final _imgRegex = RegExp(r'^\[img:(.+)\]$');
+final _imgRegex = RegExp(r'^\[img:([^\]\n]+)\]');
 
 /// Regex for detecting video markers: [video:URL]
-final _videoRegex = RegExp(r'^\[video:(.+)\]$');
+final _videoRegex = RegExp(r'^\[video:([^\]\n]+)\]');
 
 /// Regex for detecting generic file markers: [file:URL]
-final _fileRegex = RegExp(r'^\[file:(.+)\]$');
+final _fileRegex = RegExp(r'^\[file:([^\]\n]+)\]');
 
 /// Regex for detecting audio markers: [audio:URL]
-final _audioRegex = RegExp(r'^\[audio:(.+)\]$');
+final _audioRegex = RegExp(r'^\[audio:([^\]\n]+)\]');
 
 /// Regex for detecting standalone URL messages.
 final _standaloneUrlRegex = RegExp(r'^https?://[^\s]+$', caseSensitive: false);
@@ -149,6 +154,22 @@ String? extractMediaUrl(String content) {
     return content.trim();
   }
 
+  return null;
+}
+
+/// Extracts the caption that follows a media marker on the first line.
+///
+/// Returns the trimmed text after the closing `]` of an `[img:]` / `[video:]`
+/// / `[file:]` / `[audio:]` marker, or `null` if there is no marker or no
+/// caption. Used so messages of the form `[img:URL]\nCaption` render both the
+/// inline media and the caption text below it.
+String? extractMediaCaption(String content) {
+  for (final regex in [_imgRegex, _videoRegex, _fileRegex, _audioRegex]) {
+    final match = regex.firstMatch(content);
+    if (match == null) continue;
+    final rest = content.substring(match.end).trim();
+    return rest.isEmpty ? null : rest;
+  }
   return null;
 }
 

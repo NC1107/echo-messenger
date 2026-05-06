@@ -1171,6 +1171,11 @@ class _MessageItemState extends State<MessageItem>
   /// Resolve text color for message content.
   Color _contentTextColor({required bool isMine, required bool isFailed}) {
     if (isFailed) return EchoTheme.danger;
+    // Plain (Slack) layout drops the bubble fill (#564) so the message sits
+    // directly on the chat background. The primary's onColor would be picked
+    // for an accent-coloured bubble that no longer exists, so use textPrimary
+    // for readable contrast on every theme (#790).
+    if (widget._isPlain) return context.textPrimary;
     if (isMine) return Theme.of(context).colorScheme.onPrimary;
     return context.textPrimary;
   }
@@ -1185,13 +1190,30 @@ class _MessageItemState extends State<MessageItem>
     required bool hasMedia,
   }) {
     if (hasMedia) {
-      return MediaContent(
+      final mediaWidget = MediaContent(
         content: msg.content,
         isMine: isMine,
         serverUrl: widget.serverUrl,
         authToken: widget.authToken,
         mediaTicket: widget.mediaTicket,
         onImageTap: widget.onImageTap,
+      );
+      final caption = extractMediaCaption(msg.content);
+      if (caption == null) return mediaWidget;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          mediaWidget,
+          const SizedBox(height: 4),
+          RichTextContent(
+            text: caption,
+            textColor: _contentTextColor(isMine: isMine, isFailed: isFailed),
+            accentHoverColor: context.accentHover,
+            textSecondaryColor: context.textSecondary,
+            compact: widget.compactLayout,
+          ),
+        ],
       );
     }
     if (_isDecryptFailure(msg.content)) {
@@ -1438,8 +1460,15 @@ class _MessageItemState extends State<MessageItem>
       padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 8);
     }
 
+    // Compact / Plain layouts (#794) flow to the full chat-pane width like
+    // Discord/Slack — no centered-bubble cap. Bubble layout keeps 520px so
+    // bubbles don't stretch awkwardly on wide windows.
+    final bubbleConstraints = widget.compactLayout
+        ? const BoxConstraints()
+        : const BoxConstraints(maxWidth: 520);
+
     return Container(
-      constraints: const BoxConstraints(maxWidth: 520),
+      constraints: bubbleConstraints,
       padding: padding,
       decoration: BoxDecoration(
         color: _bubbleColor(isMine: isMine, isFailed: isFailed),

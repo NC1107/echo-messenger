@@ -90,6 +90,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   double _sidebarWidth = 350;
   static const _sidebarMinWidth = 200.0;
   static const _sidebarMaxWidth = 500.0;
+
+  /// Lower clamp during a resize drag — below `_sidebarMinWidth` so the
+  /// drag-end handler can detect a pull-through and snap into compact mode
+  /// (#739). Stays above 0 so the sidebar never visually vanishes mid-drag.
+  static const _sidebarPullThroughWidth = 100.0;
   static const _sidebarCollapsedWidth = 60.0;
   static const _sidebarDefaultWidth = 350.0;
 
@@ -713,13 +718,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               border: Border(top: BorderSide(color: context.border, width: 1)),
             ),
             child: Center(
-              child: IconButton(
-                icon: const Icon(Icons.settings_outlined, size: 18),
-                color: context.textSecondary,
-                tooltip: 'Settings',
-                onPressed: _openSettings,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              child: Builder(
+                builder: (context) {
+                  final updateState = ref.watch(updateProvider);
+                  final showUpdateDot =
+                      updateState.updateAvailable && !updateState.dismissed;
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.settings_outlined, size: 18),
+                        color: context.textSecondary,
+                        tooltip: 'Settings',
+                        onPressed: _openSettings,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 44,
+                          minHeight: 44,
+                        ),
+                      ),
+                      if (showUpdateDot)
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: _DotBadge(
+                            ringColor: context.mainBg,
+                            bgColor: context.accent,
+                          ),
+                        ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -1010,17 +1039,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         child: GestureDetector(
           onHorizontalDragUpdate: (details) {
             if (_sidebarCollapsed) return;
+            // Allow dragging below `_sidebarMinWidth` so users can pull the
+            // handle through to compact mode and the drag-end handler can
+            // snap to collapsed. The lower clamp keeps the sidebar from
+            // disappearing entirely mid-drag (#739).
             setState(() {
               _sidebarWidth = (_sidebarWidth + details.delta.dx).clamp(
-                _sidebarMinWidth,
+                _sidebarPullThroughWidth,
                 _sidebarMaxWidth,
               );
             });
           },
           onHorizontalDragEnd: (details) {
-            if (_sidebarWidth < 150) {
-              setState(() => _sidebarCollapsed = true);
-            }
+            setState(() {
+              if (_sidebarWidth < _sidebarMinWidth) {
+                // User pulled past the min — snap to compact and restore the
+                // expanded default for the next expand-from-compact toggle.
+                _sidebarCollapsed = true;
+                _sidebarWidth = _sidebarDefaultWidth;
+              }
+            });
           },
           onDoubleTap: () {
             setState(() {
@@ -1244,6 +1282,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         .watch(conversationsProvider)
         .conversations
         .fold<int>(0, (s, c) => s + c.unreadCount);
+    final updateState = ref.watch(updateProvider);
+    final showUpdateDot = updateState.updateAvailable && !updateState.dismissed;
 
     final tabs = <_MobileTabSpec>[
       _MobileTabSpec(
@@ -1262,10 +1302,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         outlinedIcon: Icons.people_outline,
         filledIcon: Icons.people,
       ),
-      const _MobileTabSpec(
+      _MobileTabSpec(
         label: 'Settings',
         outlinedIcon: Icons.settings_outlined,
         filledIcon: Icons.settings,
+        showDot: showUpdateDot,
       ),
     ];
 
@@ -1319,6 +1360,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 right: -8,
                                 child: _UnreadBadge(
                                   count: tab.badge,
+                                  ringColor: context.sidebarBg,
+                                  bgColor: context.accent,
+                                ),
+                              )
+                            else if (tab.showDot)
+                              Positioned(
+                                top: -2,
+                                right: -2,
+                                child: _DotBadge(
                                   ringColor: context.sidebarBg,
                                   bgColor: context.accent,
                                 ),
@@ -1661,11 +1711,18 @@ class _MobileTabSpec {
   final IconData outlinedIcon;
   final IconData filledIcon;
   final int badge;
+
+  /// Show a small accent-coloured dot (no count) on top of the icon. Used to
+  /// surface low-frequency, non-critical signals — e.g. an available update
+  /// (#792). [badge] takes precedence when both are set.
+  final bool showDot;
+
   const _MobileTabSpec({
     required this.label,
     required this.outlinedIcon,
     required this.filledIcon,
     this.badge = 0,
+    this.showDot = false,
   });
 }
 
@@ -1699,6 +1756,30 @@ class _UnreadBadge extends StatelessWidget {
             fontWeight: FontWeight.w700,
             height: 1.0,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small dot indicator (no count). Used for low-frequency, non-critical
+/// signals like an available update on the Settings icon (#792).
+class _DotBadge extends StatelessWidget {
+  final Color ringColor;
+  final Color bgColor;
+  const _DotBadge({required this.ringColor, required this.bgColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'update available',
+      child: Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(
+          color: bgColor,
+          shape: BoxShape.circle,
+          border: Border.all(color: ringColor, width: 1.5),
         ),
       ),
     );
