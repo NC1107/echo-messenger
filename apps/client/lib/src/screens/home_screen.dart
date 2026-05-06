@@ -713,13 +713,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               border: Border(top: BorderSide(color: context.border, width: 1)),
             ),
             child: Center(
-              child: IconButton(
-                icon: const Icon(Icons.settings_outlined, size: 18),
-                color: context.textSecondary,
-                tooltip: 'Settings',
-                onPressed: _openSettings,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              child: Builder(
+                builder: (context) {
+                  final updateState = ref.watch(updateProvider);
+                  final showUpdateDot =
+                      updateState.updateAvailable && !updateState.dismissed;
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.settings_outlined, size: 18),
+                        color: context.textSecondary,
+                        tooltip: 'Settings',
+                        onPressed: _openSettings,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 44,
+                          minHeight: 44,
+                        ),
+                      ),
+                      if (showUpdateDot)
+                        Positioned(
+                          top: 10,
+                          right: 10,
+                          child: _DotBadge(
+                            ringColor: context.mainBg,
+                            bgColor: context.accent,
+                          ),
+                        ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -1244,6 +1268,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         .watch(conversationsProvider)
         .conversations
         .fold<int>(0, (s, c) => s + c.unreadCount);
+    final updateState = ref.watch(updateProvider);
+    final showUpdateDot = updateState.updateAvailable && !updateState.dismissed;
 
     final tabs = <_MobileTabSpec>[
       _MobileTabSpec(
@@ -1262,10 +1288,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         outlinedIcon: Icons.people_outline,
         filledIcon: Icons.people,
       ),
-      const _MobileTabSpec(
+      _MobileTabSpec(
         label: 'Settings',
         outlinedIcon: Icons.settings_outlined,
         filledIcon: Icons.settings,
+        showDot: showUpdateDot,
       ),
     ];
 
@@ -1319,6 +1346,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                                 right: -8,
                                 child: _UnreadBadge(
                                   count: tab.badge,
+                                  ringColor: context.sidebarBg,
+                                  bgColor: context.accent,
+                                ),
+                              )
+                            else if (tab.showDot)
+                              Positioned(
+                                top: -2,
+                                right: -2,
+                                child: _DotBadge(
                                   ringColor: context.sidebarBg,
                                   bgColor: context.accent,
                                 ),
@@ -1661,11 +1697,18 @@ class _MobileTabSpec {
   final IconData outlinedIcon;
   final IconData filledIcon;
   final int badge;
+
+  /// Show a small accent-coloured dot (no count) on top of the icon. Used to
+  /// surface low-frequency, non-critical signals — e.g. an available update
+  /// (#792). [badge] takes precedence when both are set.
+  final bool showDot;
+
   const _MobileTabSpec({
     required this.label,
     required this.outlinedIcon,
     required this.filledIcon,
     this.badge = 0,
+    this.showDot = false,
   });
 }
 
@@ -1699,6 +1742,30 @@ class _UnreadBadge extends StatelessWidget {
             fontWeight: FontWeight.w700,
             height: 1.0,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small dot indicator (no count). Used for low-frequency, non-critical
+/// signals like an available update on the Settings icon (#792).
+class _DotBadge extends StatelessWidget {
+  final Color ringColor;
+  final Color bgColor;
+  const _DotBadge({required this.ringColor, required this.bgColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'update available',
+      child: Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(
+          color: bgColor,
+          shape: BoxShape.circle,
+          border: Border.all(color: ringColor, width: 1.5),
         ),
       ),
     );
