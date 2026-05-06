@@ -100,18 +100,7 @@ Future<void> _initAndRun() async {
   // Web and Windows do not support POSIX signals; handled there via the
   // AppLifecycleState.detached path in ShutdownHandler.
   if (!kIsWeb) {
-    registerSigtermHandler(() {
-      try {
-        container.read(websocketProvider.notifier).disconnect();
-      } catch (_) {}
-      try {
-        // Fire-and-forget: Hive.close() returns a Future; we cannot await it
-        // because exit(0) runs immediately after onShutdown() returns.
-        // Starting the close still lets Hive begin flushing buffered writes
-        // before the process exits, which prevents corruption.
-        Hive.close().ignore();
-      } catch (_) {}
-    });
+    registerSigtermHandler(() => _performCleanup(container));
   }
 
   // Auto-login + crypto init is handled by SplashScreen
@@ -122,4 +111,20 @@ Future<void> _initAndRun() async {
   runApp(
     UncontrolledProviderScope(container: container, child: const EchoApp()),
   );
+}
+
+/// Performs the shared pre-termination cleanup steps:
+///   1. Sends a WebSocket close frame (server marks user offline immediately).
+///   2. Begins flushing Hive box files to disk (fire-and-forget — cannot await
+///      because the caller may call exit(0) synchronously after this returns).
+void _performCleanup(ProviderContainer container) {
+  try {
+    container.read(websocketProvider.notifier).disconnect();
+  } catch (_) {}
+  try {
+    // Hive.close() is async; starting it before exit(0) gives Hive a chance
+    // to begin flushing buffered writes, which prevents box-file corruption
+    // on graceful SIGTERM paths.
+    Hive.close().ignore();
+  } catch (_) {}
 }
