@@ -48,20 +48,19 @@ extension MessageHandlersOn on WsMessageHandler {
     }
   }
 
-  /// Parse a `__system__:member_joined:<uuid>:<username>` sentinel and emit
-  /// an in-chat system event pill. No preview update, no unread increment.
-  void _handleSystemSentinel(String sentinel, String conversationId) {
+  /// Parse a `__system__:member_*` sentinel and emit an in-chat system event
+  /// pill. Delegates to [ChatMessage.translateSystemSentinel] for consistent
+  /// text generation. No preview update, no unread increment.
+  void _handleSystemSentinel(
+    String sentinel,
+    String conversationId,
+    String myUserId,
+  ) {
     if (conversationId.isEmpty) return;
-    const joinedTag = '__system__:member_joined:';
-    if (sentinel.startsWith(joinedTag)) {
-      final rest = sentinel.substring(joinedTag.length);
-      final colonIdx = rest.indexOf(':');
-      final username = colonIdx >= 0 ? rest.substring(colonIdx + 1) : rest;
-      if (username.isNotEmpty) {
-        ref
-            .read(chatProvider.notifier)
-            .addSystemEvent(conversationId, '$username joined the group');
-      }
+    final text =
+        ChatMessage.translateSystemSentinel(sentinel, myUserId: myUserId);
+    if (text != null) {
+      ref.read(chatProvider.notifier).addSystemEvent(conversationId, text);
     }
   }
 
@@ -76,7 +75,7 @@ extension MessageHandlersOn on WsMessageHandler {
     // System message sentinel -- render as an in-chat event pill and skip the
     // normal decrypt/preview pipeline entirely (#663).
     if (rawContent.startsWith(_systemPrefix)) {
-      _handleSystemSentinel(rawContent, conversationId);
+      _handleSystemSentinel(rawContent, conversationId, myUserId);
       return;
     }
 
