@@ -89,7 +89,13 @@ const _cacheTimeKey = 'update_check_time';
 const _dismissedVersionKey = 'update_dismissed_version';
 const _downloadedFileKey = 'update_downloaded_file';
 const _downloadedVersionKey = 'update_downloaded_version';
-const _cacheTtl = Duration(hours: 24);
+
+/// How long an update-check result is reused before re-fetching from the
+/// GitHub releases API. Previously 24h, which meant a release landing a few
+/// hours after the user's first launch of the day was suppressed until the
+/// next day (#793). One hour balances API politeness against freshness for
+/// users who keep the app open all day.
+const _cacheTtl = Duration(hours: 1);
 
 const _releaseApiUrl =
     'https://api.github.com/repos/NC1107/echo-messenger/releases/latest';
@@ -110,7 +116,10 @@ class Update extends _$Update {
   }
 
   Future<void> check({bool force = false}) async {
-    if (appVersion == 'dev') return;
+    if (appVersion == 'dev') {
+      debugPrint('[UpdateProvider] check skipped — running dev build');
+      return;
+    }
     state = state.copyWith(status: UpdateStatus.checking);
 
     try {
@@ -118,9 +127,17 @@ class Update extends _$Update {
 
       if (!force) {
         final usedCache = await _tryLoadFromCache(prefs);
-        if (usedCache) return;
+        if (usedCache) {
+          debugPrint(
+            '[UpdateProvider] check served from cache (TTL ${_cacheTtl.inMinutes}m)',
+          );
+          return;
+        }
       }
 
+      debugPrint(
+        '[UpdateProvider] check fetching from GitHub releases (force=$force)',
+      );
       await _fetchLatestRelease(prefs);
     } catch (e) {
       debugPrint('[UpdateProvider] Error checking for updates: $e');
