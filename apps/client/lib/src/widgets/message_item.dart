@@ -1712,8 +1712,14 @@ class _MessageItemState extends State<MessageItem>
   }) {
     return Positioned(
       top: -28,
+      // Anchor only the side closest to the bubble so the overlay sizes to
+      // its child action row (#723). Setting both left & right would force
+      // it to span the entire chat width — sent (right-aligned) bubbles set
+      // `right: 0`, but received bubbles previously also set `right: 8`,
+      // which is what produced the asymmetric full-width hover bar on
+      // left-side messages.
       left: isMine ? null : 36,
-      right: isMine ? 0 : 8,
+      right: isMine ? 0 : null,
       child: ExcludeSemantics(
         excluding: !_isHovered,
         child: IgnorePointer(
