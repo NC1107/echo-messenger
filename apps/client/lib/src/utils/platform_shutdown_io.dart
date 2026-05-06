@@ -5,7 +5,7 @@ import 'dart:io' show ProcessSignal, exit;
 /// When SIGTERM is received (e.g. from `kill -TERM <pid>` or systemd during
 /// host shutdown) [onShutdown] is awaited, then the process exits with code 0.
 void registerSigtermHandler(void Function() onShutdown) {
-  ProcessSignal.sigterm.watch().listen((_) async {
+  ProcessSignal.sigterm.watch().listen((_) {
     onShutdown();
     exit(0);
   });

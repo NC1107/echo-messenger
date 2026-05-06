@@ -105,9 +105,10 @@ Future<void> _initAndRun() async {
         container.read(websocketProvider.notifier).disconnect();
       } catch (_) {}
       try {
-        // Synchronous best-effort flush; the async close continuation
-        // may not complete before exit(0) but avoids corruption on
-        // clean SIGTERM paths where the OS does give us a brief window.
+        // Fire-and-forget: Hive.close() returns a Future; we cannot await it
+        // because exit(0) runs immediately after onShutdown() returns.
+        // Starting the close still lets Hive begin flushing buffered writes
+        // before the process exits, which prevents corruption.
         Hive.close().ignore();
       } catch (_) {}
     });

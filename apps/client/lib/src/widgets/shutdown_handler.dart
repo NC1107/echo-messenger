@@ -60,9 +60,10 @@ class _ShutdownHandlerState extends ConsumerState<ShutdownHandler>
       // Provider may already be disposed during forced teardown — ignore.
     }
 
-    // 2. Flush pending Hive writes.  Hive.close() is async but we cannot
-    //    await here; fire-and-forget is still far better than an abrupt kill
-    //    mid-write, which would corrupt box files.
+    // 2. Flush pending Hive writes.  `Hive.close()` is async; since
+    //    `didChangeAppLifecycleState` is a synchronous callback we cannot
+    //    await it.  Fire-and-forget: even starting the close is far better
+    //    than an abrupt kill mid-write which would corrupt box files.
     Hive.close().ignore();
   }
 }
