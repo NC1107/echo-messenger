@@ -100,7 +100,7 @@ jobs:
             libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             gstreamer1.0-plugins-good libsecret-1-dev \
             libayatana-appindicator3-dev \
-            libasound2-dev
+            libasound2-dev libmpv-dev
       - name: Install dependencies
         working-directory: apps/client
         run: flutter pub get
