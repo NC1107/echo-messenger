@@ -48,20 +48,77 @@ extension MessageHandlersOn on WsMessageHandler {
     }
   }
 
-  /// Parse a `__system__:member_joined:<uuid>:<username>` sentinel and emit
-  /// an in-chat system event pill. No preview update, no unread increment.
-  void _handleSystemSentinel(String sentinel, String conversationId) {
+  /// Parse a `__system__:member_*` sentinel and emit an in-chat system event
+  /// pill. No preview update, no unread increment.
+  void _handleSystemSentinel(
+    String sentinel,
+    String conversationId,
+    String myUserId,
+  ) {
     if (conversationId.isEmpty) return;
+
+    // Helper: parse `<uuid>:<username>` tail after [tag].
+    // Returns null when the sentinel is malformed.
+    (String, String)? parseUuidUsername(String tag) {
+      final rest = sentinel.substring(tag.length);
+      final colonIdx = rest.indexOf(':');
+      if (colonIdx < 0) return null;
+      final uuid = rest.substring(0, colonIdx);
+      final username = rest.substring(colonIdx + 1);
+      if (username.isEmpty) return null;
+      return (uuid, username);
+    }
+
     const joinedTag = '__system__:member_joined:';
     if (sentinel.startsWith(joinedTag)) {
-      final rest = sentinel.substring(joinedTag.length);
-      final colonIdx = rest.indexOf(':');
-      final username = colonIdx >= 0 ? rest.substring(colonIdx + 1) : rest;
-      if (username.isNotEmpty) {
-        ref
-            .read(chatProvider.notifier)
-            .addSystemEvent(conversationId, '$username joined the group');
-      }
+      final parts = parseUuidUsername(joinedTag);
+      if (parts == null) return;
+      final (uuid, username) = parts;
+      final isMe = uuid == myUserId;
+      ref.read(chatProvider.notifier).addSystemEvent(
+        conversationId,
+        '${isMe ? 'You' : username} joined the group',
+      );
+      return;
+    }
+
+    const leftTag = '__system__:member_left:';
+    if (sentinel.startsWith(leftTag)) {
+      final parts = parseUuidUsername(leftTag);
+      if (parts == null) return;
+      final (uuid, username) = parts;
+      final isMe = uuid == myUserId;
+      ref.read(chatProvider.notifier).addSystemEvent(
+        conversationId,
+        '${isMe ? 'You' : username} left the group',
+      );
+      return;
+    }
+
+    const removedTag = '__system__:member_removed:';
+    if (sentinel.startsWith(removedTag)) {
+      final parts = parseUuidUsername(removedTag);
+      if (parts == null) return;
+      final (uuid, username) = parts;
+      final isMe = uuid == myUserId;
+      ref.read(chatProvider.notifier).addSystemEvent(
+        conversationId,
+        '${isMe ? 'You were' : '$username was'} removed from the group',
+      );
+      return;
+    }
+
+    const bannedTag = '__system__:member_banned:';
+    if (sentinel.startsWith(bannedTag)) {
+      final parts = parseUuidUsername(bannedTag);
+      if (parts == null) return;
+      final (uuid, username) = parts;
+      final isMe = uuid == myUserId;
+      ref.read(chatProvider.notifier).addSystemEvent(
+        conversationId,
+        '${isMe ? 'You were' : '$username was'} banned from the group',
+      );
+      return;
     }
   }
 
@@ -76,7 +133,7 @@ extension MessageHandlersOn on WsMessageHandler {
     // System message sentinel -- render as an in-chat event pill and skip the
     // normal decrypt/preview pipeline entirely (#663).
     if (rawContent.startsWith(_systemPrefix)) {
-      _handleSystemSentinel(rawContent, conversationId);
+      _handleSystemSentinel(rawContent, conversationId, myUserId);
       return;
     }
 
