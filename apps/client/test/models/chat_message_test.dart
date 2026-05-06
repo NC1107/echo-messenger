@@ -249,22 +249,25 @@ void main() {
       },
     );
 
-    test('member_joined sentinel shows "You joined" when current user joined', () {
-      const myUuid = '22222222-2222-2222-2222-222222222222';
-      final json = {
-        'message_id': 'msg-sys-me',
-        'from_user_id': myUuid,
-        'from_username': 'alice',
-        'conversation_id': 'conv-1',
-        'content': '__system__:member_joined:$myUuid:alice',
-        'timestamp': '2026-04-01T10:00:00Z',
-      };
+    test(
+      'member_joined sentinel shows "You joined" when current user joined',
+      () {
+        const myUuid = '22222222-2222-2222-2222-222222222222';
+        final json = {
+          'message_id': 'msg-sys-me',
+          'from_user_id': myUuid,
+          'from_username': 'alice',
+          'conversation_id': 'conv-1',
+          'content': '__system__:member_joined:$myUuid:alice',
+          'timestamp': '2026-04-01T10:00:00Z',
+        };
 
-      final msg = ChatMessage.fromServerJson(json, myUuid);
+        final msg = ChatMessage.fromServerJson(json, myUuid);
 
-      expect(msg.isSystemEvent, isTrue);
-      expect(msg.content, 'You joined the group');
-    });
+        expect(msg.isSystemEvent, isTrue);
+        expect(msg.content, 'You joined the group');
+      },
+    );
 
     test('member_left sentinel translates to "X left the group"', () {
       final json = {
@@ -300,56 +303,65 @@ void main() {
       expect(msg.content, 'You left the group');
     });
 
-    test('member_removed sentinel translates to "X was removed from the group"', () {
-      final json = {
-        'message_id': 'msg-removed',
-        'from_user_id': '55555555-5555-5555-5555-555555555555',
-        'from_username': 'carol',
-        'conversation_id': 'conv-1',
-        'content':
-            '__system__:member_removed:55555555-5555-5555-5555-555555555555:carol',
-        'timestamp': '2026-04-01T10:00:00Z',
-      };
+    test(
+      'member_removed sentinel translates to "X was removed from the group"',
+      () {
+        final json = {
+          'message_id': 'msg-removed',
+          'from_user_id': '55555555-5555-5555-5555-555555555555',
+          'from_username': 'carol',
+          'conversation_id': 'conv-1',
+          'content':
+              '__system__:member_removed:55555555-5555-5555-5555-555555555555:carol',
+          'timestamp': '2026-04-01T10:00:00Z',
+        };
 
-      final msg = ChatMessage.fromServerJson(json, 'user-me');
+        final msg = ChatMessage.fromServerJson(json, 'user-me');
 
-      expect(msg.isSystemEvent, isTrue);
-      expect(msg.content, 'carol was removed from the group');
-    });
+        expect(msg.isSystemEvent, isTrue);
+        expect(msg.content, 'carol was removed from the group');
+      },
+    );
 
-    test('member_removed sentinel shows "You were removed" for current user', () {
-      const myUuid = '66666666-6666-6666-6666-666666666666';
-      final json = {
-        'message_id': 'msg-removed-me',
-        'from_user_id': myUuid,
-        'from_username': 'me',
-        'conversation_id': 'conv-1',
-        'content': '__system__:member_removed:$myUuid:me',
-        'timestamp': '2026-04-01T10:00:00Z',
-      };
+    test(
+      'member_removed sentinel shows "You were removed" for current user',
+      () {
+        const myUuid = '66666666-6666-6666-6666-666666666666';
+        final json = {
+          'message_id': 'msg-removed-me',
+          'from_user_id': myUuid,
+          'from_username': 'me',
+          'conversation_id': 'conv-1',
+          'content': '__system__:member_removed:$myUuid:me',
+          'timestamp': '2026-04-01T10:00:00Z',
+        };
 
-      final msg = ChatMessage.fromServerJson(json, myUuid);
+        final msg = ChatMessage.fromServerJson(json, myUuid);
 
-      expect(msg.isSystemEvent, isTrue);
-      expect(msg.content, 'You were removed from the group');
-    });
+        expect(msg.isSystemEvent, isTrue);
+        expect(msg.content, 'You were removed from the group');
+      },
+    );
 
-    test('member_banned sentinel translates to "X was banned from the group"', () {
-      final json = {
-        'message_id': 'msg-banned',
-        'from_user_id': '77777777-7777-7777-7777-777777777777',
-        'from_username': 'dave',
-        'conversation_id': 'conv-1',
-        'content':
-            '__system__:member_banned:77777777-7777-7777-7777-777777777777:dave',
-        'timestamp': '2026-04-01T10:00:00Z',
-      };
+    test(
+      'member_banned sentinel translates to "X was banned from the group"',
+      () {
+        final json = {
+          'message_id': 'msg-banned',
+          'from_user_id': '77777777-7777-7777-7777-777777777777',
+          'from_username': 'dave',
+          'conversation_id': 'conv-1',
+          'content':
+              '__system__:member_banned:77777777-7777-7777-7777-777777777777:dave',
+          'timestamp': '2026-04-01T10:00:00Z',
+        };
 
-      final msg = ChatMessage.fromServerJson(json, 'user-me');
+        final msg = ChatMessage.fromServerJson(json, 'user-me');
 
-      expect(msg.isSystemEvent, isTrue);
-      expect(msg.content, 'dave was banned from the group');
-    });
+        expect(msg.isSystemEvent, isTrue);
+        expect(msg.content, 'dave was banned from the group');
+      },
+    );
 
     test('member_banned sentinel shows "You were banned" for current user', () {
       const myUuid = '88888888-8888-8888-8888-888888888888';

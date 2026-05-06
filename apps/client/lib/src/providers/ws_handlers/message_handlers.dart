@@ -57,8 +57,10 @@ extension MessageHandlersOn on WsMessageHandler {
     String myUserId,
   ) {
     if (conversationId.isEmpty) return;
-    final text =
-        ChatMessage.translateSystemSentinel(sentinel, myUserId: myUserId);
+    final text = ChatMessage.translateSystemSentinel(
+      sentinel,
+      myUserId: myUserId,
+    );
     if (text != null) {
       ref.read(chatProvider.notifier).addSystemEvent(conversationId, text);
     }
