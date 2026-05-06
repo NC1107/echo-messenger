@@ -2006,7 +2006,10 @@ IconData _systemEventIcon(String content) {
   if (lower.contains('encryption') || lower.contains('key')) {
     return Icons.vpn_key;
   }
-  if (lower.contains('joined') || lower.contains('left')) {
+  if (lower.contains('joined') ||
+      lower.contains('left') ||
+      lower.contains('removed') ||
+      lower.contains('banned')) {
     return Icons.group;
   }
   return Icons.info_outline;

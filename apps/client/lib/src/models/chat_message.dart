@@ -107,7 +107,7 @@ class ChatMessage {
     // but reloading the app or opening the conversation for the first
     // time would show the literal sentinel as a regular message bubble.
     if (content.startsWith('__system__:')) {
-      final translated = _translateSystemSentinel(content);
+      final translated = translateSystemSentinel(content, myUserId: myUserId);
       if (translated != null) {
         content = translated;
         fromUserId = systemUserId;
@@ -150,15 +150,58 @@ class ChatMessage {
   /// Convert a `__system__:...` sentinel into a human-readable event line.
   /// Returns null if the sentinel is malformed or unknown so the caller
   /// can leave the message untouched.
-  static String? _translateSystemSentinel(String sentinel) {
+  ///
+  /// Pass [myUserId] to get first-person phrasing ("You joined") when the
+  /// acting user is the current user.
+  static String? translateSystemSentinel(String sentinel, {String? myUserId}) {
+    // Parse `<uuid>:<username>` tail that follows [tag] in [sentinel].
+    // Returns null when the sentinel is malformed.
+    (String, String)? parseUuidUsername(String tag) {
+      final rest = sentinel.substring(tag.length);
+      final colonIdx = rest.indexOf(':');
+      if (colonIdx < 0) return null;
+      final uuid = rest.substring(0, colonIdx);
+      final username = rest.substring(colonIdx + 1);
+      if (username.isEmpty) return null;
+      return (uuid, username);
+    }
+
     const joinedTag = '__system__:member_joined:';
     if (sentinel.startsWith(joinedTag)) {
-      final rest = sentinel.substring(joinedTag.length);
-      final colonIdx = rest.indexOf(':');
-      final username = colonIdx >= 0 ? rest.substring(colonIdx + 1) : rest;
-      if (username.isEmpty) return null;
-      return '$username joined the group';
+      final parts = parseUuidUsername(joinedTag);
+      if (parts == null) return null;
+      final (uuid, username) = parts;
+      final isMe = myUserId != null && uuid == myUserId;
+      return '${isMe ? 'You' : username} joined the group';
     }
+
+    const leftTag = '__system__:member_left:';
+    if (sentinel.startsWith(leftTag)) {
+      final parts = parseUuidUsername(leftTag);
+      if (parts == null) return null;
+      final (uuid, username) = parts;
+      final isMe = myUserId != null && uuid == myUserId;
+      return '${isMe ? 'You' : username} left the group';
+    }
+
+    const removedTag = '__system__:member_removed:';
+    if (sentinel.startsWith(removedTag)) {
+      final parts = parseUuidUsername(removedTag);
+      if (parts == null) return null;
+      final (uuid, username) = parts;
+      final isMe = myUserId != null && uuid == myUserId;
+      return '${isMe ? 'You were' : '$username was'} removed from the group';
+    }
+
+    const bannedTag = '__system__:member_banned:';
+    if (sentinel.startsWith(bannedTag)) {
+      final parts = parseUuidUsername(bannedTag);
+      if (parts == null) return null;
+      final (uuid, username) = parts;
+      final isMe = myUserId != null && uuid == myUserId;
+      return '${isMe ? 'You were' : '$username was'} banned from the group';
+    }
+
     return null;
   }
 

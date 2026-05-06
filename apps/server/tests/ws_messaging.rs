@@ -326,7 +326,7 @@ async fn invalid_json_returns_error() {
         .await
         .expect("send failed");
 
-    let event = read_text_with_timeout(&mut ws).await;
+    let event = read_text_skipping_presence(&mut ws).await;
     let msg: Value = serde_json::from_str(&event).expect("error JSON parse failed");
     assert_eq!(msg["type"], "error", "should get error event");
 
@@ -359,7 +359,7 @@ async fn message_to_noncontact_returns_error() {
         .await
         .expect("Alice send failed");
 
-    let event = read_text_with_timeout(&mut alice_ws).await;
+    let event = read_text_skipping_presence(&mut alice_ws).await;
     let msg: Value = serde_json::from_str(&event).expect("error JSON parse failed");
     assert_eq!(msg["type"], "error", "should get error for non-contact");
     assert!(
@@ -424,7 +424,7 @@ async fn offline_delivery_marks_unknown_device_undecryptable() {
         .expect("Alice send failed");
 
     // Alice receives message_sent confirmation.
-    let alice_event = read_text_with_timeout(&mut alice_ws).await;
+    let alice_event = read_text_skipping_presence(&mut alice_ws).await;
     let alice_msg: Value = serde_json::from_str(&alice_event).expect("Alice JSON parse failed");
     assert_eq!(
         alice_msg["type"], "message_sent",
@@ -504,7 +504,7 @@ async fn device_content_db_roundtrip() {
         .await
         .unwrap();
 
-    let raw = read_text_with_timeout(&mut alice_ws).await;
+    let raw = read_text_skipping_presence(&mut alice_ws).await;
     let ack: Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(ack["type"], "message_sent", "send failed: {raw}");
     let message_id = uuid::Uuid::parse_str(ack["message_id"].as_str().unwrap()).unwrap();

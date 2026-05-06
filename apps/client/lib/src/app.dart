@@ -8,6 +8,7 @@ import 'providers/theme_provider.dart';
 import 'router/app_router.dart';
 import 'theme/echo_theme.dart';
 import 'widgets/biometric_lock_guard.dart';
+import 'widgets/shutdown_handler.dart';
 
 /// Applies [CustomColorsState] overrides to an existing [ThemeData].
 /// Only overrides fields when a custom color is actually set; falls back
@@ -110,7 +111,7 @@ class EchoApp extends ConsumerWidget {
           ),
           child: child ?? const SizedBox.shrink(),
         );
-        return BiometricLockGuard(child: inner);
+        return ShutdownHandler(child: BiometricLockGuard(child: inner));
       },
     );
   }

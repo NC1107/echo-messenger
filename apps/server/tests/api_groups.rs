@@ -485,6 +485,26 @@ async fn get_system_message_count(group_id: &str) -> i64 {
     row.0
 }
 
+async fn get_system_message_count_by_kind(group_id: &str, kind: &str) -> i64 {
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("DATABASE_URL must be set");
+    let pool = echo_server::db::create_pool(&database_url).await;
+    let pattern = format!("__system__:{kind}:%");
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM messages \
+         WHERE conversation_id = $1 \
+           AND content LIKE $2 \
+           AND deleted_at IS NULL",
+    )
+    .bind(uuid::Uuid::parse_str(group_id).unwrap())
+    .bind(&pattern)
+    .fetch_one(&pool)
+    .await
+    .expect("system message count query failed");
+    row.0
+}
+
 #[tokio::test]
 async fn add_member_creates_system_message() {
     let base = common::spawn_server().await;
@@ -505,4 +525,120 @@ async fn add_member_creates_system_message() {
 
     let count = get_system_message_count(&group_id).await;
     assert_eq!(count, 1, "expected one system message row after add_member");
+}
+
+#[tokio::test]
+async fn leave_group_creates_system_message() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (owner_token, _) = register_and_login(&client, &base, "leavesysown").await;
+    let (member_token, member_id) = register_and_login(&client, &base, "leavesysmem").await;
+
+    // Make the group public so the member can join directly.
+    let group_id = {
+        let resp = client
+            .post(format!("{base}/api/groups"))
+            .header("Authorization", format!("Bearer {owner_token}"))
+            .json(&serde_json::json!({ "name": "LeaveGroup", "is_public": true }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status().as_u16(), 201);
+        resp.json::<Value>().await.unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    // Add the member so they can later leave.
+    client
+        .post(format!("{base}/api/groups/{group_id}/members"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .json(&serde_json::json!({ "user_id": member_id }))
+        .send()
+        .await
+        .unwrap();
+
+    // Member leaves the group.
+    let resp = client
+        .post(format!("{base}/api/groups/{group_id}/leave"))
+        .header("Authorization", format!("Bearer {member_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+
+    let count = get_system_message_count_by_kind(&group_id, "member_left").await;
+    assert_eq!(
+        count, 1,
+        "expected one member_left system message after leave"
+    );
+}
+
+#[tokio::test]
+async fn remove_member_creates_system_message() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (owner_token, _) = register_and_login(&client, &base, "removesysown").await;
+    let (_, member_id) = register_and_login(&client, &base, "removesysmem").await;
+
+    let group_id = create_group(&client, &base, &owner_token, "RemoveGroup").await;
+
+    // Add the member.
+    client
+        .post(format!("{base}/api/groups/{group_id}/members"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .json(&serde_json::json!({ "user_id": member_id }))
+        .send()
+        .await
+        .unwrap();
+
+    // Owner removes the member.
+    let resp = client
+        .delete(format!("{base}/api/groups/{group_id}/members/{member_id}"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+
+    let count = get_system_message_count_by_kind(&group_id, "member_removed").await;
+    assert_eq!(
+        count, 1,
+        "expected one member_removed system message after remove_member"
+    );
+}
+
+#[tokio::test]
+async fn ban_member_creates_system_message() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (owner_token, _) = register_and_login(&client, &base, "bansysown").await;
+    let (_, member_id) = register_and_login(&client, &base, "bansysmem").await;
+
+    let group_id = create_group(&client, &base, &owner_token, "BanGroup").await;
+
+    // Add the member.
+    client
+        .post(format!("{base}/api/groups/{group_id}/members"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .json(&serde_json::json!({ "user_id": member_id }))
+        .send()
+        .await
+        .unwrap();
+
+    // Owner bans the member.
+    let resp = client
+        .post(format!("{base}/api/groups/{group_id}/ban/{member_id}"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+
+    let count = get_system_message_count_by_kind(&group_id, "member_banned").await;
+    assert_eq!(
+        count, 1,
+        "expected one member_banned system message after ban_member"
+    );
 }

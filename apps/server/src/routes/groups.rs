@@ -440,6 +440,34 @@ pub async fn remove_member(
     } else {
         // Rotate group key so the removed member can no longer decrypt future messages.
         rotate_group_key_after_member_loss(&state, group_id).await;
+
+        // Emit a system message so remaining members see an in-chat pill.
+        if let Some(target_user) = db::users::find_by_id(&state.pool, target_user_id)
+            .await
+            .unwrap_or_default()
+        {
+            let sentinel = format!(
+                "__system__:member_removed:{}:{}",
+                target_user_id, target_user.username
+            );
+            if let Ok(sys_msg) =
+                db::messages::insert_system_message(&state.pool, group_id, auth.user_id, &sentinel)
+                    .await
+            {
+                let ws_event = serde_json::json!({
+                    "type": "new_message",
+                    "message_id": sys_msg.id,
+                    "from_user_id": target_user_id,
+                    "from_username": target_user.username,
+                    "conversation_id": group_id,
+                    "content": sentinel,
+                    "timestamp": sys_msg.created_at,
+                });
+                if let Ok(s) = serde_json::to_string(&ws_event) {
+                    state.hub.broadcast_json(&remaining, &s, None);
+                }
+            }
+        }
     }
 
     Ok(Json(serde_json::json!({ "status": "removed" })))
@@ -626,6 +654,12 @@ pub async fn leave_group(
         }
     }
 
+    // Look up the leaver's username before removing them so we can emit the
+    // system message even after their membership row is gone.
+    let leaver = db::users::find_by_id(&state.pool, auth.user_id)
+        .await
+        .unwrap_or_default();
+
     let removed = db::groups::remove_member(&state.pool, group_id, auth.user_id)
         .await
         .db_ctx("leave_group/remove_member")?;
@@ -651,6 +685,31 @@ pub async fn leave_group(
     } else {
         // Rotate group key so the leaver loses access to future ciphertext.
         rotate_group_key_after_member_loss(&state, group_id).await;
+
+        // Emit a system message so remaining members see an in-chat pill.
+        if let Some(leaver_user) = leaver {
+            let sentinel = format!(
+                "__system__:member_left:{}:{}",
+                auth.user_id, leaver_user.username
+            );
+            if let Ok(sys_msg) =
+                db::messages::insert_system_message(&state.pool, group_id, auth.user_id, &sentinel)
+                    .await
+            {
+                let ws_event = serde_json::json!({
+                    "type": "new_message",
+                    "message_id": sys_msg.id,
+                    "from_user_id": auth.user_id,
+                    "from_username": leaver_user.username,
+                    "conversation_id": group_id,
+                    "content": sentinel,
+                    "timestamp": sys_msg.created_at,
+                });
+                if let Ok(s) = serde_json::to_string(&ws_event) {
+                    state.hub.broadcast_json(&remaining, &s, None);
+                }
+            }
+        }
     }
 
     Ok(Json(serde_json::json!({ "status": "left" })))
@@ -747,6 +806,12 @@ pub async fn ban_member(
         return Err(AppError::bad_request("Only the group owner can ban admins"));
     }
 
+    // Look up the target user's username before banning so we can emit a
+    // system message visible to remaining members.
+    let target_user = db::users::find_by_id(&state.pool, target_user_id)
+        .await
+        .unwrap_or_default();
+
     db::groups::ban_member(&state.pool, group_id, target_user_id, auth.user_id)
         .await
         .db_ctx("ban_member/insert")?;
@@ -764,6 +829,31 @@ pub async fn ban_member(
     } else {
         // Rotate group key so the banned member loses access to future ciphertext.
         rotate_group_key_after_member_loss(&state, group_id).await;
+
+        // Emit a system message so remaining members see an in-chat pill.
+        if let Some(banned_user) = target_user {
+            let sentinel = format!(
+                "__system__:member_banned:{}:{}",
+                target_user_id, banned_user.username
+            );
+            if let Ok(sys_msg) =
+                db::messages::insert_system_message(&state.pool, group_id, auth.user_id, &sentinel)
+                    .await
+            {
+                let ws_event = serde_json::json!({
+                    "type": "new_message",
+                    "message_id": sys_msg.id,
+                    "from_user_id": target_user_id,
+                    "from_username": banned_user.username,
+                    "conversation_id": group_id,
+                    "content": sentinel,
+                    "timestamp": sys_msg.created_at,
+                });
+                if let Ok(s) = serde_json::to_string(&ws_event) {
+                    state.hub.broadcast_json(&remaining, &s, None);
+                }
+            }
+        }
     }
 
     Ok(Json(serde_json::json!({ "status": "banned" })))
