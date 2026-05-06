@@ -19,7 +19,7 @@ dependencies:
   web_socket_channel: ^3.0.0
   cryptography: ^2.7.0
   shared_preferences: ^2.3.0
-  flutter_secure_storage: ^10.0.0
+  flutter_secure_storage: ^10.1.0
   google_fonts: ^8.0.2
   url_launcher: ^6.3.0
   file_picker: ^11.0.2
