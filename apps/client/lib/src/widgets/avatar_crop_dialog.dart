@@ -1,8 +1,84 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
+
+/// Decodes [bytes] into an [img.Image] suitable for cropping.
+///
+/// The `image` package handles JPEG, PNG, GIF, WebP, BMP and TIFF directly.
+/// On iOS the gallery often hands back HEIC, which `image` does not support
+/// — that produced the "could not decode image" failure in #796. When the
+/// fast path fails we sniff for HEIC / HEIF / AVIF magic bytes and fall
+/// back to Flutter's platform decoder via [ui.instantiateImageCodec], which
+/// uses the iOS native HEIC decoder. The first frame is re-encoded as PNG
+/// and fed back through the `image` package so cropping can proceed.
+///
+/// Returns null when both decoders fail.
+Future<img.Image?> decodeAvatarImage(Uint8List bytes) {
+  if (bytes.isEmpty) return Future.value(null);
+
+  // image's decodeImage can throw on truncated/garbage input rather than
+  // returning null, so wrap the fast path defensively.
+  img.Image? direct;
+  try {
+    direct = img.decodeImage(bytes);
+  } catch (_) {
+    direct = null;
+  }
+  if (direct != null) return Future.value(direct);
+
+  // Only try the platform decoder for formats `image` legitimately can't
+  // handle. Falling back unconditionally would hide truly malformed input
+  // and stall the dialog when the platform decoder isn't available
+  // (notably in widget tests, where instantiateImageCodec doesn't resolve).
+  if (_looksLikeHeifFamily(bytes)) {
+    return _decodeViaPlatformCodec(bytes);
+  }
+  return Future.value(null);
+}
+
+// Detect HEIC / HEIF / AVIF by looking at the ISOBMFF `ftyp` box brand at
+// offset 8-11. Returns false on anything that isn't an ISOBMFF container.
+bool _looksLikeHeifFamily(Uint8List bytes) {
+  if (bytes.length < 12) return false;
+  if (bytes[4] != 0x66 ||
+      bytes[5] != 0x74 ||
+      bytes[6] != 0x79 ||
+      bytes[7] != 0x70) {
+    return false; // bytes 4-7 != "ftyp"
+  }
+  const heifBrands = {
+    'heic',
+    'heix',
+    'heim',
+    'heis',
+    'mif1',
+    'msf1',
+    'avif',
+    'avis',
+    'avi1',
+  };
+  final brand = String.fromCharCodes(bytes.sublist(8, 12));
+  return heifBrands.contains(brand);
+}
+
+Future<img.Image?> _decodeViaPlatformCodec(Uint8List bytes) async {
+  try {
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    final pngData = await frame.image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+    frame.image.dispose();
+    codec.dispose();
+    if (pngData == null) return null;
+    return img.decodePng(pngData.buffer.asUint8List());
+  } catch (_) {
+    return null;
+  }
+}
 
 /// Shows a modal crop dialog for an avatar image.
 ///
@@ -88,9 +164,8 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
     }
   }
 
-  static Future<img.Image?> _decodeAsync(Uint8List bytes) async {
-    return img.decodeImage(bytes);
-  }
+  static Future<img.Image?> _decodeAsync(Uint8List bytes) =>
+      decodeAvatarImage(bytes);
 
   // Clamp offset so the crop square (previewSize×previewSize) is always
   // fully covered by the image — no empty space inside the circle.
