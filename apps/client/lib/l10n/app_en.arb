@@ -1,0 +1,2118 @@
+{
+  "@@locale": "en",
+
+  "tagline": "End-to-end encrypted. Zero telemetry.",
+  "@tagline": { "description": "App tagline shown on login/register screens" },
+
+  "usernameLabel": "Username",
+  "@usernameLabel": { "description": "Username field label" },
+
+  "passwordLabel": "Password",
+  "@passwordLabel": { "description": "Password field label" },
+
+  "usernameRequired": "Username is required",
+  "@usernameRequired": { "description": "Validation error when username is empty" },
+
+  "passwordRequired": "Password is required",
+  "@passwordRequired": { "description": "Validation error when password is empty" },
+
+  "usernameLengthError": "Must be 3-32 characters",
+  "@usernameLengthError": { "description": "Validation error for username length" },
+
+  "usernameCharsError": "Only letters, numbers, and underscores",
+  "@usernameCharsError": { "description": "Validation error for username characters" },
+
+  "passwordMinLength": "Must be at least 8 characters",
+  "@passwordMinLength": { "description": "Validation error for password minimum length" },
+
+  "passwordMaxLength": "Must be 128 characters or fewer",
+  "@passwordMaxLength": { "description": "Validation error for password maximum length" },
+
+  "confirmPasswordLabel": "Confirm password",
+  "@confirmPasswordLabel": { "description": "Confirm password field label" },
+
+  "confirmPasswordRequired": "Please confirm your password",
+  "@confirmPasswordRequired": { "description": "Validation error when confirm password is empty" },
+
+  "passwordMismatch": "Passwords do not match",
+  "@passwordMismatch": { "description": "Validation error when passwords do not match" },
+
+  "passwordHint": "8-128 characters required",
+  "@passwordHint": { "description": "Password length hint shown below password field" },
+
+  "passwordStrengthStrong": "Strong",
+  "@passwordStrengthStrong": { "description": "Password strength label: strong" },
+
+  "passwordStrengthFair": "Fair",
+  "@passwordStrengthFair": { "description": "Password strength label: fair" },
+
+  "passwordStrengthWeak": "Weak",
+  "@passwordStrengthWeak": { "description": "Password strength label: weak" },
+
+  "forgotPassword": "Forgot password?",
+  "@forgotPassword": { "description": "Forgot password link text" },
+
+  "createAccount": "Create an account",
+  "@createAccount": { "description": "Link to go to register screen" },
+
+  "loginButton": "Log in",
+  "@loginButton": { "description": "Login button text" },
+
+  "createYourAccount": "Create your account",
+  "@createYourAccount": { "description": "Subtitle on register screen" },
+
+  "createAccountButton": "Create account",
+  "@createAccountButton": { "description": "Submit button on register screen" },
+
+  "alreadyHaveAccount": "Already have an account? Log in",
+  "@alreadyHaveAccount": { "description": "Link to login screen on register screen" },
+
+  "welcomeToEcho": "Welcome to Echo",
+  "@welcomeToEcho": { "description": "Welcome dialog title" },
+
+  "serverNoticeContent": "You're connected to the official Echo server at {host}\n\nYour messages are end-to-end encrypted. The server cannot read your messages.\n\nIn the future, you'll be able to self-host your own Echo server.",
+  "@serverNoticeContent": {
+    "description": "Welcome dialog content showing the connected server",
+    "placeholders": { "host": { "type": "String", "example": "echo-messenger.us" } }
+  },
+
+  "gotIt": "Got it",
+  "@gotIt": { "description": "Confirm button in welcome dialog" },
+
+  "logOutTitle": "Log out",
+  "@logOutTitle": { "description": "Log out dialog title and button text" },
+
+  "logOutConfirm": "Are you sure you want to log out?",
+  "@logOutConfirm": { "description": "Log out confirmation question" },
+
+  "logOutWarning": "Your local encryption keys will be cleared. Old encrypted messages on this device may become unreadable.",
+  "@logOutWarning": { "description": "Warning shown in logout dialog in settings" },
+
+  "cancel": "Cancel",
+  "@cancel": { "description": "Generic cancel button" },
+
+  "settingsTitle": "Settings",
+  "@settingsTitle": { "description": "Settings screen title" },
+
+  "expandSidebar": "Expand sidebar",
+  "@expandSidebar": { "description": "Tooltip for expand sidebar button" },
+
+  "backToConversations": "Back to conversations",
+  "@backToConversations": { "description": "Tooltip for back to conversations button" },
+
+  "noConversationSelected": "No conversation selected",
+  "@noConversationSelected": { "description": "Empty state when no conversation is selected" },
+
+  "noConversationHint": "Choose a conversation from the sidebar or start a new chat",
+  "@noConversationHint": { "description": "Hint text when no conversation is selected" },
+
+  "chatsTab": "Chats",
+  "@chatsTab": { "description": "Chats tab label" },
+
+  "discoverTab": "Discover",
+  "@discoverTab": { "description": "Discover tab label" },
+
+  "contactsTab": "Contacts",
+  "@contactsTab": { "description": "Contacts tab label" },
+
+  "downloadingUpdate": "Downloading update... {pct}%",
+  "@downloadingUpdate": {
+    "description": "Update download progress label",
+    "placeholders": { "pct": { "type": "int", "example": "45" } }
+  },
+
+  "updateReadyToInstall": "Echo v{version} ready to install",
+  "@updateReadyToInstall": {
+    "description": "Banner text when update is ready to install",
+    "placeholders": { "version": { "type": "String", "example": "1.2.3" } }
+  },
+
+  "restartToUpdate": "Restart to Update",
+  "@restartToUpdate": { "description": "Button to restart and apply update" },
+
+  "later": "Later",
+  "@later": { "description": "Dismiss update button" },
+
+  "installingUpdate": "Installing update...",
+  "@installingUpdate": { "description": "Label shown while update is installing" },
+
+  "updateFailed": "Update failed",
+  "@updateFailed": { "description": "Label shown when update fails" },
+
+  "retry": "Retry",
+  "@retry": { "description": "Generic retry button" },
+
+  "newVersionAvailableAdmin": "A new version is available. Ask your admin to update.",
+  "@newVersionAvailableAdmin": { "description": "Banner shown when a newer version is available but auto-update is not possible" },
+
+  "updateVersionAvailable": "Echo v{version} is available",
+  "@updateVersionAvailable": {
+    "description": "Banner text when an update is available",
+    "placeholders": { "version": { "type": "String", "example": "1.2.3" } }
+  },
+
+  "updateButton": "Update",
+  "@updateButton": { "description": "Update button text" },
+
+  "downloadButton": "Download",
+  "@downloadButton": { "description": "Download button text" },
+
+  "addContact": "Add Contact",
+  "@addContact": { "description": "Button to add a contact" },
+
+  "browseGroups": "Browse Groups",
+  "@browseGroups": { "description": "Button to browse groups" },
+
+  "encryptionError": "Encryption: {error}",
+  "@encryptionError": {
+    "description": "Toast message for encryption errors",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "keysRegenerated": "Your encryption keys were regenerated. Previous encrypted messages may not be readable.",
+  "@keysRegenerated": { "description": "Toast shown when encryption keys are regenerated" },
+
+  "couldNotStartConversation": "Could not start conversation",
+  "@couldNotStartConversation": { "description": "Error toast when DM creation fails" },
+
+  "accountPreferences": "Account preferences",
+  "@accountPreferences": { "description": "Settings section group header" },
+
+  "settingsSectionProfile": "Profile",
+  "@settingsSectionProfile": { "description": "Settings section: Profile" },
+
+  "settingsSectionAppearance": "Appearance",
+  "@settingsSectionAppearance": { "description": "Settings section: Appearance" },
+
+  "settingsSectionLanguage": "Language",
+  "@settingsSectionLanguage": { "description": "Settings section: Language" },
+
+  "settingsSectionNotifications": "Notifications",
+  "@settingsSectionNotifications": { "description": "Settings section: Notifications" },
+
+  "settingsSectionVoiceVideo": "Voice & Video",
+  "@settingsSectionVoiceVideo": { "description": "Settings section: Voice & Video" },
+
+  "settingsSectionPrivacy": "Privacy",
+  "@settingsSectionPrivacy": { "description": "Settings section: Privacy" },
+
+  "settingsSectionDevices": "Devices",
+  "@settingsSectionDevices": { "description": "Settings section: Devices" },
+
+  "settingsSectionStorage": "Storage",
+  "@settingsSectionStorage": { "description": "Settings section: Data & Storage" },
+
+  "settingsSectionAccessibility": "Accessibility",
+  "@settingsSectionAccessibility": { "description": "Settings section: Accessibility" },
+
+  "settingsSectionAbout": "About",
+  "@settingsSectionAbout": { "description": "Settings section: About" },
+
+  "logOut": "Log out",
+  "@logOut": { "description": "Log out button label in settings list" },
+
+  "themeSystem": "System",
+  "@themeSystem": { "description": "Theme option: System (follow device setting)" },
+
+  "themeDark": "Dark",
+  "@themeDark": { "description": "Theme option: Dark" },
+
+  "themeLight": "Light",
+  "@themeLight": { "description": "Theme option: Light" },
+
+  "themeGraphite": "Graphite",
+  "@themeGraphite": { "description": "Theme option: Graphite" },
+
+  "themeEmber": "Ember",
+  "@themeEmber": { "description": "Theme option: Ember" },
+
+  "themeNeon": "Neon",
+  "@themeNeon": { "description": "Theme option: Neon" },
+
+  "themeSakura": "Sakura",
+  "@themeSakura": { "description": "Theme option: Sakura" },
+
+  "themeAurora": "Aurora",
+  "@themeAurora": { "description": "Theme option: Aurora" },
+
+  "contactsTitle": "Contacts",
+  "@contactsTitle": { "description": "Contacts screen app bar title" },
+
+  "searchContactsLabel": "Search contacts",
+  "@searchContactsLabel": { "description": "Search contacts field label" },
+
+  "searchContactsHint": "Search by username, email, or phone...",
+  "@searchContactsHint": { "description": "Search contacts field hint text" },
+
+  "searchContactsPlaceholder": "Type to search by username, email, or phone...",
+  "@searchContactsPlaceholder": { "description": "Placeholder text when user has typed less than 2 characters" },
+
+  "noUsersFound": "No users found",
+  "@noUsersFound": { "description": "Empty state in contacts search" },
+
+  "searchFailed": "Search failed — check your connection",
+  "@searchFailed": { "description": "Error when contacts search fails" },
+
+  "noContactsYet": "No contacts yet",
+  "@noContactsYet": { "description": "Empty state when contacts list is empty" },
+
+  "searchForUsers": "Search for users above to add them",
+  "@searchForUsers": { "description": "Hint in empty contacts state" },
+
+  "contactBadge": "Contact",
+  "@contactBadge": { "description": "Badge shown when search result is already a contact" },
+
+  "pendingBadge": "Pending",
+  "@pendingBadge": { "description": "Badge shown when contact request is pending" },
+
+  "pendingRequestsHeader": "PENDING REQUESTS",
+  "@pendingRequestsHeader": { "description": "Section header for pending contact requests" },
+
+  "yourContactsHeader": "YOUR CONTACTS",
+  "@yourContactsHeader": { "description": "Section header for contacts list" },
+
+  "wantsToConnect": "Wants to connect",
+  "@wantsToConnect": { "description": "Subtitle in pending request tile" },
+
+  "decline": "Decline",
+  "@decline": { "description": "Decline contact request button" },
+
+  "accept": "Accept",
+  "@accept": { "description": "Accept contact request button" },
+
+  "add": "Add",
+  "@add": { "description": "Add contact button in search results" },
+
+  "message": "Message",
+  "@message": { "description": "Message button to start a DM" },
+
+  "requestSentTo": "Request sent to @{username}",
+  "@requestSentTo": {
+    "description": "Toast when contact request is sent",
+    "placeholders": { "username": { "type": "String", "example": "alice" } }
+  },
+
+  "accessibilityTitle": "Accessibility",
+  "@accessibilityTitle": { "description": "Accessibility section title" },
+
+  "accessibilityDescription": "Adjust the app to your needs.",
+  "@accessibilityDescription": { "description": "Accessibility section subtitle" },
+
+  "reduceMotion": "Reduce Motion",
+  "@reduceMotion": { "description": "Toggle label for reduce motion" },
+
+  "reduceMotionDescription": "Disable animated transitions and effects.",
+  "@reduceMotionDescription": { "description": "Description for reduce motion toggle" },
+
+  "fontSize": "Font Size",
+  "@fontSize": { "description": "Font size slider label" },
+
+  "fontSizeDescription": "Scale text across the app. Default is 100%.",
+  "@fontSizeDescription": { "description": "Description for font size slider" },
+
+  "fontSizeMin": "85%",
+  "@fontSizeMin": { "description": "Minimum font size label" },
+
+  "fontSizeMax": "150%",
+  "@fontSizeMax": { "description": "Maximum font size label" },
+
+  "fontSizeCurrent": "Current: {value}%",
+  "@fontSizeCurrent": {
+    "description": "Current font size display",
+    "placeholders": { "value": { "type": "int", "example": "100" } }
+  },
+
+  "highContrast": "High Contrast",
+  "@highContrast": { "description": "Toggle label for high contrast" },
+
+  "highContrastDescription": "Increase contrast for better readability.",
+  "@highContrastDescription": { "description": "Description for high contrast toggle" },
+
+  "hideUndecryptable": "Hide undecryptable messages",
+  "@hideUndecryptable": { "description": "Toggle label for hiding undecryptable messages" },
+
+  "hideUndecryptableDescription": "When on, messages that cannot be decrypted are hidden entirely instead of showing a lock icon.",
+  "@hideUndecryptableDescription": { "description": "Description for hide undecryptable messages toggle" },
+
+  "accessibilityAutoNote": "OS accessibility preferences (reduce motion, large text) are detected automatically and applied on first launch.",
+  "@accessibilityAutoNote": { "description": "Info note about OS accessibility preferences" },
+
+  "appearanceTitle": "Appearance",
+  "@appearanceTitle": { "description": "Appearance section title" },
+
+  "appearanceDescription": "Choose a theme. All themes are tuned for WCAG AA contrast.",
+  "@appearanceDescription": { "description": "Appearance section subtitle" },
+
+  "messageLayout": "Message layout",
+  "@messageLayout": { "description": "Message layout section header" },
+
+  "themeSystemDescription": "Follow device settings",
+  "@themeSystemDescription": { "description": "Description for system theme option" },
+
+  "themeDarkDescription": "Easy on the eyes",
+  "@themeDarkDescription": { "description": "Description for dark theme option" },
+
+  "themeLightDescription": "Classic bright look",
+  "@themeLightDescription": { "description": "Description for light theme option" },
+
+  "themeGraphiteDescription": "Teal accents",
+  "@themeGraphiteDescription": { "description": "Description for graphite theme option" },
+
+  "themeEmberDescription": "Amber accents",
+  "@themeEmberDescription": { "description": "Description for ember theme option" },
+
+  "themeNeonDescription": "Electric green gamer",
+  "@themeNeonDescription": { "description": "Description for neon theme option" },
+
+  "themeSakuraDescription": "Soft pink pastels",
+  "@themeSakuraDescription": { "description": "Description for sakura theme option" },
+
+  "themeAuroraDescription": "Violet gradient",
+  "@themeAuroraDescription": { "description": "Description for aurora theme option" },
+
+  "layoutBubbles": "Bubbles",
+  "@layoutBubbles": { "description": "Message layout option: Bubbles" },
+
+  "layoutBubblesDescription": "Chat bubbles aligned left and right",
+  "@layoutBubblesDescription": { "description": "Description for bubbles layout" },
+
+  "layoutCompact": "Compact",
+  "@layoutCompact": { "description": "Message layout option: Compact" },
+
+  "layoutCompactDescription": "Discord-style, all messages left-aligned",
+  "@layoutCompactDescription": { "description": "Description for compact layout" },
+
+  "layoutPlain": "Plain",
+  "@layoutPlain": { "description": "Message layout option: Plain" },
+
+  "layoutPlainDescription": "Slack-style, no bubble background",
+  "@layoutPlainDescription": { "description": "Description for plain layout" },
+
+  "autoPlayGifs": "Auto-play GIFs",
+  "@autoPlayGifs": { "description": "Toggle label for auto-play GIFs" },
+
+  "autoPlayGifsDescription": "When off, GIFs show as static thumbnails with a play button.",
+  "@autoPlayGifsDescription": { "description": "Description for auto-play GIFs toggle" },
+
+  "advanced": "Advanced",
+  "@advanced": { "description": "Advanced section header in appearance settings" },
+
+  "advancedDescription": "Override the active theme's primary and accent colors.",
+  "@advancedDescription": { "description": "Description for advanced theme customization" },
+
+  "resetToDefaults": "Reset to theme defaults",
+  "@resetToDefaults": { "description": "Button to reset custom theme colors" },
+
+  "apply": "Apply",
+  "@apply": { "description": "Apply button in advanced theme section" },
+
+  "dataStorageTitle": "Data & Storage",
+  "@dataStorageTitle": { "description": "Data & Storage section title" },
+
+  "dataStorageDescription": "Manage cached data and storage usage.",
+  "@dataStorageDescription": { "description": "Data & Storage section subtitle" },
+
+  "messageCache": "Message Cache",
+  "@messageCache": { "description": "Message cache label" },
+
+  "clear": "Clear",
+  "@clear": { "description": "Clear button" },
+
+  "clearMessageCache": "Clear Message Cache",
+  "@clearMessageCache": { "description": "Clear message cache dialog title" },
+
+  "clearCacheWarning": "Cached messages will be reloaded from the server. No data will be lost.",
+  "@clearCacheWarning": { "description": "Warning text in clear cache dialog" },
+
+  "messageCacheCleared": "Message cache cleared",
+  "@messageCacheCleared": { "description": "Toast when message cache is cleared" },
+
+  "cacheEntries": "{count} entries (~{size})",
+  "@cacheEntries": {
+    "description": "Cache size display",
+    "placeholders": {
+      "count": { "type": "int", "example": "42" },
+      "size": { "type": "String", "example": "2.1 MB" }
+    }
+  },
+
+  "unknown": "Unknown",
+  "@unknown": { "description": "Generic unknown label" },
+
+  "exportMyData": "Export My Data",
+  "@exportMyData": { "description": "Export my data section label" },
+
+  "exportDescription": "Save your locally cached messages as a JSON file. Only decrypted message content is included — private keys are never exported.",
+  "@exportDescription": { "description": "Description for export my data" },
+
+  "exportChats": "Export chats",
+  "@exportChats": { "description": "Export chats dialog title" },
+
+  "exportDialogContent": "Your locally cached messages will be saved as a JSON file. Private keys and Signal session state are not included.",
+  "@exportDialogContent": { "description": "Content in export dialog" },
+
+  "exporting": "Exporting...",
+  "@exporting": { "description": "Label while export is in progress" },
+
+  "exportChatsJson": "Export chats (JSON)",
+  "@exportChatsJson": { "description": "Export chats button label" },
+
+  "exportSaved": "Export saved",
+  "@exportSaved": { "description": "Toast when export is successful" },
+
+  "exportFailed": "Export failed: {error}",
+  "@exportFailed": {
+    "description": "Toast when export fails",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "copyAccountInfo": "Copy Account Info",
+  "@copyAccountInfo": { "description": "Button to copy account info to clipboard" },
+
+  "accountInfoCopied": "Account info copied to clipboard",
+  "@accountInfoCopied": { "description": "Toast when account info is copied" },
+
+  "devicesTitle": "My Devices",
+  "@devicesTitle": { "description": "Devices section title" },
+
+  "devicesDescription": "Manage devices that have access to your account.",
+  "@devicesDescription": { "description": "Devices section subtitle" },
+
+  "thisDevice": "This device",
+  "@thisDevice": { "description": "Label for current device" },
+
+  "lastSeen": "Last seen: {time}",
+  "@lastSeen": {
+    "description": "Last seen time label for a device",
+    "placeholders": { "time": { "type": "String", "example": "2 hours ago" } }
+  },
+
+  "noDevicesFound": "No devices found.",
+  "@noDevicesFound": { "description": "Empty state in devices list" },
+
+  "justNow": "just now",
+  "@justNow": { "description": "Time label for very recent time" },
+
+  "minutesAgo": "{count, plural, =1{1 minute ago} other{{count} minutes ago}}",
+  "@minutesAgo": {
+    "description": "Relative time in minutes",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "hoursAgo": "{count, plural, =1{1 hour ago} other{{count} hours ago}}",
+  "@hoursAgo": {
+    "description": "Relative time in hours",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "daysAgo": "{count, plural, =1{1 day ago} other{{count} days ago}}",
+  "@daysAgo": {
+    "description": "Relative time in days",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "platformWebBrowser": "Web Browser",
+  "@platformWebBrowser": { "description": "Platform label: Web Browser" },
+
+  "platformIphone": "iPhone",
+  "@platformIphone": { "description": "Platform label: iPhone" },
+
+  "platformAndroid": "Android",
+  "@platformAndroid": { "description": "Platform label: Android" },
+
+  "platformMac": "Mac",
+  "@platformMac": { "description": "Platform label: Mac" },
+
+  "platformWindows": "Windows",
+  "@platformWindows": { "description": "Platform label: Windows" },
+
+  "platformLinux": "Linux",
+  "@platformLinux": { "description": "Platform label: Linux" },
+
+  "revokeDevice": "Revoke {deviceLabel}",
+  "@revokeDevice": {
+    "description": "Dialog title for revoking a device",
+    "placeholders": { "deviceLabel": { "type": "String", "example": "My iPhone" } }
+  },
+
+  "revokeDeviceDescription": "This will remove {deviceLabel} from your account. Any active session on that device will be signed out immediately.",
+  "@revokeDeviceDescription": {
+    "description": "Description in revoke device dialog",
+    "placeholders": { "deviceLabel": { "type": "String", "example": "My iPhone" } }
+  },
+
+  "revoke": "Revoke",
+  "@revoke": { "description": "Revoke button text" },
+
+  "deviceRevoked": "Device revoked",
+  "@deviceRevoked": { "description": "Toast when a device is revoked" },
+
+  "failedToRevokeDevice": "Failed to revoke device ({statusCode})",
+  "@failedToRevokeDevice": {
+    "description": "Error when revoking a device fails",
+    "placeholders": { "statusCode": { "type": "int" } }
+  },
+
+  "networkError": "Network error",
+  "@networkError": { "description": "Generic network error message" },
+
+  "logOutOtherDevices": "Log out all other devices",
+  "@logOutOtherDevices": { "description": "Button/dialog title to log out other devices" },
+
+  "logOutOtherDevicesConfirm": "This will log out every device except this one. Continue?",
+  "@logOutOtherDevicesConfirm": { "description": "Confirmation for logging out other devices" },
+
+  "logOutOthers": "Log out others",
+  "@logOutOthers": { "description": "Confirm button in log out other devices dialog" },
+
+  "loggedOutDevices": "{count, plural, =1{Logged out 1 other device} other{Logged out {count} other devices}}",
+  "@loggedOutDevices": {
+    "description": "Toast when other devices are logged out",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "failedToLogOutDevices": "Failed to log out other devices ({statusCode})",
+  "@failedToLogOutDevices": {
+    "description": "Error when logging out other devices fails",
+    "placeholders": { "statusCode": { "type": "int" } }
+  },
+
+  "refresh": "Refresh",
+  "@refresh": { "description": "Refresh button tooltip" },
+
+  "languageTitle": "Language",
+  "@languageTitle": { "description": "Language section title" },
+
+  "languageDescription": "Choose the language used throughout the app. Takes effect immediately.",
+  "@languageDescription": { "description": "Language section subtitle" },
+
+  "notificationsTitle": "Notifications",
+  "@notificationsTitle": { "description": "Notifications section title" },
+
+  "notificationsDescription": "Configure how you receive notifications and alerts.",
+  "@notificationsDescription": { "description": "Notifications section subtitle" },
+
+  "dndBanner": "Do Not Disturb is on — all notifications are muted.",
+  "@dndBanner": { "description": "Banner shown when DND is active" },
+
+  "doNotDisturb": "Do Not Disturb",
+  "@doNotDisturb": { "description": "Do Not Disturb toggle label" },
+
+  "doNotDisturbDescription": "Mute all notifications until manually disabled.",
+  "@doNotDisturbDescription": { "description": "Description for Do Not Disturb toggle" },
+
+  "quietHours": "Quiet Hours",
+  "@quietHours": { "description": "Quiet hours section label" },
+
+  "quietHoursDescription": "Silence notifications during a scheduled time window.",
+  "@quietHoursDescription": { "description": "Description for quiet hours" },
+
+  "startTime": "Start time",
+  "@startTime": { "description": "Start time field label" },
+
+  "endTime": "End time",
+  "@endTime": { "description": "End time field label" },
+
+  "enableNotifications": "Enable Notifications",
+  "@enableNotifications": { "description": "Toggle label for enabling notifications" },
+
+  "enableNotificationsDescription": "Show desktop/mobile notifications for new messages.",
+  "@enableNotificationsDescription": { "description": "Description for enable notifications toggle" },
+
+  "directMessages": "Direct Messages",
+  "@directMessages": { "description": "Toggle label for direct message notifications" },
+
+  "directMessagesDescription": "Notify for incoming DMs.",
+  "@directMessagesDescription": { "description": "Description for DM notifications toggle" },
+
+  "groupMessages": "Group Messages",
+  "@groupMessages": { "description": "Toggle label for group message notifications" },
+
+  "groupMessagesDescription": "Notify for messages in group conversations.",
+  "@groupMessagesDescription": { "description": "Description for group notifications toggle" },
+
+  "testNotificationSection": "Test",
+  "@testNotificationSection": { "description": "Test notification section header" },
+
+  "testNotificationDescription": "Send a test notification to verify your settings.",
+  "@testNotificationDescription": { "description": "Description for test notification" },
+
+  "sendTestNotification": "Send Test Notification",
+  "@sendTestNotification": { "description": "Button to send a test notification" },
+
+  "testNotificationSent": "Test notification sent.",
+  "@testNotificationSent": { "description": "Toast when test notification is sent" },
+
+  "failedToSendTestNotification": "Failed to send test notification: {error}",
+  "@failedToSendTestNotification": {
+    "description": "Toast when test notification fails",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "messageSound": "Message Sound",
+  "@messageSound": { "description": "Message sound setting label" },
+
+  "messageSoundDescription": "Sound played when you receive a message.",
+  "@messageSoundDescription": { "description": "Description for message sound setting" },
+
+  "voiceVideoTitle": "Voice & Video",
+  "@voiceVideoTitle": { "description": "Voice & Video section title" },
+
+  "voiceVideoDescription": "Configure voice device preferences and push-to-talk behavior.",
+  "@voiceVideoDescription": { "description": "Voice & Video section subtitle" },
+
+  "inputDevice": "Input Device",
+  "@inputDevice": { "description": "Input device label" },
+
+  "outputDevice": "Output Device",
+  "@outputDevice": { "description": "Output device label" },
+
+  "camera": "Camera",
+  "@camera": { "description": "Camera label" },
+
+  "inputSensitivity": "Input Sensitivity",
+  "@inputSensitivity": { "description": "Input sensitivity label" },
+
+  "outputVolume": "Output Volume",
+  "@outputVolume": { "description": "Output volume label" },
+
+  "testSound": "Test Sound",
+  "@testSound": { "description": "Button to test sound output" },
+
+  "playing": "Playing...",
+  "@playing": { "description": "Label shown while sound is playing" },
+
+  "testMicrophone": "Test Microphone",
+  "@testMicrophone": { "description": "Button to test microphone" },
+
+  "stop": "Stop",
+  "@stop": { "description": "Stop button" },
+
+  "pushToTalk": "Push-to-Talk",
+  "@pushToTalk": { "description": "Push-to-talk toggle label" },
+
+  "pushToTalkDescription": "When enabled, your mic transmits only while push-to-talk is active.",
+  "@pushToTalkDescription": { "description": "Description for push-to-talk" },
+
+  "pushToTalkKey": "Push-to-Talk Key",
+  "@pushToTalkKey": { "description": "Push-to-talk key label" },
+
+  "setKey": "Set Key",
+  "@setKey": { "description": "Button to set push-to-talk key" },
+
+  "setPushToTalkKey": "Set Push-to-Talk Key",
+  "@setPushToTalkKey": { "description": "Dialog title to set push-to-talk key" },
+
+  "audioProcessing": "Audio Processing",
+  "@audioProcessing": { "description": "Audio processing section header" },
+
+  "audioProcessingNote": "These settings apply the next time you join a voice channel.",
+  "@audioProcessingNote": { "description": "Note about when audio processing settings apply" },
+
+  "noiseSuppression": "Noise Suppression",
+  "@noiseSuppression": { "description": "Toggle label for noise suppression" },
+
+  "noiseSuppressionDescription": "Reduce background noise like fans, typing, and ambient sounds.",
+  "@noiseSuppressionDescription": { "description": "Description for noise suppression toggle" },
+
+  "echoCancellation": "Echo Cancellation",
+  "@echoCancellation": { "description": "Toggle label for echo cancellation" },
+
+  "echoCancellationDescription": "Prevent your speakers from feeding back into your microphone.",
+  "@echoCancellationDescription": { "description": "Description for echo cancellation toggle" },
+
+  "autoGainControl": "Auto Gain Control",
+  "@autoGainControl": { "description": "Toggle label for auto gain control" },
+
+  "autoGainControlDescription": "Automatically adjust microphone volume for consistent levels.",
+  "@autoGainControlDescription": { "description": "Description for auto gain control toggle" },
+
+  "channelBehaviour": "Channel Behaviour",
+  "@channelBehaviour": { "description": "Channel behaviour section header" },
+
+  "confirmBeforeJoin": "Confirm before joining voice channel",
+  "@confirmBeforeJoin": { "description": "Toggle label for confirming before joining voice channel" },
+
+  "confirmBeforeJoinDescription": "Show a confirmation dialog before connecting to a voice channel.",
+  "@confirmBeforeJoinDescription": { "description": "Description for confirm before join toggle" },
+
+  "appLock": "App Lock",
+  "@appLock": { "description": "App lock section header" },
+
+  "appLockDescription": "Require biometric authentication when opening Echo.",
+  "@appLockDescription": { "description": "Description for app lock section" },
+
+  "biometricNotAvailable": "Biometric authentication is not available on this device.",
+  "@biometricNotAvailable": { "description": "Message when biometrics are unavailable" },
+
+  "requireBiometric": "Require Biometric to Open App",
+  "@requireBiometric": { "description": "Toggle label for requiring biometrics to open app" },
+
+  "lockDescription": "Lock Echo when it goes to the background. Use Face ID, fingerprint, or device PIN to unlock.",
+  "@lockDescription": { "description": "Description for app lock toggle" },
+
+  "biometricFailed": "Biometric authentication failed. Lock not enabled.",
+  "@biometricFailed": { "description": "Toast when biometric authentication fails" },
+
+  "messagingPrivacy": "Messaging Privacy",
+  "@messagingPrivacy": { "description": "Messaging privacy section header" },
+
+  "messagingPrivacyDescription": "Control read receipts for your direct messages.",
+  "@messagingPrivacyDescription": { "description": "Description for messaging privacy section" },
+
+  "sendReadReceipts": "Send Read Receipts",
+  "@sendReadReceipts": { "description": "Toggle label for send read receipts" },
+
+  "sendReadReceiptsDescription": "When off, others will not see when you read messages.",
+  "@sendReadReceiptsDescription": { "description": "Description for send read receipts toggle" },
+
+  "showOnlineStatus": "Show Online Status",
+  "@showOnlineStatus": { "description": "Toggle label for show online status" },
+
+  "showOnlineStatusDescription": "When off, you will appear offline to other users.",
+  "@showOnlineStatusDescription": { "description": "Description for show online status toggle" },
+
+  "preserveFilenames": "Preserve Original Filenames",
+  "@preserveFilenames": { "description": "Toggle label for preserving original filenames" },
+
+  "preserveFilenamesDescription": "When off, uploads are sent as media.ext so recipients see a generic filename.",
+  "@preserveFilenamesDescription": { "description": "Description for preserve filenames toggle" },
+
+  "contactInfoVisibility": "Contact Info Visibility",
+  "@contactInfoVisibility": { "description": "Contact info visibility section header" },
+
+  "contactInfoVisibilityDescription": "Control who can see your email and phone on your profile.",
+  "@contactInfoVisibilityDescription": { "description": "Description for contact info visibility section" },
+
+  "showEmail": "Show Email on Profile",
+  "@showEmail": { "description": "Toggle label for showing email on profile" },
+
+  "showEmailDescription": "Allow other users to see your email address.",
+  "@showEmailDescription": { "description": "Description for show email toggle" },
+
+  "showPhone": "Show Phone on Profile",
+  "@showPhone": { "description": "Toggle label for showing phone on profile" },
+
+  "showPhoneDescription": "Allow other users to see your phone number.",
+  "@showPhoneDescription": { "description": "Description for show phone toggle" },
+
+  "discoverability": "Discoverability",
+  "@discoverability": { "description": "Discoverability section header" },
+
+  "discoverabilityDescription": "Control whether others can find you using your contact details.",
+  "@discoverabilityDescription": { "description": "Description for discoverability section" },
+
+  "discoverableByEmail": "Discoverable by Email",
+  "@discoverableByEmail": { "description": "Toggle label for being discoverable by email" },
+
+  "discoverableByEmailDescription": "Allow others to find you by searching your email.",
+  "@discoverableByEmailDescription": { "description": "Description for discoverable by email toggle" },
+
+  "discoverableByPhone": "Discoverable by Phone",
+  "@discoverableByPhone": { "description": "Toggle label for being discoverable by phone" },
+
+  "discoverableByPhoneDescription": "Allow others to find you by searching your phone.",
+  "@discoverableByPhoneDescription": { "description": "Description for discoverable by phone toggle" },
+
+  "unblockTitle": "Unblock @{username}?",
+  "@unblockTitle": {
+    "description": "Dialog title to unblock a user",
+    "placeholders": { "username": { "type": "String", "example": "alice" } }
+  },
+
+  "unblockDescription": "They will be able to message you again.",
+  "@unblockDescription": { "description": "Description in unblock dialog" },
+
+  "unblock": "Unblock",
+  "@unblock": { "description": "Unblock button text" },
+
+  "usernameUnblocked": "@{username} unblocked",
+  "@usernameUnblocked": {
+    "description": "Toast when a user is unblocked",
+    "placeholders": { "username": { "type": "String", "example": "alice" } }
+  },
+
+  "failedToUnblock": "Failed to unblock user",
+  "@failedToUnblock": { "description": "Error when unblocking a user fails" },
+
+  "blockedUsers": "Blocked Users",
+  "@blockedUsers": { "description": "Blocked users section header" },
+
+  "resetEncryptionKeys": "Reset Encryption Keys",
+  "@resetEncryptionKeys": { "description": "Button/dialog title to reset encryption keys" },
+
+  "resetKeysWarning": "This will regenerate your encryption keys. You won't be able to read messages sent to previous keys.",
+  "@resetKeysWarning": { "description": "Warning in reset keys dialog" },
+
+  "enterPassword": "Enter your password:",
+  "@enterPassword": { "description": "Label prompting user to enter their password" },
+
+  "typeResetToConfirm": "Type RESET to confirm:",
+  "@typeResetToConfirm": { "description": "Label prompting user to type RESET" },
+
+  "confirmReset": "Confirm reset",
+  "@confirmReset": { "description": "Confirm reset text field label" },
+
+  "resetConfirmHint": "RESET",
+  "@resetConfirmHint": { "description": "Hint text for confirm reset field" },
+
+  "resetKeys": "Reset Keys",
+  "@resetKeys": { "description": "Reset keys button in dialog" },
+
+  "keysResetSuccess": "Encryption keys have been reset successfully.",
+  "@keysResetSuccess": { "description": "Toast when keys are reset" },
+
+  "failedToResetKeys": "Failed to reset keys: {error}",
+  "@failedToResetKeys": {
+    "description": "Toast when resetting keys fails",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "keysUploadedSuccess": "Encryption keys uploaded successfully.",
+  "@keysUploadedSuccess": { "description": "Toast when keys are uploaded" },
+
+  "keyUploadFailed": "Key upload failed. Please try again later.",
+  "@keyUploadFailed": { "description": "Toast when key upload fails" },
+
+  "failedToUploadKeys": "Failed to upload keys: {error}",
+  "@failedToUploadKeys": {
+    "description": "Toast when uploading keys fails",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "profileTitle": "Profile",
+  "@profileTitle": { "description": "Profile section title" },
+
+  "profileDescription": "Customize your public profile information.",
+  "@profileDescription": { "description": "Profile section subtitle" },
+
+  "failedToLoadProfile": "Failed to load profile. Check your connection.",
+  "@failedToLoadProfile": { "description": "Error when profile fails to load" },
+
+  "displayName": "Display Name",
+  "@displayName": { "description": "Display name field label" },
+
+  "displayNameHint": "How others will see you",
+  "@displayNameHint": { "description": "Display name field hint" },
+
+  "pronouns": "Pronouns",
+  "@pronouns": { "description": "Pronouns field label" },
+
+  "pronounsHeHim": "he/him",
+  "@pronounsHeHim": { "description": "Pronoun option: he/him" },
+
+  "pronounsSheHer": "she/her",
+  "@pronounsSheHer": { "description": "Pronoun option: she/her" },
+
+  "pronounsTheyThem": "they/them",
+  "@pronounsTheyThem": { "description": "Pronoun option: they/them" },
+
+  "pronounsHeThem": "he/they",
+  "@pronounsHeThem": { "description": "Pronoun option: he/they" },
+
+  "pronounsSheThey": "she/they",
+  "@pronounsSheThey": { "description": "Pronoun option: she/they" },
+
+  "pronounsAny": "any pronouns",
+  "@pronounsAny": { "description": "Pronoun option: any pronouns" },
+
+  "pronounsOther": "Other...",
+  "@pronounsOther": { "description": "Pronoun option: Other" },
+
+  "statusLabel": "Status",
+  "@statusLabel": { "description": "Status field label" },
+
+  "statusHint": "What are you up to?",
+  "@statusHint": { "description": "Status field hint" },
+
+  "bio": "Bio",
+  "@bio": { "description": "Bio field label" },
+
+  "bioHint": "Tell others about yourself",
+  "@bioHint": { "description": "Bio field hint" },
+
+  "website": "Website",
+  "@website": { "description": "Website field label" },
+
+  "websiteHint": "https://example.com",
+  "@websiteHint": { "description": "Website field hint" },
+
+  "email": "Email",
+  "@email": { "description": "Email field label" },
+
+  "emailHint": "you@example.com",
+  "@emailHint": { "description": "Email field hint" },
+
+  "timezone": "Timezone",
+  "@timezone": { "description": "Timezone field label" },
+
+  "timezoneHint": "Select timezone",
+  "@timezoneHint": { "description": "Timezone field hint" },
+
+  "countryCode": "Country code",
+  "@countryCode": { "description": "Country code field label" },
+
+  "phoneNumber": "Phone number",
+  "@phoneNumber": { "description": "Phone number field label" },
+
+  "phoneNumberHint": "5551234567",
+  "@phoneNumberHint": { "description": "Phone number field hint" },
+
+  "saveProfile": "Save Profile",
+  "@saveProfile": { "description": "Save profile button" },
+
+  "changePassword": "Change Password",
+  "@changePassword": { "description": "Change password button/section label" },
+
+  "uploadAvatar": "Upload Avatar",
+  "@uploadAvatar": { "description": "Upload avatar button" },
+
+  "qrCode": "QR Code",
+  "@qrCode": { "description": "QR code button" },
+
+  "shareInviteLink": "Share Invite Link",
+  "@shareInviteLink": { "description": "Share invite link button" },
+
+  "currentPasswordLabel": "Current Password",
+  "@currentPasswordLabel": { "description": "Current password field label" },
+
+  "currentPasswordHint": "Enter your current password",
+  "@currentPasswordHint": { "description": "Current password field hint" },
+
+  "newPasswordLabel": "New Password",
+  "@newPasswordLabel": { "description": "New password field label" },
+
+  "newPasswordHint": "At least 8 characters",
+  "@newPasswordHint": { "description": "New password field hint" },
+
+  "newPasswordMinLength": "New password must be at least 8 characters",
+  "@newPasswordMinLength": { "description": "Validation error for new password minimum length" },
+
+  "passwordChangedSuccess": "Password changed successfully",
+  "@passwordChangedSuccess": { "description": "Toast when password is changed" },
+
+  "failedToChangePassword": "Failed to change password: {error}",
+  "@failedToChangePassword": {
+    "description": "Toast when changing password fails",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "profileUpdated": "Profile updated",
+  "@profileUpdated": { "description": "Toast when profile is updated" },
+
+  "failedToSave": "Failed to save: {error}",
+  "@failedToSave": {
+    "description": "Toast when saving profile fails",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "avatarUpdated": "Avatar updated",
+  "@avatarUpdated": { "description": "Toast when avatar is updated" },
+
+  "addMeOnEcho": "Add Me on Echo",
+  "@addMeOnEcho": { "description": "QR invite dialog title" },
+
+  "qrInviteDescription": "Scan to open my DM invite. If we are not contacts yet, Echo will send a contact request first.",
+  "@qrInviteDescription": { "description": "QR invite dialog description" },
+
+  "inviteLinkCopied": "Invite link copied to clipboard",
+  "@inviteLinkCopied": { "description": "Toast when invite link is copied" },
+
+  "copyInviteLink": "Copy invite link",
+  "@copyInviteLink": { "description": "Button to copy invite link" },
+
+  "close": "Close",
+  "@close": { "description": "Generic close button" },
+
+  "currentBadge": "CURRENT",
+  "@currentBadge": { "description": "Badge shown on the current/active item" },
+
+  "aboutEchoMessenger": "Echo Messenger",
+  "@aboutEchoMessenger": { "description": "About section title" },
+
+  "activeOnlyServer": "Active (no other servers added yet)",
+  "@activeOnlyServer": { "description": "Label when only the active server exists" },
+
+  "addServer": "Add server",
+  "@addServer": { "description": "Button/title to add a server" },
+
+  "addServerDescription": "Verifies the URL before adding it to your list.",
+  "@addServerDescription": { "description": "Description for add server action" },
+
+  "debugLogs": "Debug Logs",
+  "@debugLogs": { "description": "Debug logs item label" },
+
+  "debugLogsDescription": "View recent in-app log entries.",
+  "@debugLogsDescription": { "description": "Description for debug logs" },
+
+  "openSource": "Open source",
+  "@openSource": { "description": "Open source section header" },
+
+  "openSourceDescription": "Echo is a decentralized, end-to-end encrypted messenger. Contributions and self-hosting are welcome.",
+  "@openSourceDescription": { "description": "Open source description" },
+
+  "checkForUpdates": "Check for Updates",
+  "@checkForUpdates": { "description": "Button to check for updates" },
+
+  "checking": "Checking...",
+  "@checking": { "description": "Label while checking for updates" },
+
+  "upToDate": "Up to date",
+  "@upToDate": { "description": "Label when app is up to date" },
+
+  "versionAvailable": "v{version} available",
+  "@versionAvailable": {
+    "description": "Label when a new version is available",
+    "placeholders": { "version": { "type": "String", "example": "1.2.3" } }
+  },
+
+  "deleteAccount": "Delete Account",
+  "@deleteAccount": { "description": "Delete account button" },
+
+  "addServerDialogContent": "Enter the URL of an Echo server. The URL is checked before it's added so we can fail fast on typos.",
+  "@addServerDialogContent": { "description": "Content text in add server dialog" },
+
+  "serverUrlLabel": "Server URL",
+  "@serverUrlLabel": { "description": "Server URL field label" },
+
+  "checkAndAdd": "Check & add",
+  "@checkAndAdd": { "description": "Button to check and add a server" },
+
+  "serverReturnedError": "Server returned HTTP {statusCode}. Not added.",
+  "@serverReturnedError": {
+    "description": "Error when server returns non-200 on health check",
+    "placeholders": { "statusCode": { "type": "int" } }
+  },
+
+  "couldNotReach": "Could not reach {url}. Not added.",
+  "@couldNotReach": {
+    "description": "Error when server is unreachable",
+    "placeholders": { "url": { "type": "String" } }
+  },
+
+  "serverAdded": "Server added.",
+  "@serverAdded": { "description": "Toast when a server is added" },
+
+  "switchServer": "Switch server?",
+  "@switchServer": { "description": "Dialog title for switching servers" },
+
+  "forgetServer": "Forget server?",
+  "@forgetServer": { "description": "Dialog title for forgetting a server" },
+
+  "forgetServerDescription": "This deletes locally-stored keys and message cache for {host}. The remote account is not affected.",
+  "@forgetServerDescription": {
+    "description": "Description in forget server dialog",
+    "placeholders": { "host": { "type": "String", "example": "echo-messenger.us" } }
+  },
+
+  "switchButton": "Switch",
+  "@switchButton": { "description": "Switch server button" },
+
+  "forgetButton": "Forget",
+  "@forgetButton": { "description": "Forget server button" },
+
+  "serverForgotten": "Server forgotten.",
+  "@serverForgotten": { "description": "Toast when a server is forgotten" },
+
+  "deleteAccountTitle": "Delete Account",
+  "@deleteAccountTitle": { "description": "Delete account dialog title" },
+
+  "deleteAccountWarning": "This will permanently delete your account and all data. This cannot be undone.",
+  "@deleteAccountWarning": { "description": "Warning in delete account dialog" },
+
+  "typeUsernameToConfirm": "Type your username to confirm:",
+  "@typeUsernameToConfirm": { "description": "Instruction to type username to confirm account deletion" },
+
+  "deleteMyAccount": "Delete My Account",
+  "@deleteMyAccount": { "description": "Confirm button in delete account dialog" },
+
+  "accountDeleted": "Account deleted successfully.",
+  "@accountDeleted": { "description": "Toast when account is deleted" },
+
+  "networkErrorTryAgain": "Network error. Please try again.",
+  "@networkErrorTryAgain": { "description": "Network error with retry suggestion" },
+
+  "debugLogsTitle": "Debug Logs",
+  "@debugLogsTitle": { "description": "Debug logs screen app bar title" },
+
+  "copyAll": "Copy All",
+  "@copyAll": { "description": "Button to copy all debug logs" },
+
+  "clearLogs": "Clear Logs",
+  "@clearLogs": { "description": "Button to clear debug logs" },
+
+  "logEntries": "{count} entries (max {max})",
+  "@logEntries": {
+    "description": "Debug log entry count display",
+    "placeholders": {
+      "count": { "type": "int" },
+      "max": { "type": "int" }
+    }
+  },
+
+  "logEntriesCopied": "{count} log entries copied to clipboard",
+  "@logEntriesCopied": {
+    "description": "Toast when log entries are copied",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "noDebugLogs": "No debug logs yet.",
+  "@noDebugLogs": { "description": "Empty state for debug logs" },
+
+  "logLevelInfo": "INF",
+  "@logLevelInfo": { "description": "Log level badge: Info" },
+
+  "logLevelWarning": "WRN",
+  "@logLevelWarning": { "description": "Log level badge: Warning" },
+
+  "logLevelError": "ERR",
+  "@logLevelError": { "description": "Log level badge: Error" },
+
+  "serverSection": "Server",
+  "@serverSection": { "description": "Server section header in about page" },
+
+  "serverHealthChecking": "Checking...",
+  "@serverHealthChecking": { "description": "Server health status: checking" },
+
+  "serverHealthOnline": "Online",
+  "@serverHealthOnline": { "description": "Server health status: online" },
+
+  "serverHealthOffline": "Offline",
+  "@serverHealthOffline": { "description": "Server health status: offline" },
+
+  "newMessageTitle": "New message",
+  "@newMessageTitle": { "description": "New message screen title" },
+
+  "to": "To:",
+  "@to": { "description": "To: label in new message screen" },
+
+  "newMessageHint": "Type a name or @handle",
+  "@newMessageHint": { "description": "Hint in new message recipient field" },
+
+  "suggested": "Suggested",
+  "@suggested": { "description": "Suggested contacts section header in new message" },
+
+  "noContactsMatchQuery": "No contacts match \"{query}\"",
+  "@noContactsMatchQuery": {
+    "description": "Empty state when no contacts match the search",
+    "placeholders": { "query": { "type": "String", "example": "alice" } }
+  },
+
+  "createGroup": "Create Group",
+  "@createGroup": { "description": "Create group screen title and button" },
+
+  "groupNameLabel": "Group Name",
+  "@groupNameLabel": { "description": "Group name field label" },
+
+  "groupDescriptionLabel": "Description (optional)",
+  "@groupDescriptionLabel": { "description": "Group description field label" },
+
+  "private": "Private",
+  "@private": { "description": "Private group option" },
+
+  "public": "Public",
+  "@public": { "description": "Public group option" },
+
+  "selectedCount": "{count} selected",
+  "@selectedCount": {
+    "description": "Label showing number of selected contacts",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "groupCreated": "Group created",
+  "@groupCreated": { "description": "Toast when a group is created" },
+
+  "discoverTitle": "Discover",
+  "@discoverTitle": { "description": "Discover groups screen title" },
+
+  "discoverTagline": "Public groups. Join with one tap — your messages stay encrypted.",
+  "@discoverTagline": { "description": "Tagline on discover groups screen" },
+
+  "searchGroupsHint": "Search public groups",
+  "@searchGroupsHint": { "description": "Search groups field hint text" },
+
+  "noGroupsFound": "No public groups found",
+  "@noGroupsFound": { "description": "Empty state when no groups are found" },
+
+  "noGroupsFoundHint": "Try a different search or create a public group",
+  "@noGroupsFoundHint": { "description": "Hint in empty groups state" },
+
+  "loadMore": "Load more",
+  "@loadMore": { "description": "Button to load more groups" },
+
+  "joined": "Joined",
+  "@joined": { "description": "Badge for groups already joined" },
+
+  "join": "Join",
+  "@join": { "description": "Button to join a group" },
+
+  "serverReturnedStatus": "Server returned {statusCode}",
+  "@serverReturnedStatus": {
+    "description": "Error when server returns an unexpected status",
+    "placeholders": { "statusCode": { "type": "int" } }
+  },
+
+  "failedToLoadGroups": "Failed to load groups",
+  "@failedToLoadGroups": { "description": "Error when groups fail to load" },
+
+  "failedToJoinGroup": "Failed to join group ({statusCode})",
+  "@failedToJoinGroup": {
+    "description": "Error when joining a group fails",
+    "placeholders": { "statusCode": { "type": "int" } }
+  },
+
+  "groupInfoTitle": "Group Info",
+  "@groupInfoTitle": { "description": "Group info screen title" },
+
+  "couldNotLoadGroupInfo": "Could not load group information",
+  "@couldNotLoadGroupInfo": { "description": "Error when group info fails to load" },
+
+  "memberCount": "{count, plural, =1{1 member} other{{count} members}}",
+  "@memberCount": {
+    "description": "Member count label",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "youLabel": "You",
+  "@youLabel": { "description": "Label for the current user in a list" },
+
+  "addMemberTooltip": "Add member",
+  "@addMemberTooltip": { "description": "Tooltip for add member button" },
+
+  "memberActionsTooltip": "Member actions",
+  "@memberActionsTooltip": { "description": "Tooltip for member actions button" },
+
+  "channels": "Channels",
+  "@channels": { "description": "Channels section header" },
+
+  "loadingChannels": "Loading channels...",
+  "@loadingChannels": { "description": "Loading state for channels" },
+
+  "noChannels": "No channels",
+  "@noChannels": { "description": "Empty state for channels" },
+
+  "addChannelTooltip": "Add channel",
+  "@addChannelTooltip": { "description": "Tooltip for add channel button" },
+
+  "deleteChannelTooltip": "Delete channel",
+  "@deleteChannelTooltip": { "description": "Tooltip for delete channel button" },
+
+  "ownerRole": "Owner",
+  "@ownerRole": { "description": "Owner role badge" },
+
+  "adminRole": "Admin",
+  "@adminRole": { "description": "Admin role badge" },
+
+  "removeButton": "Remove",
+  "@removeButton": { "description": "Remove button text" },
+
+  "banButton": "Ban",
+  "@banButton": { "description": "Ban button text" },
+
+  "leaveGroup": "Leave Group",
+  "@leaveGroup": { "description": "Leave group button" },
+
+  "dangerZone": "Danger Zone",
+  "@dangerZone": { "description": "Danger zone section header" },
+
+  "autoDeleteAfter": "Auto-delete after",
+  "@autoDeleteAfter": { "description": "Auto-delete after label" },
+
+  "ttlOff": "Off",
+  "@ttlOff": { "description": "TTL option: off (no auto-delete)" },
+
+  "ttl30Seconds": "30 seconds",
+  "@ttl30Seconds": { "description": "TTL option: 30 seconds" },
+
+  "ttl5Minutes": "5 minutes",
+  "@ttl5Minutes": { "description": "TTL option: 5 minutes" },
+
+  "ttl1Hour": "1 hour",
+  "@ttl1Hour": { "description": "TTL option: 1 hour" },
+
+  "ttl1Day": "1 day",
+  "@ttl1Day": { "description": "TTL option: 1 day" },
+
+  "ttl1Week": "1 week",
+  "@ttl1Week": { "description": "TTL option: 1 week" },
+
+  "messagesDisappearAfter": "Messages disappear after {ttlLabel}",
+  "@messagesDisappearAfter": {
+    "description": "Toast when auto-delete TTL is set",
+    "placeholders": { "ttlLabel": { "type": "String" } }
+  },
+
+  "editGroupNameTooltip": "Edit group name",
+  "@editGroupNameTooltip": { "description": "Tooltip for edit group name button" },
+
+  "saveGroupNameTooltip": "Save group name",
+  "@saveGroupNameTooltip": { "description": "Tooltip for save group name button" },
+
+  "cancelEditing": "Cancel editing",
+  "@cancelEditing": { "description": "Tooltip for cancel editing button" },
+
+  "editDescriptionTooltip": "Edit description",
+  "@editDescriptionTooltip": { "description": "Tooltip for edit description button" },
+
+  "saveDescriptionTooltip": "Save description",
+  "@saveDescriptionTooltip": { "description": "Tooltip for save description button" },
+
+  "groupNameFieldLabel": "Group name",
+  "@groupNameFieldLabel": { "description": "Group name text field label in edit mode" },
+
+  "groupDescriptionFieldLabel": "Group description",
+  "@groupDescriptionFieldLabel": { "description": "Group description text field label in edit mode" },
+
+  "couldNotReachServer": "Could not reach server",
+  "@couldNotReachServer": { "description": "Error when server is unreachable for invite link" },
+
+  "failedToGenerateInviteLink": "Failed to generate invite link",
+  "@failedToGenerateInviteLink": { "description": "Error when invite link generation fails" },
+
+  "addMemberTitle": "Add Member",
+  "@addMemberTitle": { "description": "Add member dialog title" },
+
+  "searchContactsShort": "Search contacts...",
+  "@searchContactsShort": { "description": "Short search contacts hint in add member dialog" },
+
+  "noContactsFound": "No contacts found",
+  "@noContactsFound": { "description": "Empty state when no contacts are found in search" },
+
+  "allContactsInGroup": "All contacts are already in this group",
+  "@allContactsInGroup": { "description": "Message when all contacts are already in the group" },
+
+  "memberAdded": "Member added",
+  "@memberAdded": { "description": "Toast when a member is added" },
+
+  "failedToAddMember": "Failed to add member",
+  "@failedToAddMember": { "description": "Error when adding a member fails" },
+
+  "deleteGroupTitle": "Delete Group",
+  "@deleteGroupTitle": { "description": "Delete group dialog title" },
+
+  "deleteGroupConfirm": "Are you sure you want to delete \"{groupName}\"? This will permanently remove all messages and members. This action cannot be undone.",
+  "@deleteGroupConfirm": {
+    "description": "Delete group confirmation message",
+    "placeholders": { "groupName": { "type": "String" } }
+  },
+
+  "delete": "Delete",
+  "@delete": { "description": "Generic delete button" },
+
+  "groupDeleted": "Group deleted",
+  "@groupDeleted": { "description": "Toast when a group is deleted" },
+
+  "ownerOnlyDelete": "Only the group owner can delete this group",
+  "@ownerOnlyDelete": { "description": "Error when non-owner tries to delete group" },
+
+  "failedToDeleteGroup": "Failed to delete group",
+  "@failedToDeleteGroup": { "description": "Error when deleting a group fails" },
+
+  "leaveGroupTitle": "Leave Group",
+  "@leaveGroupTitle": { "description": "Leave group dialog title" },
+
+  "leaveGroupConfirm": "Are you sure you want to leave this group?",
+  "@leaveGroupConfirm": { "description": "Leave group confirmation message" },
+
+  "leave": "Leave",
+  "@leave": { "description": "Leave button text" },
+
+  "failedToLeaveGroup": "Failed to leave group",
+  "@failedToLeaveGroup": { "description": "Error when leaving a group fails" },
+
+  "removeMemberTitle": "Remove Member",
+  "@removeMemberTitle": { "description": "Remove member dialog title" },
+
+  "removeMemberConfirm": "Remove {username} from this group?",
+  "@removeMemberConfirm": {
+    "description": "Remove member confirmation message",
+    "placeholders": { "username": { "type": "String", "example": "alice" } }
+  },
+
+  "memberRemoved": "{username} removed",
+  "@memberRemoved": {
+    "description": "Toast when a member is removed",
+    "placeholders": { "username": { "type": "String", "example": "alice" } }
+  },
+
+  "failedToRemoveMember": "Failed to remove member",
+  "@failedToRemoveMember": { "description": "Error when removing a member fails" },
+
+  "banMemberTitle": "Ban Member",
+  "@banMemberTitle": { "description": "Ban member dialog title" },
+
+  "banMemberConfirm": "Ban {username} from this group? They will not be able to rejoin.",
+  "@banMemberConfirm": {
+    "description": "Ban member confirmation message",
+    "placeholders": { "username": { "type": "String", "example": "alice" } }
+  },
+
+  "memberBanned": "{username} banned",
+  "@memberBanned": {
+    "description": "Toast when a member is banned",
+    "placeholders": { "username": { "type": "String", "example": "alice" } }
+  },
+
+  "failedToBanMember": "Failed to ban member",
+  "@failedToBanMember": { "description": "Error when banning a member fails" },
+
+  "addChannelTitle": "Add Channel",
+  "@addChannelTitle": { "description": "Add channel dialog title" },
+
+  "channelNameLabel": "Channel name",
+  "@channelNameLabel": { "description": "Channel name field label" },
+
+  "channelNameHint": "e.g. general",
+  "@channelNameHint": { "description": "Channel name field hint" },
+
+  "typeLabel": "Type",
+  "@typeLabel": { "description": "Channel type field label" },
+
+  "channelTypeText": "Text",
+  "@channelTypeText": { "description": "Channel type option: Text" },
+
+  "channelTypeVoice": "Voice",
+  "@channelTypeVoice": { "description": "Channel type option: Voice" },
+
+  "create": "Create",
+  "@create": { "description": "Create button" },
+
+  "channelCreated": "Channel created",
+  "@channelCreated": { "description": "Toast when a channel is created" },
+
+  "failedToCreateChannel": "Failed to create channel",
+  "@failedToCreateChannel": { "description": "Error when creating a channel fails" },
+
+  "deleteChannelTitle": "Delete Channel",
+  "@deleteChannelTitle": { "description": "Delete channel dialog title" },
+
+  "deleteChannelConfirm": "Delete channel \"{channelName}\"? This cannot be undone.",
+  "@deleteChannelConfirm": {
+    "description": "Delete channel confirmation message",
+    "placeholders": { "channelName": { "type": "String" } }
+  },
+
+  "channelDeleted": "Channel deleted",
+  "@channelDeleted": { "description": "Toast when a channel is deleted" },
+
+  "failedToDeleteChannel": "Failed to delete channel",
+  "@failedToDeleteChannel": { "description": "Error when deleting a channel fails" },
+
+  "failedToUpdateGroupName": "Failed to update group name",
+  "@failedToUpdateGroupName": { "description": "Error when updating group name fails" },
+
+  "failedToUpdateDescription": "Failed to update description",
+  "@failedToUpdateDescription": { "description": "Error when updating description fails" },
+
+  "groupAvatarUpdated": "Group avatar updated",
+  "@groupAvatarUpdated": { "description": "Toast when group avatar is updated" },
+
+  "failedToUploadAvatar": "Failed to upload avatar ({statusCode})",
+  "@failedToUploadAvatar": {
+    "description": "Error when avatar upload fails",
+    "placeholders": { "statusCode": { "type": "int" } }
+  },
+
+  "uploadError": "Upload error: {error}",
+  "@uploadError": {
+    "description": "Error when upload fails",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "shareQr": "Share QR",
+  "@shareQr": { "description": "Share QR button in user profile" },
+
+  "safetyNumber": "Safety Number",
+  "@safetyNumber": { "description": "Safety Number button" },
+
+  "blockUser": "Block user",
+  "@blockUser": { "description": "Block user button/dialog title" },
+
+  "shareProfile": "Share Profile",
+  "@shareProfile": { "description": "Share profile dialog title" },
+
+  "blockUserConfirm": "Are you sure you want to block @{username}? They will not be able to message you.",
+  "@blockUserConfirm": {
+    "description": "Block user confirmation message",
+    "placeholders": { "username": { "type": "String", "example": "alice" } }
+  },
+
+  "block": "Block",
+  "@block": { "description": "Block button text" },
+
+  "usernameBlocked": "@{username} blocked",
+  "@usernameBlocked": {
+    "description": "Toast when a user is blocked",
+    "placeholders": { "username": { "type": "String", "example": "alice" } }
+  },
+
+  "failedToBlockUser": "Failed to block user",
+  "@failedToBlockUser": { "description": "Error when blocking a user fails" },
+
+  "memberSince": "Member since {date}",
+  "@memberSince": {
+    "description": "Member since label on user profile",
+    "placeholders": { "date": { "type": "String", "example": "Jan 2024" } }
+  },
+
+  "contactRequestSent": "Contact request sent",
+  "@contactRequestSent": { "description": "Toast when a contact request is sent" },
+
+  "failedToLoadProfileStatus": "Failed to load profile ({statusCode})",
+  "@failedToLoadProfileStatus": {
+    "description": "Error when loading profile fails with status code",
+    "placeholders": { "statusCode": { "type": "int" } }
+  },
+
+  "passwordRecovery": "Password recovery",
+  "@passwordRecovery": { "description": "Password recovery screen title" },
+
+  "requestReset": "Request reset",
+  "@requestReset": { "description": "Request reset button" },
+
+  "backToLogin": "Back to login",
+  "@backToLogin": { "description": "Link back to login screen" },
+
+  "requestSent": "Request sent",
+  "@requestSent": { "description": "Toast when password reset request is sent" },
+
+  "forgotPasswordInfo": "If that username exists, your server admin will receive a reset token in the server logs. Ask them to share it with you, then use it on the next screen to set a new password.\n\nNote: resetting your password will delete your encrypted message history, as the server cannot access it.",
+  "@forgotPasswordInfo": { "description": "Informational text on password recovery screen" },
+
+  "enterResetToken": "Enter reset token",
+  "@enterResetToken": { "description": "Button to proceed to reset token entry" },
+
+  "connectingStatus": "Connecting…",
+  "@connectingStatus": { "description": "Status text on splash screen: connecting" },
+
+  "checkingSessionStatus": "Checking session…",
+  "@checkingSessionStatus": { "description": "Status text on splash screen: checking session" },
+
+  "loadingMessagesStatus": "Loading messages…",
+  "@loadingMessagesStatus": { "description": "Status text on splash screen: loading messages" },
+
+  "newKeysGenerated": "New encryption keys generated. Messages from before this login may not be decryptable on this device.",
+  "@newKeysGenerated": { "description": "Snackbar when new encryption keys are generated" },
+
+  "updateAvailableTitle": "Update Available",
+  "@updateAvailableTitle": { "description": "Update available dialog/screen title" },
+
+  "downloadingPercent": "Downloading... {progress}%",
+  "@downloadingPercent": {
+    "description": "Download progress label in update prompt",
+    "placeholders": { "progress": { "type": "int" } }
+  },
+
+  "installing": "Installing...",
+  "@installing": { "description": "Label while update is installing" },
+
+  "downloadFailed": "Download failed",
+  "@downloadFailed": { "description": "Error when download fails" },
+
+  "downloadUpdate": "Download Update",
+  "@downloadUpdate": { "description": "Button to download update" },
+
+  "skip": "Skip",
+  "@skip": { "description": "Skip button" },
+
+  "welcomeToEchoOnboarding": "Welcome to Echo!",
+  "@welcomeToEchoOnboarding": { "description": "Welcome message on onboarding screen" },
+
+  "setupProfileDescription": "Set up your profile so others can recognize you.",
+  "@setupProfileDescription": { "description": "Description on onboarding profile setup page" },
+
+  "messagesEncrypted": "Your messages are end-to-end encrypted.",
+  "@messagesEncrypted": { "description": "Encryption note on onboarding" },
+
+  "tapToUploadPhoto": "Tap to upload a photo",
+  "@tapToUploadPhoto": { "description": "Hint to upload avatar on onboarding" },
+
+  "avatarUploaded": "Avatar uploaded",
+  "@avatarUploaded": { "description": "Toast when avatar is uploaded on onboarding" },
+
+  "avatarUploadFailed": "Avatar upload failed ({statusCode})",
+  "@avatarUploadFailed": {
+    "description": "Error when avatar upload fails on onboarding",
+    "placeholders": { "statusCode": { "type": "int" } }
+  },
+
+  "yourMessagesArePrivate": "Your messages are private",
+  "@yourMessagesArePrivate": { "description": "Title on onboarding encryption page" },
+
+  "signalProtocolDescription": "Echo uses the Signal Protocol to encrypt your messages end-to-end. Only you and the person you are talking to can read them — not even our servers can see the content.",
+  "@signalProtocolDescription": { "description": "Description of Signal Protocol encryption on onboarding" },
+
+  "safetyNumbersDescription": "You can verify a contact's identity at any time by comparing Safety Numbers in their profile.",
+  "@safetyNumbersDescription": { "description": "Description of safety numbers on onboarding" },
+
+  "addFirstContact": "Add your first contact",
+  "@addFirstContact": { "description": "Title on onboarding add contact page" },
+
+  "sendContactRequest": "Send a contact request to start chatting.",
+  "@sendContactRequest": { "description": "Description on onboarding add contact page" },
+
+  "shareInviteLinkTile": "Share invite link",
+  "@shareInviteLinkTile": { "description": "List tile to share invite link on onboarding" },
+
+  "showQrCode": "Show QR code",
+  "@showQrCode": { "description": "List tile to show QR code on onboarding" },
+
+  "yourInviteQr": "Your invite QR",
+  "@yourInviteQr": { "description": "Dialog title for QR code on onboarding" },
+
+  "inviteLinkCopiedShort": "Invite link copied",
+  "@inviteLinkCopiedShort": { "description": "Short toast when invite link is copied on onboarding" },
+
+  "enterUsername": "Enter a username",
+  "@enterUsername": { "description": "Hint in username field on onboarding" },
+
+  "sendRequest": "Send Request",
+  "@sendRequest": { "description": "Button to send contact request on onboarding" },
+
+  "failedToSendRequest": "Failed to send request",
+  "@failedToSendRequest": { "description": "Error when sending contact request fails" },
+
+  "back": "Back",
+  "@back": { "description": "Back button on onboarding" },
+
+  "getStarted": "Get Started",
+  "@getStarted": { "description": "Button on last onboarding page" },
+
+  "next": "Next",
+  "@next": { "description": "Next button on onboarding" },
+
+  "savedMessages": "Saved Messages",
+  "@savedMessages": { "description": "Saved messages screen title" },
+
+  "noSavedMessages": "No saved messages",
+  "@noSavedMessages": { "description": "Empty state for saved messages" },
+
+  "savedMessagesHint": "Bookmark messages to access them later. Long-press any message and tap Save.",
+  "@savedMessagesHint": { "description": "Hint in empty saved messages state" },
+
+  "inConversation": "in {conversationLabel}",
+  "@inConversation": {
+    "description": "Label showing which conversation a saved message is from",
+    "placeholders": { "conversationLabel": { "type": "String" } }
+  },
+
+  "removeBookmark": "Remove bookmark",
+  "@removeBookmark": { "description": "Tooltip for remove bookmark button" },
+
+  "deleteMessageTitle": "Delete message?",
+  "@deleteMessageTitle": { "description": "Delete message dialog title" },
+
+  "deleteForMe": "Delete for me",
+  "@deleteForMe": { "description": "Delete message for current user only" },
+
+  "deleteForEveryone": "Delete for everyone",
+  "@deleteForEveryone": { "description": "Delete message for all participants" },
+
+  "messageDeletedForYou": "Message deleted for you",
+  "@messageDeletedForYou": { "description": "Toast when message is deleted for current user" },
+
+  "messageDeletedForEveryone": "Message deleted for everyone",
+  "@messageDeletedForEveryone": { "description": "Toast when message is deleted for everyone" },
+
+  "failedToDelete": "Failed to delete: {reason}",
+  "@failedToDelete": {
+    "description": "Error when deleting a message fails",
+    "placeholders": { "reason": { "type": "String" } }
+  },
+
+  "messagePinned": "Message pinned",
+  "@messagePinned": { "description": "Toast when a message is pinned" },
+
+  "failedToPinMessage": "Failed to pin message",
+  "@failedToPinMessage": { "description": "Error when pinning a message fails" },
+
+  "messageUnpinned": "Message unpinned",
+  "@messageUnpinned": { "description": "Toast when a message is unpinned" },
+
+  "failedToUnpinMessage": "Failed to unpin message",
+  "@failedToUnpinMessage": { "description": "Error when unpinning a message fails" },
+
+  "messageSaved": "Message saved",
+  "@messageSaved": { "description": "Toast when a message is saved" },
+
+  "bookmarkRemoved": "Bookmark removed",
+  "@bookmarkRemoved": { "description": "Toast when a bookmark is removed" },
+
+  "messageForwarded": "Message forwarded",
+  "@messageForwarded": { "description": "Toast when a message is forwarded" },
+
+  "failedToForwardMessage": "Failed to forward message",
+  "@failedToForwardMessage": { "description": "Error when forwarding a message fails" },
+
+  "originalMessageNotLoaded": "Original message not loaded",
+  "@originalMessageNotLoaded": { "description": "Error when original message is not available" },
+
+  "monthJanuary": "January",
+  "@monthJanuary": { "description": "Month name: January" },
+
+  "monthFebruary": "February",
+  "@monthFebruary": { "description": "Month name: February" },
+
+  "monthMarch": "March",
+  "@monthMarch": { "description": "Month name: March" },
+
+  "monthApril": "April",
+  "@monthApril": { "description": "Month name: April" },
+
+  "monthMay": "May",
+  "@monthMay": { "description": "Month name: May" },
+
+  "monthJune": "June",
+  "@monthJune": { "description": "Month name: June" },
+
+  "monthJuly": "July",
+  "@monthJuly": { "description": "Month name: July" },
+
+  "monthAugust": "August",
+  "@monthAugust": { "description": "Month name: August" },
+
+  "monthSeptember": "September",
+  "@monthSeptember": { "description": "Month name: September" },
+
+  "monthOctober": "October",
+  "@monthOctober": { "description": "Month name: October" },
+
+  "monthNovember": "November",
+  "@monthNovember": { "description": "Month name: November" },
+
+  "monthDecember": "December",
+  "@monthDecember": { "description": "Month name: December" },
+
+  "monthJan": "Jan",
+  "@monthJan": { "description": "Month abbreviation: Jan" },
+
+  "monthFeb": "Feb",
+  "@monthFeb": { "description": "Month abbreviation: Feb" },
+
+  "monthMar": "Mar",
+  "@monthMar": { "description": "Month abbreviation: Mar" },
+
+  "monthApr": "Apr",
+  "@monthApr": { "description": "Month abbreviation: Apr" },
+
+  "monthMayAbbr": "May",
+  "@monthMayAbbr": { "description": "Month abbreviation: May" },
+
+  "monthJun": "Jun",
+  "@monthJun": { "description": "Month abbreviation: Jun" },
+
+  "monthJul": "Jul",
+  "@monthJul": { "description": "Month abbreviation: Jul" },
+
+  "monthAug": "Aug",
+  "@monthAug": { "description": "Month abbreviation: Aug" },
+
+  "monthSep": "Sep",
+  "@monthSep": { "description": "Month abbreviation: Sep" },
+
+  "monthOct": "Oct",
+  "@monthOct": { "description": "Month abbreviation: Oct" },
+
+  "monthNov": "Nov",
+  "@monthNov": { "description": "Month abbreviation: Nov" },
+
+  "monthDec": "Dec",
+  "@monthDec": { "description": "Month abbreviation: Dec" },
+
+  "today": "Today",
+  "@today": { "description": "Today label in date separators" },
+
+  "yesterday": "Yesterday",
+  "@yesterday": { "description": "Yesterday label in date separators" },
+
+  "newMessages": "{count, plural, =1{1 new message} other{{count} new messages}}",
+  "@newMessages": {
+    "description": "New messages banner count",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "groupFallback": "Group",
+  "@groupFallback": { "description": "Fallback label for group without name" },
+
+  "chatFallback": "Chat",
+  "@chatFallback": { "description": "Fallback label for DM without username" },
+
+  "heyGreeting": "Hey! 👋",
+  "@heyGreeting": { "description": "Pre-fill greeting text in chat" },
+
+  "scanQrTooltip": "Scan QR to add contact",
+  "@scanQrTooltip": { "description": "Tooltip for scan QR button" },
+
+  "searchMessagesTooltip": "Search messages (Ctrl+Shift+F)",
+  "@searchMessagesTooltip": { "description": "Tooltip for search messages button" },
+
+  "collapseSidebar": "Collapse sidebar",
+  "@collapseSidebar": { "description": "Tooltip for collapse sidebar button" },
+
+  "newButton": "New",
+  "@newButton": { "description": "New button tooltip" },
+
+  "changeStatus": "Change status",
+  "@changeStatus": { "description": "Tooltip for change status button" },
+
+  "dismiss": "Dismiss",
+  "@dismiss": { "description": "Dismiss tooltip for banners" },
+
+  "newChat": "New Chat",
+  "@newChat": { "description": "Menu item to start a new chat" },
+
+  "newGroup": "New Group",
+  "@newGroup": { "description": "Menu item to create a new group" },
+
+  "discoverGroups": "Discover Groups",
+  "@discoverGroups": { "description": "Menu item to discover groups" },
+
+  "filterAll": "All",
+  "@filterAll": { "description": "Filter chip: All conversations" },
+
+  "filterDMs": "DMs",
+  "@filterDMs": { "description": "Filter chip: Direct messages only" },
+
+  "filterGroups": "Groups",
+  "@filterGroups": { "description": "Filter chip: Groups only" },
+
+  "pendingContactRequests": "{count, plural, =1{1 pending contact request} other{{count} pending contact requests}}",
+  "@pendingContactRequests": {
+    "description": "Pending contact requests banner text",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "sessionReplaced": "Signed in on another device. Tap to reconnect.",
+  "@sessionReplaced": { "description": "Banner when session is replaced on another device" },
+
+  "sessionReplacedStatus": "Session replaced",
+  "@sessionReplacedStatus": { "description": "Status label when session is replaced" },
+
+  "online": "Online",
+  "@online": { "description": "Online status label" },
+
+  "reconnecting": "Reconnecting...",
+  "@reconnecting": { "description": "Reconnecting status label" },
+
+  "statusAway": "Away",
+  "@statusAway": { "description": "Status option: Away" },
+
+  "statusDoNotDisturb": "Do Not Disturb",
+  "@statusDoNotDisturb": { "description": "Status option: Do Not Disturb" },
+
+  "statusInvisible": "Invisible",
+  "@statusInvisible": { "description": "Status option: Invisible" },
+
+  "pinnedSection": "PINNED",
+  "@pinnedSection": { "description": "Pinned section header in conversation list" },
+
+  "searchConversations": "Search conversations",
+  "@searchConversations": { "description": "Search conversations field hint" },
+
+  "couldNotLoadConversations": "Couldn't load conversations",
+  "@couldNotLoadConversations": { "description": "Error when conversations fail to load" },
+
+  "noResultsFound": "No results found for '{query}'",
+  "@noResultsFound": {
+    "description": "Empty state when search has no results",
+    "placeholders": { "query": { "type": "String" } }
+  },
+
+  "tryDifferentSearch": "Try a different search term",
+  "@tryDifferentSearch": { "description": "Hint in empty search results state" },
+
+  "noConversationsYet": "No conversations yet",
+  "@noConversationsYet": { "description": "Empty state when no conversations exist" },
+
+  "noConversationsHint": "Start chatting by adding a contact or joining a group",
+  "@noConversationsHint": { "description": "Hint in empty conversations state" },
+
+  "unpin": "Unpin",
+  "@unpin": { "description": "Unpin conversation action" },
+
+  "pin": "Pin",
+  "@pin": { "description": "Pin conversation action" },
+
+  "unmute": "Unmute",
+  "@unmute": { "description": "Unmute conversation action" },
+
+  "mute": "Mute",
+  "@mute": { "description": "Mute conversation action" },
+
+  "youHaveLeftGroup": "You have left the group.",
+  "@youHaveLeftGroup": { "description": "Toast when user leaves a group" },
+
+  "failedToUpdateMute": "Failed to update mute settings",
+  "@failedToUpdateMute": { "description": "Error when mute settings update fails" },
+
+  "errorLeavingGroup": "Error leaving group: {error}",
+  "@errorLeavingGroup": {
+    "description": "Error when leaving a group fails",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "conversationDeleted": "Conversation deleted",
+  "@conversationDeleted": { "description": "Toast when a conversation is deleted" },
+
+  "failedToDeleteConversation": "Failed to delete conversation",
+  "@failedToDeleteConversation": { "description": "Error when deleting a conversation fails" },
+
+  "dismissSessionBanner": "Dismiss session banner",
+  "@dismissSessionBanner": { "description": "Semantics label for dismiss session banner button" },
+
+  "newChatFab": "New chat",
+  "@newChatFab": { "description": "Semantics label for new chat FAB" },
+
+  "onlineMembersSection": "ONLINE — {count}",
+  "@onlineMembersSection": {
+    "description": "Online members section header",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "offlineMembersSection": "OFFLINE — {count}",
+  "@offlineMembersSection": {
+    "description": "Offline members section header",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "removeMemberTooltip": "Remove member",
+  "@removeMemberTooltip": { "description": "Tooltip for remove member button" },
+
+  "memberRemovedFromGroup": "{username} removed from group",
+  "@memberRemovedFromGroup": {
+    "description": "Toast when a member is removed from group",
+    "placeholders": { "username": { "type": "String", "example": "alice" } }
+  },
+
+  "failedToRemoveMemberStatus": "Failed to remove member ({statusCode})",
+  "@failedToRemoveMemberStatus": {
+    "description": "Error when removing a member fails with status code",
+    "placeholders": { "statusCode": { "type": "int" } }
+  },
+
+  "leftGroup": "Left group",
+  "@leftGroup": { "description": "Toast when user leaves a group via members panel" },
+
+  "failedToLeaveGroupStatus": "Failed to leave group ({statusCode})",
+  "@failedToLeaveGroupStatus": {
+    "description": "Error when leaving a group fails with status code",
+    "placeholders": { "statusCode": { "type": "int" } }
+  },
+
+  "searchAllMessages": "Search all messages...",
+  "@searchAllMessages": { "description": "Search all messages field hint" },
+
+  "noMessagesFound": "No messages found",
+  "@noMessagesFound": { "description": "Empty state when no messages match search" },
+
+  "keyboardShortcuts": "Keyboard Shortcuts",
+  "@keyboardShortcuts": { "description": "Keyboard shortcuts overlay title" },
+
+  "escToClose": "Esc to close",
+  "@escToClose": { "description": "Footer hint in keyboard shortcuts overlay" },
+
+  "shortcutNavigation": "Navigation",
+  "@shortcutNavigation": { "description": "Navigation section in keyboard shortcuts" },
+
+  "shortcutQuickSwitch": "Quick-switch conversations",
+  "@shortcutQuickSwitch": { "description": "Keyboard shortcut description: quick switch" },
+
+  "shortcutShowShortcuts": "Show keyboard shortcuts",
+  "@shortcutShowShortcuts": { "description": "Keyboard shortcut description: show shortcuts" },
+
+  "shortcutCloseOverlay": "Close overlay / cancel action",
+  "@shortcutCloseOverlay": { "description": "Keyboard shortcut description: close overlay" },
+
+  "shortcutMessaging": "Messaging",
+  "@shortcutMessaging": { "description": "Messaging section in keyboard shortcuts" },
+
+  "shortcutSendMessage": "Send message",
+  "@shortcutSendMessage": { "description": "Keyboard shortcut description: send message" },
+
+  "shortcutNewLine": "New line in message",
+  "@shortcutNewLine": { "description": "Keyboard shortcut description: new line" },
+
+  "shortcutEditLastMessage": "Edit last sent message (when input is empty)",
+  "@shortcutEditLastMessage": { "description": "Keyboard shortcut description: edit last message" },
+
+  "shortcutPaste": "Paste text or image",
+  "@shortcutPaste": { "description": "Keyboard shortcut description: paste" },
+
+  "shortcutMessages": "Messages",
+  "@shortcutMessages": { "description": "Messages section in keyboard shortcuts" },
+
+  "shortcutReactMobile": "React to message (mobile)",
+  "@shortcutReactMobile": { "description": "Keyboard shortcut description: react on mobile" },
+
+  "shortcutReactDesktop": "React to message (desktop)",
+  "@shortcutReactDesktop": { "description": "Keyboard shortcut description: react on desktop" },
+
+  "shortcutReplyMobile": "Reply to message (mobile)",
+  "@shortcutReplyMobile": { "description": "Keyboard shortcut description: reply on mobile" },
+
+  "shortcutReplyDesktop": "Reply to message (desktop)",
+  "@shortcutReplyDesktop": { "description": "Keyboard shortcut description: reply on desktop" },
+
+  "shortcutEditing": "Editing",
+  "@shortcutEditing": { "description": "Editing section in keyboard shortcuts" },
+
+  "shortcutCopyText": "Copy selected text",
+  "@shortcutCopyText": { "description": "Keyboard shortcut description: copy text" },
+
+  "shortcutCutText": "Cut selected text",
+  "@shortcutCutText": { "description": "Keyboard shortcut description: cut text" },
+
+  "shortcutCancelEdit": "Cancel message edit (while editing)",
+  "@shortcutCancelEdit": { "description": "Keyboard shortcut description: cancel edit" },
+
+  "voiceConnecting": "Connecting...",
+  "@voiceConnecting": { "description": "Voice dock status: connecting" },
+
+  "voiceConnected": "Voice Connected",
+  "@voiceConnected": { "description": "Voice dock status: connected" },
+
+  "waitingForPeers": "Waiting for peers",
+  "@waitingForPeers": { "description": "Voice dock status: waiting for peers" },
+
+  "voicePeerCount": "{channelName} · {count, plural, =1{1 peer} other{{count} peers}}",
+  "@voicePeerCount": {
+    "description": "Voice dock peer count label",
+    "placeholders": {
+      "channelName": { "type": "String" },
+      "count": { "type": "int" }
+    }
+  },
+
+  "voiceFallback": "Voice",
+  "@voiceFallback": { "description": "Fallback label for voice channel without name" },
+
+  "turnOnCamera": "Turn on camera",
+  "@turnOnCamera": { "description": "Tooltip for turn on camera button" },
+
+  "turnOffCamera": "Turn off camera",
+  "@turnOffCamera": { "description": "Tooltip for turn off camera button" },
+
+  "mutedByDeafen": "Muted by deafen",
+  "@mutedByDeafen": { "description": "Tooltip when muted by deafen" },
+
+  "deafen": "Deafen",
+  "@deafen": { "description": "Tooltip for deafen button" },
+
+  "undeafen": "Undeafen",
+  "@undeafen": { "description": "Tooltip for undeafen button" },
+
+  "shareScreen": "Share screen",
+  "@shareScreen": { "description": "Tooltip for share screen button" },
+
+  "stopSharing": "Stop sharing",
+  "@stopSharing": { "description": "Tooltip for stop sharing button" },
+
+  "localTimeLabel": "Local time: {localTime} ({timezone})",
+  "@localTimeLabel": {
+    "description": "Local time label on user profile",
+    "placeholders": {
+      "localTime": { "type": "String", "example": "3:45 PM" },
+      "timezone": { "type": "String", "example": "America/New_York" }
+    }
+  }
+}

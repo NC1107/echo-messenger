@@ -36,6 +36,9 @@ class _ShutdownHandlerState extends ConsumerState<ShutdownHandler>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Pre-warm the WebSocket provider so disconnect() can be called
+    // immediately on shutdown without waiting for lazy initialisation.
+    ref.read(websocketProvider.notifier);
   }
 
   @override
