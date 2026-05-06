@@ -9,12 +9,14 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'src/app.dart';
 import 'src/providers/server_url_provider.dart';
+import 'src/providers/websocket_provider.dart';
 import 'src/services/debug_log_service.dart';
 import 'src/services/message_cache.dart';
 import 'src/services/notification_service.dart';
 import 'src/services/saved_messages_service.dart';
 import 'src/services/sound_service.dart';
 import 'src/services/user_data_dir.dart';
+import 'src/utils/platform_shutdown.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -92,6 +94,15 @@ Future<void> _initAndRun() async {
   // gesture (e.g. the notification settings toggle).
   await NotificationService().requestPermission();
 
+  // SIGTERM handler: catches `kill -TERM <pid>` and host shutdown events
+  // (systemd sends SIGTERM before SIGKILL).  Fires cleanup before exit so
+  // the WebSocket gets a proper close frame and Hive writes are flushed.
+  // Web and Windows do not support POSIX signals; handled there via the
+  // AppLifecycleState.detached path in ShutdownHandler.
+  if (!kIsWeb) {
+    registerSigtermHandler(() => _performCleanup(container));
+  }
+
   // Auto-login + crypto init is handled by SplashScreen
   // Issue #481: Linux GTK resize triangle (bottom-right corner) bleeds
   // through Flutter canvas on some compositors. This is a Flutter Linux
@@ -100,4 +111,20 @@ Future<void> _initAndRun() async {
   runApp(
     UncontrolledProviderScope(container: container, child: const EchoApp()),
   );
+}
+
+/// Performs the shared pre-termination cleanup steps:
+///   1. Sends a WebSocket close frame (server marks user offline immediately).
+///   2. Begins flushing Hive box files to disk (fire-and-forget — cannot await
+///      because the caller may call exit(0) synchronously after this returns).
+void _performCleanup(ProviderContainer container) {
+  try {
+    container.read(websocketProvider.notifier).disconnect();
+  } catch (_) {}
+  try {
+    // Hive.close() is async; starting it before exit(0) gives Hive a chance
+    // to begin flushing buffered writes, which prevents box-file corruption
+    // on graceful SIGTERM paths.
+    Hive.close().ignore();
+  } catch (_) {}
 }

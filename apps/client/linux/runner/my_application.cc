@@ -5,6 +5,8 @@
 #include <gdk/gdkx.h>
 #endif
 
+#include <glib-unix.h>
+
 #include "flutter/generated_plugin_registrant.h"
 
 struct _MyApplication {
@@ -109,11 +111,25 @@ static gboolean my_application_local_command_line(GApplication* application,
   return TRUE;
 }
 
+// SIGTERM callback: route the signal through GApplication so the Flutter
+// engine receives a clean shutdown notification (AppLifecycleState.detached)
+// instead of being killed mid-frame.
+static gboolean on_sigterm(gpointer user_data) {
+  g_application_quit(G_APPLICATION(user_data));
+  return G_SOURCE_REMOVE;
+}
+
 // Implements GApplication::startup.
 static void my_application_startup(GApplication* application) {
   // MyApplication* self = MY_APPLICATION(object);
 
   // Perform any actions required at application startup.
+
+  // Route SIGTERM (sent by systemd/shutdown) through GApplication's quit
+  // path so the Flutter engine shuts down cleanly.  Without this the process
+  // is killed mid-frame, leaving Hive box files in a dirty state and the
+  // WebSocket without a proper close frame.
+  g_unix_signal_add(SIGTERM, on_sigterm, application);
 
   G_APPLICATION_CLASS(my_application_parent_class)->startup(application);
 }
