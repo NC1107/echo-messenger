@@ -16,6 +16,7 @@ import '../services/toast_service.dart';
 import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
 import '../utils/friendly_error.dart';
+import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/echo_logo_icon.dart';
 
 /// Shared preferences key that gates whether onboarding has been completed.
@@ -154,8 +155,20 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     final file = result.files.first;
     if (file.bytes == null) return;
 
-    setState(() => _pickedAvatar = file);
-    await _uploadAvatar(file);
+    // Show the same crop dialog the Settings → Profile flow uses (#728) so
+    // signup users get an aspect-correct avatar instead of whatever shape
+    // their gallery handed back. Dialog returns null on cancel.
+    if (!mounted) return;
+    final croppedBytes = await showAvatarCropDialog(context, file.bytes!);
+    if (croppedBytes == null) return;
+
+    final croppedFile = PlatformFile(
+      name: 'avatar.jpg',
+      size: croppedBytes.length,
+      bytes: croppedBytes,
+    );
+    setState(() => _pickedAvatar = croppedFile);
+    await _uploadAvatar(croppedFile);
   }
 
   Future<void> _uploadAvatar(PlatformFile file) async {
