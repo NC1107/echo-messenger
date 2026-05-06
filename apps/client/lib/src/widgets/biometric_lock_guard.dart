@@ -56,16 +56,27 @@ class _BiometricLockGuardState extends ConsumerState<BiometricLockGuard>
 
   Future<void> _promptUnlock() async {
     if (_promptInFlight) return;
-    _promptInFlight = true;
+    // Wrap both transitions in setState so the build() that captures the
+    // disabled state of the Unlock button (`onPressed: _promptInFlight ? null
+    // : _promptUnlock`) actually runs after each transition. Without the
+    // setState in the finally clause, the button stayed visually disabled
+    // after a failed/cancelled Face ID prompt, so users had to fully restart
+    // the app to retry.
+    setState(() => _promptInFlight = true);
     try {
       final ok = await ref.read(biometricProvider.notifier).authenticate();
       if (!mounted) return;
       if (ok) {
-        setState(() => _locked = false);
+        setState(() {
+          _locked = false;
+          _promptInFlight = false;
+        });
+      } else {
+        // Stay locked — user can retry via the button (now re-enabled).
+        setState(() => _promptInFlight = false);
       }
-      // If not ok, stay locked — user can retry via the button.
-    } finally {
-      if (mounted) _promptInFlight = false;
+    } catch (_) {
+      if (mounted) setState(() => _promptInFlight = false);
     }
   }
 

@@ -53,16 +53,24 @@ void main() {
       expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     });
 
-    testWidgets('video tile shows Watch and Download buttons', (tester) async {
-      await tester.pumpApp(
-        _videoContent('[video:https://example.com/clip.mp4]'),
-        overrides: _gifOverride(),
-      );
-      await tester.pump();
+    testWidgets(
+      'pre-play tile shows the play overlay only (no Watch/Download buttons)',
+      (tester) async {
+        await tester.pumpApp(
+          _videoContent('[video:https://example.com/clip.mp4]'),
+          overrides: _gifOverride(),
+        );
+        await tester.pump();
 
-      expect(find.text('Watch'), findsOneWidget);
-      expect(find.text('Download'), findsOneWidget);
-    });
+        // Inline playback (#727) replaced the Watch button with tap-to-play
+        // and the Download button with the message hover overlay's download.
+        expect(find.text('Watch'), findsNothing);
+        expect(find.text('Download'), findsNothing);
+        // The big circular play button is still there as the affordance
+        // to start inline playback.
+        expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+      },
+    );
 
     testWidgets('renders nothing for non-media text content', (tester) async {
       await tester.pumpApp(

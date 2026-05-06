@@ -634,10 +634,7 @@ class MediaContentState extends State<MediaContent> {
         surface: context.surface,
         mainBg: context.mainBg,
         border: context.border,
-        textPrimary: context.textPrimary,
-        textMuted: context.textMuted,
         onOpen: () => openMedia(rawUrl),
-        onDownload: () => downloadMedia(rawUrl),
       );
     }
 
@@ -739,10 +736,11 @@ class InlineVideoPlayer extends StatefulWidget {
   final Color surface;
   final Color mainBg;
   final Color border;
-  final Color textPrimary;
-  final Color textMuted;
+
+  /// Used as the "Open externally" callback in the fullscreen player when
+  /// in-app playback fails (codec, auth, etc.). Tied to the chat's
+  /// open-media launcher, which deep-links the system browser / app.
   final VoidCallback onOpen;
-  final VoidCallback onDownload;
 
   const InlineVideoPlayer({
     super.key,
@@ -753,10 +751,7 @@ class InlineVideoPlayer extends StatefulWidget {
     required this.surface,
     required this.mainBg,
     required this.border,
-    required this.textPrimary,
-    required this.textMuted,
     required this.onOpen,
-    required this.onDownload,
   });
 
   @override
@@ -764,12 +759,68 @@ class InlineVideoPlayer extends StatefulWidget {
 }
 
 class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
-  /// Open the fullscreen player. Routes through a self-contained dialog
-  /// that owns its own [VideoPlayerController] — so a failure here doesn't
-  /// silently fall back to the external browser the way the inline path
-  /// used to. The dialog renders its own loading + error states and only
-  /// offers a "Open externally" affordance after init has actually failed.
-  void _openInApp() {
+  Player? _player;
+  VideoController? _videoController;
+  bool _started = false;
+  bool _initFailed = false;
+  bool _isPlaying = false;
+  StreamSubscription<bool>? _playingSub;
+  StreamSubscription<String>? _errorSub;
+
+  @override
+  void dispose() {
+    _playingSub?.cancel();
+    _errorSub?.cancel();
+    _player?.dispose();
+    super.dispose();
+  }
+
+  /// Begin inline playback. Lazily constructs the [Player] so a chat with
+  /// many videos doesn't hold N libmpv instances open at once — only the
+  /// videos the user actually plays get a live controller. Falls back to
+  /// the fullscreen dialog if init throws or the codec rejects the source.
+  Future<void> _startInline() async {
+    if (_started || _initFailed) return;
+    setState(() => _started = true);
+    try {
+      final player = Player();
+      final controller = VideoController(player);
+      _playingSub = player.stream.playing.listen((v) {
+        if (mounted) setState(() => _isPlaying = v);
+      });
+      _errorSub = player.stream.error.listen((e) {
+        if (!mounted || e.isEmpty) return;
+        debugPrint('[InlineVideoPlayer] error: $e');
+        setState(() => _initFailed = true);
+      });
+      await player.open(
+        Media(widget.videoUrl, httpHeaders: widget.headers),
+        play: true,
+      );
+      if (!mounted) {
+        await player.dispose();
+        return;
+      }
+      setState(() {
+        _player = player;
+        _videoController = controller;
+      });
+    } catch (e) {
+      debugPrint('[InlineVideoPlayer] init failed: $e');
+      if (mounted) setState(() => _initFailed = true);
+    }
+  }
+
+  void _togglePlayPause() {
+    final p = _player;
+    if (p == null) return;
+    _isPlaying ? p.pause() : p.play();
+  }
+
+  /// Opens the standalone fullscreen player. The fullscreen view owns its
+  /// own [Player] so the inline session keeps its position and audio when
+  /// the user dismisses the dialog.
+  void _openFullscreen() {
     showDialog<void>(
       context: context,
       barrierColor: Colors.black,
@@ -795,43 +846,22 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: widget.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: _buildVideoArea(),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Wrap(
-              spacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _openInApp,
-                  icon: const Icon(Icons.play_arrow, size: 14),
-                  label: const Text('Watch'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: widget.onDownload,
-                  icon: const Icon(Icons.download_outlined, size: 14),
-                  label: const Text('Download'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-        ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: AspectRatio(aspectRatio: 16 / 9, child: _buildVideoArea()),
       ),
     );
   }
 
-  /// Static play-thumbnail. Tapping always opens the self-contained
-  /// fullscreen player. We deliberately don't init a controller inline
-  /// anymore — it created a confusing "inline mini-player vs fullscreen
-  /// player" duality and quietly fell through to the system browser when
-  /// init failed.
+  /// Renders one of three states:
+  ///   1. Pre-play: static thumbnail with a big play button (no controller
+  ///      constructed yet — cheap).
+  ///   2. Init failed: static thumbnail again, with an "Open in fullscreen"
+  ///      tap target so the user can still try the standalone player.
+  ///   3. Playing: live [Video] surface; single-tap toggles play/pause,
+  ///      double-tap opens fullscreen, and a small fullscreen icon in the
+  ///      corner is the explicit entry point for users who don't discover
+  ///      the gesture.
   Widget _buildVideoArea() {
     // Server generates a JPEG first-frame thumbnail at upload time (#561).
     // If that endpoint 404s (older upload, ffmpeg missing, etc.), the
@@ -855,51 +885,103 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       errorWidget: (_, _, _) => Container(color: widget.mainBg),
     );
 
-    return Semantics(
-      label: 'play video',
-      button: true,
-      child: GestureDetector(
-        onTap: _openInApp,
-        child: SizedBox(
-          height: 170,
+    final controller = _videoController;
+    if (_started && !_initFailed && controller != null) {
+      // State 3: live playback. Single tap = play/pause, double tap =
+      // open fullscreen, the corner icon is an explicit fullscreen affordance.
+      return Semantics(
+        label: 'video player, double tap to open fullscreen',
+        child: GestureDetector(
+          onTap: _togglePlayPause,
+          onDoubleTap: _openFullscreen,
           child: Stack(
             fit: StackFit.expand,
             children: [
-              thumb,
-              Center(
-                child: Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.black.withValues(alpha: 0.55),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.4),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  alignment: Alignment.center,
-                  child: const Padding(
-                    // Optical centering: the play triangle's mass sits left of
-                    // its bounding box, so nudge it right by 2px.
-                    padding: EdgeInsets.only(left: 2),
-                    child: Icon(
-                      Icons.play_arrow_rounded,
+              Video(controller: controller, controls: NoVideoControls),
+              if (!_isPlaying)
+                Center(child: _PlayOverlay(onTap: _togglePlayPause)),
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Material(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.fullscreen,
                       color: Colors.white,
-                      size: 32,
+                      size: 18,
+                    ),
+                    tooltip: 'Open fullscreen',
+                    onPressed: _openFullscreen,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
                     ),
                   ),
                 ),
               ),
             ],
           ),
+        ),
+      );
+    }
+
+    // States 1 + 2: thumbnail with a play button. Tapping starts inline
+    // playback; if init has already failed once we route to the standalone
+    // fullscreen player which renders a richer error UI.
+    return Semantics(
+      label: 'play video',
+      button: true,
+      child: GestureDetector(
+        onTap: _initFailed ? _openFullscreen : _startInline,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            thumb,
+            Center(child: _PlayOverlay(onTap: _startInline)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Circular play button used both on the pre-play thumbnail and as the
+/// "tap to resume" affordance over a paused inline video.
+class _PlayOverlay extends StatelessWidget {
+  final VoidCallback onTap;
+  const _PlayOverlay({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.black.withValues(alpha: 0.55),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.15),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        alignment: Alignment.center,
+        child: const Padding(
+          // Optical centering: the play triangle's mass sits left of its
+          // bounding box, so nudge it right by 2px.
+          padding: EdgeInsets.only(left: 2),
+          child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 32),
         ),
       ),
     );
