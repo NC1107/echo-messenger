@@ -1185,13 +1185,30 @@ class _MessageItemState extends State<MessageItem>
     required bool hasMedia,
   }) {
     if (hasMedia) {
-      return MediaContent(
+      final mediaWidget = MediaContent(
         content: msg.content,
         isMine: isMine,
         serverUrl: widget.serverUrl,
         authToken: widget.authToken,
         mediaTicket: widget.mediaTicket,
         onImageTap: widget.onImageTap,
+      );
+      final caption = extractMediaCaption(msg.content);
+      if (caption == null) return mediaWidget;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          mediaWidget,
+          const SizedBox(height: 4),
+          RichTextContent(
+            text: caption,
+            textColor: _contentTextColor(isMine: isMine, isFailed: isFailed),
+            accentHoverColor: context.accentHover,
+            textSecondaryColor: context.textSecondary,
+            compact: widget.compactLayout,
+          ),
+        ],
       );
     }
     if (_isDecryptFailure(msg.content)) {
