@@ -427,15 +427,7 @@ class ChatHeaderBar extends ConsumerWidget {
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
       IconButton(
-        icon: Badge(
-          isLabelVisible: pinnedCount > 0,
-          label: Text(
-            '$pinnedCount',
-            style: const TextStyle(fontSize: 9, color: Colors.white),
-          ),
-          backgroundColor: context.accent,
-          child: const Icon(Icons.push_pin_outlined, size: 20),
-        ),
+        icon: const Icon(Icons.push_pin_outlined, size: 20),
         color: context.textSecondary,
         tooltip: 'Pinned messages',
         onPressed: () => _showPinnedMessagesDialog(context, ref, conv),
