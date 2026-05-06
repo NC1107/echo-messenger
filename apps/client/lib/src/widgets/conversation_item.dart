@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/chat_message.dart' show MessageStatus;
+import '../models/chat_message.dart' show ChatMessage, MessageStatus;
 import '../models/conversation.dart';
 import '../providers/chat_provider.dart';
 import '../providers/conversations_provider.dart';
@@ -229,6 +229,19 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
   String? _resolveSnippet() {
     final conv = widget.conversation;
     String? snippet = conv.lastMessage;
+
+    // System sentinels (e.g. `__system__:member_joined:UUID:USERNAME`) must
+    // be rendered as the friendly event line, not the raw sentinel and not
+    // with a "You: " sender prefix. They never come through the WS preview
+    // path — only the HTTP last_msg_cte fetch surfaces them — so this is the
+    // only place the sidebar gets to translate them.
+    if (snippet != null && snippet.startsWith('__system__:')) {
+      final translated = ChatMessage.translateSystemSentinel(
+        snippet,
+        myUserId: widget.myUserId,
+      );
+      if (translated != null) return translated;
+    }
 
     snippet = _maskEncryptedSnippet(snippet);
     snippet = _applyMediaLabel(snippet);

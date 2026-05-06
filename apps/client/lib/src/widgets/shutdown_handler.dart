@@ -36,6 +36,11 @@ class _ShutdownHandlerState extends ConsumerState<ShutdownHandler>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Force-instantiate the websocket provider so we don't have to discover
+    // it lazily inside _handleShutdown — at OS-shutdown time the framework
+    // is mid-tear-down and provider creation can race the dispose pipeline.
+    // Using read() (not watch()) avoids unnecessary rebuilds.
+    ref.read(websocketProvider.notifier);
   }
 
   @override
