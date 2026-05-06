@@ -7,6 +7,31 @@ import 'package:echo_app/src/providers/server_url_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+// Fake notifiers used to seed initial state for the @riverpod class
+// providers under test. The base classes' `build()` always returns a
+// default value; these fakes return whatever the test container passes in.
+
+class _FakeSearchQuery extends ConversationSearchQuery {
+  _FakeSearchQuery(this._initial);
+  final String _initial;
+  @override
+  String build() => _initial;
+}
+
+class _FakeFilterType extends ConversationFilterTypeNotifier {
+  _FakeFilterType(this._initial);
+  final ConversationFilterType _initial;
+  @override
+  ConversationFilterType build() => _initial;
+}
+
+class _FakePinnedIds extends PinnedConversationIds {
+  _FakePinnedIds(this._initial);
+  final Set<String> _initial;
+  @override
+  Set<String> build() => _initial;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -56,9 +81,15 @@ ProviderContainer _container({
         return n;
       }),
       privacyProvider.overrideWith(Privacy.new),
-      conversationSearchQueryProvider.overrideWith((ref) => searchQuery),
-      conversationFilterTypeProvider.overrideWith((ref) => filterType),
-      pinnedConversationIdsProvider.overrideWith((ref) => pinnedIds),
+      conversationSearchQueryProvider.overrideWith(
+        () => _FakeSearchQuery(searchQuery),
+      ),
+      conversationFilterTypeProvider.overrideWith(
+        () => _FakeFilterType(filterType),
+      ),
+      pinnedConversationIdsProvider.overrideWith(
+        () => _FakePinnedIds(pinnedIds),
+      ),
     ],
   );
   // Seed conversations directly into state (no network call needed).

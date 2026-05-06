@@ -21,10 +21,18 @@ linter:
   # `// ignore_for_file: name_of_lint` syntax on the line or in the file
   # producing the lint.
   rules:
-    # avoid_print: false  # Uncomment to disable the `avoid_print` rule
     # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
     prefer_const_constructors: true
     prefer_const_literals_to_create_immutables: true
+    # Forbid raw `print()` — debugPrint() is stripped in release builds and
+    # is the project standard. The codebase already uses debugPrint everywhere.
+    avoid_print: true
+    # Catch BuildContext usage after an `await` (post-async-gap), a classic
+    # Flutter footgun that crashes when the widget is unmounted mid-await.
+    use_build_context_synchronously: true
+    # `unnecessary_async` is a logical follow-up but currently flags 27
+    # call sites across providers/services/tests; cleaning those is its
+    # own focused PR.
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options
