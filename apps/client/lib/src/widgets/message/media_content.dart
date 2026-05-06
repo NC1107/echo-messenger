@@ -1,11 +1,14 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:video_player/video_player.dart';
 
 import '../../providers/gif_playback_provider.dart';
 import '../../services/media_cache_service.dart';
@@ -903,10 +906,14 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   }
 }
 
-/// Self-contained fullscreen video player. Owns its own
-/// [VideoPlayerController] so it doesn't depend on the inline bubble's init
+/// Self-contained fullscreen video player. Owns its own [Player] +
+/// [VideoController] so it doesn't depend on the inline bubble's init
 /// succeeding first. Renders three states: loading, playing, and error
 /// (with a clear "Open externally" affordance for codec / auth failures).
+///
+/// Backed by media_kit (libmpv) so the same code path works on every
+/// platform — including Linux desktop, where the previous video_player
+/// stack had no backend (#727).
 class FullscreenVideoPlayer extends StatefulWidget {
   final String videoUrl;
   final String rawUrl;
@@ -918,12 +925,6 @@ class FullscreenVideoPlayer extends StatefulWidget {
   /// wired to the same launcher the bubble's Download button uses.
   final VoidCallback onLaunchExternal;
 
-  /// Overrides the Linux platform check. `null` (default) reads
-  /// [defaultTargetPlatform] at runtime. Pass `true` / `false` in widget
-  /// tests to exercise each code path without running on Linux hardware (#620).
-  @visibleForTesting
-  final bool? isLinuxOverride;
-
   const FullscreenVideoPlayer({
     super.key,
     required this.videoUrl,
@@ -932,7 +933,6 @@ class FullscreenVideoPlayer extends StatefulWidget {
     required this.accent,
     required this.textMuted,
     required this.onLaunchExternal,
-    this.isLinuxOverride,
   });
 
   @override
@@ -940,9 +940,20 @@ class FullscreenVideoPlayer extends StatefulWidget {
 }
 
 class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
-  VideoPlayerController? _controller;
+  Player? _player;
+  VideoController? _videoController;
+  final List<StreamSubscription<dynamic>> _subs = [];
+
   bool _initFailed = false;
   String? _errorMessage;
+
+  // Mirrored player state — kept in sync via stream listeners so the build
+  // method can stay synchronous.
+  bool _isPlaying = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  int _videoWidth = 0;
+  int _videoHeight = 0;
 
   @override
   void initState() {
@@ -951,37 +962,59 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
   }
 
   Future<void> _init() async {
-    // video_player has no Linux desktop implementation — calling initialize()
-    // on Linux throws UnimplementedError before any player state is set up
-    // (#620). Detect this ahead-of-time and show the graceful fallback so the
-    // user can still open the video externally.
-    final isLinux =
-        widget.isLinuxOverride ??
-        (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux);
-    if (isLinux) {
-      if (mounted) {
-        setState(() {
-          _initFailed = true;
-          _errorMessage =
-              'Video playback is not supported on Linux desktop. '
-              'Use "Open externally" to watch with your system player.';
-        });
-      }
-      return;
-    }
     try {
-      final controller = VideoPlayerController.networkUrl(
-        Uri.parse(widget.videoUrl),
-        httpHeaders: widget.headers,
+      final player = Player();
+      final controller = VideoController(player);
+
+      _subs.add(
+        player.stream.playing.listen((v) {
+          if (mounted) setState(() => _isPlaying = v);
+        }),
       );
-      await controller.initialize();
+      _subs.add(
+        player.stream.position.listen((v) {
+          if (mounted) setState(() => _position = v);
+        }),
+      );
+      _subs.add(
+        player.stream.duration.listen((v) {
+          if (mounted) setState(() => _duration = v);
+        }),
+      );
+      _subs.add(
+        player.stream.width.listen((v) {
+          if (mounted && v != null) setState(() => _videoWidth = v);
+        }),
+      );
+      _subs.add(
+        player.stream.height.listen((v) {
+          if (mounted && v != null) setState(() => _videoHeight = v);
+        }),
+      );
+      _subs.add(
+        player.stream.error.listen((e) {
+          if (!mounted || e.isEmpty) return;
+          debugPrint('[FullscreenVideoPlayer] player error: $e');
+          setState(() {
+            _initFailed = true;
+            _errorMessage = e;
+          });
+        }),
+      );
+
+      await player.open(
+        Media(widget.videoUrl, httpHeaders: widget.headers),
+        play: true,
+      );
+
       if (!mounted) {
-        controller.dispose();
+        await player.dispose();
         return;
       }
-      controller.addListener(_onUpdate);
-      setState(() => _controller = controller);
-      controller.play();
+      setState(() {
+        _player = player;
+        _videoController = controller;
+      });
     } catch (e) {
       debugPrint(
         '[FullscreenVideoPlayer] init failed for ${widget.rawUrl}: $e',
@@ -997,19 +1030,17 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
 
   @override
   void dispose() {
-    _controller?.removeListener(_onUpdate);
-    _controller?.dispose();
+    for (final sub in _subs) {
+      sub.cancel();
+    }
+    _player?.dispose();
     super.dispose();
   }
 
-  void _onUpdate() {
-    if (mounted) setState(() {});
-  }
-
   void _togglePlayPause() {
-    final c = _controller;
-    if (c == null) return;
-    c.value.isPlaying ? c.pause() : c.play();
+    final p = _player;
+    if (p == null) return;
+    _isPlaying ? p.pause() : p.play();
   }
 
   String _formatDuration(Duration d) =>
@@ -1017,15 +1048,15 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    final c = _controller;
+    final controller = _videoController;
 
     Widget body;
     if (_initFailed) {
       body = _buildErrorState();
-    } else if (c == null) {
+    } else if (controller == null) {
       body = _buildLoadingState();
     } else {
-      body = _buildPlayer(c);
+      body = _buildPlayer(controller);
     }
 
     return Dialog.fullscreen(
@@ -1131,12 +1162,15 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
     );
   }
 
-  Widget _buildPlayer(VideoPlayerController c) {
-    final position = c.value.position;
-    final duration = c.value.duration;
-    final progress = (duration.inMilliseconds > 0)
-        ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
+  Widget _buildPlayer(VideoController controller) {
+    final progress = (_duration.inMilliseconds > 0)
+        ? (_position.inMilliseconds / _duration.inMilliseconds).clamp(0.0, 1.0)
         : 0.0;
+    // Fall back to 16:9 until the codec reports real dimensions. Clamp wide
+    // so a portrait phone clip doesn't take over the screen vertically.
+    final aspectRatio = (_videoWidth > 0 && _videoHeight > 0)
+        ? (_videoWidth / _videoHeight).clamp(0.3, 5.0)
+        : 16 / 9;
 
     return Stack(
       children: [
@@ -1144,8 +1178,8 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
           child: GestureDetector(
             onTap: _togglePlayPause,
             child: AspectRatio(
-              aspectRatio: c.value.aspectRatio.clamp(0.3, 5.0),
-              child: VideoPlayer(c),
+              aspectRatio: aspectRatio,
+              child: Video(controller: controller, controls: NoVideoControls),
             ),
           ),
         ),
@@ -1171,7 +1205,7 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
                     child: IconButton(
                       padding: EdgeInsets.zero,
                       icon: Icon(
-                        c.value.isPlaying ? Icons.pause : Icons.play_arrow,
+                        _isPlaying ? Icons.pause : Icons.play_arrow,
                         color: Colors.white,
                         size: 28,
                       ),
@@ -1197,8 +1231,8 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
                       child: Slider(
                         value: progress,
                         onChanged: (v) {
-                          final ms = (v * duration.inMilliseconds).round();
-                          c.seekTo(Duration(milliseconds: ms));
+                          final ms = (v * _duration.inMilliseconds).round();
+                          _player?.seek(Duration(milliseconds: ms));
                         },
                       ),
                     ),
@@ -1206,7 +1240,7 @@ class _FullscreenVideoPlayerState extends State<FullscreenVideoPlayer> {
                   Padding(
                     padding: const EdgeInsets.only(right: 12),
                     child: Text(
-                      '${_formatDuration(position)} / ${_formatDuration(duration)}',
+                      '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
                       style: const TextStyle(color: Colors.white, fontSize: 11),
                     ),
                   ),
