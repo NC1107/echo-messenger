@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:echo_app/src/providers/gif_playback_provider.dart';
 import 'package:echo_app/src/widgets/message/media_content.dart';
+import 'package:echo_app/src/widgets/message/video_player.dart';
 
 import '../helpers/pump_app.dart';
 
