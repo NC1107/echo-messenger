@@ -35,24 +35,23 @@ class _FakeLiveKitNotifier extends LiveKitVoiceNotifier {
   }) async {}
 }
 
-class _FakeChannelsNotifier extends ChannelsNotifier {
-  _FakeChannelsNotifier(super.ref) {
-    state = const ChannelsState(
-      channelsByConversation: {
-        'conv-1': [
-          GroupChannel(
-            id: 'voice-1',
-            conversationId: 'conv-1',
-            name: 'General',
-            kind: 'voice',
-            position: 0,
-            category: 'Voice Channels',
-            createdAt: '2026-01-01T00:00:00Z',
-          ),
-        ],
-      },
-    );
-  }
+class _FakeChannelsNotifier extends Channels {
+  @override
+  ChannelsState build() => const ChannelsState(
+    channelsByConversation: {
+      'conv-1': [
+        GroupChannel(
+          id: 'voice-1',
+          conversationId: 'conv-1',
+          name: 'General',
+          kind: 'voice',
+          position: 0,
+          category: 'Voice Channels',
+          createdAt: '2026-01-01T00:00:00Z',
+        ),
+      ],
+    },
+  );
 
   @override
   Future<void> loadChannels(String conversationId) async {}
@@ -94,7 +93,7 @@ List<Override> _overrides({required LiveKitVoiceState voiceState}) {
     livekitVoiceProvider.overrideWith(
       (ref) => _FakeLiveKitNotifier(ref, initial: voiceState),
     ),
-    channelsProvider.overrideWith((ref) => _FakeChannelsNotifier(ref)),
+    channelsProvider.overrideWith(_FakeChannelsNotifier.new),
   ];
 }
 
@@ -141,7 +140,7 @@ void main() {
             fakeVoice = _FakeLiveKitNotifier(ref, initial: _activeVoiceState);
             return fakeVoice;
           }),
-          channelsProvider.overrideWith((ref) => _FakeChannelsNotifier(ref)),
+          channelsProvider.overrideWith(_FakeChannelsNotifier.new),
         ],
       );
       await tester.pump();

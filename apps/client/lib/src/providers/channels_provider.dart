@@ -1,12 +1,14 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/channel.dart';
 import 'auth_provider.dart';
 import 'server_url_provider.dart';
+
+part 'channels_provider.g.dart';
 
 class ChannelsState {
   final Map<String, List<GroupChannel>> channelsByConversation;
@@ -50,10 +52,10 @@ class ChannelsState {
   }
 }
 
-class ChannelsNotifier extends StateNotifier<ChannelsState> {
-  final Ref ref;
-
-  ChannelsNotifier(this.ref) : super(const ChannelsState());
+@Riverpod(keepAlive: true)
+class Channels extends _$Channels {
+  @override
+  ChannelsState build() => const ChannelsState();
 
   String get _serverUrl => ref.read(serverUrlProvider);
 
@@ -64,7 +66,7 @@ class ChannelsNotifier extends StateNotifier<ChannelsState> {
 
   Future<http.Response> _authenticatedRequest(
     Future<http.Response> Function(String token) requestFn,
-  ) async {
+  ) {
     return ref.read(authProvider.notifier).authenticatedRequest(requestFn);
   }
 
@@ -289,9 +291,3 @@ class ChannelsNotifier extends StateNotifier<ChannelsState> {
     }
   }
 }
-
-final channelsProvider = StateNotifierProvider<ChannelsNotifier, ChannelsState>(
-  (ref) {
-    return ChannelsNotifier(ref);
-  },
-);

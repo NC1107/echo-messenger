@@ -114,7 +114,7 @@ extension CryptoServiceInit on CryptoService {
     String storedPrivate, {
     Future<String?> Function(String key)? readKey,
   }) async {
-    Future<String?> read(String key) async =>
+    Future<String?> read(String key) =>
         readKey != null ? readKey(key) : store.read(key);
 
     final privateBytes = base64Decode(storedPrivate);

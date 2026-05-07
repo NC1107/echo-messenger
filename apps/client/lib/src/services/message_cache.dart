@@ -290,7 +290,7 @@ class MessageCache {
   }
 
   /// Open a Hive box (encrypted if a key is available, plain otherwise).
-  static Future<Box<Map>> _openBox(String name) async {
+  static Future<Box<Map>> _openBox(String name) {
     final keyBytes = _encKeyBytes;
     if (keyBytes != null) {
       return _openEncryptedBox(name, keyBytes);

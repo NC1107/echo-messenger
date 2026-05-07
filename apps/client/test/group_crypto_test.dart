@@ -109,7 +109,7 @@ void main() {
       );
     });
 
-    test('decryption without prefix throws FormatException', () async {
+    test('decryption without prefix throws FormatException', () {
       final key = GroupCryptoService.generateGroupKey();
 
       expect(
@@ -118,7 +118,7 @@ void main() {
       );
     });
 
-    test('decryption with truncated ciphertext throws', () async {
+    test('decryption with truncated ciphertext throws', () {
       final key = GroupCryptoService.generateGroupKey();
       // Valid prefix but too short payload
       final shortPayload = '${groupEncryptedPrefix}AAAA';

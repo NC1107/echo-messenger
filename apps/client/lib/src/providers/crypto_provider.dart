@@ -308,7 +308,7 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
   Future<int?> rotateGroupKey(
     String conversationId,
     List<Map<String, dynamic>> members,
-  ) async {
+  ) {
     final groupCrypto = ref.read(groupCryptoServiceProvider);
     final token = ref.read(authProvider).token ?? '';
     groupCrypto.setToken(token);
@@ -316,7 +316,7 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
   }
 
   /// Fetch the latest group key from the server and cache it locally.
-  Future<(int, String)?> fetchGroupKey(String conversationId) async {
+  Future<(int, String)?> fetchGroupKey(String conversationId) {
     final groupCrypto = ref.read(groupCryptoServiceProvider);
     final token = ref.read(authProvider).token ?? '';
     groupCrypto.setToken(token);
@@ -334,7 +334,7 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
   // -----------------------------------------------------------------------
 
   /// Check whether a peer's identity key has changed since first contact.
-  Future<bool> hasPeerIdentityKeyChanged(String peerUserId) async {
+  Future<bool> hasPeerIdentityKeyChanged(String peerUserId) {
     final crypto = ref.read(cryptoServiceProvider);
     return crypto.hasPeerIdentityKeyChanged(peerUserId);
   }
@@ -361,7 +361,7 @@ class CryptoNotifier extends StateNotifier<CryptoState> {
 
   /// Compute the safety-number fingerprint for [peerUserId], or `null`
   /// if either identity key is unavailable.
-  Future<String?> safetyNumberFor(String peerUserId) async {
+  Future<String?> safetyNumberFor(String peerUserId) {
     final crypto = ref.read(cryptoServiceProvider);
     return crypto.safetyNumberFor(peerUserId);
   }
