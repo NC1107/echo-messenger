@@ -1,23 +1,23 @@
-import 'dart:async';
-
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:pointer_interceptor/pointer_interceptor.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 import '../../theme/echo_theme.dart';
-import 'youtube_platform_support.dart';
 
 /// 16:9 YouTube embed.
 ///
-/// On platforms where `youtube_player_iframe` (and its underlying webview
-/// implementation) is supported — iOS, Android, Web, macOS — this renders
-/// the inline iframe player. On Linux + Windows desktop, or when iframe
-/// init fails for any reason (network, ad-blocker, etc.), it falls back to
-/// a static thumbnail card with a red play button overlay; tapping the
-/// fallback launches YouTube via deep link or the system browser.
-class YouTubeEmbed extends StatefulWidget {
+/// Renders a static thumbnail card with a red play button overlay; tapping
+/// launches the video in the YouTube app (deep-link) or, if the app isn't
+/// installed, the system browser.
+///
+/// We deliberately don't use `youtube_player_iframe` for inline playback
+/// any more. YouTube blocks many otherwise-public videos from embedding
+/// (region locks, age gates, "embedding disabled by uploader") and renders
+/// its branded "Video unavailable, error 152-N" UI inside the iframe
+/// without firing a JS error event we can intercept. The result was 8
+/// seconds of YouTube's branded error before the load timeout swapped to
+/// this card. The card is faster, more reliable, and consistent with how
+/// Discord/Slack handle YouTube links.
+class YouTubeEmbed extends StatelessWidget {
   final String videoId;
   final String? title;
 
@@ -34,164 +34,6 @@ class YouTubeEmbed extends StatefulWidget {
     final match = _idRegex.firstMatch(url.trim());
     return match?.group(1);
   }
-
-  @override
-  State<YouTubeEmbed> createState() => _YouTubeEmbedState();
-}
-
-class _YouTubeEmbedState extends State<YouTubeEmbed> {
-  YoutubePlayerController? _controller;
-  StreamSubscription<YoutubePlayerValue>? _subscription;
-  Timer? _loadTimeout;
-  bool _useFallback = !youtubeIframeSupported;
-
-  /// Maximum time we wait for the iframe player to reach any known state
-  /// (`cued`, `unstarted`, etc.) before assuming a silent failure and
-  /// swapping to the static fallback card. Some YouTube error states (e.g.
-  /// region/age/embed restrictions that surface as the iframe's branded
-  /// "Video unavailable" UI with codes like 152/153) never fire the JS
-  /// `onError` event, so the explicit-error listener below cannot catch
-  /// them — this timeout is the catch-net for that class of failures.
-  static const _kLoadTimeout = Duration(seconds: 8);
-
-  @override
-  void initState() {
-    super.initState();
-    if (youtubeIframeSupported) {
-      try {
-        final controller = YoutubePlayerController.fromVideoId(
-          videoId: widget.videoId,
-          autoPlay: false,
-          params: const YoutubePlayerParams(
-            mute: false,
-            showControls: true,
-            showFullscreenButton: true,
-            strictRelatedVideos: true,
-          ),
-        );
-        // Listen for explicit IFrame-API errors and for the player reaching
-        // a usable state (which cancels the load-timeout fallback). The two
-        // signals together cover most failure modes:
-        //   - JS `onError` codes 100/101/105/150 + catch-all `unknown`
-        //     (handled here via `value.error`).
-        //   - Silent failures where YouTube renders its branded error UI
-        //     inside the iframe without firing onError (handled via the
-        //     load timeout below).
-        _subscription = controller.listen((value) {
-          if (!mounted || _useFallback) return;
-          if (value.error != YoutubeError.none) {
-            debugPrint(
-              '[YouTubeEmbed] runtime error ${value.error}, falling back',
-            );
-            _loadTimeout?.cancel();
-            setState(() => _useFallback = true);
-            return;
-          }
-          // Cancel the timeout once the iframe reports any usable state —
-          // anything past `unknown` means YouTube's player is alive.
-          if (value.playerState != PlayerState.unknown) {
-            _loadTimeout?.cancel();
-          }
-        });
-        _loadTimeout = Timer(_kLoadTimeout, () {
-          if (!mounted || _useFallback) return;
-          debugPrint(
-            '[YouTubeEmbed] iframe never reached a usable state in '
-            '${_kLoadTimeout.inSeconds}s, falling back '
-            '(likely region/embed/age restriction)',
-          );
-          setState(() => _useFallback = true);
-        });
-        _controller = controller;
-      } catch (e) {
-        debugPrint('[YouTubeEmbed] iframe init failed: $e');
-        _useFallback = true;
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _loadTimeout?.cancel();
-    _subscription?.cancel();
-    _controller?.close();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = _controller;
-    if (_useFallback || controller == null) {
-      return _YouTubeFallbackCard(videoId: widget.videoId, title: widget.title);
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          decoration: BoxDecoration(
-            color: context.surface,
-            border: Border.all(color: context.border, width: 1),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                // On web the iframe sits inside an HtmlElementView and the
-                // outer GestureDetector on the chat bubble (long-press,
-                // swipe-to-reply) wins the gesture arena before the iframe
-                // sees the tap. PointerInterceptor draws a transparent HTML
-                // element that intercepts pointer events at the DOM layer
-                // so they reach the iframe's controls. No-op on native.
-                child: kIsWeb
-                    ? PointerInterceptor(
-                        child: YoutubePlayer(
-                          controller: controller,
-                          aspectRatio: 16 / 9,
-                          enableFullScreenOnVerticalDrag: false,
-                        ),
-                      )
-                    : YoutubePlayer(
-                        controller: controller,
-                        aspectRatio: 16 / 9,
-                        enableFullScreenOnVerticalDrag: false,
-                      ),
-              ),
-              if (widget.title != null && widget.title!.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                  child: Text(
-                    widget.title!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: context.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      height: 1.3,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Static thumbnail card. Used directly on Linux/Windows desktop where the
-/// iframe player isn't supported, and as a fallback when iframe init fails
-/// at runtime on supported platforms.
-class _YouTubeFallbackCard extends StatelessWidget {
-  final String videoId;
-  final String? title;
-
-  const _YouTubeFallbackCard({required this.videoId, this.title});
 
   static Future<void> _launchVideo(String videoId) async {
     final appUri = Uri.parse('youtube://watch?v=$videoId');
