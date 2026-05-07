@@ -48,11 +48,12 @@ class _FakeGroupCryptoService extends GroupCryptoService {
   Future<(int, String)?> fetchGroupKey(String conversationId) async => null;
 }
 
-class _FakeChannelsNotifier extends ChannelsNotifier {
+class _FakeChannelsNotifier extends Channels {
   final List<String> loadedChannels = [];
   final List<String> loadedVoiceSessions = [];
 
-  _FakeChannelsNotifier(super.ref);
+  @override
+  ChannelsState build() => const ChannelsState();
 
   @override
   Future<void> loadChannels(String conversationId) async {
@@ -173,8 +174,8 @@ void _setup() {
       conversationsProvider.overrideWith(
         (ref) => _FakeConversationsNotifier(ref),
       ),
-      channelsProvider.overrideWith((ref) {
-        fakeChannels = _FakeChannelsNotifier(ref);
+      channelsProvider.overrideWith(() {
+        fakeChannels = _FakeChannelsNotifier();
         return fakeChannels;
       }),
     ],

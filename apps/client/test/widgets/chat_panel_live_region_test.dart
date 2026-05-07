@@ -45,10 +45,9 @@ class _FakeChatNotifier extends ChatNotifier {
   }
 }
 
-class _FakeChannelsNotifier extends ChannelsNotifier {
-  _FakeChannelsNotifier(super.ref) {
-    state = const ChannelsState();
-  }
+class _FakeChannelsNotifier extends Channels {
+  @override
+  ChannelsState build() => const ChannelsState();
 
   @override
   Future<void> loadChannels(String conversationId) async {}
@@ -129,7 +128,7 @@ List<Override> _overrides({
       holder.notifier = n;
       return n;
     }),
-    channelsProvider.overrideWith((ref) => _FakeChannelsNotifier(ref)),
+    channelsProvider.overrideWith(_FakeChannelsNotifier.new),
     privacyProvider.overrideWith(_FakePrivacy.new),
     voiceSettingsProvider.overrideWith(_FakeVoiceSettings.new),
     voiceRtcProvider.overrideWith((ref) => _FakeVoiceRtcNotifier(ref)),

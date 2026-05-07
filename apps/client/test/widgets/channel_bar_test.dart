@@ -10,28 +10,27 @@ import 'package:echo_app/src/widgets/channel_bar.dart';
 import '../helpers/mock_providers.dart';
 import '../helpers/pump_app.dart';
 
-class _FakeChannelsNotifier extends ChannelsNotifier {
-  _FakeChannelsNotifier(super.ref) : super() {
-    state = const ChannelsState(
-      channelsByConversation: {
-        'conv-1': [
-          GroupChannel(
-            id: 'voice-1',
-            conversationId: 'conv-1',
-            name: 'lounge',
-            kind: 'voice',
-            position: 0,
-            category: 'Voice Channels',
-            createdAt: '2026-01-01T00:00:00Z',
-          ),
-        ],
-      },
-      voiceSessionsByChannel: {'voice-1': []},
-    );
-  }
-
+class _FakeChannelsNotifier extends Channels {
   int joinCalls = 0;
   int leaveCalls = 0;
+
+  @override
+  ChannelsState build() => const ChannelsState(
+    channelsByConversation: {
+      'conv-1': [
+        GroupChannel(
+          id: 'voice-1',
+          conversationId: 'conv-1',
+          name: 'lounge',
+          kind: 'voice',
+          position: 0,
+          category: 'Voice Channels',
+          createdAt: '2026-01-01T00:00:00Z',
+        ),
+      ],
+    },
+    voiceSessionsByChannel: {'voice-1': []},
+  );
 
   @override
   Future<bool> joinVoiceChannel(String conversationId, String channelId) async {
@@ -125,8 +124,8 @@ void main() {
         overrides: [
           authOverride(loggedInAuthState),
           webSocketOverride(),
-          channelsProvider.overrideWith((ref) {
-            fakeChannels = _FakeChannelsNotifier(ref);
+          channelsProvider.overrideWith(() {
+            fakeChannels = _FakeChannelsNotifier();
             return fakeChannels;
           }),
           voiceRtcProvider.overrideWith((ref) {
@@ -167,8 +166,8 @@ void main() {
         overrides: [
           authOverride(loggedInAuthState),
           webSocketOverride(),
-          channelsProvider.overrideWith((ref) {
-            fakeChannels = _FakeChannelsNotifier(ref);
+          channelsProvider.overrideWith(() {
+            fakeChannels = _FakeChannelsNotifier();
             return fakeChannels;
           }),
           voiceRtcProvider.overrideWith((ref) {
@@ -211,8 +210,8 @@ void main() {
         overrides: [
           authOverride(loggedInAuthState),
           webSocketOverride(),
-          channelsProvider.overrideWith((ref) {
-            fakeChannels = _FakeChannelsNotifier(ref);
+          channelsProvider.overrideWith(() {
+            fakeChannels = _FakeChannelsNotifier();
             return fakeChannels;
           }),
           voiceRtcProvider.overrideWith((ref) {
