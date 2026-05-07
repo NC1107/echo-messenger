@@ -36,6 +36,7 @@ import 'chat_input_bar/media_marker_helpers.dart';
 import 'chat_input_bar/media_picker_toggle.dart';
 import 'chat_input_bar/recording_row.dart';
 import 'chat_input_bar/send_button.dart';
+import 'chat_input_bar/upload_helpers.dart';
 import 'input/markdown_toolbar.dart';
 import 'input/pending_attachments_strip.dart';
 import 'input/input_status_bar.dart';
@@ -44,36 +45,8 @@ import 'input/reply_preview_bar.dart';
 import 'media_picker_panel.dart';
 import 'mobile_media_picker_panel.dart';
 
-const _kOctetStream = 'octet-stream';
-
-/// Mirror of `MAX_FILE_SIZE` in `apps/server/src/routes/media.rs`. Both must
-/// be bumped together. Cloudflare Free also caps request bodies at 100 MB,
-/// so going higher than this without proxy work will 502 on prod.
-const _kMaxUploadBytes = 100 * 1024 * 1024;
-
-/// Strip the original name and return `media.{ext}` (or just `media` if the
-/// filename had no extension). Used by the "preserve original filenames"
-/// privacy toggle.
-String _genericFilename(String original) {
-  final dot = original.lastIndexOf('.');
-  if (dot <= 0 || dot == original.length - 1) return 'media';
-  final ext = original.substring(dot + 1).toLowerCase();
-  return 'media.$ext';
-}
-
-/// Format a byte count as a human-readable string (1024-based, 1 decimal).
-String _formatBytes(int bytes) {
-  if (bytes < 1024) return '$bytes B';
-  const units = ['KB', 'MB', 'GB'];
-  var v = bytes / 1024.0;
-  var i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return '${v.toStringAsFixed(1)} ${units[i]}';
-}
-
+// Upload constants + pure-Dart helpers (kOctetStream, kMaxUploadBytes,
+// genericFilename, formatBytes) live in chat_input_bar/upload_helpers.dart.
 // Marker / MIME helpers live in chat_input_bar/media_marker_helpers.dart.
 // Local alias preserves the `_kImageGif` symbol used at three call sites
 // in this file without touching them.
@@ -316,7 +289,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       'm4a': ['audio', 'mp4'],
       'aac': ['audio', 'aac'],
     };
-    final mime = mimeTypes[ext] ?? ['application', _kOctetStream];
+    final mime = mimeTypes[ext] ?? ['application', kOctetStream];
 
     _setPendingAttachment(
       bytes: fileBytes,
@@ -725,7 +698,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     // upload the file under a generic name keyed off the extension. The file
     // contents are unchanged.
     final preserve = await readPreserveOriginalFilenames();
-    final uploadFileName = preserve ? fileName : _genericFilename(fileName);
+    final uploadFileName = preserve ? fileName : genericFilename(fileName);
 
     final uploader = UploadClient(ref.read(authProvider.notifier));
     final result = await uploader.uploadFile(
@@ -873,12 +846,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
       var sentCount = 0;
       for (final file in result.files) {
-        if (file.size > _kMaxUploadBytes) {
+        if (file.size > kMaxUploadBytes) {
           if (mounted) {
             ToastService.show(
               context,
-              '${file.name} is ${_formatBytes(file.size)} — limit is '
-              '${_formatBytes(_kMaxUploadBytes)}',
+              '${file.name} is ${formatBytes(file.size)} — limit is '
+              '${formatBytes(kMaxUploadBytes)}',
               type: ToastType.error,
             );
           }
@@ -908,7 +881,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         }
 
         final ext = (file.extension ?? '').toLowerCase();
-        final mime = _kMimeTypes[ext] ?? ['application', _kOctetStream];
+        final mime = _kMimeTypes[ext] ?? ['application', kOctetStream];
         final mimeType = '${mime[0]}/${mime[1]}';
 
         if (isMulti) {
@@ -1283,12 +1256,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
       var sentCount = 0;
       for (final file in result.files) {
-        if (file.size > _kMaxUploadBytes) {
+        if (file.size > kMaxUploadBytes) {
           if (mounted) {
             ToastService.show(
               context,
-              '${file.name} is ${_formatBytes(file.size)} — limit is '
-              '${_formatBytes(_kMaxUploadBytes)}',
+              '${file.name} is ${formatBytes(file.size)} — limit is '
+              '${formatBytes(kMaxUploadBytes)}',
               type: ToastType.error,
             );
           }
@@ -1304,7 +1277,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         if (bytes == null) continue;
 
         final ext = (file.extension ?? '').toLowerCase();
-        final mime = _kMimeTypes[ext] ?? ['application', _kOctetStream];
+        final mime = _kMimeTypes[ext] ?? ['application', kOctetStream];
         final mimeType = '${mime[0]}/${mime[1]}';
 
         if (isMulti) {
