@@ -93,7 +93,7 @@ void main() {
       );
     });
 
-    test('decryption without prefix throws FormatException', () async {
+    test('decryption without prefix throws FormatException', () {
       final key = GroupCryptoService.generateGroupKey();
       expect(
         () => GroupCryptoService.decryptGroupMessage('no-prefix-data', key),

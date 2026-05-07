@@ -30,9 +30,10 @@ linter:
     # Catch BuildContext usage after an `await` (post-async-gap), a classic
     # Flutter footgun that crashes when the widget is unmounted mid-await.
     use_build_context_synchronously: true
-    # `unnecessary_async` is a logical follow-up but currently flags 27
-    # call sites across providers/services/tests; cleaning those is its
-    # own focused PR.
+    # Catch async functions with no await — usually means a sync expression
+    # was wrapped in async/await unnecessarily, or someone meant to await
+    # something inside but forgot.
+    unnecessary_async: true
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

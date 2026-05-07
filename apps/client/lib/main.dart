@@ -19,7 +19,7 @@ import 'src/services/sound_service.dart';
 import 'src/services/user_data_dir.dart';
 import 'src/utils/platform_shutdown.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // Initialize media_kit's libmpv backend so video playback works on every
   // platform — including Linux desktop, where Flutter's default video_player

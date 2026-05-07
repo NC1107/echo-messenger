@@ -495,7 +495,7 @@ void main() {
       expect(result.id, 'new-dm-1');
     });
 
-    test('throws DmException when server returns 400', () async {
+    test('throws DmException when server returns 400', () {
       when(
         () => mockClient.post(
           any(that: predicate<Uri>((u) => u.path == '/api/conversations/dm')),
@@ -517,7 +517,7 @@ void main() {
       );
     });
 
-    test('throws DmException on network error', () async {
+    test('throws DmException on network error', () {
       when(
         () => mockClient.post(
           any(that: predicate<Uri>((u) => u.path == '/api/conversations/dm')),

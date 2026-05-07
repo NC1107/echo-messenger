@@ -4,7 +4,7 @@ void main() {
   group('readImageFromClipboard', () {
     test(
       'Wayland: uses wl-paste when WAYLAND_DISPLAY is set',
-      () async {
+      () {
         // Bug: _readLinuxClipboard() always calls xclip, which is X11-only.
         // On Wayland sessions (WAYLAND_DISPLAY set or XDG_SESSION_TYPE=wayland),
         // xclip is unavailable and the paste silently returns null.
@@ -19,7 +19,7 @@ void main() {
 
     test(
       'iOS: readImageFromClipboard logs and returns null instead of silently falling through',
-      () async {
+      () {
         // Bug: readImageFromClipboard() has no Platform.isIOS branch.
         // On iOS the function falls through the if/else chain and returns null
         // without any log, giving the user no indication of why paste fails.
@@ -36,7 +36,7 @@ void main() {
   group('writeImageToClipboard', () {
     test(
       'Wayland: uses wl-copy when WAYLAND_DISPLAY is set',
-      () async {
+      () {
         // Bug: _writeLinuxClipboard() always calls xclip, which is X11-only.
         // On Wayland xclip fails silently.
         // Expected fix: detect Wayland env vars and use wl-copy instead.

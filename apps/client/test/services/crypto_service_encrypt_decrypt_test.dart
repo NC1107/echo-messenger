@@ -222,19 +222,16 @@ void main() {
       },
     );
 
-    test(
-      'decryptMessage throws for unknown peer with normal message',
-      () async {
-        // Construct a fake "normal" (non-X3DH) ciphertext — just random bytes.
-        final fakeWire = base64Encode(
-          Uint8List.fromList(List.generate(100, (i) => i)),
-        );
-        expect(
-          () => asBob(() => bob.decryptMessage('unknown-peer', fakeWire)),
-          throwsA(isA<Exception>()),
-        );
-      },
-    );
+    test('decryptMessage throws for unknown peer with normal message', () {
+      // Construct a fake "normal" (non-X3DH) ciphertext — just random bytes.
+      final fakeWire = base64Encode(
+        Uint8List.fromList(List.generate(100, (i) => i)),
+      );
+      expect(
+        () => asBob(() => bob.decryptMessage('unknown-peer', fakeWire)),
+        throwsA(isA<Exception>()),
+      );
+    });
 
     test('session persists across CryptoService re-init', () async {
       // Establish session: Alice -> Bob

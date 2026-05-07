@@ -333,7 +333,7 @@ class AuthNotifier extends StateNotifier<AuthState>
   /// clears the in-state refresh token so the caller can simulate the web path
   /// (no body) using the standard mock infrastructure.
   @visibleForTesting
-  Future<bool> refreshAccessTokenForTest({bool sendBody = true}) async {
+  Future<bool> refreshAccessTokenForTest({bool sendBody = true}) {
     if (!sendBody) {
       // Temporarily null out the refresh token in state so _doRefreshAccessToken
       // takes the kIsWeb-equivalent branch where no body field is included.

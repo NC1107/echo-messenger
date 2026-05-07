@@ -71,7 +71,7 @@ class Privacy extends _$Privacy {
 
   Future<http.Response> _authenticatedRequest(
     Future<http.Response> Function(String token) requestFn,
-  ) async {
+  ) {
     return ref.read(authProvider.notifier).authenticatedRequest(requestFn);
   }
 

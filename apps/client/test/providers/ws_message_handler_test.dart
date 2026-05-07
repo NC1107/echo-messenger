@@ -187,7 +187,7 @@ const _myUserId = 'my-user-id';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUp(() async {
+  setUp(() {
     SharedPreferences.setMockInitialValues({});
     _setup();
   });

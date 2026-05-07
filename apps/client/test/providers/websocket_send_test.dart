@@ -547,7 +547,7 @@ class _PreKeyErrorCryptoService extends CryptoService {
   Future<Map<String, String>> encryptForAllDevices(
     String peerUserId,
     String plaintext,
-  ) async {
+  ) {
     throw Exception('No PreKey bundle found for user');
   }
 
@@ -560,7 +560,7 @@ class _PreKeyErrorCryptoService extends CryptoService {
   }
 
   @override
-  Future<String> encryptMessage(String peerUserId, String plaintext) async {
+  Future<String> encryptMessage(String peerUserId, String plaintext) {
     throw Exception('No PreKey bundle found for user');
   }
 

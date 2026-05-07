@@ -113,7 +113,7 @@ class ConversationsNotifier extends StateNotifier<ConversationsState>
   @override
   Future<http.Response> _authenticatedRequest(
     Future<http.Response> Function(String token) requestFn,
-  ) async {
+  ) {
     return ref.read(authProvider.notifier).authenticatedRequest(requestFn);
   }
 

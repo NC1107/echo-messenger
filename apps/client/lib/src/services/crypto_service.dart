@@ -645,7 +645,7 @@ class CryptoService {
     String peerUserId,
     String ciphertextB64,
     int? fromDeviceId,
-  ) async {
+  ) {
     final sessionKey = _sessionKeyFor(peerUserId, fromDeviceId);
     final fullWire = Uint8List.fromList(base64Decode(ciphertextB64));
 

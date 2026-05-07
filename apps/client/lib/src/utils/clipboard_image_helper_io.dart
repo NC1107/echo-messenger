@@ -49,7 +49,7 @@ bool _isWaylandSession() {
       xdgSessionType == 'wayland';
 }
 
-Future<ClipboardImageData?> _readLinuxClipboard() async {
+Future<ClipboardImageData?> _readLinuxClipboard() {
   if (_isWaylandSession()) {
     return _readWaylandClipboard();
   }
@@ -264,7 +264,7 @@ Future<bool> writeImageToClipboard(Uint8List bytes, String mimeType) async {
   return false;
 }
 
-Future<bool> _writeLinuxClipboard(Uint8List bytes, String mimeType) async {
+Future<bool> _writeLinuxClipboard(Uint8List bytes, String mimeType) {
   if (_isWaylandSession()) {
     return _writeWaylandClipboard(bytes, mimeType);
   }

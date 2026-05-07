@@ -85,7 +85,7 @@ class Contacts extends _$Contacts {
   /// Make an authenticated request with automatic 401 refresh-and-retry.
   Future<http.Response> _authenticatedRequest(
     Future<http.Response> Function(String token) requestFn,
-  ) async {
+  ) {
     return ref.read(authProvider.notifier).authenticatedRequest(requestFn);
   }
 
