@@ -943,7 +943,28 @@ pub(super) async fn fanout_message(
     // contains a standalone `@here`, drop the offline list so no APNs push
     // fires.  Encrypted groups are skipped: the server can't read the
     // ciphertext, and `@here` won't appear literally inside it.
+    //
+    // Privacy trade-off: this is the only path where the server inspects
+    // message body content outside of storage / sender-routing.  We keep
+    // the read narrow (single substring scan, no logging of body bytes)
+    // and gate it on `!is_encrypted` so encrypted groups are unaffected.
+    //
+    // `@everyone` does NOT suppress offline push: by design it should
+    // notify *every* member, online or not, which is exactly what the
+    // unmodified fanout already does.
     let suppress_offline_push = !is_encrypted && mentions_broadcast(&fields.content, "here");
+
+    if suppress_offline_push && !offline_user_ids.is_empty() {
+        // Audit trail for #451: suppressing pushes is observable abuse
+        // surface (any member can silence offline notifications). Log
+        // counts only — no body or recipient identifiers.
+        tracing::info!(
+            %sender_id,
+            %conv_id,
+            suppressed = offline_user_ids.len(),
+            "at_here_suppressed_offline_push"
+        );
+    }
 
     if !offline_user_ids.is_empty() && !suppress_offline_push {
         spawn_push_notifications(
@@ -964,6 +985,11 @@ pub(super) async fn fanout_message(
 /// other than alphanumeric or underscore).  Case-insensitive so users
 /// typing `@Here` or `@HERE` are still routed correctly.
 pub(super) fn mentions_broadcast(content: &str, keyword: &str) -> bool {
+    // Hot path: most messages don't contain '@' at all.  Bail before any
+    // allocation — `str::contains` for a single ASCII byte is SIMD-fast.
+    if !content.contains('@') {
+        return false;
+    }
     let target = format!("@{}", keyword.to_lowercase());
     let lower = content.to_lowercase();
     let mut start = 0;
