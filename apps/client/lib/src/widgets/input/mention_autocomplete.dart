@@ -43,9 +43,12 @@ class MentionAutocomplete extends StatelessWidget {
 
   List<_BroadcastMention> get _filteredBroadcasts {
     if (mentionQuery.isEmpty) return _broadcasts;
-    return _broadcasts
-        .where((b) => b.keyword.startsWith(mentionQuery))
-        .toList();
+    // Defensive lowercase: callers from this codebase already pass a
+    // lowercased query (extractMentionQuery normalizes it), but the
+    // public API should not silently drop suggestions for a mixed-case
+    // query supplied by a future caller.
+    final q = mentionQuery.toLowerCase();
+    return _broadcasts.where((b) => b.keyword.startsWith(q)).toList();
   }
 
   @override
@@ -189,46 +192,4 @@ class _MentionItem extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Attempts to extract a partial mention query from [text] at the given
-/// [cursorPosition]. Returns the lowercased query string when an active `@`
-/// trigger is found, or `null` when no mention autocomplete should be shown.
-String? extractMentionQuery(String text, int cursorPosition) {
-  if (cursorPosition < 0 || cursorPosition > text.length) return null;
-
-  final beforeCursor = text.substring(0, cursorPosition);
-  final atIndex = beforeCursor.lastIndexOf('@');
-  if (atIndex < 0) return null;
-
-  if (atIndex > 0 && beforeCursor[atIndex - 1] != ' ') return null;
-
-  final partial = beforeCursor.substring(atIndex + 1);
-  if (partial.contains(' ')) return null;
-
-  return partial.toLowerCase();
-}
-
-/// Inserts a completed @mention into [text] at the cursor position, replacing
-/// the partial query. Returns the new [TextEditingValue] with updated cursor.
-TextEditingValue insertMention({
-  required String text,
-  required int cursorPosition,
-  required String username,
-}) {
-  if (cursorPosition < 0) return TextEditingValue(text: text);
-
-  final beforeCursor = text.substring(0, cursorPosition);
-  final atIndex = beforeCursor.lastIndexOf('@');
-  if (atIndex < 0) return TextEditingValue(text: text);
-
-  final afterCursor = text.substring(cursorPosition);
-  final replacement = '@$username ';
-  final newText = text.substring(0, atIndex) + replacement + afterCursor;
-  final newCursorPos = atIndex + replacement.length;
-
-  return TextEditingValue(
-    text: newText,
-    selection: TextSelection.collapsed(offset: newCursorPos),
-  );
 }

@@ -65,7 +65,10 @@ void main() {
     test('filterMembers removes the local user', () {
       const me = ConversationMember(userId: 'me', username: 'testuser');
       const other = ConversationMember(userId: 'other', username: 'alice');
-      final filtered = controller.filterMembers([me, other], 'me');
+      final filtered = MentionComposerController.filterMembers([
+        me,
+        other,
+      ], 'me');
       expect(filtered, hasLength(1));
       expect(filtered.first.userId, 'other');
     });

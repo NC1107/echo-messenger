@@ -546,6 +546,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final text = _messageController.text;
     final cursorPos = _messageController.selection.baseOffset;
 
+    // No selection (-1) means the field has never been focused; bail out
+    // before insertMention's no-op path so we don't dismiss the picker
+    // without inserting anything (would be a silent UX failure).
+    if (cursorPos < 0) return;
+
     _messageController.value = insertMention(
       text: text,
       cursorPosition: cursorPos,
@@ -558,7 +563,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
   List<ConversationMember> get _filteredMentionMembers {
     final myUserId = ref.read(authProvider).userId ?? '';
-    return _mentionController.filterMembers(
+    return MentionComposerController.filterMembers(
       widget.conversation.members,
       myUserId,
     );

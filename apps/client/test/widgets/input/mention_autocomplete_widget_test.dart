@@ -40,6 +40,7 @@ void main() {
       expect(find.text('@everyone'), findsOneWidget);
       expect(find.text('@here'), findsNothing);
       expect(find.text('alice'), findsNothing);
+      expect(find.text('bob'), findsNothing);
     });
 
     testWidgets('query "he" surfaces only @here', (tester) async {
@@ -48,6 +49,18 @@ void main() {
 
       expect(find.text('@here'), findsOneWidget);
       expect(find.text('@everyone'), findsNothing);
+      expect(find.text('alice'), findsNothing);
+      expect(find.text('bob'), findsNothing);
+    });
+
+    testWidgets('mixed-case query "He" still surfaces @here', (tester) async {
+      // Defensive: extractMentionQuery normalizes to lowercase upstream,
+      // but the public widget API should not silently drop suggestions
+      // for callers that don't pre-normalize.
+      await tester.pumpApp(harness(query: 'He'));
+      await tester.pump();
+
+      expect(find.text('@here'), findsOneWidget);
     });
 
     testWidgets('query that matches nothing renders empty', (tester) async {

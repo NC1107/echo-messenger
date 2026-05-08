@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:echo_app/src/widgets/input/mention_autocomplete.dart';
+import 'package:echo_app/src/widgets/input/mention_controller.dart';
 
 void main() {
   group('extractMentionQuery', () {
@@ -47,6 +47,18 @@ void main() {
     test('works for broadcast keywords (everyone / here)', () {
       expect(extractMentionQuery('@every', 6), 'every');
       expect(extractMentionQuery('hi @here', 8), 'here');
+    });
+
+    test('accepts tab as left boundary', () {
+      expect(extractMentionQuery('\t@al', 4), 'al');
+    });
+
+    test('accepts newline as left boundary', () {
+      expect(extractMentionQuery('first\n@al', 9), 'al');
+    });
+
+    test('breaks on tab inside the partial', () {
+      expect(extractMentionQuery('@al\tice', 7), isNull);
     });
   });
 
