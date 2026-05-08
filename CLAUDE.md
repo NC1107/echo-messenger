@@ -152,7 +152,9 @@ Three compose files in `infra/docker/`:
 - `docker-compose.test.yml` -- CI (PostgreSQL on port 5433, avoids conflicts)
 - `docker-compose.prod.yml` -- production: Traefik with Cloudflare TLS, PostgreSQL backups (7-day/4-week/6-month retention), LiveKit for voice
 
-**Prod deploy** is automated via `.github/workflows/prod-deploy.yml`. It fires automatically when the Release workflow publishes a GitHub release and is also `workflow_dispatch`-able for manual rolls or rollbacks (`gh workflow run "Prod Deploy" -f tag=v0.0.123`). Required repo secrets: `PROD_SSH_HOST`, `PROD_SSH_USER`, `PROD_SSH_KEY`, `PROD_COMPOSE_DIR` (optional `PROD_SSH_PORT`). The workflow SSHes in, sets `SERVER_VERSION`/`WEB_VERSION` to the tag, runs `docker compose pull && up -d` against the `server` and `web` services, and polls `/api/health` until the version matches. The `production` GitHub environment can gate it behind required reviewers in repo settings.
+**Prod deploy** runs on the host via `containrrr/watchtower` watching `:latest`-tagged images. The repo's release pipeline publishes new images to GHCR; watchtower picks them up on its next interval and recreates the affected containers. Note that the host's running compose (`~/docker-server/echo-messenger/docker-compose.yml`) sets `WEB_VERSION=latest` / `SERVER_VERSION=latest` and is not the same file as the repo's `infra/docker/docker-compose.prod.yml` (which pins explicit versions and is the documented manual fallback). The host compose also overrides the web service `healthcheck` to use `curl http://127.0.0.1/` -- the image's baked-in `wget http://localhost/healthz` resolves to IPv6 first, which nginx doesn't listen on, so the container shows unhealthy and Traefik's docker provider silently filters it out (#prod-2026-05-08).
+
+**Prod smoke** is `.github/workflows/prod-smoke.yml` -- a manual-dispatch workflow that runs the Playwright manual specs against the live URL from a GitHub-hosted runner (no SSH, no host access). Useful as a post-deploy sanity check.
 
 ## Known Limitations
 

@@ -103,12 +103,12 @@ services:
       - traefik
       - echo-internal
 
-  # Watchtower removed: auto-pulling `latest` every 5 minutes risks deploying
-  # broken builds with zero human review.  Pin image versions via SERVER_VERSION
-  # and WEB_VERSION env vars and deploy via the Prod Deploy workflow
-  # (.github/workflows/prod-deploy.yml), which fires automatically when a
-  # GitHub release publishes and is also workflow_dispatch-able for manual
-  # rolls / rollbacks.  Manual fallback if the workflow is unavailable:
+  # NOTE: this tracked compose pins explicit image versions and is intended as
+  # a documented manual-deploy fallback / reference.  The actual production
+  # host (echo-messenger.us) deploys via `containrrr/watchtower` watching
+  # `:latest`-tagged images on a separate `docker-compose.yml` that sets
+  # WEB_VERSION=latest and SERVER_VERSION=latest.  To pin and roll manually
+  # against this file:
   #   SERVER_VERSION=v1.2.3 WEB_VERSION=v1.2.3 docker compose pull && docker compose up -d
 
   backup:
