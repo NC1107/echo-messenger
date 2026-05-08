@@ -1713,13 +1713,20 @@ class _MessageItemState extends State<MessageItem>
     return Positioned(
       top: -28,
       // Anchor only the side closest to the bubble so the overlay sizes to
-      // its child action row (#723). Setting both left & right would force
+      // its child action row (#723).  Setting both left & right would force
       // it to span the entire chat width — sent (right-aligned) bubbles set
       // `right: 0`, but received bubbles previously also set `right: 8`,
       // which is what produced the asymmetric full-width hover bar on
       // left-side messages.
       left: isMine ? null : 36,
       right: isMine ? 0 : null,
+      // Defensive `IntrinsicWidth` wrap: in CanvasKit (web) the action
+      // row's `Container > Row(MainAxisSize.min)` was still expanding to
+      // the full Stack width despite the Positioned only setting one
+      // edge — see the production screenshot reported on 2026-05-08.
+      // IntrinsicWidth forces the child subtree to size to its
+      // own intrinsic content regardless of the parent's loose
+      // constraints, giving us the snug action bar everywhere.
       child: ExcludeSemantics(
         excluding: !_isHovered,
         child: IgnorePointer(
@@ -1732,7 +1739,9 @@ class _MessageItemState extends State<MessageItem>
               offset: _isHovered ? Offset.zero : const Offset(0, -0.12),
               duration: const Duration(milliseconds: 140),
               curve: Curves.easeOut,
-              child: _buildHoverActions(msg, isMine, mediaUrl: mediaUrl),
+              child: IntrinsicWidth(
+                child: _buildHoverActions(msg, isMine, mediaUrl: mediaUrl),
+              ),
             ),
           ),
         ),
