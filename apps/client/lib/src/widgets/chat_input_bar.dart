@@ -41,6 +41,7 @@ import 'input/markdown_toolbar.dart';
 import 'input/pending_attachments_strip.dart';
 import 'input/input_status_bar.dart';
 import 'input/mention_autocomplete.dart';
+import 'input/mention_controller.dart';
 import 'input/reply_preview_bar.dart';
 import 'media_picker_panel.dart';
 import 'mobile_media_picker_panel.dart';
@@ -120,9 +121,10 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   ChatMessage? _editingMessage;
   bool get _isEditing => _editingMessage != null;
 
-  // Mention autocomplete state
-  bool _showMentionPicker = false;
-  String _mentionQuery = '';
+  // Mention autocomplete state — owned by a controller so the logic is
+  // unit-testable without pumping the whole composer (#513).
+  final MentionComposerController _mentionController =
+      MentionComposerController();
 
   // Pending attachments staged for the current send. Single-pick uses one
   // entry (with the caption-and-send flow); multi-pick stages all picked
@@ -160,7 +162,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   void initState() {
     super.initState();
     _messageController.addListener(_onTextChanged);
+    _mentionController.addListener(_onMentionChanged);
     _loadDraft(widget.conversation.id);
+  }
+
+  void _onMentionChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -171,8 +178,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _saveDraftImmediate(oldWidget.conversation.id, _messageController.text);
       _draftSaveTimer?.cancel();
 
-      _showMentionPicker = false;
-      _mentionQuery = '';
+      _mentionController.dismiss();
       _searchDebounce?.cancel();
       // Release every staged attachment's ValueNotifier — switching
       // conversations was previously only releasing the last one (#623),
@@ -198,6 +204,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _recorder.dispose();
     _messageController.removeListener(_onTextChanged);
     _messageController.dispose();
+    _mentionController.removeListener(_onMentionChanged);
+    _mentionController.dispose();
     _inputFocusNode.dispose();
     // Release every staged attachment's ValueNotifier (#623). Calling
     // setState here would be unsafe during dispose; just walk the list
@@ -527,30 +535,11 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   }
 
   void _detectMention(String text) {
-    final conv = widget.conversation;
-    if (!conv.isGroup) {
-      if (_showMentionPicker) {
-        setState(() {
-          _showMentionPicker = false;
-          _mentionQuery = '';
-        });
-      }
-      return;
-    }
-
-    final query = extractMentionQuery(
-      text,
-      _messageController.selection.baseOffset,
+    _mentionController.detect(
+      text: text,
+      cursorPosition: _messageController.selection.baseOffset,
+      isGroup: widget.conversation.isGroup,
     );
-    if (query == null) {
-      if (_showMentionPicker) setState(() => _showMentionPicker = false);
-      return;
-    }
-
-    setState(() {
-      _showMentionPicker = true;
-      _mentionQuery = query;
-    });
   }
 
   void _handleMentionSelected(String username) {
@@ -563,17 +552,16 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       username: username,
     );
 
-    setState(() {
-      _showMentionPicker = false;
-      _mentionQuery = '';
-    });
+    _mentionController.dismiss();
     _inputFocusNode.requestFocus();
   }
 
   List<ConversationMember> get _filteredMentionMembers {
-    final conv = widget.conversation;
     final myUserId = ref.read(authProvider).userId ?? '';
-    return conv.members.where((m) => m.userId != myUserId).toList();
+    return _mentionController.filterMembers(
+      widget.conversation.members,
+      myUserId,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1412,11 +1400,8 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
   /// Handles the Escape key. Returns true if the event was consumed.
   void _handleEscapeKey() {
-    if (_showMentionPicker) {
-      setState(() {
-        _showMentionPicker = false;
-        _mentionQuery = '';
-      });
+    if (_mentionController.showPicker) {
+      _mentionController.dismiss();
     } else if (_showInlinePicker) {
       setState(() => _showInlinePicker = false);
       _inputFocusNode.requestFocus();
@@ -1881,10 +1866,10 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
           mainAxisSize: MainAxisSize.min,
           children: [
             // Mention autocomplete picker
-            if (_showMentionPicker)
+            if (_mentionController.showPicker)
               MentionAutocomplete(
                 members: _filteredMentionMembers,
-                mentionQuery: _mentionQuery,
+                mentionQuery: _mentionController.query,
                 onMentionSelected: _handleMentionSelected,
               ),
             // Input area
