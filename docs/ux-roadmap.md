@@ -239,11 +239,21 @@ Phase 1 design against three target sizes from the start.
   `screens/settings/appearance_section.dart` directly below the
   existing "Message layout" picker.
 
+**Shipped (message-item slice):**
+
+- Message body density: `RichTextContent` gained an optional
+  `density: UIDensity?` param that drives a three-tier fontSize +
+  lineHeight table (16/1.55, 15/1.47, 13/1.35).  `MessageItem`
+  threads density through, replacing the `compact: widget.compactLayout`
+  proxy.  Inter-message `topPad` (header + follow-up) and
+  inline sender + timestamp font sizes now also key off density.
+  Bubble inner padding intentionally unchanged for now.
+
 **Deferred follow-ups (separate PRs):**
 
-- Message item density (line-height, bubble padding tied to
-  `UIDensity` instead of `MessageLayout.compact`). `MessageLayout`
-  still controls bubble compactness today.
+- Bubble inner padding scaling.
+- Reaction-pill / hover-action / hover-timestamp density.
+- Date-divider density between message groups.
 - Channel bar / group list density.
 - Settings rows density.
 - Per-screen density overrides.
