@@ -553,7 +553,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         : chatState.messagesForConversation(conv.id);
     if (messages.isEmpty) return;
 
-    final oldestTimestamp = messages.first.timestamp;
+    // System events (member_joined, voice_session_started, ...) live at the
+    // conversation root with `channelId == null` and surface in every
+    // channel view, but their timestamps predate the actual channel messages
+    // -- they're created when the group is born.  If we use them as the
+    // pagination cursor, the server's `?channel_id=X&before=<system_ts>`
+    // query (correctly) returns zero rows, `hasMore` flips to false, and
+    // the message list dead-locks at the first page (#prod-2026-05-08).
+    // Use the oldest channel-scoped real message instead.
+    final paginationCursor = messages.firstWhere(
+      (m) => !m.isSystemEvent,
+      orElse: () => messages.first,
+    );
+    final oldestTimestamp = paginationCursor.timestamp;
     final auth = ref.read(authProvider);
     if (auth.token == null || auth.userId == null) return;
 
@@ -746,28 +758,95 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   // Jump to reply quote
   // ---------------------------------------------------------------------------
 
-  void _jumpToReplyQuote(String replyToId) {
+  Future<void> _jumpToReplyQuote(String replyToId) async {
     final conv = widget.conversation;
     if (conv == null) return;
-    final chatState = ref.read(chatProvider);
     final selectedChannelId = conv.isGroup ? _selectedTextChannelId : null;
     final includeUnchanneled = conv.isGroup && _selectedTextChannelId == null;
-    final messages = _resolveMessages(
-      conv,
-      chatState,
-      selectedChannelId,
-      includeUnchanneled,
-    );
-    final index = messages.indexWhere((m) => m.id == replyToId);
-    if (index < 0) {
-      ToastService.show(
-        context,
-        'Original message not loaded',
-        type: ToastType.info,
+
+    bool isLoaded() {
+      final state = ref.read(chatProvider);
+      final loaded = _resolveMessages(
+        conv,
+        state,
+        selectedChannelId,
+        includeUnchanneled,
       );
+      return loaded.indexWhere((m) => m.id == replyToId) >= 0;
+    }
+
+    // Fast path: already in memory.
+    if (isLoaded()) {
+      _highlightMessage(replyToId);
       return;
     }
-    _highlightMessage(replyToId);
+
+    // Slow path: paginate older history until the target appears or
+    // `hasMore` flips to false.  Cap to 30 rounds (~1500 msgs at 50/round)
+    // so a stale or removed parent can't spin forever.
+    final auth = ref.read(authProvider);
+    if (auth.token == null || auth.userId == null) return;
+
+    final groupCrypto = conv.isGroup
+        ? ref.read(groupCryptoServiceProvider)
+        : null;
+    groupCrypto?.setToken(auth.token!);
+
+    final cryptoState = ref.read(cryptoProvider);
+    final crypto = (!conv.isGroup && cryptoState.isInitialized)
+        ? ref.read(cryptoServiceProvider)
+        : null;
+    crypto?.setToken(auth.token!);
+
+    for (var round = 0; round < 30; round++) {
+      if (!mounted) return;
+      final state = ref.read(chatProvider);
+      if (!state.conversationHasMore(
+        conv.id,
+        channelId: _selectedTextChannelId,
+      )) {
+        break;
+      }
+      final loaded = _resolveMessages(
+        conv,
+        state,
+        selectedChannelId,
+        includeUnchanneled,
+      );
+      if (loaded.isEmpty) break;
+      // Use the oldest channel-scoped (non-system) message as the
+      // pagination cursor; system events live at the conversation root
+      // and would dead-end the channel-scoped ?before= query.
+      final cursor = loaded.firstWhere(
+        (m) => !m.isSystemEvent,
+        orElse: () => loaded.first,
+      );
+
+      await ref
+          .read(chatProvider.notifier)
+          .loadHistoryWithUserId(
+            conv.id,
+            auth.token!,
+            auth.userId!,
+            channelId: _selectedTextChannelId,
+            before: cursor.timestamp,
+            crypto: crypto,
+            isGroup: conv.isGroup,
+            groupCrypto: groupCrypto,
+          );
+      if (!mounted) return;
+      if (isLoaded()) {
+        _highlightMessage(replyToId);
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    ToastService.show(
+      context,
+      'Original message not available',
+      type: ToastType.info,
+    );
   }
 
   // ---------------------------------------------------------------------------
