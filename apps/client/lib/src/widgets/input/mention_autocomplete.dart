@@ -20,8 +20,7 @@ class MentionAutocomplete extends StatelessWidget {
     required this.onMentionSelected,
   });
 
-  /// Broadcast pseudo-mentions surfaced alongside member rows. Phase 1
-  /// ships `@everyone` and `@here`; role mentions are out of scope (#451).
+  /// Broadcast keywords (`@everyone`, `@here`) surfaced alongside member rows.
   static const List<_BroadcastMention> _broadcasts = [
     _BroadcastMention(
       keyword: 'everyone',
