@@ -311,17 +311,28 @@ whom" without reading text labels.
 
 ### 3c — Layer hierarchy
 
+**Status:** speaker-driven attention shipped. Drawing-mode-driven
+attention and saturation desaturation remain open as follow-ups.
+
 **Goal:** The room guides attention automatically.
 
 **Scope:**
 
-- Active speaker visually elevated (size, contrast, ring intensity).
-- Shared content (screen share window, drawing canvas) elevated above
-  inactive participants.
-- Inactive users fade back — lower opacity, smaller size, less
-  saturated avatar color.
-- Current collaboration target (the thing being discussed / drawn on)
-  elevated above everything else.
+- ~~Active speaker visually elevated~~ — shipped: scale boost +
+  retained ring/audio-radius signal carries elevation.
+- ~~Inactive users fade back — lower opacity, smaller size~~ —
+  shipped: per-build `anyoneSpeaking` drives a `ParticipantAttention`
+  enum (`speaking` / `faded` / `idle`) consumed by both grid tiles
+  and canvas pucks via `AnimatedOpacity` + `AnimatedScale`.  Reduce-
+  motion fully gated.  ~~less saturated avatar color~~ deferred —
+  opacity reduction reads enough; promote later if user feedback
+  asks for it.
+- Shared content elevated — emergent: when participants fade, the
+  screen-share window / drawing canvas naturally stand out without
+  per-element work.  Direct elevation work deferred until needed.
+- Current collaboration target (drawing-mode-driven attention) —
+  **deferred** to a follow-up; speaker-driven covers most rooms
+  today.
 
 **Acceptance:** Screenshot of a busy room communicates the focal
 points to a stranger in <2 seconds.
