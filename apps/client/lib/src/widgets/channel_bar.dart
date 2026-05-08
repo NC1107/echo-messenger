@@ -6,6 +6,7 @@ import '../models/channel.dart';
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
 import '../providers/livekit_voice_provider.dart';
+import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
@@ -160,6 +161,8 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     final voiceSettings = ref.watch(voiceSettingsProvider);
     final authState = ref.watch(authProvider);
     final myUserId = authState.userId ?? '';
+    // Phase 2 follow-up: density drives chip padding / icon / font.
+    final density = ref.watch(uiDensityProvider);
 
     ref.listen<ChannelsState>(channelsProvider, (previous, next) {
       _syncDerivedState(next, myUserId);
@@ -180,6 +183,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
           channelsState,
           voiceSettings,
           activeVoice,
+          density,
         ),
         if (activeVoice != null && voiceRtc.isActive) _buildVideoGrid(voiceRtc),
         if (activeVoice != null && !widget.hideVoiceDock)
@@ -202,8 +206,33 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     return 'No channels yet';
   }
 
-  Widget _buildTextChannelChip(GroupChannel channel) {
+  /// Phase 2 follow-up: per-density chip metrics.  Same shape as the
+  /// switch tables in conversation_item.dart and message_item.dart.
+  ({EdgeInsets padding, double iconSize, double labelSize, double radius})
+  _chipMetrics(UIDensity density) => switch (density) {
+    UIDensity.cozy => (
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      iconSize: 16,
+      labelSize: 14,
+      radius: 22,
+    ),
+    UIDensity.normal => (
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      iconSize: 14,
+      labelSize: 12,
+      radius: 20,
+    ),
+    UIDensity.compact => (
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      iconSize: 12,
+      labelSize: 11,
+      radius: 18,
+    ),
+  };
+
+  Widget _buildTextChannelChip(GroupChannel channel, UIDensity density) {
     final isSelected = widget.selectedTextChannelId == channel.id;
+    final m = _chipMetrics(density);
     return Semantics(
       label: 'text channel: ${channel.name}',
       button: true,
@@ -211,15 +240,15 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(m.radius),
           onTap: () => widget.onTextChannelChanged(channel.id),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: m.padding,
             decoration: BoxDecoration(
               color: isSelected
                   ? context.accent.withValues(alpha: 0.15)
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(m.radius),
               border: Border.all(
                 color: isSelected
                     ? context.accent.withValues(alpha: 0.4)
@@ -231,7 +260,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
               children: [
                 Icon(
                   Icons.tag,
-                  size: 14,
+                  size: m.iconSize,
                   color: isSelected ? context.accent : context.textMuted,
                 ),
                 const SizedBox(width: 4),
@@ -239,7 +268,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                   channel.name,
                   style: TextStyle(
                     color: isSelected ? context.accent : context.textSecondary,
-                    fontSize: 12,
+                    fontSize: m.labelSize,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
@@ -348,24 +377,26 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     List<VoiceSessionMember> participants,
     VoiceSettingsState voiceSettings,
     String? activeVoiceChannelId,
+    UIDensity density,
   ) {
     final participantCount = participants.length;
     final isActive = _isVoiceChannelActive(channel.id, activeVoiceChannelId);
+    final m = _chipMetrics(density);
     return Semantics(
       label: 'voice channel: ${channel.name}',
       button: true,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(m.radius),
           onTap: () => _handleVoiceChipTap(channel, isActive, voiceSettings),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: m.padding,
             decoration: BoxDecoration(
               color: isActive
                   ? context.accent.withValues(alpha: 0.15)
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(m.radius),
               border: Border.all(
                 color: isActive
                     ? context.accent.withValues(alpha: 0.4)
@@ -381,7 +412,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                 children: [
                   Icon(
                     Icons.volume_up_outlined,
-                    size: 14,
+                    size: m.iconSize,
                     color: isActive ? context.accent : context.textMuted,
                   ),
                   const SizedBox(width: 4),
@@ -389,7 +420,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                     channel.name,
                     style: TextStyle(
                       color: isActive ? context.accent : context.textSecondary,
-                      fontSize: 12,
+                      fontSize: m.labelSize,
                       fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                     ),
                   ),
@@ -413,6 +444,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
     ChannelsState channelsState,
     VoiceSettingsState voiceSettings,
     String? activeVoiceChannelId,
+    UIDensity density,
   ) {
     return Container(
       width: double.infinity,
@@ -434,7 +466,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
               child: Row(
                 children: [
                   for (final channel in textChannels) ...[
-                    _buildTextChannelChip(channel),
+                    _buildTextChannelChip(channel, density),
                     const SizedBox(width: 6),
                   ],
                   if (textChannels.isNotEmpty && voiceChannels.isNotEmpty)
@@ -448,6 +480,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                       channelsState.voiceSessionsFor(channel.id),
                       voiceSettings,
                       activeVoiceChannelId,
+                      density,
                     ),
                     const SizedBox(width: 6),
                   ],

@@ -1,18 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
 
 /// A grouped card row used by the redesigned Settings list and other
-/// sectioned card layouts. Renders a leading colored icon badge (~36×36
-/// rounded-12), a primary label, an optional trailing summary value, and a
-/// chevron. Use [destructive] for "Log out" / "Delete" style rows — the
-/// chevron is suppressed and the label/icon use [EchoTheme.danger].
-class CardRow extends StatelessWidget {
+/// sectioned card layouts. Renders a leading colored icon badge, a primary
+/// label, an optional trailing summary value, and a chevron. Use
+/// [destructive] for "Log out" / "Delete" style rows -- the chevron is
+/// suppressed and the label/icon use [EchoTheme.danger].
+///
+/// Sizing scales with the global [UIDensity] (cozy / normal / compact),
+/// matching the density tiers used by the channel bar and message stream.
+class CardRow extends ConsumerWidget {
   /// Leading icon shown inside the colored badge.
   final IconData icon;
 
-  /// Tint applied to the icon and to the [iconBadgeBg] (semi-transparent).
-  /// Use [EchoTheme.danger] for destructive rows.
+  /// Tint applied to the icon and to the icon badge background
+  /// (semi-transparent). Use [EchoTheme.danger] for destructive rows.
   final Color iconColor;
 
   /// Primary row label.
@@ -29,6 +34,10 @@ class CardRow extends StatelessWidget {
   /// Tap handler. When null the row renders disabled (40% opacity).
   final VoidCallback? onTap;
 
+  /// Optional density override; defaults to the value from
+  /// [uiDensityProvider]. Tests can pin a specific tier via this param.
+  final UIDensity? density;
+
   const CardRow({
     super.key,
     required this.icon,
@@ -37,15 +46,54 @@ class CardRow extends StatelessWidget {
     this.trailingValue,
     this.destructive = false,
     this.onTap,
+    this.density,
   });
 
-  static const double _rowHeight = 56;
-  static const double _hPadding = 12;
-  static const double _badgeSize = 36;
-  static const double _badgeRadius = 12;
+  static _CardRowMetrics _metricsFor(UIDensity density) {
+    switch (density) {
+      case UIDensity.cozy:
+        return const _CardRowMetrics(
+          rowHeight: 64,
+          hPadding: 14,
+          badgeSize: 40,
+          badgeRadius: 14,
+          iconSize: 20,
+          gap: 14,
+          labelSize: 16,
+          trailingSize: 14,
+          chevronSize: 18,
+        );
+      case UIDensity.compact:
+        return const _CardRowMetrics(
+          rowHeight: 44,
+          hPadding: 10,
+          badgeSize: 28,
+          badgeRadius: 10,
+          iconSize: 16,
+          gap: 10,
+          labelSize: 13,
+          trailingSize: 12,
+          chevronSize: 14,
+        );
+      case UIDensity.normal:
+        return const _CardRowMetrics(
+          rowHeight: 56,
+          hPadding: 12,
+          badgeSize: 36,
+          badgeRadius: 12,
+          iconSize: 18,
+          gap: 12,
+          labelSize: 15,
+          trailingSize: 13,
+          chevronSize: 16,
+        );
+    }
+  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final UIDensity effectiveDensity = density ?? ref.watch(uiDensityProvider);
+    final m = _metricsFor(effectiveDensity);
     final effectiveIconColor = destructive ? EchoTheme.danger : iconColor;
     final effectiveLabelColor = destructive
         ? EchoTheme.danger
@@ -53,21 +101,20 @@ class CardRow extends StatelessWidget {
 
     final disabled = onTap == null;
     final content = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: _hPadding),
+      padding: EdgeInsets.symmetric(horizontal: m.hPadding),
       child: Row(
         children: [
-          // Leading colored icon badge.
           Container(
-            width: _badgeSize,
-            height: _badgeSize,
+            width: m.badgeSize,
+            height: m.badgeSize,
             decoration: BoxDecoration(
               color: effectiveIconColor.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(_badgeRadius),
+              borderRadius: BorderRadius.circular(m.badgeRadius),
             ),
             alignment: Alignment.center,
-            child: Icon(icon, size: 18, color: effectiveIconColor),
+            child: Icon(icon, size: m.iconSize, color: effectiveIconColor),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: m.gap),
           Expanded(
             child: Text(
               label,
@@ -75,7 +122,7 @@ class CardRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: effectiveLabelColor,
-                fontSize: 15,
+                fontSize: m.labelSize,
                 fontWeight: destructive ? FontWeight.w600 : FontWeight.w500,
               ),
             ),
@@ -89,13 +136,20 @@ class CardRow extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.end,
-                style: TextStyle(color: context.textMuted, fontSize: 13),
+                style: TextStyle(
+                  color: context.textMuted,
+                  fontSize: m.trailingSize,
+                ),
               ),
             ),
           ],
           if (!destructive) ...[
             const SizedBox(width: 4),
-            Icon(Icons.chevron_right, size: 16, color: context.textMuted),
+            Icon(
+              Icons.chevron_right,
+              size: m.chevronSize,
+              color: context.textMuted,
+            ),
           ],
         ],
       ),
@@ -108,7 +162,7 @@ class CardRow extends StatelessWidget {
       child: Opacity(
         opacity: disabled ? 0.4 : 1,
         child: SizedBox(
-          height: _rowHeight,
+          height: m.rowHeight,
           child: Material(
             type: MaterialType.transparency,
             child: InkWell(
@@ -121,4 +175,28 @@ class CardRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _CardRowMetrics {
+  final double rowHeight;
+  final double hPadding;
+  final double badgeSize;
+  final double badgeRadius;
+  final double iconSize;
+  final double gap;
+  final double labelSize;
+  final double trailingSize;
+  final double chevronSize;
+
+  const _CardRowMetrics({
+    required this.rowHeight,
+    required this.hPadding,
+    required this.badgeSize,
+    required this.badgeRadius,
+    required this.iconSize,
+    required this.gap,
+    required this.labelSize,
+    required this.trailingSize,
+    required this.chevronSize,
+  });
 }

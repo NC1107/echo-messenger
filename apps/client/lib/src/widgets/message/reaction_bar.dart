@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/reaction.dart';
+import '../../providers/theme_provider.dart' show UIDensity;
 import '../../theme/echo_theme.dart';
 import '../../theme/motion_tokens.dart';
 
@@ -8,6 +9,9 @@ import '../../theme/motion_tokens.dart';
 /// The chip background matches the parent bubble color (sent or received) with
 /// a halo border in the chat background color to visually separate it from
 /// the bubble edge.
+///
+/// Sizing scales with [density] (cozy / normal / compact) so reactions
+/// match the surrounding message-stream density. Phase 2 follow-up.
 class ReactionBar extends StatelessWidget {
   final List<Reaction> reactions;
   final String? currentUserId;
@@ -21,6 +25,9 @@ class ReactionBar extends StatelessWidget {
 
   final void Function(Offset globalPosition)? onTap;
 
+  /// UI density tier; defaults to compact (today's behavior) when omitted.
+  final UIDensity density;
+
   const ReactionBar({
     super.key,
     required this.reactions,
@@ -28,6 +35,7 @@ class ReactionBar extends StatelessWidget {
     required this.isMine,
     required this.chatBgColor,
     this.onTap,
+    this.density = UIDensity.compact,
   });
 
   @override
@@ -67,11 +75,66 @@ class ReactionBar extends StatelessWidget {
                 isMine: isMine,
                 chatBgColor: chatBgColor,
                 onTap: onTap,
+                density: density,
               ),
           ],
         ),
       ),
     );
+  }
+}
+
+class _ReactionMetrics {
+  final double height;
+  final double hPadding;
+  final double radius;
+  final double emojiSize;
+  final double countSize;
+  final double gap;
+
+  const _ReactionMetrics({
+    required this.height,
+    required this.hPadding,
+    required this.radius,
+    required this.emojiSize,
+    required this.countSize,
+    required this.gap,
+  });
+
+  static const cozy = _ReactionMetrics(
+    height: 26,
+    hPadding: 10,
+    radius: 13,
+    emojiSize: 15,
+    countSize: 13,
+    gap: 4,
+  );
+  static const normal = _ReactionMetrics(
+    height: 24,
+    hPadding: 9,
+    radius: 12,
+    emojiSize: 14,
+    countSize: 12,
+    gap: 3,
+  );
+  static const compact = _ReactionMetrics(
+    height: 22,
+    hPadding: 8,
+    radius: 11,
+    emojiSize: 13,
+    countSize: 11,
+    gap: 3,
+  );
+
+  static _ReactionMetrics forDensity(UIDensity d) {
+    switch (d) {
+      case UIDensity.cozy:
+        return cozy;
+      case UIDensity.normal:
+        return normal;
+      case UIDensity.compact:
+        return compact;
+    }
   }
 }
 
@@ -87,6 +150,7 @@ class _ReactionPill extends StatefulWidget {
   final bool isMine;
   final Color chatBgColor;
   final void Function(Offset globalPosition)? onTap;
+  final UIDensity density;
 
   const _ReactionPill({
     super.key,
@@ -95,6 +159,7 @@ class _ReactionPill extends StatefulWidget {
     required this.isMine,
     required this.chatBgColor,
     this.onTap,
+    required this.density,
   });
 
   @override
@@ -135,17 +200,18 @@ class _ReactionPillState extends State<_ReactionPill>
   Widget build(BuildContext context) {
     final bgColor = widget.isMine ? context.sentBubble : context.recvBubble;
     final textColor = widget.isMine ? Colors.white : context.textPrimary;
+    final m = _ReactionMetrics.forDensity(widget.density);
 
     return GestureDetector(
       onTapUp: (details) => widget.onTap?.call(details.globalPosition),
       child: ScaleTransition(
         scale: _scale,
         child: Container(
-          height: 22,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          height: m.height,
+          padding: EdgeInsets.symmetric(horizontal: m.hPadding),
           decoration: BoxDecoration(
             color: bgColor,
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(m.radius),
             border: Border.all(color: widget.chatBgColor, width: 1.5),
           ),
           child: Row(
@@ -153,16 +219,16 @@ class _ReactionPillState extends State<_ReactionPill>
             children: [
               Text(
                 widget.emoji,
-                style: const TextStyle(
-                  fontSize: 13,
+                style: TextStyle(
+                  fontSize: m.emojiSize,
                   decoration: TextDecoration.none,
                 ),
               ),
-              const SizedBox(width: 3),
+              SizedBox(width: m.gap),
               Text(
                 '${widget.count}',
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: m.countSize,
                   fontWeight: FontWeight.w600,
                   color: textColor.withValues(alpha: 0.75),
                   decoration: TextDecoration.none,

@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:echo_app/src/providers/theme_provider.dart' show UIDensity;
 import 'package:echo_app/src/theme/echo_theme.dart';
 import 'package:echo_app/src/widgets/settings/card_row.dart';
 
 Widget _wrap(Widget child) {
-  return MaterialApp(
-    theme: EchoTheme.darkTheme,
-    darkTheme: EchoTheme.darkTheme,
-    themeMode: ThemeMode.dark,
-    home: Scaffold(body: child),
+  return ProviderScope(
+    child: MaterialApp(
+      theme: EchoTheme.darkTheme,
+      darkTheme: EchoTheme.darkTheme,
+      themeMode: ThemeMode.dark,
+      home: Scaffold(body: child),
+    ),
   );
 }
 
@@ -96,6 +100,72 @@ void main() {
       // Still rendered, just dimmed.
       expect(find.text('About'), findsOneWidget);
       expect(find.byType(Opacity), findsWidgets);
+    });
+  });
+
+  // -------------------------------------------------------------
+  // Phase 2 follow-up: settings row density tiers.
+  // -------------------------------------------------------------
+
+  group('CardRow density', () {
+    Future<void> pumpAt(WidgetTester tester, UIDensity density) async {
+      await tester.pumpWidget(
+        _wrap(
+          CardRow(
+            icon: Icons.palette_outlined,
+            iconColor: const Color(0xFF8458E9),
+            label: 'Appearance',
+            trailingValue: 'Dark',
+            onTap: () {},
+            density: density,
+          ),
+        ),
+      );
+    }
+
+    testWidgets('cozy renders 16pt label and 64px row', (tester) async {
+      await pumpAt(tester, UIDensity.cozy);
+      final label = tester.widget<Text>(find.text('Appearance'));
+      expect(label.style?.fontSize, 16);
+      final row = tester.widget<SizedBox>(
+        find
+            .ancestor(
+              of: find.byType(Material),
+              matching: find.byType(SizedBox),
+            )
+            .first,
+      );
+      expect(row.height, 64);
+    });
+
+    testWidgets('normal renders 15pt label and 56px row', (tester) async {
+      await pumpAt(tester, UIDensity.normal);
+      final label = tester.widget<Text>(find.text('Appearance'));
+      expect(label.style?.fontSize, 15);
+      final row = tester.widget<SizedBox>(
+        find
+            .ancestor(
+              of: find.byType(Material),
+              matching: find.byType(SizedBox),
+            )
+            .first,
+      );
+      expect(row.height, 56);
+    });
+
+    testWidgets('compact renders 13pt label and 44px row', (tester) async {
+      await pumpAt(tester, UIDensity.compact);
+      final label = tester.widget<Text>(find.text('Appearance'));
+      expect(label.style?.fontSize, 13);
+      final row = tester.widget<SizedBox>(
+        find
+            .ancestor(
+              of: find.byType(Material),
+              matching: find.byType(SizedBox),
+            )
+            .first,
+      );
+      expect(row.height, 44);
     });
   });
 }

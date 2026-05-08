@@ -22,6 +22,19 @@ class CanvasPoint {
 
   @override
   String toString() => 'CanvasPoint($x, $y)';
+
+  // Value equality is load-bearing for the voice lounge: every audio
+  // poll (100ms) rebuilds CanvasState.avatarPositions with fresh
+  // CanvasPoint instances, and downstream widgets `select` on them.
+  // Without ==/hashCode every selector fires every tick, dragging the
+  // whole tree into a 10Hz rebuild storm in CanvasKit / web.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is CanvasPoint && x == other.x && y == other.y);
+
+  @override
+  int get hashCode => Object.hash(x, y);
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:echo_app/src/models/channel.dart';
 import 'package:echo_app/src/providers/channels_provider.dart';
 import 'package:echo_app/src/providers/livekit_voice_provider.dart';
+import 'package:echo_app/src/providers/theme_provider.dart';
 import 'package:echo_app/src/providers/voice_settings_provider.dart';
 import 'package:echo_app/src/widgets/channel_bar.dart';
 
@@ -109,6 +110,18 @@ class _FakeVoiceSettingsConfirm extends VoiceSettings {
       const VoiceSettingsState(confirmBeforeJoinVoice: true);
 }
 
+/// Static UIDensity notifier used by Phase 2 density-tier tests
+/// to bypass the production notifier's SharedPreferences load.
+class _StaticUIDensity extends UIDensityNotifier {
+  final UIDensity _density;
+  _StaticUIDensity(this._density);
+
+  @override
+  UIDensity build() => _density;
+}
+
+void _noopChannelChanged(String? _) {}
+
 void main() {
   group('ChannelBar voice join confirmation', () {
     testWidgets('asks for confirmation before joining voice', (tester) async {
@@ -187,6 +200,49 @@ void main() {
       expect(fakeChannels.joinCalls, 1);
       expect(fakeVoiceRtc.joinCalls, 1);
       expect(activeVoice, 'voice-1');
+    });
+
+    // -------------------------------------------------------------
+    // Phase 2 follow-up: channel chip density.
+    // -------------------------------------------------------------
+
+    Future<void> pumpAtDensity(WidgetTester tester, UIDensity density) async {
+      await tester.pumpApp(
+        const ChannelBar(
+          conversationId: 'conv-1',
+          onTextChannelChanged: _noopChannelChanged,
+          onVoiceChannelChanged: _noopChannelChanged,
+        ),
+        overrides: [
+          authOverride(loggedInAuthState),
+          webSocketOverride(),
+          channelsProvider.overrideWith(_FakeChannelsNotifier.new),
+          voiceRtcProvider.overrideWith(_FakeVoiceRtcNotifier.new),
+          voiceSettingsProvider.overrideWith(_FakeVoiceSettings.new),
+          uiDensityProvider.overrideWith(() => _StaticUIDensity(density)),
+        ],
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('cozy density renders 14pt voice chip label', (tester) async {
+      await pumpAtDensity(tester, UIDensity.cozy);
+      final label = tester.widget<Text>(find.text('lounge'));
+      expect(label.style?.fontSize, 14);
+    });
+
+    testWidgets('normal density renders 12pt voice chip label', (tester) async {
+      await pumpAtDensity(tester, UIDensity.normal);
+      final label = tester.widget<Text>(find.text('lounge'));
+      expect(label.style?.fontSize, 12);
+    });
+
+    testWidgets('compact density renders 11pt voice chip label', (
+      tester,
+    ) async {
+      await pumpAtDensity(tester, UIDensity.compact);
+      final label = tester.widget<Text>(find.text('lounge'));
+      expect(label.style?.fontSize, 11);
     });
 
     testWidgets('tapping active voice channel shows lounge', (tester) async {

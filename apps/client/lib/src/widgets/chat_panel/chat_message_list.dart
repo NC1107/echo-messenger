@@ -207,6 +207,7 @@ class ChatMessageList extends ConsumerWidget {
             mediaTicket: mediaTicket,
             senderAvatarUrl: senderAvatarUrl,
             layout: ref.watch(messageLayoutProvider),
+            density: ref.watch(uiDensityProvider),
             hideUndecryptable: ref
                 .watch(accessibilityProvider)
                 .hideUndecryptable,

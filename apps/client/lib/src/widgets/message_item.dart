@@ -10,7 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:photo_manager/photo_manager.dart' show PhotoManager;
 
 import '../models/chat_message.dart';
-import '../providers/theme_provider.dart' show MessageLayout;
+import '../providers/theme_provider.dart' show MessageLayout, UIDensity;
 import '../services/message_cache.dart' show MessageCache;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
@@ -89,6 +89,13 @@ class MessageItem extends StatefulWidget {
   /// (Discord-style all-left with bubble bg), or `plain` (Slack-style all-left, no bg).
   final MessageLayout layout;
 
+  /// User-selected density tier (Phase 2 follow-up).  Drives body
+  /// fontSize / line-height, name + timestamp fontSize, and inter-
+  /// message vertical padding — orthogonal to [layout], which still
+  /// owns bubble shape, alignment, color, and the inline-vs-stacked
+  /// header decision.
+  final UIDensity density;
+
   /// True for any non-bubbles layout — they share alignment + spacing semantics.
   bool get compactLayout => layout != MessageLayout.bubbles;
 
@@ -134,6 +141,7 @@ class MessageItem extends StatefulWidget {
     this.mediaTicket,
     this.senderAvatarUrl,
     this.layout = MessageLayout.bubbles,
+    this.density = UIDensity.compact,
     this.hideUndecryptable = false,
     this.onImageTap,
   });
@@ -1024,10 +1032,25 @@ class _MessageItemState extends State<MessageItem>
     required ChatMessage msg,
     required bool hasMedia,
   }) {
+    // Phase 2 follow-up: density-aware sender + inline-timestamp
+    // sizing.  Layout (bubble style) still controls *whether* the
+    // timestamp is inline vs separate; density controls the font
+    // sizes on whichever side it lands.
+    final double nameFontSize = switch (widget.density) {
+      UIDensity.cozy => 14,
+      UIDensity.normal => 13,
+      UIDensity.compact => 12,
+    };
+    final double timestampFontSize = switch (widget.density) {
+      UIDensity.cozy => 12,
+      UIDensity.normal => 11,
+      UIDensity.compact => 10,
+    };
+
     final nameText = Text(
       msg.fromUsername,
       style: GoogleFonts.inter(
-        fontSize: 13,
+        fontSize: nameFontSize,
         fontWeight: FontWeight.w600,
         color: _getSenderLabelColor(msg.fromUserId),
       ),
@@ -1050,7 +1073,10 @@ class _MessageItemState extends State<MessageItem>
           const SizedBox(width: 6),
           Text(
             formatMessageTimestamp(msg.timestamp),
-            style: GoogleFonts.inter(fontSize: 11, color: context.textMuted),
+            style: GoogleFonts.inter(
+              fontSize: timestampFontSize,
+              color: context.textMuted,
+            ),
           ),
         ],
       ),
@@ -1211,7 +1237,7 @@ class _MessageItemState extends State<MessageItem>
             textColor: _contentTextColor(isMine: isMine, isFailed: isFailed),
             accentHoverColor: context.accentHover,
             textSecondaryColor: context.textSecondary,
-            compact: widget.compactLayout,
+            density: widget.density,
           ),
         ],
       );
@@ -1230,7 +1256,7 @@ class _MessageItemState extends State<MessageItem>
       textColor: textColor,
       accentHoverColor: context.accentHover,
       textSecondaryColor: context.textSecondary,
-      compact: widget.compactLayout,
+      density: widget.density,
     );
 
     final embeddedImages = extractEmbeddedImageUrls(displayContent);
@@ -1684,6 +1710,13 @@ class _MessageItemState extends State<MessageItem>
     required ChatMessage msg,
     required bool isMine,
   }) {
+    // Scale font with density so the hover-timestamp matches the
+    // surrounding message-stream sizing.
+    final hoverFontSize = switch (widget.density) {
+      UIDensity.cozy => 12.0,
+      UIDensity.normal => 11.0,
+      UIDensity.compact => 10.0,
+    };
     return AnimatedOpacity(
       opacity: _isHovered ? 1.0 : 0.0,
       duration: const Duration(milliseconds: 140),
@@ -1693,7 +1726,10 @@ class _MessageItemState extends State<MessageItem>
           msg.editedAt != null
               ? '${formatMessageTimestamp(msg.timestamp)} (edited)'
               : formatMessageTimestamp(msg.timestamp),
-          style: GoogleFonts.inter(fontSize: 11, color: context.textMuted),
+          style: GoogleFonts.inter(
+            fontSize: hoverFontSize,
+            color: context.textMuted,
+          ),
         ),
       ),
     );
@@ -1713,13 +1749,20 @@ class _MessageItemState extends State<MessageItem>
     return Positioned(
       top: -28,
       // Anchor only the side closest to the bubble so the overlay sizes to
-      // its child action row (#723). Setting both left & right would force
+      // its child action row (#723).  Setting both left & right would force
       // it to span the entire chat width — sent (right-aligned) bubbles set
       // `right: 0`, but received bubbles previously also set `right: 8`,
       // which is what produced the asymmetric full-width hover bar on
       // left-side messages.
       left: isMine ? null : 36,
       right: isMine ? 0 : null,
+      // Defensive `IntrinsicWidth` wrap: in CanvasKit (web) the action
+      // row's `Container > Row(MainAxisSize.min)` was still expanding to
+      // the full Stack width despite the Positioned only setting one
+      // edge — see the production screenshot reported on 2026-05-08.
+      // IntrinsicWidth forces the child subtree to size to its
+      // own intrinsic content regardless of the parent's loose
+      // constraints, giving us the snug action bar everywhere.
       child: ExcludeSemantics(
         excluding: !_isHovered,
         child: IgnorePointer(
@@ -1732,7 +1775,9 @@ class _MessageItemState extends State<MessageItem>
               offset: _isHovered ? Offset.zero : const Offset(0, -0.12),
               duration: const Duration(milliseconds: 140),
               curve: Curves.easeOut,
-              child: _buildHoverActions(msg, isMine, mediaUrl: mediaUrl),
+              child: IntrinsicWidth(
+                child: _buildHoverActions(msg, isMine, mediaUrl: mediaUrl),
+              ),
             ),
           ),
         ),
@@ -1911,6 +1956,7 @@ class _MessageItemState extends State<MessageItem>
       isMine: isMine,
       chatBgColor: context.chatBg,
       onTap: (pos) => widget.onReactionTap?.call(msg, pos),
+      density: widget.density,
     );
 
     final bubble = _buildBubble(
@@ -1931,13 +1977,23 @@ class _MessageItemState extends State<MessageItem>
     final canSwipeToReply =
         _isMobileTouch && widget.onReply != null && !msg.isSystemEvent;
 
-    // In compact mode, the gap between bubbles from the same sender is
-    // reduced so the conversation reads as a single stream.
+    // Phase 2 follow-up: density-driven gap between bubbles from
+    // the same sender, replacing the old MessageLayout-derived
+    // ternary so layout (bubble style) and density (vertical
+    // spacing) are independent knobs.
     final double topPad;
     if (widget.showHeader) {
-      topPad = widget.compactLayout ? 3 : 8;
+      topPad = switch (widget.density) {
+        UIDensity.cozy => 12,
+        UIDensity.normal => 8,
+        UIDensity.compact => 3,
+      };
     } else {
-      topPad = widget.compactLayout ? 1 : 2;
+      topPad = switch (widget.density) {
+        UIDensity.cozy => 4,
+        UIDensity.normal => 2,
+        UIDensity.compact => 1,
+      };
     }
 
     final messageWidget = Container(

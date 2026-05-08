@@ -180,8 +180,10 @@ low-risk, and unblocks every future onboarding / churn discussion.
 
 ## Phase 2 — Density tier (Cozy / Normal / Compact)
 
-**Status:** sidebar slice shipped. Message item / channel bar / settings
-row density follow-ups still open.
+**Status:** sidebar, message item, channel bar, settings rows,
+reactions / hover-timestamp, date-divider, and voice-dock slices
+shipped. Bubble inner padding and inter-chip spacing remain as
+deferred Phase 2 follow-ups.
 
 **Goal:** Power users get Discord-compact density. New users get
 today's effective default (compact, matching the legacy
@@ -239,13 +241,69 @@ Phase 1 design against three target sizes from the start.
   `screens/settings/appearance_section.dart` directly below the
   existing "Message layout" picker.
 
+**Shipped (message-item slice):**
+
+- Message body density: `RichTextContent` gained an optional
+  `density: UIDensity?` param that drives a three-tier fontSize +
+  lineHeight table (16/1.55, 15/1.47, 13/1.35).  `MessageItem`
+  threads density through, replacing the `compact: widget.compactLayout`
+  proxy.  Inter-message `topPad` (header + follow-up) and
+  inline sender + timestamp font sizes now also key off density.
+  Bubble inner padding intentionally unchanged for now.
+
+**Shipped (channel bar slice):**
+
+- Channel chip density: `ChannelBar` reads `uiDensityProvider` and
+  threads the density through `_buildTextChannelChip` /
+  `_buildVoiceChannelChip`, with one `_chipMetrics` helper packing
+  padding / icon size / label size / border radius into a single
+  record.  Cozy 14×9/16/14/22, Normal 10×6/14/12/20 (today's),
+  Compact 8×4/12/11/18.
+
+**Shipped (settings rows slice):**
+
+- Settings row density: `CardRow` (settings list, log-out button,
+  about row) became a `ConsumerWidget` that reads `uiDensityProvider`
+  and packs row-height / horizontal padding / icon-badge size /
+  label & trailing font size / chevron size into a `_CardRowMetrics`
+  record.  Cozy 64/14/40/16/14/18, Normal 56/12/36/15/13/16
+  (today's), Compact 44/10/28/13/12/14.  Tests pin each tier.
+
+**Shipped (reactions slice):**
+
+- Reaction-pill density: `ReactionBar` takes a `density` param and
+  scales pill height / horizontal padding / corner radius / emoji
+  font / count font / inner gap via `_ReactionMetrics`.  Cozy
+  26/10/13/15/13/4, Normal 24/9/12/14/12/3, Compact 22/8/11/13/11/3
+  (today's).  `MessageItem` threads `widget.density` into the bar.
+- Hover-timestamp density: the on-hover edited-timestamp under each
+  message scales 12 / 11 / 10 with cozy / normal / compact, matching
+  the surrounding font ramp.
+- Hover-action chip dimensions intentionally unchanged: the 44×44
+  hit target is a WCAG 2.5.5 minimum and stays stable across tiers.
+
+**Shipped (date-divider slice):**
+
+- `DateDivider` became a `ConsumerWidget` that reads
+  `uiDensityProvider` and scales vertical padding / horizontal label
+  padding / font size via `_DateDividerMetrics`.  Cozy 8/12/12,
+  Normal 6/10/11, Compact 4/8/11 (today's).  The 1-pixel rule colors
+  stay constant across tiers so the divider weight reads identically.
+
+**Shipped (voice-dock slice):**
+
+- `VoiceDock` reads `uiDensityProvider` and scales horizontal /
+  vertical chrome padding, the leading `graphic_eq` icon size,
+  the icon→text gap, the two status font sizes, and the control
+  button icon size via `_DockMetrics`.  Cozy 12/10/16/8/12/11/18,
+  Normal 10/8/15/7/11/10/17, Compact 8/6/14/6/11/10/16 (today's).
+  `_DockIconButton` keeps its 44×44 hit target across tiers per
+  WCAG 2.5.5 — only the visual icon scales.
+
 **Deferred follow-ups (separate PRs):**
 
-- Message item density (line-height, bubble padding tied to
-  `UIDensity` instead of `MessageLayout.compact`). `MessageLayout`
-  still controls bubble compactness today.
-- Channel bar / group list density.
-- Settings rows density.
+- Bubble inner padding scaling.
+- Inter-chip spacing scaling on the channel bar.
 - Per-screen density overrides.
 - Mobile density (phones get a single density determined by viewport).
 
@@ -311,17 +369,28 @@ whom" without reading text labels.
 
 ### 3c — Layer hierarchy
 
+**Status:** speaker-driven attention shipped. Drawing-mode-driven
+attention and saturation desaturation remain open as follow-ups.
+
 **Goal:** The room guides attention automatically.
 
 **Scope:**
 
-- Active speaker visually elevated (size, contrast, ring intensity).
-- Shared content (screen share window, drawing canvas) elevated above
-  inactive participants.
-- Inactive users fade back — lower opacity, smaller size, less
-  saturated avatar color.
-- Current collaboration target (the thing being discussed / drawn on)
-  elevated above everything else.
+- ~~Active speaker visually elevated~~ — shipped: scale boost +
+  retained ring/audio-radius signal carries elevation.
+- ~~Inactive users fade back — lower opacity, smaller size~~ —
+  shipped: per-build `anyoneSpeaking` drives a `ParticipantAttention`
+  enum (`speaking` / `faded` / `idle`) consumed by both grid tiles
+  and canvas pucks via `AnimatedOpacity` + `AnimatedScale`.  Reduce-
+  motion fully gated.  ~~less saturated avatar color~~ deferred —
+  opacity reduction reads enough; promote later if user feedback
+  asks for it.
+- Shared content elevated — emergent: when participants fade, the
+  screen-share window / drawing canvas naturally stand out without
+  per-element work.  Direct elevation work deferred until needed.
+- Current collaboration target (drawing-mode-driven attention) —
+  **deferred** to a follow-up; speaker-driven covers most rooms
+  today.
 
 **Acceptance:** Screenshot of a busy room communicates the focal
 points to a stranger in <2 seconds.
