@@ -9,6 +9,7 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 
 import '../../providers/livekit_voice_provider.dart';
 import '../../theme/echo_theme.dart';
+import '../../theme/motion_tokens.dart';
 import '../../utils/canvas_utils.dart';
 import '../../widgets/voice_speaking_ring.dart';
 
@@ -206,7 +207,8 @@ class ParticipantTile extends StatelessWidget {
           : null,
       onLongPress: !isLocal && onMuteForMe != null ? onMuteForMe : null,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: MotionDurations.standard,
+        curve: MotionCurves.entrance,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           border: Border.all(

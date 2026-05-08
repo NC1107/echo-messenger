@@ -12,6 +12,7 @@ import '../providers/theme_provider.dart'
     show MessageLayout, messageLayoutProvider;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../theme/motion_tokens.dart';
 import 'avatar_utils.dart';
 
 /// Fixed height of a single conversation list item in normal mode.
@@ -405,7 +406,8 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
             bottom: 0,
             right: 0,
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 400),
+              duration: MotionDurations.gentle,
+              curve: MotionCurves.emphasis,
               width: dotSize,
               height: dotSize,
               decoration: BoxDecoration(

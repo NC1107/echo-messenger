@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/echo_theme.dart';
+import '../theme/motion_tokens.dart';
 
 // ---------------------------------------------------------------------------
 // VoiceSpeakingRing
@@ -28,7 +29,8 @@ class VoiceSpeakingRing extends StatefulWidget {
   /// Width of the ring border. Defaults to 2.5.
   final double ringWidth;
 
-  /// Duration of one half-cycle of the pulse animation. Defaults to 700 ms.
+  /// Duration of one half-cycle of the pulse animation.
+  /// Defaults to [MotionDurations.pulse] (the ambient-breathing token).
   final Duration pulseDuration;
 
   const VoiceSpeakingRing({
@@ -37,7 +39,7 @@ class VoiceSpeakingRing extends StatefulWidget {
     required this.audioLevel,
     this.threshold = 0.05,
     this.ringWidth = 2.5,
-    this.pulseDuration = const Duration(milliseconds: 700),
+    this.pulseDuration = MotionDurations.pulse,
   });
 
   @override

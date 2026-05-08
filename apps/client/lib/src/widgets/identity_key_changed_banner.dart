@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../providers/crypto_provider.dart';
 import '../screens/safety_number_screen.dart';
 import '../theme/echo_theme.dart';
+import '../theme/motion_tokens.dart';
 
 /// Displays an amber warning banner when a DM peer's identity key has changed
 /// (TOFU violation). Offers "View Safety Number" and "Dismiss" actions.
@@ -123,8 +124,8 @@ class _IdentityKeyChangedBannerState
     final visible = _checked && _changed;
 
     return AnimatedSize(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
+      duration: MotionDurations.standard,
+      curve: MotionCurves.entrance,
       child: visible
           ? Semantics(
               label: 'identity key changed warning',

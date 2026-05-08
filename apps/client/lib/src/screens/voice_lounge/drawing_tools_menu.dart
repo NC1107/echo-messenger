@@ -14,6 +14,7 @@ import '../../providers/canvas_provider.dart';
 import '../../providers/server_url_provider.dart';
 import '../../services/upload_client.dart';
 import '../../theme/echo_theme.dart';
+import '../../theme/motion_tokens.dart';
 import '../../utils/canvas_utils.dart';
 
 /// Popup content for the drawing tools menu.
@@ -128,7 +129,7 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
                       height: 44,
                       child: Center(
                         child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 120),
+                          duration: MotionDurations.quick,
                           width: isSelected ? 24 : 20,
                           height: isSelected ? 24 : 20,
                           decoration: BoxDecoration(
@@ -184,7 +185,7 @@ class _DrawingToolsMenuState extends ConsumerState<DrawingToolsMenu> {
                         ref.read(canvasProvider.notifier).setStrokeWidth(s);
                       },
                       child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 120),
+                        duration: MotionDurations.quick,
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(

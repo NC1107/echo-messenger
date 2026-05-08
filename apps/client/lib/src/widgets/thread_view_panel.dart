@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
+import '../theme/motion_tokens.dart';
 import '../theme/responsive.dart';
 import 'message/reply_quote.dart';
 
@@ -127,8 +128,8 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
     if (!_scrollController.hasClients) return;
     _scrollController.animateTo(
       _scrollController.position.maxScrollExtent,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
+      duration: MotionDurations.expressive,
+      curve: MotionCurves.entrance,
     );
   }
 
