@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../theme/echo_theme.dart';
@@ -10,12 +12,20 @@ import '../theme/motion_tokens.dart';
 /// Wraps [child] with a green pulsing ring when [audioLevel] exceeds
 /// [threshold] (default 0.05).
 ///
-/// Ring opacity is proportional to the audio level and, unless
-/// [MediaQuery.disableAnimations] is set, pulses at 700 ms intervals so
-/// active speakers are clearly visible at a glance.
+/// Two layers run together while a participant is speaking:
 ///
-/// Reduce-motion: when [MediaQuery.of(context).disableAnimations] is true a
-/// static (non-pulsing) ring is rendered at full levelOpacity.
+/// - **Tight border ring** hugging the avatar — opacity is proportional
+///   to the audio level and oscillates between ~0.55 and that level
+///   peak so the ring stays visible during the breath.
+/// - **Outward audio-radius rings** (Phase 3a of the UX roadmap) — two
+///   concentric rings spawned at the avatar edge that expand outward
+///   and fade as they go, staggered by half a cycle so a new pulse is
+///   always visible. Painted via a single [CustomPainter] on top of
+///   the tight ring layer; no per-frame allocations.
+///
+/// Reduce-motion: when [MediaQuery.of(context).disableAnimations] is
+/// true, only the static tight ring is rendered (no pulse, no
+/// expansion).
 class VoiceSpeakingRing extends StatefulWidget {
   /// The avatar or tile content to decorate.
   final Widget child;
@@ -26,12 +36,17 @@ class VoiceSpeakingRing extends StatefulWidget {
   /// Threshold above which the ring becomes visible. Defaults to 0.05.
   final double threshold;
 
-  /// Width of the ring border. Defaults to 2.5.
+  /// Width of the tight border ring. Defaults to 2.5.
   final double ringWidth;
 
-  /// Duration of one half-cycle of the pulse animation.
-  /// Defaults to [MotionDurations.pulse] (the ambient-breathing token).
+  /// Duration of one half-cycle of the tight-ring pulse animation.
+  /// The audio-radius rings use the same value as the period of one
+  /// outward expansion. Defaults to [MotionDurations.pulse].
   final Duration pulseDuration;
+
+  /// How far each outer audio-radius ring expands beyond the tight
+  /// ring before it fully fades. Defaults to 14 logical pixels.
+  final double radiusReach;
 
   const VoiceSpeakingRing({
     super.key,
@@ -40,6 +55,7 @@ class VoiceSpeakingRing extends StatefulWidget {
     this.threshold = 0.05,
     this.ringWidth = 2.5,
     this.pulseDuration = MotionDurations.pulse,
+    this.radiusReach = 14,
   });
 
   @override
@@ -48,28 +64,41 @@ class VoiceSpeakingRing extends StatefulWidget {
 
 // Exposed for testing (state can be read via tester.state(find.byType(...))).
 class VoiceSpeakingRingState extends State<VoiceSpeakingRing>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
+  /// Drives the tight ring's opacity oscillation. Forward / reverse
+  /// pattern (preserves the existing 0→1→0 breath).
   late final AnimationController _pulse;
 
-  /// Whether the pulse animation is currently running. Used in tests.
+  /// Drives the audio-radius rings' outward expansion.  Repeats
+  /// monotonically (no reverse) so the rings always grow outward
+  /// rather than retracting back into the avatar.
+  late final AnimationController _waves;
+
+  /// Whether the tight-ring pulse animation is currently running.
+  /// Used in tests.
   bool get isAnimating => _pulse.isAnimating;
 
   @override
   void initState() {
     super.initState();
     _pulse = AnimationController(vsync: this, duration: widget.pulseDuration)
-      ..addStatusListener(_onStatus);
+      ..addStatusListener(_onPulseStatus);
+    _waves = AnimationController(
+      vsync: this,
+      // Full expansion cycle = one tight-ring pulse half-cycle, so a
+      // wave is born ~every 700ms by default.  Two staggered rings at
+      // half-cycle offset give a continuous radar feel.
+      duration: widget.pulseDuration,
+    );
+
     // Defer the first start so MediaQuery (reduce-motion) is available.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (widget.audioLevel > widget.threshold &&
-          !MediaQuery.of(context).disableAnimations) {
-        _pulse.forward();
-      }
+      _syncAnimations();
     });
   }
 
-  void _onStatus(AnimationStatus status) {
+  void _onPulseStatus(AnimationStatus status) {
     if (status == AnimationStatus.completed) {
       _pulse.reverse();
     } else if (status == AnimationStatus.dismissed) {
@@ -77,22 +106,37 @@ class VoiceSpeakingRingState extends State<VoiceSpeakingRing>
     }
   }
 
+  /// Start or stop both controllers based on the current speaking
+  /// state and reduce-motion preference.
+  void _syncAnimations() {
+    final isSpeaking = widget.audioLevel > widget.threshold;
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+
+    if (isSpeaking && !reduceMotion) {
+      if (!_pulse.isAnimating) _pulse.forward();
+      if (!_waves.isAnimating) _waves.repeat();
+    } else {
+      if (_pulse.isAnimating) {
+        _pulse.stop();
+        _pulse.value = 0;
+      }
+      if (_waves.isAnimating) {
+        _waves.stop();
+        _waves.value = 0;
+      }
+    }
+  }
+
   @override
   void didUpdateWidget(VoiceSpeakingRing oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final isSpeaking = widget.audioLevel > widget.threshold;
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
-    if (isSpeaking && !_pulse.isAnimating && !reduceMotion) {
-      _pulse.forward();
-    } else if (!isSpeaking && _pulse.isAnimating) {
-      _pulse.stop();
-      _pulse.value = 0;
-    }
+    _syncAnimations();
   }
 
   @override
   void dispose() {
     _pulse.dispose();
+    _waves.dispose();
     super.dispose();
   }
 
@@ -107,7 +151,7 @@ class VoiceSpeakingRingState extends State<VoiceSpeakingRing>
     final reduceMotion = MediaQuery.of(context).disableAnimations;
 
     if (reduceMotion) {
-      // Static green ring -- no animation.
+      // Static green tight ring — no pulse, no expansion.
       return _RingDecoration(
         ringOpacity: levelOpacity,
         ringWidth: widget.ringWidth,
@@ -115,15 +159,27 @@ class VoiceSpeakingRingState extends State<VoiceSpeakingRing>
       );
     }
 
-    // Animated pulsing ring -- opacity oscillates between 0.35 and levelOpacity.
+    // Tight ring oscillates 0.55 → levelOpacity → 0.55 each pulse cycle.
+    // Outer rings expand outward from the tight ring's edge, staggered.
     return AnimatedBuilder(
-      animation: _pulse,
+      animation: Listenable.merge([_pulse, _waves]),
       builder: (context, child) {
-        final ringOpacity = 0.35 + (_pulse.value * (levelOpacity - 0.35));
-        return _RingDecoration(
-          ringOpacity: ringOpacity,
-          ringWidth: widget.ringWidth,
-          child: child!,
+        final ringOpacity = 0.55 + (_pulse.value * (levelOpacity - 0.55));
+        return CustomPaint(
+          // Behind the child + tight ring, so expanding rings appear to
+          // emanate from the avatar's outer edge without obscuring it.
+          painter: _AudioRadiusPainter(
+            phase: _waves.value,
+            level: levelOpacity,
+            reach: widget.radiusReach,
+            stroke: widget.ringWidth,
+            color: EchoTheme.online,
+          ),
+          child: _RingDecoration(
+            ringOpacity: ringOpacity,
+            ringWidth: widget.ringWidth,
+            child: child!,
+          ),
         );
       },
       child: widget.child,
@@ -155,4 +211,59 @@ class _RingDecoration extends StatelessWidget {
       child: child,
     );
   }
+}
+
+/// Paints the expanding audio-radius rings around a circular avatar.
+///
+/// Two ring "phases" share the same controller via a half-cycle
+/// offset so a new wave is always being born while the previous one
+/// fades out.  Opacity scales with [level] (the speaker's amplitude)
+/// and falls linearly with progress; radius grows linearly from the
+/// child's edge to `edge + reach`.
+class _AudioRadiusPainter extends CustomPainter {
+  final double phase; // [0, 1)
+  final double level; // current peak opacity
+  final double reach; // px to grow beyond the tight ring
+  final double stroke; // line width of each ring
+  final Color color;
+
+  _AudioRadiusPainter({
+    required this.phase,
+    required this.level,
+    required this.reach,
+    required this.stroke,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    // Tight ring sits on the child's outer edge; expansion starts there.
+    final innerRadius = math.min(size.width, size.height) / 2;
+
+    void paintWave(double t) {
+      // Skip near-invisible rings to keep the canvas cheap.
+      if (t <= 0 || t >= 1) return;
+      final opacity = (level * (1.0 - t)).clamp(0.0, 1.0);
+      if (opacity < 0.04) return;
+      final radius = innerRadius + reach * t;
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke * 0.65
+        ..color = color.withValues(alpha: opacity);
+      canvas.drawCircle(center, radius, paint);
+    }
+
+    paintWave(phase);
+    // Second ring, half a cycle out of phase.
+    paintWave((phase + 0.5) % 1.0);
+  }
+
+  @override
+  bool shouldRepaint(covariant _AudioRadiusPainter old) =>
+      old.phase != phase ||
+      old.level != level ||
+      old.reach != reach ||
+      old.stroke != stroke ||
+      old.color != color;
 }

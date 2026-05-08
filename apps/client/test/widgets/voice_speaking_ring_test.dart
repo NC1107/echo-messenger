@@ -133,5 +133,80 @@ void main() {
         expect(state2.isAnimating, isTrue);
       },
     );
+
+    // -----------------------------------------------------------------------
+    // Phase 3a — audio-radius (expanding outer rings).
+    // -----------------------------------------------------------------------
+
+    testWidgets(
+      'audio-radius painter is mounted when audioLevel exceeds threshold',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            const VoiceSpeakingRing(
+              audioLevel: 0.3,
+              child: SizedBox(width: 48, height: 48),
+            ),
+          ),
+        );
+        await tester.pump();
+        // CustomPaint is the host of the audio-radius painter; appears
+        // only on the animated path.
+        expect(find.byType(CustomPaint), findsWidgets);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'audio-radius painter is NOT mounted below threshold (silent)',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            const VoiceSpeakingRing(
+              key: ValueKey('quiet'),
+              audioLevel: 0.01,
+              child: SizedBox(key: ValueKey('child'), width: 48, height: 48),
+            ),
+          ),
+        );
+        await tester.pump();
+        // The widget short-circuits to `child` directly, so neither the
+        // tight-ring DecoratedBox nor the CustomPaint host should be
+        // rendered as descendants of the SpeakingRing.
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('quiet')),
+            matching: find.byType(CustomPaint),
+          ),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'audio-radius painter is NOT mounted with reduce-motion enabled',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            const VoiceSpeakingRing(
+              key: ValueKey('reduced'),
+              audioLevel: 0.3,
+              child: SizedBox(width: 48, height: 48),
+            ),
+            reduceMotion: true,
+          ),
+        );
+        await tester.pump();
+        // Reduce-motion path renders only the static _RingDecoration,
+        // never the CustomPaint host that drives the expanding rings.
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('reduced')),
+            matching: find.byType(CustomPaint),
+          ),
+          findsNothing,
+        );
+      },
+    );
   });
 }
