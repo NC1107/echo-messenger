@@ -141,6 +141,56 @@ for u in "${USERS[@]}"; do
   api PATCH /api/users/me/profile "${USER_TOKEN[$u]}" "$body" >/dev/null
 done
 
+# Single shared scratch dir for everything that needs temp files (avatars,
+# picsum-fetched images for attachments, generated tiny fixtures).  Phases
+# below reference $TMP_DIR; consolidating prevents the multiple `trap`
+# definitions from overwriting each other.
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+# Fetch a deterministic JPEG from picsum.photos into $TMP_DIR keyed by a
+# stable seed string so reruns produce the same image.  Echoes the local
+# file path on success, or empty + nonzero exit on failure.
+picsum_fetch() {
+  local seed="$1" w="${2:-256}" h="${3:-256}"
+  local out="$TMP_DIR/picsum-${seed}-${w}x${h}.jpg"
+  if [ -s "$out" ]; then
+    printf '%s' "$out"
+    return 0
+  fi
+  if curl -sLf -m 15 -o "$out" "https://picsum.photos/seed/$seed/$w/$h"; then
+    printf '%s' "$out"
+    return 0
+  fi
+  rm -f "$out"
+  return 1
+}
+
+# ----- Phase 1c: avatars from picsum.photos ---------------------------------
+# Each user gets a stable 256x256 image keyed by their username.  Skip with
+# NO_AVATARS=1 if the picsum host is unreachable.
+NO_AVATARS="${NO_AVATARS:-0}"
+if [ "$NO_AVATARS" != "1" ]; then
+  log "==> Phase 1c: avatars (picsum.photos)"
+  for u in "${USERS[@]}"; do
+    avatar=$(picsum_fetch "$u" 256 256) || avatar=""
+    if [ -z "$avatar" ]; then
+      printf "    %-10s [picsum fetch failed]\n" "$u"
+      continue
+    fi
+    resp=$(curl -sS -m 30 -X PUT "$SERVER_URL/api/users/me/avatar" \
+      -H "Authorization: Bearer ${USER_TOKEN[$u]}" \
+      -F "file=@$avatar;type=image/jpeg" 2>/dev/null) || resp=""
+    url=$(jq -r '.avatar_url // empty' <<<"$resp" 2>/dev/null)
+    if [ -n "$url" ]; then
+      printf "    %-10s %s\n" "$u" "$url"
+    else
+      printf "    %-10s [upload skipped: %s]\n" "$u" \
+        "$(jq -r '.message // .error // "unknown"' <<<"$resp" 2>/dev/null | head -c 60)"
+    fi
+  done
+fi
+
 # ----- Phase 2: all-to-all contacts -----------------------------------------
 log "==> Phase 2: contacts (all-to-all)"
 for a in "${USERS[@]}"; do
@@ -308,15 +358,33 @@ total_attachments=0
 total_links=0
 
 ASSETS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/apps/client/assets/images"
-TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+# Note: $TMP_DIR + EXIT trap are declared up in Phase 1c so picsum_fetch can
+# share them; do not redeclare them here or the trap will leak earlier files.
 
 # Materialise the named asset on disk and echo the path. Returns non-zero
 # if the name is unknown.
+#
+# `picsum-*` asset names fetch a real photo from https://picsum.photos so
+# the seeded message stream gets visual variety rather than the same logo
+# every time.  Each picsum asset uses a stable seed so reruns are
+# deterministic and idempotent.  Falls back to the bundled logo if the
+# picsum host is unreachable.
 make_asset() {
   case "$1" in
     logo)
       printf '%s' "$ASSETS_DIR/echo_logo_white.png" ;;
+    picsum-square)
+      local p; p=$(picsum_fetch "square-${RANDOM}" 512 512) \
+        || p="$ASSETS_DIR/echo_logo_white.png"
+      printf '%s' "$p" ;;
+    picsum-portrait)
+      local p; p=$(picsum_fetch "portrait-${RANDOM}" 600 900) \
+        || p="$ASSETS_DIR/echo_logo_white.png"
+      printf '%s' "$p" ;;
+    picsum-landscape)
+      local p; p=$(picsum_fetch "landscape-${RANDOM}" 900 600) \
+        || p="$ASSETS_DIR/echo_logo_white.png"
+      printf '%s' "$p" ;;
     tiny-png)
       # 1x1 transparent PNG (67 bytes, IHDR + IDAT + IEND).
       local p="$TMP_DIR/tiny.png"

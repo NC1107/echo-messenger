@@ -136,7 +136,7 @@
         {
           "from": "alice",
           "kind": "image",
-          "asset": "logo",
+          "asset": "picsum-square",
           "caption": "logo refresh proposal"
         },
         {
@@ -338,7 +338,7 @@
         {
           "from": "charlie",
           "kind": "image",
-          "asset": "logo",
+          "asset": "picsum-portrait",
           "caption": "cover art draft"
         }
       ],
@@ -428,7 +428,7 @@
         {
           "from": "diana",
           "kind": "image",
-          "asset": "logo",
+          "asset": "picsum-landscape",
           "caption": "next watch poll header"
         },
         {
@@ -560,7 +560,7 @@
         {
           "from": "alice",
           "kind": "image",
-          "asset": "logo"
+          "asset": "picsum-square"
         },
         {
           "from": "bob",
@@ -649,7 +649,7 @@
         {
           "from": "henry",
           "kind": "image",
-          "asset": "logo",
+          "asset": "picsum-portrait",
           "caption": "last weeks meet"
         }
       ],
