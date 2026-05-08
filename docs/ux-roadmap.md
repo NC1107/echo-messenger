@@ -180,8 +180,9 @@ low-risk, and unblocks every future onboarding / churn discussion.
 
 ## Phase 2 — Density tier (Cozy / Normal / Compact)
 
-**Status:** sidebar slice shipped. Message item / channel bar / settings
-row density follow-ups still open.
+**Status:** sidebar, message item, channel bar, and settings rows
+slices shipped. Voice dock / reactions / hover-actions density
+follow-ups still open.
 
 **Goal:** Power users get Discord-compact density. New users get
 today's effective default (compact, matching the legacy
@@ -258,6 +259,15 @@ Phase 1 design against three target sizes from the start.
   record.  Cozy 14×9/16/14/22, Normal 10×6/14/12/20 (today's),
   Compact 8×4/12/11/18.
 
+**Shipped (settings rows slice):**
+
+- Settings row density: `CardRow` (settings list, log-out button,
+  about row) became a `ConsumerWidget` that reads `uiDensityProvider`
+  and packs row-height / horizontal padding / icon-badge size /
+  label & trailing font size / chevron size into a `_CardRowMetrics`
+  record.  Cozy 64/14/40/16/14/18, Normal 56/12/36/15/13/16
+  (today's), Compact 44/10/28/13/12/14.  Tests pin each tier.
+
 **Deferred follow-ups (separate PRs):**
 
 - Bubble inner padding scaling.
@@ -265,7 +275,6 @@ Phase 1 design against three target sizes from the start.
 - Date-divider density between message groups.
 - Inter-chip spacing scaling on the channel bar.
 - Voice control dock density.
-- Settings rows density.
 - Per-screen density overrides.
 - Mobile density (phones get a single density determined by viewport).
 
