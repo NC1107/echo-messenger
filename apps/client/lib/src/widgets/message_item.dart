@@ -10,7 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:photo_manager/photo_manager.dart' show PhotoManager;
 
 import '../models/chat_message.dart';
-import '../providers/theme_provider.dart' show MessageLayout;
+import '../providers/theme_provider.dart' show MessageLayout, UIDensity;
 import '../services/message_cache.dart' show MessageCache;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
@@ -89,6 +89,13 @@ class MessageItem extends StatefulWidget {
   /// (Discord-style all-left with bubble bg), or `plain` (Slack-style all-left, no bg).
   final MessageLayout layout;
 
+  /// User-selected density tier (Phase 2 follow-up).  Drives body
+  /// fontSize / line-height, name + timestamp fontSize, and inter-
+  /// message vertical padding — orthogonal to [layout], which still
+  /// owns bubble shape, alignment, color, and the inline-vs-stacked
+  /// header decision.
+  final UIDensity density;
+
   /// True for any non-bubbles layout — they share alignment + spacing semantics.
   bool get compactLayout => layout != MessageLayout.bubbles;
 
@@ -134,6 +141,7 @@ class MessageItem extends StatefulWidget {
     this.mediaTicket,
     this.senderAvatarUrl,
     this.layout = MessageLayout.bubbles,
+    this.density = UIDensity.compact,
     this.hideUndecryptable = false,
     this.onImageTap,
   });
@@ -1024,10 +1032,25 @@ class _MessageItemState extends State<MessageItem>
     required ChatMessage msg,
     required bool hasMedia,
   }) {
+    // Phase 2 follow-up: density-aware sender + inline-timestamp
+    // sizing.  Layout (bubble style) still controls *whether* the
+    // timestamp is inline vs separate; density controls the font
+    // sizes on whichever side it lands.
+    final double nameFontSize = switch (widget.density) {
+      UIDensity.cozy => 14,
+      UIDensity.normal => 13,
+      UIDensity.compact => 12,
+    };
+    final double timestampFontSize = switch (widget.density) {
+      UIDensity.cozy => 12,
+      UIDensity.normal => 11,
+      UIDensity.compact => 10,
+    };
+
     final nameText = Text(
       msg.fromUsername,
       style: GoogleFonts.inter(
-        fontSize: 13,
+        fontSize: nameFontSize,
         fontWeight: FontWeight.w600,
         color: _getSenderLabelColor(msg.fromUserId),
       ),
@@ -1050,7 +1073,10 @@ class _MessageItemState extends State<MessageItem>
           const SizedBox(width: 6),
           Text(
             formatMessageTimestamp(msg.timestamp),
-            style: GoogleFonts.inter(fontSize: 11, color: context.textMuted),
+            style: GoogleFonts.inter(
+              fontSize: timestampFontSize,
+              color: context.textMuted,
+            ),
           ),
         ],
       ),
@@ -1211,7 +1237,7 @@ class _MessageItemState extends State<MessageItem>
             textColor: _contentTextColor(isMine: isMine, isFailed: isFailed),
             accentHoverColor: context.accentHover,
             textSecondaryColor: context.textSecondary,
-            compact: widget.compactLayout,
+            density: widget.density,
           ),
         ],
       );
@@ -1230,7 +1256,7 @@ class _MessageItemState extends State<MessageItem>
       textColor: textColor,
       accentHoverColor: context.accentHover,
       textSecondaryColor: context.textSecondary,
-      compact: widget.compactLayout,
+      density: widget.density,
     );
 
     final embeddedImages = extractEmbeddedImageUrls(displayContent);
@@ -1940,13 +1966,23 @@ class _MessageItemState extends State<MessageItem>
     final canSwipeToReply =
         _isMobileTouch && widget.onReply != null && !msg.isSystemEvent;
 
-    // In compact mode, the gap between bubbles from the same sender is
-    // reduced so the conversation reads as a single stream.
+    // Phase 2 follow-up: density-driven gap between bubbles from
+    // the same sender, replacing the old MessageLayout-derived
+    // ternary so layout (bubble style) and density (vertical
+    // spacing) are independent knobs.
     final double topPad;
     if (widget.showHeader) {
-      topPad = widget.compactLayout ? 3 : 8;
+      topPad = switch (widget.density) {
+        UIDensity.cozy => 12,
+        UIDensity.normal => 8,
+        UIDensity.compact => 3,
+      };
     } else {
-      topPad = widget.compactLayout ? 1 : 2;
+      topPad = switch (widget.density) {
+        UIDensity.cozy => 4,
+        UIDensity.normal => 2,
+        UIDensity.compact => 1,
+      };
     }
 
     final messageWidget = Container(
