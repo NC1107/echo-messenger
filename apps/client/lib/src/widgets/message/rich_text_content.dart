@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../providers/theme_provider.dart' show UIDensity;
+
 /// Regex for detecting URLs in message text.
 final urlRegex = RegExp(r'https?://[^\s]+');
 
@@ -53,7 +55,18 @@ class RichTextContent extends StatefulWidget {
   /// When true, uses tighter font size (13) and line height (1.35) to match
   /// Slack/Discord compact density. User font-scale from #632 still applies
   /// via MediaQuery.textScaler above this widget.
+  ///
+  /// Honored only when [density] is null.  Most call sites still use
+  /// this; new call sites that thread [UIDensity] should pass it
+  /// instead and leave [compact] at its default.
   final bool compact;
+
+  /// Optional explicit density tier (Phase 2 follow-up).  When set,
+  /// overrides [compact] and selects body font size / line-height
+  /// from a three-tier table (cozy / normal / compact).  When null,
+  /// the legacy [compact] bool drives sizing for back-compat with
+  /// non-message call sites.
+  final UIDensity? density;
 
   const RichTextContent({
     super.key,
@@ -62,6 +75,7 @@ class RichTextContent extends StatefulWidget {
     required this.accentHoverColor,
     required this.textSecondaryColor,
     this.compact = false,
+    this.density,
   });
 
   @override
@@ -79,13 +93,49 @@ class _RichTextContentState extends State<RichTextContent> {
     super.dispose();
   }
 
+  /// Body fontSize.  Three-tier density table when [widget.density] is
+  /// set; otherwise the legacy [widget.compact] bool applies.
+  double get _bodyFontSize {
+    final d = widget.density;
+    if (d != null) {
+      return switch (d) {
+        UIDensity.cozy => 16,
+        UIDensity.normal => 15,
+        UIDensity.compact => 13,
+      };
+    }
+    return widget.compact ? 13 : 15;
+  }
+
+  /// Body line-height.  Same precedence rule as [_bodyFontSize].
+  double get _bodyLineHeight {
+    final d = widget.density;
+    if (d != null) {
+      return switch (d) {
+        UIDensity.cozy => 1.55,
+        UIDensity.normal => 1.47,
+        UIDensity.compact => 1.35,
+      };
+    }
+    return widget.compact ? 1.35 : 1.47;
+  }
+
+  /// Effective "compact" signal for sub-elements (inline code,
+  /// blockquote indents) that don't yet have density-tier values.
+  /// Cozy reads as not-compact; otherwise mirrors density / legacy
+  /// compact bool.
+  bool get _isCompact {
+    final d = widget.density;
+    if (d != null) return d == UIDensity.compact;
+    return widget.compact;
+  }
+
   /// Base text style used throughout message rendering.
   /// Ligatures are disabled ("calt" 0) so user text reads without code ligatures.
-  /// Compact mode shrinks to 13pt / 1.35 line-height (Slack/Discord density).
   TextStyle _baseStyle() => TextStyle(
-    fontSize: widget.compact ? 13 : 15,
+    fontSize: _bodyFontSize,
     color: widget.textColor,
-    height: widget.compact ? 1.35 : 1.47,
+    height: _bodyLineHeight,
     fontFeatures: const [FontFeature.disable('calt')],
   );
 
@@ -123,10 +173,10 @@ class _RichTextContentState extends State<RichTextContent> {
         TextSpan(
           text: match.group(0),
           style: TextStyle(
-            fontSize: widget.compact ? 13 : 15,
+            fontSize: _bodyFontSize,
             color: widget.accentHoverColor,
             fontWeight: FontWeight.w600,
-            height: widget.compact ? 1.35 : 1.47,
+            height: _bodyLineHeight,
           ),
         ),
       );
@@ -208,11 +258,11 @@ class _RichTextContentState extends State<RichTextContent> {
     ({int start, int end, String tag, RegExpMatch match}) e,
   ) {
     final linkStyle = TextStyle(
-      fontSize: widget.compact ? 13 : 15,
+      fontSize: _bodyFontSize,
       color: widget.accentHoverColor,
       decoration: TextDecoration.underline,
       decorationColor: widget.accentHoverColor,
-      height: widget.compact ? 1.35 : 1.47,
+      height: _bodyLineHeight,
     );
     switch (e.tag) {
       case 'bold':
@@ -302,10 +352,10 @@ class _RichTextContentState extends State<RichTextContent> {
             child: Text(
               code,
               style: TextStyle(
-                fontSize: widget.compact ? 12 : 14,
+                fontSize: _isCompact ? 12 : 14,
                 fontFamily: 'monospace',
                 color: widget.textColor,
-                height: widget.compact ? 1.35 : 1.47,
+                height: _bodyLineHeight,
               ),
             ),
           ),
