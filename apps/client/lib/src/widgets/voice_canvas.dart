@@ -13,8 +13,10 @@ import '../providers/auth_provider.dart';
 import '../providers/canvas_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../theme/echo_theme.dart';
+import '../theme/motion_tokens.dart';
 import '../utils/canvas_utils.dart';
 import 'puck_trail.dart';
+import 'voice/participant_attention.dart';
 import 'voice_speaking_ring.dart';
 
 const double _kAvatarSize = 48.0;
@@ -223,6 +225,12 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
       }
     }
 
+    // Phase 3c: room-level attention context computed once and passed
+    // to every puck so non-speakers fade back when someone else is on
+    // the air.  `_ParticipantInfo.isSpeaking` already does the
+    // threshold check at audioLevel > 0.05.
+    final anyoneSpeaking = participants.any((p) => p.isSpeaking);
+
     for (int i = 0; i < participants.length; i++) {
       final participant = participants[i];
       final pos = canvas.avatarPositions[participant.userId];
@@ -245,6 +253,11 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
         size.height > _kAvatarSize ? size.height - _kAvatarSize : 0.0,
       );
 
+      final attention = attentionFor(
+        isSpeaking: participant.isSpeaking,
+        anyoneElseSpeaking: anyoneSpeaking && !participant.isSpeaking,
+      );
+
       widgets.add(
         Positioned(
           left: left,
@@ -254,6 +267,7 @@ class _VoiceCanvasState extends ConsumerState<VoiceCanvas> {
             participant: participant,
             canvasSize: size,
             currentPos: CanvasPoint(x: normalized.x, y: normalized.y),
+            attention: attention,
             httpHeaders: authState.token != null
                 ? {'Authorization': 'Bearer ${authState.token}'}
                 : null,
@@ -542,6 +556,11 @@ class _DraggableAvatar extends StatefulWidget {
   final bool draggable;
   final VoidCallback? onDoubleTap;
 
+  /// Phase 3c: room-level attention (speaking / faded / idle).  Drives
+  /// the avatar's scale + opacity so non-speakers fade back when
+  /// someone else is on the air.
+  final ParticipantAttention attention;
+
   final Map<String, String>? httpHeaders;
 
   const _DraggableAvatar({
@@ -551,6 +570,7 @@ class _DraggableAvatar extends StatefulWidget {
     required this.currentPos,
     required this.onDrag,
     required this.onDragEnd,
+    this.attention = ParticipantAttention.idle,
     this.draggable = false,
     this.onDoubleTap,
     this.httpHeaders,
@@ -636,7 +656,29 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
     final avatarColor = HSLColor.fromAHSL(1.0, hue, 0.5, 0.35).toColor();
     final initial = info.name.isNotEmpty ? info.name[0].toUpperCase() : '?';
 
-    final scale = info.isSpeaking ? 1.12 : 1.0;
+    // Phase 3c: scale + opacity follow the room-level attention so
+    // non-speakers fade back when someone else has the floor.  Reduce-
+    // motion users get the flat 1.0/1.0 baseline; the speaking ring
+    // alone carries the elevation signal in that mode.
+    final attention = widget.attention;
+    final double targetScale;
+    final double targetOpacity;
+    if (_reduceMotion) {
+      targetScale = 1.0;
+      targetOpacity = 1.0;
+    } else {
+      switch (attention) {
+        case ParticipantAttention.speaking:
+          targetScale = 1.16;
+          targetOpacity = 1.0;
+        case ParticipantAttention.faded:
+          targetScale = 0.92;
+          targetOpacity = 0.62;
+        case ParticipantAttention.idle:
+          targetScale = 1.0;
+          targetOpacity = 1.0;
+      }
+    }
 
     final hasVideo = info.videoTrack != null;
 
@@ -679,25 +721,31 @@ class _DraggableAvatarState extends State<_DraggableAvatar>
             ),
     );
 
-    final avatar = AnimatedScale(
-      scale: scale,
-      duration: const Duration(milliseconds: 150),
-      child: VoiceSpeakingRing(
-        audioLevel: info.audioLevel,
-        child: Container(
-          width: _kAvatarSize,
-          height: _kAvatarSize,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: context.mainBg.withValues(alpha: 0.35),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ],
+    final avatar = AnimatedOpacity(
+      opacity: targetOpacity,
+      duration: MotionDurations.standard,
+      curve: MotionCurves.entrance,
+      child: AnimatedScale(
+        scale: targetScale,
+        duration: MotionDurations.quick,
+        curve: MotionCurves.emphasis,
+        child: VoiceSpeakingRing(
+          audioLevel: info.audioLevel,
+          child: Container(
+            width: _kAvatarSize,
+            height: _kAvatarSize,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: context.mainBg.withValues(alpha: 0.35),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: tile,
           ),
-          child: tile,
         ),
       ),
     );

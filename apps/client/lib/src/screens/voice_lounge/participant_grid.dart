@@ -11,6 +11,7 @@ import '../../providers/livekit_voice_provider.dart';
 import '../../theme/echo_theme.dart';
 import '../../theme/motion_tokens.dart';
 import '../../utils/canvas_utils.dart';
+import '../../widgets/voice/participant_attention.dart';
 import '../../widgets/voice_speaking_ring.dart';
 
 class ParticipantGrid extends StatelessWidget {
@@ -35,16 +36,35 @@ class ParticipantGrid extends StatelessWidget {
     this.authToken,
   });
 
+  /// Phase 3c threshold: matches `_ParticipantInfo.isSpeaking` in
+  /// voice_canvas.dart so attention behaves consistently between
+  /// grid and canvas modes.
+  static const double _attentionThreshold = 0.05;
+
+  bool get _anyoneSpeaking {
+    if (voiceState.localAudioLevel > _attentionThreshold) return true;
+    for (final level in voiceState.peerAudioLevels.values) {
+      if (level > _attentionThreshold) return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (room == null) {
       return _buildPlaceholder(context, 'Connecting to voice...');
     }
 
+    // Phase 3c: precompute room attention once per build so each
+    // tile renders fade/scale relative to whoever is on the air.
+    final anyoneSpeaking = _anyoneSpeaking;
+
     final tiles = <Widget>[
       if (room!.localParticipant != null)
-        _buildLocalTile(room!.localParticipant!),
-      ...room!.remoteParticipants.values.map(_buildRemoteTile),
+        _buildLocalTile(room!.localParticipant!, anyoneSpeaking),
+      ...room!.remoteParticipants.values.map(
+        (p) => _buildRemoteTile(p, anyoneSpeaking),
+      ),
     ];
 
     if (tiles.isEmpty) {
@@ -69,7 +89,10 @@ class ParticipantGrid extends StatelessWidget {
     );
   }
 
-  Widget _buildLocalTile(lk.LocalParticipant localParticipant) {
+  Widget _buildLocalTile(
+    lk.LocalParticipant localParticipant,
+    bool anyoneSpeaking,
+  ) {
     final localVideo = localParticipant.videoTrackPublications
         .where(
           (pub) => pub.track != null && pub.source == lk.TrackSource.camera,
@@ -78,6 +101,12 @@ class ParticipantGrid extends StatelessWidget {
 
     final localHasVideo =
         localVideo?.track != null && voiceState.isVideoEnabled;
+
+    final localIsSpeaking = voiceState.localAudioLevel > _attentionThreshold;
+    final attention = attentionFor(
+      isSpeaking: localIsSpeaking,
+      anyoneElseSpeaking: anyoneSpeaking && !localIsSpeaking,
+    );
 
     return ParticipantTile(
       key: const ValueKey('local'),
@@ -89,12 +118,16 @@ class ParticipantGrid extends StatelessWidget {
       audioLevel: voiceState.localAudioLevel,
       isMuted: !voiceState.isCaptureEnabled,
       isLocal: true,
+      attention: attention,
       onTap: onTileTap != null ? () => onTileTap!('local') : null,
       authToken: authToken,
     );
   }
 
-  Widget _buildRemoteTile(lk.RemoteParticipant participant) {
+  Widget _buildRemoteTile(
+    lk.RemoteParticipant participant,
+    bool anyoneSpeaking,
+  ) {
     final displayName = participantDisplayName(participant);
     final videoTrack = participant.videoTrackPublications
         .where(
@@ -110,6 +143,12 @@ class ParticipantGrid extends StatelessWidget {
         : participant.sid.toString();
     final audioLevel = voiceState.peerAudioLevels[identity] ?? 0.0;
 
+    final remoteIsSpeaking = audioLevel > _attentionThreshold;
+    final attention = attentionFor(
+      isSpeaking: remoteIsSpeaking,
+      anyoneElseSpeaking: anyoneSpeaking && !remoteIsSpeaking,
+    );
+
     return ParticipantTile(
       key: ValueKey('remote-${participant.sid}'),
       name: displayName,
@@ -120,6 +159,7 @@ class ParticipantGrid extends StatelessWidget {
       audioLevel: audioLevel,
       isMuted: participant.isMuted,
       connectionState: voiceState.peerConnectionStates[identity],
+      attention: attention,
       onTap: onTileTap != null
           ? () => onTileTap!('remote-${participant.sid}')
           : null,
@@ -180,6 +220,11 @@ class ParticipantTile extends StatelessWidget {
   final VoidCallback? onMuteForMe;
   final String? authToken;
 
+  /// Phase 3c: room-level attention (speaking / faded / idle).
+  /// Drives the tile's scale + opacity so non-speakers fade back when
+  /// someone else is on the air.
+  final ParticipantAttention attention;
+
   const ParticipantTile({
     super.key,
     required this.name,
@@ -191,6 +236,7 @@ class ParticipantTile extends StatelessWidget {
     this.isMuted = false,
     this.connectionState,
     this.isLocal = false,
+    this.attention = ParticipantAttention.idle,
     this.onTap,
     this.onMuteForMe,
     this.authToken,
@@ -199,60 +245,90 @@ class ParticipantTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSpeaking = audioLevel > 0.01;
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final double targetScale;
+    final double targetOpacity;
+    if (reduceMotion) {
+      targetScale = 1.0;
+      targetOpacity = 1.0;
+    } else {
+      switch (attention) {
+        case ParticipantAttention.speaking:
+          targetScale = 1.04;
+          targetOpacity = 1.0;
+        case ParticipantAttention.faded:
+          targetScale = 0.96;
+          targetOpacity = 0.62;
+        case ParticipantAttention.idle:
+          targetScale = 1.0;
+          targetOpacity = 1.0;
+      }
+    }
 
-    return GestureDetector(
-      onTap: onTap,
-      onSecondaryTapUp: !isLocal && onMuteForMe != null
-          ? (details) => _showParticipantMenu(context, details.globalPosition)
-          : null,
-      onLongPress: !isLocal && onMuteForMe != null ? onMuteForMe : null,
-      child: AnimatedContainer(
-        duration: MotionDurations.standard,
-        curve: MotionCurves.entrance,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSpeaking ? EchoTheme.online : context.border,
-            width: isSpeaking ? 2.0 : 1.0,
-          ),
-          boxShadow: isSpeaking
-              ? [
-                  BoxShadow(
-                    color: EchoTheme.online.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    spreadRadius: 1,
-                  ),
-                ]
+    return AnimatedOpacity(
+      opacity: targetOpacity,
+      duration: MotionDurations.standard,
+      curve: MotionCurves.entrance,
+      child: AnimatedScale(
+        scale: targetScale,
+        duration: MotionDurations.quick,
+        curve: MotionCurves.emphasis,
+        child: GestureDetector(
+          onTap: onTap,
+          onSecondaryTapUp: !isLocal && onMuteForMe != null
+              ? (details) =>
+                    _showParticipantMenu(context, details.globalPosition)
               : null,
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(15),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Container(
-              color: context.surface.withValues(alpha: 0.30),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Video or avatar
-                  if (hasVideo && videoTrack != null)
-                    lk.VideoTrackRenderer(
-                      videoTrack!,
-                      fit: lk.VideoViewFit.cover,
-                      mirrorMode: mirror
-                          ? lk.VideoViewMirrorMode.mirror
-                          : lk.VideoViewMirrorMode.off,
-                    )
-                  else
-                    AvatarCircle(
-                      name: name,
-                      avatarUrl: avatarUrl,
-                      audioLevel: audioLevel,
-                      authToken: authToken,
-                    ),
-                  _buildNameLabel(context),
-                ],
+          onLongPress: !isLocal && onMuteForMe != null ? onMuteForMe : null,
+          child: AnimatedContainer(
+            duration: MotionDurations.standard,
+            curve: MotionCurves.entrance,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isSpeaking ? EchoTheme.online : context.border,
+                width: isSpeaking ? 2.0 : 1.0,
+              ),
+              boxShadow: isSpeaking
+                  ? [
+                      BoxShadow(
+                        color: EchoTheme.online.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(15),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Container(
+                  color: context.surface.withValues(alpha: 0.30),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // Video or avatar
+                      if (hasVideo && videoTrack != null)
+                        lk.VideoTrackRenderer(
+                          videoTrack!,
+                          fit: lk.VideoViewFit.cover,
+                          mirrorMode: mirror
+                              ? lk.VideoViewMirrorMode.mirror
+                              : lk.VideoViewMirrorMode.off,
+                        )
+                      else
+                        AvatarCircle(
+                          name: name,
+                          avatarUrl: avatarUrl,
+                          audioLevel: audioLevel,
+                          authToken: authToken,
+                        ),
+                      _buildNameLabel(context),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
