@@ -14,6 +14,7 @@ import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
 import 'avatar_utils.dart';
+// Stack + Positioned (active edge bar overlay) come from material.dart.
 
 /// Fixed height of a single conversation list item in normal mode.
 const double kConversationItemHeight = 68.0;
@@ -39,16 +40,22 @@ Color presenceStatusDotColor(
 
 /// Compose the screen-reader announcement for a conversation row (#631).
 ///
-/// Order: name -> unread count -> muted -> last message snippet. Exposed
-/// at top level so widget tests can lock the contract without reaching
-/// into the private state class.
+/// Order: name -> mention -> unread count -> muted -> last message snippet.
+/// Mention is announced first because it implies the user has an
+/// explicit @-callout waiting; unread count alone doesn't.
+/// Exposed at top level so widget tests can lock the contract without
+/// reaching into the private state class.
 String composeConversationItemSemanticsLabel({
   required String displayName,
   required int unreadCount,
   required bool muted,
   required String? snippet,
+  int mentionCount = 0,
 }) {
   final buf = StringBuffer('Conversation with $displayName');
+  if (mentionCount > 0) {
+    buf.write(', mentioned');
+  }
   if (unreadCount > 0) {
     buf.write(', $unreadCount unread');
   }
@@ -319,64 +326,94 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
       label: composeConversationItemSemanticsLabel(
         displayName: displayName,
         unreadCount: conv.unreadCount,
+        mentionCount: conv.mentionCount,
         muted: conv.isMuted,
         snippet: snippet,
       ),
       button: true,
       child: Material(
         type: MaterialType.transparency,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          focusColor: context.accentLight,
-          onHover: (hovered) => setState(() => _isHovered = hovered),
-          onTap: widget.onTap,
-          onSecondaryTapUp: (details) {
-            widget.onContextMenu?.call(details.globalPosition);
-          },
-          onLongPress: _enableLongPressMenu ? _showMuteSheet : null,
-          child: Container(
-            height: isCompact
-                ? kConversationItemHeightCompact
-                : kConversationItemHeight,
-            margin: const EdgeInsets.symmetric(vertical: 1),
-            decoration: BoxDecoration(
-              color: _resolveBackgroundColor(context),
+        child: Stack(
+          children: [
+            InkWell(
               borderRadius: BorderRadius.circular(10),
-            ),
-            padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 12),
-            // Visual children re-announce muted/unread/timestamp via
-            // their own Semantics nodes; suppress those so the composed
-            // outer label is the single announcement (#631).
-            child: ExcludeSemantics(
-              child: Row(
-                children: [
-                  _buildAvatarStack(
-                    context,
-                    conv,
-                    displayName,
-                    isCompact: isCompact,
+              focusColor: context.accentLight,
+              onHover: (hovered) => setState(() => _isHovered = hovered),
+              onTap: widget.onTap,
+              onSecondaryTapUp: (details) {
+                widget.onContextMenu?.call(details.globalPosition);
+              },
+              onLongPress: _enableLongPressMenu ? _showMuteSheet : null,
+              child: AnimatedContainer(
+                duration: MotionDurations.quick,
+                curve: MotionCurves.emphasis,
+                height: isCompact
+                    ? kConversationItemHeightCompact
+                    : kConversationItemHeight,
+                margin: const EdgeInsets.symmetric(vertical: 1),
+                decoration: BoxDecoration(
+                  color: _resolveBackgroundColor(context, hasUnread),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 12),
+                // Visual children re-announce muted/unread/timestamp via
+                // their own Semantics nodes; suppress those so the composed
+                // outer label is the single announcement (#631).
+                child: ExcludeSemantics(
+                  child: Row(
+                    children: [
+                      _buildAvatarStack(
+                        context,
+                        conv,
+                        displayName,
+                        isCompact: isCompact,
+                      ),
+                      SizedBox(width: isCompact ? 8 : 12),
+                      _buildNameAndSnippet(
+                        context,
+                        displayName: displayName,
+                        snippet: snippet,
+                        hasUnread: hasUnread,
+                        conv: conv,
+                        isCompact: isCompact,
+                      ),
+                    ],
                   ),
-                  SizedBox(width: isCompact ? 8 : 12),
-                  _buildNameAndSnippet(
-                    context,
-                    displayName: displayName,
-                    snippet: snippet,
-                    hasUnread: hasUnread,
-                    conv: conv,
-                    isCompact: isCompact,
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
+            // Active-conversation accent bar — 4px wide left edge marker.
+            // Stronger glance signal than the existing tint alone.
+            // IgnorePointer so taps pass through to the InkWell.
+            if (widget.isSelected)
+              Positioned(
+                left: 0,
+                top: 6,
+                bottom: 6,
+                child: IgnorePointer(
+                  child: Container(
+                    width: 4,
+                    decoration: BoxDecoration(
+                      color: context.activeRowAccent,
+                      borderRadius: const BorderRadius.horizontal(
+                        right: Radius.circular(2),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 
-  Color _resolveBackgroundColor(BuildContext context) {
+  Color _resolveBackgroundColor(BuildContext context, bool hasUnread) {
     if (widget.isSelected) return context.accentLight;
     if (_isHovered) return context.surfaceHover;
+    if (hasUnread && !widget.conversation.isMuted) {
+      return context.unreadRowTint;
+    }
     return Colors.transparent;
   }
 
@@ -405,19 +442,24 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
           Positioned(
             bottom: 0,
             right: 0,
-            child: AnimatedContainer(
-              duration: MotionDurations.gentle,
-              curve: MotionCurves.emphasis,
-              width: dotSize,
-              height: dotSize,
-              decoration: BoxDecoration(
-                color: presenceStatusDotColor(
-                  context,
-                  widget.peerPresenceStatus,
-                  widget.isPeerOnline,
+            // Dim the presence dot for muted conversations so the row
+            // reads as "present but quiet" overall.
+            child: Opacity(
+              opacity: conv.isMuted ? 0.5 : 1.0,
+              child: AnimatedContainer(
+                duration: MotionDurations.gentle,
+                curve: MotionCurves.emphasis,
+                width: dotSize,
+                height: dotSize,
+                decoration: BoxDecoration(
+                  color: presenceStatusDotColor(
+                    context,
+                    widget.peerPresenceStatus,
+                    widget.isPeerOnline,
+                  ),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: context.sidebarBg, width: 2),
                 ),
-                shape: BoxShape.circle,
-                border: Border.all(color: context.sidebarBg, width: 2),
               ),
             ),
           ),
@@ -522,7 +564,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
               fontSize: 12,
-              color: hasUnread ? context.accent : context.textMuted,
+              color: widget.conversation.isMuted
+                  ? context.mutedSurface
+                  : (hasUnread ? context.accent : context.textMuted),
             ),
           ),
         ],
@@ -551,7 +595,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   style: GoogleFonts.inter(
                     fontSize: isCompact ? 13 : 14,
                     fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w500,
-                    color: context.textPrimary,
+                    color: conv.isMuted
+                        ? context.textMuted
+                        : context.textPrimary,
                   ),
                 ),
               ),
@@ -677,7 +723,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
                     fontSize: snippetFontSize,
-                    color: context.textMuted,
+                    color: conv.isMuted
+                        ? context.mutedSurface
+                        : context.textMuted,
                     fontWeight: snippetWeight,
                   ),
                 ),
@@ -688,7 +736,36 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
             child: Icon(
               Icons.notifications_off_outlined,
               size: 16,
-              color: context.textMuted,
+              color: context.mutedSurface,
+            ),
+          ),
+        // Mention badge sits to the LEFT of the unread count badge so it
+        // remains visible when the unread count is multi-digit.  Distinct
+        // color (mentionBadgeBg) so "you were mentioned" reads differently
+        // from "X unread."
+        if (conv.mentionCount > 0)
+          Semantics(
+            label: '${conv.mentionCount} mentions',
+            child: Container(
+              margin: const EdgeInsets.only(left: 8),
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                color: context.mentionBadgeBg,
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: const ExcludeSemantics(
+                child: Text(
+                  '@',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    height: 1,
+                  ),
+                ),
+              ),
             ),
           ),
         if (hasUnread)
