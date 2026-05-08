@@ -26,6 +26,7 @@ Get the latest buildw from the [Releases page](https://github.com/NC1107/echo-me
 - **Privacy controls** -- Toggle read receipts
 - **Username DM invites** -- Share `#/u/{username}` deep links and QR codes to add contacts quickly
 - **Per-message encryption indicator** -- Lock icon shows which messages were encrypted
+- **@mentions** -- @username autocomplete in group chats; @everyone notifies all members, @here notifies only online members (plaintext groups)
 - **Typing indicators** -- See when someone is typing
 - **Conversations list** -- Last message preview, unread badges, timestamps
 - **Cross-platform** -- Windows, Linux, Web, iOS, Android

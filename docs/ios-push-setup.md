@@ -74,6 +74,10 @@ The server loads the config once at startup. If any required variable is missing
 | No push attempt in logs | User has no registered push token | Ensure the iOS app requested notification permission and the token was sent to `/api/push/register` |
 | Push sent but app doesn't wake | iOS killed the app or battery saver | Normal iOS behavior -- silent pushes are best-effort. App will reconnect on next foreground. |
 
+## @here Mention Behavior
+
+When a plaintext group message contains a standalone `@here`, the server skips APNs push to offline members for that message — only currently connected members are notified. This is intentional: `@here` is designed for "attention needed now" pings without waking offline users. `@everyone` is unaffected and continues to trigger push for all members as normal. Encrypted group messages are never inspected for mention keywords, so this logic does not apply to them.
+
 ## Self-Hosting Notes
 
 The APNs key is tied to your Apple Developer account. If you self-host and want iOS push:
