@@ -1,15 +1,21 @@
 // Horizontal divider with a localized day label ("Today" / "Yesterday" / date).
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
 import '../../theme/echo_theme.dart';
 
-class DateDivider extends StatelessWidget {
+class DateDivider extends ConsumerWidget {
   final String timestamp;
 
-  const DateDivider({super.key, required this.timestamp});
+  /// Optional density override; defaults to the value from
+  /// [uiDensityProvider]. Tests can pin a specific tier via this param.
+  final UIDensity? density;
+
+  const DateDivider({super.key, required this.timestamp, this.density});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     try {
       final dt = DateTime.parse(timestamp).toLocal();
       final now = DateTime.now();
@@ -24,8 +30,11 @@ class DateDivider extends StatelessWidget {
       } else {
         label = '${_fullMonthName(dt.month)} ${dt.day}, ${dt.year}';
       }
+      final UIDensity effectiveDensity =
+          density ?? ref.watch(uiDensityProvider);
+      final m = _DateDividerMetrics.forDensity(effectiveDensity);
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
+        padding: EdgeInsets.symmetric(vertical: m.vPad, horizontal: 16),
         child: Row(
           children: [
             Expanded(
@@ -35,10 +44,13 @@ class DateDivider extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: EdgeInsets.symmetric(horizontal: m.hPad),
               child: Text(
                 label,
-                style: TextStyle(fontSize: 11, color: context.textMuted),
+                style: TextStyle(
+                  fontSize: m.fontSize,
+                  color: context.textMuted,
+                ),
               ),
             ),
             Expanded(
@@ -72,5 +84,32 @@ class DateDivider extends StatelessWidget {
       'December',
     ];
     return names[m.clamp(1, 12)];
+  }
+}
+
+class _DateDividerMetrics {
+  final double vPad;
+  final double hPad;
+  final double fontSize;
+
+  const _DateDividerMetrics({
+    required this.vPad,
+    required this.hPad,
+    required this.fontSize,
+  });
+
+  static const cozy = _DateDividerMetrics(vPad: 8, hPad: 12, fontSize: 12);
+  static const normal = _DateDividerMetrics(vPad: 6, hPad: 10, fontSize: 11);
+  static const compact = _DateDividerMetrics(vPad: 4, hPad: 8, fontSize: 11);
+
+  static _DateDividerMetrics forDensity(UIDensity d) {
+    switch (d) {
+      case UIDensity.cozy:
+        return cozy;
+      case UIDensity.normal:
+        return normal;
+      case UIDensity.compact:
+        return compact;
+    }
   }
 }

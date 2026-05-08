@@ -180,9 +180,9 @@ low-risk, and unblocks every future onboarding / churn discussion.
 
 ## Phase 2 — Density tier (Cozy / Normal / Compact)
 
-**Status:** sidebar, message item, channel bar, settings rows, and
-reactions / hover-timestamp slices shipped. Voice dock and remaining
-inline density follow-ups still open.
+**Status:** sidebar, message item, channel bar, settings rows,
+reactions / hover-timestamp, and date-divider slices shipped.
+Voice dock and remaining inline density follow-ups still open.
 
 **Goal:** Power users get Discord-compact density. New users get
 today's effective default (compact, matching the legacy
@@ -281,10 +281,17 @@ Phase 1 design against three target sizes from the start.
 - Hover-action chip dimensions intentionally unchanged: the 44×44
   hit target is a WCAG 2.5.5 minimum and stays stable across tiers.
 
+**Shipped (date-divider slice):**
+
+- `DateDivider` became a `ConsumerWidget` that reads
+  `uiDensityProvider` and scales vertical padding / horizontal label
+  padding / font size via `_DateDividerMetrics`.  Cozy 8/12/12,
+  Normal 6/10/11, Compact 4/8/11 (today's).  The 1-pixel rule colors
+  stay constant across tiers so the divider weight reads identically.
+
 **Deferred follow-ups (separate PRs):**
 
 - Bubble inner padding scaling.
-- Date-divider density between message groups.
 - Inter-chip spacing scaling on the channel bar.
 - Voice control dock density.
 - Per-screen density overrides.
