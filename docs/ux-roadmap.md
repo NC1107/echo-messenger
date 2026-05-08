@@ -249,12 +249,22 @@ Phase 1 design against three target sizes from the start.
   inline sender + timestamp font sizes now also key off density.
   Bubble inner padding intentionally unchanged for now.
 
+**Shipped (channel bar slice):**
+
+- Channel chip density: `ChannelBar` reads `uiDensityProvider` and
+  threads the density through `_buildTextChannelChip` /
+  `_buildVoiceChannelChip`, with one `_chipMetrics` helper packing
+  padding / icon size / label size / border radius into a single
+  record.  Cozy 14×9/16/14/22, Normal 10×6/14/12/20 (today's),
+  Compact 8×4/12/11/18.
+
 **Deferred follow-ups (separate PRs):**
 
 - Bubble inner padding scaling.
 - Reaction-pill / hover-action / hover-timestamp density.
 - Date-divider density between message groups.
-- Channel bar / group list density.
+- Inter-chip spacing scaling on the channel bar.
+- Voice control dock density.
 - Settings rows density.
 - Per-screen density overrides.
 - Mobile density (phones get a single density determined by viewport).
