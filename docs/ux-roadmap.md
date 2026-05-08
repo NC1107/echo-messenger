@@ -54,7 +54,7 @@ These are easy traps. None of them belong in this roadmap.
 
 ## Phase 0 — Motion language foundation
 
-**Status:** in flight (the PR landing this roadmap doc).
+**Status:** shipped.
 
 **Goal:** Replace scattered inline `Duration(milliseconds: N)` and
 `Curves.foo` calls with a shared semantic vocabulary so future PRs can
@@ -82,7 +82,7 @@ tune the *feel* of the app without sweeping across dozens of widgets.
 
 **Out of scope:**
 
-- Sweeping every duration in the codebase. The remaining ~22 inline
+- Sweeping every duration in the codebase. The remaining inline
   durations are picked up incrementally as their owning files are
   touched.
 - Spring physics. `SpringSimulation` is right for Phase 3 voice-lounge
@@ -90,7 +90,38 @@ tune the *feel* of the app without sweeping across dozens of widgets.
 
 ---
 
+## Phase 0b — Motion expansion (incremental sweep)
+
+**Status:** shipped (Top 5 of 15 candidates).
+
+After the Phase 0 tokens landed, a follow-up sweep mapped 15 more
+animation candidates ranked by ROI. The top 5 were lifted in:
+
+- `widgets/message/message_status_icon.dart` — status progression
+  (sending → sent → delivered → read) animates via `AnimatedSwitcher`
+  + scale.
+- `widgets/chat_input_bar/send_button.dart` — single animated
+  container interpolates fill + border across mic / send / confirm
+  modes; inner `AnimatedSwitcher` scales the icon between them.
+- `widgets/chat_input_bar.dart` — reply preview bar mount/unmount uses
+  `AnimatedSize(entrance)`.
+- `widgets/message/reaction_bar.dart` — new reaction pills enter with
+  a soft overshoot via `expressiveBounce`.
+- `widgets/conversation_item.dart` — covered as part of Phase 1
+  hover/active background animation.
+
+**Remaining tier 2/3 candidates** (e.g., dock submenu scale, voice
+settings switch flash, date/unread dividers, media picker panel)
+intentionally not in this PR. They are picked up incrementally as
+their owning files are touched.
+
+---
+
 ## Phase 1 — Sidebar state hierarchy
+
+**Status:** shipped. Mention badge ships as a *client-side-only* signal
+(see "Out of scope / follow-ups" below); the rest of the deltas land in
+the same PR as Phase 0b.
 
 **Goal:** Unread / muted / mentioned / active conversations are
 distinguishable in <100ms of glance, not after parsing color and font
@@ -132,8 +163,15 @@ low-risk, and unblocks every future onboarding / churn discussion.
   (Phase 2 dependency).
 - Tests in `test/widgets/conversation_item_test.dart` cover each state.
 
-**Out of scope:**
+**Out of scope / follow-ups:**
 
+- **Server-side mention persistence.** The shipped mention badge is
+  derived client-side: when a `new_message` arrives, the WS handler
+  scans the decrypted plaintext for `@<myUsername>`, `@everyone`, or
+  `@here` and increments `Conversation.mentionCount` (a
+  client-state-only field). `markAsRead` clears it. Multi-device sync
+  of "you have mentions waiting" requires a server column + API
+  change — deferred until needed.
 - Full sidebar redesign (server list, channel tree).
 - Nav rework (top bar, search, profile menu).
 - Mobile-specific tweaks.
