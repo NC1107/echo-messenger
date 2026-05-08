@@ -8,19 +8,32 @@ import '../models/chat_message.dart' show ChatMessage, MessageStatus;
 import '../models/conversation.dart';
 import '../providers/chat_provider.dart';
 import '../providers/conversations_provider.dart';
-import '../providers/theme_provider.dart'
-    show MessageLayout, messageLayoutProvider;
+import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
 import 'avatar_utils.dart';
 // Stack + Positioned (active edge bar overlay) come from material.dart.
 
-/// Fixed height of a single conversation list item in normal mode.
+/// Fixed height of a single conversation list item in the normal density
+/// tier (UX roadmap Phase 2).
 const double kConversationItemHeight = 68.0;
 
-/// Tighter height for compact (Discord-style) layout (#427).
+/// Tighter height for the compact (Discord-style) density tier.
 const double kConversationItemHeightCompact = 52.0;
+
+/// Roomier height for the cozy density tier — power users who want
+/// breathing room on large displays.
+const double kConversationItemHeightCozy = 84.0;
+
+/// Looks up the conversation row height for a given [density]. Used by
+/// `ConversationPanel` and tests so the list-level geometry stays in sync
+/// with `ConversationItem`'s own sizing.
+double conversationItemHeightFor(UIDensity density) => switch (density) {
+  UIDensity.cozy => kConversationItemHeightCozy,
+  UIDensity.normal => kConversationItemHeight,
+  UIDensity.compact => kConversationItemHeightCompact,
+};
 
 /// Return the dot color for a peer presence status.
 Color presenceStatusDotColor(
@@ -320,7 +333,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     final displayName = conv.displayName(widget.myUserId);
     final hasUnread = conv.unreadCount > 0;
     final snippet = _resolveSnippet();
-    final isCompact = ref.watch(messageLayoutProvider) == MessageLayout.compact;
+    final density = ref.watch(uiDensityProvider);
+    final isCompact = density == UIDensity.compact;
+    final isCozy = density == UIDensity.cozy;
 
     return Semantics(
       label: composeConversationItemSemanticsLabel(
@@ -347,15 +362,15 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
               child: AnimatedContainer(
                 duration: MotionDurations.quick,
                 curve: MotionCurves.emphasis,
-                height: isCompact
-                    ? kConversationItemHeightCompact
-                    : kConversationItemHeight,
+                height: conversationItemHeightFor(density),
                 margin: const EdgeInsets.symmetric(vertical: 1),
                 decoration: BoxDecoration(
                   color: _resolveBackgroundColor(context, hasUnread),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                padding: EdgeInsets.symmetric(horizontal: isCompact ? 10 : 12),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isCozy ? 14 : (isCompact ? 10 : 12),
+                ),
                 // Visual children re-announce muted/unread/timestamp via
                 // their own Semantics nodes; suppress those so the composed
                 // outer label is the single announcement (#631).
@@ -366,16 +381,16 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                         context,
                         conv,
                         displayName,
-                        isCompact: isCompact,
+                        density: density,
                       ),
-                      SizedBox(width: isCompact ? 8 : 12),
+                      SizedBox(width: isCozy ? 14 : (isCompact ? 8 : 12)),
                       _buildNameAndSnippet(
                         context,
                         displayName: displayName,
                         snippet: snippet,
                         hasUnread: hasUnread,
                         conv: conv,
-                        isCompact: isCompact,
+                        density: density,
                       ),
                     ],
                   ),
@@ -421,12 +436,27 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     BuildContext context,
     Conversation conv,
     String displayName, {
-    bool isCompact = false,
+    UIDensity density = UIDensity.normal,
   }) {
-    // Compact: 14px radius (28px diameter); normal: 20px radius (40px diameter).
-    final double avatarRadius = isCompact ? 14 : 20;
-    final double dotSize = isCompact ? 10 : 12;
-    final double groupIconSize = isCompact ? 14.0 : 18.0;
+    // Density tier sizes (UX roadmap Phase 2):
+    //   compact -> 14px radius (28px diameter), 10px dot, 14px group icon
+    //   normal  -> 20px radius (40px diameter), 12px dot, 18px group icon
+    //   cozy    -> 22px radius (44px diameter), 13px dot, 20px group icon
+    final double avatarRadius = switch (density) {
+      UIDensity.cozy => 22,
+      UIDensity.normal => 20,
+      UIDensity.compact => 14,
+    };
+    final double dotSize = switch (density) {
+      UIDensity.cozy => 13,
+      UIDensity.normal => 12,
+      UIDensity.compact => 10,
+    };
+    final double groupIconSize = switch (density) {
+      UIDensity.cozy => 20,
+      UIDensity.normal => 18,
+      UIDensity.compact => 14,
+    };
     return Stack(
       children: [
         buildAvatar(
@@ -473,38 +503,48 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     required String? snippet,
     required bool hasUnread,
     required Conversation conv,
-    bool isCompact = false,
+    UIDensity density = UIDensity.normal,
   }) {
     final peer = conv.isGroup
         ? null
         : conv.members.where((m) => m.userId != widget.myUserId).firstOrNull;
     final statusText = peer?.statusText;
+    final double statusFontSize = switch (density) {
+      UIDensity.cozy => 12,
+      UIDensity.normal => 11,
+      UIDensity.compact => 10,
+    };
+    final double snippetGap = switch (density) {
+      UIDensity.cozy => 6,
+      UIDensity.normal => 4,
+      UIDensity.compact => 1,
+    };
 
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _buildNameRow(context, displayName, hasUnread, isCompact: isCompact),
+          _buildNameRow(context, displayName, hasUnread, density: density),
           if (statusText != null && statusText.isNotEmpty) ...[
             const SizedBox(height: 1),
             Text(
               statusText,
               style: GoogleFonts.inter(
-                fontSize: isCompact ? 10 : 11,
+                fontSize: statusFontSize,
                 color: context.textMuted,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ] else if (snippet != null) ...[
-            SizedBox(height: isCompact ? 1 : 4),
+            SizedBox(height: snippetGap),
             _buildSnippetRow(
               context,
               snippet,
               hasUnread,
               conv,
-              isCompact: isCompact,
+              density: density,
             ),
           ],
         ],
@@ -516,7 +556,7 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     BuildContext context,
     String displayName,
     bool hasUnread, {
-    bool isCompact = false,
+    UIDensity density = UIDensity.normal,
   }) {
     // On desktop (non-web, non-mobile), show a ... button on hover so users
     // who don't right-click can still discover the context menu.
@@ -593,7 +633,11 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                   style: GoogleFonts.inter(
-                    fontSize: isCompact ? 13 : 14,
+                    fontSize: switch (density) {
+                      UIDensity.cozy => 15,
+                      UIDensity.normal => 14,
+                      UIDensity.compact => 13,
+                    },
                     fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w500,
                     color: conv.isMuted
                         ? context.textMuted
@@ -684,12 +728,15 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
     String snippet,
     bool hasUnread,
     Conversation conv, {
-    bool isCompact = false,
+    UIDensity density = UIDensity.normal,
   }) {
     final showDraft = _draft != null && !hasUnread;
     final snippetWeight = hasUnread ? FontWeight.w500 : FontWeight.normal;
-    // Compact: 11px snippet; normal: 13px.
-    final double snippetFontSize = isCompact ? 11 : 13;
+    final double snippetFontSize = switch (density) {
+      UIDensity.cozy => 14,
+      UIDensity.normal => 13,
+      UIDensity.compact => 11,
+    };
     return Row(
       children: [
         Expanded(

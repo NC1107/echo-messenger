@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:echo_app/src/models/chat_message.dart';
 import 'package:echo_app/src/models/conversation.dart';
 import 'package:echo_app/src/providers/chat_provider.dart';
+import 'package:echo_app/src/providers/theme_provider.dart';
 import 'package:echo_app/src/theme/echo_theme.dart';
 import 'package:echo_app/src/widgets/conversation_item.dart';
 
@@ -811,6 +812,125 @@ void main() {
       expect(label, contains('4 unread'));
     });
 
+    testWidgets('cozy density renders 84px row + 22px avatar radius', (
+      tester,
+    ) async {
+      final conv = _makeConversation(
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:00',
+          onTap: () {},
+        ),
+        overrides: [
+          uiDensityProvider.overrideWith(
+            () => _StaticUIDensity(UIDensity.cozy),
+          ),
+        ],
+      );
+      await tester.pump();
+      expect(
+        conversationItemHeightFor(UIDensity.cozy),
+        kConversationItemHeightCozy,
+      );
+      // Settle one more frame so AnimatedContainer reaches its target.
+      await tester.pumpAndSettle();
+      final container = tester.widget<AnimatedContainer>(
+        find
+            .descendant(
+              of: find.byType(ConversationItem),
+              matching: find.byType(AnimatedContainer),
+            )
+            .first,
+      );
+      expect(
+        container.constraints?.minHeight ?? 0,
+        kConversationItemHeightCozy,
+      );
+    });
+
+    testWidgets('compact density renders 52px row', (tester) async {
+      final conv = _makeConversation(
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:00',
+          onTap: () {},
+        ),
+        overrides: [
+          uiDensityProvider.overrideWith(
+            () => _StaticUIDensity(UIDensity.compact),
+          ),
+        ],
+      );
+      await tester.pumpAndSettle();
+      final container = tester.widget<AnimatedContainer>(
+        find
+            .descendant(
+              of: find.byType(ConversationItem),
+              matching: find.byType(AnimatedContainer),
+            )
+            .first,
+      );
+      expect(
+        container.constraints?.minHeight ?? 0,
+        kConversationItemHeightCompact,
+      );
+    });
+
+    testWidgets('normal density renders 68px row (default)', (tester) async {
+      final conv = _makeConversation(
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:00',
+          onTap: () {},
+        ),
+        overrides: [
+          uiDensityProvider.overrideWith(
+            () => _StaticUIDensity(UIDensity.normal),
+          ),
+        ],
+      );
+      await tester.pumpAndSettle();
+      final container = tester.widget<AnimatedContainer>(
+        find
+            .descendant(
+              of: find.byType(ConversationItem),
+              matching: find.byType(AnimatedContainer),
+            )
+            .first,
+      );
+      expect(container.constraints?.minHeight ?? 0, kConversationItemHeight);
+    });
+
     testWidgets('muted conversation uses dimmer name color', (tester) async {
       final muted = _makeConversation(
         lastMessage: 'quiet message',
@@ -841,6 +961,18 @@ void main() {
       expect(nameWidget.style?.color, isNot(equals(ctx.textPrimary)));
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+// Test override that returns a static UIDensity without persisting.
+// Bypasses the SharedPreferences load that the production notifier runs.
+// ---------------------------------------------------------------------------
+class _StaticUIDensity extends UIDensityNotifier {
+  final UIDensity _density;
+  _StaticUIDensity(this._density);
+
+  @override
+  UIDensity build() => _density;
 }
 
 // ---------------------------------------------------------------------------
