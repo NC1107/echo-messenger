@@ -3,6 +3,7 @@
 
 use axum::Json;
 use axum::extract::State;
+use axum::extract::rejection::JsonRejection;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
@@ -243,7 +244,13 @@ pub async fn login(
 pub async fn refresh(
     State(state): State<Arc<AppState>>,
     jar: CookieJar,
-    body: Option<Json<RefreshRequest>>,
+    // `Result<Json<_>, _>` (not `Option<Json<_>>`): when the web client sends
+    // `Content-Type: application/json` with a zero-length body, axum's
+    // `Option<Json<T>>` extractor errors out before we get to look at the
+    // cookie, and the user gets logged out on every page refresh. With
+    // `Result<...>` we receive the rejection in-band and ignore it -- the
+    // cookie is still readable and the request can succeed.
+    body: Result<Json<RefreshRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     // Cookie wins when both are present so the web client's HttpOnly cookie
     // can never be silently overridden by a malicious JSON body. Mobile/desktop
@@ -253,6 +260,7 @@ pub async fn refresh(
         .map(|c| c.value().to_string())
         .filter(|s| !s.is_empty());
     let body_token = body
+        .ok()
         .and_then(|Json(b)| b.refresh_token)
         .filter(|s| !s.is_empty());
     let raw_token = cookie_token

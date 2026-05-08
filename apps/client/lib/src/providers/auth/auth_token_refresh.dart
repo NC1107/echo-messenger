@@ -177,7 +177,13 @@ mixin AuthTokenRefreshMixin on StateNotifier<AuthState>, AuthTokenStorageMixin {
             .post(
               Uri.parse('$_serverUrl/api/auth/refresh'),
               headers: _kJsonHeaders,
-              // No body -- server reads the HttpOnly cookie.
+              // Empty `{}` body, not no body: with `Content-Type:
+              // application/json` set, axum's `Option<Json<T>>` extractor
+              // tries to parse and fails with "EOF" on a zero-length body,
+              // which short-circuits before the cookie path runs and the
+              // user gets logged out on every refresh.  An empty object is
+              // valid JSON and makes serde's #[serde(default)] kick in.
+              body: '{}',
             )
             .timeout(const Duration(seconds: 15));
 
@@ -259,14 +265,18 @@ mixin AuthTokenRefreshMixin on StateNotifier<AuthState>, AuthTokenStorageMixin {
     try {
       final http.Response response;
       if (kIsWeb) {
-        // Let the browser attach the cookie automatically.
+        // Let the browser attach the cookie automatically.  Send an empty
+        // `{}` body rather than nothing -- axum's Option<Json<T>> extractor
+        // fails with "EOF" if Content-Type is application/json and the body
+        // is zero-length, which short-circuits before the cookie path can
+        // run.  See companion comment in tryAutoLogin's _tryRefreshWithCookie.
         final client = buildHttpClient();
         try {
           response = await client
               .post(
                 Uri.parse('$_serverUrl/api/auth/refresh'),
                 headers: _kJsonHeaders,
-                // No body -- server reads the HttpOnly cookie.
+                body: '{}',
               )
               .timeout(const Duration(seconds: 15));
         } finally {
