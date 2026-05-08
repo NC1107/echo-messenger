@@ -196,6 +196,32 @@ jobs:
           chmod +x appimagetool
           mkdir -p Echo.AppDir/usr/bin Echo.AppDir/usr/share/applications Echo.AppDir/usr/share/icons/hicolor/256x256/apps
           cp -r apps/client/build/linux/x64/release/bundle/* Echo.AppDir/usr/bin/
+          # Bundle libmpv.so.2 (and runtime deps) inside the AppImage so it
+          # actually runs on hosts that don't ship libmpv globally.
+          # `media_kit_libs_video` declares a runtime dependency on libmpv
+          # via the dynamic linker but does NOT copy the .so into the
+          # bundle, which left users hitting "libmpv.so.2: cannot open
+          # shared object file" at launch (reported 2026-05-08).  AppRun
+          # already prepends usr/bin/lib to LD_LIBRARY_PATH so the loader
+          # finds these copies.
+          mkdir -p Echo.AppDir/usr/bin/lib
+          LIBMPV_PATH=$(ldconfig -p | awk '/libmpv\.so\.2 / {print $4; exit}')
+          if [ -z "$LIBMPV_PATH" ] || [ ! -e "$LIBMPV_PATH" ]; then
+            echo "::error::libmpv.so.2 not resolvable on the build host; install libmpv2 or libmpv-dev before this step."
+            exit 1
+          fi
+          cp -L "$LIBMPV_PATH" Echo.AppDir/usr/bin/lib/
+          # libmpv pulls in transitive .so deps that some minimal target
+          # hosts also lack (e.g. libplacebo, libmujs).  Resolve via ldd
+          # and copy any that aren't part of glibc / libstdc++ / ld-linux
+          # (those stay host-side per AppImage convention).
+          ldd "$LIBMPV_PATH" | awk '/=>/ {print $3}' \
+            | grep -vE '/(libc|libm|libdl|libpthread|librt|libstdc\+\+|libgcc_s|ld-linux)\.so' \
+            | while read -r dep; do
+                [ -z "$dep" ] || [ ! -e "$dep" ] && continue
+                cp -Ln "$dep" Echo.AppDir/usr/bin/lib/ 2>/dev/null || true
+              done
+          ls Echo.AppDir/usr/bin/lib/libmpv* > /dev/null  # sanity check
           cat > Echo.AppDir/echo.desktop << 'EOF'
           [Desktop Entry]
           Name=Echo
