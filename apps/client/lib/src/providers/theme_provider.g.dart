@@ -43,6 +43,22 @@ final messageLayoutNotifierProvider =
     );
 
 typedef _$MessageLayoutNotifier = Notifier<MessageLayout>;
+String _$uIDensityNotifierHash() => r'b63be7192710cd7e4854b0c246f87c7a2016742b';
+
+/// See also [UIDensityNotifier].
+@ProviderFor(UIDensityNotifier)
+final uIDensityNotifierProvider =
+    NotifierProvider<UIDensityNotifier, UIDensity>.internal(
+      UIDensityNotifier.new,
+      name: r'uIDensityNotifierProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$uIDensityNotifierHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$UIDensityNotifier = Notifier<UIDensity>;
 String _$customColorsHash() => r'8c29d77cdeb45748e1dd87e93287d132534582b8';
 
 /// See also [CustomColors].
