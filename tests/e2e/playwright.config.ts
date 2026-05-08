@@ -45,6 +45,7 @@ export default defineConfig({
         'live_test.spec.ts',
         'open_prod.spec.ts',
         'prod_test.spec.ts',
+        'density_walkthrough.spec.ts',
       ],
       use: { browserName: 'chromium' },
     },

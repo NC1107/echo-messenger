@@ -152,6 +152,8 @@ Three compose files in `infra/docker/`:
 - `docker-compose.test.yml` -- CI (PostgreSQL on port 5433, avoids conflicts)
 - `docker-compose.prod.yml` -- production: Traefik with Cloudflare TLS, PostgreSQL backups (7-day/4-week/6-month retention), LiveKit for voice
 
+**Prod deploy** is automated via `.github/workflows/prod-deploy.yml`. It fires automatically when the Release workflow publishes a GitHub release and is also `workflow_dispatch`-able for manual rolls or rollbacks (`gh workflow run "Prod Deploy" -f tag=v0.0.123`). Required repo secrets: `PROD_SSH_HOST`, `PROD_SSH_USER`, `PROD_SSH_KEY`, `PROD_COMPOSE_DIR` (optional `PROD_SSH_PORT`). The workflow SSHes in, sets `SERVER_VERSION`/`WEB_VERSION` to the tag, runs `docker compose pull && up -d` against the `server` and `web` services, and polls `/api/health` until the version matches. The `production` GitHub environment can gate it behind required reviewers in repo settings.
+
 ## Known Limitations
 
 1. Session keys cached in memory with 24h idle TTL + 200-entry LRU cap; evicted entries have key material zeroed and reload from secure storage on demand.
