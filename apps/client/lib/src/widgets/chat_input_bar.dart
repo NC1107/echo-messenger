@@ -28,6 +28,7 @@ import '../services/slash_commands.dart';
 import '../services/toast_service.dart';
 import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
+import '../theme/motion_tokens.dart';
 import '../theme/responsive.dart';
 import '../utils/clipboard_image_helper.dart';
 import 'chat_input_bar/attach_file_button.dart';
@@ -1890,13 +1891,21 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                       statusText: inputStatusText,
                       onCancelEdit: _cancelEditMode,
                     ),
-                  // Reply preview bar
-                  if (replyToMessage != null)
-                    ReplyPreviewBar(
-                      replyToMessage: replyToMessage,
-                      onDismiss: () =>
-                          ref.read(chatProvider.notifier).clearReplyTo(),
-                    ),
+                  // Reply preview bar — wrap in AnimatedSize so the bar
+                  // slides in/out instead of snapping when reply mode
+                  // is entered or dismissed (UX roadmap motion expansion).
+                  AnimatedSize(
+                    duration: MotionDurations.standard,
+                    curve: MotionCurves.entrance,
+                    alignment: Alignment.topCenter,
+                    child: replyToMessage != null
+                        ? ReplyPreviewBar(
+                            replyToMessage: replyToMessage,
+                            onDismiss: () =>
+                                ref.read(chatProvider.notifier).clearReplyTo(),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
                   // Pending-attachments strip — one chip per staged file
                   // with thumbnail, name, size, progress, and cancel.
                   if (_hasPendingAttachment)

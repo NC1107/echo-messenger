@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/chat_message.dart';
 import '../../theme/echo_theme.dart';
+import '../../theme/motion_tokens.dart';
 
 /// Displays a small status icon (sending, sent, delivered, read, failed) with
 /// a tooltip describing the current state.
@@ -43,7 +44,26 @@ class MessageStatusIcon extends StatelessWidget {
       padding: const EdgeInsets.only(left: 4),
       child: Tooltip(
         message: tooltip,
-        child: Icon(icon, size: 12, color: color),
+        // AnimatedSwitcher gives the sending → sent → delivered → read
+        // progression a brief scale transition so each status hand-off
+        // reads as 'something happened' instead of an instant icon swap.
+        // The ValueKey on the icon ensures the switcher detects the
+        // status change (icons of the same type still differ).
+        child: AnimatedSwitcher(
+          duration: MotionDurations.quick,
+          switchInCurve: MotionCurves.emphasis,
+          switchOutCurve: MotionCurves.exit,
+          transitionBuilder: (child, animation) => ScaleTransition(
+            scale: animation,
+            child: FadeTransition(opacity: animation, child: child),
+          ),
+          child: Icon(
+            icon,
+            key: ValueKey<MessageStatus>(status!),
+            size: 12,
+            color: color,
+          ),
+        ),
       ),
     );
   }

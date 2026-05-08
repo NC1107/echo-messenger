@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/crypto_provider.dart';
 import '../../theme/echo_theme.dart';
+import '../../theme/motion_tokens.dart';
 
 /// Round send / mic / confirm-edit button on the right side of the input row.
 class SendButton extends ConsumerWidget {
@@ -35,64 +36,61 @@ class SendButton extends ConsumerWidget {
         cryptoState.isInitialized && !cryptoState.keysUploadFailed;
     final canSend = hasContent && (cryptoReady || !isDm);
 
-    // When there's no content and not editing, show a bordered mic button
-    // (mirrors the design's RoundIcon). It transitions to the filled accent
-    // send button below as soon as content is present.
-    final showMic = !hasContent && !isEditing && !kIsWeb;
-    if (showMic) {
-      return Semantics(
-        label: 'Record voice message',
-        button: true,
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onStartRecording,
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: context.surface,
-                shape: BoxShape.circle,
-                border: Border.all(color: context.border, width: 1),
-              ),
-              alignment: Alignment.center,
-              child: Icon(
-                Icons.mic_outlined,
-                size: 20,
-                color: context.textSecondary,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
+    // Three visual modes share one container so the transitions between
+    // them animate via AnimatedContainer + AnimatedSwitcher rather than
+    // snapping (mic ↔ send-arrow on first keystroke; send-arrow ↔ check
+    // on edit-mode entry; disabled ↔ enabled fill color).
+    final bool showMic = !hasContent && !isEditing && !kIsWeb;
 
+    final IconData iconData;
+    final Color iconColor;
     final Color fillColor;
-    if (!canSend) {
+    final bool showBorder;
+    final VoidCallback? onTap;
+    final String semanticLabel;
+    final ValueKey<String> iconKey;
+
+    if (showMic) {
+      iconData = Icons.mic_outlined;
+      iconColor = context.textSecondary;
       fillColor = context.surface;
+      showBorder = true;
+      onTap = onStartRecording;
+      semanticLabel = 'Record voice message';
+      iconKey = const ValueKey('mic');
     } else if (isEditing) {
-      fillColor = EchoTheme.online;
+      iconData = Icons.check_rounded;
+      iconColor = canSend ? Colors.white : context.textMuted;
+      fillColor = canSend ? EchoTheme.online : context.surface;
+      showBorder = !canSend;
+      onTap = canSend ? resolveSendAction() : null;
+      semanticLabel = 'Confirm edit';
+      iconKey = const ValueKey('check');
     } else {
-      fillColor = context.accent;
+      iconData = Icons.arrow_upward_rounded;
+      iconColor = canSend ? Colors.white : context.textMuted;
+      fillColor = canSend ? context.accent : context.surface;
+      showBorder = !canSend;
+      onTap = canSend ? resolveSendAction() : null;
+      semanticLabel = 'Send message';
+      iconKey = const ValueKey('send');
     }
-    final iconColor = canSend ? Colors.white : context.textMuted;
-    final showBorder = !canSend;
 
     final cryptoBlocked = isDm && !cryptoReady;
 
     Widget button = Semantics(
-      label: isEditing ? 'Confirm edit' : 'Send message',
+      label: semanticLabel,
       button: true,
-      enabled: canSend,
+      enabled: showMic ? true : canSend,
       child: Material(
         color: Colors.transparent,
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
-          onTap: canSend ? resolveSendAction() : null,
-          child: Container(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: MotionDurations.standard,
+            curve: MotionCurves.emphasis,
             width: 40,
             height: 40,
             decoration: BoxDecoration(
@@ -103,10 +101,15 @@ class SendButton extends ConsumerWidget {
                   : null,
             ),
             alignment: Alignment.center,
-            child: Icon(
-              isEditing ? Icons.check_rounded : Icons.arrow_upward_rounded,
-              size: 20,
-              color: iconColor,
+            child: AnimatedSwitcher(
+              duration: MotionDurations.quick,
+              switchInCurve: MotionCurves.emphasis,
+              switchOutCurve: MotionCurves.exit,
+              transitionBuilder: (child, animation) => ScaleTransition(
+                scale: animation,
+                child: FadeTransition(opacity: animation, child: child),
+              ),
+              child: Icon(iconData, key: iconKey, size: 20, color: iconColor),
             ),
           ),
         ),
