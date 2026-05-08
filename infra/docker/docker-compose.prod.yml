@@ -105,8 +105,10 @@ services:
 
   # Watchtower removed: auto-pulling `latest` every 5 minutes risks deploying
   # broken builds with zero human review.  Pin image versions via SERVER_VERSION
-  # and WEB_VERSION env vars and deploy manually or via CI/CD.
-  # To update:
+  # and WEB_VERSION env vars and deploy via the Prod Deploy workflow
+  # (.github/workflows/prod-deploy.yml), which fires automatically when a
+  # GitHub release publishes and is also workflow_dispatch-able for manual
+  # rolls / rollbacks.  Manual fallback if the workflow is unavailable:
   #   SERVER_VERSION=v1.2.3 WEB_VERSION=v1.2.3 docker compose pull && docker compose up -d
 
   backup:
