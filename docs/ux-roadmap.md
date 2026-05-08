@@ -258,9 +258,9 @@ the prior one feeling right.
 
 ### 3a — Ambient motion
 
-**Status:** sub-slice 1 (speaking-ring polish + per-puck audio
-radius) shipped. Sub-slices 2 (presence trails) and 3 (mesh ripple)
-remain open.
+**Status:** sub-slices 1 (speaking-ring polish + per-puck audio
+radius) and 2 (presence trails) shipped. Sub-slice 3 (mesh ripple)
+remains open and is gated on first introducing a vertex-mesh layer.
 
 **Goal:** The voice lounge feels alive, not static.
 
@@ -272,8 +272,12 @@ remain open.
   `_AudioRadiusPainter`; opacity floor raised so the pulse stays
   visible. Reduce-motion fully gated.
   (`apps/client/lib/src/widgets/voice_speaking_ring.dart`)
-- Presence trails — when a user moves their puck, a soft motion trail
-  fades behind them. **Open.**
+- ~~Presence trails~~ — shipped: each draggable puck leaves a short
+  fading wake of ghost circles on local drag and remote position
+  updates. Pure-Dart `PuckTrail` helper, `Ticker`-driven repaint
+  that pauses when the buffer drains, reduce-motion fully gated.
+  (`apps/client/lib/src/widgets/puck_trail.dart`,
+  `apps/client/lib/src/widgets/voice_canvas.dart`)
 - Nearby-mesh ripple — when someone speaks, the canvas vertex mesh
   near them subtly distorts (low amplitude, no distraction).
   **Open** — depends on first introducing a vertex-mesh layer.
