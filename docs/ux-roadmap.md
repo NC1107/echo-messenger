@@ -258,19 +258,28 @@ the prior one feeling right.
 
 ### 3a — Ambient motion
 
+**Status:** sub-slice 1 (speaking-ring polish + per-puck audio
+radius) shipped. Sub-slices 2 (presence trails) and 3 (mesh ripple)
+remain open.
+
 **Goal:** The voice lounge feels alive, not static.
 
 **Scope:**
 
-- Speaking-ring polish — smoother pulse curve, subtle audio-radius
-  glow, denser feedback at higher amplitude.
+- ~~Speaking-ring polish~~ + ~~per-puck audio-radius rings~~ — shipped:
+  each speaking participant now emits two outward-expanding rings
+  on top of the existing tight ring, painted via a single
+  `_AudioRadiusPainter`; opacity floor raised so the pulse stays
+  visible. Reduce-motion fully gated.
+  (`apps/client/lib/src/widgets/voice_speaking_ring.dart`)
 - Presence trails — when a user moves their puck, a soft motion trail
-  fades behind them.
-- Soft audio-radius visualization — concentric rings that pulse with
-  the speaker's audio level (similar to the existing speaking ring,
-  but at room scale, not per-tile).
+  fades behind them. **Open.**
 - Nearby-mesh ripple — when someone speaks, the canvas vertex mesh
   near them subtly distorts (low amplitude, no distraction).
+  **Open** — depends on first introducing a vertex-mesh layer.
+- Room-scale audio-radius visualization (concentric rings at
+  *room* scale rather than per-puck). **Optional follow-up** if the
+  per-puck version proves insufficient in dense rooms.
 
 **Acceptance:** Gut check — "feels like a place" rather than "feels
 like a screen." Nothing loud. All motion respects
