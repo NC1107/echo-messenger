@@ -180,8 +180,12 @@ low-risk, and unblocks every future onboarding / churn discussion.
 
 ## Phase 2 — Density tier (Cozy / Normal / Compact)
 
-**Goal:** Power users get Discord-compact density. New users get the
-current spacious default. Setting persists.
+**Status:** sidebar slice shipped. Message item / channel bar / settings
+row density follow-ups still open.
+
+**Goal:** Power users get Discord-compact density. New users get
+today's effective default (compact, matching the legacy
+`MessageLayout.compact` behavior). Setting persists.
 
 **Why now:** Density is the #1 user-power request in chat apps. Phase 1
 also depends on a notion of "default density" — codifying it here lets
