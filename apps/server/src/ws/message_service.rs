@@ -337,6 +337,7 @@ pub(super) async fn handle_send_message(
         &deliver,
         stored.id,
         conv_security.is_encrypted,
+        conv_kind == Some(ConversationKind::Group),
         recipient_device_contents,
     )
     .await;
@@ -848,6 +849,7 @@ pub(super) async fn fanout_message(
     message: &ServerMessage,
     stored_id: Uuid,
     is_encrypted: bool,
+    is_group: bool,
     recipient_device_contents: Option<RecipientDeviceContents>,
 ) {
     let Some(fields) = NewMessageFields::extract(message) else {
@@ -952,7 +954,10 @@ pub(super) async fn fanout_message(
     // `@everyone` does NOT suppress offline push: by design it should
     // notify *every* member, online or not, which is exactly what the
     // unmodified fanout already does.
-    let suppress_offline_push = !is_encrypted && mentions_broadcast(&fields.content, "here");
+    // `@here` is a group-only concept; in a 1:1 DM the literal text "@here"
+    // is just a string and must not silently drop the recipient's push.
+    let suppress_offline_push =
+        is_group && !is_encrypted && mentions_broadcast(&fields.content, "here");
 
     if suppress_offline_push && !offline_user_ids.is_empty() {
         // Audit trail for #451: suppressing pushes is observable abuse
