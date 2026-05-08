@@ -19,7 +19,6 @@ import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/livekit_voice_provider.dart';
-import '../providers/channels_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/notification_service.dart';
 import '../services/tray_service.dart';
@@ -1208,14 +1207,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       }),
     );
 
-    if (voiceActive && !_showingLounge) {
-      chatContent = Column(
-        children: [
-          _buildVoiceRejoinBanner(voiceRtc),
-          Expanded(child: chatContent),
-        ],
-      );
-    }
+    // Note: a "● <channel> — Tap to view voice" rejoin banner used to sit
+    // between the chat and a dismissed lounge.  It has been removed because
+    // the persistent VoiceDock at the bottom of the sidebar already shows
+    // the active voice channel name + status indicator + controls and is
+    // tappable to reopen the lounge -- the banner duplicated that affordance.
 
     return Scaffold(
       body: SafeArea(
@@ -1395,58 +1391,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 ),
               );
             }),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Thin banner shown above the chat when a voice session is active but the
-  /// lounge has been dismissed. Tapping it reopens the voice lounge.
-  Widget _buildVoiceRejoinBanner(LiveKitVoiceState voiceRtc) {
-    final channelsState = ref.read(channelsProvider);
-    final convId = voiceRtc.conversationId ?? '';
-    final channelId = voiceRtc.channelId ?? '';
-    final channels = channelsState.channelsFor(convId);
-    final channelName =
-        channels.where((c) => c.id == channelId).firstOrNull?.name ?? 'Voice';
-
-    return Semantics(
-      label: 'rejoin voice channel',
-      button: true,
-      child: Material(
-        color: EchoTheme.online.withValues(alpha: 0.12),
-        child: InkWell(
-          onTap: () => setState(() {
-            _showingLounge = true;
-            _userDismissedLounge = false;
-          }),
-          child: Container(
-            height: 40,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: context.border, width: 1),
-              ),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.graphic_eq, size: 16, color: EchoTheme.online),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '● $channelName — Tap to view voice',
-                    style: const TextStyle(
-                      color: EchoTheme.online,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Icon(Icons.chevron_right, size: 16, color: context.textMuted),
-              ],
-            ),
           ),
         ),
       ),

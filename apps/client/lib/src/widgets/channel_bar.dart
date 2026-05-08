@@ -314,9 +314,8 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
           );
       if (!mounted) return;
       widget.onVoiceChannelChanged(channel.id);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Joined ${channel.name}')));
+      // The voice dock + auto-show-lounge already give the user clear visual
+      // feedback that the join succeeded; the snackbar was redundant noise.
     }
   }
 
