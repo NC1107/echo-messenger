@@ -13,6 +13,12 @@ class Conversation {
   final String? lastMessageTimestamp;
   final String? lastMessageSender;
   final int unreadCount;
+
+  /// Number of unread messages that mention the local user (`@username`,
+  /// `@everyone`, or `@here`). Client-side state only — not serialized
+  /// to/from the server. Reset to 0 by [ConversationsNotifier.markAsRead].
+  final int mentionCount;
+
   final bool isMuted;
   final bool isPinned;
 
@@ -32,6 +38,7 @@ class Conversation {
     this.lastMessageTimestamp,
     this.lastMessageSender,
     this.unreadCount = 0,
+    this.mentionCount = 0,
     this.isMuted = false,
     this.isPinned = false,
     this.ttlSeconds,
@@ -112,6 +119,7 @@ class Conversation {
     String? lastMessageTimestamp,
     String? lastMessageSender,
     int? unreadCount,
+    int? mentionCount,
     bool? isMuted,
     bool? isPinned,
     Object? ttlSeconds = _sentinel,
@@ -128,6 +136,7 @@ class Conversation {
       lastMessageTimestamp: lastMessageTimestamp ?? this.lastMessageTimestamp,
       lastMessageSender: lastMessageSender ?? this.lastMessageSender,
       unreadCount: unreadCount ?? this.unreadCount,
+      mentionCount: mentionCount ?? this.mentionCount,
       isMuted: isMuted ?? this.isMuted,
       isPinned: isPinned ?? this.isPinned,
       ttlSeconds: ttlSeconds == _sentinel
@@ -151,6 +160,7 @@ class Conversation {
             lastMessageTimestamp == other.lastMessageTimestamp &&
             lastMessageSender == other.lastMessageSender &&
             unreadCount == other.unreadCount &&
+            mentionCount == other.mentionCount &&
             isMuted == other.isMuted &&
             isPinned == other.isPinned &&
             ttlSeconds == other.ttlSeconds &&
@@ -169,6 +179,7 @@ class Conversation {
     lastMessageTimestamp,
     lastMessageSender,
     unreadCount,
+    mentionCount,
     isMuted,
     isPinned,
     ttlSeconds,

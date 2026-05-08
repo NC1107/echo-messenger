@@ -198,13 +198,13 @@ class ConversationsNotifier extends StateNotifier<ConversationsState>
     }
   }
 
-  /// Mark a conversation as read (reset unread count).
+  /// Mark a conversation as read (reset unread + mention counts).
   void markAsRead(String conversationId) {
     final updated = List<Conversation>.from(state.conversations);
     final index = updated.indexWhere((c) => c.id == conversationId);
 
     if (index >= 0) {
-      updated[index] = updated[index].copyWith(unreadCount: 0);
+      updated[index] = updated[index].copyWith(unreadCount: 0, mentionCount: 0);
       state = state.copyWith(conversations: updated);
       _updateTabBadge();
     }
@@ -212,13 +212,12 @@ class ConversationsNotifier extends StateNotifier<ConversationsState>
 
   /// Send read receipt to server.
   Future<void> sendReadReceipt(String conversationId) async {
-    // Save old count so we can restore it if the server call fails.
-    final oldCount =
-        state.conversations
-            .where((c) => c.id == conversationId)
-            .firstOrNull
-            ?.unreadCount ??
-        0;
+    // Save old counts so we can restore them if the server call fails.
+    final oldConv = state.conversations
+        .where((c) => c.id == conversationId)
+        .firstOrNull;
+    final oldUnread = oldConv?.unreadCount ?? 0;
+    final oldMention = oldConv?.mentionCount ?? 0;
 
     markAsRead(conversationId);
     final privacy = ref.read(privacyProvider);
@@ -237,12 +236,15 @@ class ConversationsNotifier extends StateNotifier<ConversationsState>
         '[Conversations] sendReadReceipt failed for '
         '$conversationId: $e',
       );
-      // Rollback: restore the previous unread count so the badge reappears.
-      if (oldCount > 0) {
+      // Rollback: restore the previous counts so the badges reappear.
+      if (oldUnread > 0 || oldMention > 0) {
         final rollback = List<Conversation>.from(state.conversations);
         final idx = rollback.indexWhere((c) => c.id == conversationId);
         if (idx >= 0) {
-          rollback[idx] = rollback[idx].copyWith(unreadCount: oldCount);
+          rollback[idx] = rollback[idx].copyWith(
+            unreadCount: oldUnread,
+            mentionCount: oldMention,
+          );
           state = state.copyWith(conversations: rollback);
           _updateTabBadge();
         }
