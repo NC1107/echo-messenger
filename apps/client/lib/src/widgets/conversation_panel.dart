@@ -17,8 +17,7 @@ import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
-import '../providers/theme_provider.dart'
-    show MessageLayout, messageLayoutProvider;
+import '../providers/theme_provider.dart' show uiDensityProvider;
 import '../utils/time_utils.dart';
 import 'avatar_utils.dart';
 import 'conversation_item.dart';
@@ -1449,11 +1448,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
           // Use fixed itemExtent when no section headers/dividers for faster layout.
-          // Compact mode uses tighter rows to match Slack/Discord density (#427).
+          // Three-way density (UX roadmap Phase 2): cozy / normal / compact.
           itemExtent: extraItems == 0
-              ? (ref.watch(messageLayoutProvider) == MessageLayout.compact
-                    ? kConversationItemHeightCompact
-                    : kConversationItemHeight)
+              ? conversationItemHeightFor(ref.watch(uiDensityProvider))
               : null,
           itemCount: sorted.length + extraItems,
           itemBuilder: (context, index) => _buildListItem(

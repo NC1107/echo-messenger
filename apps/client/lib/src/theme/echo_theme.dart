@@ -1222,6 +1222,34 @@ extension EchoColors on BuildContext {
   Color get recvBubble => echo.recvBubble;
   Color get cardRowBg => echo.resolvedCardRowBg;
   Gradient? get chatBgGradient => echo.chatBgGradient;
+
+  // ---------------------------------------------------------------------------
+  // Sidebar state hierarchy tokens (UX roadmap Phase 1).
+  // Derived from existing palette so themes don't need per-theme overrides;
+  // promote to ThemeExtension fields if specific themes ever need to retune.
+  // ---------------------------------------------------------------------------
+
+  /// Subtle accent-tinted background applied to a sidebar row when the
+  /// conversation has unread messages. ~6% opacity keeps it readable
+  /// alongside hover and selected states.
+  Color get unreadRowTint => accent.withValues(alpha: 0.06);
+
+  /// Full-saturation accent used for the 4px-wide left edge bar that marks
+  /// the actively-selected conversation. Stronger signal than the existing
+  /// row tint alone.
+  Color get activeRowAccent => accent;
+
+  /// Distinct color for the mention indicator badge (`@`). Reuses the
+  /// shared danger/warning red so unread vs. mention badges read
+  /// differently at a glance — accent for unread count, danger for
+  /// "you were mentioned."
+  Color get mentionBadgeBg => EchoTheme.danger;
+
+  /// Reduced-contrast text color for muted conversations. Darker than
+  /// [textMuted] so the row reads as "present but quiet" rather than
+  /// "secondary." Applied to name, snippet, timestamp, and the presence
+  /// dot when [Conversation.isMuted] is true.
+  Color get mutedSurface => textMuted.withValues(alpha: 0.6);
 }
 
 /// Shared layout tokens for sectioned card lists (e.g. Settings).

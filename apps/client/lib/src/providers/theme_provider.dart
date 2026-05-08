@@ -23,6 +23,7 @@ enum AppThemeSelection {
 
 const _kThemeKey = 'echo_theme_mode';
 const _kMessageLayoutKey = 'echo_message_layout';
+const _kUiDensityKey = 'echo_ui_density';
 
 /// Migrated from `StateNotifier` to `@riverpod` Notifier (audit 2026-04-30).
 /// Class is named `AppTheme` (not `Theme`) to avoid colliding with Flutter's
@@ -109,6 +110,56 @@ class MessageLayoutNotifier extends _$MessageLayoutNotifier {
 /// short names.
 final themeProvider = appThemeProvider;
 final messageLayoutProvider = messageLayoutNotifierProvider;
+final uiDensityProvider = uIDensityNotifierProvider;
+
+// ---------------------------------------------------------------------------
+// UI density: cozy (spacious) / normal / compact (Discord-style).
+//
+// Independent of [MessageLayout] (which controls bubble style). Phase 2 of
+// docs/ux-roadmap.md.
+// ---------------------------------------------------------------------------
+
+enum UIDensity { cozy, normal, compact }
+
+@Riverpod(keepAlive: true)
+class UIDensityNotifier extends _$UIDensityNotifier {
+  @override
+  UIDensity build() {
+    _load();
+    // Today's effective default is compact: MessageLayoutNotifier defaults
+    // to MessageLayout.compact, which currently shrinks the sidebar.  Match
+    // that here so brand-new users (no prefs at all) see no behavior change.
+    return UIDensity.compact;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kUiDensityKey);
+    if (raw == null) {
+      // First read after upgrade.  If the user explicitly chose a
+      // non-compact MessageLayout (bubbles or plain), their sidebar
+      // was rendering at the spacious 68px height — preserve that by
+      // setting density to normal.  Otherwise keep the build() default
+      // (compact), matching today's behavior.
+      final legacy = prefs.getString(_kMessageLayoutKey);
+      if (legacy != null && legacy != 'compact') {
+        state = UIDensity.normal;
+      }
+      return;
+    }
+    state = switch (raw) {
+      'cozy' => UIDensity.cozy,
+      'compact' => UIDensity.compact,
+      _ => UIDensity.normal,
+    };
+  }
+
+  Future<void> setDensity(UIDensity density) async {
+    state = density;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kUiDensityKey, density.name);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Custom color overrides: user-selectable primary and accent (issue #613)

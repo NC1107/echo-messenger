@@ -102,6 +102,7 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 - Dart production: `apps/client/lib/src/services/signal_protocol.dart`, `signal_x3dh.dart`, `signal_session.dart`
 - 1:1 messages: X3DH key exchange + Double Ratchet (end-to-end encrypted)
 - Group messages: group key envelopes infrastructure exists (`group_crypto_service.dart`, `routes/group_keys.rs`) but not fully wired. When `is_encrypted=true` is enabled on a group, `sendGroupMessage` hard-fails on encryption errors instead of falling back to plaintext (#344) — server-side ciphertext-only enforcement is tracked separately (#591)
+- `@everyone` / `@here` broadcast mentions are surfaced in the group mention autocomplete picker (#451). `@here` causes the server to skip APNs push to offline members (plaintext groups only; encrypted groups are unaffected because the literal text never appears in ciphertext).
 
 **Voice & Video** (LiveKit integration):
 - Server: `routes/voice.rs` handles call signaling and LiveKit token generation

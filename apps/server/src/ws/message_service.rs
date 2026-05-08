@@ -337,6 +337,7 @@ pub(super) async fn handle_send_message(
         &deliver,
         stored.id,
         conv_security.is_encrypted,
+        conv_kind == Some(ConversationKind::Group),
         recipient_device_contents,
     )
     .await;
@@ -848,6 +849,7 @@ pub(super) async fn fanout_message(
     message: &ServerMessage,
     stored_id: Uuid,
     is_encrypted: bool,
+    is_group: bool,
     recipient_device_contents: Option<RecipientDeviceContents>,
 ) {
     let Some(fields) = NewMessageFields::extract(message) else {
@@ -939,7 +941,45 @@ pub(super) async fn fanout_message(
         send_delivery_confirmation(state, sender_id, sender_device_id, stored_id, conv_id).await;
     }
 
-    if !offline_user_ids.is_empty() {
+    // #451: `@here` only notifies online members.  When the plaintext body
+    // contains a standalone `@here`, drop the offline list so no APNs push
+    // fires.  Encrypted groups are skipped: the server can't read the
+    // ciphertext, and `@here` won't appear literally inside it.
+    //
+    // Privacy trade-off: this is the only path where the server inspects
+    // message body content outside of storage / sender-routing.  We keep
+    // the read narrow (single substring scan, no logging of body bytes)
+    // and gate it on `!is_encrypted` so encrypted groups are unaffected.
+    //
+    // `@everyone` does NOT suppress offline push: by design it should
+    // notify *every* member, online or not, which is exactly what the
+    // unmodified fanout already does.
+    // `@here` is a group-only concept; in a 1:1 DM the literal text "@here"
+    // is just a string and must not silently drop the recipient's push.
+    //
+    // Guarded behind `!offline_user_ids.is_empty()` so the body scan
+    // is skipped entirely when no offline recipients exist (the only
+    // path where suppression matters).  `mentions_broadcast` itself
+    // already short-circuits on content with no '@', but this guard
+    // skips even the call setup on the hot path.
+    let suppress_offline_push = !offline_user_ids.is_empty()
+        && is_group
+        && !is_encrypted
+        && mentions_broadcast(&fields.content, "here");
+
+    if suppress_offline_push {
+        // Audit trail for #451: suppressing pushes is observable abuse
+        // surface (any member can silence offline notifications). Log
+        // counts only — no body or recipient identifiers.
+        tracing::info!(
+            %sender_id,
+            %conv_id,
+            suppressed = offline_user_ids.len(),
+            "at_here_suppressed_offline_push"
+        );
+    }
+
+    if !offline_user_ids.is_empty() && !suppress_offline_push {
         spawn_push_notifications(
             state.pool.clone(),
             offline_user_ids,
@@ -950,6 +990,41 @@ pub(super) async fn fanout_message(
             stored_id,
         );
     }
+}
+
+/// Returns true when `content` contains `@<keyword>` as a standalone token.
+///
+/// Boundaries are start/end of string or any non-word character (anything
+/// other than alphanumeric or underscore).  Case-insensitive so users
+/// typing `@Here` or `@HERE` are still routed correctly.
+pub(super) fn mentions_broadcast(content: &str, keyword: &str) -> bool {
+    // Hot path: most messages don't contain '@' at all.  Bail before any
+    // allocation — `str::contains` for a single ASCII byte is SIMD-fast.
+    if !content.contains('@') {
+        return false;
+    }
+    let target = format!("@{}", keyword.to_lowercase());
+    let lower = content.to_lowercase();
+    let mut start = 0;
+    while let Some(rel) = lower[start..].find(&target) {
+        let abs = start + rel;
+        let after = abs + target.len();
+        let left_ok = abs == 0
+            || !lower[..abs]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        let right_ok = after == lower.len()
+            || !lower[after..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        if left_ok && right_ok {
+            return true;
+        }
+        start = abs + target.len();
+    }
+    false
 }
 
 /// Deliver any messages that were stored while the user was offline, then mark
@@ -1123,5 +1198,63 @@ async fn deliver_one_batch(
                 .hub
                 .send_to(&msg.sender_id, WsMessage::Text(json.into()));
         }
+    }
+}
+
+#[cfg(test)]
+mod broadcast_tests {
+    use super::mentions_broadcast;
+
+    #[test]
+    fn matches_lone_at_here() {
+        assert!(mentions_broadcast("@here", "here"));
+    }
+
+    #[test]
+    fn matches_at_here_with_surrounding_text() {
+        assert!(mentions_broadcast("hi @here please look", "here"));
+    }
+
+    #[test]
+    fn matches_at_here_with_punctuation() {
+        assert!(mentions_broadcast("@here, please", "here"));
+        assert!(mentions_broadcast("psst.@here!", "here"));
+    }
+
+    #[test]
+    fn rejects_at_hereafter() {
+        assert!(!mentions_broadcast("@hereafter we go", "here"));
+    }
+
+    #[test]
+    fn rejects_email_like_x_at_here() {
+        assert!(!mentions_broadcast("x@here", "here"));
+    }
+
+    #[test]
+    fn rejects_underscore_suffix() {
+        assert!(!mentions_broadcast("@here_lounge", "here"));
+    }
+
+    #[test]
+    fn case_insensitive() {
+        assert!(mentions_broadcast("Yo @Here folks", "here"));
+        assert!(mentions_broadcast("YO @HERE FOLKS", "here"));
+    }
+
+    #[test]
+    fn matches_everyone_too() {
+        assert!(mentions_broadcast("@everyone get in here", "everyone"));
+        assert!(!mentions_broadcast("@everyones", "everyone"));
+    }
+
+    #[test]
+    fn empty_content_is_false() {
+        assert!(!mentions_broadcast("", "here"));
+    }
+
+    #[test]
+    fn no_match_is_false() {
+        assert!(!mentions_broadcast("normal message", "here"));
     }
 }

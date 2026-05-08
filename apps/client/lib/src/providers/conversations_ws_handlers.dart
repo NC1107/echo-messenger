@@ -17,12 +17,16 @@ mixin _ConversationsWsHandlersMixin on StateNotifier<ConversationsState> {
   ///
   /// Set [incrementUnread] to false for the sender's own messages so the
   /// unread badge is not bumped for messages the user just sent.
+  /// Set [isMention] to true when the decrypted message body contains a
+  /// mention of the local user (`@<myUsername>`, `@everyone`, `@here`);
+  /// the mentionCount badge is bumped alongside the unread count.
   void onNewMessage({
     required String conversationId,
     required String content,
     required String timestamp,
     required String senderUsername,
     bool incrementUnread = true,
+    bool isMention = false,
   }) {
     // System sentinel messages (#663) must not appear in the conversation
     // preview or increment the unread badge.
@@ -39,11 +43,15 @@ mixin _ConversationsWsHandlersMixin on StateNotifier<ConversationsState> {
 
     if (index >= 0) {
       final conv = conversations[index];
+      final shouldBumpMention = incrementUnread && isMention;
       final updatedConv = conv.copyWith(
         lastMessage: content,
         lastMessageTimestamp: timestamp,
         lastMessageSender: senderUsername,
         unreadCount: incrementUnread ? conv.unreadCount + 1 : conv.unreadCount,
+        mentionCount: shouldBumpMention
+            ? conv.mentionCount + 1
+            : conv.mentionCount,
       );
 
       // Build new list updating only the changed conversation and moving

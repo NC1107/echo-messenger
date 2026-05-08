@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
@@ -13,6 +14,7 @@ import '../providers/canvas_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
+import 'puck_trail.dart';
 import 'voice_speaking_ring.dart';
 
 const double _kAvatarSize = 48.0;
@@ -558,8 +560,74 @@ class _DraggableAvatar extends StatefulWidget {
   State<_DraggableAvatar> createState() => _DraggableAvatarState();
 }
 
-class _DraggableAvatarState extends State<_DraggableAvatar> {
+class _DraggableAvatarState extends State<_DraggableAvatar>
+    with SingleTickerProviderStateMixin {
   CanvasPoint? _localPos;
+
+  /// Buffer of recent positions used to paint the presence trail
+  /// (Phase 3a sub-slice 2 of `docs/ux-roadmap.md`).
+  final PuckTrail _trail = PuckTrail();
+
+  /// Drives a 60Hz repaint of the trail so old samples fade smoothly.
+  /// Only ticks while the buffer holds at least one sample.
+  late final Ticker _trailTicker;
+
+  /// Cached reduce-motion value; refreshed on `didChangeDependencies`
+  /// and `didUpdateWidget` so we don't sample inside `MediaQuery.of`
+  /// during paint.
+  bool _reduceMotion = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _trailTicker = createTicker(_onTrailTick);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduceMotion = MediaQuery.of(context).disableAnimations;
+    if (_reduceMotion) _stopTrail();
+  }
+
+  @override
+  void didUpdateWidget(_DraggableAvatar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final prev = oldWidget.currentPos;
+    final next = widget.currentPos;
+    if (!_reduceMotion && (prev.x != next.x || prev.y != next.y)) {
+      // Remote (or post-drag committed) position arrived — record the
+      // *previous* point so the trail starts where the puck just was.
+      _pushTrailSample(prev);
+    }
+  }
+
+  @override
+  void dispose() {
+    _trailTicker.dispose();
+    _trail.clear();
+    super.dispose();
+  }
+
+  void _pushTrailSample(CanvasPoint pos) {
+    if (_reduceMotion) return;
+    _trail.addSample(pos, DateTime.now());
+    if (!_trailTicker.isActive) _trailTicker.start();
+  }
+
+  void _stopTrail() {
+    if (_trailTicker.isActive) _trailTicker.stop();
+    _trail.clear();
+  }
+
+  void _onTrailTick(Duration _) {
+    final now = DateTime.now();
+    _trail.prune(now);
+    if (_trail.isEmpty) {
+      _trailTicker.stop();
+    }
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -634,10 +702,42 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
       ),
     );
 
+    // Phase 3a sub-slice 2: paint the presence trail BEHIND the
+    // avatar circle.  CustomPaint is sized to the avatar but draws
+    // freely (negative offsets) — the surrounding `Stack(Clip.none)`
+    // lets ghost circles render to the left/right/up/down of the
+    // puck without being clipped at the immediate stack bounds.
+    final trailSamples = _reduceMotion
+        ? const <RenderedTrailSample>[]
+        : _trail.render(
+            current: _localPos ?? widget.currentPos,
+            canvasSize: widget.canvasSize,
+            now: DateTime.now(),
+          );
+    final avatarWithTrail = trailSamples.isEmpty
+        ? avatar
+        : Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              IgnorePointer(
+                child: CustomPaint(
+                  size: const Size(_kAvatarSize, _kAvatarSize),
+                  painter: _TrailPainter(
+                    samples: trailSamples,
+                    color: EchoTheme.online,
+                    radius: _kAvatarHalfSize * 0.45,
+                  ),
+                ),
+              ),
+              avatar,
+            ],
+          );
+
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        avatar,
+        avatarWithTrail,
         const SizedBox(height: 4),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -674,6 +774,10 @@ class _DraggableAvatarState extends State<_DraggableAvatar> {
             x: (base.x + dx).clamp(0.0, 1.0),
             y: (base.y + dy).clamp(0.0, 1.0),
           );
+          // Record where the puck *was* before this update so the
+          // trail tracks the actual motion path; `_localPos` becomes
+          // the new "current" used by the trail painter.
+          _pushTrailSample(base);
           _localPos = newPos;
           widget.onDrag(newPos);
         },
@@ -783,4 +887,47 @@ class _CanvasImageWidgetState extends State<_CanvasImageWidget> {
       ),
     );
   }
+}
+
+/// Paints fading ghost circles at past positions of a puck so motion
+/// reads as "presence" rather than a snapping cursor.
+///
+/// Phase 3a sub-slice 2 of `docs/ux-roadmap.md`.  `samples` is built
+/// fresh each frame by `PuckTrail.render`; the painter just iterates
+/// and draws.  No allocations beyond the per-call `Paint` — and we
+/// reuse a single Paint instance across the loop.
+class _TrailPainter extends CustomPainter {
+  final List<RenderedTrailSample> samples;
+  final Color color;
+
+  /// Radius of each ghost circle.  Smaller than the puck itself so
+  /// trails read as a wake, not a doppelgänger.
+  final double radius;
+
+  const _TrailPainter({
+    required this.samples,
+    required this.color,
+    required this.radius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (samples.isEmpty) return;
+    final center = Offset(size.width / 2, size.height / 2);
+    final paint = Paint()..style = PaintingStyle.fill;
+    for (final s in samples) {
+      // Trails are subdued — multiply by 0.45 so the puck stays the
+      // visual anchor and the wake stays in the periphery.
+      final alpha = (s.opacity * 0.45).clamp(0.0, 1.0);
+      if (alpha < 0.04) continue;
+      paint.color = color.withValues(alpha: alpha);
+      canvas.drawCircle(center + s.offset, radius, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrailPainter old) =>
+      !identical(old.samples, samples) ||
+      old.color != color ||
+      old.radius != radius;
 }

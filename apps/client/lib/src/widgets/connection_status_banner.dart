@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/websocket_provider.dart';
 import '../theme/echo_theme.dart';
+import '../theme/motion_tokens.dart';
 
 /// Displays a slim banner at the top of the chat area to indicate WebSocket
 /// connection status. Only visible when disconnected or briefly when reconnecting.
@@ -131,8 +132,8 @@ class _ConnectionStatusBannerState
         wsState.wasReplaced;
 
     return AnimatedSize(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
+      duration: MotionDurations.standard,
+      curve: MotionCurves.entrance,
       child: Container(
         width: double.infinity,
         color: status.color.withValues(alpha: 0.15),

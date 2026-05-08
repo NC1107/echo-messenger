@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:echo_app/src/models/chat_message.dart';
 import 'package:echo_app/src/models/conversation.dart';
 import 'package:echo_app/src/providers/chat_provider.dart';
+import 'package:echo_app/src/providers/theme_provider.dart';
 import 'package:echo_app/src/theme/echo_theme.dart';
 import 'package:echo_app/src/widgets/conversation_item.dart';
 
@@ -18,6 +19,7 @@ Conversation _makeConversation({
   String? lastMessageTimestamp,
   String? lastMessageSender,
   int unreadCount = 0,
+  int mentionCount = 0,
   bool isMuted = false,
   List<ConversationMember> members = const [],
 }) {
@@ -29,6 +31,7 @@ Conversation _makeConversation({
     lastMessageTimestamp: lastMessageTimestamp,
     lastMessageSender: lastMessageSender,
     unreadCount: unreadCount,
+    mentionCount: mentionCount,
     isMuted: isMuted,
     members: members,
   );
@@ -689,6 +692,287 @@ void main() {
       );
     });
   });
+
+  group('ConversationItem state hierarchy (UX roadmap Phase 1)', () {
+    testWidgets('mention badge renders when mentionCount > 0', (tester) async {
+      final conv = _makeConversation(
+        lastMessage: 'hi @me',
+        mentionCount: 2,
+        unreadCount: 5,
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:00',
+          onTap: () {},
+        ),
+      );
+      await tester.pump();
+      expect(find.text('@'), findsOneWidget);
+    });
+
+    testWidgets('mention badge absent when mentionCount is 0', (tester) async {
+      final conv = _makeConversation(
+        lastMessage: 'hello',
+        unreadCount: 3,
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:00',
+          onTap: () {},
+        ),
+      );
+      await tester.pump();
+      expect(find.text('@'), findsNothing);
+    });
+
+    testWidgets('selected conversation renders an active edge bar', (
+      tester,
+    ) async {
+      final conv = _makeConversation(
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+
+      // Render unselected first.
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:00',
+          onTap: () {},
+        ),
+      );
+      await tester.pump();
+      final unselectedPositioned = find
+          .descendant(
+            of: find.byType(ConversationItem),
+            matching: find.byType(Positioned),
+          )
+          .evaluate()
+          .length;
+
+      // Then render selected; the bar adds exactly one more Positioned widget.
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: true,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:00',
+          onTap: () {},
+        ),
+      );
+      await tester.pump();
+      final selectedPositioned = find
+          .descendant(
+            of: find.byType(ConversationItem),
+            matching: find.byType(Positioned),
+          )
+          .evaluate()
+          .length;
+
+      expect(selectedPositioned, equals(unselectedPositioned + 1));
+    });
+
+    testWidgets('semantics label includes "mentioned" when mentionCount > 0', (
+      tester,
+    ) async {
+      final label = composeConversationItemSemanticsLabel(
+        displayName: 'alice',
+        unreadCount: 4,
+        mentionCount: 1,
+        muted: false,
+        snippet: 'hi',
+      );
+      expect(label, contains('mentioned'));
+      expect(label, contains('4 unread'));
+    });
+
+    testWidgets('cozy density renders 84px row + 22px avatar radius', (
+      tester,
+    ) async {
+      final conv = _makeConversation(
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:00',
+          onTap: () {},
+        ),
+        overrides: [
+          uiDensityProvider.overrideWith(
+            () => _StaticUIDensity(UIDensity.cozy),
+          ),
+        ],
+      );
+      await tester.pump();
+      expect(
+        conversationItemHeightFor(UIDensity.cozy),
+        kConversationItemHeightCozy,
+      );
+      // Settle one more frame so AnimatedContainer reaches its target.
+      await tester.pumpAndSettle();
+      final container = tester.widget<AnimatedContainer>(
+        find
+            .descendant(
+              of: find.byType(ConversationItem),
+              matching: find.byType(AnimatedContainer),
+            )
+            .first,
+      );
+      expect(
+        container.constraints?.minHeight ?? 0,
+        kConversationItemHeightCozy,
+      );
+    });
+
+    testWidgets('compact density renders 52px row', (tester) async {
+      final conv = _makeConversation(
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:00',
+          onTap: () {},
+        ),
+        overrides: [
+          uiDensityProvider.overrideWith(
+            () => _StaticUIDensity(UIDensity.compact),
+          ),
+        ],
+      );
+      await tester.pumpAndSettle();
+      final container = tester.widget<AnimatedContainer>(
+        find
+            .descendant(
+              of: find.byType(ConversationItem),
+              matching: find.byType(AnimatedContainer),
+            )
+            .first,
+      );
+      expect(
+        container.constraints?.minHeight ?? 0,
+        kConversationItemHeightCompact,
+      );
+    });
+
+    testWidgets('normal density renders 68px row (default)', (tester) async {
+      final conv = _makeConversation(
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:00',
+          onTap: () {},
+        ),
+        overrides: [
+          uiDensityProvider.overrideWith(
+            () => _StaticUIDensity(UIDensity.normal),
+          ),
+        ],
+      );
+      await tester.pumpAndSettle();
+      final container = tester.widget<AnimatedContainer>(
+        find
+            .descendant(
+              of: find.byType(ConversationItem),
+              matching: find.byType(AnimatedContainer),
+            )
+            .first,
+      );
+      expect(container.constraints?.minHeight ?? 0, kConversationItemHeight);
+    });
+
+    testWidgets('muted conversation uses dimmer name color', (tester) async {
+      final muted = _makeConversation(
+        lastMessage: 'quiet message',
+        isMuted: true,
+        unreadCount: 1,
+        members: const [
+          ConversationMember(userId: 'peer-id', username: 'alice'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: muted,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:00',
+          onTap: () {},
+        ),
+      );
+      await tester.pump();
+
+      final ctx = tester.element(find.byType(ConversationItem));
+      final nameWidget = tester.widget<Text>(find.text('alice'));
+      // Muted name should be textMuted, not textPrimary.
+      expect(nameWidget.style?.color, equals(ctx.textMuted));
+      expect(nameWidget.style?.color, isNot(equals(ctx.textPrimary)));
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Test override that returns a static UIDensity without persisting.
+// Bypasses the SharedPreferences load that the production notifier runs.
+// ---------------------------------------------------------------------------
+class _StaticUIDensity extends UIDensityNotifier {
+  final UIDensity _density;
+  _StaticUIDensity(this._density);
+
+  @override
+  UIDensity build() => _density;
 }
 
 // ---------------------------------------------------------------------------

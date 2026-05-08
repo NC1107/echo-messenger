@@ -17,6 +17,7 @@ import '../services/notification_service.dart';
 import '../services/sound_service.dart';
 import '../utils/crypto_utils.dart';
 import '../utils/debug_log.dart';
+import '../utils/mention_detection.dart';
 import 'auth_provider.dart';
 import 'canvas_provider.dart';
 import 'channels_provider.dart';
@@ -375,6 +376,15 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
       MessageCache.cacheMessages(conversationId, [msg]);
     }
 
+    // Mention detection runs over the *decrypted* plaintext. Skip the
+    // sender's own messages — we don't want to badge someone for
+    // mentioning themselves. Sentinel-shaped strings (failed decrypt,
+    // placeholders) won't contain real mentions and are filtered by
+    // _decryptedPreviews logic upstream.
+    final isMention =
+        fromUserId != myUserId &&
+        containsMention(decryptedContent, ref.read(authProvider).username);
+
     // Update conversations list with decrypted preview
     ref
         .read(conversationsProvider.notifier)
@@ -383,6 +393,7 @@ mixin WsMessageHandler on StateNotifier<WebSocketState> {
           content: decryptedContent,
           timestamp: timestamp,
           senderUsername: senderUsername,
+          isMention: isMention,
         );
 
     // Notify with decrypted content so users never see ciphertext.

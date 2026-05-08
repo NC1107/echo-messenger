@@ -257,6 +257,48 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
                   .read(messageLayoutProvider.notifier)
                   .setLayout(MessageLayout.plain),
             ),
+            const SizedBox(height: 32),
+            // Density tier — UX roadmap Phase 2.  Independent of message
+            // layout: density tunes sidebar row spacing without changing
+            // bubble style.
+            Text(
+              'Density',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _LayoutOption(
+              label: 'Cozy',
+              subtitle: 'More breathing room',
+              icon: Icons.density_large,
+              isSelected: ref.watch(uiDensityProvider) == UIDensity.cozy,
+              onTap: () => ref
+                  .read(uiDensityProvider.notifier)
+                  .setDensity(UIDensity.cozy),
+            ),
+            const SizedBox(height: 8),
+            _LayoutOption(
+              label: 'Normal',
+              subtitle: 'Balanced default',
+              icon: Icons.density_medium,
+              isSelected: ref.watch(uiDensityProvider) == UIDensity.normal,
+              onTap: () => ref
+                  .read(uiDensityProvider.notifier)
+                  .setDensity(UIDensity.normal),
+            ),
+            const SizedBox(height: 8),
+            _LayoutOption(
+              label: 'Compact',
+              subtitle: 'Power-user dense, Discord-style',
+              icon: Icons.density_small,
+              isSelected: ref.watch(uiDensityProvider) == UIDensity.compact,
+              onTap: () => ref
+                  .read(uiDensityProvider.notifier)
+                  .setDensity(UIDensity.compact),
+            ),
             const SizedBox(height: 24),
             // GIF autoplay
             SwitchListTile.adaptive(

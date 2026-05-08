@@ -14,6 +14,7 @@ import '../../providers/livekit_voice_provider.dart';
 import '../../providers/screen_share_provider.dart';
 import '../../providers/voice_settings_provider.dart';
 import '../../theme/echo_theme.dart';
+import '../../theme/motion_tokens.dart';
 import 'lounge_constants.dart';
 
 class FloatingDock extends ConsumerWidget {
@@ -291,7 +292,8 @@ class FloatingDock extends ConsumerWidget {
           },
           borderRadius: BorderRadius.circular(20),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
+            duration: MotionDurations.quick,
+            curve: MotionCurves.entrance,
             width: 40,
             height: 40,
             decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
@@ -389,7 +391,8 @@ class DockButtonWithSubmenu extends StatelessWidget {
               },
               borderRadius: BorderRadius.circular(20),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
+                duration: MotionDurations.quick,
+                curve: MotionCurves.entrance,
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(

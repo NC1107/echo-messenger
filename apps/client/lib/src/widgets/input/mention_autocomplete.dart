@@ -6,7 +6,8 @@ import '../../theme/echo_theme.dart';
 /// Displays an autocomplete popup for @-mentioning conversation members.
 ///
 /// Sits above the input bar and filters members based on [mentionQuery].
-/// When a member is tapped, [onMentionSelected] fires with their username.
+/// When a row is tapped, [onMentionSelected] fires with the username
+/// (or the broadcast keyword `everyone` / `here`).
 class MentionAutocomplete extends StatelessWidget {
   final List<ConversationMember> members;
   final String mentionQuery;
@@ -19,6 +20,20 @@ class MentionAutocomplete extends StatelessWidget {
     required this.onMentionSelected,
   });
 
+  /// Broadcast keywords (`@everyone`, `@here`) surfaced alongside member rows.
+  static const List<_BroadcastMention> _broadcasts = [
+    _BroadcastMention(
+      keyword: 'everyone',
+      icon: Icons.campaign_outlined,
+      subtitle: 'Notify everyone',
+    ),
+    _BroadcastMention(
+      keyword: 'here',
+      icon: Icons.bolt_outlined,
+      subtitle: 'Notify online members',
+    ),
+  ];
+
   List<ConversationMember> get _filteredMembers {
     if (mentionQuery.isEmpty) return members;
     return members
@@ -26,13 +41,32 @@ class MentionAutocomplete extends StatelessWidget {
         .toList();
   }
 
+  List<_BroadcastMention> get _filteredBroadcasts {
+    if (mentionQuery.isEmpty) return _broadcasts;
+    // Defensive lowercase: callers from this codebase already pass a
+    // lowercased query (extractMentionQuery normalizes it), but the
+    // public API should not silently drop suggestions for a mixed-case
+    // query supplied by a future caller.
+    final q = mentionQuery.toLowerCase();
+    return _broadcasts.where((b) => b.keyword.startsWith(q)).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final filtered = _filteredMembers;
-    if (filtered.isEmpty) return const SizedBox.shrink();
+    final memberRows = _filteredMembers;
+    final broadcastRows = _filteredBroadcasts;
+    if (memberRows.isEmpty && broadcastRows.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // ListView uses `reverse: true`, so item 0 paints at the bottom (next
+    // to the text field).  Members come first (lower indices) so they sit
+    // closest to the cursor; broadcasts get pushed to the top of the
+    // picker — they're rarer and visually distinct.
+    final total = memberRows.length + broadcastRows.length;
 
     return Container(
-      constraints: const BoxConstraints(maxHeight: 160),
+      constraints: const BoxConstraints(maxHeight: 200),
       margin: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
         color: context.surface,
@@ -42,14 +76,77 @@ class MentionAutocomplete extends StatelessWidget {
       child: ListView.builder(
         reverse: true,
         padding: EdgeInsets.zero,
-        itemCount: filtered.length,
+        itemCount: total,
         itemBuilder: (context, i) {
-          final member = filtered[i];
-          return _MentionItem(
-            member: member,
-            onTap: () => onMentionSelected(member.username),
+          if (i < memberRows.length) {
+            final member = memberRows[i];
+            return _MentionItem(
+              member: member,
+              onTap: () => onMentionSelected(member.username),
+            );
+          }
+          final broadcast = broadcastRows[i - memberRows.length];
+          return _BroadcastMentionItem(
+            broadcast: broadcast,
+            onTap: () => onMentionSelected(broadcast.keyword),
           );
         },
+      ),
+    );
+  }
+}
+
+class _BroadcastMention {
+  final String keyword;
+  final IconData icon;
+  final String subtitle;
+
+  const _BroadcastMention({
+    required this.keyword,
+    required this.icon,
+    required this.subtitle,
+  });
+}
+
+class _BroadcastMentionItem extends StatelessWidget {
+  final _BroadcastMention broadcast;
+  final VoidCallback onTap;
+
+  const _BroadcastMentionItem({required this.broadcast, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'mention @${broadcast.keyword}',
+      hint: broadcast.subtitle,
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Icon(broadcast.icon, size: 14, color: context.accent),
+              const SizedBox(width: 8),
+              Text(
+                '@${broadcast.keyword}',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: context.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  broadcast.subtitle,
+                  style: TextStyle(fontSize: 11, color: context.textMuted),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -95,46 +192,4 @@ class _MentionItem extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Attempts to extract a partial mention query from [text] at the given
-/// [cursorPosition]. Returns the lowercased query string when an active `@`
-/// trigger is found, or `null` when no mention autocomplete should be shown.
-String? extractMentionQuery(String text, int cursorPosition) {
-  if (cursorPosition < 0 || cursorPosition > text.length) return null;
-
-  final beforeCursor = text.substring(0, cursorPosition);
-  final atIndex = beforeCursor.lastIndexOf('@');
-  if (atIndex < 0) return null;
-
-  if (atIndex > 0 && beforeCursor[atIndex - 1] != ' ') return null;
-
-  final partial = beforeCursor.substring(atIndex + 1);
-  if (partial.contains(' ')) return null;
-
-  return partial.toLowerCase();
-}
-
-/// Inserts a completed @mention into [text] at the cursor position, replacing
-/// the partial query. Returns the new [TextEditingValue] with updated cursor.
-TextEditingValue insertMention({
-  required String text,
-  required int cursorPosition,
-  required String username,
-}) {
-  if (cursorPosition < 0) return TextEditingValue(text: text);
-
-  final beforeCursor = text.substring(0, cursorPosition);
-  final atIndex = beforeCursor.lastIndexOf('@');
-  if (atIndex < 0) return TextEditingValue(text: text);
-
-  final afterCursor = text.substring(cursorPosition);
-  final replacement = '@$username ';
-  final newText = text.substring(0, atIndex) + replacement + afterCursor;
-  final newCursorPos = atIndex + replacement.length;
-
-  return TextEditingValue(
-    text: newText,
-    selection: TextSelection.collapsed(offset: newCursorPos),
-  );
 }

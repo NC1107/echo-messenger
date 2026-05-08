@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/reaction.dart';
 import '../../theme/echo_theme.dart';
+import '../../theme/motion_tokens.dart';
 
 /// Displays per-emoji reaction pills, each showing the emoji and its count.
 /// The chip background matches the parent bubble color (sent or received) with
@@ -57,6 +58,10 @@ class ReactionBar extends StatelessWidget {
           children: [
             for (final entry in grouped.entries)
               _ReactionPill(
+                // Stable key so reordering this list doesn't let Flutter
+                // recycle a different emoji's _ReactionPillState (whose
+                // entry-scale animation has already played).
+                key: ValueKey('reaction-${entry.key}'),
                 emoji: entry.key,
                 count: entry.value.length,
                 isMine: isMine,
@@ -70,7 +75,13 @@ class ReactionBar extends StatelessWidget {
   }
 }
 
-class _ReactionPill extends StatelessWidget {
+/// Reaction pill with a one-shot scale-in on first mount.
+///
+/// AnimationController fires once on initState, with a soft overshoot
+/// (`MotionCurves.expressiveBounce`) so a newly-added reaction reads as
+/// "celebratory" without crossing into cartoon territory.  Reduce-motion
+/// users skip the animation entirely.
+class _ReactionPill extends StatefulWidget {
   final String emoji;
   final int count;
   final bool isMine;
@@ -78,6 +89,7 @@ class _ReactionPill extends StatelessWidget {
   final void Function(Offset globalPosition)? onTap;
 
   const _ReactionPill({
+    super.key,
     required this.emoji,
     required this.count,
     required this.isMine,
@@ -86,41 +98,78 @@ class _ReactionPill extends StatelessWidget {
   });
 
   @override
+  State<_ReactionPill> createState() => _ReactionPillState();
+}
+
+class _ReactionPillState extends State<_ReactionPill>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entry;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _entry = AnimationController(vsync: this, duration: MotionDurations.quick);
+    _scale = CurvedAnimation(
+      parent: _entry,
+      curve: MotionCurves.expressiveBounce,
+    );
+    // Defer to post-frame so MediaQuery (reduce-motion) is available.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (MediaQuery.of(context).disableAnimations) {
+        _entry.value = 1.0;
+      } else {
+        _entry.forward(from: 0);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _entry.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final bgColor = isMine ? context.sentBubble : context.recvBubble;
-    final textColor = isMine ? Colors.white : context.textPrimary;
+    final bgColor = widget.isMine ? context.sentBubble : context.recvBubble;
+    final textColor = widget.isMine ? Colors.white : context.textPrimary;
 
     return GestureDetector(
-      onTapUp: (details) => onTap?.call(details.globalPosition),
-      child: Container(
-        height: 22,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(11),
-          border: Border.all(color: chatBgColor, width: 1.5),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              emoji,
-              style: const TextStyle(
-                fontSize: 13,
-                decoration: TextDecoration.none,
+      onTapUp: (details) => widget.onTap?.call(details.globalPosition),
+      child: ScaleTransition(
+        scale: _scale,
+        child: Container(
+          height: 22,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(color: widget.chatBgColor, width: 1.5),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                widget.emoji,
+                style: const TextStyle(
+                  fontSize: 13,
+                  decoration: TextDecoration.none,
+                ),
               ),
-            ),
-            const SizedBox(width: 3),
-            Text(
-              '$count',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: textColor.withValues(alpha: 0.75),
-                decoration: TextDecoration.none,
+              const SizedBox(width: 3),
+              Text(
+                '${widget.count}',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: textColor.withValues(alpha: 0.75),
+                  decoration: TextDecoration.none,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
