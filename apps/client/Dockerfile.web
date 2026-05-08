@@ -23,5 +23,12 @@ EXPOSE 80
 
 # Hit the silent /healthz path (nginx.conf disables access logging for it)
 # so the healthcheck doesn't spam the access log every interval.
+#
+# Use 127.0.0.1, not `localhost`: busybox wget in the alpine base resolves
+# `localhost` to ::1 first, but nginx only binds IPv4 (`listen 80;` in
+# nginx.conf with no `[::]:80`).  IPv6 → connection refused → unhealthy →
+# Traefik's docker provider silently filters the container out and the
+# router never registers, leaving the public site 404 even though the
+# container is actually serving fine.  Tracked down on prod 2026-05-08.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -q --spider http://localhost/healthz || exit 1
+    CMD wget -q --spider http://127.0.0.1/healthz || exit 1
