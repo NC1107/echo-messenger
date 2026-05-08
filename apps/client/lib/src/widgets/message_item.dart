@@ -1710,6 +1710,13 @@ class _MessageItemState extends State<MessageItem>
     required ChatMessage msg,
     required bool isMine,
   }) {
+    // Scale font with density so the hover-timestamp matches the
+    // surrounding message-stream sizing.
+    final hoverFontSize = switch (widget.density) {
+      UIDensity.cozy => 12.0,
+      UIDensity.normal => 11.0,
+      UIDensity.compact => 10.0,
+    };
     return AnimatedOpacity(
       opacity: _isHovered ? 1.0 : 0.0,
       duration: const Duration(milliseconds: 140),
@@ -1719,7 +1726,10 @@ class _MessageItemState extends State<MessageItem>
           msg.editedAt != null
               ? '${formatMessageTimestamp(msg.timestamp)} (edited)'
               : formatMessageTimestamp(msg.timestamp),
-          style: GoogleFonts.inter(fontSize: 11, color: context.textMuted),
+          style: GoogleFonts.inter(
+            fontSize: hoverFontSize,
+            color: context.textMuted,
+          ),
         ),
       ),
     );
@@ -1946,6 +1956,7 @@ class _MessageItemState extends State<MessageItem>
       isMine: isMine,
       chatBgColor: context.chatBg,
       onTap: (pos) => widget.onReactionTap?.call(msg, pos),
+      density: widget.density,
     );
 
     final bubble = _buildBubble(

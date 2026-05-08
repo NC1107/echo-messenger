@@ -180,9 +180,9 @@ low-risk, and unblocks every future onboarding / churn discussion.
 
 ## Phase 2 — Density tier (Cozy / Normal / Compact)
 
-**Status:** sidebar, message item, channel bar, and settings rows
-slices shipped. Voice dock / reactions / hover-actions density
-follow-ups still open.
+**Status:** sidebar, message item, channel bar, settings rows, and
+reactions / hover-timestamp slices shipped. Voice dock and remaining
+inline density follow-ups still open.
 
 **Goal:** Power users get Discord-compact density. New users get
 today's effective default (compact, matching the legacy
@@ -268,10 +268,22 @@ Phase 1 design against three target sizes from the start.
   record.  Cozy 64/14/40/16/14/18, Normal 56/12/36/15/13/16
   (today's), Compact 44/10/28/13/12/14.  Tests pin each tier.
 
+**Shipped (reactions slice):**
+
+- Reaction-pill density: `ReactionBar` takes a `density` param and
+  scales pill height / horizontal padding / corner radius / emoji
+  font / count font / inner gap via `_ReactionMetrics`.  Cozy
+  26/10/13/15/13/4, Normal 24/9/12/14/12/3, Compact 22/8/11/13/11/3
+  (today's).  `MessageItem` threads `widget.density` into the bar.
+- Hover-timestamp density: the on-hover edited-timestamp under each
+  message scales 12 / 11 / 10 with cozy / normal / compact, matching
+  the surrounding font ramp.
+- Hover-action chip dimensions intentionally unchanged: the 44×44
+  hit target is a WCAG 2.5.5 minimum and stays stable across tiers.
+
 **Deferred follow-ups (separate PRs):**
 
 - Bubble inner padding scaling.
-- Reaction-pill / hover-action / hover-timestamp density.
 - Date-divider density between message groups.
 - Inter-chip spacing scaling on the channel bar.
 - Voice control dock density.
