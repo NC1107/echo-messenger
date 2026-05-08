@@ -181,8 +181,9 @@ low-risk, and unblocks every future onboarding / churn discussion.
 ## Phase 2 — Density tier (Cozy / Normal / Compact)
 
 **Status:** sidebar, message item, channel bar, settings rows,
-reactions / hover-timestamp, and date-divider slices shipped.
-Voice dock and remaining inline density follow-ups still open.
+reactions / hover-timestamp, date-divider, and voice-dock slices
+shipped. Bubble inner padding and inter-chip spacing remain as
+deferred Phase 2 follow-ups.
 
 **Goal:** Power users get Discord-compact density. New users get
 today's effective default (compact, matching the legacy
@@ -289,11 +290,20 @@ Phase 1 design against three target sizes from the start.
   Normal 6/10/11, Compact 4/8/11 (today's).  The 1-pixel rule colors
   stay constant across tiers so the divider weight reads identically.
 
+**Shipped (voice-dock slice):**
+
+- `VoiceDock` reads `uiDensityProvider` and scales horizontal /
+  vertical chrome padding, the leading `graphic_eq` icon size,
+  the icon→text gap, the two status font sizes, and the control
+  button icon size via `_DockMetrics`.  Cozy 12/10/16/8/12/11/18,
+  Normal 10/8/15/7/11/10/17, Compact 8/6/14/6/11/10/16 (today's).
+  `_DockIconButton` keeps its 44×44 hit target across tiers per
+  WCAG 2.5.5 — only the visual icon scales.
+
 **Deferred follow-ups (separate PRs):**
 
 - Bubble inner padding scaling.
 - Inter-chip spacing scaling on the channel bar.
-- Voice control dock density.
 - Per-screen density overrides.
 - Mobile density (phones get a single density determined by viewport).
 

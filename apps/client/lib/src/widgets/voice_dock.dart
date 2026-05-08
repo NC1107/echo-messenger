@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/channels_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
+import '../providers/theme_provider.dart' show UIDensity, uiDensityProvider;
 import '../providers/voice_settings_provider.dart';
 import '../theme/echo_theme.dart';
 
@@ -43,6 +44,8 @@ class VoiceDock extends ConsumerWidget {
     final voiceSettings = ref.watch(voiceSettingsProvider);
     final channelsState = ref.watch(channelsProvider);
     final screenShare = ref.watch(screenShareProvider);
+    final density = ref.watch(uiDensityProvider);
+    final m = _DockMetrics.forDensity(density);
     final conversationId = voiceLk.conversationId ?? '';
     final channelId = voiceLk.channelId!;
 
@@ -57,7 +60,7 @@ class VoiceDock extends ConsumerWidget {
       onTap: onNavigateToLounge,
       child: Container(
         width: width,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        padding: EdgeInsets.symmetric(horizontal: m.hPad, vertical: m.vPad),
         decoration: BoxDecoration(
           color: context.surface,
           border: Border(
@@ -73,6 +76,7 @@ class VoiceDock extends ConsumerWidget {
               voiceLk.isJoining,
               peerCount,
               channelName,
+              m,
             ),
             ..._buildControlButtons(
               context,
@@ -82,6 +86,7 @@ class VoiceDock extends ConsumerWidget {
               screenShare,
               conversationId,
               channelId,
+              m,
             ),
           ],
         ),
@@ -106,12 +111,13 @@ class VoiceDock extends ConsumerWidget {
     bool isJoining,
     int peerCount,
     String channelName,
+    _DockMetrics m,
   ) {
     return Expanded(
       child: Row(
         children: [
-          Icon(Icons.graphic_eq, size: 14, color: statusColor),
-          const SizedBox(width: 6),
+          Icon(Icons.graphic_eq, size: m.statusIconSize, color: statusColor),
+          SizedBox(width: m.gap),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -121,13 +127,16 @@ class VoiceDock extends ConsumerWidget {
                   _voiceStatusLabel(isJoining, peerCount),
                   style: TextStyle(
                     color: statusColor,
-                    fontSize: 11,
+                    fontSize: m.statusBigFontSize,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 Text(
                   '$channelName \u00b7 $peerCount ${peerCount == 1 ? 'peer' : 'peers'}',
-                  style: TextStyle(color: context.textMuted, fontSize: 10),
+                  style: TextStyle(
+                    color: context.textMuted,
+                    fontSize: m.statusSmallFontSize,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -148,15 +157,16 @@ class VoiceDock extends ConsumerWidget {
     ScreenShareState screenShare,
     String conversationId,
     String channelId,
+    _DockMetrics m,
   ) {
     return [
-      _buildVideoButton(context, ref, voiceLk),
-      _buildMuteButton(context, ref, voiceSettings),
+      _buildVideoButton(context, ref, voiceLk, m),
+      _buildMuteButton(context, ref, voiceSettings, m),
       _buildMicLevelIndicator(ref, voiceSettings),
-      _buildDeafenButton(context, ref, voiceSettings),
+      _buildDeafenButton(context, ref, voiceSettings, m),
       if (_supportsScreenShare)
-        _buildScreenShareButton(context, ref, screenShare),
-      _buildHangupButton(ref, screenShare, conversationId, channelId),
+        _buildScreenShareButton(context, ref, screenShare, m),
+      _buildHangupButton(ref, screenShare, conversationId, channelId, m),
     ];
   }
 
@@ -164,11 +174,13 @@ class VoiceDock extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     LiveKitVoiceState voiceLk,
+    _DockMetrics m,
   ) {
     return _DockIconButton(
       icon: voiceLk.isVideoEnabled ? Icons.videocam : Icons.videocam_off,
       color: voiceLk.isVideoEnabled ? context.accent : context.textSecondary,
       tooltip: voiceLk.isVideoEnabled ? 'Turn off camera' : 'Turn on camera',
+      iconSize: m.btnIconSize,
       onPressed: () async {
         await ref.read(livekitVoiceProvider.notifier).toggleVideo();
       },
@@ -179,6 +191,7 @@ class VoiceDock extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     VoiceSettingsState voiceSettings,
+    _DockMetrics m,
   ) {
     return _DockIconButton(
       icon: voiceSettings.selfMuted || voiceSettings.selfDeafened
@@ -186,6 +199,7 @@ class VoiceDock extends ConsumerWidget {
           : Icons.mic,
       color: _muteColor(context, voiceSettings),
       tooltip: _muteTooltip(voiceSettings),
+      iconSize: m.btnIconSize,
       onPressed: () async {
         final notifier = ref.read(voiceSettingsProvider.notifier);
         final nextMuted = !voiceSettings.selfMuted;
@@ -222,6 +236,7 @@ class VoiceDock extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     VoiceSettingsState voiceSettings,
+    _DockMetrics m,
   ) {
     return _DockIconButton(
       icon: voiceSettings.selfDeafened ? Icons.headset_off : Icons.headset,
@@ -229,6 +244,7 @@ class VoiceDock extends ConsumerWidget {
           ? EchoTheme.danger
           : context.textSecondary,
       tooltip: voiceSettings.selfDeafened ? 'Undeafen' : 'Deafen',
+      iconSize: m.btnIconSize,
       onPressed: () async {
         final notifier = ref.read(voiceSettingsProvider.notifier);
         final nextDeafened = !voiceSettings.selfDeafened;
@@ -242,6 +258,7 @@ class VoiceDock extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     ScreenShareState screenShare,
+    _DockMetrics m,
   ) {
     return _DockIconButton(
       icon: screenShare.isScreenSharing
@@ -251,6 +268,7 @@ class VoiceDock extends ConsumerWidget {
           ? EchoTheme.online
           : context.textSecondary,
       tooltip: screenShare.isScreenSharing ? 'Stop sharing' : 'Share screen',
+      iconSize: m.btnIconSize,
       onPressed: () async {
         final lkNotifier = ref.read(livekitVoiceProvider.notifier);
         final ssNotifier = ref.read(screenShareProvider.notifier);
@@ -272,11 +290,13 @@ class VoiceDock extends ConsumerWidget {
     ScreenShareState screenShare,
     String conversationId,
     String channelId,
+    _DockMetrics m,
   ) {
     return _DockIconButton(
       icon: Icons.call_end,
       color: EchoTheme.danger,
       tooltip: 'Leave',
+      iconSize: m.btnIconSize,
       onPressed: () async {
         if (screenShare.isScreenSharing) {
           await ref
@@ -312,12 +332,14 @@ class _DockIconButton extends StatelessWidget {
   final Color color;
   final String tooltip;
   final VoidCallback onPressed;
+  final double iconSize;
 
   const _DockIconButton({
     required this.icon,
     required this.color,
     required this.tooltip,
     required this.onPressed,
+    this.iconSize = 16,
   });
 
   @override
@@ -327,12 +349,75 @@ class _DockIconButton extends StatelessWidget {
       child: InkWell(
         onTap: onPressed,
         borderRadius: BorderRadius.circular(8),
+        // 44x44 hit target stays constant across density tiers (WCAG 2.5.5);
+        // only the visual icon scales.
         child: SizedBox(
           width: 44,
           height: 44,
-          child: Center(child: Icon(icon, size: 16, color: color)),
+          child: Center(
+            child: Icon(icon, size: iconSize, color: color),
+          ),
         ),
       ),
     );
+  }
+}
+
+class _DockMetrics {
+  final double hPad;
+  final double vPad;
+  final double statusIconSize;
+  final double gap;
+  final double statusBigFontSize;
+  final double statusSmallFontSize;
+  final double btnIconSize;
+
+  const _DockMetrics({
+    required this.hPad,
+    required this.vPad,
+    required this.statusIconSize,
+    required this.gap,
+    required this.statusBigFontSize,
+    required this.statusSmallFontSize,
+    required this.btnIconSize,
+  });
+
+  static const cozy = _DockMetrics(
+    hPad: 12,
+    vPad: 10,
+    statusIconSize: 16,
+    gap: 8,
+    statusBigFontSize: 12,
+    statusSmallFontSize: 11,
+    btnIconSize: 18,
+  );
+  static const normal = _DockMetrics(
+    hPad: 10,
+    vPad: 8,
+    statusIconSize: 15,
+    gap: 7,
+    statusBigFontSize: 11,
+    statusSmallFontSize: 10,
+    btnIconSize: 17,
+  );
+  static const compact = _DockMetrics(
+    hPad: 8,
+    vPad: 6,
+    statusIconSize: 14,
+    gap: 6,
+    statusBigFontSize: 11,
+    statusSmallFontSize: 10,
+    btnIconSize: 16,
+  );
+
+  static _DockMetrics forDensity(UIDensity d) {
+    switch (d) {
+      case UIDensity.cozy:
+        return cozy;
+      case UIDensity.normal:
+        return normal;
+      case UIDensity.compact:
+        return compact;
+    }
   }
 }
