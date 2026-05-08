@@ -130,6 +130,14 @@ class VoiceSpeakingRingState extends State<VoiceSpeakingRing>
   @override
   void didUpdateWidget(VoiceSpeakingRing oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.pulseDuration != oldWidget.pulseDuration) {
+      // Keep the controllers in sync if the parent retunes the pulse.
+      // AnimationController.duration is a setter that takes effect on
+      // the next tick, so an in-flight animation continues to its
+      // current end state at the new rate.
+      _pulse.duration = widget.pulseDuration;
+      _waves.duration = widget.pulseDuration;
+    }
     _syncAnimations();
   }
 
@@ -159,12 +167,17 @@ class VoiceSpeakingRingState extends State<VoiceSpeakingRing>
       );
     }
 
-    // Tight ring oscillates 0.55 → levelOpacity → 0.55 each pulse cycle.
-    // Outer rings expand outward from the tight ring's edge, staggered.
+    // Tight ring oscillates between a floor and the level peak each
+    // pulse cycle.  When the speaker is loud, the floor is 0.55; when
+    // they are quiet (level < 0.55), we collapse the floor to the
+    // level itself so the pulse never *exceeds* the audio-derived
+    // peak (which would make quiet speakers misleadingly opaque).
+    final pulseFloor = math.min(0.55, levelOpacity);
     return AnimatedBuilder(
       animation: Listenable.merge([_pulse, _waves]),
       builder: (context, child) {
-        final ringOpacity = 0.55 + (_pulse.value * (levelOpacity - 0.55));
+        final ringOpacity =
+            pulseFloor + (_pulse.value * (levelOpacity - pulseFloor));
         return CustomPaint(
           // Behind the child + tight ring, so expanding rings appear to
           // emanate from the avatar's outer edge without obscuring it.
@@ -241,16 +254,20 @@ class _AudioRadiusPainter extends CustomPainter {
     // Tight ring sits on the child's outer edge; expansion starts there.
     final innerRadius = math.min(size.width, size.height) / 2;
 
+    // Single Paint reused across both waves — only `color` changes
+    // between calls.  The doc-comment promise of "no per-frame
+    // allocations" depends on this.
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke * 0.65;
+
     void paintWave(double t) {
       // Skip near-invisible rings to keep the canvas cheap.
       if (t <= 0 || t >= 1) return;
       final opacity = (level * (1.0 - t)).clamp(0.0, 1.0);
       if (opacity < 0.04) return;
       final radius = innerRadius + reach * t;
-      final paint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke * 0.65
-        ..color = color.withValues(alpha: opacity);
+      paint.color = color.withValues(alpha: opacity);
       canvas.drawCircle(center, radius, paint);
     }
 

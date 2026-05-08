@@ -7,11 +7,15 @@
 /// client may grow client-only mention features later (e.g., custom
 /// keyword highlights, mute-mentions-from-X).
 ///
-/// Boundary rule: `@` is preceded by start-of-string or whitespace /
-/// non-word character, and the keyword is followed by end-of-string or
-/// non-word character.  Word characters are `[A-Za-z0-9_]`.  This
-/// matches what the autocomplete picker treats as a mention trigger
-/// and avoids false positives like `me@host` or `@hereabouts`.
+/// Boundary rule: `@` is preceded by start-of-string or any non-word
+/// character (whitespace OR punctuation), and the keyword is followed
+/// by end-of-string or a non-word character.  Word characters are
+/// `[A-Za-z0-9_]`.  This is intentionally *more permissive* than the
+/// autocomplete picker (`extractMentionQuery`), which only fires after
+/// whitespace — the picker stays conservative to avoid surprising the
+/// user, but the detection used to drive notifications/badges should
+/// match anywhere a mention can plausibly appear in plaintext.  Both
+/// rules avoid false positives like `me@host` and `@hereabouts`.
 library;
 
 /// Returns true when [content] contains a mention of [myUsername]

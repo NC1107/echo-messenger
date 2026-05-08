@@ -58,6 +58,10 @@ class ReactionBar extends StatelessWidget {
           children: [
             for (final entry in grouped.entries)
               _ReactionPill(
+                // Stable key so reordering this list doesn't let Flutter
+                // recycle a different emoji's _ReactionPillState (whose
+                // entry-scale animation has already played).
+                key: ValueKey('reaction-${entry.key}'),
                 emoji: entry.key,
                 count: entry.value.length,
                 isMine: isMine,
@@ -85,6 +89,7 @@ class _ReactionPill extends StatefulWidget {
   final void Function(Offset globalPosition)? onTap;
 
   const _ReactionPill({
+    super.key,
     required this.emoji,
     required this.count,
     required this.isMine,

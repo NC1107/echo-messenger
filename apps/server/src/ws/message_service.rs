@@ -956,10 +956,18 @@ pub(super) async fn fanout_message(
     // unmodified fanout already does.
     // `@here` is a group-only concept; in a 1:1 DM the literal text "@here"
     // is just a string and must not silently drop the recipient's push.
-    let suppress_offline_push =
-        is_group && !is_encrypted && mentions_broadcast(&fields.content, "here");
+    //
+    // Guarded behind `!offline_user_ids.is_empty()` so the body scan
+    // is skipped entirely when no offline recipients exist (the only
+    // path where suppression matters).  `mentions_broadcast` itself
+    // already short-circuits on content with no '@', but this guard
+    // skips even the call setup on the hot path.
+    let suppress_offline_push = !offline_user_ids.is_empty()
+        && is_group
+        && !is_encrypted
+        && mentions_broadcast(&fields.content, "here");
 
-    if suppress_offline_push && !offline_user_ids.is_empty() {
+    if suppress_offline_push {
         // Audit trail for #451: suppressing pushes is observable abuse
         // surface (any member can silence offline notifications). Log
         // counts only — no body or recipient identifiers.

@@ -3,6 +3,10 @@ import 'package:flutter/widgets.dart' show TextEditingValue, TextSelection;
 
 import '../../models/conversation.dart';
 
+// Reused across [extractMentionQuery] calls to avoid per-keystroke
+// regex allocation in the input hot path.
+final RegExp _whitespace = RegExp(r'\s');
+
 /// Attempts to extract a partial mention query from [text] at the given
 /// [cursorPosition]. Returns the lowercased query string when an active `@`
 /// trigger is found, or `null` when no mention autocomplete should be shown.
@@ -21,12 +25,11 @@ String? extractMentionQuery(String text, int cursorPosition) {
 
   if (atIndex > 0) {
     final prev = beforeCursor[atIndex - 1];
-    final isWhitespace = RegExp(r'\s').hasMatch(prev);
-    if (!isWhitespace) return null;
+    if (!_whitespace.hasMatch(prev)) return null;
   }
 
   final partial = beforeCursor.substring(atIndex + 1);
-  if (RegExp(r'\s').hasMatch(partial)) return null;
+  if (_whitespace.hasMatch(partial)) return null;
 
   return partial.toLowerCase();
 }

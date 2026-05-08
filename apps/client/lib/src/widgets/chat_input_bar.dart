@@ -1404,7 +1404,10 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     return false; // don't consume -- let other handlers also run
   }
 
-  /// Handles the Escape key. Returns true if the event was consumed.
+  /// Handles the Escape key by dismissing the highest-priority
+  /// composer-modal state (mention picker → inline picker → media
+  /// picker → pending attachments → edit mode → reply state).  Each
+  /// dismissal is a no-op if the corresponding state isn't active.
   void _handleEscapeKey() {
     if (_mentionController.showPicker) {
       _mentionController.dismiss();
