@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Directory, Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import 'src/app.dart';
 import 'src/providers/server_url_provider.dart';
@@ -59,8 +62,29 @@ void main() {
   );
 }
 
+/// Initialize Hive with a sane storage location.
+///
+/// `Hive.initFlutter()` calls `getApplicationDocumentsDirectory()` which on
+/// Linux desktop resolves to `~/Documents/` -- the user's general-purpose
+/// folder, not an app-private dir.  That dumps `echo_*.hive` and `.lock`
+/// files alongside the user's own documents.  On Linux we route to
+/// `getApplicationSupportDirectory()` (`~/.local/share/<bundle>/`) instead.
+/// Other platforms keep the default since their app-documents path is
+/// already private (e.g. `~/Library/Containers/<bundle>/Data/Documents`
+/// on macOS, `AppData\Roaming\<vendor>\<app>` on Windows).
+Future<void> _initHive() async {
+  if (kIsWeb || !Platform.isLinux) {
+    await Hive.initFlutter();
+    return;
+  }
+  final appSupport = await getApplicationSupportDirectory();
+  final hiveDir = p.join(appSupport.path, 'hive');
+  await Directory(hiveDir).create(recursive: true);
+  Hive.init(hiveDir);
+}
+
 Future<void> _initAndRun() async {
-  await Hive.initFlutter();
+  await _initHive();
   await UserDataDir.instance.init();
   await MessageCache.init();
   await SavedMessagesService.instance.init();
