@@ -405,6 +405,40 @@ void main() {
       expect(find.textContaining('[img:'), findsNothing);
     });
 
+    testWidgets('image marker WITH caption shows icon + caption, not marker', (
+      tester,
+    ) async {
+      // The seed scripts emit `[img:URL]\ncaption` for captioned attachments;
+      // the previous `^\[img:.+\]$` regex only matched bare markers, so the
+      // raw `[img:...]` text leaked into the conversation preview
+      // (#prod-2026-05-08).
+      final conv = _makeConversation(
+        isGroup: true,
+        lastMessage: '[img:/api/media/photo.png]\nthe reaction',
+        lastMessageSender: 'henry',
+        members: const [
+          ConversationMember(userId: 'henry-id', username: 'henry'),
+          ConversationMember(userId: 'my-id', username: 'me'),
+        ],
+      );
+      await tester.pumpApp(
+        ConversationItem(
+          conversation: conv,
+          myUserId: 'my-id',
+          isSelected: false,
+          isPinned: false,
+          isPeerOnline: false,
+          timestamp: '10:30',
+          onTap: () {},
+        ),
+      );
+      await tester.pump();
+
+      // Caption is shown after the icon; raw marker never leaks through.
+      expect(find.textContaining('the reaction'), findsOneWidget);
+      expect(find.textContaining('[img:'), findsNothing);
+    });
+
     testWidgets('sender label prepends "You" for own messages in groups', (
       tester,
     ) async {

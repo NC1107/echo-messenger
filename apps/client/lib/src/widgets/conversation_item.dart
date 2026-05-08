@@ -299,19 +299,31 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
 
   String? _applyMediaLabel(String? snippet) {
     if (snippet == null) return null;
-    if (RegExp(r'^\[img:.+\]$').hasMatch(snippet)) {
-      return '\u{1F4F7} Photo';
-    }
-    if (RegExp(r'^\[video:.+\]$').hasMatch(snippet)) {
-      return '\u{1F3AC} Video';
-    }
-    if (RegExp(r'^\[file:.+\]$').hasMatch(snippet)) {
-      return '\u{1F4CE} File';
-    }
-    if (RegExp(r'^\[voice:.+\]$').hasMatch(snippet)) {
-      return '\u{1F3A4} Voice message';
-    }
-    return snippet;
+    // Match a leading [kind:url] marker, optionally followed by a newline and
+    // a caption (the seed scripts emit `[img:URL]\ncaption` for captioned
+    // attachments).  The previous `^\[img:.+\]$` regex only matched bare
+    // markers, so captioned messages leaked the raw `[img:...]` text into
+    // the conversation preview (#prod-2026-05-08).
+    final match = RegExp(
+      r'^\[(img|video|file|voice):[^\]]+\]\s*\n?\s*',
+    ).firstMatch(snippet);
+    if (match == null) return snippet;
+    final kind = match.group(1)!;
+    final caption = snippet.substring(match.end).trim();
+    const icons = {
+      'img': '\u{1F4F7}',
+      'video': '\u{1F3AC}',
+      'file': '\u{1F4CE}',
+      'voice': '\u{1F3A4}',
+    };
+    const fallbacks = {
+      'img': 'Photo',
+      'video': 'Video',
+      'file': 'File',
+      'voice': 'Voice message',
+    };
+    final icon = icons[kind] ?? '';
+    return caption.isEmpty ? '$icon ${fallbacks[kind]!}' : '$icon $caption';
   }
 
   String? _prependSenderLabel(String? snippet, Conversation conv) {
