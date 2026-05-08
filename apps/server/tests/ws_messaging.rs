@@ -306,6 +306,126 @@ async fn group_message_fanout() {
 }
 
 // ---------------------------------------------------------------------------
+// Broadcast mentions (#451)
+// ---------------------------------------------------------------------------
+
+/// Regression: an `@here` message must still deliver to every online member.
+/// (#451 only suppresses the *push* fanout to offline users; the live WS
+/// fanout remains unchanged.)
+#[tokio::test]
+async fn at_here_delivers_to_all_online_members() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "hralice").await;
+    let (bob_token, bob_id, _bob_name) = common::register_and_login(&client, &base, "hrbob").await;
+    let (charlie_token, charlie_id, _charlie_name) =
+        common::register_and_login(&client, &base, "hrcharlie").await;
+
+    let group_id = common::create_group(&client, &base, &alice_token, "HereGroup").await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
+
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
+    let charlie_ticket = common::get_ws_ticket(&client, &base, &charlie_token).await;
+
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+    let mut bob_ws = connect_ws(&base, &bob_ticket).await;
+    let mut charlie_ws = connect_ws(&base, &charlie_ticket).await;
+
+    drain_pending(&mut alice_ws).await;
+    drain_pending(&mut bob_ws).await;
+    drain_pending(&mut charlie_ws).await;
+
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "conversation_id": group_id,
+        "content": "@here all hands",
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("alice send failed");
+
+    let alice_event = read_text_skipping_presence(&mut alice_ws).await;
+    let alice_msg: Value = serde_json::from_str(&alice_event).unwrap();
+    assert_eq!(alice_msg["type"], "message_sent");
+
+    let bob_event = read_text_skipping_presence(&mut bob_ws).await;
+    let bob_msg: Value = serde_json::from_str(&bob_event).unwrap();
+    assert_eq!(bob_msg["type"], "new_message");
+    assert_eq!(bob_msg["content"], "@here all hands");
+
+    let charlie_event = read_text_skipping_presence(&mut charlie_ws).await;
+    let charlie_msg: Value = serde_json::from_str(&charlie_event).unwrap();
+    assert_eq!(charlie_msg["type"], "new_message");
+    assert_eq!(charlie_msg["content"], "@here all hands");
+
+    let _ = alice_ws.close(None).await;
+    let _ = bob_ws.close(None).await;
+    let _ = charlie_ws.close(None).await;
+}
+
+/// Regression: an `@everyone` message also delivers to every member.  No
+/// special server handling is required for `@everyone` — the existing
+/// fanout already covers all members — but if someone changes that, this
+/// catches it.
+#[tokio::test]
+async fn at_everyone_delivers_to_all_members() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "evalice").await;
+    let (bob_token, bob_id, _bob_name) = common::register_and_login(&client, &base, "evbob").await;
+    let (charlie_token, charlie_id, _charlie_name) =
+        common::register_and_login(&client, &base, "evcharlie").await;
+
+    let group_id = common::create_group(&client, &base, &alice_token, "EveryoneGroup").await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &bob_id).await;
+    common::add_member_to_group(&client, &base, &alice_token, &group_id, &charlie_id).await;
+
+    let alice_ticket = common::get_ws_ticket(&client, &base, &alice_token).await;
+    let bob_ticket = common::get_ws_ticket(&client, &base, &bob_token).await;
+    let charlie_ticket = common::get_ws_ticket(&client, &base, &charlie_token).await;
+
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+    let mut bob_ws = connect_ws(&base, &bob_ticket).await;
+    let mut charlie_ws = connect_ws(&base, &charlie_ticket).await;
+
+    drain_pending(&mut alice_ws).await;
+    drain_pending(&mut bob_ws).await;
+    drain_pending(&mut charlie_ws).await;
+
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "conversation_id": group_id,
+        "content": "@everyone announce",
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("alice send failed");
+
+    let alice_event = read_text_skipping_presence(&mut alice_ws).await;
+    let alice_msg: Value = serde_json::from_str(&alice_event).unwrap();
+    assert_eq!(alice_msg["type"], "message_sent");
+
+    for ws in [&mut bob_ws, &mut charlie_ws] {
+        let event = read_text_skipping_presence(ws).await;
+        let parsed: Value = serde_json::from_str(&event).unwrap();
+        assert_eq!(parsed["type"], "new_message");
+        assert_eq!(parsed["content"], "@everyone announce");
+    }
+
+    let _ = alice_ws.close(None).await;
+    let _ = bob_ws.close(None).await;
+    let _ = charlie_ws.close(None).await;
+}
+
+// ---------------------------------------------------------------------------
 // Error handling
 // ---------------------------------------------------------------------------
 
