@@ -213,11 +213,27 @@ log "    opened ${#WS_PID[@]} sockets"
 sleep 0.5
 
 ws_send() {
-  # $1 = sender username, $2 = JSON payload (single line, NDJSON)
+  # $1 = sender username, $2 = JSON payload (single line, NDJSON).
+  # The trailing `|| true` is critical: if a websocat process at the other
+  # end of the FIFO has died (e.g. server closed the WS for a rate-limit
+  # violation), printf raises SIGPIPE and the bare `set -e` would abort
+  # the entire seed run.  We log a warning instead and let the loop
+  # continue with the remaining senders.
   local u="$1" payload="$2"
   local fd="${WS_FD[$u]}"
-  printf '%s\n' "$payload" >&"$fd"
+  if ! printf '%s\n' "$payload" >&"$fd" 2>/dev/null; then
+    echo "    [warn] ws_send to $u failed (socket closed?); continuing" >&2
+    return 0
+  fi
 }
+
+# Pace WebSocket sends to fit the server's per-connection rate limit:
+# the WS receive loop in apps/server/src/ws/handler.rs uses a token
+# bucket of 30 messages with 3-msg/sec refill, and closes the
+# connection after 3 consecutive violations.  With 6 rotating senders,
+# a sustained aggregate of ~12 msg/sec (=2 msg/sec/sender) keeps every
+# bucket well above empty.  Sleep 80 ms between sends -> 12.5 msg/sec.
+ws_pace_sleep="${WS_PACE_SLEEP:-0.08}"
 
 # ----- Phase 4: stress messages ---------------------------------------------
 log "==> Phase 4: sending messages"
@@ -264,8 +280,7 @@ for i in $(seq 1 "$MESSAGES"); do
   text="${FRAGMENTS[$((RANDOM % ${#FRAGMENTS[@]}))]} (#$i)"
   ws_send "$sender" "$(mk_payload "$text")"
   sender_idx=$((sender_idx + 1))
-  # Yield every 50 frames so the server's WS reader can drain.
-  [ $((i % 50)) -eq 0 ] && sleep 0.05
+  sleep "$ws_pace_sleep"
 done
 
 # Big-text messages (~8 KB each).  Server caps at MAX_MESSAGE_LENGTH
@@ -278,6 +293,7 @@ for i in $(seq 1 "$BIG_TEXT"); do
   body="big-text #$i: $body"
   sender="${ALL_USERS[$((RANDOM % ${#ALL_USERS[@]}))]}"
   ws_send "$sender" "$(mk_payload "$body")"
+  sleep "$ws_pace_sleep"
 done
 
 # Emoji-heavy / jumbo-emoji.
@@ -289,6 +305,7 @@ for i in $(seq 1 "$EMOJI"); do
   for _ in $(seq 1 "$count"); do body+="${EMOJIS[$((RANDOM % ${#EMOJIS[@]}))]}"; done
   sender="${ALL_USERS[$((RANDOM % ${#ALL_USERS[@]}))]}"
   ws_send "$sender" "$(mk_payload "$body")"
+  sleep "$ws_pace_sleep"
 done
 
 # Markdown stress: fenced code blocks, blockquotes, lists.
@@ -301,14 +318,19 @@ for i in $(seq 1 "$MARKDOWN"); do
   esac
   sender="${ALL_USERS[$((RANDOM % ${#ALL_USERS[@]}))]}"
   ws_send "$sender" "$(mk_payload "$body")"
+  sleep "$ws_pace_sleep"
 done
 
-# Rapid-fire same-second timestamps (no sleep between sends).
+# Rapid-fire same-second timestamps.  We still pace these (rotating across
+# 6 senders -> ~5 per sender per second after pacing) to avoid blowing up
+# the rate limit; the "same second" property is preserved by the timestamp
+# resolution server-side, not by sub-second wall clock here.
 log "    [e] $RAPIDFIRE rapid-fire messages"
 for i in $(seq 1 "$RAPIDFIRE"); do
   sender="${ALL_USERS[$((sender_idx % ${#ALL_USERS[@]}))]}"
   ws_send "$sender" "$(mk_payload "rapid #$i — same second, tests grouping")"
   sender_idx=$((sender_idx + 1))
+  sleep "$ws_pace_sleep"
 done
 
 # Let the server settle before we pull message IDs for replies / reactions.
@@ -335,7 +357,7 @@ else
     text="reply #$i in the deep thread"
     ws_send "$sender" "$(mk_reply_payload "$text" "$parent")"
     sender_idx=$((sender_idx + 1))
-    [ $((i % 50)) -eq 0 ] && sleep 0.05
+    sleep "$ws_pace_sleep"
   done
 
   # Reaction-heavy messages: pick REACTIONS messages and add 5+ unique emoji
