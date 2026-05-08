@@ -212,16 +212,26 @@ jobs:
           fi
           cp -L "$LIBMPV_PATH" Echo.AppDir/usr/bin/lib/
           # libmpv pulls in transitive .so deps that some minimal target
-          # hosts also lack (e.g. libplacebo, libmujs).  Resolve via ldd
-          # and copy any that aren't part of glibc / libstdc++ / ld-linux
-          # (those stay host-side per AppImage convention).
+          # hosts also lack (FFmpeg, libplacebo, etc.).  Resolve via ldd
+          # but use an explicit *allowlist* of media-kit libs rather than a
+          # generic exclude list -- if we bundle e.g. libglib-2.0 from the
+          # Ubuntu build host it shadows the host's newer glib, and any
+          # system library linked against it (libsecret, libgio, etc.)
+          # crashes at startup with "undefined symbol: g_variant_builder_*"
+          # on Fedora 43 / glib 2.84+ targets (reported 2026-05-08).  Keep
+          # universal system libraries on the host; only bundle the media
+          # stack we know minimal hosts may not ship.
+          BUNDLE_RE='^(libmpv|libav(codec|format|util|filter|device)|libsws(cale)?|libswresample|libpostproc|libplacebo|libmujs|libdovi|libshaderc|libspirv-cross|libass|libuchardet|libvpx|libx264|libx265|libtheora|libvorbis|libopus|libdav1d|libaom|liblcms|librubberband|libsoxr|libchromaprint|libbluray|libsrt|libnghttp[23])'
           ldd "$LIBMPV_PATH" | awk '/=>/ {print $3}' \
-            | grep -vE '/(libc|libm|libdl|libpthread|librt|libstdc\+\+|libgcc_s|ld-linux)\.so' \
             | while read -r dep; do
                 [ -z "$dep" ] || [ ! -e "$dep" ] && continue
-                cp -Ln "$dep" Echo.AppDir/usr/bin/lib/ 2>/dev/null || true
+                base=$(basename "$dep")
+                if echo "$base" | grep -qE "$BUNDLE_RE"; then
+                  cp -Ln "$dep" Echo.AppDir/usr/bin/lib/ 2>/dev/null || true
+                fi
               done
           ls Echo.AppDir/usr/bin/lib/libmpv* > /dev/null  # sanity check
+          echo "Bundled libs:"; ls -1 Echo.AppDir/usr/bin/lib/ | sort
           cat > Echo.AppDir/echo.desktop << 'EOF'
           [Desktop Entry]
           Name=Echo
