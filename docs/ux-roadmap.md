@@ -223,8 +223,25 @@ Phase 1 design against three target sizes from the start.
   scaling still works).
 - Toggle persists across app restart.
 
-**Out of scope:**
+**Shipped (sidebar slice):**
 
+- `UIDensity` enum + `uiDensityProvider` with one-shot migration from
+  `MessageLayout.compact` so existing users see no behavior change.
+- Sidebar (`conversation_item.dart`, `conversation_panel.dart`)
+  reads density via `conversationItemHeightFor()`; three-way size
+  tables for row height (84/68/52), avatar radius (22/20/14),
+  presence dot, group icon, fonts, padding, and gaps.
+- Settings UI: new "Density" radio group in
+  `screens/settings/appearance_section.dart` directly below the
+  existing "Message layout" picker.
+
+**Deferred follow-ups (separate PRs):**
+
+- Message item density (line-height, bubble padding tied to
+  `UIDensity` instead of `MessageLayout.compact`). `MessageLayout`
+  still controls bubble compactness today.
+- Channel bar / group list density.
+- Settings rows density.
 - Per-screen density overrides.
 - Mobile density (phones get a single density determined by viewport).
 
