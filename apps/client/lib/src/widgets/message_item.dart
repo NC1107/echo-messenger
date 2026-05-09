@@ -19,7 +19,7 @@ import '../utils/download_helper.dart';
 import '../utils/clipboard_image_helper.dart' show writeImageToClipboard;
 import '../utils/semantics_preview.dart';
 import '../utils/time_utils.dart';
-import 'avatar_utils.dart' show buildAvatar, avatarColor, senderLabelColor;
+import 'avatar_utils.dart' show buildAvatar, avatarColor;
 import '../services/media_cache_service.dart';
 import 'message/hover_action_button.dart';
 import 'message/link_preview_card.dart';
@@ -27,9 +27,11 @@ import 'message/media_content.dart';
 import 'message/message_status_icon.dart';
 import 'message/message_indicators.dart';
 import 'message/reaction_bar.dart';
+import 'message/reply_count_badge.dart';
 import 'message/reply_quote.dart';
 import 'message/retry_row.dart';
 import 'message/rich_text_content.dart';
+import 'message/sender_name_label.dart';
 import 'message/system_event_pill.dart';
 import 'message/youtube_embed.dart';
 
@@ -230,14 +232,6 @@ class _MessageItemState extends State<MessageItem>
     if (left.inMinutes < 60) return '${left.inMinutes}m';
     if (left.inHours < 24) return '${left.inHours}h';
     return '${left.inDays}d';
-  }
-
-  /// Sender-name label color for group messages. Uses a contrast-safe palette
-  /// against the dark recv bubble (#500); the sidebar avatar background still
-  /// uses `avatarColor`, where contrast rules differ.
-  Color _getSenderLabelColor(String userId) {
-    final name = widget.message.fromUsername;
-    return senderLabelColor(name);
   }
 
   /// Avatar background color (contrast for the avatar's white initial glyph).
@@ -1026,66 +1020,6 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  /// Build the sender name label shown above the message bubble.
-  ///
-  /// In compact layout the sender name and timestamp share a single inline
-  /// row ("Username 12:34 PM") to save vertical space. Everywhere else the
-  /// name stands alone on its own line above the bubble.
-  Widget _buildSenderNameLabel({
-    required ChatMessage msg,
-    required bool hasMedia,
-  }) {
-    // Phase 2 follow-up: density-aware sender + inline-timestamp
-    // sizing.  Layout (bubble style) still controls *whether* the
-    // timestamp is inline vs separate; density controls the font
-    // sizes on whichever side it lands.
-    final double nameFontSize = switch (widget.density) {
-      UIDensity.cozy => 14,
-      UIDensity.normal => 13,
-      UIDensity.compact => 12,
-    };
-    final double timestampFontSize = switch (widget.density) {
-      UIDensity.cozy => 12,
-      UIDensity.normal => 11,
-      UIDensity.compact => 10,
-    };
-
-    final nameText = Text(
-      msg.fromUsername,
-      style: GoogleFonts.inter(
-        fontSize: nameFontSize,
-        fontWeight: FontWeight.w600,
-        color: _getSenderLabelColor(msg.fromUserId),
-      ),
-    );
-
-    final padding = EdgeInsets.only(bottom: 4, left: hasMedia ? 8 : 0);
-
-    if (!widget.compactLayout) {
-      return Padding(padding: padding, child: nameText);
-    }
-
-    return Padding(
-      padding: padding,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          nameText,
-          const SizedBox(width: 6),
-          Text(
-            formatMessageTimestamp(msg.timestamp),
-            style: GoogleFonts.inter(
-              fontSize: timestampFontSize,
-              color: context.textMuted,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Returns true when [content] is a known decrypt-failure sentinel.
   ///
   /// Mirrors [MessageCache.failureSentinels] so system sentinels (prefixed
@@ -1272,7 +1206,12 @@ class _MessageItemState extends State<MessageItem>
     return [
       if (msg.pinnedAt != null) PinnedIndicator(isMine: isMine),
       if (widget.showHeader && (!isMine || widget.compactLayout))
-        _buildSenderNameLabel(msg: msg, hasMedia: hasMedia),
+        SenderNameLabel(
+          message: msg,
+          hasMedia: hasMedia,
+          compactLayout: widget.compactLayout,
+          density: widget.density,
+        ),
       if (msg.replyToContent != null)
         ReplyQuote(
           replyToUsername: msg.replyToUsername,
@@ -1472,53 +1411,6 @@ class _MessageItemState extends State<MessageItem>
             ),
           if (isMine) MessageStatusIcon(status: msg.status),
         ],
-      ),
-    );
-  }
-
-  Widget _buildReplyCountBadge({
-    required ChatMessage msg,
-    required bool isMine,
-  }) {
-    final count = msg.replyCount;
-    final label = count == 1 ? '1 reply' : '$count replies';
-    return Padding(
-      padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
-      child: Align(
-        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-        child: Semantics(
-          label: 'View $label',
-          button: true,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => widget.onViewThread?.call(msg),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: context.accent.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.forum_outlined, size: 12, color: context.accent),
-                    const SizedBox(width: 4),
-                    Text(
-                      label,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: context.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -1818,7 +1710,11 @@ class _MessageItemState extends State<MessageItem>
                 ),
               ),
               if (msg.replyCount > 0)
-                _buildReplyCountBadge(msg: msg, isMine: isMine),
+                ReplyCountBadge(
+                  message: msg,
+                  isMine: isMine,
+                  onTap: widget.onViewThread,
+                ),
               if (widget.isLastInGroup)
                 _buildTimestampRow(msg: msg, isMine: isMine)
               else
