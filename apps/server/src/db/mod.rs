@@ -4,6 +4,7 @@ pub mod contacts;
 pub mod groups;
 pub mod keys;
 pub mod media;
+pub mod mentions;
 pub mod messages;
 pub mod password_reset;
 pub mod push_tokens;

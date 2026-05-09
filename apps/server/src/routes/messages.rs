@@ -72,6 +72,14 @@ pub struct ConversationListItem {
     pub members: Vec<MemberInfo>,
     pub last_message: Option<LastMessageInfo>,
     pub unread_count: i64,
+    /// Unread mentions of this user (server-side, persistent across
+    /// refresh).  Computed from the `mentions` table joined against the
+    /// user's `read_receipts` row using the same `created_at >
+    /// last_read_at` predicate as `unread_count`, so marking the
+    /// conversation as read clears mentions in the same step.  Encrypted
+    /// groups always report 0 here -- the server can't see plaintext, so
+    /// no rows are inserted; their badge stays client-side-only.
+    pub mention_count: i64,
     pub is_pinned: bool,
 }
 
@@ -158,6 +166,7 @@ struct ConversationFullRow {
     members_json: Option<serde_json::Value>,
     last_message_json: Option<serde_json::Value>,
     unread_count: i64,
+    mention_count: i64,
     is_pinned: bool,
 }
 
@@ -211,6 +220,18 @@ pub async fn list_conversations(
               AND m2.deleted_at IS NULL \
               AND m2.created_at > COALESCE(rc.last_read_at, '1970-01-01'::timestamptz) \
             GROUP BY m2.conversation_id \
+        ), \
+        mention_cte AS ( \
+            SELECT m3.conversation_id, COUNT(*) AS mention_count \
+            FROM messages m3 \
+            JOIN mentions mt ON mt.message_id = m3.id \
+            JOIN user_convs uc2 ON uc2.conversation_id = m3.conversation_id \
+            LEFT JOIN read_cte rc2 ON rc2.conversation_id = m3.conversation_id \
+            WHERE mt.mentioned_user_id = $1 \
+              AND m3.sender_id != $1 \
+              AND m3.deleted_at IS NULL \
+              AND m3.created_at > COALESCE(rc2.last_read_at, '1970-01-01'::timestamptz) \
+            GROUP BY m3.conversation_id \
         ) \
         SELECT \
             c.id AS conversation_id, \
@@ -231,6 +252,7 @@ pub async fn list_conversations(
                  ELSE NULL \
             END AS last_message_json, \
             COALESCE(urc.unread_count, 0) AS unread_count, \
+            COALESCE(mnc.mention_count, 0) AS mention_count, \
             EXISTS( \
                 SELECT 1 FROM pinned_conversations pc \
                 WHERE pc.user_id = $1 AND pc.conversation_id = c.id \
@@ -240,6 +262,7 @@ pub async fn list_conversations(
         LEFT JOIN members_cte mc ON mc.conversation_id = c.id \
         LEFT JOIN last_msg_cte lm ON lm.conversation_id = c.id \
         LEFT JOIN unread_cte urc ON urc.conversation_id = c.id \
+        LEFT JOIN mention_cte mnc ON mnc.conversation_id = c.id \
         ORDER BY lm.created_at DESC NULLS LAST \
         LIMIT 50",
     )
@@ -274,6 +297,7 @@ pub async fn list_conversations(
             members,
             last_message,
             unread_count: row.unread_count,
+            mention_count: row.mention_count,
             is_pinned: row.is_pinned,
         });
     }
