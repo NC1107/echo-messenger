@@ -39,10 +39,12 @@ pub struct MessageWithSender {
     pub reply_count: i64,
     /// Reactions aggregated as a JSON array of
     /// `{message_id, user_id, username, emoji}` objects.  Public history
-    /// queries (`get_messages`, `get_thread_replies`) populate this so the
-    /// client can render reactions on history reload; the WS replay path
-    /// (`get_undelivered`) leaves it as `Null` because reactions are
-    /// rebroadcast independently over WebSocket.
+    /// queries (`get_messages`, `get_thread_replies`) populate this with
+    /// a real LATERAL aggregate so the client can render reactions on
+    /// history reload.  Other queries (`search_messages`,
+    /// `get_undelivered`) include `'[]'::json AS reactions` to satisfy
+    /// the FromRow contract -- sqlx requires every struct field to map
+    /// to a column in the row.
     #[serde(default)]
     pub reactions: Option<sqlx::types::Json<serde_json::Value>>,
 }
@@ -316,7 +318,8 @@ pub async fn get_undelivered(
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                COALESCE(rc.reply_count, 0) AS reply_count \
+                COALESCE(rc.reply_count, 0) AS reply_count, \
+                '[]'::json AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
@@ -542,7 +545,8 @@ pub async fn search_messages(
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                COALESCE(rc.cnt, 0) AS reply_count \
+                COALESCE(rc.cnt, 0) AS reply_count, \
+                '[]'::json AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
@@ -928,7 +932,7 @@ pub async fn get_thread_replies(
            AND m.conversation_id = $2 \
            AND m.deleted_at IS NULL \
            AND ($3::timestamptz IS NULL OR m.created_at < $3) \
-         ORDER BY m.created_at ASC \
+         ORDER BY m.created_at DESC \
          LIMIT $4",
     )
     .bind(parent_message_id)
