@@ -627,8 +627,13 @@ pub async fn upload_avatar(
         .await
         .map_err(|e| AppError::bad_request(format!("Invalid multipart data: {e}")))?
     {
+        // Accept either "avatar" (historical) or "file" (matches the
+        // /api/media/upload convention used by the seed scripts and most
+        // generic upload pickers).  Mismatch was returning a confusing
+        // "Missing 'avatar' field in multipart form data" even when a
+        // perfectly valid PNG was attached under the wrong field name.
         let field_name = field.name().unwrap_or_default().to_string();
-        if field_name != "avatar" {
+        if field_name != "avatar" && field_name != "file" {
             continue;
         }
 
@@ -690,7 +695,7 @@ pub async fn upload_avatar(
     }
 
     Err(AppError::bad_request(
-        "Missing 'avatar' field in multipart form data",
+        "Missing avatar in multipart form data (expected field name 'avatar' or 'file')",
     ))
 }
 
