@@ -307,6 +307,7 @@ pub(super) async fn handle_send_message(
         reply_to_id,
         &recipient_device_contents,
         ttl_seconds,
+        conv_security.is_encrypted,
     )
     .await
     else {
@@ -358,6 +359,7 @@ pub(super) async fn store_and_confirm(
     reply_to_id: Option<Uuid>,
     recipient_device_contents: &Option<RecipientDeviceContents>,
     ttl_seconds: Option<i64>,
+    is_encrypted: bool,
 ) -> Option<db::messages::MessageRow> {
     // Resolve TTL: use per-message override first, then fall back to conversation setting.
     // Clamp to valid range: 5 seconds to 1 year. Reject non-positive values.
@@ -406,6 +408,30 @@ pub(super) async fn store_and_confirm(
             return None;
         }
     };
+
+    // Persist mentions for plaintext groups (#451 follow-up).  Encrypted
+    // groups skip this -- the canonical content here is ciphertext, so
+    // there's nothing to scan; their mention badges remain client-side.
+    // Errors are logged and swallowed so a mention-table hiccup never
+    // blocks the actual send.
+    if !is_encrypted {
+        match db::mentions::extract_and_persist(&state.pool, stored.id, conv_id, sender_id, content)
+            .await
+        {
+            Ok(0) => {}
+            Ok(n) => tracing::debug!(
+                message_id = %stored.id,
+                conversation_id = %conv_id,
+                count = n,
+                "persisted mentions"
+            ),
+            Err(e) => tracing::error!(
+                message_id = %stored.id,
+                conversation_id = %conv_id,
+                "failed to persist mentions: {e:?}"
+            ),
+        }
+    }
 
     // Store per-device ciphertexts if present. Per-user device IDs collide
     // across users, so each entry is keyed by (recipient_user_id, device_id).

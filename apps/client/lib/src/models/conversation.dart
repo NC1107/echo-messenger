@@ -92,6 +92,12 @@ class Conversation {
       lastMessageTimestamp: lastMsgTimestamp,
       lastMessageSender: lastMsgSender,
       unreadCount: json['unread_count'] as int? ?? 0,
+      // mention_count is populated by the server from the `mentions` table
+      // joined against this user's read_receipt; it survives a refresh.
+      // Old/legacy responses without the field default to 0 -- that's fine,
+      // the next WS message bump or the next /api/conversations fetch fills
+      // it in.
+      mentionCount: json['mention_count'] as int? ?? 0,
       isMuted: json['is_muted'] as bool? ?? false,
       isPinned: json['is_pinned'] as bool? ?? false,
       ttlSeconds:
