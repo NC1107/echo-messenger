@@ -18,10 +18,13 @@ import '../helpers/mock_providers.dart';
 import '../helpers/pump_app.dart';
 
 /// Notifier we can mutate from the test body.
-class _FakeChatNotifier extends ChatNotifier {
-  _FakeChatNotifier(super.ref, ChatState initial) {
-    state = initial;
-  }
+class _FakeChatNotifier extends Chat {
+  _FakeChatNotifier(this._initial);
+
+  final ChatState _initial;
+
+  @override
+  ChatState build() => _initial;
 
   @override
   Future<void> loadHistoryWithUserId(
@@ -123,8 +126,8 @@ List<Override> _overrides({
 }) {
   return [
     ...standardOverrides(),
-    chatProvider.overrideWith((ref) {
-      final n = _FakeChatNotifier(ref, initial);
+    chatProvider.overrideWith(() {
+      final n = _FakeChatNotifier(initial);
       holder.notifier = n;
       return n;
     }),

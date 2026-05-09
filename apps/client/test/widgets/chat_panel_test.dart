@@ -20,10 +20,13 @@ import '../helpers/pump_app.dart';
 // Fake notifiers for additional providers ChatPanel depends on
 // ---------------------------------------------------------------------------
 
-class _FakeChatNotifier extends ChatNotifier {
-  _FakeChatNotifier(super.ref, ChatState initial) {
-    state = initial;
-  }
+class _FakeChatNotifier extends Chat {
+  _FakeChatNotifier(this._initial);
+
+  final ChatState _initial;
+
+  @override
+  ChatState build() => _initial;
 
   @override
   Future<void> loadHistoryWithUserId(
@@ -69,7 +72,7 @@ class _FakeVoiceRtcNotifier extends LiveKitVoiceNotifier {
 List<Override> _chatPanelOverrides({ChatState chatState = const ChatState()}) {
   return [
     ...standardOverrides(),
-    chatProvider.overrideWith((ref) => _FakeChatNotifier(ref, chatState)),
+    chatProvider.overrideWith(() => _FakeChatNotifier(chatState)),
     channelsProvider.overrideWith(_FakeChannelsNotifier.new),
     privacyProvider.overrideWith(_FakePrivacy.new),
     voiceSettingsProvider.overrideWith(_FakeVoiceSettings.new),

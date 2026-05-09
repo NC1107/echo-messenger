@@ -678,8 +678,8 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            chatProvider.overrideWith((ref) {
-              final n = _MutableChatNotifier(ref, initialState);
+            chatProvider.overrideWith(() {
+              final n = _MutableChatNotifier(initialState);
               capturedNotifier = n;
               return n;
             }),
@@ -1013,10 +1013,13 @@ class _StaticUIDensity extends UIDensityNotifier {
 // ChatNotifier subclass that exposes direct state mutation for tests.
 // Skips all network/cache operations so tests stay hermetic.
 // ---------------------------------------------------------------------------
-class _MutableChatNotifier extends ChatNotifier {
-  _MutableChatNotifier(super.ref, ChatState initial) {
-    state = initial;
-  }
+class _MutableChatNotifier extends Chat {
+  _MutableChatNotifier(this._initial);
+
+  final ChatState _initial;
+
+  @override
+  ChatState build() => _initial;
 
   @override
   void addMessage(ChatMessage msg) => state = state.withMessage(msg);

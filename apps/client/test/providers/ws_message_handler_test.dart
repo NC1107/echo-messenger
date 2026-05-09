@@ -110,11 +110,7 @@ class _FakeConversationsNotifier extends ConversationsNotifier {
 // Concrete handler for testing
 // ---------------------------------------------------------------------------
 
-class _TestWsHandler extends StateNotifier<WebSocketState>
-    with WsMessageHandler {
-  @override
-  final Ref ref;
-
+class _TestWsHandler extends Notifier<WebSocketState> with WsMessageHandler {
   @override
   final StreamController<Map<String, dynamic>> voiceSignalController =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -123,13 +119,13 @@ class _TestWsHandler extends StateNotifier<WebSocketState>
   final StreamController<Map<String, dynamic>> deviceRevokedController =
       StreamController<Map<String, dynamic>>.broadcast();
 
-  _TestWsHandler(this.ref) : super(const WebSocketState());
+  @override
+  WebSocketState build() => const WebSocketState();
 }
 
-final _testHandlerProvider =
-    StateNotifierProvider<_TestWsHandler, WebSocketState>(
-      (ref) => _TestWsHandler(ref),
-    );
+final _testHandlerProvider = NotifierProvider<_TestWsHandler, WebSocketState>(
+  _TestWsHandler.new,
+);
 
 // ---------------------------------------------------------------------------
 // Test setup

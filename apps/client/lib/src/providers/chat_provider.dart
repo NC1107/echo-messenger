@@ -1,10 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
-
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/chat_message.dart';
 import '../models/reaction.dart';
@@ -16,6 +15,8 @@ import '../utils/crypto_utils.dart';
 import 'auth_provider.dart';
 import 'conversations_provider.dart';
 import 'server_url_provider.dart';
+
+part 'chat_provider.g.dart';
 
 /// Placeholder content strings emitted by ws_message_handler.dart while a
 /// message is awaiting decryption.  When [ChatState.withMessage] sees an
@@ -169,14 +170,24 @@ class ChatState {
 /// Maximum messages retained per conversation to bound memory usage.
 const _maxMessagesPerConv = 500;
 
-class ChatNotifier extends StateNotifier<ChatState> {
-  final Ref ref;
-
+@Riverpod(keepAlive: true)
+class Chat extends _$Chat {
   /// Timers that transition pending messages to failed after 15 seconds
   /// without server confirmation.
   final Map<String, Timer> _sendTimeouts = {};
 
-  ChatNotifier(this.ref) : super(const ChatState());
+  @override
+  ChatState build() {
+    // Cancel any pending send-timeout timers when this notifier is
+    // disposed (mirrors the legacy `dispose()` override).
+    ref.onDispose(() {
+      for (final timer in _sendTimeouts.values) {
+        timer.cancel();
+      }
+      _sendTimeouts.clear();
+    });
+    return const ChatState();
+  }
 
   String get _serverUrl => ref.read(serverUrlProvider);
 
@@ -933,26 +944,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
     await sender(forwarded);
   }
 
+  /// Reset all in-memory state.  Used on logout / account switch.
+  /// (`build()`'s `ref.onDispose` already covers timer teardown when
+  /// the provider itself is disposed; this method handles "stay
+  /// alive but clear" semantics.)
   void clear() {
-    // Cancel all pending send-timeout timers to prevent orphaned callbacks.
     for (final timer in _sendTimeouts.values) {
       timer.cancel();
     }
     _sendTimeouts.clear();
     state = const ChatState();
   }
-
-  @override
-  void dispose() {
-    // Cancel any remaining timers so they don't fire after disposal.
-    for (final timer in _sendTimeouts.values) {
-      timer.cancel();
-    }
-    _sendTimeouts.clear();
-    super.dispose();
-  }
 }
-
-final chatProvider = StateNotifierProvider<ChatNotifier, ChatState>((ref) {
-  return ChatNotifier(ref);
-});

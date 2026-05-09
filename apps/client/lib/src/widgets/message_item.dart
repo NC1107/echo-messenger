@@ -19,15 +19,20 @@ import '../utils/download_helper.dart';
 import '../utils/clipboard_image_helper.dart' show writeImageToClipboard;
 import '../utils/semantics_preview.dart';
 import '../utils/time_utils.dart';
-import 'avatar_utils.dart' show buildAvatar, avatarColor, senderLabelColor;
+import 'avatar_utils.dart' show buildAvatar, avatarColor;
 import '../services/media_cache_service.dart';
 import 'message/hover_action_button.dart';
 import 'message/link_preview_card.dart';
 import 'message/media_content.dart';
 import 'message/message_status_icon.dart';
+import 'message/message_indicators.dart';
 import 'message/reaction_bar.dart';
+import 'message/reply_count_badge.dart';
 import 'message/reply_quote.dart';
+import 'message/retry_row.dart';
 import 'message/rich_text_content.dart';
+import 'message/sender_name_label.dart';
+import 'message/system_event_pill.dart';
 import 'message/youtube_embed.dart';
 
 /// Common emojis for the reaction picker.
@@ -227,14 +232,6 @@ class _MessageItemState extends State<MessageItem>
     if (left.inMinutes < 60) return '${left.inMinutes}m';
     if (left.inHours < 24) return '${left.inHours}h';
     return '${left.inDays}d';
-  }
-
-  /// Sender-name label color for group messages. Uses a contrast-safe palette
-  /// against the dark recv bubble (#500); the sidebar avatar background still
-  /// uses `avatarColor`, where contrast rules differ.
-  Color _getSenderLabelColor(String userId) {
-    final name = widget.message.fromUsername;
-    return senderLabelColor(name);
   }
 
   /// Avatar background color (contrast for the avatar's white initial glyph).
@@ -1023,66 +1020,6 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  /// Build the sender name label shown above the message bubble.
-  ///
-  /// In compact layout the sender name and timestamp share a single inline
-  /// row ("Username 12:34 PM") to save vertical space. Everywhere else the
-  /// name stands alone on its own line above the bubble.
-  Widget _buildSenderNameLabel({
-    required ChatMessage msg,
-    required bool hasMedia,
-  }) {
-    // Phase 2 follow-up: density-aware sender + inline-timestamp
-    // sizing.  Layout (bubble style) still controls *whether* the
-    // timestamp is inline vs separate; density controls the font
-    // sizes on whichever side it lands.
-    final double nameFontSize = switch (widget.density) {
-      UIDensity.cozy => 14,
-      UIDensity.normal => 13,
-      UIDensity.compact => 12,
-    };
-    final double timestampFontSize = switch (widget.density) {
-      UIDensity.cozy => 12,
-      UIDensity.normal => 11,
-      UIDensity.compact => 10,
-    };
-
-    final nameText = Text(
-      msg.fromUsername,
-      style: GoogleFonts.inter(
-        fontSize: nameFontSize,
-        fontWeight: FontWeight.w600,
-        color: _getSenderLabelColor(msg.fromUserId),
-      ),
-    );
-
-    final padding = EdgeInsets.only(bottom: 4, left: hasMedia ? 8 : 0);
-
-    if (!widget.compactLayout) {
-      return Padding(padding: padding, child: nameText);
-    }
-
-    return Padding(
-      padding: padding,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          nameText,
-          const SizedBox(width: 6),
-          Text(
-            formatMessageTimestamp(msg.timestamp),
-            style: GoogleFonts.inter(
-              fontSize: timestampFontSize,
-              color: context.textMuted,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Returns true when [content] is a known decrypt-failure sentinel.
   ///
   /// Mirrors [MessageCache.failureSentinels] so system sentinels (prefixed
@@ -1094,106 +1031,6 @@ class _MessageItemState extends State<MessageItem>
   /// Build a clean lock-icon pill for messages that could not be decrypted.
   ///
   /// Replaces the old verbose text with a rounded pill containing a lock icon
-  /// and short italic label so users see a polished affordance (#668).
-  Widget _buildDecryptFailurePill() {
-    return Semantics(
-      label: 'Message could not be decrypted',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: context.textMuted.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.lock_outline, size: 16, color: context.textSecondary),
-            const SizedBox(width: 6),
-            Text(
-              'Message could not be decrypted',
-              style: GoogleFonts.inter(
-                fontStyle: FontStyle.italic,
-                color: context.textSecondary,
-                fontSize: 13,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Build the retry/delete row shown below a failed outbound message.
-  Widget _buildRetryRow({required ChatMessage msg}) {
-    return Container(
-      margin: const EdgeInsets.only(top: 4, right: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: EchoTheme.danger.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: EchoTheme.danger.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          const Icon(Icons.error_rounded, size: 16, color: EchoTheme.danger),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              msg.content.contains('not have been delivered')
-                  ? 'Message may not have been delivered'
-                  : 'Failed to send',
-              style: const TextStyle(
-                fontSize: 12,
-                color: EchoTheme.danger,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          if (widget.onRetry != null) ...[
-            const SizedBox(width: 10),
-            GestureDetector(
-              onTap: () => widget.onRetry?.call(msg),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: context.accent,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  'Retry',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ],
-          if (widget.onDelete != null) ...[
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: () => widget.onDelete?.call(msg),
-              child: Text(
-                'Delete',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: EchoTheme.danger.withValues(alpha: 0.8),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   /// Resolve text color for message content.
   Color _contentTextColor({required bool isMine, required bool isFailed}) {
     if (isFailed) return EchoTheme.danger;
@@ -1243,7 +1080,7 @@ class _MessageItemState extends State<MessageItem>
       );
     }
     if (_isDecryptFailure(msg.content)) {
-      return _buildDecryptFailurePill();
+      return const DecryptFailurePill();
     }
 
     final displayContent = msg.content.startsWith(_forwardedPrefix)
@@ -1359,74 +1196,6 @@ class _MessageItemState extends State<MessageItem>
     );
   }
 
-  /// Build a small pinned indicator shown inside the bubble.
-  Widget _buildPinnedIndicator({required bool isMine}) {
-    return Semantics(
-      label: 'Pinned message',
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.push_pin,
-              size: 11,
-              color: isMine
-                  ? Theme.of(
-                      context,
-                    ).colorScheme.onPrimary.withValues(alpha: 0.7)
-                  : context.accent,
-            ),
-            const SizedBox(width: 3),
-            Text(
-              'Pinned',
-              style: GoogleFonts.inter(
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-                color: isMine
-                    ? Theme.of(
-                        context,
-                      ).colorScheme.onPrimary.withValues(alpha: 0.7)
-                    : context.accent,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildForwardedBadge({required bool isMine}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.forward,
-            size: 12,
-            color: isMine
-                ? Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7)
-                : context.textMuted,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            'Forwarded',
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontStyle: FontStyle.italic,
-              color: isMine
-                  ? Theme.of(
-                      context,
-                    ).colorScheme.onPrimary.withValues(alpha: 0.7)
-                  : context.textMuted,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Assemble the children of the bubble Column.
   List<Widget> _bubbleChildren({
     required ChatMessage msg,
@@ -1435,9 +1204,14 @@ class _MessageItemState extends State<MessageItem>
     required bool hasMedia,
   }) {
     return [
-      if (msg.pinnedAt != null) _buildPinnedIndicator(isMine: isMine),
+      if (msg.pinnedAt != null) PinnedIndicator(isMine: isMine),
       if (widget.showHeader && (!isMine || widget.compactLayout))
-        _buildSenderNameLabel(msg: msg, hasMedia: hasMedia),
+        SenderNameLabel(
+          message: msg,
+          hasMedia: hasMedia,
+          compactLayout: widget.compactLayout,
+          density: widget.density,
+        ),
       if (msg.replyToContent != null)
         ReplyQuote(
           replyToUsername: msg.replyToUsername,
@@ -1448,7 +1222,7 @@ class _MessageItemState extends State<MessageItem>
               : null,
         ),
       if (msg.content.startsWith(_forwardedPrefix))
-        _buildForwardedBadge(isMine: isMine),
+        ForwardedBadge(isMine: isMine),
       _buildBubbleContent(
         msg: msg,
         isMine: isMine,
@@ -1576,27 +1350,6 @@ class _MessageItemState extends State<MessageItem>
 
   /// Build the tiny green lock icon shown next to the timestamp on encrypted
   /// messages. Received-message lock is tappable to open the safety-number
-  /// verification screen; my own lock icon is non-interactive.
-  Widget _buildLockIcon({required ChatMessage msg, required bool isMine}) {
-    const icon = Padding(
-      padding: EdgeInsets.only(left: 3),
-      child: Icon(Icons.lock, size: 10, color: EchoTheme.online),
-    );
-
-    if (isMine || widget.onVerifyIdentity == null) {
-      return icon;
-    }
-
-    return Tooltip(
-      message: 'End-to-end encrypted. Tap to verify.',
-      child: InkWell(
-        onTap: () => widget.onVerifyIdentity!(msg),
-        borderRadius: BorderRadius.circular(6),
-        child: icon,
-      ),
-    );
-  }
-
   /// Build the timestamp row shown below the last message in a group.
   Widget _buildTimestampRow({required ChatMessage msg, required bool isMine}) {
     return Padding(
@@ -1611,7 +1364,12 @@ class _MessageItemState extends State<MessageItem>
             formatMessageTimestamp(msg.timestamp),
             style: GoogleFonts.inter(fontSize: 11, color: context.textMuted),
           ),
-          if (msg.isEncrypted) _buildLockIcon(msg: msg, isMine: isMine),
+          if (msg.isEncrypted)
+            LockIcon(
+              message: msg,
+              isMine: isMine,
+              onVerifyIdentity: widget.onVerifyIdentity,
+            ),
           if (msg.pinnedAt != null)
             Padding(
               padding: const EdgeInsets.only(left: 4),
@@ -1653,53 +1411,6 @@ class _MessageItemState extends State<MessageItem>
             ),
           if (isMine) MessageStatusIcon(status: msg.status),
         ],
-      ),
-    );
-  }
-
-  Widget _buildReplyCountBadge({
-    required ChatMessage msg,
-    required bool isMine,
-  }) {
-    final count = msg.replyCount;
-    final label = count == 1 ? '1 reply' : '$count replies';
-    return Padding(
-      padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
-      child: Align(
-        alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-        child: Semantics(
-          label: 'View $label',
-          button: true,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => widget.onViewThread?.call(msg),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: context.accent.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.forum_outlined, size: 12, color: context.accent),
-                    const SizedBox(width: 4),
-                    Text(
-                      label,
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: context.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -1828,43 +1539,6 @@ class _MessageItemState extends State<MessageItem>
   }
 
   /// Build the system event pill (centered, borderless).
-  Widget _buildSystemEventPill(ChatMessage msg) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: context.surface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: context.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                _systemEventIcon(msg.content),
-                size: 13,
-                color: context.textMuted,
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  msg.content,
-                  style: GoogleFonts.inter(
-                    color: context.textMuted,
-                    fontSize: 11,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   /// Whether the current platform supports touch-based swipe gestures.
   static bool get _isMobileTouch =>
       !kIsWeb &&
@@ -1952,7 +1626,7 @@ class _MessageItemState extends State<MessageItem>
     final isFailed = msg.status == MessageStatus.failed;
     final isSending = msg.status == MessageStatus.sending;
 
-    if (msg.isSystemEvent) return _buildSystemEventPill(msg);
+    if (msg.isSystemEvent) return SystemEventPill(message: msg);
 
     // Hide undecryptable messages entirely when the user has opted in (#668).
     if (widget.hideUndecryptable && _isDecryptFailure(msg.content)) {
@@ -2036,12 +1710,21 @@ class _MessageItemState extends State<MessageItem>
                 ),
               ),
               if (msg.replyCount > 0)
-                _buildReplyCountBadge(msg: msg, isMine: isMine),
+                ReplyCountBadge(
+                  message: msg,
+                  isMine: isMine,
+                  onTap: widget.onViewThread,
+                ),
               if (widget.isLastInGroup)
                 _buildTimestampRow(msg: msg, isMine: isMine)
               else
                 _buildHoverTimestamp(msg: msg, isMine: isMine),
-              if (isFailed && isMine) _buildRetryRow(msg: msg),
+              if (isFailed && isMine)
+                RetryRow(
+                  message: msg,
+                  onRetry: widget.onRetry,
+                  onDelete: widget.onDelete,
+                ),
             ],
           ),
           if (!hasReactions)
@@ -2100,21 +1783,4 @@ class _MessageItemState extends State<MessageItem>
       ),
     );
   }
-}
-
-IconData _systemEventIcon(String content) {
-  final lower = content.toLowerCase();
-  if (lower.contains('call')) {
-    return Icons.call;
-  }
-  if (lower.contains('encryption') || lower.contains('key')) {
-    return Icons.vpn_key;
-  }
-  if (lower.contains('joined') ||
-      lower.contains('left') ||
-      lower.contains('removed') ||
-      lower.contains('banned')) {
-    return Icons.group;
-  }
-  return Icons.info_outline;
 }

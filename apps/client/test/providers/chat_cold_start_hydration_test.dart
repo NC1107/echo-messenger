@@ -12,7 +12,7 @@ import 'package:echo_app/src/services/message_cache.dart';
 
 /// Creates a fresh [ChatNotifier] (empty state, no WS events) to simulate a
 /// cold-start scenario where the user has not yet opened any chat panel.
-ChatNotifier _createNotifier() {
+Chat _createNotifier() {
   final container = ProviderContainer(
     overrides: [
       authProvider.overrideWith((ref) {

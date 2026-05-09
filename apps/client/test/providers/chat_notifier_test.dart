@@ -8,7 +8,7 @@ import 'package:echo_app/src/providers/chat_provider.dart';
 import 'package:echo_app/src/providers/server_url_provider.dart';
 
 /// Create a real ChatNotifier backed by a ProviderContainer.
-ChatNotifier _createNotifier() {
+Chat _createNotifier() {
   final container = ProviderContainer(
     overrides: [
       authProvider.overrideWith((ref) {

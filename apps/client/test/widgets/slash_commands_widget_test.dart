@@ -18,13 +18,16 @@ import '../helpers/pump_app.dart';
 // ---------------------------------------------------------------------------
 
 Override _chatOverride([ChatState state = const ChatState()]) {
-  return chatProvider.overrideWith((ref) => _FakeChatNotifier(ref, state));
+  return chatProvider.overrideWith(() => _FakeChatNotifier(state));
 }
 
-class _FakeChatNotifier extends ChatNotifier {
-  _FakeChatNotifier(super.ref, ChatState initial) {
-    state = initial;
-  }
+class _FakeChatNotifier extends Chat {
+  _FakeChatNotifier(this._initial);
+
+  final ChatState _initial;
+
+  @override
+  ChatState build() => _initial;
 
   @override
   Future<void> loadHistoryWithUserId(

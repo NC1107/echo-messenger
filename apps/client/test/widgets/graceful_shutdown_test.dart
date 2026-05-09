@@ -23,9 +23,10 @@ import '../helpers/mock_providers.dart';
 // ---------------------------------------------------------------------------
 
 class _TrackingWsNotifier extends WebSocketNotifier {
-  _TrackingWsNotifier(super.ref) {
-    state = const WebSocketState(isConnected: true);
-  }
+  _TrackingWsNotifier();
+
+  @override
+  WebSocketState build() => const WebSocketState(isConnected: true);
 
   int disconnectCalls = 0;
 
@@ -53,8 +54,8 @@ void main() {
         ProviderScope(
           overrides: [
             ...standardOverrides(),
-            websocketProvider.overrideWith((ref) {
-              ws = _TrackingWsNotifier(ref);
+            websocketProvider.overrideWith(() {
+              ws = _TrackingWsNotifier();
               return ws;
             }),
           ],
@@ -85,8 +86,8 @@ void main() {
         ProviderScope(
           overrides: [
             ...standardOverrides(),
-            websocketProvider.overrideWith((ref) {
-              ws = _TrackingWsNotifier(ref);
+            websocketProvider.overrideWith(() {
+              ws = _TrackingWsNotifier();
               return ws;
             }),
           ],
