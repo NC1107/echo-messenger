@@ -873,6 +873,7 @@ pub async fn get_thread_replies(
     pool: &PgPool,
     parent_message_id: Uuid,
     conversation_id: Uuid,
+    before: Option<chrono::DateTime<chrono::Utc>>,
     limit: i64,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
@@ -894,11 +895,13 @@ pub async fn get_thread_replies(
          WHERE m.reply_to_id = $1 \
            AND m.conversation_id = $2 \
            AND m.deleted_at IS NULL \
+           AND ($3::timestamptz IS NULL OR m.created_at < $3) \
          ORDER BY m.created_at ASC \
-         LIMIT $3",
+         LIMIT $4",
     )
     .bind(parent_message_id)
     .bind(conversation_id)
+    .bind(before)
     .bind(limit)
     .fetch_all(pool)
     .await
