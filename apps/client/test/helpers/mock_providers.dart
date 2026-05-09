@@ -173,13 +173,14 @@ class _FakeContacts extends Contacts {
 
 /// Override [websocketProvider] with a disconnected state.
 Override webSocketOverride() {
-  return websocketProvider.overrideWith((ref) => _FakeWebSocketNotifier(ref));
+  return websocketProvider.overrideWith(() => _FakeWebSocketNotifier());
 }
 
 class _FakeWebSocketNotifier extends WebSocketNotifier {
-  _FakeWebSocketNotifier(super.ref) {
-    state = const WebSocketState();
-  }
+  _FakeWebSocketNotifier();
+
+  @override
+  WebSocketState build() => const WebSocketState();
 
   @override
   void connect() {}

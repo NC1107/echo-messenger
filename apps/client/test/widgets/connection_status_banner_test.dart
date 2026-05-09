@@ -11,7 +11,18 @@ import 'package:echo_app/src/widgets/connection_status_banner.dart';
 /// the inherited init (typing-cleanup Timer) is harmless under the
 /// fake_async pump cadence the widget tests use.
 class _TestWsNotifier extends WebSocketNotifier {
-  _TestWsNotifier(super.ref);
+  _TestWsNotifier(this._initial);
+
+  final WebSocketState _initial;
+
+  /// `build()` is the only sanctioned slot in @riverpod codegen for setting
+  /// the initial state -- assigning to `state` from the constructor body is
+  /// a no-op because the framework overwrites it with `build()`'s return.
+  /// Test code calls `setStateForTest` AFTER the framework has materialised
+  /// the notifier (post-pump), so the constructor receives the very first
+  /// state the widget should see.
+  @override
+  WebSocketState build() => _initial;
 
   void setStateForTest(WebSocketState next) => state = next;
 
@@ -21,9 +32,9 @@ class _TestWsNotifier extends WebSocketNotifier {
   }
 }
 
-ProviderScope _wrap(_TestWsNotifier Function(Ref) build) {
+ProviderScope _wrap(_TestWsNotifier Function() build) {
   return ProviderScope(
-    overrides: [websocketProvider.overrideWith((ref) => build(ref))],
+    overrides: [websocketProvider.overrideWith(() => build())],
     child: const MaterialApp(home: Scaffold(body: ConnectionStatusBanner())),
   );
 }
@@ -32,9 +43,8 @@ void main() {
   group('ConnectionStatusBanner (#499)', () {
     testWidgets('hidden when connected', (tester) async {
       await tester.pumpWidget(
-        _wrap((ref) {
-          final n = _TestWsNotifier(ref);
-          n.setStateForTest(const WebSocketState(isConnected: true));
+        _wrap(() {
+          final n = _TestWsNotifier(const WebSocketState(isConnected: true));
           return n;
         }),
       );
@@ -50,9 +60,8 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _wrap((ref) {
-          final n = _TestWsNotifier(ref);
-          n.setStateForTest(
+        _wrap(() {
+          final n = _TestWsNotifier(
             const WebSocketState(isConnected: false, reconnectAttempts: 0),
           );
           return n;
@@ -70,9 +79,8 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _wrap((ref) {
-          final n = _TestWsNotifier(ref);
-          n.setStateForTest(
+        _wrap(() {
+          final n = _TestWsNotifier(
             const WebSocketState(isConnected: false, reconnectAttempts: 2),
           );
           return n;
@@ -88,9 +96,8 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        _wrap((ref) {
-          final n = _TestWsNotifier(ref);
-          n.setStateForTest(
+        _wrap(() {
+          final n = _TestWsNotifier(
             const WebSocketState(isConnected: false, reconnectAttempts: 10),
           );
           return n;
@@ -108,9 +115,8 @@ void main() {
 
     testWidgets('shows session-replaced label + retry', (tester) async {
       await tester.pumpWidget(
-        _wrap((ref) {
-          final n = _TestWsNotifier(ref);
-          n.setStateForTest(
+        _wrap(() {
+          final n = _TestWsNotifier(
             const WebSocketState(isConnected: false, wasReplaced: true),
           );
           return n;
@@ -126,9 +132,8 @@ void main() {
     ) async {
       late _TestWsNotifier notifier;
       await tester.pumpWidget(
-        _wrap((ref) {
-          notifier = _TestWsNotifier(ref);
-          notifier.setStateForTest(
+        _wrap(() {
+          notifier = _TestWsNotifier(
             const WebSocketState(isConnected: false, reconnectAttempts: 1),
           );
           return notifier;

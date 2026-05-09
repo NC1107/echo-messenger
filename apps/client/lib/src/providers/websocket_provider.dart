@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/chat_message.dart';
@@ -21,10 +21,10 @@ import 'ws_message_handler.dart';
 
 export 'ws_message_handler.dart' show WsMessageHandler, WebSocketState;
 
-class WebSocketNotifier extends StateNotifier<WebSocketState>
-    with WsMessageHandler {
-  @override
-  final Ref ref;
+part 'websocket_provider.g.dart';
+
+@Riverpod(keepAlive: true)
+class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   Timer? _typingCleanupTimer;
@@ -54,29 +54,42 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
   /// Throttle: track last typing event sent per conversation.
   final Map<String, DateTime> _lastTypingSent = {};
 
-  WebSocketNotifier(this.ref) : super(const WebSocketState()) {
-    // Periodically clean up stale typing indicators
+  @override
+  WebSocketState build() {
+    // Periodically clean up stale typing indicators.
     _typingCleanupTimer = Timer.periodic(
       const Duration(seconds: 2),
       (_) => _cleanupTyping(),
     );
 
     // Re-bind the websocket whenever the active server URL changes (#PR-2).
-    // The previous code path read the URL via `ref.read` at connect time,
-    // which left the live socket pointed at the OLD origin after a switch.
-    // We listen here, in the constructor, so the subscription lasts as long
-    // as the notifier itself.
+    // We listen inside `build()`, so the subscription lasts as long as the
+    // notifier itself (matches the legacy constructor's lifetime).
     ref.listen<String>(serverUrlProvider, (previous, next) {
       if (previous == next) return;
       // Always tear down the existing socket; the old origin must not see
       // any further frames from this client.
       disconnect();
-      // Reconnect only if we still have an authenticated session. The login
+      // Reconnect only if we still have an authenticated session.  The login
       // flow will call `connect()` itself once auth completes.
       if (ref.read(authProvider).isLoggedIn) {
         connect();
       }
     });
+
+    // Mirror the legacy `dispose()` teardown.
+    ref.onDispose(() {
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = null;
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      _typingCleanupTimer?.cancel();
+      _voiceSignalController.close();
+      _deviceRevokedController.close();
+      disconnect();
+    });
+
+    return const WebSocketState();
   }
 
   Stream<Map<String, dynamic>> get voiceSignals =>
@@ -710,22 +723,11 @@ class WebSocketNotifier extends StateNotifier<WebSocketState>
       state = state.copyWith(typingUsers: updatedTyping);
     }
   }
-
-  @override
-  void dispose() {
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = null;
-    _reconnectTimer?.cancel();
-    _reconnectTimer = null;
-    _typingCleanupTimer?.cancel();
-    _voiceSignalController.close();
-    _deviceRevokedController.close();
-    disconnect();
-    super.dispose();
-  }
 }
 
-final websocketProvider =
-    StateNotifierProvider<WebSocketNotifier, WebSocketState>((ref) {
-      return WebSocketNotifier(ref);
-    });
+/// Short alias matching the historical provider symbol.  Codegen names
+/// the generated provider after the class (`webSocketNotifierProvider`),
+/// but the rest of the codebase has always referenced this as
+/// `websocketProvider`; the alias avoids a cross-cutting rename that's
+/// orthogonal to the migration.
+final websocketProvider = webSocketNotifierProvider;

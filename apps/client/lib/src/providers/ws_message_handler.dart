@@ -126,8 +126,10 @@ class WebSocketState {
 ///
 /// The handler implementations are split across feature-grouped part files
 /// in `ws_handlers/` (message, typing/reaction, presence, voice, crypto).
-mixin WsMessageHandler on StateNotifier<WebSocketState> {
-  Ref get ref;
+mixin WsMessageHandler on Notifier<WebSocketState> {
+  // `ref` is provided by the parent Notifier class (codegen migration #770);
+  // the redundant getter declaration the legacy StateNotifier mixin needed
+  // is no longer required.
   StreamController<Map<String, dynamic>> get voiceSignalController;
 
   /// Broadcast of `device_revoked` events for the current user. UI surfaces

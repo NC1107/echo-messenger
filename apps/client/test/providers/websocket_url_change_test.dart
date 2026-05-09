@@ -18,7 +18,7 @@ class _RecordingWsNotifier extends WebSocketNotifier {
   int connectCalls = 0;
   int disconnectCalls = 0;
 
-  _RecordingWsNotifier(super.ref);
+  _RecordingWsNotifier();
 
   @override
   void connect() {
@@ -54,8 +54,8 @@ void main() {
             ),
           ),
         ),
-        websocketProvider.overrideWith((ref) {
-          ws = _RecordingWsNotifier(ref);
+        websocketProvider.overrideWith(() {
+          ws = _RecordingWsNotifier();
           return ws;
         }),
       ],
