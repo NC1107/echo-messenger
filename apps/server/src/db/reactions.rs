@@ -51,14 +51,23 @@ pub async fn remove_reaction(
 }
 
 /// Get the conversation_id for a given message.
+///
+/// Rejects soft-deleted messages so callers (add_reaction, remove_reaction)
+/// can't keep building reaction state on a message the user has explicitly
+/// removed.  Without this filter, a stale client cursor would happily add
+/// 💯 to a tombstone, and the row would surface again the moment the
+/// `deleted_at IS NULL` filter on history queries is bypassed.
 pub async fn get_message_conversation_id(
     pool: &PgPool,
     message_id: Uuid,
 ) -> Result<Option<Uuid>, sqlx::Error> {
-    let row: Option<(Uuid,)> = sqlx::query_as("SELECT conversation_id FROM messages WHERE id = $1")
-        .bind(message_id)
-        .fetch_optional(pool)
-        .await?;
+    let row: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT conversation_id FROM messages \
+         WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(message_id)
+    .fetch_optional(pool)
+    .await?;
     Ok(row.map(|(id,)| id))
 }
 

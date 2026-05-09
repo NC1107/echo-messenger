@@ -119,9 +119,11 @@ their owning files are touched.
 
 ## Phase 1 — Sidebar state hierarchy
 
-**Status:** shipped. Mention badge ships as a *client-side-only* signal
-(see "Out of scope / follow-ups" below); the rest of the deltas land in
-the same PR as Phase 0b.
+**Status:** shipped. Server-side mention persistence landed as a
+follow-up — the badge now survives a refresh for plaintext groups
+(encrypted-group mentions remain client-side only because the server
+can't see ciphertext content).  The rest of the Phase 1 deltas
+shipped alongside Phase 0b.
 
 **Goal:** Unread / muted / mentioned / active conversations are
 distinguishable in <100ms of glance, not after parsing color and font
@@ -165,13 +167,14 @@ low-risk, and unblocks every future onboarding / churn discussion.
 
 **Out of scope / follow-ups:**
 
-- **Server-side mention persistence.** The shipped mention badge is
-  derived client-side: when a `new_message` arrives, the WS handler
-  scans the decrypted plaintext for `@<myUsername>`, `@everyone`, or
-  `@here` and increments `Conversation.mentionCount` (a
-  client-state-only field). `markAsRead` clears it. Multi-device sync
-  of "you have mentions waiting" requires a server column + API
-  change — deferred until needed.
+- ~~**Server-side mention persistence.**~~ Shipped 2026-05-09: a
+  `mentions(message_id, mentioned_user_id)` table is populated when a
+  plaintext message is stored, and `list_conversations` joins it
+  against the user's read receipt to produce a `mention_count` that
+  survives a refresh. Encrypted groups still rely on client-side
+  detection because the server never sees plaintext there — that
+  follow-up will need per-recipient envelopes to carry mention
+  metadata.
 - Full sidebar redesign (server list, channel tree).
 - Nav rework (top bar, search, profile menu).
 - Mobile-specific tweaks.

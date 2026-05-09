@@ -52,8 +52,21 @@ pub(super) fn is_valid_ciphertext_shape(b64: &str) -> bool {
     false
 }
 
-/// Validate that the message content does not exceed the maximum length.
+/// Validate that the message content is non-empty (after trimming) and
+/// does not exceed the maximum length.  REST edit already rejects empty
+/// strings; the WS path didn't, which let clients persist a whitespace-
+/// only message that surfaced as a blank bubble in the timeline.
+///
+/// Trim-emptiness only applies to the *plaintext* path -- encrypted
+/// conversations carry base64-encoded ciphertext that starts with magic
+/// bytes (`0xEC 0x01/0x02` or a 4-byte LE header_len of 40), so the
+/// canonical content is never empty there.  We still gate it through a
+/// trim because base64 of a real ciphertext doesn't whitespace-out.
 pub(super) fn validate_message_length(state: &AppState, sender_id: Uuid, content: &str) -> bool {
+    if content.trim().is_empty() {
+        send_error(state, sender_id, "Content cannot be empty");
+        return false;
+    }
     if content.len() > MAX_MESSAGE_LENGTH {
         send_error(
             state,
