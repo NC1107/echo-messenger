@@ -1721,7 +1721,14 @@ class _MessageItemState extends State<MessageItem>
       opacity: _isHovered ? 1.0 : 0.0,
       duration: const Duration(milliseconds: 140),
       child: Padding(
-        padding: EdgeInsets.only(top: 2, left: isMine ? 0 : 36),
+        // Compact / plain layouts left-align every message regardless of
+        // sender, so even "my" messages need the 36px avatar-gutter inset
+        // to line up with the bubble.  Only bubbles-layout sent messages
+        // sit flush right and warrant `left: 0`.
+        padding: EdgeInsets.only(
+          top: 2,
+          left: (isMine && !widget.compactLayout) ? 0 : 36,
+        ),
         child: Text(
           msg.editedAt != null
               ? '${formatMessageTimestamp(msg.timestamp)} (edited)'
@@ -1746,6 +1753,12 @@ class _MessageItemState extends State<MessageItem>
     required bool isMine,
     required String? mediaUrl,
   }) {
+    // In bubbles layout, "my" messages are right-aligned so the overlay
+    // anchors to the right edge.  In compact / plain layouts every message
+    // is left-aligned regardless of sender, so right-anchoring the
+    // overlay parks it on the far right of the chat -- nowhere near the
+    // bubble (#prod-2026-05-08).  Use the bubble's actual visual side.
+    final bubbleOnRight = isMine && !widget.compactLayout;
     return Positioned(
       top: -28,
       // Anchor only the side closest to the bubble so the overlay sizes to
@@ -1754,8 +1767,8 @@ class _MessageItemState extends State<MessageItem>
       // `right: 0`, but received bubbles previously also set `right: 8`,
       // which is what produced the asymmetric full-width hover bar on
       // left-side messages.
-      left: isMine ? null : 36,
-      right: isMine ? 0 : null,
+      left: bubbleOnRight ? null : 36,
+      right: bubbleOnRight ? 0 : null,
       // Defensive `IntrinsicWidth` wrap: in CanvasKit (web) the action
       // row's `Container > Row(MainAxisSize.min)` was still expanding to
       // the full Stack width despite the Positioned only setting one
