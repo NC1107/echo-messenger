@@ -442,7 +442,10 @@ pub async fn edit_message(
     Path(message_id): Path<Uuid>,
     Json(body): Json<EditMessageRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    if body.content.is_empty() {
+    // Reject empty *and* whitespace-only edits.  Without the trim, a
+    // user could replace a real message with `"   "` and surface a
+    // blank bubble in the timeline.
+    if body.content.trim().is_empty() {
         return Err(AppError::bad_request("Content cannot be empty"));
     }
     if body.content.len() > 10_000 {
