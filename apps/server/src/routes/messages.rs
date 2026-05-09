@@ -110,6 +110,11 @@ pub struct MessageDto {
     pub reply_to_content: Option<String>,
     pub reply_to_username: Option<String>,
     pub reply_count: i64,
+    /// Reactions on this message: array of
+    /// `{message_id, user_id, username, emoji}`.  Aggregated by the DB
+    /// query so history reloads render reactions immediately instead of
+    /// silently dropping them until the next WS reaction-update event.
+    pub reactions: serde_json::Value,
 }
 
 impl From<db::messages::MessageWithSender> for MessageDto {
@@ -131,6 +136,10 @@ impl From<db::messages::MessageWithSender> for MessageDto {
             reply_to_content: m.reply_to_content,
             reply_to_username: m.reply_to_username,
             reply_count: m.reply_count,
+            reactions: m
+                .reactions
+                .map(|j| j.0)
+                .unwrap_or_else(|| serde_json::json!([])),
         }
     }
 }
