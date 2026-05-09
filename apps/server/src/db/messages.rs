@@ -37,6 +37,14 @@ pub struct MessageWithSender {
     pub reply_to_content: Option<String>,
     pub reply_to_username: Option<String>,
     pub reply_count: i64,
+    /// Reactions aggregated as a JSON array of
+    /// `{message_id, user_id, username, emoji}` objects.  Public history
+    /// queries (`get_messages`, `get_thread_replies`) populate this so the
+    /// client can render reactions on history reload; the WS replay path
+    /// (`get_undelivered`) leaves it as `Null` because reactions are
+    /// rebroadcast independently over WebSocket.
+    #[serde(default)]
+    pub reactions: Option<sqlx::types::Json<serde_json::Value>>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -222,7 +230,8 @@ pub async fn get_messages(
                 m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                COALESCE(rc.reply_count, 0) AS reply_count \
+                COALESCE(rc.reply_count, 0) AS reply_count, \
+                COALESCE(rx.reactions, '[]'::json) AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
@@ -233,6 +242,17 @@ pub async fn get_messages(
              WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL \
              GROUP BY reply_to_id \
          ) rc ON rc.reply_to_id = m.id \
+         LEFT JOIN LATERAL ( \
+             SELECT json_agg(json_build_object( \
+                 'message_id', r.message_id, \
+                 'user_id', r.user_id, \
+                 'username', rxu.username, \
+                 'emoji', r.emoji \
+             )) AS reactions \
+             FROM reactions r \
+             JOIN users rxu ON rxu.id = r.user_id \
+             WHERE r.message_id = m.id \
+         ) rx ON true \
          LEFT JOIN message_device_contents mdc \
                 ON $5::int IS NOT NULL \
                AND mdc.message_id = m.id \
@@ -873,6 +893,7 @@ pub async fn get_thread_replies(
     pool: &PgPool,
     parent_message_id: Uuid,
     conversation_id: Uuid,
+    before: Option<chrono::DateTime<chrono::Utc>>,
     limit: i64,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
     sqlx::query_as::<_, MessageWithSender>(
@@ -882,7 +903,8 @@ pub async fn get_thread_replies(
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                COALESCE(rc.cnt, 0) AS reply_count \
+                COALESCE(rc.cnt, 0) AS reply_count, \
+                COALESCE(rx.reactions, '[]'::json) AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
@@ -891,14 +913,27 @@ pub async fn get_thread_replies(
              SELECT COUNT(*) AS cnt FROM messages r \
              WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
          ) rc ON true \
+         LEFT JOIN LATERAL ( \
+             SELECT json_agg(json_build_object( \
+                 'message_id', r.message_id, \
+                 'user_id', r.user_id, \
+                 'username', rxu.username, \
+                 'emoji', r.emoji \
+             )) AS reactions \
+             FROM reactions r \
+             JOIN users rxu ON rxu.id = r.user_id \
+             WHERE r.message_id = m.id \
+         ) rx ON true \
          WHERE m.reply_to_id = $1 \
            AND m.conversation_id = $2 \
            AND m.deleted_at IS NULL \
+           AND ($3::timestamptz IS NULL OR m.created_at < $3) \
          ORDER BY m.created_at ASC \
-         LIMIT $3",
+         LIMIT $4",
     )
     .bind(parent_message_id)
     .bind(conversation_id)
+    .bind(before)
     .bind(limit)
     .fetch_all(pool)
     .await

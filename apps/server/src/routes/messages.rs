@@ -110,6 +110,11 @@ pub struct MessageDto {
     pub reply_to_content: Option<String>,
     pub reply_to_username: Option<String>,
     pub reply_count: i64,
+    /// Reactions on this message: array of
+    /// `{message_id, user_id, username, emoji}`.  Aggregated by the DB
+    /// query so history reloads render reactions immediately instead of
+    /// silently dropping them until the next WS reaction-update event.
+    pub reactions: serde_json::Value,
 }
 
 impl From<db::messages::MessageWithSender> for MessageDto {
@@ -131,6 +136,10 @@ impl From<db::messages::MessageWithSender> for MessageDto {
             reply_to_content: m.reply_to_content,
             reply_to_username: m.reply_to_username,
             reply_count: m.reply_count,
+            reactions: m
+                .reactions
+                .map(|j| j.0)
+                .unwrap_or_else(|| serde_json::json!([])),
         }
     }
 }
@@ -474,6 +483,10 @@ pub async fn edit_message(
 #[derive(Debug, Deserialize)]
 pub struct ThreadRepliesQuery {
     pub limit: Option<i64>,
+    /// Optional cursor for pagination: return only replies whose
+    /// `created_at < before`.  Without this, threads with more than
+    /// `limit` replies (default 50, max 100) silently truncate.
+    pub before: Option<DateTime<Utc>>,
 }
 
 pub async fn get_thread_replies(
@@ -508,9 +521,15 @@ pub async fn get_thread_replies(
     let limit = params.limit.unwrap_or(50).min(100);
     // Scope to the parent's conversation so cross-conversation replies cannot
     // leak content across DMs.
-    let replies = db::messages::get_thread_replies(&state.pool, message_id, conversation_id, limit)
-        .await
-        .db_ctx("get_thread_replies/fetch")?;
+    let replies = db::messages::get_thread_replies(
+        &state.pool,
+        message_id,
+        conversation_id,
+        params.before,
+        limit,
+    )
+    .await
+    .db_ctx("get_thread_replies/fetch")?;
 
     Ok(Json(replies))
 }
