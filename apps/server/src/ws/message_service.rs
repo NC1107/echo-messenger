@@ -998,13 +998,13 @@ pub(super) async fn fanout_message(
     //
     // Guarded behind `!offline_user_ids.is_empty()` so the body scan
     // is skipped entirely when no offline recipients exist (the only
-    // path where suppression matters).  `mentions_broadcast` itself
+    // path where suppression matters).  `is_standalone_keyword` itself
     // already short-circuits on content with no '@', but this guard
     // skips even the call setup on the hot path.
     let suppress_offline_push = !offline_user_ids.is_empty()
         && is_group
         && !is_encrypted
-        && mentions_broadcast(&fields.content, "here");
+        && db::mentions::is_standalone_keyword(&fields.content, "here");
 
     if suppress_offline_push {
         // Audit trail for #451: suppressing pushes is observable abuse
@@ -1029,41 +1029,6 @@ pub(super) async fn fanout_message(
             stored_id,
         );
     }
-}
-
-/// Returns true when `content` contains `@<keyword>` as a standalone token.
-///
-/// Boundaries are start/end of string or any non-word character (anything
-/// other than alphanumeric or underscore).  Case-insensitive so users
-/// typing `@Here` or `@HERE` are still routed correctly.
-pub(super) fn mentions_broadcast(content: &str, keyword: &str) -> bool {
-    // Hot path: most messages don't contain '@' at all.  Bail before any
-    // allocation — `str::contains` for a single ASCII byte is SIMD-fast.
-    if !content.contains('@') {
-        return false;
-    }
-    let target = format!("@{}", keyword.to_lowercase());
-    let lower = content.to_lowercase();
-    let mut start = 0;
-    while let Some(rel) = lower[start..].find(&target) {
-        let abs = start + rel;
-        let after = abs + target.len();
-        let left_ok = abs == 0
-            || !lower[..abs]
-                .chars()
-                .next_back()
-                .is_some_and(|c| c.is_alphanumeric() || c == '_');
-        let right_ok = after == lower.len()
-            || !lower[after..]
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_alphanumeric() || c == '_');
-        if left_ok && right_ok {
-            return true;
-        }
-        start = abs + target.len();
-    }
-    false
 }
 
 /// Deliver any messages that were stored while the user was offline, then mark
@@ -1237,63 +1202,5 @@ async fn deliver_one_batch(
                 .hub
                 .send_to(&msg.sender_id, WsMessage::Text(json.into()));
         }
-    }
-}
-
-#[cfg(test)]
-mod broadcast_tests {
-    use super::mentions_broadcast;
-
-    #[test]
-    fn matches_lone_at_here() {
-        assert!(mentions_broadcast("@here", "here"));
-    }
-
-    #[test]
-    fn matches_at_here_with_surrounding_text() {
-        assert!(mentions_broadcast("hi @here please look", "here"));
-    }
-
-    #[test]
-    fn matches_at_here_with_punctuation() {
-        assert!(mentions_broadcast("@here, please", "here"));
-        assert!(mentions_broadcast("psst.@here!", "here"));
-    }
-
-    #[test]
-    fn rejects_at_hereafter() {
-        assert!(!mentions_broadcast("@hereafter we go", "here"));
-    }
-
-    #[test]
-    fn rejects_email_like_x_at_here() {
-        assert!(!mentions_broadcast("x@here", "here"));
-    }
-
-    #[test]
-    fn rejects_underscore_suffix() {
-        assert!(!mentions_broadcast("@here_lounge", "here"));
-    }
-
-    #[test]
-    fn case_insensitive() {
-        assert!(mentions_broadcast("Yo @Here folks", "here"));
-        assert!(mentions_broadcast("YO @HERE FOLKS", "here"));
-    }
-
-    #[test]
-    fn matches_everyone_too() {
-        assert!(mentions_broadcast("@everyone get in here", "everyone"));
-        assert!(!mentions_broadcast("@everyones", "everyone"));
-    }
-
-    #[test]
-    fn empty_content_is_false() {
-        assert!(!mentions_broadcast("", "here"));
-    }
-
-    #[test]
-    fn no_match_is_false() {
-        assert!(!mentions_broadcast("normal message", "here"));
     }
 }
