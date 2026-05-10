@@ -33,8 +33,24 @@ class CallKitEndAction extends CallKitAction {
 /// service in [BackgroundService], desktop apps aren't restricted.
 class VoiceCallKitService {
   VoiceCallKitService._() {
-    if (_isIos) {
-      _eventSub = FlutterCallkitIncoming.onEvent.listen(_handleEvent);
+    if (!_isIos) return;
+    // Subscribe defensively — on a fresh install the plugin may not be
+    // fully registered yet and getting `onEvent` can throw on some iOS
+    // versions.  A failure here must NOT crash the app; CallKit
+    // integration just becomes a no-op.
+    try {
+      _eventSub = FlutterCallkitIncoming.onEvent.listen(
+        _handleEvent,
+        onError: (Object e) {
+          _log('CallKit event-stream error (ignored): $e', error: true);
+        },
+      );
+    } catch (e, stack) {
+      _log(
+        'Failed to subscribe to CallKit event stream — service will run in no-op mode: $e',
+        error: true,
+      );
+      _log('Stack: $stack', error: true);
     }
   }
   static final VoiceCallKitService instance = VoiceCallKitService._();
@@ -71,42 +87,57 @@ class VoiceCallKitService {
       await endCall();
     }
 
+    // Bare-minimum IOSParams — every optional field we set in v0.0.299 has
+    // been a candidate for the on-tap crash, so we drop everything that
+    // isn't strictly required to start an outgoing call.  Notably
+    // `iconName` is gone (it referenced a CallKitLogo.png we don't bundle,
+    // a hard-crash trigger when CallKit tries to resolve the asset) and
+    // audioSessionMode is reset to 'default' to match the upstream
+    // example.
     final params = CallKitParams(
       id: callId,
       nameCaller: channelName,
       handle: 'Echo Messenger',
       type: 0,
-      // CallKit's UI mute state must agree with our LiveKit mic state on
-      // join; the handler below keeps it in sync after that.
       ios: const IOSParams(
-        iconName: 'CallKitLogo',
         handleType: 'generic',
         supportsVideo: false,
         maximumCallGroups: 1,
         maximumCallsPerCallGroup: 1,
-        audioSessionMode: 'voiceChat',
+        audioSessionMode: 'default',
         audioSessionActive: true,
-        audioSessionPreferredSampleRate: 44100.0,
-        audioSessionPreferredIOBufferDuration: 0.005,
         supportsDTMF: false,
         supportsHolding: false,
         supportsGrouping: false,
         supportsUngrouping: false,
-        ringtonePath: 'system_ringtone_default',
       ),
     );
 
+    // CallKit failure must NOT take down the voice join — LiveKit is
+    // already connected by the time we get here, and the user's
+    // experience of "voice works but iOS may suspend faster" is far
+    // better than "tap channel, app crashes."  Catch everything,
+    // including platform exceptions, asset-resolution errors, and
+    // permission failures.
     try {
       await FlutterCallkitIncoming.startCall(params);
-      // Reflect the initial mute state into the CallKit UI so the user
-      // doesn't see Unmuted while LiveKit started muted.
       if (isMuted) {
-        await FlutterCallkitIncoming.muteCall(callId, isMuted: true);
+        try {
+          await FlutterCallkitIncoming.muteCall(callId, isMuted: true);
+        } catch (e) {
+          _log('CallKit muteCall failed (non-fatal): $e', error: true);
+        }
       }
       _activeCallId = callId;
       _log('Started CallKit call: $callId ($channelName)');
-    } catch (e) {
-      _log('Failed to start CallKit call: $e', error: true);
+    } catch (e, stack) {
+      _log(
+        'CallKit startCall threw — voice will run without it: $e',
+        error: true,
+      );
+      _log('Stack: $stack', error: true);
+      // Leave _activeCallId null so endCall is also a no-op; the
+      // foreground-service / notification stays in charge.
     }
   }
 
