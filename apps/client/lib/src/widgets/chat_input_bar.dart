@@ -1826,7 +1826,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   @override
   Widget build(BuildContext context) {
     final conv = widget.conversation;
-    final myUserId = ref.watch(authProvider).userId ?? '';
+    final myUserId = ref.watch(authProvider.select((s) => s.userId)) ?? '';
     final voiceSettings = ref.watch(voiceSettingsProvider);
     final replyToMessage = ref.watch(
       chatProvider.select((s) => s.replyToMessage),
