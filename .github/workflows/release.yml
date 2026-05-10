@@ -221,7 +221,10 @@ jobs:
           # on Fedora 43 / glib 2.84+ targets (reported 2026-05-08).  Keep
           # universal system libraries on the host; only bundle the media
           # stack we know minimal hosts may not ship.
-          BUNDLE_RE='^(libmpv|libav(codec|format|util|filter|device)|libsws(cale)?|libswresample|libpostproc|libplacebo|libmujs|libdovi|libshaderc|libspirv-cross|libass|libuchardet|libvpx|libx264|libx265|libtheora|libvorbis|libopus|libdav1d|libaom|liblcms|librubberband|libsoxr|libchromaprint|libbluray|libsrt|libnghttp[23])'
+          # libmpv on bookworm pulls liblua5.2 (embedded scripting).  Without
+          # it the AppImage fails on hosts that don't ship liblua5.2-0 with
+          # "liblua5.2.so.0: cannot open shared object file" (#835).
+          BUNDLE_RE='^(libmpv|libav(codec|format|util|filter|device)|libsws(cale)?|libswresample|libpostproc|libplacebo|libmujs|libdovi|libshaderc|libspirv-cross|libass|libuchardet|libvpx|libx264|libx265|libtheora|libvorbis|libopus|libdav1d|libaom|liblcms|librubberband|libsoxr|libchromaprint|libbluray|libsrt|libnghttp[23]|liblua5\.[0-9]+|libluajit)'
           ldd "$LIBMPV_PATH" | awk '/=>/ {print $3}' \
             | while read -r dep; do
                 [ -z "$dep" ] || [ ! -e "$dep" ] && continue
