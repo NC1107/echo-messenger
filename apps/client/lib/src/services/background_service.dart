@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
@@ -5,75 +6,172 @@ import 'package:flutter/services.dart';
 
 import 'debug_log_service.dart';
 
+/// Action emitted by the voice notification's Mute / Leave buttons.
+sealed class VoiceNotificationAction {
+  const VoiceNotificationAction();
+}
+
+class VoiceMuteAction extends VoiceNotificationAction {
+  final bool muted;
+  const VoiceMuteAction({required this.muted});
+}
+
+class VoiceLeaveAction extends VoiceNotificationAction {
+  const VoiceLeaveAction();
+}
+
 /// Manages background execution for mobile platforms.
 ///
-/// **Android**: Starts a foreground service with a persistent notification
-/// ("Echo Messenger is running") so the OS keeps the WebSocket alive when the
-/// app is backgrounded. No Google/Firebase dependency -- the WebSocket IS the
-/// push mechanism.
+/// **Android**: Starts a foreground service.  Two modes:
 ///
-/// **iOS**: Will use APNs silent pushes in the future (Apple requirement, not
-/// Google). For now, the WebSocket reconnects when the app returns to
-/// foreground.
+///   - keep-alive (default): generic notification, type DATA_SYNC, used so
+///     the WebSocket stays connected for incoming messages.
+///   - voice: notification shows the channel name + Mute / Leave actions,
+///     type MICROPHONE | MEDIA_PLAYBACK so Android 14+ does not revoke
+///     RECORD_AUDIO when the app is backgrounded.  See
+///     [LiveKitVoiceNotifier.joinChannel] / [leaveChannel].
 ///
-/// **Desktop**: No-op. Desktop apps aren't restricted by OS backgrounding.
+/// **iOS**: Background voice survival is handled by AVAudioSession + CallKit
+/// (see [VoiceCallKitService]).  Silent APNs pushes wake the app for chat.
+///
+/// **Desktop**: No-op.
 class BackgroundService {
-  BackgroundService._();
+  BackgroundService._() {
+    _channel.setMethodCallHandler(_handleMethodCall);
+  }
   static final BackgroundService instance = BackgroundService._();
 
   static const _channel = MethodChannel('us.echomessenger/foreground_service');
-  bool _running = false;
 
-  /// Whether this platform needs a foreground service to stay connected.
-  static bool get _needsForegroundService {
+  final _actionController =
+      StreamController<VoiceNotificationAction>.broadcast();
+
+  /// Stream of Mute / Leave taps from the voice notification (Android only).
+  Stream<VoiceNotificationAction> get notificationActions =>
+      _actionController.stream;
+
+  bool _keepaliveRunning = false;
+  bool _voiceRunning = false;
+
+  static bool get _isAndroid {
     if (kIsWeb) return false;
     return Platform.isAndroid;
   }
 
-  /// Start the foreground service (Android only).
-  ///
-  /// Call after login when the WebSocket is established. The service shows a
-  /// persistent notification and prevents the OS from killing the app's
-  /// network connections.
+  /// Start the keep-alive foreground service (Android only).  Idempotent.
   Future<void> start() async {
-    if (!_needsForegroundService || _running) return;
-
+    if (!_isAndroid || _keepaliveRunning || _voiceRunning) return;
     try {
       await _channel.invokeMethod('start');
-      _running = true;
-      debugPrint('[BackgroundService] Foreground service started');
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'BackgroundService',
-        'Foreground service started',
-      );
+      _keepaliveRunning = true;
+      _log('Keep-alive service started');
     } catch (e) {
-      debugPrint('[BackgroundService] Failed to start: $e');
-      DebugLogService.instance.log(
-        LogLevel.error,
-        'BackgroundService',
-        'Failed to start foreground service: $e',
-      );
+      _log('Failed to start keep-alive service: $e', error: true);
     }
   }
 
-  /// Stop the foreground service (call on logout).
+  /// Stop the keep-alive foreground service.  No-op if voice mode is active
+  /// (caller should use [stopVoice] instead).
   Future<void> stop() async {
-    if (!_running) return;
-
+    if (!_isAndroid || (!_keepaliveRunning && !_voiceRunning)) return;
     try {
       await _channel.invokeMethod('stop');
-      _running = false;
-      debugPrint('[BackgroundService] Foreground service stopped');
-      DebugLogService.instance.log(
-        LogLevel.info,
-        'BackgroundService',
-        'Foreground service stopped',
-      );
+      _keepaliveRunning = false;
+      _voiceRunning = false;
+      _log('Foreground service stopped');
     } catch (e) {
-      debugPrint('[BackgroundService] Failed to stop: $e');
+      _log('Failed to stop foreground service: $e', error: true);
     }
   }
 
-  bool get isRunning => _running;
+  /// Promote the foreground service to voice mode.  Safe to call whether
+  /// the keep-alive service is running or not — the service will reconfigure
+  /// itself with the MICROPHONE | MEDIA_PLAYBACK type.
+  Future<void> startVoice({
+    required String channelName,
+    required bool isMuted,
+    required int participantCount,
+  }) async {
+    if (!_isAndroid) return;
+    try {
+      await _channel.invokeMethod('startVoice', {
+        'channelName': channelName,
+        'isMuted': isMuted,
+        'participantCount': participantCount,
+      });
+      _voiceRunning = true;
+      // Voice mode subsumes keep-alive on the same service instance.
+      _keepaliveRunning = false;
+      _log(
+        'Voice service started: $channelName (muted=$isMuted, n=$participantCount)',
+      );
+    } catch (e) {
+      _log('Failed to start voice service: $e', error: true);
+    }
+  }
+
+  /// Update the live voice notification with new state.  Safe to call from
+  /// any frequency; the underlying notification just gets re-issued.
+  Future<void> updateVoice({
+    String? channelName,
+    bool? isMuted,
+    int? participantCount,
+  }) async {
+    if (!_isAndroid || !_voiceRunning) return;
+    try {
+      await _channel.invokeMethod('updateVoice', {
+        'channelName': ?channelName,
+        'isMuted': ?isMuted,
+        'participantCount': ?participantCount,
+      });
+    } catch (e) {
+      _log('Failed to update voice notification: $e', error: true);
+    }
+  }
+
+  /// Stop the voice-mode foreground service (called on leaveChannel).
+  Future<void> stopVoice() async {
+    if (!_isAndroid) return;
+    try {
+      await _channel.invokeMethod('stopVoice');
+      _voiceRunning = false;
+      _log('Voice service stopped');
+    } catch (e) {
+      _log('Failed to stop voice service: $e', error: true);
+    }
+  }
+
+  Future<dynamic> _handleMethodCall(MethodCall call) async {
+    if (call.method != 'onNotificationAction') return null;
+    final args = (call.arguments as Map?) ?? const {};
+    final action = args['action'] as String?;
+    switch (action) {
+      case 'mute':
+        final muted = (args['muted'] as bool?) ?? false;
+        _actionController.add(VoiceMuteAction(muted: muted));
+      case 'leave':
+        _actionController.add(const VoiceLeaveAction());
+    }
+    return null;
+  }
+
+  bool get isRunning => _keepaliveRunning || _voiceRunning;
+  bool get isVoiceRunning => _voiceRunning;
+
+  void _log(String message, {bool error = false}) {
+    debugPrint('[BackgroundService] $message');
+    DebugLogService.instance.log(
+      error ? LogLevel.error : LogLevel.info,
+      'BackgroundService',
+      message,
+    );
+  }
+
+  /// Test-only: reset internal flags so `setUp(() => ...)` can run with a
+  /// fresh state.  Does NOT touch the platform side.
+  @visibleForTesting
+  void resetForTesting() {
+    _keepaliveRunning = false;
+    _voiceRunning = false;
+  }
 }

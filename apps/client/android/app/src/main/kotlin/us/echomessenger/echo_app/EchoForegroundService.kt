@@ -12,21 +12,44 @@ import android.os.IBinder
 import android.os.PowerManager
 
 /**
- * Foreground service that keeps the app alive in the background so the
- * WebSocket connection stays active and messages arrive in real time.
+ * Foreground service that keeps the app alive in the background.
  *
- * Shows a persistent notification ("Echo Messenger is running") that the
- * user can tap to return to the app. No external push service (Firebase,
- * Google Play Services) is required.
+ * Supports two modes:
+ *
+ *   - **Keep-alive mode** (default): generic notification, type DATA_SYNC.
+ *     Used so the WebSocket stays connected for incoming messages.
+ *
+ *   - **Voice mode**: notification shows the active channel name + Mute /
+ *     Leave actions, type MICROPHONE | MEDIA_PLAYBACK so Android 14+ does
+ *     not revoke RECORD_AUDIO when the app is backgrounded.  Started by
+ *     LiveKitVoiceProvider.joinChannel via the BackgroundService method
+ *     channel; stopped on leaveChannel.
+ *
+ * Mute / Leave actions are routed back to Dart via a static broadcast
+ * channel held by [MainActivity] (see [VoiceNotificationReceiver]).
  */
 class EchoForegroundService : Service() {
 
     companion object {
         const val CHANNEL_ID = "echo_foreground"
         const val NOTIFICATION_ID = 1
+
+        // Intent extras used to start / update the voice notification.
+        const val EXTRA_MODE = "mode"
+        const val EXTRA_CHANNEL_NAME = "channel_name"
+        const val EXTRA_IS_MUTED = "is_muted"
+        const val EXTRA_PARTICIPANT_COUNT = "participant_count"
+
+        // Mode values.
+        const val MODE_KEEPALIVE = "keepalive"
+        const val MODE_VOICE = "voice"
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var currentMode: String = MODE_KEEPALIVE
+    private var voiceChannelName: String = ""
+    private var voiceIsMuted: Boolean = false
+    private var voiceParticipantCount: Int = 1
 
     override fun onCreate() {
         super.onCreate()
@@ -34,36 +57,59 @@ class EchoForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // A null intent here means the service was restarted by the system
+        // after being killed; fall back to keep-alive defaults.
+        val mode = intent?.getStringExtra(EXTRA_MODE) ?: currentMode
+        currentMode = mode
+
+        if (mode == MODE_VOICE) {
+            voiceChannelName = intent?.getStringExtra(EXTRA_CHANNEL_NAME) ?: voiceChannelName
+            voiceIsMuted = intent?.getBooleanExtra(EXTRA_IS_MUTED, voiceIsMuted) ?: voiceIsMuted
+            voiceParticipantCount = intent?.getIntExtra(EXTRA_PARTICIPANT_COUNT, voiceParticipantCount)
+                ?: voiceParticipantCount
+        }
+
         val notification = buildNotification()
+        startInForegroundMode(notification)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        if (wakeLock == null) {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "echo:foreground_service"
+            ).apply {
+                setReferenceCounted(false)
+                acquire()
+            }
         }
 
-        // Acquire a partial wake lock to keep the CPU running for the
-        // WebSocket connection. Tagged so it's identifiable in battery stats.
-        val pm = getSystemService(POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "echo:foreground_service"
-        ).apply {
-            acquire()
-        }
-
-        // If the system kills the service, restart it automatically.
         return START_STICKY
     }
 
-    override fun onDestroy() {
-        wakeLock?.let {
-            if (it.isHeld) it.release()
+    private fun startInForegroundMode(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val type = if (currentMode == MODE_VOICE) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            }
+            startForeground(NOTIFICATION_ID, notification, type)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
         }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // User swiped the app from recents — drop the notification cleanly
+        // so we don't leak a zombie wakelock or stuck "Connected" badge.
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
+    override fun onDestroy() {
+        wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         super.onDestroy()
     }
@@ -77,7 +123,7 @@ class EchoForegroundService : Service() {
                 "Background Connection",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Keeps Echo connected for real-time messages"
+                description = "Keeps Echo connected for real-time messages and voice"
                 setShowBadge(false)
             }
             val manager = getSystemService(NotificationManager::class.java)
@@ -86,7 +132,6 @@ class EchoForegroundService : Service() {
     }
 
     private fun buildNotification(): Notification {
-        // Tap the notification to open the app
         val openIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -95,12 +140,65 @@ class EchoForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Echo Messenger")
-            .setContentText("Connected and receiving messages")
+        val title: String
+        val body: String
+        val builder = Notification.Builder(this, CHANNEL_ID)
+
+        if (currentMode == MODE_VOICE) {
+            title = if (voiceChannelName.isNotEmpty()) voiceChannelName else "Voice call"
+            body = if (voiceParticipantCount > 1) {
+                "Connected · $voiceParticipantCount in lounge"
+            } else {
+                "Connected"
+            }
+            builder.addAction(buildMuteAction())
+            builder.addAction(buildLeaveAction())
+        } else {
+            title = "Echo Messenger"
+            body = "Connected and receiving messages"
+        }
+
+        return builder
+            .setContentTitle(title)
+            .setContentText(body)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
+    }
+
+    private fun buildMuteAction(): Notification.Action {
+        val label = if (voiceIsMuted) "Unmute" else "Mute"
+        val icon = if (voiceIsMuted) {
+            android.R.drawable.ic_lock_silent_mode_off
+        } else {
+            android.R.drawable.ic_lock_silent_mode
+        }
+        val intent = Intent(this, VoiceNotificationReceiver::class.java).apply {
+            action = VoiceNotificationReceiver.ACTION_TOGGLE_MUTE
+            // Pass the desired post-toggle state so the UI matches even if
+            // the broadcast races a state read.
+            putExtra(VoiceNotificationReceiver.EXTRA_NEW_MUTED, !voiceIsMuted)
+        }
+        val pending = PendingIntent.getBroadcast(
+            this, 1, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return Notification.Action.Builder(icon, label, pending).build()
+    }
+
+    private fun buildLeaveAction(): Notification.Action {
+        val intent = Intent(this, VoiceNotificationReceiver::class.java).apply {
+            action = VoiceNotificationReceiver.ACTION_LEAVE
+        }
+        val pending = PendingIntent.getBroadcast(
+            this, 2, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        return Notification.Action.Builder(
+            android.R.drawable.ic_menu_close_clear_cancel,
+            "Leave",
+            pending
+        ).build()
     }
 }

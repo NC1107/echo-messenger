@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart';
 
+import '../../services/background_service.dart';
 import '../../services/debug_log_service.dart';
 import '../../services/sound_service.dart';
 import '../auth_provider.dart';
+import '../channels_provider.dart';
 import '../server_url_provider.dart';
 import '../voice_settings_provider.dart';
 
@@ -130,7 +132,53 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
   @override
   bool _wasMutedBeforeDeafen = false;
 
+  /// Subscription to the foreground-service notification actions so the
+  /// Mute / Leave buttons in the live notification map back into LiveKit
+  /// state changes.  Active only while a voice room is connected.
+  StreamSubscription<VoiceNotificationAction>? _notificationActionSub;
+
   LiveKitVoiceNotifier(this.ref) : super(LiveKitVoiceState.empty);
+
+  /// Resolve the human-readable channel name for the active room so the
+  /// voice notification can show "lounge" instead of a UUID.  Falls back
+  /// to "Voice" when the channel hasn't been hydrated yet.
+  String _resolveChannelName(String conversationId, String channelId) {
+    final channels = ref.read(channelsProvider).channelsFor(conversationId);
+    final match = channels.where((c) => c.id == channelId).firstOrNull;
+    final name = match?.name;
+    if (name == null || name.isEmpty) return 'Voice';
+    return name;
+  }
+
+  void _attachNotificationActionListener() {
+    _notificationActionSub ??= BackgroundService.instance.notificationActions
+        .listen((action) {
+          switch (action) {
+            case VoiceMuteAction(muted: final muted):
+              // Notification button maps "muted=true" → mic off.
+              setCaptureEnabled(!muted);
+            case VoiceLeaveAction():
+              unawaited(leaveChannel());
+          }
+        });
+  }
+
+  void _detachNotificationActionListener() {
+    _notificationActionSub?.cancel();
+    _notificationActionSub = null;
+  }
+
+  /// Push the latest voice state into the live notification.  No-op on
+  /// platforms that don't surface a foreground service.
+  void _syncVoiceNotification() {
+    if (_disposed || !state.isActive) return;
+    unawaited(
+      BackgroundService.instance.updateVoice(
+        isMuted: !state.isCaptureEnabled,
+        participantCount: state.peerCount + 1,
+      ),
+    );
+  }
 
   // -------------------------------------------------------------------------
   // Public API
@@ -238,6 +286,18 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
       _startAudioLevelPolling();
       SoundService().playVoiceJoin();
 
+      // Promote the foreground service to voice mode so the OS keeps the
+      // mic + audio session alive when the app is backgrounded.  Listen
+      // for Mute / Leave taps coming back from the notification.
+      _attachNotificationActionListener();
+      unawaited(
+        BackgroundService.instance.startVoice(
+          channelName: _resolveChannelName(conversationId, channelId),
+          isMuted: !micEnabled,
+          participantCount: state.peerCount + 1,
+        ),
+      );
+
       DebugLogService.instance.log(
         LogLevel.info,
         'LiveKitVoice',
@@ -279,6 +339,8 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
         'Cleanup error during leave (ignored): $e',
       );
     }
+    _detachNotificationActionListener();
+    unawaited(BackgroundService.instance.stopVoice());
     state = LiveKitVoiceState.empty;
   }
 
@@ -428,6 +490,19 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
       peerCount: participants.length,
       peerConnectionStates: peerStates,
     );
+
+    // Keep the live notification's participant count fresh as people come
+    // and go.  No-op on platforms that don't surface a foreground service.
+    _syncVoiceNotification();
+  }
+
+  /// Override the AV mixin's mute toggle so the live notification keeps
+  /// step with the LiveKit mic state.  Optimistic — the foreground service
+  /// re-issues the notification when [updateVoice] returns.
+  @override
+  void setCaptureEnabled(bool enabled) {
+    super.setCaptureEnabled(enabled);
+    _syncVoiceNotification();
   }
 
   // -------------------------------------------------------------------------
@@ -499,6 +574,8 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
   void dispose() {
     _disposed = true;
     _stopAudioLevelPolling();
+    _detachNotificationActionListener();
+    unawaited(BackgroundService.instance.stopVoice());
 
     // Synchronously null out references so in-flight callbacks hit null checks
     // instead of accessing freed memory. The actual network disconnect is
