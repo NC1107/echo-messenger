@@ -10,6 +10,7 @@ import '../providers/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/voice_settings_provider.dart';
+import '../services/pip_controller.dart';
 import '../theme/echo_theme.dart';
 import '../utils/canvas_utils.dart';
 import '../widgets/lounge_drawing_canvas.dart';
@@ -409,6 +410,28 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     );
   }
 
+  /// Picture-in-Picture body: scan remote participants for a screen-share
+  /// track and render it edge-to-edge.  Returns null if no track is found
+  /// so the caller can fall back to the regular layout.
+  Widget? _buildPipBody(WidgetRef ref) {
+    final room = ref.read(livekitVoiceProvider.notifier).room;
+    if (room == null) return null;
+    for (final participant in room.remoteParticipants.values) {
+      for (final pub in participant.videoTrackPublications) {
+        final lk.VideoTrack? track = pub.track;
+        if (track != null &&
+            pub.subscribed &&
+            pub.source == lk.TrackSource.screenShareVideo) {
+          return ColoredBox(
+            color: Colors.black,
+            child: lk.VideoTrackRenderer(track, fit: lk.VideoViewFit.contain),
+          );
+        }
+      }
+    }
+    return null;
+  }
+
   void _closeSubmenu() => setState(() => _activeSubmenu = null);
 
   /// Build all dock submenu follower widgets for the current [_activeSubmenu].
@@ -459,9 +482,20 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     final voiceSettings = ref.watch(voiceSettingsProvider);
     final screenShare = ref.watch(screenShareProvider);
     final channelsState = ref.watch(channelsProvider);
+    final inPip = ref.watch(pipModeProvider).inPip;
 
     final conversationId = voiceLk.conversationId ?? '';
     final channelId = voiceLk.channelId ?? '';
+
+    // Picture-in-Picture: render only the remote screen-share track in a
+    // bare full-bleed VideoTrackRenderer.  No header, no dock, no canvas
+    // chrome — the whole point of PiP is a tiny system window with just
+    // the relevant pixels.  Falls through to the regular layout if the
+    // OS reports PiP without a remote track (e.g. transient state).
+    if (inPip) {
+      final pipBody = _buildPipBody(ref);
+      if (pipBody != null) return pipBody;
+    }
 
     final channels = channelsState.channelsFor(conversationId);
     final activeChannel = channels.where((c) => c.id == channelId).firstOrNull;

@@ -81,6 +81,7 @@
 		<string>remote-notification</string>
 		<string>audio</string>
 		<string>voip</string>
+		<string>picture-in-picture</string>
 	</array>
 	<key>RTCScreenSharingExtension</key>
 	<string>us.echomessenger.app.broadcast</string>

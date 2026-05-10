@@ -6,9 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:livekit_client/livekit_client.dart';
 
+import '../../services/background_service.dart';
 import '../../services/debug_log_service.dart';
+import '../../services/pip_controller.dart';
 import '../../services/sound_service.dart';
+import '../../services/voice_callkit_service.dart';
 import '../auth_provider.dart';
+import '../channels_provider.dart';
 import '../server_url_provider.dart';
 import '../voice_settings_provider.dart';
 
@@ -130,7 +134,68 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
   @override
   bool _wasMutedBeforeDeafen = false;
 
+  /// Subscription to the foreground-service notification actions so the
+  /// Mute / Leave buttons in the live notification map back into LiveKit
+  /// state changes.  Active only while a voice room is connected.
+  StreamSubscription<VoiceNotificationAction>? _notificationActionSub;
+
+  /// Subscription to CallKit lock-screen actions on iOS.  Same lifecycle
+  /// as the Android notification action sub — active only during a call.
+  StreamSubscription<CallKitAction>? _callKitActionSub;
+
   LiveKitVoiceNotifier(this.ref) : super(LiveKitVoiceState.empty);
+
+  /// Resolve the human-readable channel name for the active room so the
+  /// voice notification can show "lounge" instead of a UUID.  Falls back
+  /// to "Voice" when the channel hasn't been hydrated yet.
+  String _resolveChannelName(String conversationId, String channelId) {
+    final channels = ref.read(channelsProvider).channelsFor(conversationId);
+    final match = channels.where((c) => c.id == channelId).firstOrNull;
+    final name = match?.name;
+    if (name == null || name.isEmpty) return 'Voice';
+    return name;
+  }
+
+  void _attachNotificationActionListener() {
+    _notificationActionSub ??= BackgroundService.instance.notificationActions
+        .listen((action) {
+          switch (action) {
+            case VoiceMuteAction(muted: final muted):
+              // Notification button maps "muted=true" → mic off.
+              setCaptureEnabled(!muted);
+            case VoiceLeaveAction():
+              unawaited(leaveChannel());
+          }
+        });
+    _callKitActionSub ??= VoiceCallKitService.instance.actions.listen((action) {
+      switch (action) {
+        case CallKitMuteAction(muted: final muted):
+          setCaptureEnabled(!muted);
+        case CallKitEndAction():
+          unawaited(leaveChannel());
+      }
+    });
+  }
+
+  void _detachNotificationActionListener() {
+    _notificationActionSub?.cancel();
+    _notificationActionSub = null;
+    _callKitActionSub?.cancel();
+    _callKitActionSub = null;
+  }
+
+  /// Push the latest voice state into the live notification + CallKit
+  /// entry.  No-op on platforms that don't surface either.
+  void _syncVoiceNotification() {
+    if (_disposed || !state.isActive) return;
+    unawaited(
+      BackgroundService.instance.updateVoice(
+        isMuted: !state.isCaptureEnabled,
+        participantCount: state.peerCount + 1,
+      ),
+    );
+    unawaited(VoiceCallKitService.instance.setMuted(!state.isCaptureEnabled));
+  }
 
   // -------------------------------------------------------------------------
   // Public API
@@ -238,6 +303,32 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
       _startAudioLevelPolling();
       SoundService().playVoiceJoin();
 
+      // Promote the foreground service to voice mode (Android) and report
+      // an outgoing CallKit call (iOS) so the OS keeps the mic + audio
+      // session alive when the app is backgrounded.  Listen for Mute /
+      // Leave / End taps coming back from either UI.
+      final resolvedChannelName = _resolveChannelName(
+        conversationId,
+        channelId,
+      );
+      _attachNotificationActionListener();
+      unawaited(
+        BackgroundService.instance.startVoice(
+          channelName: resolvedChannelName,
+          isMuted: !micEnabled,
+          participantCount: state.peerCount + 1,
+        ),
+      );
+      unawaited(
+        VoiceCallKitService.instance.startCall(
+          // CallKit identifies the call by id; use the room's conversation
+          // + channel pair so a future "rejoin same room" call is a no-op.
+          callId: '$conversationId:$channelId',
+          channelName: resolvedChannelName,
+          isMuted: !micEnabled,
+        ),
+      );
+
       DebugLogService.instance.log(
         LogLevel.info,
         'LiveKitVoice',
@@ -279,6 +370,10 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
         'Cleanup error during leave (ignored): $e',
       );
     }
+    _detachNotificationActionListener();
+    unawaited(BackgroundService.instance.stopVoice());
+    unawaited(VoiceCallKitService.instance.endCall());
+    unawaited(PipController.instance.disable());
     state = LiveKitVoiceState.empty;
   }
 
@@ -371,9 +466,11 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
       })
       ..on<TrackSubscribedEvent>((event) {
         _syncPeerState();
+        _syncRemoteScreenShareForPip();
       })
       ..on<TrackUnsubscribedEvent>((event) {
         _syncPeerState();
+        _syncRemoteScreenShareForPip();
       })
       ..on<RoomDisconnectedEvent>((_) {
         DebugLogService.instance.log(
@@ -405,6 +502,30 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
       });
   }
 
+  /// Walk the remote participants for an active screen-share video track
+  /// and tell [PipController] whether to keep the activity PiP-eligible.
+  /// Pure idempotent — safe to call from any TrackSubscribed /
+  /// TrackUnsubscribed event without checking which track changed.
+  void _syncRemoteScreenShareForPip() {
+    final room = _room;
+    if (room == null || _disposed) return;
+    for (final participant in room.remoteParticipants.values) {
+      for (final pub in participant.videoTrackPublications) {
+        if (pub.track != null &&
+            pub.subscribed &&
+            pub.source == TrackSource.screenShareVideo) {
+          // Native side stores 16:9 default when 0 is passed; LiveKit
+          // doesn't surface frame dimensions synchronously, so we accept
+          // a slightly-off aspect for the first PiP entry.  Frame-size
+          // tracking via VideoTrackRenderer is a follow-up.
+          unawaited(PipController.instance.enable(width: 0, height: 0));
+          return;
+        }
+      }
+    }
+    unawaited(PipController.instance.disable());
+  }
+
   /// Synchronize the participant list from the LiveKit room into our state.
   void _syncPeerState() {
     final room = _room;
@@ -428,6 +549,19 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
       peerCount: participants.length,
       peerConnectionStates: peerStates,
     );
+
+    // Keep the live notification's participant count fresh as people come
+    // and go.  No-op on platforms that don't surface a foreground service.
+    _syncVoiceNotification();
+  }
+
+  /// Override the AV mixin's mute toggle so the live notification keeps
+  /// step with the LiveKit mic state.  Optimistic — the foreground service
+  /// re-issues the notification when [updateVoice] returns.
+  @override
+  void setCaptureEnabled(bool enabled) {
+    super.setCaptureEnabled(enabled);
+    _syncVoiceNotification();
   }
 
   // -------------------------------------------------------------------------
@@ -499,6 +633,9 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
   void dispose() {
     _disposed = true;
     _stopAudioLevelPolling();
+    _detachNotificationActionListener();
+    unawaited(BackgroundService.instance.stopVoice());
+    unawaited(VoiceCallKitService.instance.endCall());
 
     // Synchronously null out references so in-flight callbacks hit null checks
     // instead of accessing freed memory. The actual network disconnect is
