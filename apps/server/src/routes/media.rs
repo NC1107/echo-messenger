@@ -49,6 +49,7 @@ const ALLOWED_MIME_TYPES: &[&str] = &[
     "audio/ogg",
     "audio/wav",
     "audio/mp4",
+    "audio/m4a",
     "audio/aac",
     "audio/x-m4a",
     "audio/flac",
@@ -82,7 +83,7 @@ fn extension_for_mime(mime: &str) -> &str {
         "audio/mpeg" => "mp3",
         "audio/ogg" => "ogg",
         "audio/wav" => "wav",
-        "audio/mp4" | "audio/x-m4a" => "m4a",
+        "audio/mp4" | "audio/x-m4a" | "audio/m4a" => "m4a",
         "audio/aac" => "aac",
         "audio/flac" | "audio/x-flac" => "flac",
         "application/pdf" => "pdf",
@@ -118,12 +119,15 @@ fn validate_bytes(data: &[u8], declared_mime: &str) -> Result<String, AppError> 
     match infer::get(data) {
         Some(inferred) => {
             let m = inferred.mime_type();
-            // M4A audio files share the same MP4 container magic bytes as video/mp4.
-            // When infer reports video/mp4 but the client declared an audio/mp4 type,
-            // trust the declared audio MIME -- the container is valid regardless.
-            let effective = if m == "video/mp4"
-                && matches!(declared_mime, "audio/mp4" | "audio/x-m4a" | "audio/aac")
-            {
+            // M4A audio files share the same MP4 container magic bytes as
+            // video/mp4.  Different `infer` versions disambiguate differently:
+            // some report video/mp4 (and we trust the declared audio MIME),
+            // others report audio/m4a directly (which we accept on its own).
+            let effective = if (m == "video/mp4" || m == "audio/m4a")
+                && matches!(
+                    declared_mime,
+                    "audio/mp4" | "audio/x-m4a" | "audio/m4a" | "audio/aac"
+                ) {
                 declared_mime
             } else {
                 m
@@ -236,10 +240,14 @@ fn validate_head(head: &[u8], declared_mime: &str) -> Result<String, AppError> {
     match infer::get(head) {
         Some(inferred) => {
             let m = inferred.mime_type();
-            // M4A audio files share the same MP4 container magic bytes as video/mp4.
-            let effective = if m == "video/mp4"
-                && matches!(declared_mime, "audio/mp4" | "audio/x-m4a" | "audio/aac")
-            {
+            // M4A audio files share the same MP4 container magic bytes as
+            // video/mp4.  Different `infer` versions disambiguate differently
+            // (see validate_bytes for details).
+            let effective = if (m == "video/mp4" || m == "audio/m4a")
+                && matches!(
+                    declared_mime,
+                    "audio/mp4" | "audio/x-m4a" | "audio/m4a" | "audio/aac"
+                ) {
                 declared_mime
             } else {
                 m
@@ -786,6 +794,37 @@ mod tests {
         let head = make_m4v_head();
         let mime = validate_bytes(&head, "video/mp4").expect("M4V magic bytes should be accepted");
         assert_eq!(mime, "video/x-m4v");
+    }
+
+    // Minimal M4A header -- ftyp box with "M4A " brand, padded to 512 bytes.
+    // The `record` plugin on iOS/Android produces this brand for AAC-LC voice
+    // recordings.  Different `infer` crate versions return either "video/mp4"
+    // or "audio/m4a" for this magic; both must round-trip through validation.
+    fn make_m4a_head() -> Vec<u8> {
+        let mut v = vec![
+            0x00, 0x00, 0x00, 0x14, // box size = 20
+            b'f', b't', b'y', b'p', // box type = "ftyp"
+            b'M', b'4', b'A', b' ', // major brand = "M4A "
+            0x00, 0x00, 0x00, 0x00, // minor version
+            b'M', b'4', b'A', b' ', // compatible brand
+        ];
+        v.resize(512, 0);
+        v
+    }
+
+    #[test]
+    fn validate_bytes_accepts_m4a_voice_recording() {
+        // Regression for #837: voice messages from mobile (record plugin,
+        // AAC-LC in MP4 container) were rejected because the declared MIME
+        // path only accepted infer="video/mp4", and infer can also report
+        // "audio/m4a" for the same magic bytes.
+        let head = make_m4a_head();
+        let mime = validate_bytes(&head, "audio/mp4")
+            .expect("M4A voice recordings should be accepted when declared as audio/mp4");
+        assert!(
+            matches!(mime.as_str(), "audio/mp4" | "audio/m4a" | "audio/x-m4a"),
+            "unexpected normalized mime: {mime}"
+        );
     }
 
     #[test]
