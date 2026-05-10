@@ -8,6 +8,7 @@ import 'package:livekit_client/livekit_client.dart';
 
 import '../../services/background_service.dart';
 import '../../services/debug_log_service.dart';
+import '../../services/pip_controller.dart';
 import '../../services/sound_service.dart';
 import '../../services/voice_callkit_service.dart';
 import '../auth_provider.dart';
@@ -372,6 +373,7 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
     _detachNotificationActionListener();
     unawaited(BackgroundService.instance.stopVoice());
     unawaited(VoiceCallKitService.instance.endCall());
+    unawaited(PipController.instance.disable());
     state = LiveKitVoiceState.empty;
   }
 
@@ -464,9 +466,11 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
       })
       ..on<TrackSubscribedEvent>((event) {
         _syncPeerState();
+        _syncRemoteScreenShareForPip();
       })
       ..on<TrackUnsubscribedEvent>((event) {
         _syncPeerState();
+        _syncRemoteScreenShareForPip();
       })
       ..on<RoomDisconnectedEvent>((_) {
         DebugLogService.instance.log(
@@ -496,6 +500,30 @@ class LiveKitVoiceNotifier extends StateNotifier<LiveKitVoiceState>
           'Room reconnecting...',
         );
       });
+  }
+
+  /// Walk the remote participants for an active screen-share video track
+  /// and tell [PipController] whether to keep the activity PiP-eligible.
+  /// Pure idempotent — safe to call from any TrackSubscribed /
+  /// TrackUnsubscribed event without checking which track changed.
+  void _syncRemoteScreenShareForPip() {
+    final room = _room;
+    if (room == null || _disposed) return;
+    for (final participant in room.remoteParticipants.values) {
+      for (final pub in participant.videoTrackPublications) {
+        if (pub.track != null &&
+            pub.subscribed &&
+            pub.source == TrackSource.screenShareVideo) {
+          // Native side stores 16:9 default when 0 is passed; LiveKit
+          // doesn't surface frame dimensions synchronously, so we accept
+          // a slightly-off aspect for the first PiP entry.  Frame-size
+          // tracking via VideoTrackRenderer is a follow-up.
+          unawaited(PipController.instance.enable(width: 0, height: 0));
+          return;
+        }
+      }
+    }
+    unawaited(PipController.instance.disable());
   }
 
   /// Synchronize the participant list from the LiveKit room into our state.
