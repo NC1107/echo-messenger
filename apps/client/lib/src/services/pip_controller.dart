@@ -64,8 +64,8 @@ class PipController {
   /// calls with new dimensions update the aspect ratio without re-entering
   /// PiP, which lets the native side track resolution changes mid-call.
   ///
-  /// Width / height should come from the WebRTC track; values <= 0 fall
-  /// back to a 16:9 default so we never push an invalid Rational.
+  /// Width / height should come from the LiveKit video track; values <= 0
+  /// fall back to a 16:9 default so we never push an invalid Rational.
   Future<void> enable({required int width, required int height}) async {
     if (!_isMobile) return;
     final w = width > 0 ? width : 1280;

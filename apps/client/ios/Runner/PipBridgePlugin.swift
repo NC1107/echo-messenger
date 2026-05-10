@@ -5,16 +5,17 @@
 // AVPictureInPictureController so the system records the activity as
 // PiP-eligible the moment a remote screen share is published.
 //
-// CURRENT STATE: scaffolding only.  Actual rendering of the WebRTC track
-// inside the PiP layer requires bridging livekit_client's RTCVideoFrames
-// into an AVSampleBufferDisplayLayer — that needs a fork of the
-// livekit_client iOS plugin to expose a PiP-renderer hook, which is
-// tracked as a follow-up.  Until then, PiP entry will surface a system
-// PiP window backed by a placeholder layer so iOS keeps the audio
-// session alive (already covered by CallKit in Slice 2 anyway), but the
-// user must return to the app to see the share.  Voice + the lounge UI
-// stay running because of the foreground service / CallKit work in
-// Slices 1 and 2; this plugin only governs the PiP-window rendering.
+// CURRENT STATE: scaffolding only.  Actual rendering of the LiveKit
+// screen-share track inside the PiP layer requires a fork of the
+// livekit_client iOS plugin so we can attach our own renderer to a
+// LiveKit RemoteVideoTrack and forward its frames into an
+// AVSampleBufferDisplayLayer — tracked as a follow-up.  Until then, PiP
+// entry will surface a system PiP window backed by a placeholder layer
+// so iOS keeps the audio session alive (already covered by CallKit in
+// Slice 2 anyway), but the user must return to the app to see the
+// share.  Voice + the lounge UI stay running because of the foreground
+// service / CallKit work in Slices 1 and 2; this plugin only governs
+// the PiP-window rendering.
 
 import AVKit
 import Flutter
@@ -81,8 +82,8 @@ final class PipBridgePlugin: NSObject, AVPictureInPictureControllerDelegate {
     sampleBufferLayer = layer
 
     // ContentSource using the sample-buffer playback variant (iOS 15+).
-    // This is the path that integrates with WebRTC frames once we have a
-    // frame bridge — for now the layer remains empty.
+    // Once the livekit_client renderer hook lands, the LiveKit track's
+    // frames flow into this layer; for now it remains empty.
     let source = AVPictureInPictureController.ContentSource(
       sampleBufferDisplayLayer: layer,
       playbackDelegate: PipPlaybackDelegate.shared
@@ -162,7 +163,8 @@ private final class PipPlaybackDelegate: NSObject, AVPictureInPictureSampleBuffe
     _ pictureInPictureController: AVPictureInPictureController,
     didTransitionToRenderSize newRenderSize: CMVideoDimensions
   ) {
-    // Aspect change — nothing to do until frame bridging lands.
+    // Aspect change — nothing to do until the LiveKit renderer hook
+    // lands and starts pushing track-resolution updates.
   }
 
   func pictureInPictureController(
