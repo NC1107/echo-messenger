@@ -1220,6 +1220,12 @@ extension EchoColors on BuildContext {
   Color get textMuted => echo.textMuted;
   Color get sentBubble => echo.sentBubble;
   Color get recvBubble => echo.recvBubble;
+
+  /// Foreground color for content rendered on top of [sentBubble].
+  /// Resolves to `ColorScheme.onPrimary` because most themes keep the sent
+  /// bubble at or near the accent color; promote to a dedicated
+  /// [EchoColorExtension] field if a theme ever needs a non-onPrimary value.
+  Color get onSentBubble => Theme.of(this).colorScheme.onPrimary;
   Color get cardRowBg => echo.resolvedCardRowBg;
   Gradient? get chatBgGradient => echo.chatBgGradient;
 

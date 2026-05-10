@@ -199,7 +199,9 @@ class _ReactionPillState extends State<_ReactionPill>
   @override
   Widget build(BuildContext context) {
     final bgColor = widget.isMine ? context.sentBubble : context.recvBubble;
-    final textColor = widget.isMine ? Colors.white : context.textPrimary;
+    final textColor = widget.isMine
+        ? context.onSentBubble
+        : context.textPrimary;
     final m = _ReactionMetrics.forDensity(widget.density);
 
     return GestureDetector(

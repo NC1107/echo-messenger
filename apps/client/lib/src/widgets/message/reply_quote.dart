@@ -53,6 +53,8 @@ class ReplyQuote extends StatelessWidget {
             : 'In reply to ${replyToUsername ?? "Unknown"}: $truncated';
     }
 
+    final mineFg = context.onSentBubble;
+
     return Semantics(
       label: semanticsLabel,
       child: MouseRegion(
@@ -63,14 +65,12 @@ class ReplyQuote extends StatelessWidget {
             margin: const EdgeInsets.only(bottom: 6),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
-              color: (isMine ? Colors.white : context.accent).withValues(
-                alpha: 0.12,
-              ),
+              color: (isMine ? mineFg : context.accent).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
               border: Border(
                 left: BorderSide(
                   color: isMine
-                      ? Colors.white.withValues(alpha: 0.5)
+                      ? mineFg.withValues(alpha: 0.5)
                       : context.accent,
                   width: 3,
                 ),
@@ -87,7 +87,7 @@ class ReplyQuote extends StatelessWidget {
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: isMine
-                        ? Colors.white.withValues(alpha: 0.8)
+                        ? mineFg.withValues(alpha: 0.8)
                         : context.accent,
                   ),
                 ),
@@ -103,7 +103,7 @@ class ReplyQuote extends StatelessWidget {
 
   Widget _buildContentPreview(BuildContext context, ReplyAttachmentKind kind) {
     final textColor = isMine
-        ? Colors.white.withValues(alpha: 0.7)
+        ? context.onSentBubble.withValues(alpha: 0.7)
         : context.textSecondary;
 
     switch (kind) {
