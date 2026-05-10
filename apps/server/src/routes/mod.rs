@@ -102,6 +102,10 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         rate_limit::make_rate_limit_layer(rate_limit::ticket_limiter(Arc::clone(&proxies)));
     let media_upload_limit =
         rate_limit::make_rate_limit_layer(rate_limit::media_upload_limiter(Arc::clone(&proxies)));
+    let user_avatar_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::avatar_upload_limiter(Arc::clone(&proxies)));
+    let group_avatar_limit =
+        rate_limit::make_rate_limit_layer(rate_limit::avatar_upload_limiter(Arc::clone(&proxies)));
     let link_preview_limit =
         rate_limit::make_rate_limit_layer(rate_limit::link_preview_limiter(Arc::clone(&proxies)));
     let key_reset_limit =
@@ -298,7 +302,12 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         .route("/{id}/unban/{user_id}", post(groups::unban_member))
         .route(
             "/{id}/avatar",
-            put(groups::upload_group_avatar).get(groups::get_group_avatar),
+            put(groups::upload_group_avatar)
+                .get(groups::get_group_avatar)
+                .layer(DefaultBodyLimit::max(
+                    groups::MAX_GROUP_AVATAR_SIZE.saturating_mul(2),
+                ))
+                .layer(middleware::from_fn(group_avatar_limit)),
         )
         .route(
             "/{id}/invites",
@@ -320,7 +329,14 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
         )
         .route("/me/status", patch(users::update_presence_status))
         .route("/me/status-text", put(users::update_status_text))
-        .route("/me/avatar", put(users::upload_avatar))
+        .route(
+            "/me/avatar",
+            put(users::upload_avatar)
+                .layer(DefaultBodyLimit::max(
+                    users::MAX_AVATAR_SIZE.saturating_mul(2),
+                ))
+                .layer(middleware::from_fn(user_avatar_limit)),
+        )
         .route("/online", get(users::online_users))
         .route("/search", get(users::search_users))
         .route("/resolve/{username}", get(users::resolve_username_invite))

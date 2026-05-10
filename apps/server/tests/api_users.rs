@@ -728,6 +728,41 @@ async fn avatar_upload_valid_png_returns_200() {
 }
 
 #[tokio::test]
+async fn avatar_upload_oversize_payload_rejected_without_buffering() {
+    // Regression for #831 #1: pre-fix code path read the entire client
+    // payload into RAM before checking the size cap.  This test sends a
+    // multipart body well over the 2 MB avatar cap and asserts the server
+    // rejects with 4xx.  The body is also above axum's per-route
+    // DefaultBodyLimit (4 MB) so the request should fail at body-decode
+    // time rather than after fully buffering 8 MB of attacker bytes.
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let (token, _) = setup_user(&client, &base, "avbig").await;
+
+    // 8 MB blob (well over MAX_AVATAR_SIZE = 2 MB and the 4 MB body limit).
+    let oversize = vec![0u8; 8 * 1024 * 1024];
+    let part = Part::bytes(oversize)
+        .file_name("big.png")
+        .mime_str("image/png")
+        .unwrap();
+    let form = Form::new().part("avatar", part);
+
+    let resp = client
+        .put(format!("{base}/api/users/me/avatar"))
+        .header("Authorization", format!("Bearer {token}"))
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+
+    let status = resp.status().as_u16();
+    assert!(
+        (400..500).contains(&status),
+        "oversize avatar must be rejected with 4xx, got {status}"
+    );
+}
+
+#[tokio::test]
 async fn avatar_upload_non_image_returns_4xx_with_code() {
     let base = common::spawn_server().await;
     let client = Client::new();

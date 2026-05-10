@@ -896,7 +896,7 @@ pub async fn unban_member(
 // ---------------------------------------------------------------------------
 
 /// Maximum group avatar size: 2 MB.
-const MAX_GROUP_AVATAR_SIZE: usize = 2 * 1024 * 1024;
+pub(super) const MAX_GROUP_AVATAR_SIZE: usize = 2 * 1024 * 1024;
 
 /// Allowed group avatar MIME types (validated via magic bytes, not client-supplied Content-Type).
 const ALLOWED_GROUP_AVATAR_TYPES: &[&str] = &["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -962,10 +962,7 @@ pub async fn upload_group_avatar(
             continue;
         }
 
-        let data = field
-            .bytes()
-            .await
-            .map_err(|e| AppError::bad_request(format!("Failed to read avatar data: {e}")))?;
+        let data = super::users::read_avatar_field_capped(field, MAX_GROUP_AVATAR_SIZE).await?;
 
         // Validate via magic bytes, not client-declared Content-Type
         let mime_type = match infer::get(&data) {
@@ -987,13 +984,6 @@ pub async fn upload_group_avatar(
                     ALLOWED_GROUP_AVATAR_TYPES.join(", ")
                 ),
             ));
-        }
-
-        if data.len() > MAX_GROUP_AVATAR_SIZE {
-            return Err(AppError::bad_request(format!(
-                "Avatar too large. Maximum size is {} bytes",
-                MAX_GROUP_AVATAR_SIZE
-            )));
         }
 
         let ext = avatar_extension_for_mime(&mime_type);
