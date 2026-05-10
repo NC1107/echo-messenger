@@ -37,7 +37,14 @@ class VoiceLeaveAction extends VoiceNotificationAction {
 /// **Desktop**: No-op.
 class BackgroundService {
   BackgroundService._() {
-    _channel.setMethodCallHandler(_handleMethodCall);
+    try {
+      _channel.setMethodCallHandler(_handleMethodCall);
+    } catch (_) {
+      // No binary messenger yet (unit tests without WidgetsFlutterBinding).
+      // Notification actions are an Android runtime concern; tests that
+      // exercise them should call ensureInitialized() before importing
+      // anything that touches LiveKitVoiceNotifier.
+    }
   }
   static final BackgroundService instance = BackgroundService._();
 

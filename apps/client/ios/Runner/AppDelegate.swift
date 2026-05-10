@@ -1,3 +1,4 @@
+import AVFoundation
 import Flutter
 import UIKit
 import UserNotifications
@@ -15,6 +16,23 @@ import UserNotifications
 
     // Register for remote notifications (APNs)
     application.registerForRemoteNotifications()
+
+    // Configure the AVAudioSession for VoIP-style playback so CallKit and
+    // LiveKit's WebRTC engine share consistent options.  We don't activate
+    // it here — CallKit owns activation when an outgoing call starts and
+    // releases it on end.  Setting category up front avoids first-frame
+    // audio drops when LiveKit grabs the session ahead of CallKit on a
+    // cold-start join.
+    do {
+      let session = AVAudioSession.sharedInstance()
+      try session.setCategory(
+        .playAndRecord,
+        mode: .voiceChat,
+        options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers, .defaultToSpeaker]
+      )
+    } catch {
+      NSLog("[Echo] AVAudioSession setCategory failed: \(error.localizedDescription)")
+    }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

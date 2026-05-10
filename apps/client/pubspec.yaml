@@ -53,6 +53,7 @@ dependencies:
   flutter_slidable: ^3.1.1
   image: ^4.8.0
   flutter_colorpicker: ^1.1.0
+  flutter_callkit_incoming: ^3.0.0
 
 dev_dependencies:
   flutter_test:
