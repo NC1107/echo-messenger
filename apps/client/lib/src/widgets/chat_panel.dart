@@ -1693,6 +1693,32 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     return raw.where((m) => !_deletedForMeIds.contains(m.id)).toList();
   }
 
+  /// Apply channel + delete-for-me filters to a pre-fetched message list.
+  /// Used by the build path so a `.select` on the per-conversation list ref
+  /// keeps unrelated conversations from rebuilding.
+  List<ChatMessage> _filterChannelAndDeleted(
+    Conversation conv,
+    List<ChatMessage> raw,
+    String? selectedChannelId,
+    bool includeUnchanneled,
+  ) {
+    Iterable<ChatMessage> filtered = raw;
+    if (conv.isGroup &&
+        selectedChannelId != null &&
+        selectedChannelId.isNotEmpty) {
+      filtered = filtered.where((m) {
+        if (m.isSystemEvent) return true;
+        if (m.channelId == selectedChannelId) return true;
+        return includeUnchanneled &&
+            (m.channelId == null || m.channelId!.isEmpty);
+      });
+    }
+    if (_deletedForMeIds.isNotEmpty) {
+      filtered = filtered.where((m) => !_deletedForMeIds.contains(m.id));
+    }
+    return identical(filtered, raw) ? raw : filtered.toList();
+  }
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
@@ -1743,17 +1769,29 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       ),
     );
 
-    final chatState = ref.watch(chatProvider);
-    final messages = _resolveMessages(
+    // Watch only this conversation's message list reference and the loading
+    // flag for this channel — `messagesByConversation` keeps inner list
+    // refs stable across copyWith for unaffected conversations, so adding
+    // a message to conv B no longer rebuilds conv A's panel (#834 F6).
+    final convMessages = ref.watch(
+      chatProvider.select((s) => s.messagesByConversation[conv.id]),
+    );
+    final messages = _filterChannelAndDeleted(
       conv,
-      chatState,
+      convMessages ?? const [],
       selectedChannelId,
       includeUnchanneled,
     );
 
-    final isLoadingHistory = chatState.isLoadingHistory(
-      conv.id,
-      channelId: selectedChannelId,
+    final isLoadingHistory = ref.watch(
+      chatProvider.select(
+        (s) => s.isLoadingHistory(conv.id, channelId: selectedChannelId),
+      ),
+    );
+    final hasMoreHistory = ref.watch(
+      chatProvider.select(
+        (s) => s.conversationHasMore(conv.id, channelId: selectedChannelId),
+      ),
     );
 
     final typingUsers = typingUserIds.where((u) => u != myUserId).map((uid) {
@@ -1862,7 +1900,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                       ChatMessageList(
                         conv: conv,
                         messages: messages,
-                        chatState: chatState,
                         memberAvatars: memberAvatars,
                         myUserId: myUserId,
                         serverUrl: serverUrl,
@@ -1870,6 +1907,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
                         mediaTicket: mediaTicket,
                         channelId: selectedChannelId,
                         isLoadingHistory: isLoadingHistory,
+                        hasMoreHistory: hasMoreHistory,
                         displayName: displayName,
                         scrollController: _scrollController,
                         messageKeys: _messageKeys,

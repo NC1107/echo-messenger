@@ -581,7 +581,7 @@ pub async fn resolve_username_invite(
 }
 
 /// Maximum avatar size: 2 MB.
-const MAX_AVATAR_SIZE: usize = 2 * 1024 * 1024;
+pub(super) const MAX_AVATAR_SIZE: usize = 2 * 1024 * 1024;
 
 /// Allowed avatar MIME types (validated via magic bytes, not client-supplied Content-Type).
 const ALLOWED_AVATAR_TYPES: &[&str] = &["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -606,6 +606,39 @@ fn mime_for_extension(ext: &str) -> &str {
         "gif" => "image/gif",
         _ => "application/octet-stream",
     }
+}
+
+/// Stream a multipart `field` into memory, rejecting the moment its byte
+/// total crosses `max_bytes`.  Avatars are capped at a few MB so the whole
+/// buffer is still small enough for `infer::get` validation, but the
+/// previous `field.bytes().await` path read the entire client-supplied
+/// payload into RAM before checking the cap (#831).  This helper closes
+/// that DoS window — concurrent attackers can no longer pin O(N * 100 MB)
+/// of process memory by spamming oversized POSTs.
+///
+/// Shared by both `/me/avatar` and `/groups/{id}/avatar` upload handlers.
+pub(super) async fn read_avatar_field_capped(
+    mut field: axum::extract::multipart::Field<'_>,
+    max_bytes: usize,
+) -> Result<Vec<u8>, AppError> {
+    let mut buf = Vec::with_capacity(max_bytes.min(64 * 1024));
+    loop {
+        let chunk = field
+            .chunk()
+            .await
+            .map_err(|e| AppError::bad_request(format!("Failed to read avatar data: {e}")))?;
+        let Some(bytes) = chunk else { break };
+        if bytes.is_empty() {
+            continue;
+        }
+        if buf.len().saturating_add(bytes.len()) > max_bytes {
+            return Err(AppError::bad_request(format!(
+                "Avatar too large. Maximum size is {max_bytes} bytes"
+            )));
+        }
+        buf.extend_from_slice(&bytes);
+    }
+    Ok(buf)
 }
 
 /// PUT /api/users/me/avatar
@@ -637,17 +670,7 @@ pub async fn upload_avatar(
             continue;
         }
 
-        let data = field
-            .bytes()
-            .await
-            .map_err(|e| AppError::bad_request(format!("Failed to read avatar data: {e}")))?;
-
-        if data.len() > MAX_AVATAR_SIZE {
-            return Err(AppError::bad_request(format!(
-                "Avatar too large. Maximum size is {} bytes",
-                MAX_AVATAR_SIZE
-            )));
-        }
+        let data = read_avatar_field_capped(field, MAX_AVATAR_SIZE).await?;
 
         // Validate via magic bytes, not client-declared Content-Type.
         let mime_type = match infer::get(&data) {

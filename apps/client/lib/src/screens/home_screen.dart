@@ -1127,6 +1127,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final voiceRtc = ref.watch(voiceRtcProvider);
     final voiceActive = voiceRtc.isActive && voiceRtc.channelId != null;
 
+    _autoShowLoungeOnJoin(voiceActive);
+
     Widget rightPanel;
     if (_showSettings) {
       rightPanel = SettingsContent(
@@ -1244,6 +1246,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   Widget _buildNarrowLayout() {
     final voiceRtc = ref.watch(voiceRtcProvider);
     final voiceActive = voiceRtc.isActive && voiceRtc.channelId != null;
+
+    _autoShowLoungeOnJoin(voiceActive);
+
+    // Voice lounge takes precedence over any tab on mobile narrow.  Without
+    // this gate, joining voice from Discover/Contacts/Settings left the user
+    // staring at that tab while the lounge state was already true.
+    if (voiceActive && _showingLounge) {
+      return Scaffold(
+        body: SafeArea(
+          child: VoiceLoungeScreen(
+            onBackToChat: () => setState(() {
+              _showingLounge = false;
+              _userDismissedLounge = true;
+            }),
+          ),
+        ),
+      );
+    }
 
     // When on the Chats tab AND a conversation is open, render the chat
     // full-screen with no bottom tab bar. Pressing back returns to the

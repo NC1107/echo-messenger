@@ -14,7 +14,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/chat_message.dart';
 import '../../models/conversation.dart';
 import '../../providers/accessibility_provider.dart';
-import '../../providers/chat_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../theme/echo_theme.dart';
 import '../message_item.dart';
@@ -30,7 +29,6 @@ import 'unread_divider.dart';
 class ChatMessageList extends ConsumerWidget {
   final Conversation conv;
   final List<ChatMessage> messages;
-  final ChatState chatState;
   final Map<String, String?> memberAvatars;
   final String myUserId;
   final String serverUrl;
@@ -38,6 +36,7 @@ class ChatMessageList extends ConsumerWidget {
   final String? mediaTicket;
   final String? channelId;
   final bool isLoadingHistory;
+  final bool hasMoreHistory;
   final String displayName;
 
   /// Owned by parent [ChatPanel]; drives the floating-date pill and
@@ -95,7 +94,6 @@ class ChatMessageList extends ConsumerWidget {
     super.key,
     required this.conv,
     required this.messages,
-    required this.chatState,
     required this.memberAvatars,
     required this.myUserId,
     required this.serverUrl,
@@ -103,6 +101,7 @@ class ChatMessageList extends ConsumerWidget {
     required this.mediaTicket,
     required this.channelId,
     required this.isLoadingHistory,
+    required this.hasMoreHistory,
     required this.displayName,
     required this.scrollController,
     required this.messageKeys,
@@ -256,10 +255,10 @@ class ChatMessageList extends ConsumerWidget {
         itemCount: messages.length + 1,
         itemBuilder: (context, index) {
           if (index == 0) {
-            if (chatState.conversationHasMore(conv.id, channelId: channelId)) {
+            if (hasMoreHistory) {
               return SizedBox(
                 height: 48,
-                child: chatState.isLoadingHistory(conv.id, channelId: channelId)
+                child: isLoadingHistory
                     ? const Center(
                         child: SizedBox(
                           width: 16,

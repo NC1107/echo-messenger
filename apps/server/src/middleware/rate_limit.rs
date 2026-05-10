@@ -261,6 +261,14 @@ pub fn media_upload_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(30, 60, trusted_proxies)
 }
 
+/// Avatar upload rate limiter: 6 uploads per 60 seconds per IP.
+/// Tighter than media uploads — avatars rarely change, and the small
+/// per-request body (avatars cap at a few MB) makes cheap-to-issue
+/// floods more attractive without a tight cap (#831).
+pub fn avatar_upload_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
+    RateLimiter::with_shared_proxies(6, 60, trusted_proxies)
+}
+
 /// Link preview rate limiter: 20 requests per 60 seconds per IP.
 pub fn link_preview_limiter(trusted_proxies: Arc<Vec<IpAddr>>) -> RateLimiter {
     RateLimiter::with_shared_proxies(20, 60, trusted_proxies)

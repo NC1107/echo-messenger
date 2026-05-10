@@ -21,7 +21,7 @@ use uuid::Uuid;
 /// `containsMention`: the keyword is a standalone token if its left and
 /// right neighbours are start/end-of-string or non-word characters
 /// (anything other than `[A-Za-z0-9_]`).  Case-insensitive.
-fn is_standalone_keyword(content: &str, keyword: &str) -> bool {
+pub fn is_standalone_keyword(content: &str, keyword: &str) -> bool {
     if keyword.is_empty() {
         return false;
     }
@@ -230,5 +230,33 @@ mod tests {
         assert!(is_standalone_keyword("@everyone get in", "everyone"));
         assert!(is_standalone_keyword("ping @here", "here"));
         assert!(!is_standalone_keyword("@hereafter", "here"));
+    }
+
+    #[test]
+    fn standalone_keyword_with_punctuation() {
+        assert!(is_standalone_keyword("@here, please", "here"));
+        assert!(is_standalone_keyword("psst.@here!", "here"));
+    }
+
+    #[test]
+    fn standalone_keyword_rejects_email_prefix() {
+        assert!(!is_standalone_keyword("x@here", "here"));
+    }
+
+    #[test]
+    fn standalone_keyword_rejects_underscore_suffix() {
+        assert!(!is_standalone_keyword("@here_lounge", "here"));
+    }
+
+    #[test]
+    fn standalone_keyword_is_case_insensitive() {
+        assert!(is_standalone_keyword("Yo @Here folks", "here"));
+        assert!(is_standalone_keyword("YO @HERE FOLKS", "here"));
+    }
+
+    #[test]
+    fn standalone_keyword_no_at_is_false() {
+        assert!(!is_standalone_keyword("normal message", "here"));
+        assert!(!is_standalone_keyword("", "here"));
     }
 }

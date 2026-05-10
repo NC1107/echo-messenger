@@ -22,10 +22,8 @@ extension MessageHandlersOn on WsMessageHandler {
           channelId: channelId,
           expiresAt: expiresAt,
         );
-    // Update status to sent
-    ref
-        .read(chatProvider.notifier)
-        .updateMessageStatus(conversationId, messageId, MessageStatus.sent);
+    // confirmSent already transitions status to sent atomically with the ID
+    // swap (chat_provider.dart:442); no follow-up updateMessageStatus needed.
 
     // Update conversation list preview so the sender sees their own message
     // reflected immediately (e.g. attachment markers, text). Without this the
