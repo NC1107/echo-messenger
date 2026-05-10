@@ -492,11 +492,25 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
-          xcrun altool --upload-app \
-            -f echo-ios-${{ needs.version.outputs.version }}.ipa \
-            -t ios \
-            --apiKey "$ASC_KEY_ID" \
-            --apiIssuer "$ASC_ISSUER_ID"
+          set -e
+          # altool can exit 0 even when the upload fails Apple-side
+          # validation (e.g. invalid Info.plist values in v0.0.298),
+          # so capture the output and grep for the failure marker.
+          UPLOAD_LOG=$(mktemp)
+          if xcrun altool --upload-app \
+              -f echo-ios-${{ needs.version.outputs.version }}.ipa \
+              -t ios \
+              --apiKey "$ASC_KEY_ID" \
+              --apiIssuer "$ASC_ISSUER_ID" 2>&1 | tee "$UPLOAD_LOG"
+          then
+            if grep -qE 'UPLOAD FAILED|Validation failed|ERROR ITMS' "$UPLOAD_LOG"; then
+              echo "::error::altool reported a validation failure even though it exited 0"
+              exit 1
+            fi
+          else
+            echo "::error::altool returned a non-zero exit code"
+            exit 1
+          fi
       - name: Upload iOS artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
