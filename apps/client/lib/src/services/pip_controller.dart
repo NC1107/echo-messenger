@@ -35,7 +35,14 @@ class PipController {
 
   static const _channel = MethodChannel('us.echomessenger/pip');
 
+  /// Test-only override: when true, every method behaves as if running on
+  /// a mobile device.  Lets unit tests exercise the platform-channel
+  /// surface without an Android / iOS host.
+  @visibleForTesting
+  static bool debugTreatAsMobile = false;
+
   static bool get _isMobile {
+    if (debugTreatAsMobile) return true;
     if (kIsWeb) return false;
     return Platform.isAndroid || Platform.isIOS;
   }

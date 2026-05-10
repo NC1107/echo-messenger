@@ -60,7 +60,14 @@ class BackgroundService {
   bool _keepaliveRunning = false;
   bool _voiceRunning = false;
 
+  /// Test-only override: when true, every method behaves as if running on
+  /// Android.  Allows the unit tests to exercise the platform-channel
+  /// surface without an actual Android device.
+  @visibleForTesting
+  static bool debugTreatAsAndroid = false;
+
   static bool get _isAndroid {
+    if (debugTreatAsAndroid) return true;
     if (kIsWeb) return false;
     return Platform.isAndroid;
   }
