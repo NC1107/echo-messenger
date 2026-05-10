@@ -71,7 +71,7 @@ reqwest = { version = "0.13", features = ["json", "stream"] }
 infer = "0.19"
 
 [dev-dependencies]
-tokio-tungstenite = "0.28"
+tokio-tungstenite = "0.29"
 reqwest = { version = "0.13", features = ["json", "multipart"] }
 criterion = { version = "0.8", features = ["html_reports"] }
 
