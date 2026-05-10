@@ -6,6 +6,7 @@ import UserNotifications
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var pushChannel: FlutterMethodChannel?
+  private var pipBridge: Any?  // PipBridgePlugin, type-erased so iOS < 15 builds compile.
 
   override func application(
     _ application: UIApplication,
@@ -56,6 +57,17 @@ import UserNotifications
       name: "us.echomessenger/push",
       binaryMessenger: messenger
     )
+
+    // Register the PiP method-channel handler.  Hosted on the root
+    // window's view so the AVSampleBufferDisplayLayer we add for PiP
+    // gets a valid superlayer; Flutter's content view itself isn't a
+    // suitable host because Flutter manages its own layer hierarchy.
+    if #available(iOS 15.0, *) {
+      let host = window?.rootViewController?.view ?? UIView()
+      let bridge = PipBridgePlugin()
+      bridge.register(with: messenger, hostView: host)
+      pipBridge = bridge
+    }
   }
 
   // MARK: - APNs Token Registration
