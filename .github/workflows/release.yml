@@ -233,11 +233,18 @@ jobs:
           curl -fSL --retry 3 --retry-delay 2 \
             -o linuxdeploy-x86_64.AppImage \
             "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          # linuxdeploy-plugin-gtk ships only as a shell script on the
+          # repo's main branch — no tagged release.  Pull it from raw.
           curl -fSL --retry 3 --retry-delay 2 \
             -o linuxdeploy-plugin-gtk.sh \
-            "https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk.sh"
+            "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh"
           ls -la linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
+          # linuxdeploy looks for plugins by exact name `linuxdeploy-plugin-<name>`
+          # in $PATH, no .sh suffix accepted.  Symlink + export PATH so
+          # `--plugin gtk` resolves.
+          ln -sf linuxdeploy-plugin-gtk.sh linuxdeploy-plugin-gtk
+          export PATH="$(pwd):$PATH"
           # linuxdeploy itself is an AppImage and needs to be runnable;
           # GitHub Actions runners don't have FUSE 2 by default but our
           # apt-get step installs libfuse2.  Sanity-check by invoking
