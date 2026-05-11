@@ -307,10 +307,20 @@ jobs:
               --desktop-file Echo.AppDir/echo.desktop \
               --icon-file Echo.AppDir/echo.png \
               --output appimage
-          # linuxdeploy writes Echo-x86_64.AppImage to CWD with the
-          # version derived from Name= in the .desktop file.  Rename to
-          # the canonical artifact name expected by the release job.
-          mv Echo*.AppImage Echo-x86_64.AppImage
+          # linuxdeploy writes the AppImage to CWD with a name derived
+          # from the .desktop file's Name= field.  In our case that's
+          # already "Echo-x86_64.AppImage" — but be defensive for the
+          # case where linuxdeploy versions the filename.  Skip the
+          # rename when source == target so `mv` doesn't self-mv-error
+          # ("are the same file").
+          APPIMAGE=$(ls Echo*.AppImage 2>/dev/null | head -1)
+          if [ -z "$APPIMAGE" ]; then
+            echo "::error::linuxdeploy did not produce an AppImage"
+            exit 1
+          fi
+          if [ "$APPIMAGE" != "Echo-x86_64.AppImage" ]; then
+            mv "$APPIMAGE" Echo-x86_64.AppImage
+          fi
 
           # 6. Lightweight sanity: confirm libmpv made it in.  linuxdeploy
           #    silently skips libs in its excludelist, so missing libmpv
