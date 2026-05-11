@@ -224,16 +224,32 @@ jobs:
           # libmpv on bookworm pulls liblua5.2 (embedded scripting).  Without
           # it the AppImage fails on hosts that don't ship liblua5.2-0 with
           # "liblua5.2.so.0: cannot open shared object file" (#835).
-          BUNDLE_RE='^(libmpv|libav(codec|format|util|filter|device)|libsws(cale)?|libswresample|libpostproc|libplacebo|libmujs|libdovi|libshaderc|libspirv-cross|libass|libuchardet|libvpx|libx264|libx265|libtheora|libvorbis|libopus|libdav1d|libaom|liblcms|librubberband|libsoxr|libchromaprint|libbluray|libsrt|libnghttp[23]|liblua5\.[0-9]+|libluajit)'
-          ldd "$LIBMPV_PATH" | awk '/=>/ {print $3}' \
-            | while read -r dep; do
-                [ -z "$dep" ] || [ ! -e "$dep" ] && continue
-                base=$(basename "$dep")
-                if echo "$base" | grep -qE "$BUNDLE_RE"; then
-                  cp -Ln "$dep" Echo.AppDir/usr/bin/lib/ 2>/dev/null || true
-                fi
-              done
+          #
+          # Skia / Flutter image-decoding pull libjpeg + libpng + libtiff +
+          # libwebp + libgif transitively; minimal hosts may not ship them
+          # (#836 follow-up: v0.0.300 failed with libjpeg.so.8 missing).
+          BUNDLE_RE='^(libmpv|libav(codec|format|util|filter|device)|libsws(cale)?|libswresample|libpostproc|libplacebo|libmujs|libdovi|libshaderc|libspirv-cross|libass|libuchardet|libvpx|libx264|libx265|libtheora|libvorbis|libopus|libdav1d|libaom|liblcms|librubberband|libsoxr|libchromaprint|libbluray|libsrt|libnghttp[23]|liblua5\.[0-9]+|libluajit|libjpeg|libpng|libtiff|libwebp|libgif|libopenjp2|libheif|libde265)'
+          # Walk ldd on BOTH libmpv (for the media stack) AND the Flutter
+          # binary itself (for Skia / image-codec / network deps).  Bundles
+          # any soname matching BUNDLE_RE from either dependency tree.
+          for target in "$LIBMPV_PATH" Echo.AppDir/usr/bin/echo_app; do
+            [ -f "$target" ] || continue
+            ldd "$target" 2>/dev/null | awk '/=>/ {print $3}' \
+              | while read -r dep; do
+                  [ -z "$dep" ] || [ ! -e "$dep" ] && continue
+                  base=$(basename "$dep")
+                  if echo "$base" | grep -qE "$BUNDLE_RE"; then
+                    cp -Ln "$dep" Echo.AppDir/usr/bin/lib/ 2>/dev/null || true
+                  fi
+                done
+          done
           ls Echo.AppDir/usr/bin/lib/libmpv* > /dev/null  # sanity check
+          # libjpeg is so commonly required that a missing bundle is almost
+          # certainly a regression — fail-fast if it's not there.
+          ls Echo.AppDir/usr/bin/lib/libjpeg* > /dev/null || {
+            echo "::error::libjpeg not bundled; the regex or ldd walk regressed."
+            exit 1
+          }
           echo "Bundled libs:"; ls -1 Echo.AppDir/usr/bin/lib/ | sort
           cat > Echo.AppDir/echo.desktop << 'EOF'
           [Desktop Entry]
