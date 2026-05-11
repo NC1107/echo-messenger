@@ -296,37 +296,65 @@ jobs:
           magick public/white_echo_icon.png -gravity center -background none -extent 1408x1408 -resize 256x256 Echo.AppDir/echo.png || \
           cp public/white_echo_icon.png Echo.AppDir/echo.png
 
-          # 5. Run linuxdeploy.  --plugin gtk bundles a coherent GTK
-          #    runtime (gobject/gio/gdk-pixbuf/cairo/pango/harfbuzz).
-          #    --output appimage produces the final .AppImage in CWD.
+          # 5. Run linuxdeploy WITHOUT --output appimage so we can
+          #    post-process the AppDir before appimagetool packages
+          #    it.  linuxdeploy-plugin-gtk over-bundles relative to
+          #    the AppImageCommunity excludelist — most notably
+          #    libgstreamer-1.0.so.0, which crashes audioplayers_linux
+          #    at runtime (bundled gstreamer + host-only gst-plugins
+          #    = no factories registered, plugin throws on init).
+          #    Also strips other "must come from host" libs that
+          #    crashed v0.0.303-class hosts.
           export DEPLOY_GTK_VERSION=3
           tools/linuxdeploy-x86_64.AppImage \
               --appdir Echo.AppDir \
               --plugin gtk \
               --executable Echo.AppDir/usr/bin/echo_app \
               --desktop-file Echo.AppDir/echo.desktop \
-              --icon-file Echo.AppDir/echo.png \
-              --output appimage
-          # linuxdeploy writes the AppImage to CWD with a name derived
-          # from the .desktop file's Name= field.  In our case that's
-          # already "Echo-x86_64.AppImage" — but be defensive for the
-          # case where linuxdeploy versions the filename.  Skip the
-          # rename when source == target so `mv` doesn't self-mv-error
-          # ("are the same file").
-          APPIMAGE=$(ls Echo*.AppImage 2>/dev/null | head -1)
-          if [ -z "$APPIMAGE" ]; then
-            echo "::error::linuxdeploy did not produce an AppImage"
-            exit 1
-          fi
-          if [ "$APPIMAGE" != "Echo-x86_64.AppImage" ]; then
-            mv "$APPIMAGE" Echo-x86_64.AppImage
-          fi
+              --icon-file Echo.AppDir/echo.png
 
-          # 6. Lightweight sanity: confirm libmpv made it in.  linuxdeploy
-          #    silently skips libs in its excludelist, so missing libmpv
-          #    would mean the staging in step 3 didn't work.
-          if ! unsquashfs -l Echo-x86_64.AppImage 2>/dev/null | grep -q libmpv.so.2; then
-            echo "::warning::libmpv.so.2 not detected in AppImage payload (some appimagetool versions don't expose unsquashfs introspection; non-fatal)."
+          # 5b. Strip host-coupled libs that linuxdeploy-plugin-gtk
+          #     bundled despite the excludelist.  These must come
+          #     from the user's host:
+          #       - libgstreamer/libgst* — host has plugins, ours doesn't
+          #       - libdbus / libsystemd / libudev — talks to host daemons
+          #       - libmount / libblkid — symbol-coupled to host's libgio
+          #       - libselinux / libpcre2 — host security + version-skewed
+          STRIP_LIBS=(
+            'libgstreamer-1.0.so*'
+            'libgstapp-1.0.so*'
+            'libgstbase-1.0.so*'
+            'libgstvideo-1.0.so*'
+            'libgstaudio-1.0.so*'
+            'libdbus-1.so*'
+            'libsystemd.so*'
+            'libudev.so*'
+            'libmount.so*'
+            'libblkid.so*'
+            'libselinux.so*'
+            'libpcre2-8.so*'
+          )
+          for pat in "${STRIP_LIBS[@]}"; do
+            for f in Echo.AppDir/usr/lib/$pat Echo.AppDir/lib/$pat; do
+              [ -e "$f" ] && { echo "  stripping $f"; rm -f "$f"; }
+            done
+          done
+
+          # 5c. Now package with appimagetool ourselves.  linuxdeploy
+          #     bundles appimagetool inside its AppImage, but it's
+          #     simpler to grab the standalone version.
+          curl -fSL --retry 3 --retry-delay 2 \
+            -o tools/appimagetool \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x tools/appimagetool
+          ARCH=x86_64 tools/appimagetool --appimage-extract-and-run \
+              --no-appstream \
+              Echo.AppDir \
+              Echo-x86_64.AppImage
+          # 6. Sanity: confirm libmpv made it in + size report.
+          if [ ! -f Echo-x86_64.AppImage ]; then
+            echo "::error::Echo-x86_64.AppImage was not produced"
+            exit 1
           fi
           echo "Final AppImage size: $(du -h Echo-x86_64.AppImage | cut -f1)"
       - name: Upload Linux artifacts
