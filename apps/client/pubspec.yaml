@@ -54,6 +54,7 @@ dependencies:
   image: ^4.8.0
   flutter_colorpicker: ^1.1.0
   flutter_callkit_incoming: ^3.0.0
+  flutter_markdown: ^0.7.7+1
 
 dev_dependencies:
   flutter_test:

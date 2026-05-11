@@ -19,6 +19,7 @@ import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/update_provider.dart';
 import '../providers/livekit_voice_provider.dart';
+import '../providers/release_notes_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/notification_service.dart';
 import '../services/tray_service.dart';
@@ -31,6 +32,7 @@ import '../widgets/members_panel.dart';
 import '../utils/web_lifecycle.dart';
 import '../widgets/keyboard_shortcuts_overlay.dart';
 import '../widgets/global_search_overlay.dart';
+import '../widgets/whats_new_modal.dart';
 import '../widgets/quick_switcher_overlay.dart';
 import '../widgets/voice_dock.dart';
 import 'contacts_screen.dart';
@@ -186,14 +188,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // 5. Load privacy preferences used for read-receipt/plaintext behavior.
     await ref.read(privacyProvider.notifier).load();
 
-    // 6. Check for app updates (non-blocking)
-    ref.read(updateProvider.notifier).check();
+    // 6. Check for app updates.  Awaited so step 6b can read the
+    // resulting release-notes body and decide whether to show the
+    // What's New modal — without await the body isn't populated yet
+    // and the modal silently skips.  Cached path is sync (≤ 1ms);
+    // network path is a single 10s-timeout GET so worst-case impact
+    // on home-screen first paint is bounded.
+    await ref.read(updateProvider.notifier).check();
+
+    // 6b. Show the What's New modal once per upgrade.  No-op on fresh
+    // install (releaseNotesProvider bootstraps last_shown = appVersion
+    // so first launch never surfaces a changelog).
+    await _showWhatsNewIfNeeded();
 
     // 7b. Init system tray (desktop only; no-op on web/mobile).
     unawaited(TrayService.instance.init());
 
     // 7. Show first-login server notice
     await _showServerNoticeIfNeeded();
+  }
+
+  Future<void> _showWhatsNewIfNeeded() async {
+    if (!mounted) return;
+    // Force AsyncNotifier.build() to run before reading .value — the
+    // first read of an AsyncNotifierProvider returns AsyncLoading; we
+    // need the resolved snapshot.
+    await ref.read(releaseNotesProvider.future);
+    if (!mounted) return;
+    await maybeShowWhatsNew(context, ref);
   }
 
   void _startPendingRefreshLoop() {
