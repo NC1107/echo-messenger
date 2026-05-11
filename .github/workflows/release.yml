@@ -182,12 +182,13 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          # Build deps + libmpv runtime so linuxdeploy can walk the
-          # libmpv dep tree via ldd.  libsndio + libjack stay installed
-          # so libmpv's audio-backend transitives resolve cleanly;
-          # linuxdeploy's excludelist won't bundle them when they're
-          # audio daemons, but the plugin pattern wants ldd to find
-          # them on disk during the walk.
+          # libsndio7-dev + libjack-jackd2-dev are required so the
+          # bundling step can resolve libmpv's hard-linked audio
+          # backends via ldd.  Without them, ldd reports "not found"
+          # and walk_deps silently skips them, shipping a bundle that
+          # fails on every user host that doesn't have them either
+          # (sndio is OpenBSD's audio daemon, jack is pro-audio —
+          # neither is on typical Linux desktops).
           sudo apt-get install -y \
             clang cmake ninja-build \
             libgtk-3-dev libfuse2 \
@@ -195,8 +196,7 @@ jobs:
             gstreamer1.0-plugins-good \
             libsecret-1-dev libayatana-appindicator3-dev \
             libasound2-dev libmpv-dev \
-            libsndio-dev libjack-jackd2-dev \
-            squashfs-tools desktop-file-utils
+            libsndio-dev libjack-jackd2-dev
       - name: Build
         working-directory: apps/client
         run: flutter build linux --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
@@ -206,82 +206,206 @@ jobs:
           tar czf ${{ github.workspace }}/echo-linux-x64.tar.gz .
       - name: Build AppImage
         run: |
-          # AppImage bundling via linuxdeploy + linuxdeploy-plugin-gtk.
-          #
-          # Replaces a hand-rolled BUNDLE_RE / DENY_RE walk after the
-          # v0.0.296..v0.0.303 cycle of lib-of-the-week regressions
-          # (#835 + #845 + #846 history) showed the curated-allowlist
-          # pattern is unsustainable.  linuxdeploy uses the upstream
-          # AppImageCommunity `excludelist`:
-          #
-          #   https://github.com/AppImageCommunity/pkg2appimage/blob/master/excludelist
-          #
-          # which is the maintained canonical list of "must come from
-          # user's host" libs (glibc, libGL, libdbus, libasound, etc.).
-          # The GTK plugin additionally bundles a coherent GTK runtime
-          # (GLib + GIO + GdkPixbuf loaders + Adwaita icons) so the
-          # libglib symbol-version skew that shadowed Fedora 43+ hosts
-          # in v0.0.296 doesn't recur.
-
-          # 1. Download linuxdeploy + the GTK plugin (continuous builds).
-          # Use `curl -fSL` instead of `wget -q` — wget's -q swallowed the
-          # 4xx/5xx that took down v0.0.305's first attempt, with no clue
-          # in the log.  curl -f fails loud on HTTP errors and -S surfaces
-          # the underlying message even with output redirected.
-          set -x  # surface every download attempt in the log
-          mkdir -p tools && cd tools
-          curl -fSL --retry 3 --retry-delay 2 \
-            -o linuxdeploy-x86_64.AppImage \
-            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
-          # linuxdeploy-plugin-gtk ships only as a shell script on the
-          # repo's main branch — no tagged release.  Pull it from raw.
-          curl -fSL --retry 3 --retry-delay 2 \
-            -o linuxdeploy-plugin-gtk.sh \
-            "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh"
-          ls -la linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
-          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
-          # linuxdeploy looks for plugins by exact name `linuxdeploy-plugin-<name>`
-          # in $PATH, no .sh suffix accepted.  Symlink + export PATH so
-          # `--plugin gtk` resolves.
-          ln -sf linuxdeploy-plugin-gtk.sh linuxdeploy-plugin-gtk
-          export PATH="$(pwd):$PATH"
-          # linuxdeploy itself is an AppImage and needs to be runnable;
-          # GitHub Actions runners don't have FUSE 2 by default but our
-          # apt-get step installs libfuse2.  Sanity-check by invoking
-          # --version so a missing FUSE bails out immediately with a
-          # clear message rather than mid-build.
-          ./linuxdeploy-x86_64.AppImage --version || {
-            echo "::error::linuxdeploy AppImage failed to run.  Likely cause: libfuse2 missing on runner OR --appimage-extract-and-run needed."
-            ./linuxdeploy-x86_64.AppImage --appimage-extract >/dev/null
-            mv squashfs-root linuxdeploy-extracted
-            echo "::warning::Falling back to extracted linuxdeploy."
-            ln -sf linuxdeploy-extracted/AppRun linuxdeploy-x86_64.AppImage
-          }
-          set +x
-          cd "$GITHUB_WORKSPACE"
-
-          # 2. Prepare AppDir.  linuxdeploy expects:
-          #      AppDir/usr/bin/        -- main binary
-          #      AppDir/usr/share/...   -- desktop file + icon
-          #    It populates AppDir/usr/lib/ itself via ldd + excludelist.
-          mkdir -p Echo.AppDir/usr/bin \
-                   Echo.AppDir/usr/share/applications \
-                   Echo.AppDir/usr/share/icons/hicolor/256x256/apps
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x appimagetool
+          mkdir -p Echo.AppDir/usr/bin Echo.AppDir/usr/share/applications Echo.AppDir/usr/share/icons/hicolor/256x256/apps
           cp -r apps/client/build/linux/x64/release/bundle/* Echo.AppDir/usr/bin/
-
-          # 3. Stage libmpv.so.2 alongside the binary BEFORE linuxdeploy
-          #    runs so its ldd walk can see it.  media_kit_libs_video
-          #    declares a runtime DT_NEEDED on libmpv but doesn't ship
-          #    the .so, so without this step linuxdeploy can't find any
-          #    of libmpv's transitives.
+          # Bundle libmpv.so.2 (and runtime deps) inside the AppImage so it
+          # actually runs on hosts that don't ship libmpv globally.
+          # `media_kit_libs_video` declares a runtime dependency on libmpv
+          # via the dynamic linker but does NOT copy the .so into the
+          # bundle, which left users hitting "libmpv.so.2: cannot open
+          # shared object file" at launch (reported 2026-05-08).  AppRun
+          # already prepends usr/bin/lib to LD_LIBRARY_PATH so the loader
+          # finds these copies.
+          mkdir -p Echo.AppDir/usr/bin/lib
           LIBMPV_PATH=$(ldconfig -p | awk '/libmpv\.so\.2 / {print $4; exit}')
           if [ -z "$LIBMPV_PATH" ] || [ ! -e "$LIBMPV_PATH" ]; then
             echo "::error::libmpv.so.2 not resolvable on the build host; install libmpv2 or libmpv-dev before this step."
             exit 1
           fi
-          cp -L "$LIBMPV_PATH" Echo.AppDir/usr/bin/
+          cp -L "$LIBMPV_PATH" Echo.AppDir/usr/bin/lib/
+          # Deny-list approach (replaces the per-lib allowlist after we
+          # hit libjpeg / libsixel / libjxl / etc. one-by-one across
+          # v0.0.296..v0.0.301).  Bundle EVERY transitive dep of libmpv
+          # + echo_app that isn't in the deny list, then validate with
+          # `ldd` that no soname is unresolved against the bundle path.
+          #
+          # The deny list covers libs that vary across distros and must
+          # come from the user's host — bundling them shadows the host
+          # version and breaks symbol lookups (e.g. v0.0.296's broken
+          # bundle of libglib-2.0 on Fedora 43 caused
+          # "undefined symbol: g_variant_builder_*" at startup).
+          # Keep this list tight and additive; everything else gets
+          # bundled.
+          # Layered deny list: keep libs that must come from the user's
+          # host so they can talk to the host's display server, audio
+          # daemon, dbus, etc.  Bundling these would shadow the host's
+          # service-talking versions and break routing.  Everything not
+          # matched here gets bundled.
+          DENY_GROUPS=(
+            # Core C runtime + ELF loader.
+            'ld-linux|libc\.so|libm\.so|libpthread\.so|librt\.so|libdl\.so'
+            'libgcc_s\.so|libstdc\+\+\.so|libgomp\.so|libnsl\.|libresolv\.'
+            'libutil\.|libanl\.|libcrypt\.|libcap\.'
 
-          # 4. .desktop file + icon (consumed by linuxdeploy).
+            # GLib / GObject / GIO — system glue, must match host.
+            'libglib-|libgio-|libgobject-|libgthread-|libgmodule-'
+
+            # GTK / Pango / Cairo / Harfbuzz / Fonts — display chain.
+            'libgtk-|libgdk-|libgdk_pixbuf-|libpango-|libpangocairo-|libpangoft'
+            'libcairo-|libcairo\.|libharfbuzz|libatk-|libatk\.'
+            'libfontconfig|libfreetype|libdatrie|libthai|libgraphite2|libfribidi'
+
+            # X / Wayland / GL — windowing + GPU.
+            'libxkbcommon|libwayland|libxcb|libX11|libXext|libXi|libXrender'
+            'libXrandr|libXcomposite|libXdamage|libXfixes|libXcursor|libXau'
+            'libXdmcp|libXinerama|libXxf86vm|libdrm|libgbm|libEGL|libGLESv2'
+            'libGL\.|libGLX|libGLdispatch|libxshmfence'
+
+            # Audio daemons that users have (ALSA / PulseAudio / PipeWire)
+            # MUST come from the host so they reach the running daemon.
+            # libsndio + libjack intentionally NOT here — they're rare
+            # (OpenBSD / pro-audio) and most Linux desktops don't ship
+            # them, so we bundle them.  libmpv hard-links them.
+            'libasound|libpulse|libpipewire|libapulse'
+
+            # GStreamer + GNOME / KDE shell integrations — pulled in by
+            # GTK image loaders, file pickers, tray indicators, etc.
+            # Bundling these breaks if the host's gst-plugins / GIO
+            # modules don't match the bundled lib version.
+            'libgstreamer|libgst[a-z]+-|libgstapp|libgstbase|libgstvideo|libgstaudio'
+            'libcloudproviders|libayatana|libappindicator|libtinysparql|libjson-glib'
+            'libglycin|libdconf|libgsettings'
+
+            # System services / IPC.
+            'libdbus|libsystemd|libudev|libelogind|libavahi'
+
+            # util-linux suite — libmount + libblkid are tightly coupled
+            # to the host's libgio version via MOUNT_2.* symbol versions.
+            # Bundling an Ubuntu-built libmount shadows the host's and
+            # breaks libgio symbol lookups on Fedora 44+ (#v0.0.303
+            # incident).
+            'libmount|libblkid|libsmartcols|libuuid|libfdisk'
+
+            # ICU (text + Unicode) — Ubuntu and Fedora ship different
+            # major versions (74 vs 76+); symbol mismatches surface as
+            # silent crashes in GTK/Pango when bundled.
+            'libicudata|libicuuc|libicui18n|libicutu|libicuio'
+
+            # GPU / video acceleration — talks to host kernel + driver.
+            'libvulkan|libvdpau|libva\.|libva-drm|libva-wayland|libva-x11'
+            'libGLdispatch|libGLU|libnvidia'
+
+            # Compiler runtimes + ELF tooling.
+            'libgfortran|libgomp\.|libunwind|libdw\.|libquadmath'
+
+            # Wayland decorations / theming — must match compositor.
+            'libdecor-0|libdecor'
+
+            # ncurses / terminal info — host's terminfo data is
+            # /etc/terminfo, not bundlable.
+            'libtinfo|libncurses|libslang'
+
+            # GLib / gobject introspection extras (some pulled by
+            # libgio in addition to the libglib- pattern above).
+            'libgirepository|libgthread'
+
+            # Misc gettext + libunistring + libidn2 — distros patch
+            # these for locale data; bundling causes UTF-8 weirdness.
+            'libgettext|libintl|libunistring|libidn2'
+
+            # System crypto / TLS — distros patch these heavily.
+            'libcrypto\.|libssl\.|libgcrypt|libgpg-error|libgnutls|libtasn1'
+            'libnettle|libhogweed|libidn|libldap|libsasl|libkrb5|libcom_err'
+            'libkeyutils|libk5crypto|libgssapi|libp11-kit'
+            'libnss|libnspr|libplc4|libplds4|libsmime3|libnssutil3|libfreebl3|libsoftokn3'
+
+            # Compression + utilities that are universally present.
+            # libbz2 intentionally NOT here: Debian-flavored sonames
+            # (libbz2.so.1.0) don't exist on Fedora (which ships
+            # libbz2.so.1), so bundling is safer than relying on host.
+            'libpcre|libffi|libelf|libz\.so|liblzma|liblzo|libzstd|libdatum'
+
+            # Misc system libs.
+            'libxml2|libxslt|libsqlite|libapparmor|libselinux|libacl|libattr'
+            'libsoup|libsecret|libnotify|libcanberra|libbsd|libmd\.so|libusb'
+          )
+          DENY_RE="^($(IFS='|'; echo "${DENY_GROUPS[*]}"))"
+
+          # Bundle every transitive dep of libmpv + echo_app that isn't
+          # in DENY_RE.  Repeating safe — cp -n is no-clobber.
+          walk_deps() {
+            local target="$1"
+            [ -f "$target" ] || return 0
+            ldd "$target" 2>/dev/null | awk '/=>/ {print $3}' \
+              | while read -r dep; do
+                  [ -z "$dep" ] || [ ! -e "$dep" ] && continue
+                  base=$(basename "$dep")
+                  if echo "$base" | grep -qE "$DENY_RE"; then
+                    continue
+                  fi
+                  cp -Ln "$dep" Echo.AppDir/usr/bin/lib/ 2>/dev/null || true
+                done
+          }
+
+          walk_deps "$LIBMPV_PATH"
+          walk_deps Echo.AppDir/usr/bin/echo_app
+          # Walk recursively over the bundled libs themselves so anything
+          # that ldd missed on the first pass (because LD_LIBRARY_PATH
+          # was system-only) gets caught.  Two passes is enough for our
+          # dep depth.
+          for _ in 1 2; do
+            for lib in Echo.AppDir/usr/bin/lib/*.so*; do
+              walk_deps "$lib"
+            done
+          done
+
+          ls Echo.AppDir/usr/bin/lib/libmpv* > /dev/null  # sanity check
+          ls Echo.AppDir/usr/bin/lib/libjpeg* > /dev/null || {
+            echo "::error::libjpeg not bundled; the deny list or ldd walk regressed."
+            exit 1
+          }
+          echo "Bundled libs:"; ls -1 Echo.AppDir/usr/bin/lib/ | sort
+
+          # Validation: walk DT_NEEDED on echo_app + every bundled .so
+          # and confirm each soname is EITHER bundled OR matches the
+          # deny regex (= explicitly expected from user's host).
+          #
+          # We deliberately don't use `ldd` here: ldd resolves against
+          # the build host's installed packages, so a lib that happens
+          # to be on the Ubuntu CI runner via libmpv-dev's deps (e.g.
+          # libsndio) shows up as "resolved" even though the user's
+          # Fedora host doesn't have it.  That gap is what shipped
+          # broken v0.0.302 to a user.  DT_NEEDED checks the actual
+          # ELF dependency declarations, independent of the host.
+          echo "=== AppImage dep validation ==="
+          NEEDED=$(objdump -p Echo.AppDir/usr/bin/echo_app \
+              Echo.AppDir/usr/bin/lib/*.so* 2>/dev/null \
+              | awk '/NEEDED/ {print $2}' | sort -u)
+          MISSING=()
+          for soname in $NEEDED; do
+            # In the bundle? OK.
+            if [ -e "Echo.AppDir/usr/bin/lib/$soname" ]; then
+              continue
+            fi
+            # Explicitly expected from user's host? OK.
+            if echo "$soname" | grep -qE "$DENY_RE"; then
+              continue
+            fi
+            MISSING+=("$soname")
+          done
+          if [ "${#MISSING[@]}" -gt 0 ]; then
+            echo "::error::Needed sonames neither bundled nor in DENY_RE:"
+            printf '  %s\n' "${MISSING[@]}"
+            echo "::error::Either let the deny list keep excluding these"
+            echo "::error::(if every user host is guaranteed to have them)"
+            echo "::error::OR remove the matching deny pattern so they get"
+            echo "::error::bundled.  See the libsndio incident in v0.0.302."
+            exit 1
+          fi
+          NEEDED_COUNT=$(printf '%s\n' "$NEEDED" | wc -l)
+          echo "All ${NEEDED_COUNT} needed sonames resolved against bundle or deny list ✓"
           cat > Echo.AppDir/echo.desktop << 'EOF'
           [Desktop Entry]
           Name=Echo
@@ -293,70 +417,20 @@ jobs:
           StartupNotify=true
           StartupWMClass=com.echo.echo_app
           EOF
+          cp Echo.AppDir/echo.desktop Echo.AppDir/usr/share/applications/
+          # Placeholder icon
           magick public/white_echo_icon.png -gravity center -background none -extent 1408x1408 -resize 256x256 Echo.AppDir/echo.png || \
           cp public/white_echo_icon.png Echo.AppDir/echo.png
-
-          # 5. Run linuxdeploy WITHOUT --output appimage so we can
-          #    post-process the AppDir before appimagetool packages
-          #    it.  linuxdeploy-plugin-gtk over-bundles relative to
-          #    the AppImageCommunity excludelist — most notably
-          #    libgstreamer-1.0.so.0, which crashes audioplayers_linux
-          #    at runtime (bundled gstreamer + host-only gst-plugins
-          #    = no factories registered, plugin throws on init).
-          #    Also strips other "must come from host" libs that
-          #    crashed v0.0.303-class hosts.
-          export DEPLOY_GTK_VERSION=3
-          tools/linuxdeploy-x86_64.AppImage \
-              --appdir Echo.AppDir \
-              --plugin gtk \
-              --executable Echo.AppDir/usr/bin/echo_app \
-              --desktop-file Echo.AppDir/echo.desktop \
-              --icon-file Echo.AppDir/echo.png
-
-          # 5b. Strip host-coupled libs that linuxdeploy-plugin-gtk
-          #     bundled despite the excludelist.  These must come
-          #     from the user's host:
-          #       - libgstreamer/libgst* — host has plugins, ours doesn't
-          #       - libdbus / libsystemd / libudev — talks to host daemons
-          #       - libmount / libblkid — symbol-coupled to host's libgio
-          #       - libselinux / libpcre2 — host security + version-skewed
-          STRIP_LIBS=(
-            'libgstreamer-1.0.so*'
-            'libgstapp-1.0.so*'
-            'libgstbase-1.0.so*'
-            'libgstvideo-1.0.so*'
-            'libgstaudio-1.0.so*'
-            'libdbus-1.so*'
-            'libsystemd.so*'
-            'libudev.so*'
-            'libmount.so*'
-            'libblkid.so*'
-            'libselinux.so*'
-            'libpcre2-8.so*'
-          )
-          for pat in "${STRIP_LIBS[@]}"; do
-            for f in Echo.AppDir/usr/lib/$pat Echo.AppDir/lib/$pat; do
-              [ -e "$f" ] && { echo "  stripping $f"; rm -f "$f"; }
-            done
-          done
-
-          # 5c. Now package with appimagetool ourselves.  linuxdeploy
-          #     bundles appimagetool inside its AppImage, but it's
-          #     simpler to grab the standalone version.
-          curl -fSL --retry 3 --retry-delay 2 \
-            -o tools/appimagetool \
-            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
-          chmod +x tools/appimagetool
-          ARCH=x86_64 tools/appimagetool --appimage-extract-and-run \
-              --no-appstream \
-              Echo.AppDir \
-              Echo-x86_64.AppImage
-          # 6. Sanity: confirm libmpv made it in + size report.
-          if [ ! -f Echo-x86_64.AppImage ]; then
-            echo "::error::Echo-x86_64.AppImage was not produced"
-            exit 1
-          fi
-          echo "Final AppImage size: $(du -h Echo-x86_64.AppImage | cut -f1)"
+          cp Echo.AppDir/echo.png Echo.AppDir/usr/share/icons/hicolor/256x256/apps/
+          cat > Echo.AppDir/AppRun << 'APPRUN'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "$0")")"
+          export LD_LIBRARY_PATH="${HERE}/usr/bin/lib:${LD_LIBRARY_PATH}"
+          exec "${HERE}/usr/bin/echo_app" "$@"
+          APPRUN
+          chmod +x Echo.AppDir/AppRun
+          ARCH=x86_64 ./appimagetool --no-appstream Echo.AppDir Echo-x86_64.AppImage || \
+          ARCH=x86_64 ./appimagetool Echo.AppDir Echo-x86_64.AppImage
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
