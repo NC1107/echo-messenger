@@ -281,6 +281,40 @@ jobs:
             # System services / IPC.
             'libdbus|libsystemd|libudev|libelogind|libavahi'
 
+            # util-linux suite — libmount + libblkid are tightly coupled
+            # to the host's libgio version via MOUNT_2.* symbol versions.
+            # Bundling an Ubuntu-built libmount shadows the host's and
+            # breaks libgio symbol lookups on Fedora 44+ (#v0.0.303
+            # incident).
+            'libmount|libblkid|libsmartcols|libuuid|libfdisk'
+
+            # ICU (text + Unicode) — Ubuntu and Fedora ship different
+            # major versions (74 vs 76+); symbol mismatches surface as
+            # silent crashes in GTK/Pango when bundled.
+            'libicudata|libicuuc|libicui18n|libicutu|libicuio'
+
+            # GPU / video acceleration — talks to host kernel + driver.
+            'libvulkan|libvdpau|libva\.|libva-drm|libva-wayland|libva-x11'
+            'libGLdispatch|libGLU|libnvidia'
+
+            # Compiler runtimes + ELF tooling.
+            'libgfortran|libgomp\.|libunwind|libdw\.|libquadmath'
+
+            # Wayland decorations / theming — must match compositor.
+            'libdecor-0|libdecor'
+
+            # ncurses / terminal info — host's terminfo data is
+            # /etc/terminfo, not bundlable.
+            'libtinfo|libncurses|libslang'
+
+            # GLib / gobject introspection extras (some pulled by
+            # libgio in addition to the libglib- pattern above).
+            'libgirepository|libgthread'
+
+            # Misc gettext + libunistring + libidn2 — distros patch
+            # these for locale data; bundling causes UTF-8 weirdness.
+            'libgettext|libintl|libunistring|libidn2'
+
             # System crypto / TLS — distros patch these heavily.
             'libcrypto\.|libssl\.|libgcrypt|libgpg-error|libgnutls|libtasn1'
             'libnettle|libhogweed|libidn|libldap|libsasl|libkrb5|libcom_err'

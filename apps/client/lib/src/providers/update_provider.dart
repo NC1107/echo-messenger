@@ -29,6 +29,12 @@ class UpdateState {
   final String? errorMessage;
   final bool dismissed;
 
+  /// Markdown body of the latest release's notes, as returned by the
+  /// GitHub releases API.  Cached locally; null until the first check
+  /// completes.  Consumed by [WhatsNewModal] (via [releaseNotesProvider])
+  /// to render the "What's New" sheet on first launch after an update.
+  final String? releaseBody;
+
   const UpdateState({
     this.status = UpdateStatus.idle,
     this.latestVersion,
@@ -38,6 +44,7 @@ class UpdateState {
     this.downloadProgress = 0,
     this.errorMessage,
     this.dismissed = false,
+    this.releaseBody,
   });
 
   bool get updateAvailable =>
@@ -57,6 +64,7 @@ class UpdateState {
     double? downloadProgress,
     String? errorMessage,
     bool? dismissed,
+    String? releaseBody,
   }) {
     return UpdateState(
       status: status ?? this.status,
@@ -67,8 +75,56 @@ class UpdateState {
       downloadProgress: downloadProgress ?? this.downloadProgress,
       errorMessage: errorMessage ?? this.errorMessage,
       dismissed: dismissed ?? this.dismissed,
+      releaseBody: releaseBody ?? this.releaseBody,
     );
   }
+}
+
+/// Strip auto-generated noise from a GitHub release notes body so the
+/// What's-New modal shows a clean changelog.  Trims:
+///
+///   - The `**Full Changelog**: https://...compare/vA...vB` trailer that
+///     `softprops/action-gh-release` always appends.
+///   - Dependabot's `bumps `dep` from X to Y` diff URLs (one per line) —
+///     the human commit subject above them is what readers actually
+///     want.
+///   - `Co-Authored-By:` trailers from squash commits.
+///   - Leading/trailing whitespace.
+///
+/// Pure function — exposed for unit tests.
+String? sanitizeReleaseBody(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  var body = raw;
+
+  // GitHub's auto-changelog footer: "**Full Changelog**: <url>"
+  body = body.replaceAll(
+    RegExp(
+      r'\*\*Full Changelog\*\*:\s*https://github\.com/\S+',
+      multiLine: true,
+    ),
+    '',
+  );
+
+  // Dependabot dependency diff URLs.
+  body = body.replaceAll(
+    RegExp(
+      r'^- \[.*\]\(https://github\.com/\S+/compare/\S+\)$',
+      multiLine: true,
+    ),
+    '',
+  );
+
+  // Co-author trailers from squashed PRs.
+  body = body.replaceAll(
+    RegExp(r'^Co-Authored-By:.*$', multiLine: true, caseSensitive: false),
+    '',
+  );
+
+  // Collapse 3+ blank lines into a single blank line.
+  body = body.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+
+  body = body.trim();
+  return body.isEmpty ? null : body;
 }
 
 bool _isNewer(String remote, String local) {
@@ -164,6 +220,7 @@ class Update extends _$Update {
       latestVersion: version,
       downloadUrl: data['url'] as String?,
       assetDownloadUrl: data['assetUrl'] as String?,
+      releaseBody: data['body'] as String?,
       dismissed: dismissed,
       status: readyPath != null
           ? UpdateStatus.readyToInstall
@@ -192,10 +249,16 @@ class Update extends _$Update {
     final version = tagName.startsWith('v') ? tagName.substring(1) : tagName;
     final url = (data['html_url'] as String?) ?? _releasesPageUrl;
     final assetUrl = _findPlatformAssetUrl(data);
+    final body = sanitizeReleaseBody(data['body'] as String?);
 
     await prefs.setString(
       _cacheKey,
-      jsonEncode({'version': version, 'url': url, 'assetUrl': assetUrl}),
+      jsonEncode({
+        'version': version,
+        'url': url,
+        'assetUrl': assetUrl,
+        'body': body,
+      }),
     );
     await prefs.setInt(_cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
 
@@ -206,6 +269,7 @@ class Update extends _$Update {
       latestVersion: version,
       downloadUrl: url,
       assetDownloadUrl: assetUrl,
+      releaseBody: body,
       dismissed: dismissed,
       status: readyPath != null
           ? UpdateStatus.readyToInstall
