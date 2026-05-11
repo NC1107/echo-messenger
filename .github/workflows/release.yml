@@ -211,46 +211,132 @@ jobs:
             exit 1
           fi
           cp -L "$LIBMPV_PATH" Echo.AppDir/usr/bin/lib/
-          # libmpv pulls in transitive .so deps that some minimal target
-          # hosts also lack (FFmpeg, libplacebo, etc.).  Resolve via ldd
-          # but use an explicit *allowlist* of media-kit libs rather than a
-          # generic exclude list -- if we bundle e.g. libglib-2.0 from the
-          # Ubuntu build host it shadows the host's newer glib, and any
-          # system library linked against it (libsecret, libgio, etc.)
-          # crashes at startup with "undefined symbol: g_variant_builder_*"
-          # on Fedora 43 / glib 2.84+ targets (reported 2026-05-08).  Keep
-          # universal system libraries on the host; only bundle the media
-          # stack we know minimal hosts may not ship.
-          # libmpv on bookworm pulls liblua5.2 (embedded scripting).  Without
-          # it the AppImage fails on hosts that don't ship liblua5.2-0 with
-          # "liblua5.2.so.0: cannot open shared object file" (#835).
+          # Deny-list approach (replaces the per-lib allowlist after we
+          # hit libjpeg / libsixel / libjxl / etc. one-by-one across
+          # v0.0.296..v0.0.301).  Bundle EVERY transitive dep of libmpv
+          # + echo_app that isn't in the deny list, then validate with
+          # `ldd` that no soname is unresolved against the bundle path.
           #
-          # Skia / Flutter image-decoding pull libjpeg + libpng + libtiff +
-          # libwebp + libgif transitively; minimal hosts may not ship them
-          # (#836 follow-up: v0.0.300 failed with libjpeg.so.8 missing).
-          BUNDLE_RE='^(libmpv|libav(codec|format|util|filter|device)|libsws(cale)?|libswresample|libpostproc|libplacebo|libmujs|libdovi|libshaderc|libspirv-cross|libass|libuchardet|libvpx|libx264|libx265|libtheora|libvorbis|libopus|libdav1d|libaom|liblcms|librubberband|libsoxr|libchromaprint|libbluray|libsrt|libnghttp[23]|liblua5\.[0-9]+|libluajit|libjpeg|libpng|libtiff|libwebp|libgif|libopenjp2|libheif|libde265)'
-          # Walk ldd on BOTH libmpv (for the media stack) AND the Flutter
-          # binary itself (for Skia / image-codec / network deps).  Bundles
-          # any soname matching BUNDLE_RE from either dependency tree.
-          for target in "$LIBMPV_PATH" Echo.AppDir/usr/bin/echo_app; do
-            [ -f "$target" ] || continue
+          # The deny list covers libs that vary across distros and must
+          # come from the user's host — bundling them shadows the host
+          # version and breaks symbol lookups (e.g. v0.0.296's broken
+          # bundle of libglib-2.0 on Fedora 43 caused
+          # "undefined symbol: g_variant_builder_*" at startup).
+          # Keep this list tight and additive; everything else gets
+          # bundled.
+          # Layered deny list: keep libs that must come from the user's
+          # host so they can talk to the host's display server, audio
+          # daemon, dbus, etc.  Bundling these would shadow the host's
+          # service-talking versions and break routing.  Everything not
+          # matched here gets bundled.
+          DENY_GROUPS=(
+            # Core C runtime + ELF loader.
+            'ld-linux|libc\.so|libm\.so|libpthread\.so|librt\.so|libdl\.so'
+            'libgcc_s\.so|libstdc\+\+\.so|libgomp\.so|libnsl\.|libresolv\.'
+            'libutil\.|libanl\.|libcrypt\.|libcap\.'
+
+            # GLib / GObject / GIO — system glue, must match host.
+            'libglib-|libgio-|libgobject-|libgthread-|libgmodule-'
+
+            # GTK / Pango / Cairo / Harfbuzz / Fonts — display chain.
+            'libgtk-|libgdk-|libgdk_pixbuf-|libpango-|libpangocairo-|libpangoft'
+            'libcairo-|libcairo\.|libharfbuzz|libatk-|libatk\.'
+            'libfontconfig|libfreetype|libdatrie|libthai|libgraphite2|libfribidi'
+
+            # X / Wayland / GL — windowing + GPU.
+            'libxkbcommon|libwayland|libxcb|libX11|libXext|libXi|libXrender'
+            'libXrandr|libXcomposite|libXdamage|libXfixes|libXcursor|libXau'
+            'libXdmcp|libXinerama|libXxf86vm|libdrm|libgbm|libEGL|libGLESv2'
+            'libGL\.|libGLX|libGLdispatch|libxshmfence'
+
+            # Audio servers + clients — MUST come from host audio daemon
+            # (ALSA / PulseAudio / PipeWire / JACK).  Bundling them
+            # breaks the routing pipe to the running daemon and the
+            # user gets silence.
+            'libasound|libpulse|libpipewire|libjack|libsndio|libapulse'
+
+            # GStreamer + GNOME / KDE shell integrations — pulled in by
+            # GTK image loaders, file pickers, tray indicators, etc.
+            # Bundling these breaks if the host's gst-plugins / GIO
+            # modules don't match the bundled lib version.
+            'libgstreamer|libgst[a-z]+-|libgstapp|libgstbase|libgstvideo|libgstaudio'
+            'libcloudproviders|libayatana|libappindicator|libtinysparql|libjson-glib'
+            'libglycin|libdconf|libgsettings'
+
+            # System services / IPC.
+            'libdbus|libsystemd|libudev|libelogind|libavahi'
+
+            # System crypto / TLS — distros patch these heavily.
+            'libcrypto\.|libssl\.|libgcrypt|libgpg-error|libgnutls|libtasn1'
+            'libnettle|libhogweed|libidn|libldap|libsasl|libkrb5|libcom_err'
+            'libkeyutils|libk5crypto|libgssapi|libp11-kit'
+            'libnss|libnspr|libplc4|libplds4|libsmime3|libnssutil3|libfreebl3|libsoftokn3'
+
+            # Compression + utilities that are universally present.
+            # libbz2 intentionally NOT here: Debian-flavored sonames
+            # (libbz2.so.1.0) don't exist on Fedora (which ships
+            # libbz2.so.1), so bundling is safer than relying on host.
+            'libpcre|libffi|libelf|libz\.so|liblzma|liblzo|libzstd|libdatum'
+
+            # Misc system libs.
+            'libxml2|libxslt|libsqlite|libapparmor|libselinux|libacl|libattr'
+            'libsoup|libsecret|libnotify|libcanberra|libbsd|libmd\.so|libusb'
+          )
+          DENY_RE="^($(IFS='|'; echo "${DENY_GROUPS[*]}"))"
+
+          # Bundle every transitive dep of libmpv + echo_app that isn't
+          # in DENY_RE.  Repeating safe — cp -n is no-clobber.
+          walk_deps() {
+            local target="$1"
+            [ -f "$target" ] || return 0
             ldd "$target" 2>/dev/null | awk '/=>/ {print $3}' \
               | while read -r dep; do
                   [ -z "$dep" ] || [ ! -e "$dep" ] && continue
                   base=$(basename "$dep")
-                  if echo "$base" | grep -qE "$BUNDLE_RE"; then
-                    cp -Ln "$dep" Echo.AppDir/usr/bin/lib/ 2>/dev/null || true
+                  if echo "$base" | grep -qE "$DENY_RE"; then
+                    continue
                   fi
+                  cp -Ln "$dep" Echo.AppDir/usr/bin/lib/ 2>/dev/null || true
                 done
+          }
+
+          walk_deps "$LIBMPV_PATH"
+          walk_deps Echo.AppDir/usr/bin/echo_app
+          # Walk recursively over the bundled libs themselves so anything
+          # that ldd missed on the first pass (because LD_LIBRARY_PATH
+          # was system-only) gets caught.  Two passes is enough for our
+          # dep depth.
+          for _ in 1 2; do
+            for lib in Echo.AppDir/usr/bin/lib/*.so*; do
+              walk_deps "$lib"
+            done
           done
+
           ls Echo.AppDir/usr/bin/lib/libmpv* > /dev/null  # sanity check
-          # libjpeg is so commonly required that a missing bundle is almost
-          # certainly a regression — fail-fast if it's not there.
           ls Echo.AppDir/usr/bin/lib/libjpeg* > /dev/null || {
-            echo "::error::libjpeg not bundled; the regex or ldd walk regressed."
+            echo "::error::libjpeg not bundled; the deny list or ldd walk regressed."
             exit 1
           }
           echo "Bundled libs:"; ls -1 Echo.AppDir/usr/bin/lib/ | sort
+
+          # Validation: with LD_LIBRARY_PATH pinned to the bundle, ldd
+          # must resolve every dep of echo_app.  Any "not found" line
+          # means a transitive lib slipped through the deny list AND
+          # isn't on the build host — exactly the v0.0.300/301 failure
+          # mode.  Catching it here ships fewer broken builds.
+          echo "=== AppImage dep validation ==="
+          UNRESOLVED=$(LD_LIBRARY_PATH="$(pwd)/Echo.AppDir/usr/bin/lib" \
+              ldd Echo.AppDir/usr/bin/echo_app 2>/dev/null \
+              | awk '/not found/ {print $1}' | sort -u || true)
+          if [ -n "$UNRESOLVED" ]; then
+            echo "::error::Unresolved deps in the AppImage bundle:"
+            echo "$UNRESOLVED" | sed 's/^/  /'
+            echo "::error::Either install these libs on the build host so ldd"
+            echo "::error::can resolve them, or add them to DENY_RE if they're"
+            echo "::error::expected to come from the user's host."
+            exit 1
+          fi
+          echo "All deps resolved against bundle ✓"
           cat > Echo.AppDir/echo.desktop << 'EOF'
           [Desktop Entry]
           Name=Echo
