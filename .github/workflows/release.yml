@@ -224,10 +224,33 @@ jobs:
           # in v0.0.296 doesn't recur.
 
           # 1. Download linuxdeploy + the GTK plugin (continuous builds).
+          # Use `curl -fSL` instead of `wget -q` — wget's -q swallowed the
+          # 4xx/5xx that took down v0.0.305's first attempt, with no clue
+          # in the log.  curl -f fails loud on HTTP errors and -S surfaces
+          # the underlying message even with output redirected.
+          set -x  # surface every download attempt in the log
           mkdir -p tools && cd tools
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk.sh
+          curl -fSL --retry 3 --retry-delay 2 \
+            -o linuxdeploy-x86_64.AppImage \
+            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          curl -fSL --retry 3 --retry-delay 2 \
+            -o linuxdeploy-plugin-gtk.sh \
+            "https://github.com/linuxdeploy/linuxdeploy-plugin-gtk/releases/download/continuous/linuxdeploy-plugin-gtk.sh"
+          ls -la linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-gtk.sh
+          # linuxdeploy itself is an AppImage and needs to be runnable;
+          # GitHub Actions runners don't have FUSE 2 by default but our
+          # apt-get step installs libfuse2.  Sanity-check by invoking
+          # --version so a missing FUSE bails out immediately with a
+          # clear message rather than mid-build.
+          ./linuxdeploy-x86_64.AppImage --version || {
+            echo "::error::linuxdeploy AppImage failed to run.  Likely cause: libfuse2 missing on runner OR --appimage-extract-and-run needed."
+            ./linuxdeploy-x86_64.AppImage --appimage-extract >/dev/null
+            mv squashfs-root linuxdeploy-extracted
+            echo "::warning::Falling back to extracted linuxdeploy."
+            ln -sf linuxdeploy-extracted/AppRun linuxdeploy-x86_64.AppImage
+          }
+          set +x
           cd "$GITHUB_WORKSPACE"
 
           # 2. Prepare AppDir.  linuxdeploy expects:
