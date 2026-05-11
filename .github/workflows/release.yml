@@ -182,7 +182,21 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build libgtk-3-dev libfuse2 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good libsecret-1-dev libayatana-appindicator3-dev libasound2-dev libmpv-dev
+          # libsndio7-dev + libjack-jackd2-dev are required so the
+          # bundling step can resolve libmpv's hard-linked audio
+          # backends via ldd.  Without them, ldd reports "not found"
+          # and walk_deps silently skips them, shipping a bundle that
+          # fails on every user host that doesn't have them either
+          # (sndio is OpenBSD's audio daemon, jack is pro-audio —
+          # neither is on typical Linux desktops).
+          sudo apt-get install -y \
+            clang cmake ninja-build \
+            libgtk-3-dev libfuse2 \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-good \
+            libsecret-1-dev libayatana-appindicator3-dev \
+            libasound2-dev libmpv-dev \
+            libsndio-dev libjack-jackd2-dev
       - name: Build
         working-directory: apps/client
         run: flutter build linux --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
@@ -249,11 +263,12 @@ jobs:
             'libXdmcp|libXinerama|libXxf86vm|libdrm|libgbm|libEGL|libGLESv2'
             'libGL\.|libGLX|libGLdispatch|libxshmfence'
 
-            # Audio servers + clients — MUST come from host audio daemon
-            # (ALSA / PulseAudio / PipeWire / JACK).  Bundling them
-            # breaks the routing pipe to the running daemon and the
-            # user gets silence.
-            'libasound|libpulse|libpipewire|libjack|libsndio|libapulse'
+            # Audio daemons that users have (ALSA / PulseAudio / PipeWire)
+            # MUST come from the host so they reach the running daemon.
+            # libsndio + libjack intentionally NOT here — they're rare
+            # (OpenBSD / pro-audio) and most Linux desktops don't ship
+            # them, so we bundle them.  libmpv hard-links them.
+            'libasound|libpulse|libpipewire|libapulse'
 
             # GStreamer + GNOME / KDE shell integrations — pulled in by
             # GTK image loaders, file pickers, tray indicators, etc.
@@ -319,24 +334,44 @@ jobs:
           }
           echo "Bundled libs:"; ls -1 Echo.AppDir/usr/bin/lib/ | sort
 
-          # Validation: with LD_LIBRARY_PATH pinned to the bundle, ldd
-          # must resolve every dep of echo_app.  Any "not found" line
-          # means a transitive lib slipped through the deny list AND
-          # isn't on the build host — exactly the v0.0.300/301 failure
-          # mode.  Catching it here ships fewer broken builds.
+          # Validation: walk DT_NEEDED on echo_app + every bundled .so
+          # and confirm each soname is EITHER bundled OR matches the
+          # deny regex (= explicitly expected from user's host).
+          #
+          # We deliberately don't use `ldd` here: ldd resolves against
+          # the build host's installed packages, so a lib that happens
+          # to be on the Ubuntu CI runner via libmpv-dev's deps (e.g.
+          # libsndio) shows up as "resolved" even though the user's
+          # Fedora host doesn't have it.  That gap is what shipped
+          # broken v0.0.302 to a user.  DT_NEEDED checks the actual
+          # ELF dependency declarations, independent of the host.
           echo "=== AppImage dep validation ==="
-          UNRESOLVED=$(LD_LIBRARY_PATH="$(pwd)/Echo.AppDir/usr/bin/lib" \
-              ldd Echo.AppDir/usr/bin/echo_app 2>/dev/null \
-              | awk '/not found/ {print $1}' | sort -u || true)
-          if [ -n "$UNRESOLVED" ]; then
-            echo "::error::Unresolved deps in the AppImage bundle:"
-            echo "$UNRESOLVED" | sed 's/^/  /'
-            echo "::error::Either install these libs on the build host so ldd"
-            echo "::error::can resolve them, or add them to DENY_RE if they're"
-            echo "::error::expected to come from the user's host."
+          NEEDED=$(objdump -p Echo.AppDir/usr/bin/echo_app \
+              Echo.AppDir/usr/bin/lib/*.so* 2>/dev/null \
+              | awk '/NEEDED/ {print $2}' | sort -u)
+          MISSING=()
+          for soname in $NEEDED; do
+            # In the bundle? OK.
+            if [ -e "Echo.AppDir/usr/bin/lib/$soname" ]; then
+              continue
+            fi
+            # Explicitly expected from user's host? OK.
+            if echo "$soname" | grep -qE "$DENY_RE"; then
+              continue
+            fi
+            MISSING+=("$soname")
+          done
+          if [ "${#MISSING[@]}" -gt 0 ]; then
+            echo "::error::Needed sonames neither bundled nor in DENY_RE:"
+            printf '  %s\n' "${MISSING[@]}"
+            echo "::error::Either let the deny list keep excluding these"
+            echo "::error::(if every user host is guaranteed to have them)"
+            echo "::error::OR remove the matching deny pattern so they get"
+            echo "::error::bundled.  See the libsndio incident in v0.0.302."
             exit 1
           fi
-          echo "All deps resolved against bundle ✓"
+          NEEDED_COUNT=$(printf '%s\n' "$NEEDED" | wc -l)
+          echo "All ${NEEDED_COUNT} needed sonames resolved against bundle or deny list ✓"
           cat > Echo.AppDir/echo.desktop << 'EOF'
           [Desktop Entry]
           Name=Echo
