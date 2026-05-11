@@ -30,6 +30,7 @@ import '../theme/responsive.dart';
 import 'channel_bar.dart';
 import 'chat_header_bar.dart';
 import 'chat_input_bar.dart';
+import 'chat_panel_controller.dart';
 import 'chat/session_corrupted_banner.dart';
 import 'chat_panel/chat_message_list.dart';
 import 'chat_panel/drop_overlay.dart';
@@ -86,6 +87,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     with WidgetsBindingObserver {
   final _scrollController = ScrollController();
   final _chatInputBarKey = GlobalKey<ChatInputBarState>();
+  final _controller = ChatPanelController();
 
   /// Cache scroll offsets keyed by conversation ID so switching conversations
   /// preserves the user's position. Capped at [_kMaxScrollPositions] entries
@@ -216,10 +218,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   @override
   void initState() {
     super.initState();
+    _controller.attachScrollController(_scrollController);
+    _controller.deletedForMeIds = _deletedForMeIds;
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addObserver(this);
     _loadDismissedBanners();
-    _loadDeletedForMe();
+    _loadDeletedForMe().then((_) {
+      if (mounted) _controller.deletedForMeIds = _deletedForMeIds;
+    });
     _pendingInitialMessageId = widget.initialMessageId;
   }
 
@@ -306,6 +312,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     _liveRegionClearTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -463,11 +470,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     });
   }
 
-  bool _isNearBottom() {
-    if (!_scrollController.hasClients) return true;
-    final pos = _scrollController.position;
-    return pos.maxScrollExtent - pos.pixels < 150;
-  }
+  bool _isNearBottom() => _controller.isNearBottom();
 
   void _loadHistory() {
     final conv = widget.conversation;
@@ -1671,53 +1674,29 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     }
   }
 
-  /// Resolve messages for the current conversation and channel.
-  /// Filters out messages the user has deleted locally ("delete for me").
   List<ChatMessage> _resolveMessages(
     Conversation conv,
     ChatState chatState,
     String? selectedChannelId,
     bool includeUnchanneled,
-  ) {
-    final List<ChatMessage> raw;
-    if (conv.isGroup) {
-      raw = chatState.messagesForConversationChannel(
-        conv.id,
-        channelId: selectedChannelId,
-        includeUnchanneled: includeUnchanneled,
-      );
-    } else {
-      raw = chatState.messagesForConversation(conv.id);
-    }
-    if (_deletedForMeIds.isEmpty) return raw;
-    return raw.where((m) => !_deletedForMeIds.contains(m.id)).toList();
-  }
+  ) => _controller.resolveMessages(
+    conv,
+    chatState,
+    selectedChannelId,
+    includeUnchanneled,
+  );
 
-  /// Apply channel + delete-for-me filters to a pre-fetched message list.
-  /// Used by the build path so a `.select` on the per-conversation list ref
-  /// keeps unrelated conversations from rebuilding.
   List<ChatMessage> _filterChannelAndDeleted(
     Conversation conv,
     List<ChatMessage> raw,
     String? selectedChannelId,
     bool includeUnchanneled,
-  ) {
-    Iterable<ChatMessage> filtered = raw;
-    if (conv.isGroup &&
-        selectedChannelId != null &&
-        selectedChannelId.isNotEmpty) {
-      filtered = filtered.where((m) {
-        if (m.isSystemEvent) return true;
-        if (m.channelId == selectedChannelId) return true;
-        return includeUnchanneled &&
-            (m.channelId == null || m.channelId!.isEmpty);
-      });
-    }
-    if (_deletedForMeIds.isNotEmpty) {
-      filtered = filtered.where((m) => !_deletedForMeIds.contains(m.id));
-    }
-    return identical(filtered, raw) ? raw : filtered.toList();
-  }
+  ) => _controller.filterChannelAndDeleted(
+    conv,
+    raw,
+    selectedChannelId,
+    includeUnchanneled,
+  );
 
   // ---------------------------------------------------------------------------
   // Build
