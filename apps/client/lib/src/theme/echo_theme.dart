@@ -284,16 +284,19 @@ class EchoTheme {
   // Paper theme colors (light) — warm off-white with darkened indigo accent.
   // Replaces the legacy "Light" palette: bg warmed from #F5F5F7 -> #FAFAF7,
   // accent darkened from #5B5EE6 -> #4F46E5 for stronger WCAG AA contrast.
+  // Slice 6 (May 2026): pushed further into warm-cream territory — base bg
+  // moved from cool off-white toward a paper-cream tone for less harsh
+  // glare. Accent kept at indigo since it still clears AA on the warmer bg.
   static const paperAccent = Color(0xFF4F46E5);
   static const paperAccentHover = Color(0xFF6366F1);
-  static const lightMainBg = Color(0xFFFAFAF7);
-  static const lightSidebarBg = Color(0xFFF3F3EF);
-  static const lightChatBg = Color(0xFFF8F8F5);
-  static const lightSurface = Color(0xFFFFFFFC);
-  static const lightSurfaceHover = Color(0xFFEEEEEA);
-  static const lightTextPrimary = Color(0xFF1A1A1E);
-  static const lightTextSecondary = Color(0xFF5C5C66);
-  static const lightTextMuted = Color(0xFF72727E);
+  static const lightMainBg = Color(0xFFF8F5F0);
+  static const lightSidebarBg = Color(0xFFF3EFEA);
+  static const lightChatBg = Color(0xFFFCF9F6);
+  static const lightSurface = Color(0xFFFEF9F5);
+  static const lightSurfaceHover = Color(0xFFEFEAE2);
+  static const lightTextPrimary = Color(0xFF2C2618);
+  static const lightTextSecondary = Color(0xFF5C5448);
+  static const lightTextMuted = Color(0xFF72685A);
   // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
   static const lightSentBubble = paperAccent;
   static const lightRecvBubble = lightSurface;
@@ -345,10 +348,13 @@ class EchoTheme {
   // Sakura theme colors (feminine aesthetic -- light pink with soft pastels)
   // Accent darkened from 0xFFDD1C85 -> 0xFFC0186E for WCAG AA on white text.
   // Bg warmed from 0xFFFFF5F7 -> 0xFFFFF7F5.
+  // Slice 6: nudge surface a touch warmer (it sits behind avatars + cards;
+  // the cooler pink read as fluorescent in side-by-side comparisons with
+  // Paper).
   static const sakuraMainBg = Color(0xFFFFF7F5);
   static const sakuraSidebarBg = Color(0xFFFFF0F3);
   static const sakuraChatBg = Color(0xFFFFF8FA);
-  static const sakuraSurface = Color(0xFFFFFAFC);
+  static const sakuraSurface = Color(0xFFFFF8F4);
   static const sakuraSurfaceHover = Color(0xFFFFE8EE);
   static const sakuraAccent = Color(0xFFC0186E);
   static const sakuraAccentHover = Color(0xFFFF45A8);
