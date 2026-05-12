@@ -420,7 +420,7 @@ class _MessageItemState extends State<MessageItem>
               border: Border.all(color: context.border),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.6),
+                  color: context.shadowColor,
                   blurRadius: 40,
                   offset: const Offset(0, 16),
                 ),

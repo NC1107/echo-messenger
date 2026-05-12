@@ -822,6 +822,26 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
   /// Optional gradient for the chat background. Null means use flat [chatBg].
   final Gradient? chatBgGradient;
 
+  /// Slice 8 tokens (May 2026): consolidate hardcoded UI colors that were
+  /// previously sprinkled across widgets as `Colors.white/black.withValues`
+  /// calls. Each theme can tune them; defaults are derived from brightness.
+  ///
+  /// Hairline dividers (channel bar separators, popup borders, etc.).
+  final Color dividerTint;
+
+  /// Background fill for video tiles + black-letterbox surfaces (the LiveKit
+  /// grid, fullscreen video preview, etc.). Always near-black even on light
+  /// themes — video reads best on a true dark backdrop.
+  final Color videoOverlayBg;
+
+  /// Shadow color for cards/popups. Theme-aware (deeper on dark, lighter on
+  /// light) so cards lift cleanly without looking dirty.
+  final Color shadowColor;
+
+  /// Modal/gallery scrim — sits over the entire UI when a fullscreen viewer
+  /// (image gallery, avatar crop, etc.) is open.
+  final Color overlayScrim;
+
   const EchoColorExtension({
     required this.sidebarBg,
     required this.chatBg,
@@ -832,6 +852,10 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     required this.recvBubble,
     this.cardRowBg,
     this.chatBgGradient,
+    this.dividerTint = const Color(0x14FFFFFF),
+    this.videoOverlayBg = const Color(0xFF0A0A0A),
+    this.shadowColor = const Color(0x66000000),
+    this.overlayScrim = const Color(0x8C000000),
   });
 
   /// Resolved card row surface color. Defaults to [surfaceHover] when no
@@ -862,6 +886,8 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     textMuted: EchoTheme.lightTextMuted,
     sentBubble: EchoTheme.lightSentBubble,
     recvBubble: EchoTheme.lightRecvBubble,
+    dividerTint: Color(0x14000000),
+    shadowColor: Color(0x26000000),
   );
 
   /// Graphite theme colors
@@ -895,6 +921,8 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     textMuted: EchoTheme.sakuraTextMuted,
     sentBubble: EchoTheme.sakuraSentBubble,
     recvBubble: EchoTheme.sakuraRecvBubble,
+    dividerTint: Color(0x14000000),
+    shadowColor: Color(0x26000000),
   );
 
   @override
@@ -908,6 +936,10 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     Color? recvBubble,
     Color? cardRowBg,
     Gradient? chatBgGradient,
+    Color? dividerTint,
+    Color? videoOverlayBg,
+    Color? shadowColor,
+    Color? overlayScrim,
   }) {
     return EchoColorExtension(
       sidebarBg: sidebarBg ?? this.sidebarBg,
@@ -919,6 +951,10 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
       recvBubble: recvBubble ?? this.recvBubble,
       cardRowBg: cardRowBg ?? this.cardRowBg,
       chatBgGradient: chatBgGradient ?? this.chatBgGradient,
+      dividerTint: dividerTint ?? this.dividerTint,
+      videoOverlayBg: videoOverlayBg ?? this.videoOverlayBg,
+      shadowColor: shadowColor ?? this.shadowColor,
+      overlayScrim: overlayScrim ?? this.overlayScrim,
     );
   }
 
@@ -947,6 +983,10 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
       recvBubble: Color.lerp(recvBubble, other.recvBubble, t)!,
       cardRowBg: lerpedCardRowBg,
       chatBgGradient: t < 0.5 ? chatBgGradient : other.chatBgGradient,
+      dividerTint: Color.lerp(dividerTint, other.dividerTint, t)!,
+      videoOverlayBg: Color.lerp(videoOverlayBg, other.videoOverlayBg, t)!,
+      shadowColor: Color.lerp(shadowColor, other.shadowColor, t)!,
+      overlayScrim: Color.lerp(overlayScrim, other.overlayScrim, t)!,
     );
   }
 }
@@ -975,6 +1015,12 @@ extension EchoColors on BuildContext {
   Color get textMuted => echo.textMuted;
   Color get sentBubble => echo.sentBubble;
   Color get recvBubble => echo.recvBubble;
+
+  // Slice 8 tokens.
+  Color get dividerTint => echo.dividerTint;
+  Color get videoOverlayBg => echo.videoOverlayBg;
+  Color get shadowColor => echo.shadowColor;
+  Color get overlayScrim => echo.overlayScrim;
 
   /// Foreground color for content rendered on top of [sentBubble].
   /// Resolves to `ColorScheme.onPrimary` because most themes keep the sent
