@@ -103,12 +103,22 @@ impl Hub {
     /// message. Full/closed queues are logged separately so beta-test
     /// telemetry distinguishes saturation from disconnect cleanup.
     pub fn send_to_user(&self, user_id: &Uuid, msg: WsMessage) -> bool {
+        !self.send_to_user_collecting(user_id, msg).is_empty()
+    }
+
+    /// Send a message to ALL connected devices of a user and return the
+    /// list of device IDs whose outbound queue accepted the message.
+    ///
+    /// Used by the fanout path (#829) so the per-device `message_deliveries`
+    /// ledger can be populated even on the legacy/plaintext code path that
+    /// doesn't carry a per-device frame map.
+    pub fn send_to_user_collecting(&self, user_id: &Uuid, msg: WsMessage) -> Vec<i32> {
         // Snapshot the device IDs while holding the read ref so we can
         // mutate `connections` (via `unregister`) without re-entrant locks
         // on the slow-consumer eviction path below.
         let device_ids: Vec<(i32, WsTx)> = {
             let Some(devices) = self.inner.connections.get(user_id) else {
-                return false;
+                return Vec::new();
             };
             devices
                 .iter()
@@ -116,13 +126,13 @@ impl Hub {
                 .collect()
         };
 
-        let mut any_sent = false;
+        let mut accepted = Vec::with_capacity(device_ids.len());
         for (device_id, tx) in device_ids {
             if self.try_send_tracked(*user_id, device_id, &tx, msg.clone()) {
-                any_sent = true;
+                accepted.push(device_id);
             }
         }
-        any_sent
+        accepted
     }
 
     /// Send a message to a specific device of a user. Returns true only when

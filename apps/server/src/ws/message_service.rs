@@ -796,34 +796,64 @@ pub(super) fn build_per_device_json(
 ///
 /// Both `per_recipient_json` entries and `legacy_msg` are `WsMessage::Text`
 /// (Bytes-backed); cloning inside the loop is O(1) — no string copying (#690).
+/// Outcome of a fan-out delivery attempt to a single conversation member.
+///
+/// `accepted_device_ids` lists the device IDs whose outbound queues actually
+/// accepted the frame on the per-device path -- the caller uses these to
+/// populate the per-device delivery ledger so sibling devices that come
+/// online later still replay the message (#829).
+pub(super) struct MemberDeliveryOutcome {
+    pub delivered: bool,
+    pub accepted_device_ids: Vec<i32>,
+}
+
 pub(super) fn deliver_to_member(
     hub: &crate::ws::hub::Hub,
     member_id: &Uuid,
     per_recipient_json: Option<&HashMap<Uuid, Vec<(i32, WsMessage)>>>,
     legacy_msg: Option<&WsMessage>,
-) -> bool {
+) -> MemberDeliveryOutcome {
     if let Some(by_recipient) = per_recipient_json
         && let Some(device_msgs) = by_recipient.get(member_id)
     {
         // Deliver to ALL recipient devices; OR-accumulate instead of short-circuiting
         // so a successful send to device #1 doesn't skip device #2.
-        let mut any_sent = false;
+        let mut accepted = Vec::with_capacity(device_msgs.len());
         for (did, msg) in device_msgs {
             // WsMessage::Text is Bytes-backed; clone is O(1).
             if hub.send_to_device(member_id, *did, msg.clone()) {
-                any_sent = true;
+                accepted.push(*did);
             }
         }
-        return any_sent;
+        return MemberDeliveryOutcome {
+            delivered: !accepted.is_empty(),
+            accepted_device_ids: accepted,
+        };
     }
     if let Some(msg) = legacy_msg {
-        hub.send_to_user(member_id, msg.clone())
-    } else {
-        false
+        // #829: the legacy/plaintext path also needs to populate the per-device
+        // ledger so sibling devices that come online later don't re-receive
+        // the message via `get_undelivered` replay. Use the collecting variant
+        // so we know which device queues actually accepted the frame.
+        let accepted = hub.send_to_user_collecting(member_id, msg.clone());
+        return MemberDeliveryOutcome {
+            delivered: !accepted.is_empty(),
+            accepted_device_ids: accepted,
+        };
+    }
+    MemberDeliveryOutcome {
+        delivered: false,
+        accepted_device_ids: Vec::new(),
     }
 }
 
 /// Mark messages as delivered in the DB and send a delivery confirmation back to the sender.
+///
+/// #829: the `messages.delivered` flag is no longer the gate for `get_undelivered`
+/// replay -- the per-device `message_deliveries` ledger is. This function exists
+/// purely for the sender's read-receipt UI: it tells the sending client "at least
+/// one recipient device accepted this frame". Sibling-device replay correctness
+/// is handled by `mark_devices_delivered_pairs` in `fanout_message`.
 pub(super) async fn send_delivery_confirmation(
     state: &AppState,
     sender_id: Uuid,
@@ -957,23 +987,51 @@ pub(super) async fn fanout_message(
 
     let mut any_delivered = false;
     let mut offline_user_ids = Vec::new();
+    // #829: collect (recipient_user_id, device_id) pairs that the hub actually
+    // accepted on the per-device path. After fanout we batch-insert them into
+    // `message_deliveries` so a sibling device that comes online later does
+    // NOT receive the same message again via `get_undelivered` replay.
+    let mut accepted_device_pairs: Vec<(Uuid, i32)> = Vec::new();
 
     let eligible = member_ids
         .iter()
         .filter(|id| **id != sender_id && !blockers.contains(id));
 
     for member_id in eligible {
-        let delivered = deliver_to_member(
+        let outcome = deliver_to_member(
             &state.hub,
             member_id,
             per_recipient_json.as_ref(),
             legacy_msg.as_ref(),
         );
-        if delivered {
+        if outcome.delivered {
             any_delivered = true;
         } else {
             offline_user_ids.push(*member_id);
         }
+        for did in outcome.accepted_device_ids {
+            accepted_device_pairs.push((*member_id, did));
+        }
+    }
+
+    // #829: populate the per-device ledger for every recipient device whose
+    // queue accepted the frame. Without this, sibling devices that were
+    // offline at fan-out time would never receive the message: the global
+    // `messages.delivered` flag was the historical gate but now only serves
+    // the read-receipt UI; the per-device ledger is the authoritative replay
+    // gate (see `db::messages::get_undelivered`).
+    if !accepted_device_pairs.is_empty()
+        && let Err(e) = db::messages::mark_devices_delivered_pairs(
+            &state.pool,
+            stored_id,
+            &accepted_device_pairs,
+        )
+        .await
+    {
+        tracing::error!(
+            message_id = %stored_id,
+            "failed to populate per-device delivery ledger on fanout: {e:?}"
+        );
     }
 
     if any_delivered {
