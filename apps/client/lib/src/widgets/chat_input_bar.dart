@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show File;
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:path_provider/path_provider.dart';
@@ -33,6 +32,7 @@ import '../theme/responsive.dart';
 import '../utils/clipboard_image_helper.dart';
 import 'chat_input_controller.dart';
 import 'chat_input_bar/attach_file_button.dart';
+import 'chat_input_bar/file_pickers.dart' as pickers;
 import 'chat_input_bar/attach_option.dart';
 import 'chat_input_bar/media_marker_helpers.dart';
 import 'chat_input_bar/media_picker_toggle.dart';
@@ -772,26 +772,9 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _onInputChanged(_messageController.text);
   }
 
-  // ---------------------------------------------------------------------------
-  // File mime resolution (shared between pickers)
-  // ---------------------------------------------------------------------------
-
-  static const _kMimeTypes = <String, List<String>>{
-    'jpg': ['image', 'jpeg'],
-    'jpeg': ['image', 'jpeg'],
-    'png': ['image', 'png'],
-    'gif': ['image', 'gif'],
-    'webp': ['image', 'webp'],
-    'mp4': ['video', 'mp4'],
-    'mov': ['video', 'quicktime'],
-    'webm': ['video', 'webm'],
-    'pdf': ['application', 'pdf'],
-    'mp3': ['audio', 'mpeg'],
-    'ogg': ['audio', 'ogg'],
-    'wav': ['audio', 'wav'],
-    'm4a': ['audio', 'mp4'],
-    'aac': ['audio', 'aac'],
-  };
+  // MIME-type table lives on `chat_input_bar/file_pickers.dart` (#513
+  // slice 6) — the only remaining caller here is `_sendFileImmediately`,
+  // which receives the resolved mimeType from the picker functions.
 
   /// Upload [bytes] and immediately send the result as a message.
   /// Used for the 2nd..Nth files when multiple are selected at once.
@@ -813,114 +796,25 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     await _doSend(marker);
   }
 
-  Future<void> _pickFile() async {
-    if (_isPickingFile) return;
-    _isPickingFile = true;
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.any,
-        allowMultiple: true,
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty) return;
-      if (!mounted) return;
-
-      // Single pick → preview flow (caption + send). Multi pick → send all
-      // immediately as separate messages; mixing the two creates races where
-      // the user may interact with the pending preview while the rest are
-      // still uploading in the background.
-      final isMulti = result.files.length > 1;
-      if (isMulti) {
-        ToastService.show(
-          context,
-          'Sending ${result.files.length} files...',
-          type: ToastType.info,
-        );
-      }
-
-      var sentCount = 0;
-      for (final file in result.files) {
-        if (file.size > kMaxUploadBytes) {
-          if (mounted) {
-            ToastService.show(
-              context,
-              '${file.name} is ${formatBytes(file.size)} — limit is '
-              '${formatBytes(kMaxUploadBytes)}',
-              type: ToastType.error,
-            );
-          }
-          continue;
-        }
-
-        // On mobile, withData:true may still yield null bytes for larger files
-        // or certain content URIs. Fall back to reading from the file path.
-        Uint8List? bytes = file.bytes;
-        if (bytes == null && file.path != null && !kIsWeb) {
-          try {
-            bytes = await File(file.path!).readAsBytes();
-          } catch (e) {
-            debugPrint('[ChatInput] Failed to read file from path: $e');
-          }
-        }
-
-        if (bytes == null) {
-          if (mounted) {
-            ToastService.show(
-              context,
-              'Could not read file: ${file.name}',
-              type: ToastType.error,
-            );
-          }
-          continue;
-        }
-
-        final ext = (file.extension ?? '').toLowerCase();
-        final mime = _kMimeTypes[ext] ?? ['application', kOctetStream];
-        final mimeType = '${mime[0]}/${mime[1]}';
-
-        if (isMulti) {
-          try {
-            await _sendFileImmediately(
-              bytes: bytes,
-              fileName: file.name,
-              mimeType: mimeType,
-              ext: ext,
-            );
-            sentCount++;
-          } catch (e) {
-            debugPrint('[ChatInput] Send failed for ${file.name}: $e');
-            if (mounted) {
-              ToastService.show(
-                context,
-                'Failed to send ${file.name}',
-                type: ToastType.error,
-              );
-            }
-          }
-        } else {
-          _setPendingAttachment(
-            bytes: bytes,
-            fileName: file.name,
-            mimeType: mimeType,
-            ext: ext,
-          );
-        }
-      }
-      if (isMulti && mounted && sentCount < result.files.length) {
-        final failed = result.files.length - sentCount;
-        ToastService.show(
-          context,
-          '$failed of ${result.files.length} failed to send',
-          type: ToastType.error,
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ToastService.show(context, 'File pick error: $e', type: ToastType.error);
-    } finally {
-      _isPickingFile = false;
-    }
-  }
+  Future<void> _pickFile() => pickers.pickFile(
+    context: context,
+    mounted: () => mounted,
+    isPicking: () => _isPickingFile,
+    setIsPicking: (v) => _isPickingFile = v,
+    stage:
+        ({
+          required List<int> bytes,
+          required String fileName,
+          required String mimeType,
+          required String ext,
+        }) => _setPendingAttachment(
+          bytes: bytes,
+          fileName: fileName,
+          mimeType: mimeType,
+          ext: ext,
+        ),
+    sendImmediately: _sendFileImmediately,
+  );
 
   // ---------------------------------------------------------------------------
   // Edit mode
@@ -1227,130 +1121,44 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     );
   }
 
-  Future<void> _pickImageFromGallery() async {
-    if (_isPickingFile) return;
-    _isPickingFile = true;
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.media,
-        allowMultiple: true,
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty) return;
-      if (!mounted) return;
+  Future<void> _pickImageFromGallery() => pickers.pickImageFromGallery(
+    context: context,
+    mounted: () => mounted,
+    isPicking: () => _isPickingFile,
+    setIsPicking: (v) => _isPickingFile = v,
+    stage:
+        ({
+          required List<int> bytes,
+          required String fileName,
+          required String mimeType,
+          required String ext,
+        }) => _setPendingAttachment(
+          bytes: bytes,
+          fileName: fileName,
+          mimeType: mimeType,
+          ext: ext,
+        ),
+    sendImmediately: _sendFileImmediately,
+  );
 
-      final isMulti = result.files.length > 1;
-      if (isMulti) {
-        ToastService.show(
-          context,
-          'Sending ${result.files.length} files...',
-          type: ToastType.info,
-        );
-      }
-
-      var sentCount = 0;
-      for (final file in result.files) {
-        if (file.size > kMaxUploadBytes) {
-          if (mounted) {
-            ToastService.show(
-              context,
-              '${file.name} is ${formatBytes(file.size)} — limit is '
-              '${formatBytes(kMaxUploadBytes)}',
-              type: ToastType.error,
-            );
-          }
-          continue;
-        }
-
-        Uint8List? bytes = file.bytes;
-        if (bytes == null && file.path != null && !kIsWeb) {
-          try {
-            bytes = await File(file.path!).readAsBytes();
-          } catch (_) {}
-        }
-        if (bytes == null) continue;
-
-        final ext = (file.extension ?? '').toLowerCase();
-        final mime = _kMimeTypes[ext] ?? ['application', kOctetStream];
-        final mimeType = '${mime[0]}/${mime[1]}';
-
-        if (isMulti) {
-          try {
-            await _sendFileImmediately(
-              bytes: bytes,
-              fileName: file.name,
-              mimeType: mimeType,
-              ext: ext,
-            );
-            sentCount++;
-          } catch (e) {
-            debugPrint('[ChatInput] Send failed for ${file.name}: $e');
-            if (mounted) {
-              ToastService.show(
-                context,
-                'Failed to send ${file.name}',
-                type: ToastType.error,
-              );
-            }
-          }
-        } else {
-          _setPendingAttachment(
-            bytes: bytes,
-            fileName: file.name,
-            mimeType: mimeType,
-            ext: ext,
-          );
-        }
-      }
-      if (isMulti && mounted && sentCount < result.files.length) {
-        final failed = result.files.length - sentCount;
-        ToastService.show(
-          context,
-          '$failed of ${result.files.length} failed to send',
-          type: ToastType.error,
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ToastService.show(context, 'Pick error: $e', type: ToastType.error);
-    } finally {
-      _isPickingFile = false;
-    }
-  }
-
-  Future<void> _pickImageFromCamera() async {
-    if (_isPickingFile) return;
-    _isPickingFile = true;
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty) return;
-      if (!mounted) return;
-      final file = result.files.first;
-      Uint8List? bytes = file.bytes;
-      if (bytes == null && file.path != null && !kIsWeb) {
-        try {
-          bytes = await File(file.path!).readAsBytes();
-        } catch (_) {}
-      }
-      if (bytes == null) return;
-      final ext = (file.extension ?? 'jpg').toLowerCase();
-      _setPendingAttachment(
-        bytes: bytes,
-        fileName: file.name,
-        mimeType: 'image/${ext == 'jpg' ? 'jpeg' : ext}',
-        ext: ext,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ToastService.show(context, 'Camera error: $e', type: ToastType.error);
-    } finally {
-      _isPickingFile = false;
-    }
-  }
+  Future<void> _pickImageFromCamera() => pickers.pickImageFromCamera(
+    context: context,
+    mounted: () => mounted,
+    isPicking: () => _isPickingFile,
+    setIsPicking: (v) => _isPickingFile = v,
+    stage:
+        ({
+          required List<int> bytes,
+          required String fileName,
+          required String mimeType,
+          required String ext,
+        }) => _setPendingAttachment(
+          bytes: bytes,
+          fileName: fileName,
+          mimeType: mimeType,
+          ext: ext,
+        ),
+  );
 
   /// Toggles the inline (mobile) or overlay (desktop) media picker. Shared
   /// callback wired into [MediaPickerToggle] from `_buildInputRow`.
