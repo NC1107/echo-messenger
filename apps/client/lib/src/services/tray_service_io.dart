@@ -22,8 +22,9 @@ Future<void> _safeSetToolTip(String text) async {
 ///
 /// Initialise once after login with [TrayService.init]. Updates the tray
 /// tooltip to reflect the current unread message count via [updateBadge].
-/// The context menu provides Show / Hide / Quit actions; the close button
-/// minimises the app to the tray instead of quitting.
+/// The context menu provides Show / Hide / Check for updates / Quit
+/// actions; the close button minimises the app to the tray instead of
+/// quitting.
 ///
 /// **Platform behavior**:
 /// - **Windows / macOS**: left-click toggles the window directly via
@@ -44,14 +45,24 @@ class TrayService with TrayListener, WindowListener {
 
   bool _initialised = false;
 
+  /// Caller-supplied handler for the "Check for updates" menu item. Set
+  /// via [init] so the tray service stays UI-agnostic (the home screen
+  /// owns the BuildContext + provider ref needed to actually trigger the
+  /// check and surface a toast).
+  VoidCallback? _onCheckForUpdates;
+
   /// Whether tray is supported on the current platform.
   static bool get isSupported =>
       Platform.isLinux || Platform.isWindows || Platform.isMacOS;
 
   /// Initialise the system tray. Safe to call multiple times — subsequent
   /// calls are no-ops.
-  Future<void> init() async {
+  ///
+  /// [onCheckForUpdates] is invoked when the user picks the "Check for
+  /// updates" menu item. Pass null to omit the menu entry.
+  Future<void> init({VoidCallback? onCheckForUpdates}) async {
     if (!isSupported || _initialised) return;
+    _onCheckForUpdates = onCheckForUpdates;
 
     // Initialise window_manager first so we can intercept the close event.
     await windowManager.ensureInitialized();
@@ -146,6 +157,8 @@ class TrayService with TrayListener, WindowListener {
         windowManager.focus();
       case 'hide':
         windowManager.hide();
+      case 'check_updates':
+        _onCheckForUpdates?.call();
       case 'quit':
         // Slice 10: ensure last-known geometry is on disk before quitting.
         WindowStateService.save().whenComplete(() {
@@ -172,6 +185,11 @@ class TrayService with TrayListener, WindowListener {
           MenuItem(key: 'show', label: 'Show Echo'),
           MenuItem(key: 'hide', label: 'Hide Echo'),
           MenuItem.separator(),
+          // Only surface "Check for updates" when the caller wired in a
+          // handler; otherwise the entry would be inert (no-op click).
+          if (_onCheckForUpdates != null)
+            MenuItem(key: 'check_updates', label: 'Check for updates'),
+          if (_onCheckForUpdates != null) MenuItem.separator(),
           MenuItem(key: 'quit', label: 'Quit'),
         ],
       ),

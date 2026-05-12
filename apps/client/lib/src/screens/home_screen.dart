@@ -30,6 +30,7 @@ import '../widgets/conversation_panel.dart'
     show ConversationPanel, buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import '../widgets/members_panel.dart';
 import '../utils/web_lifecycle.dart';
+import '../version.dart';
 import '../widgets/keyboard_shortcuts_overlay.dart';
 import '../widgets/global_search_overlay.dart';
 import '../widgets/whats_new_modal.dart';
@@ -203,11 +204,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // so first launch never surfaces a changelog).
     await _showWhatsNewIfNeeded();
 
-    // 7b. Init system tray (desktop only; no-op on web/mobile).
-    unawaited(TrayService.instance.init());
+    // 7b. Init system tray (desktop only; no-op on web/mobile). The
+    // "Check for updates" menu item routes through _handleTrayCheckForUpdates
+    // so the tray service stays UI-agnostic and the toast surfaces here
+    // where we have a BuildContext.
+    unawaited(
+      TrayService.instance.init(onCheckForUpdates: _handleTrayCheckForUpdates),
+    );
 
     // 7. Show first-login server notice
     await _showServerNoticeIfNeeded();
+  }
+
+  /// Handler wired into the desktop system-tray "Check for updates" menu
+  /// item. Forces a re-check of the GitHub releases API (bypasses the 1h
+  /// cache) and surfaces the result via toast. The pre-existing
+  /// update-available banner still fires for the "new version" path; this
+  /// just adds the explicit "you are on the latest version" confirmation
+  /// that's otherwise invisible when a check returns nothing new.
+  Future<void> _handleTrayCheckForUpdates() async {
+    if (!mounted) return;
+    // Dev builds short-circuit inside Update.check(); be explicit so the
+    // user isn't left wondering whether the click did anything.
+    if (appVersion == 'dev') {
+      ToastService.show(
+        context,
+        'Update check skipped on dev build',
+        type: ToastType.info,
+      );
+      return;
+    }
+    ToastService.show(context, 'Checking for updates...', type: ToastType.info);
+    await ref.read(updateProvider.notifier).check(force: true);
+    if (!mounted) return;
+    final update = ref.read(updateProvider);
+    if (update.updateAvailable) {
+      if (update.dismissed) {
+        // User previously dismissed the banner for this version; the
+        // explicit re-check is their signal that they actually want to
+        // see it again, so surface a toast that points back at the
+        // version (the banner stays hidden until the cache rolls).
+        ToastService.show(
+          context,
+          'Update available: v${update.latestVersion}',
+          type: ToastType.info,
+        );
+      }
+      // Otherwise the persistent update banner already shows "vX is
+      // available" with Update/Download/Later actions — a transient
+      // toast on top of it would be redundant noise.
+      return;
+    }
+    ToastService.show(
+      context,
+      'You are on the latest version',
+      type: ToastType.success,
+    );
   }
 
   Future<void> _showWhatsNewIfNeeded() async {
