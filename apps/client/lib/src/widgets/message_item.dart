@@ -1679,8 +1679,9 @@ class _MessageItemState extends State<MessageItem>
         UIDensity.compact => 3,
       };
     } else {
+      // Slice 3: collapse same-sender gap to 1-2px to remove "floaty" look.
       topPad = switch (widget.density) {
-        UIDensity.cozy => 4,
+        UIDensity.cozy => 2,
         UIDensity.normal => 2,
         UIDensity.compact => 1,
       };
@@ -1688,8 +1689,8 @@ class _MessageItemState extends State<MessageItem>
 
     final messageWidget = Container(
       padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
+        left: 12,
+        right: 12,
         top: topPad,
         bottom: hasReactions ? 4 : 2,
       ),
