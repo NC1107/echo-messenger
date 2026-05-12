@@ -976,9 +976,11 @@ class EchoTheme {
   // High-contrast themes
   // ---------------------------------------------------------------------------
 
-  static ThemeData get highContrastDarkTheme {
+  /// Single high-contrast theme: #7C9BFF accent on pure black with white text.
+  /// Replaces the legacy `highContrastDarkTheme` + `highContrastLightTheme`
+  /// split (collapsed in the 9 -> 6 palette reduction).
+  static ThemeData get highContrastTheme {
     final base = darkTheme;
-    // High-contrast accent: #7C9BFF on pure-black bg with white text.
     const hcAccent = Color(0xFF7C9BFF);
     const hcSurface = Colors.black;
     return base.copyWith(
@@ -1002,33 +1004,6 @@ class EchoTheme {
           recvBubble: hcSurface,
           textMuted: const Color(0xFFAAAAAA),
           accentLight: const Color(0x337C9BFF),
-        ),
-      ],
-    );
-  }
-
-  static ThemeData get highContrastLightTheme {
-    final base = lightTheme;
-    return base.copyWith(
-      colorScheme: base.colorScheme.copyWith(
-        surface: Colors.white,
-        onSurface: Colors.black,
-        primary: const Color(0xFF0000CC),
-        secondary: const Color(0xFF0000AA),
-        onSurfaceVariant: const Color(0xFF333333),
-      ),
-      dividerColor: Colors.black54,
-      scaffoldBackgroundColor: Colors.white,
-      extensions: [
-        EchoColorExtension.light.copyWith(
-          sidebarBg: const Color(0xFFF0F0F0),
-          chatBg: Colors.white,
-          surfaceHover: const Color(0xFFE8E8E8),
-          // Locked bubble rule: sent = primary, recv = surface.
-          sentBubble: const Color(0xFF0000CC),
-          recvBubble: Colors.white,
-          textMuted: const Color(0xFF555555),
-          accentLight: const Color(0x220000CC),
         ),
       ],
     );

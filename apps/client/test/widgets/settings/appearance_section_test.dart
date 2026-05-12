@@ -18,12 +18,13 @@ void main() {
           AppThemeSelection.neon,
           AppThemeSelection.sakura,
           AppThemeSelection.aurora,
+          AppThemeSelection.highContrast,
         ]),
       );
     });
 
-    test('has 8 theme options', () {
-      expect(AppThemeSelection.values, hasLength(8));
+    test('has 9 theme options', () {
+      expect(AppThemeSelection.values, hasLength(9));
     });
   });
 

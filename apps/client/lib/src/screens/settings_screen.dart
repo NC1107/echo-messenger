@@ -261,6 +261,8 @@ class SettingsRootView extends ConsumerWidget {
         return 'Sakura';
       case AppThemeSelection.aurora:
         return 'Aurora';
+      case AppThemeSelection.highContrast:
+        return 'High contrast';
     }
   }
 }

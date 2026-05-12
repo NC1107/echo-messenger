@@ -19,6 +19,7 @@ enum AppThemeSelection {
   neon,
   sakura,
   aurora,
+  highContrast,
 }
 
 const _kThemeKey = 'echo_theme_mode';
@@ -53,6 +54,10 @@ class AppTheme extends _$AppTheme {
       'neon' => AppThemeSelection.neon,
       'sakura' => AppThemeSelection.sakura,
       'aurora' => AppThemeSelection.aurora,
+      'highContrast' => AppThemeSelection.highContrast,
+      'highContrastDark' =>
+        AppThemeSelection.highContrast, // legacy alias (slice 6)
+      'highContrastLight' => AppThemeSelection.paper, // legacy alias (slice 6)
       _ => AppThemeSelection.indigo,
     };
   }

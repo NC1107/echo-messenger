@@ -109,6 +109,17 @@ const _auroraPreview = _ThemePreviewColors(
   textSecondary: EchoTheme.auroraTextSecondary,
 );
 
+const _highContrastPreview = _ThemePreviewColors(
+  sidebarBg: Color(0xFF0A0A0A),
+  mainBg: Color(0xFF000000),
+  sentBubble: Color(0xFF7C9BFF),
+  recvBubble: Color(0xFF000000),
+  accent: Color(0xFF7C9BFF),
+  border: Color(0xFF8A8A8A),
+  textPrimary: Color(0xFFFFFFFF),
+  textSecondary: Color(0xFFCCCCCC),
+);
+
 class AppearanceSection extends ConsumerStatefulWidget {
   const AppearanceSection({super.key});
 
@@ -172,6 +183,12 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
         label: 'Aurora',
         subtitle: 'Violet gradient',
         preview: _auroraPreview,
+      ),
+      _ThemeCardData(
+        selection: AppThemeSelection.highContrast,
+        label: 'High contrast',
+        subtitle: 'WCAG AAA accessibility',
+        preview: _highContrastPreview,
       ),
     ];
 
