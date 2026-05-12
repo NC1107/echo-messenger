@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'window_state_service.dart';
+
 /// Safely set tray tooltip, catching MissingPluginException on Linux where
 /// libappindicator does not support setToolTip.
 Future<void> _safeSetToolTip(String text) async {
@@ -112,6 +114,11 @@ class TrayService with TrayListener, WindowListener {
 
   @override
   void onWindowClose() async {
+    // Slice 10: persist window geometry before hiding to tray so that even
+    // a soft-close (close button -> tray) captures the user's latest
+    // layout. The true app quit also funnels through this listener via
+    // `Quit` -> `setPreventClose(false)` -> `close()`.
+    await WindowStateService.save();
     await windowManager.hide();
   }
 
@@ -140,8 +147,11 @@ class TrayService with TrayListener, WindowListener {
       case 'hide':
         windowManager.hide();
       case 'quit':
-        windowManager.setPreventClose(false);
-        windowManager.close();
+        // Slice 10: ensure last-known geometry is on disk before quitting.
+        WindowStateService.save().whenComplete(() {
+          windowManager.setPreventClose(false);
+          windowManager.close();
+        });
     }
   }
 

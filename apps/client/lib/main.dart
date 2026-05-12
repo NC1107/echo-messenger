@@ -20,6 +20,7 @@ import 'src/services/notification_service.dart';
 import 'src/services/saved_messages_service.dart';
 import 'src/services/sound_service.dart';
 import 'src/services/user_data_dir.dart';
+import 'src/services/window_state_service.dart';
 import 'src/utils/platform_shutdown.dart';
 
 void main() {
@@ -149,6 +150,12 @@ Future<void> _initAndRun() async {
 void _performCleanup(ProviderContainer container) {
   try {
     container.read(websocketProvider.notifier).disconnect();
+  } catch (_) {}
+  try {
+    // Slice 10: capture last-known window geometry before quitting so the
+    // next launch restores it after the splash. Fire-and-forget so we
+    // never block the SIGTERM cleanup path.
+    WindowStateService.save().ignore();
   } catch (_) {}
   try {
     // Hive.close() is async; starting it before exit(0) gives Hive a chance

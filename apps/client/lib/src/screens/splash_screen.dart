@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +16,7 @@ import '../providers/websocket_provider.dart';
 import '../services/message_cache.dart';
 import '../services/push_token_service.dart';
 import '../services/update_service.dart' as update_svc;
+import '../services/window_state_service.dart';
 import '../router/app_router.dart' show pendingDeepLink;
 import '../screens/onboarding_wizard.dart' show kOnboardingCompletedKey;
 import '../theme/echo_theme.dart';
@@ -66,6 +69,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
   Future<void> _init() async {
     final stopwatch = Stopwatch()..start();
+
+    // Slice 10: shrink the desktop window to a 300×300 splash before doing
+    // any async work, Discord-style. The window expands back to the user's
+    // last-known size after navigation lands on home/login.
+    await WindowStateService.enterSplash();
 
     _setStatus('Checking session…');
     final loggedIn = await _attemptAutoLogin();
@@ -167,6 +175,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   /// Navigate to the appropriate screen after init completes.
   void _navigateAfterInit(bool loggedIn) {
     final isLoggedIn = ref.read(authProvider).isLoggedIn;
+
+    // Slice 10: restore the user's last-known window geometry as soon as we
+    // know we're leaving the splash. Fire-and-forget — navigation must not
+    // wait for the OS window resize.
+    unawaited(WindowStateService.restore());
 
     if (isLoggedIn && pendingDeepLink != null) {
       final destination = pendingDeepLink!;
