@@ -45,12 +45,16 @@ class WindowStateService {
     }
   }
 
-  /// Restore the previously-saved window size + position, falling back to
-  /// the [defaultSize] centered on the primary display when no prior state
-  /// is recorded.
+  /// Restore the previously-saved window size + position AND re-attach the
+  /// native title bar that [enterSplash] removed. Falls back to [defaultSize]
+  /// centered on the primary display when no prior state is recorded.
   static Future<void> restore() async {
     if (!_isDesktop) return;
     try {
+      // Re-attach the title bar before resizing so the user doesn't see a
+      // chromeless full-sized window for a frame.
+      await windowManager.setTitleBarStyle(TitleBarStyle.normal);
+
       final prefs = await SharedPreferences.getInstance();
       final width = prefs.getDouble(_kWidthKey) ?? defaultSize.width;
       final height = prefs.getDouble(_kHeightKey) ?? defaultSize.height;
@@ -73,11 +77,13 @@ class WindowStateService {
     }
   }
 
-  /// Shrink the window to a 300×300 splash and center it on screen. Used by
-  /// the splash screen during auto-login so boot feels lightweight.
+  /// Shrink the window to a 300×300 chromeless splash and center it on
+  /// screen — matches Discord's boot flow. The title bar is removed via
+  /// [TitleBarStyle.hidden] and re-attached by [restore] on completion.
   static Future<void> enterSplash() async {
     if (!_isDesktop) return;
     try {
+      await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
       await windowManager.setSize(const Size(300, 300));
       await windowManager.center();
     } catch (_) {
