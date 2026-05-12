@@ -832,11 +832,16 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
             label: '${widget.conversation.unreadCount} unread messages',
             child: Container(
               margin: const EdgeInsets.only(left: 8),
-              constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+              // 20×20 for cozy/normal density, 16×16 for compact, per the
+              // design canvas. Muted conversations keep the dim grey style.
+              constraints: BoxConstraints(
+                minWidth: density == UIDensity.compact ? 16 : 20,
+                minHeight: density == UIDensity.compact ? 16 : 20,
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 5),
               decoration: BoxDecoration(
                 color: conv.isMuted ? context.surfaceHover : context.accent,
-                borderRadius: BorderRadius.circular(9),
+                shape: BoxShape.circle,
               ),
               alignment: Alignment.center,
               child: ExcludeSemantics(
@@ -845,10 +850,8 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                       ? '99+'
                       : '${widget.conversation.unreadCount}',
                   style: GoogleFonts.inter(
-                    color: conv.isMuted
-                        ? context.textMuted
-                        : Theme.of(context).colorScheme.onPrimary,
-                    fontSize: 10,
+                    color: conv.isMuted ? context.textMuted : Colors.white,
+                    fontSize: density == UIDensity.compact ? 10 : 11,
                     fontWeight: FontWeight.w700,
                     height: 1,
                   ),
