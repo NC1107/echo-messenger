@@ -132,7 +132,12 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           _bioController.text = data['bio'] as String? ?? '';
           _statusController.text = data['status_message'] as String? ?? '';
           _pronounsController.text = data['pronouns'] as String? ?? '';
-          _timezoneController.text = data['timezone'] as String? ?? '';
+          // Default the timezone to the device's current zone when the server
+          // has no value persisted yet — saves the user a manual selection.
+          final persistedTz = data['timezone'] as String? ?? '';
+          _timezoneController.text = persistedTz.isNotEmpty
+              ? persistedTz
+              : DateTime.now().timeZoneName;
           _websiteController.text = data['website'] as String? ?? '';
           _emailController.text = data['email'] as String? ?? '';
           _phoneController.text = data['phone'] as String? ?? '';
@@ -687,8 +692,8 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
           _profileField(
             controller: _bioController,
             label: 'Bio',
-            hint: 'Tell others about yourself',
-            maxLength: 300,
+            hint: 'Tell people about yourself',
+            maxLength: 280,
             maxLines: 3,
           ),
           const SizedBox(height: 12),
