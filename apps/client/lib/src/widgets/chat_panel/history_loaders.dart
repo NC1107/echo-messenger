@@ -13,45 +13,72 @@ import '../chat_panel_controller.dart';
 /// `#prod-2026-05-08` pagination cursor rationale lives on
 /// [ChatPanelController.paginationCursor].
 
-Future<void> loadHistory({
-  required WidgetRef ref,
-  required Conversation conv,
-  required String? selectedTextChannelId,
-}) async {
-  final auth = ref.read(authProvider);
-  if (auth.token == null || auth.userId == null) return;
+/// Auth + crypto bundle resolved for a single history call. Returns `null`
+/// when the user isn't authenticated; otherwise [groupCrypto] is populated
+/// for group convs and [crypto] for 1:1 DMs (when crypto is initialized).
+/// Both [setToken] calls are made before the bundle is returned.
+class _HistoryAuth {
+  _HistoryAuth({
+    required this.token,
+    required this.userId,
+    required this.crypto,
+    required this.groupCrypto,
+  });
+  final String token;
+  final String userId;
+  final dynamic crypto;
+  final dynamic groupCrypto;
+}
 
-  // Load cached messages first for instant display
-  ref.read(chatProvider.notifier).loadFromCache(conv.id, auth.userId!);
+_HistoryAuth? _resolveAuth(WidgetRef ref, Conversation conv) {
+  final auth = ref.read(authProvider);
+  final token = auth.token;
+  final userId = auth.userId;
+  if (token == null || userId == null) return null;
 
   final groupCrypto = conv.isGroup
       ? ref.read(groupCryptoServiceProvider)
       : null;
-  if (groupCrypto != null) {
-    groupCrypto.setToken(auth.token!);
-  }
+  groupCrypto?.setToken(token);
 
   // For 1:1 DMs, pass the crypto service so encrypted messages can be
-  // decrypted. Without this, _decryptIfNeeded sees crypto==null and
+  // decrypted. Without this, `_decryptIfNeeded` sees crypto==null and
   // shows "[Encrypted history]" instead of the actual message content.
   final cryptoState = ref.read(cryptoProvider);
   final crypto = (!conv.isGroup && cryptoState.isInitialized)
       ? ref.read(cryptoServiceProvider)
       : null;
-  if (crypto != null) {
-    crypto.setToken(auth.token!);
-  }
+  crypto?.setToken(token);
+
+  return _HistoryAuth(
+    token: token,
+    userId: userId,
+    crypto: crypto,
+    groupCrypto: groupCrypto,
+  );
+}
+
+Future<void> loadHistory({
+  required WidgetRef ref,
+  required Conversation conv,
+  required String? selectedTextChannelId,
+}) async {
+  final a = _resolveAuth(ref, conv);
+  if (a == null) return;
+
+  // Load cached messages first for instant display
+  ref.read(chatProvider.notifier).loadFromCache(conv.id, a.userId);
 
   await ref
       .read(chatProvider.notifier)
       .loadHistoryWithUserId(
         conv.id,
-        auth.token!,
-        auth.userId!,
+        a.token,
+        a.userId,
         channelId: selectedTextChannelId,
-        crypto: crypto,
+        crypto: a.crypto,
         isGroup: conv.isGroup,
-        groupCrypto: groupCrypto,
+        groupCrypto: a.groupCrypto,
       );
 }
 
@@ -92,36 +119,20 @@ void loadOlderMessages({
   // cursor — see `ChatPanelController.paginationCursor` for the
   // `#prod-2026-05-08` rationale.
   final oldestTimestamp = controller.paginationCursor(messages).timestamp;
-  final auth = ref.read(authProvider);
-  if (auth.token == null || auth.userId == null) return;
-
-  final groupCryptoOlder = conv.isGroup
-      ? ref.read(groupCryptoServiceProvider)
-      : null;
-  if (groupCryptoOlder != null) {
-    groupCryptoOlder.setToken(auth.token!);
-  }
-
-  // Pass crypto for 1:1 DM decryption (same as loadHistory)
-  final cryptoStateOlder = ref.read(cryptoProvider);
-  final cryptoOlder = (!conv.isGroup && cryptoStateOlder.isInitialized)
-      ? ref.read(cryptoServiceProvider)
-      : null;
-  if (cryptoOlder != null) {
-    cryptoOlder.setToken(auth.token!);
-  }
+  final a = _resolveAuth(ref, conv);
+  if (a == null) return;
 
   ref
       .read(chatProvider.notifier)
       .loadHistoryWithUserId(
         conv.id,
-        auth.token!,
-        auth.userId!,
+        a.token,
+        a.userId,
         channelId: selectedTextChannelId,
         before: oldestTimestamp,
-        crypto: cryptoOlder,
+        crypto: a.crypto,
         isGroup: conv.isGroup,
-        groupCrypto: groupCryptoOlder,
+        groupCrypto: a.groupCrypto,
       );
 }
 
@@ -160,19 +171,8 @@ Future<void> jumpToReplyQuote({
   // Slow path: paginate older history until the target appears or
   // `hasMore` flips to false.  Cap to 30 rounds (~1500 msgs at 50/round)
   // so a stale or removed parent can't spin forever.
-  final auth = ref.read(authProvider);
-  if (auth.token == null || auth.userId == null) return;
-
-  final groupCrypto = conv.isGroup
-      ? ref.read(groupCryptoServiceProvider)
-      : null;
-  groupCrypto?.setToken(auth.token!);
-
-  final cryptoState = ref.read(cryptoProvider);
-  final crypto = (!conv.isGroup && cryptoState.isInitialized)
-      ? ref.read(cryptoServiceProvider)
-      : null;
-  crypto?.setToken(auth.token!);
+  final a = _resolveAuth(ref, conv);
+  if (a == null) return;
 
   for (var round = 0; round < 30; round++) {
     if (!mounted()) return;
@@ -196,13 +196,13 @@ Future<void> jumpToReplyQuote({
         .read(chatProvider.notifier)
         .loadHistoryWithUserId(
           conv.id,
-          auth.token!,
-          auth.userId!,
+          a.token,
+          a.userId,
           channelId: selectedTextChannelId,
           before: cursor.timestamp,
-          crypto: crypto,
+          crypto: a.crypto,
           isGroup: conv.isGroup,
-          groupCrypto: groupCrypto,
+          groupCrypto: a.groupCrypto,
         );
     if (!mounted()) return;
     if (isLoaded()) {

@@ -48,14 +48,7 @@ import 'input/reply_preview_bar.dart';
 import 'media_picker_panel.dart';
 import 'mobile_media_picker_panel.dart';
 
-// Upload constants + pure-Dart helpers (kOctetStream, kMaxUploadBytes,
-// genericFilename, formatBytes) live in chat_input_bar/upload_helpers.dart.
-// Marker / MIME helpers live in chat_input_bar/media_marker_helpers.dart.
-// Local alias preserves the `_kImageGif` symbol used at three call sites
-// in this file without touching them.
-const _kImageGif = kImageGifMimeType;
-
-/// Extracted chat input bar from ChatPanel (~850 lines).
+/// Extracted chat input bar from ChatPanel.
 ///
 /// Manages:
 /// - Text composition with mention autocomplete
@@ -158,10 +151,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   set _recordingDuration(Duration v) => _controller.recordingDuration = v;
   List<double> get _recordingAmplitudes => _controller.recordingAmplitudes;
 
-  // Debounce for search (used by _detectMention indirectly via parent, but
-  // kept here to match the cancel contract in dispose/didUpdateWidget).
-  Timer? _searchDebounce;
-
   // Draft auto-save
   static const _draftKeyPrefix = 'chat_draft_';
   Timer? _draftSaveTimer;
@@ -190,7 +179,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _draftSaveTimer?.cancel();
 
       _mentionController.dismiss();
-      _searchDebounce?.cancel();
       // Release every staged attachment's ValueNotifier — switching
       // conversations was previously only releasing the last one (#623),
       // leaking notifiers for the rest.
@@ -210,7 +198,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   @override
   void dispose() {
     _draftSaveTimer?.cancel();
-    _searchDebounce?.cancel();
     _messageController.removeListener(_onTextChanged);
     _mentionController.removeListener(_onMentionChanged);
     // [_controller.dispose] handles text controller + focus node + mention
@@ -1596,7 +1583,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         _setPendingExternalAttachment(
           url: gifUrl,
           fileName: 'gif',
-          mimeType: _kImageGif,
+          mimeType: kImageGifMimeType,
           ext: 'gif',
         );
       },
@@ -1753,7 +1740,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                             _setPendingExternalAttachment(
                               url: gifUrl,
                               fileName: 'gif',
-                              mimeType: _kImageGif,
+                              mimeType: kImageGifMimeType,
                               ext: 'gif',
                             );
                           },

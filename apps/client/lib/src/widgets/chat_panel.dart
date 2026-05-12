@@ -743,9 +743,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
             _scrollToBottom(settleRetries: 2);
           });
         },
-        // LiveKit handles remote audio playback automatically (#prod-2026-05-08
-        // legacy P2P WebRTC migration); no hidden renderer widgets needed.
-        voiceRenderers: const [],
       ),
     );
 

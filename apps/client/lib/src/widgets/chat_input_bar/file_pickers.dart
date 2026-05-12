@@ -33,12 +33,52 @@ Future<void> pickFile({
   required void Function(bool) setIsPicking,
   required StageAttachmentFn stage,
   required SendFileImmediatelyFn sendImmediately,
+}) => _pickAndDispatch(
+  context: context,
+  mounted: mounted,
+  isPicking: isPicking,
+  setIsPicking: setIsPicking,
+  stage: stage,
+  sendImmediately: sendImmediately,
+  type: FileType.any,
+  errorPrefix: 'File pick',
+);
+
+/// Mobile gallery picker — same multi/single semantics as [pickFile] but
+/// scoped to `FileType.media`.
+Future<void> pickImageFromGallery({
+  required BuildContext context,
+  required bool Function() mounted,
+  required bool Function() isPicking,
+  required void Function(bool) setIsPicking,
+  required StageAttachmentFn stage,
+  required SendFileImmediatelyFn sendImmediately,
+}) => _pickAndDispatch(
+  context: context,
+  mounted: mounted,
+  isPicking: isPicking,
+  setIsPicking: setIsPicking,
+  stage: stage,
+  sendImmediately: sendImmediately,
+  type: FileType.media,
+  errorPrefix: 'Pick',
+);
+
+Future<void> _pickAndDispatch({
+  required BuildContext context,
+  required bool Function() mounted,
+  required bool Function() isPicking,
+  required void Function(bool) setIsPicking,
+  required StageAttachmentFn stage,
+  required SendFileImmediatelyFn sendImmediately,
+  required FileType type,
+  required String errorPrefix,
 }) async {
   if (isPicking()) return;
   setIsPicking(true);
   try {
     final result = await FilePicker.pickFiles(
-      type: FileType.any,
+      type: type,
       allowMultiple: true,
       withData: true,
     );
@@ -131,102 +171,7 @@ Future<void> pickFile({
     }
   } catch (e) {
     if (!context.mounted) return;
-    ToastService.show(context, 'File pick error: $e', type: ToastType.error);
-  } finally {
-    setIsPicking(false);
-  }
-}
-
-/// Mobile gallery picker — same multi/single semantics as [pickFile] but
-/// scoped to `FileType.media`.
-Future<void> pickImageFromGallery({
-  required BuildContext context,
-  required bool Function() mounted,
-  required bool Function() isPicking,
-  required void Function(bool) setIsPicking,
-  required StageAttachmentFn stage,
-  required SendFileImmediatelyFn sendImmediately,
-}) async {
-  if (isPicking()) return;
-  setIsPicking(true);
-  try {
-    final result = await FilePicker.pickFiles(
-      type: FileType.media,
-      allowMultiple: true,
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) return;
-    if (!mounted()) return;
-
-    final isMulti = result.files.length > 1;
-    if (isMulti && context.mounted) {
-      ToastService.show(
-        context,
-        'Sending ${result.files.length} files...',
-        type: ToastType.info,
-      );
-    }
-
-    var sentCount = 0;
-    for (final file in result.files) {
-      if (file.size > kMaxUploadBytes) {
-        if (context.mounted) {
-          ToastService.show(
-            context,
-            '${file.name} is ${formatBytes(file.size)} — limit is '
-            '${formatBytes(kMaxUploadBytes)}',
-            type: ToastType.error,
-          );
-        }
-        continue;
-      }
-
-      Uint8List? bytes = file.bytes;
-      if (bytes == null && file.path != null && !kIsWeb) {
-        try {
-          bytes = await File(file.path!).readAsBytes();
-        } catch (_) {}
-      }
-      if (bytes == null) continue;
-
-      final ext = (file.extension ?? '').toLowerCase();
-      final mime = kMimeTypes[ext] ?? ['application', kOctetStream];
-      final mimeType = '${mime[0]}/${mime[1]}';
-
-      if (isMulti) {
-        try {
-          await sendImmediately(
-            bytes: bytes,
-            fileName: file.name,
-            mimeType: mimeType,
-            ext: ext,
-          );
-          sentCount++;
-        } catch (e) {
-          debugPrint('[ChatInput] Send failed for ${file.name}: $e');
-          if (context.mounted) {
-            ToastService.show(
-              context,
-              'Failed to send ${file.name}',
-              type: ToastType.error,
-            );
-          }
-        }
-      } else {
-        stage(bytes: bytes, fileName: file.name, mimeType: mimeType, ext: ext);
-      }
-    }
-    if (isMulti && context.mounted && sentCount < result.files.length) {
-      final failed = result.files.length - sentCount;
-      ToastService.show(
-        context,
-        '$failed of ${result.files.length} failed to send',
-        type: ToastType.error,
-      );
-    }
-  } catch (e) {
-    if (!context.mounted) return;
-    ToastService.show(context, 'Pick error: $e', type: ToastType.error);
+    ToastService.show(context, '$errorPrefix error: $e', type: ToastType.error);
   } finally {
     setIsPicking(false);
   }

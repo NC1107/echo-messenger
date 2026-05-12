@@ -84,7 +84,6 @@ class ChatPanelBodyParams {
     required this.onScrollToBottom,
     required this.onMessageSent,
     required this.onMediaPickerChanged,
-    required this.voiceRenderers,
   });
 
   final Conversation conv;
@@ -143,7 +142,6 @@ class ChatPanelBodyParams {
   final VoidCallback onScrollToBottom;
   final VoidCallback onMessageSent;
   final VoidCallback onMediaPickerChanged;
-  final List<Widget> voiceRenderers;
 }
 
 Widget buildChatContentBox(
@@ -317,7 +315,6 @@ Widget buildChatContentBox(
               onMessageSent: p.onMessageSent,
               onMediaPickerChanged: p.onMediaPickerChanged,
             ),
-            ...p.voiceRenderers,
           ],
         ),
         // Floating emoji/GIF picker — rendered above the message list so taps
