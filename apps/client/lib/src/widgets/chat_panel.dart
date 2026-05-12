@@ -67,9 +67,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     return '$_newMessagesBelowCount new $noun';
   }
 
-  // Forwarders below funnel widget-local state through `_controller`
-  // (invariants #1, #3, #4, #6); call sites keep their original names so
-  // the diff stays focused on ownership, not call-site churn.
   Set<String> get _dismissedBannerIds => DismissedBannersStorage.ids;
   String? get _selectedTextChannelId => _controller.selectedTextChannelId;
   set _selectedTextChannelId(String? v) =>
@@ -104,9 +101,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   final Set<String> _savedIds = {};
   String? get _floatingDate => _controller.floatingDate;
   bool get _floatingDateVisible => _controller.floatingDateVisible;
-  // `_wasNearBottom` (invariant #4) is captured BEFORE the soft keyboard
-  // shrinks the viewport — `_handleKeyboardScroll` reads the pre-resize
-  // snapshot, not the live `_isNearBottom()` after the resize.
   bool get _wasNearBottom => _controller.wasNearBottom;
   set _wasNearBottom(bool v) => _controller.wasNearBottom = v;
   bool get _hasNewMessagesBelow => _controller.hasNewMessagesBelow;
@@ -484,8 +478,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     );
   }
 
-  // Message-action forwarders are inlined as closures at the
-  // `ChatPanelBodyParams` call site in `build`.
   void _handleKeyboardScroll() {
     final keyboardInset = MediaQuery.of(context).viewInsets.bottom;
     if (keyboardInset != _lastKeyboardInset) {

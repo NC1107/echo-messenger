@@ -21,25 +21,16 @@ class ChatPanelController extends ChangeNotifier {
   /// after async load completes.
   Set<String> deletedForMeIds = const {};
 
-  // --- Channel-scoped loading keys (invariant #3) ---------------------------
-  //
-  // `loadedHistoryKey` and `loadedChannelsConversationId` dedupe per
-  // (conversationId, channelId). `autoScrollConversationKey` gates the
-  // `ref.listen<ChatState>(...)` wiring so it isn't installed twice per
-  // visible channel.
-
+  // Per-(conversationId, channelId) dedupe keys for history / channel-list
+  // loads and the `ref.listen<ChatState>` autoscroll wiring.
   String? selectedTextChannelId;
   String? loadedHistoryKey;
   String? loadedChannelsConversationId;
   String? autoScrollConversationKey;
 
-  // --- Per-channel scroll position cache (invariant #1, #5) ----------------
-  //
-  // Keyed by `${conversationId}:${channelId ?? ""}` so switching text
-  // channels within a group preserves separate scroll positions. Capped at
-  // [kMaxScrollPositions] entries to prevent unbounded growth; oldest entries
-  // are evicted when over the limit (eviction policy is invariant #5).
-
+  // Per-channel scroll position cache, keyed by `${conversationId}:${channelId ?? ""}`
+  // so switching text channels within a group preserves separate positions.
+  // Capped to avoid unbounded growth; oldest entries evict first.
   static const int kMaxScrollPositions = 50;
   final Map<String, double> scrollPositions = {};
 
@@ -52,41 +43,25 @@ class ChatPanelController extends ChangeNotifier {
   String cacheKeyFor(String conversationId) =>
       '$conversationId:${selectedTextChannelId ?? ""}';
 
-  // --- Unread boundary + new-messages pill (invariant #6) -----------------
-  //
-  // The unread boundary is captured ONCE per channel session (first time
-  // the conversation opens with `unreadCount > 0`, or the first time
-  // messages arrive after an empty channel open). `unreadBoundaryMessageId`
-  // gates that single-capture guard; resetting to `null` re-arms it. The
-  // widget resets these fields on conversation switch and on
-  // `onTextChannelChanged`.
-
+  // Unread boundary is captured ONCE per channel session (on first open with
+  // `unreadCount > 0`, or first arrival after an empty open). Setting
+  // [unreadBoundaryMessageId] to `null` re-arms the capture; the widget
+  // does so on conversation switch and `onTextChannelChanged`.
   String? unreadBoundaryMessageId;
   int unreadBoundaryCount = 0;
 
-  /// True when a new message arrives while the user has scrolled up.
   bool hasNewMessagesBelow = false;
   int newMessagesBelowCount = 0;
 
-  // --- Floating date label state ------------------------------------------
-  //
-  // The pill shows the date of the topmost visible message and fades out 2s
-  // after the user stops scrolling. The timer is cancelled on conversation
-  // switch + dispose so it never fires after the widget is gone.
-
+  // Floating date pill state. Timer cancelled on conversation switch + dispose.
   String? floatingDate;
   bool floatingDateVisible = false;
   Timer? floatingDateTimer;
 
-  // --- Keyboard / near-bottom tracking (invariant #4) ----------------------
-  //
-  // `wasNearBottom` (originally `_wasNearBottom` on `_ChatPanelState`) is
-  // updated on every scroll event BEFORE the soft keyboard shrinks the
-  // viewport. `handleKeyboardScroll` reads it to decide whether to re-pin
-  // to the bottom when the keyboard opens/closes; using the live
-  // `isNearBottom()` after the resize is unreliable because the
-  // maxScrollExtent has already shifted.
-
+  // [wasNearBottom] is updated on every scroll event BEFORE the soft keyboard
+  // shrinks the viewport. `handleKeyboardScroll` reads this pre-resize
+  // snapshot — the live `isNearBottom()` is unreliable after the resize
+  // because `maxScrollExtent` has already shifted.
   bool wasNearBottom = true;
   double lastKeyboardInset = 0;
 
@@ -145,7 +120,6 @@ class ChatPanelController extends ChangeNotifier {
     }
   }
 
-  /// Update the per-channel scroll cache and run [evictScrollPositions].
   void cacheCurrentOffset(String conversationId) {
     final c = _scrollController;
     if (c == null || !c.hasClients) return;
@@ -153,21 +127,13 @@ class ChatPanelController extends ChangeNotifier {
     evictScrollPositions();
   }
 
-  /// Drop cached offset for [conversationId] under the current channel.
   void clearCachedOffset(String conversationId) {
     scrollPositions.remove(cacheKeyFor(conversationId));
   }
 
-  /// Animate or jump the scroll controller to its maxScrollExtent and
-  /// retry-settle so new content (e.g. an image that just resolved) doesn't
-  /// leave the user a few pixels short. Returns a future that completes
-  /// once the settle pass is finished. [onSettleComplete] runs on the same
-  /// frame the cache is updated; the widget passes a callback to clear its
-  /// `_hasNewMessagesBelow` pill.
-  ///
-  /// Pure mechanics — no `ref` here. The widget invokes this from a
-  /// `WidgetsBinding.instance.addPostFrameCallback` wrapper so the pill
-  /// `setState` happens in the correct phase.
+  /// Animate (or jump) to `maxScrollExtent` and retry-settle so newly resolved
+  /// content (e.g. an image finishing decode) doesn't leave the user a few
+  /// pixels short of the bottom.
   void scrollToBottom({
     required String? conversationId,
     bool animated = true,
