@@ -168,7 +168,7 @@ class SettingsRootView extends ConsumerWidget {
               ),
               _row(
                 context,
-                icon: Icons.graphic_eq,
+                icon: Icons.mic_outlined,
                 iconColor: const Color(0xFF22C55E),
                 section: SettingsSection.voiceVideo,
               ),
@@ -186,13 +186,13 @@ class SettingsRootView extends ConsumerWidget {
               ),
               _row(
                 context,
-                icon: Icons.folder_outlined,
+                icon: Icons.sd_storage_outlined,
                 iconColor: context.textPrimary,
                 section: SettingsSection.dataStorage,
               ),
               _row(
                 context,
-                icon: Icons.accessibility_new_outlined,
+                icon: Icons.accessibility_outlined,
                 iconColor: const Color(0xFF3B82F6),
                 section: SettingsSection.accessibility,
               ),
