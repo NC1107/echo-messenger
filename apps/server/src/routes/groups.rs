@@ -1260,9 +1260,25 @@ pub async fn accept_invite(
         })));
     }
 
-    db::groups::accept_invite_token(&state.pool, &token, auth.user_id)
+    // #829: the in-tx revalidation can surface `Expired` / `Exhausted` if a
+    // concurrent accept raced past the pre-tx fast path above. Map those
+    // outcomes to the same error shape the fast-path checks use so the API
+    // response is consistent.
+    let outcome = db::groups::accept_invite_token(&state.pool, &token, auth.user_id)
         .await
         .db_ctx("accept_invite/insert")?;
+    match outcome {
+        db::groups::AcceptInviteOutcome::Expired => {
+            return Err(AppError::not_found("Invite link has expired"));
+        }
+        db::groups::AcceptInviteOutcome::Exhausted => {
+            return Err(AppError::bad_request(
+                "Invite link has reached its use limit",
+            ));
+        }
+        db::groups::AcceptInviteOutcome::Added | db::groups::AcceptInviteOutcome::AlreadyMember => {
+        }
+    }
 
     invalidate_member_cache(invite.conversation_id);
 

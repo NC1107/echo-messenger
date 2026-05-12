@@ -827,25 +827,71 @@ pub async fn list_invite_tokens(
     .await
 }
 
+/// Outcome of `accept_invite_token`.
+///
+/// `Expired` / `Exhausted` are surfaced by the in-tx revalidation gate
+/// (#829): the pre-tx checks in the route handler are an optimistic fast
+/// path, but concurrent accepts under a `max_uses=N` token could otherwise
+/// race past those checks and over-consume the token. The transaction now
+/// re-reads `expires_at` and `(max_uses, use_count)` under `FOR UPDATE`
+/// so the correctness gate runs after the row is locked.
+#[derive(Debug, PartialEq, Eq)]
+pub enum AcceptInviteOutcome {
+    /// New member row was inserted (or a soft-removed row reactivated).
+    Added,
+    /// Caller was already an active member; no row changed.
+    AlreadyMember,
+    /// Token expired between pre-tx validation and the locked re-read.
+    Expired,
+    /// Token reached `max_uses` between pre-tx validation and the locked re-read.
+    Exhausted,
+}
+
 /// Atomically increment use_count and add the user to the group.
 ///
-/// Returns `Ok(true)` when the user was added, `Ok(false)` when already a member.
-/// The caller must validate expiry and max_uses before calling this function.
+/// Returns:
+/// - `Ok(AcceptInviteOutcome::Added)` when the user was added.
+/// - `Ok(AcceptInviteOutcome::AlreadyMember)` when no row changed.
+/// - `Ok(AcceptInviteOutcome::Expired)` when the token expired (raced past
+///   the pre-tx fast path).
+/// - `Ok(AcceptInviteOutcome::Exhausted)` when `max_uses` was already met
+///   under the locked re-read.
+///
+/// #829: the caller's pre-tx validation in the route handler is a
+/// best-effort fast reject; the in-tx revalidation below is the correctness
+/// gate against TOCTOU under concurrent accepts.
 pub async fn accept_invite_token(
     pool: &PgPool,
     token: &str,
     user_id: Uuid,
-) -> Result<bool, sqlx::Error> {
+) -> Result<AcceptInviteOutcome, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     // Lock the token row for update so concurrent accepts are serialised.
-    let row: (Uuid,) = sqlx::query_as(
-        "SELECT conversation_id FROM group_invite_tokens WHERE token = $1 FOR UPDATE",
+    // #829: fetch expires_at / max_uses / use_count under the same lock so
+    // the post-pre-tx-check window cannot be exploited.
+    let row: (Uuid, Option<DateTime<Utc>>, Option<i32>, i32) = sqlx::query_as(
+        "SELECT conversation_id, expires_at, max_uses, use_count \
+         FROM group_invite_tokens WHERE token = $1 FOR UPDATE",
     )
     .bind(token)
     .fetch_one(&mut *tx)
     .await?;
-    let conversation_id = row.0;
+    let (conversation_id, expires_at, max_uses, use_count) = row;
+
+    // Re-validate under the lock (#829).  Bail out before mutating membership
+    // or incrementing use_count so concurrent accepts cannot over-consume a
+    // max-uses=N token.  The caller maps these outcomes to the same error
+    // shape the pre-tx checks already use.
+    if expires_at.is_some_and(|exp| Utc::now() > exp) {
+        // Read-only tx; rollback is implicit on drop, but be explicit.
+        let _ = tx.rollback().await;
+        return Ok(AcceptInviteOutcome::Expired);
+    }
+    if max_uses.is_some_and(|max| use_count >= max) {
+        let _ = tx.rollback().await;
+        return Ok(AcceptInviteOutcome::Exhausted);
+    }
 
     // Add the member (reactivates soft-removed rows via ON CONFLICT).
     let result = sqlx::query(
@@ -875,5 +921,9 @@ pub async fn accept_invite_token(
         .await?;
 
     tx.commit().await?;
-    Ok(added)
+    Ok(if added {
+        AcceptInviteOutcome::Added
+    } else {
+        AcceptInviteOutcome::AlreadyMember
+    })
 }

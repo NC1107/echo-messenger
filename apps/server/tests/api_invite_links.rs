@@ -404,3 +404,99 @@ async fn banned_user_cannot_accept_invite() {
 
     assert_eq!(resp.status().as_u16(), 400);
 }
+
+// ---------------------------------------------------------------------------
+// TOCTOU concurrency (#829)
+// ---------------------------------------------------------------------------
+
+/// Concurrent accepts against a `max_uses=1` token must not be allowed to
+/// over-consume the token: only one accept may add a member. Pre-#829, the
+/// pre-tx validation in the route handler was checked OUTSIDE the
+/// FOR UPDATE lock on the token row, so a burst of N concurrent requests
+/// could each pass validation and then each insert a member.
+#[tokio::test]
+async fn concurrent_accept_respects_max_uses_under_lock() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (owner_token, _) = register_and_login(&client, &base, "invtoc_own").await;
+    let group_id = create_group(&client, &base, &owner_token, "InvToctouGroup").await;
+
+    // Create a single-use invite.
+    let resp = client
+        .post(format!("{base}/api/groups/{group_id}/invites"))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .json(&serde_json::json!({ "max_uses": 1 }))
+        .send()
+        .await
+        .unwrap();
+    let body: Value = resp.json().await.unwrap();
+    let inv_token = body["token"].as_str().unwrap().to_string();
+
+    // Register 2 prospective joiners and collect their tokens. 2 is enough
+    // contention to deterministically exercise the TOCTOU race without
+    // blowing the per-IP register rate limit (3/60s, shared with the
+    // owner registration above).
+    let mut joiner_tokens = Vec::with_capacity(2);
+    for i in 0..2 {
+        let (tok, _) = register_and_login(&client, &base, &format!("invtoc_j{i}")).await;
+        joiner_tokens.push(tok);
+    }
+
+    // Fire all accept requests concurrently.
+    let base_arc = std::sync::Arc::new(base);
+    let url_path = format!("/api/invites/{inv_token}/accept");
+    let mut handles = Vec::with_capacity(joiner_tokens.len());
+    for joiner_token in joiner_tokens {
+        let base_clone = base_arc.clone();
+        let url_path_clone = url_path.clone();
+        let c = client.clone();
+        handles.push(tokio::spawn(async move {
+            c.post(format!("{base_clone}{url_path_clone}"))
+                .header("Authorization", format!("Bearer {joiner_token}"))
+                .send()
+                .await
+                .map(|r| r.status().as_u16())
+        }));
+    }
+
+    let mut successes = 0;
+    let mut rejections = 0;
+    for h in handles {
+        match h.await.unwrap() {
+            Ok(200) => successes += 1,
+            Ok(400) | Ok(404) => rejections += 1,
+            Ok(other) => panic!("unexpected status {other}"),
+            Err(e) => panic!("request error: {e}"),
+        }
+    }
+
+    assert_eq!(
+        successes, 1,
+        "exactly one concurrent accept must succeed for a max_uses=1 token"
+    );
+    assert_eq!(
+        rejections, 1,
+        "the losing concurrent accept must be rejected"
+    );
+
+    // Verify use_count is exactly 1 in the listing.
+    let list_resp = client
+        .get(format!("{}/api/groups/{group_id}/invites", *base_arc))
+        .header("Authorization", format!("Bearer {owner_token}"))
+        .send()
+        .await
+        .unwrap();
+    let invites: Value = list_resp.json().await.unwrap();
+    let inv = invites
+        .as_array()
+        .expect("invites response is an array")
+        .iter()
+        .find(|i| i["token"].as_str() == Some(inv_token.as_str()))
+        .expect("invite still listed");
+    assert_eq!(
+        inv["use_count"].as_i64().unwrap(),
+        1,
+        "use_count must not exceed max_uses under concurrent load"
+    );
+}
