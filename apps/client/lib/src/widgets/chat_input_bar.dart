@@ -136,27 +136,27 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // (not inherited) by [_controller] so its dispose hook is wired through.
   MentionComposerController get _mentionController => _controller.mention;
 
-  // Pending attachments staged for the current send. Single-pick uses one
-  // entry (with the caption-and-send flow); multi-pick stages all picked
-  // files here so the user can review, cancel individual files, and watch
-  // progress before sending. Each entry carries its own ValueNotifier for
-  // upload progress so chip rebuilds don't ripple through the whole bar.
-  final List<PendingAttachment> _pendingAttachments = [];
-
-  bool get _hasPendingAttachment => _pendingAttachments.isNotEmpty;
+  // Pending attachments + voice recording state live on [_controller].
+  // Forwarders preserve the existing `_pendingAttachments` / `_isRecording`
+  // / `_recorder` call sites.
+  List<PendingAttachment> get _pendingAttachments =>
+      _controller.pendingAttachments;
+  bool get _hasPendingAttachment => _controller.hasPendingAttachment;
   bool get _isAnyPendingAttachmentUploading =>
-      _pendingAttachments.any((a) => a.isUploading);
+      _controller.isAnyPendingAttachmentUploading;
   bool get _allPendingAttachmentsReady =>
-      _pendingAttachments.isNotEmpty &&
-      _pendingAttachments.every((a) => a.uploadedUrl != null);
+      _controller.allPendingAttachmentsReady;
 
-  // Voice recording state
-  final AudioRecorder _recorder = AudioRecorder();
-  bool _isRecording = false;
-  DateTime? _recordingStartTime;
-  Timer? _recordingTimer;
-  Duration _recordingDuration = Duration.zero;
-  final List<double> _recordingAmplitudes = [];
+  AudioRecorder get _recorder => _controller.recorder;
+  bool get _isRecording => _controller.isRecording;
+  set _isRecording(bool v) => _controller.isRecording = v;
+  DateTime? get _recordingStartTime => _controller.recordingStartTime;
+  set _recordingStartTime(DateTime? v) => _controller.recordingStartTime = v;
+  Timer? get _recordingTimer => _controller.recordingTimer;
+  set _recordingTimer(Timer? v) => _controller.recordingTimer = v;
+  Duration get _recordingDuration => _controller.recordingDuration;
+  set _recordingDuration(Duration v) => _controller.recordingDuration = v;
+  List<double> get _recordingAmplitudes => _controller.recordingAmplitudes;
 
   // Debounce for search (used by _detectMention indirectly via parent, but
   // kept here to match the cancel contract in dispose/didUpdateWidget).
@@ -211,21 +211,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   void dispose() {
     _draftSaveTimer?.cancel();
     _searchDebounce?.cancel();
-    _recordingTimer?.cancel();
-    _recorder.dispose();
     _messageController.removeListener(_onTextChanged);
     _mentionController.removeListener(_onMentionChanged);
     // [_controller.dispose] handles text controller + focus node + mention
-    // controller dispose so their order stays in one place (#513).
+    // controller + voice ticker + recorder + pending attachments dispose
+    // so the cancel-then-tear-down order stays in one place (#513, #623).
     _controller.dispose();
-    // Release every staged attachment's ValueNotifier (#623). Calling
-    // setState here would be unsafe during dispose; just walk the list
-    // and dispose each one directly.
-    for (final att in _pendingAttachments) {
-      att.cancelled = true;
-      att.dispose();
-    }
-    _pendingAttachments.clear();
     super.dispose();
   }
 

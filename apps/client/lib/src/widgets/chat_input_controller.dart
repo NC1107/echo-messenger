@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show FocusNode, TextEditingController;
+import 'package:record/record.dart';
 
 import '../models/chat_message.dart';
 import 'input/mention_controller.dart';
+import 'input/pending_attachments_strip.dart' show PendingAttachment;
 
 /// Non-rendering state controller for [ChatInputBar].
 ///
@@ -37,6 +41,37 @@ class ChatInputController extends ChangeNotifier {
   /// controller's [dispose] so the widget no longer has to remember to
   /// release it.
   final MentionComposerController mention;
+
+  // --- Pending attachments -------------------------------------------------
+  //
+  // Pending attachments staged for the current send. Single-pick stages
+  // one entry (with caption-and-send flow); multi-pick stages all picked
+  // files here so the user can review, cancel individual files, and watch
+  // progress before sending. Each entry carries its own ValueNotifier for
+  // upload progress so chip rebuilds don't ripple through the whole bar.
+
+  final List<PendingAttachment> pendingAttachments = [];
+
+  bool get hasPendingAttachment => pendingAttachments.isNotEmpty;
+  bool get isAnyPendingAttachmentUploading =>
+      pendingAttachments.any((a) => a.isUploading);
+  bool get allPendingAttachmentsReady =>
+      pendingAttachments.isNotEmpty &&
+      pendingAttachments.every((a) => a.uploadedUrl != null);
+
+  // --- Voice recording -----------------------------------------------------
+  //
+  // The amplitude tick runs every 100ms while `isRecording` is true. The
+  // [recordingTimer] is cancelled in [dispose] so it never fires after the
+  // widget is gone — same guarantee `_recordingTimer?.cancel()` gave on the
+  // old `ChatInputBarState.dispose()`.
+
+  final AudioRecorder recorder = AudioRecorder();
+  bool isRecording = false;
+  DateTime? recordingStartTime;
+  Timer? recordingTimer;
+  Duration recordingDuration = Duration.zero;
+  final List<double> recordingAmplitudes = [];
 
   // --- Edit mode -----------------------------------------------------------
   //
@@ -73,6 +108,19 @@ class ChatInputController extends ChangeNotifier {
 
   @override
   void dispose() {
+    // Voice ticker MUST be cancelled before the recorder is torn down so a
+    // late tick doesn't fire `getAmplitude` on a disposed recorder.
+    recordingTimer?.cancel();
+    recordingTimer = null;
+    recorder.dispose();
+    // Release every staged attachment's ValueNotifier (#623). Mark each
+    // cancelled first so any in-flight upload's success setState short-
+    // circuits before touching disposed state.
+    for (final att in pendingAttachments) {
+      att.cancelled = true;
+      att.dispose();
+    }
+    pendingAttachments.clear();
     text.dispose();
     focus.dispose();
     mention.dispose();
