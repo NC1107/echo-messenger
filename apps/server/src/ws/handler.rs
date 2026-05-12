@@ -17,6 +17,14 @@ use crate::types::ConversationKind;
 use crate::ws::message_service;
 use crate::ws::typing_service;
 
+/// Application-level heartbeat payload (#829).
+///
+/// Browser WebSocket APIs swallow protocol-level Ping/Pong before they reach
+/// JavaScript, so the JSON heartbeat is the only signal a browser client can
+/// observe to confirm the socket is still alive. Hoisted to a `&'static str`
+/// so the 30-second tick doesn't allocate a fresh `String` per heartbeat.
+const HEARTBEAT_PAYLOAD: &str = r#"{"type":"heartbeat"}"#;
+
 #[derive(Deserialize)]
 #[serde(tag = "type")]
 enum ClientMessage {
@@ -240,8 +248,13 @@ pub async fn handle_socket(
                 WsMessage::Ping(vec![].into()),
             );
             // Application-level heartbeat (visible to all clients).
-            let hb = r#"{"type":"heartbeat"}"#.to_string();
-            if !ping_hub.send_to_device(&ping_user_id, ping_device_id, WsMessage::Text(hb.into())) {
+            // #829: payload is a module-level `&'static str` to avoid the
+            // per-tick `String` allocation.
+            if !ping_hub.send_to_device(
+                &ping_user_id,
+                ping_device_id,
+                WsMessage::Text(HEARTBEAT_PAYLOAD.into()),
+            ) {
                 break;
             }
         }
@@ -295,6 +308,11 @@ pub async fn handle_socket(
         }
     };
     drop(leftover_rx);
+    // #829: abort the heartbeat task on any disconnect path (clean close OR
+    // the err arm of the recv loop both flow through this select! cleanup).
+    // Without the explicit abort, the 30 s tick keeps firing until
+    // `send_to_device` returns false on the dropped queue -- one or two
+    // extra ticks past the disconnect under load.
     ping_task.abort();
 
     cleanup_user_voice_sessions(&state, user_id).await;
