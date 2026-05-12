@@ -2,11 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Persistent blocklist of message IDs deleted via "delete for me".
 /// Survives app restarts so messages don't reappear on history reload.
-///
-/// Extracted from `_ChatPanelState` static helpers (#512 slice 6). The
-/// blocklist lives on this class as a process-wide singleton because each
-/// `_ChatPanelState` instance shares the same set — the previous
-/// `static Set<String>` lived on the class for the same reason.
+/// Process-wide singleton: every `_ChatPanelState` instance shares one set.
 class DeletedForMeStorage {
   DeletedForMeStorage._();
 

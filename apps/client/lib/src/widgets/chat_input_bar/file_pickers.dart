@@ -8,31 +8,6 @@ import 'package:flutter/material.dart';
 import '../../services/toast_service.dart';
 import 'upload_helpers.dart';
 
-/// File-picker flows extracted from `ChatInputBarState` (#513 slice 6).
-///
-/// Mirror the original `_pickFile`, `_pickImageFromGallery`,
-/// `_pickImageFromCamera`, `_showMobileAttachMenu`, and
-/// `_handlePhotoSelected` bit-for-bit. Each function takes callbacks for
-/// the state mutations it can't perform directly (staging an attachment vs
-/// sending one immediately).
-
-const _kMimeTypes = <String, List<String>>{
-  'jpg': ['image', 'jpeg'],
-  'jpeg': ['image', 'jpeg'],
-  'png': ['image', 'png'],
-  'gif': ['image', 'gif'],
-  'webp': ['image', 'webp'],
-  'mp4': ['video', 'mp4'],
-  'mov': ['video', 'quicktime'],
-  'webm': ['video', 'webm'],
-  'pdf': ['application', 'pdf'],
-  'mp3': ['audio', 'mpeg'],
-  'ogg': ['audio', 'ogg'],
-  'wav': ['audio', 'wav'],
-  'm4a': ['audio', 'mp4'],
-  'aac': ['audio', 'aac'],
-};
-
 typedef StageAttachmentFn =
     void Function({
       required List<int> bytes,
@@ -120,7 +95,7 @@ Future<void> pickFile({
       }
 
       final ext = (file.extension ?? '').toLowerCase();
-      final mime = _kMimeTypes[ext] ?? ['application', kOctetStream];
+      final mime = kMimeTypes[ext] ?? ['application', kOctetStream];
       final mimeType = '${mime[0]}/${mime[1]}';
 
       if (isMulti) {
@@ -215,7 +190,7 @@ Future<void> pickImageFromGallery({
       if (bytes == null) continue;
 
       final ext = (file.extension ?? '').toLowerCase();
-      final mime = _kMimeTypes[ext] ?? ['application', kOctetStream];
+      final mime = kMimeTypes[ext] ?? ['application', kOctetStream];
       final mimeType = '${mime[0]}/${mime[1]}';
 
       if (isMulti) {

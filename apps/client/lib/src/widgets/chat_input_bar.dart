@@ -282,23 +282,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final ext = fileName.contains('.')
         ? fileName.split('.').last.toLowerCase()
         : '';
-    final mimeTypes = <String, List<String>>{
-      'jpg': ['image', 'jpeg'],
-      'jpeg': ['image', 'jpeg'],
-      'png': ['image', 'png'],
-      'gif': ['image', 'gif'],
-      'webp': ['image', 'webp'],
-      'mp4': ['video', 'mp4'],
-      'mov': ['video', 'quicktime'],
-      'webm': ['video', 'webm'],
-      'pdf': ['application', 'pdf'],
-      'mp3': ['audio', 'mpeg'],
-      'ogg': ['audio', 'ogg'],
-      'wav': ['audio', 'wav'],
-      'm4a': ['audio', 'mp4'],
-      'aac': ['audio', 'aac'],
-    };
-    final mime = mimeTypes[ext] ?? ['application', kOctetStream];
+    final mime = kMimeTypes[ext] ?? ['application', kOctetStream];
 
     _setPendingAttachment(
       bytes: fileBytes,
@@ -771,10 +755,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
 
     _onInputChanged(_messageController.text);
   }
-
-  // MIME-type table lives on `chat_input_bar/file_pickers.dart` (#513
-  // slice 6) — the only remaining caller here is `_sendFileImmediately`,
-  // which receives the resolved mimeType from the picker functions.
 
   /// Upload [bytes] and immediately send the result as a message.
   /// Used for the 2nd..Nth files when multiple are selected at once.

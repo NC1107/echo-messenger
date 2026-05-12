@@ -12,12 +12,6 @@ import '../../utils/semantics_preview.dart';
 import '../chat_panel_controller.dart';
 import 'message_actions.dart' show fullMonthName;
 
-/// Helpers for the message-list scroll, floating-date label, unread-boundary
-/// capture, and autoscroll wiring extracted from `_ChatPanelState`
-/// (#512 slice 6). Each function takes the widget-local closures it needs
-/// (so `setState` calls land in the right `State` object) and never holds
-/// a `ChatPanelController` reference past its argument list.
-
 /// Update the floating date pill so it reflects the date of the topmost
 /// rendered message. Cancels and reschedules the 2s fade-out timer.
 void updateFloatingDate({

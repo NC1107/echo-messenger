@@ -24,11 +24,8 @@ import 'new_messages_pill.dart';
 
 /// Build the inner `chatContentBox` Stack for `ChatPanel.build` — the
 /// header bar, channel bar, banners, message list, floating pills, input
-/// bar, and overlay layers. Extracted to a helper to shrink
-/// `_ChatPanelState.build` below the 800-LOC budget (#512 slice 6).
-///
-/// All Riverpod listening stays in the calling `build` method; this helper
-/// receives already-resolved values + callbacks.
+/// bar, and overlay layers. All Riverpod listening stays in the calling
+/// `build` method; this helper receives already-resolved values + callbacks.
 class ChatPanelBodyParams {
   ChatPanelBodyParams({
     required this.conv,

@@ -26,15 +26,6 @@ import '../message/media_content.dart'
         resolveMediaUrl;
 import 'full_reaction_picker.dart';
 
-/// Top-level message-action helpers extracted from the `_ChatPanelState`
-/// god-module (#512 slice 6). Each function takes `(WidgetRef ref,
-/// BuildContext context, ...)` so the call sites on `_ChatPanelState`
-/// reduce to one-line forwarders.
-///
-/// These mirror the original methods bit-for-bit — no behavior changes.
-/// Lifecycle checks use `context.mounted` so the analyzer's
-/// `use_build_context_synchronously` lint stays clean across async gaps.
-
 enum DeleteChoice { forMe, forEveryone }
 
 Future<void> retryMessage({

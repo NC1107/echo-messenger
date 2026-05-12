@@ -10,7 +10,7 @@ import 'input/pending_attachments_strip.dart' show PendingAttachment;
 
 /// Non-rendering state controller for [ChatInputBar].
 ///
-/// Owns the text composer + edit state + (in later slices) attachments,
+/// Owns the text composer + edit state, attachments,
 /// voice recording, and mention autocomplete bridging. Composes (not
 /// inherits) the existing [MentionComposerController] so its dispose hook
 /// is wired through this controller's dispose.
@@ -21,9 +21,6 @@ import 'input/pending_attachments_strip.dart' show PendingAttachment;
 ///   `WidgetRef` or call `ref.watch/read/select`;
 /// - `ChatInputBarState`'s public methods reachable via
 ///   `GlobalKey<ChatInputBarState>` keep IDENTICAL signatures (#513).
-///
-/// Slice 4 (#513): text controller + edit-message state. Slice 5 will move
-/// attachments, voice recording state, and mention bridging.
 class ChatInputController extends ChangeNotifier {
   ChatInputController({MentionComposerController? mentionController})
     : mention = mentionController ?? MentionComposerController();

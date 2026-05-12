@@ -5,13 +5,7 @@ import '../../theme/echo_theme.dart';
 import '../message_item.dart' show reactionEmojis;
 
 /// Build the quick-react bar overlay shown when a user long-presses a
-/// message. Extracted from `_ChatPanelState._showReactionPicker` (#512
-/// slice 6) so the message-list state stays focused on data wiring.
-///
-/// The caller is responsible for inserting the returned [OverlayEntry] and
-/// for removing it from `_dismissReactionPicker`. Tap callbacks reach back
-/// through [onDismiss] (to remove the overlay), [onToggleReaction] (single
-/// emoji tap), and [onPickFromFull] (the "+" expand button).
+/// message. The caller inserts and later removes the returned [OverlayEntry].
 OverlayEntry buildReactionPickerOverlay({
   required BuildContext context,
   required ChatMessage message,

@@ -10,13 +10,8 @@ import '../../providers/crypto_provider.dart';
 import '../../services/toast_service.dart';
 import '../chat_panel_controller.dart';
 
-/// History-loading helpers extracted from `_ChatPanelState` (#512 slice 6).
-///
-/// These mirror the original Riverpod-driven `_loadHistory`,
-/// `_loadOlderMessages`, `_jumpToReplyQuote`, and `_loadChannels` methods
-/// bit-for-bit. The `#prod-2026-05-08` pagination cursor rationale lives on
-/// [ChatPanelController.paginationCursor]; the comment threads through
-/// both pagination sites.
+/// `#prod-2026-05-08` pagination cursor rationale lives on
+/// [ChatPanelController.paginationCursor].
 
 Future<void> loadHistory({
   required WidgetRef ref,

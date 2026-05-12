@@ -13,21 +13,12 @@ import '../providers/chat_provider.dart';
 /// Owns scroll, pagination, unread-boundary, and floating-date state so the
 /// widget's `State` can focus on the build tree. Receives data via method
 /// args; it never holds a `WidgetRef` or calls `ref.watch/read/select`.
-///
-/// Slice 1 (#512): pure helpers — `isNearBottom`, `filterChannelAndDeleted`,
-/// `resolveMessages`.
-/// Slice 2 (#512): scroll-position cache, channel-scoped loading keys,
-/// pagination cursor helper, keyboard-resize state, restore-with-retry, and
-/// scroll-to-bottom. Riverpod-driven calls (`loadHistory`,
-/// `loadOlderMessages`, `onTextChannelChanged`) stay in the widget because
-/// they need `WidgetRef`; the channel-scoped keys they consult live here.
 class ChatPanelController extends ChangeNotifier {
   ScrollController? _scrollController;
 
   /// Persistent blocklist of message IDs deleted via "delete for me".
-  /// Owned by the widget for now; passed in via [resolveMessages] /
-  /// [filterChannelAndDeleted]. Will move into the controller in a later
-  /// slice once the SharedPreferences load path migrates.
+  /// Populated from [DeletedForMeStorage.ids] in initState and refreshed
+  /// after async load completes.
   Set<String> deletedForMeIds = const {};
 
   // --- Channel-scoped loading keys (invariant #3) ---------------------------
