@@ -25,13 +25,32 @@ const _routeHome = '/home';
 const _routeLogin = '/login';
 const _routeSplash = '/splash';
 
-/// Stores a deep link path that was requested before the user was
-/// authenticated. After login or splash auto-login, the app navigates
-/// here instead of /home.
-///
-/// TODO(#158): migrate to a Riverpod provider to eliminate this top-level
-/// mutable variable and make deep-link state properly reactive/testable.
-String? pendingDeepLink;
+// ---------------------------------------------------------------------------
+// Pending Deep Link State Management
+// ---------------------------------------------------------------------------
+
+/// Manages pending deep links requested before authentication.
+/// Deep links are stored when the user attempts an unauthenticated navigation,
+/// then resolved after successful login/auto-login for reactive routing.
+class _PendingDeepLinkNotifier extends StateNotifier<String?> {
+  _PendingDeepLinkNotifier() : super(null);
+
+  void set(String? link) => state = link;
+
+  String? takeAndClear() {
+    final link = state;
+    state = null;
+    return link;
+  }
+}
+
+final _pendingDeepLinkProvider =
+    StateNotifierProvider<_PendingDeepLinkNotifier, String?>(
+      (ref) => _PendingDeepLinkNotifier(),
+    );
+
+/// Exported provider for accessing and mutating pending deep-link state.
+final pendingDeepLinkProvider = _pendingDeepLinkProvider;
 
 /// Shared fade transition used by all routes.
 CustomTransitionPage<void> _fadePage({
@@ -82,15 +101,14 @@ String? _authRedirect(Ref ref, GoRouterState state) {
   if (!isLoggedIn && !isAuthRoute && !isOnboarding && !isJoinRoute) {
     final intended = state.matchedLocation;
     if (intended != _routeHome && intended != _routeLogin) {
-      pendingDeepLink = state.uri.toString();
+      ref.read(_pendingDeepLinkProvider.notifier).set(state.uri.toString());
     }
     return _routeLogin;
   }
   if (isLoggedIn && isAuthRoute) {
-    if (pendingDeepLink != null) {
-      final destination = pendingDeepLink!;
-      pendingDeepLink = null;
-      return destination;
+    final deepLink = ref.read(_pendingDeepLinkProvider.notifier).takeAndClear();
+    if (deepLink != null) {
+      return deepLink;
     }
     return _routeHome;
   }

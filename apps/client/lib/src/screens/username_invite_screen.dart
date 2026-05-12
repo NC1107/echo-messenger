@@ -9,7 +9,7 @@ import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../router/app_router.dart' show pendingDeepLink;
+import '../router/app_router.dart' show pendingDeepLinkProvider;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
@@ -132,7 +132,7 @@ class _UsernameInviteScreenState extends ConsumerState<UsernameInviteScreen> {
   }
 
   void _goToLogin() {
-    pendingDeepLink = '/u/${widget.username}';
+    ref.read(pendingDeepLinkProvider.notifier).set('/u/${widget.username}');
     context.go(_routeLogin);
   }
 

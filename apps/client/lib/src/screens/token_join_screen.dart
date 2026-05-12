@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 import '../providers/auth_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
-import '../router/app_router.dart' show pendingDeepLink;
+import '../router/app_router.dart' show pendingDeepLinkProvider;
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 
@@ -227,7 +227,7 @@ class _TokenJoinScreenState extends ConsumerState<TokenJoinScreen>
   }
 
   void _goToLogin() {
-    pendingDeepLink = '/invite/t/${widget.token}';
+    ref.read(pendingDeepLinkProvider.notifier).set('/invite/t/${widget.token}');
     context.go(_routeLogin);
   }
 

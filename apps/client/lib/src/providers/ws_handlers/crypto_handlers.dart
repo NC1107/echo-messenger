@@ -40,6 +40,8 @@ extension CryptoHandlersOn on WsMessageHandler {
       'WebSocket',
       'Session replaced by another connection: $reason',
     );
+    // Clear pending messages to prevent leaking other-user ciphertext
+    clearPendingDecryptQueue();
     _state = _state.copyWith(wasReplaced: true, isConnected: false);
   }
 
@@ -63,6 +65,8 @@ extension CryptoHandlersOn on WsMessageHandler {
         'WebSocket',
         'Current device ($revokedDeviceId) was revoked; logging out.',
       );
+      // Clear pending messages before logout
+      clearPendingDecryptQueue();
       _state = _state.copyWith(isConnected: false);
       ref.read(authProvider.notifier).logout();
     }

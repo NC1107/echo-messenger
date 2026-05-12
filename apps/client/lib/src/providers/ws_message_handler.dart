@@ -161,6 +161,13 @@ mixin WsMessageHandler on Notifier<WebSocketState> {
     state = state.copyWith(onlineUsers: const {}, presenceStatuses: const {});
   }
 
+  /// Clear pending decrypt queue without draining.
+  /// Called when auth session changes (logout, session_replaced, device_revoked)
+  /// to prevent cross-account message leakage (audit 2026-05-12, finding #4).
+  void clearPendingDecryptQueue() {
+    _pendingDecryptQueue.clear();
+  }
+
   /// Decrypt queued messages that arrived before crypto init completed.
   void drainPendingDecryptQueue(String myUserId) {
     if (_pendingDecryptQueue.isEmpty) return;

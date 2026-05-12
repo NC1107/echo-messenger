@@ -786,7 +786,14 @@ class _ConnectionStatusDot extends ConsumerWidget {
         message: tooltip,
         child: InkWell(
           customBorder: const CircleBorder(),
-          onTap: () => ref.read(websocketProvider.notifier).connect(),
+          onTap: () {
+            final notifier = ref.read(websocketProvider.notifier);
+            if (ref.read(websocketProvider).wasReplaced) {
+              notifier.reconnectAfterReplacement();
+            } else {
+              notifier.connect();
+            }
+          },
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Container(

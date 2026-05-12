@@ -168,6 +168,8 @@ class _MessageItemState extends State<MessageItem>
   bool _swipeTriggered = false;
   Timer? _expireTimer;
   late final AnimationController _swipeAnimController;
+  Animation<double>? _swipeAnimation;
+  late void Function() _swipeAnimListener;
 
   @override
   void initState() {
@@ -176,6 +178,12 @@ class _MessageItemState extends State<MessageItem>
       vsync: this,
       duration: const Duration(milliseconds: 200),
     );
+    // Define listener once, reuse across animations
+    _swipeAnimListener = () {
+      if (mounted && _swipeAnimation != null) {
+        setState(() => _swipeDx = _swipeAnimation!.value);
+      }
+    };
     _scheduleExpireTimer();
   }
 
@@ -199,12 +207,14 @@ class _MessageItemState extends State<MessageItem>
   void _startSpringBack() {
     final startDx = _swipeDx;
     if (startDx == 0) return;
-    final animation = Tween<double>(begin: startDx, end: 0).animate(
+
+    // Remove old listener to prevent accumulation across multiple swipe cycles
+    _swipeAnimation?.removeListener(_swipeAnimListener);
+
+    _swipeAnimation = Tween<double>(begin: startDx, end: 0).animate(
       CurvedAnimation(parent: _swipeAnimController, curve: Curves.easeOut),
     );
-    animation.addListener(() {
-      if (mounted) setState(() => _swipeDx = animation.value);
-    });
+    _swipeAnimation!.addListener(_swipeAnimListener);
     _swipeAnimController.forward(from: 0);
   }
 
@@ -1477,9 +1487,10 @@ class _MessageItemState extends State<MessageItem>
           left: (isMine && !widget.compactLayout) ? 0 : 36,
         ),
         child: Text(
-          msg.editedAt != null
-              ? '${formatMessageTimestamp(msg.timestamp)} (edited)'
-              : formatMessageTimestamp(msg.timestamp),
+          () {
+            final timestamp = formatMessageTimestamp(msg.timestamp);
+            return msg.editedAt != null ? '$timestamp (edited)' : timestamp;
+          }(),
           style: GoogleFonts.inter(
             fontSize: hoverFontSize,
             color: context.textMuted,
