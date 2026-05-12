@@ -26,9 +26,18 @@ class FloatingDatePill extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: context.surface.withValues(alpha: 0.92),
+              // Solid surface (was translucent) + thin border + soft shadow
+              // for legibility while scrolling fast (design canvas).
+              color: context.surface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.border),
+              border: Border.all(color: context.border, width: 1),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: Text(
               date ?? '',
