@@ -34,6 +34,12 @@ class ChatPanelController extends ChangeNotifier {
   static const int kMaxScrollPositions = 50;
   final Map<String, double> scrollPositions = {};
 
+  // Last viewed channel per conversation. Lets a re-entered group restore the
+  // user to the channel they left off on (which in turn lets [scrollPositions]
+  // hit on its `"convId:channelId"` key — otherwise the channel id is null at
+  // restore time and the lookup misses, falling through to scroll-to-bottom).
+  final Map<String, String?> lastChannelByConversation = {};
+
   void evictScrollPositions() {
     while (scrollPositions.length > kMaxScrollPositions) {
       scrollPositions.remove(scrollPositions.keys.first);
