@@ -48,7 +48,7 @@ const _lightPreview = _ThemePreviewColors(
   mainBg: EchoTheme.lightMainBg,
   sentBubble: EchoTheme.lightSentBubble,
   recvBubble: EchoTheme.lightRecvBubble,
-  accent: EchoTheme.accent,
+  accent: EchoTheme.paperAccent,
   border: EchoTheme.lightBorder,
   textPrimary: EchoTheme.lightTextPrimary,
   textSecondary: EchoTheme.lightTextSecondary,
@@ -138,9 +138,9 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
         preview: _darkPreview,
       ),
       _ThemeCardData(
-        selection: AppThemeSelection.light,
-        label: 'Light',
-        subtitle: 'Classic bright look',
+        selection: AppThemeSelection.paper,
+        label: 'Paper',
+        subtitle: 'Warm off-white',
         preview: _lightPreview,
       ),
       _ThemeCardData(

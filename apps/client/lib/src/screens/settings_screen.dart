@@ -249,8 +249,8 @@ class SettingsRootView extends ConsumerWidget {
         return 'System';
       case AppThemeSelection.indigo:
         return 'Indigo';
-      case AppThemeSelection.light:
-        return 'Light';
+      case AppThemeSelection.paper:
+        return 'Paper';
       case AppThemeSelection.graphite:
         return 'Graphite';
       case AppThemeSelection.ember:

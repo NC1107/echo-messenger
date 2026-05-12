@@ -24,12 +24,12 @@ void main() {
     });
 
     test('loads persisted theme from SharedPreferences', () async {
-      SharedPreferences.setMockInitialValues({'echo_theme_mode': 'light'});
+      SharedPreferences.setMockInitialValues({'echo_theme_mode': 'paper'});
       final container = ProviderContainer();
       addTearDown(container.dispose);
       container.read(appThemeProvider);
       await _flushLoad();
-      expect(container.read(appThemeProvider), AppThemeSelection.light);
+      expect(container.read(appThemeProvider), AppThemeSelection.paper);
     });
 
     test('loads all theme variants', () async {
@@ -37,7 +37,8 @@ void main() {
         'system': AppThemeSelection.system,
         'indigo': AppThemeSelection.indigo,
         'dark': AppThemeSelection.indigo, // legacy alias migrates to indigo
-        'light': AppThemeSelection.light,
+        'paper': AppThemeSelection.paper,
+        'light': AppThemeSelection.paper, // legacy alias migrates to paper
         'graphite': AppThemeSelection.graphite,
         'ember': AppThemeSelection.ember,
         'neon': AppThemeSelection.neon,
@@ -89,7 +90,7 @@ void main() {
 
       final notifier = container.read(appThemeProvider.notifier);
       await notifier.setThemeMode(ThemeMode.light);
-      expect(container.read(appThemeProvider), AppThemeSelection.light);
+      expect(container.read(appThemeProvider), AppThemeSelection.paper);
 
       await notifier.setThemeMode(ThemeMode.dark);
       expect(container.read(appThemeProvider), AppThemeSelection.indigo);

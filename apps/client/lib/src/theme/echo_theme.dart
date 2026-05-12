@@ -269,20 +269,24 @@ class EchoTheme {
     );
   }
 
-  // Light theme colors — tuned to avoid harsh pure white
-  static const lightMainBg = Color(0xFFF5F5F7);
-  static const lightSidebarBg = Color(0xFFF0F0F3);
-  static const lightChatBg = Color(0xFFF8F8FA);
-  static const lightSurface = Color(0xFFFAFAFC);
-  static const lightSurfaceHover = Color(0xFFEEEEF1);
+  // Paper theme colors (light) — warm off-white with darkened indigo accent.
+  // Replaces the legacy "Light" palette: bg warmed from #F5F5F7 -> #FAFAF7,
+  // accent darkened from #5B5EE6 -> #4F46E5 for stronger WCAG AA contrast.
+  static const paperAccent = Color(0xFF4F46E5);
+  static const paperAccentHover = Color(0xFF6366F1);
+  static const lightMainBg = Color(0xFFFAFAF7);
+  static const lightSidebarBg = Color(0xFFF3F3EF);
+  static const lightChatBg = Color(0xFFF8F8F5);
+  static const lightSurface = Color(0xFFFFFFFC);
+  static const lightSurfaceHover = Color(0xFFEEEEEA);
   static const lightTextPrimary = Color(0xFF1A1A1E);
   static const lightTextSecondary = Color(0xFF5C5C66);
   static const lightTextMuted = Color(0xFF72727E);
   // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
-  static const lightSentBubble = accent;
+  static const lightSentBubble = paperAccent;
   static const lightRecvBubble = lightSurface;
-  static const lightBorder = Color(0xFFDFDFE5);
-  static const lightAccentLight = Color(0x1A5B5EE6);
+  static const lightBorder = Color(0xFFDFDFD5);
+  static const lightAccentLight = Color(0x1A4F46E5);
 
   // Graphite theme colors (high-contrast dark with teal accent)
   // Dark onPrimary used because the high-luminance teal accent fails WCAG AA
@@ -399,8 +403,8 @@ class EchoTheme {
       scaffoldBackgroundColor: lightMainBg,
       textTheme: textTheme,
       colorScheme: const ColorScheme.light(
-        primary: accent,
-        secondary: accentHover,
+        primary: paperAccent,
+        secondary: paperAccentHover,
         surface: lightSurface,
         onSurfaceVariant: lightTextSecondary,
         error: danger,
@@ -429,12 +433,12 @@ class EchoTheme {
       inputDecorationTheme: _buildInputTheme(
         fillColor: lightSurface,
         borderColor: lightBorder,
-        focusBorderColor: accent,
+        focusBorderColor: paperAccent,
         hintColor: lightTextMuted,
         labelColor: lightTextSecondary,
       ),
-      filledButtonTheme: _buildFilledButtonTheme(accent),
-      textButtonTheme: _buildTextButtonTheme(accent),
+      filledButtonTheme: _buildFilledButtonTheme(paperAccent),
+      textButtonTheme: _buildTextButtonTheme(paperAccent),
       outlinedButtonTheme: _buildOutlinedButtonTheme(
         lightTextPrimary,
         lightBorder,

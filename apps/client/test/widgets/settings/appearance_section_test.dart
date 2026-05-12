@@ -12,7 +12,7 @@ void main() {
         containsAll([
           AppThemeSelection.system,
           AppThemeSelection.indigo,
-          AppThemeSelection.light,
+          AppThemeSelection.paper,
           AppThemeSelection.graphite,
           AppThemeSelection.ember,
           AppThemeSelection.neon,

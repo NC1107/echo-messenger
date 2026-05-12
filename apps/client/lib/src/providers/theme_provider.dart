@@ -13,7 +13,7 @@ const kCustomAccentColorKey = 'theme.accent_color';
 enum AppThemeSelection {
   system,
   indigo,
-  light,
+  paper,
   graphite,
   ember,
   neon,
@@ -41,7 +41,9 @@ class AppTheme extends _$AppTheme {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getString(_kThemeKey);
     state = switch (value) {
-      'light' => AppThemeSelection.light,
+      'paper' => AppThemeSelection.paper,
+      'light' =>
+        AppThemeSelection.paper, // legacy alias for migration (slice 6)
       'indigo' => AppThemeSelection.indigo,
       'dark' =>
         AppThemeSelection.indigo, // legacy alias for migration (slice 6)
@@ -66,7 +68,7 @@ class AppTheme extends _$AppTheme {
     final selection = switch (mode) {
       ThemeMode.system => AppThemeSelection.system,
       ThemeMode.dark => AppThemeSelection.indigo,
-      ThemeMode.light => AppThemeSelection.light,
+      ThemeMode.light => AppThemeSelection.paper,
     };
     await setTheme(selection);
   }
