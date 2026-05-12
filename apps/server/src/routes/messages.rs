@@ -215,9 +215,11 @@ pub async fn list_conversations(
             SELECT m2.conversation_id, COUNT(*) AS unread_count \
             FROM messages m2 \
             JOIN user_convs uc ON uc.conversation_id = m2.conversation_id \
+            LEFT JOIN channels ch ON ch.id = m2.channel_id \
             LEFT JOIN read_cte rc ON rc.conversation_id = m2.conversation_id \
             WHERE m2.sender_id != $1 \
               AND m2.deleted_at IS NULL \
+              AND (m2.channel_id IS NULL OR ch.deleted_at IS NULL) \
               AND m2.created_at > COALESCE(rc.last_read_at, '1970-01-01'::timestamptz) \
             GROUP BY m2.conversation_id \
         ), \
@@ -226,10 +228,12 @@ pub async fn list_conversations(
             FROM messages m3 \
             JOIN mentions mt ON mt.message_id = m3.id \
             JOIN user_convs uc2 ON uc2.conversation_id = m3.conversation_id \
+            LEFT JOIN channels ch2 ON ch2.id = m3.channel_id \
             LEFT JOIN read_cte rc2 ON rc2.conversation_id = m3.conversation_id \
             WHERE mt.mentioned_user_id = $1 \
               AND m3.sender_id != $1 \
               AND m3.deleted_at IS NULL \
+              AND (m3.channel_id IS NULL OR ch2.deleted_at IS NULL) \
               AND m3.created_at > COALESCE(rc2.last_read_at, '1970-01-01'::timestamptz) \
             GROUP BY m3.conversation_id \
         ) \

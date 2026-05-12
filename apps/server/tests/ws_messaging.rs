@@ -1686,3 +1686,130 @@ async fn read_text_skipping_chatter(ws: &mut WsStream) -> String {
         return text;
     }
 }
+
+// Multi-device offline sibling replay regression (#829)
+// ---------------------------------------------------------------------------
+
+/// Bug #829 — when a recipient has multiple devices but only some are online
+/// at fan-out time, the historical global `messages.delivered = true` flag
+/// (flipped on first-device delivery) would cause `get_undelivered` to skip
+/// the message for the sibling devices that came online later. Those devices
+/// would silently never receive the message.
+///
+/// This test:
+///   1. Connects Alice, plus Bob device #1. Bob devices #2 and #3 are offline.
+///   2. Alice sends a message with per-device ciphertexts for all 3 of Bob's
+///      devices.
+///   3. Asserts device #1 receives `new_message` immediately.
+///   4. Connects Bob device #2, asserts it receives the replayed `new_message`
+///      with the device-#2 ciphertext (this is the load-bearing assertion --
+///      pre-#829, this would never arrive).
+///   5. Connects Bob device #3, asserts the same.
+#[tokio::test]
+async fn multi_device_offline_siblings_replay_on_reconnect() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    let (alice_token, _alice_id, _alice_name) =
+        common::register_and_login(&client, &base, "mdsib_alice").await;
+    let (bob_token, bob_id, bob_name) =
+        common::register_and_login(&client, &base, "mdsib_bob").await;
+
+    common::make_contacts(&client, &base, &alice_token, &bob_token, &bob_id, &bob_name).await;
+
+    // Alice connects (device id is irrelevant for this assertion).
+    let alice_ticket = common::get_ws_ticket_for_device(&client, &base, &alice_token, 1).await;
+    let mut alice_ws = connect_ws(&base, &alice_ticket).await;
+
+    // Bob device #1 connects -- the only one online at fan-out time.
+    let bob_d1_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 31).await;
+    let mut bob_d1_ws = connect_ws(&base, &bob_d1_ticket).await;
+
+    drain_pending(&mut alice_ws).await;
+    drain_pending(&mut bob_d1_ws).await;
+
+    let bob_d1_ct = common::dummy_ciphertext("829_bob_d31");
+    let bob_d2_ct = common::dummy_ciphertext("829_bob_d32");
+    let bob_d3_ct = common::dummy_ciphertext("829_bob_d33");
+    let canonical = common::dummy_ciphertext("829_canonical");
+
+    // Alice sends to Bob with per-device ciphertexts for all 3 devices, even
+    // though only device #1 is online. Devices #2 and #3 must replay when
+    // they later reconnect.
+    let send_msg = serde_json::json!({
+        "type": "send_message",
+        "to_user_id": bob_id,
+        "content": canonical,
+        "recipient_device_contents": {
+            bob_id.to_string(): {
+                "31": bob_d1_ct.clone(),
+                "32": bob_d2_ct.clone(),
+                "33": bob_d3_ct.clone(),
+            },
+        },
+    });
+    alice_ws
+        .send(Message::Text(send_msg.to_string().into()))
+        .await
+        .expect("Alice send failed");
+
+    // Alice gets her message_sent ack.
+    let ack_text = read_text_skipping_presence(&mut alice_ws).await;
+    let ack: Value = serde_json::from_str(&ack_text).unwrap();
+    assert_eq!(ack["type"], "message_sent");
+
+    // Bob device #1 (online) receives the live fan-out.
+    let d1_text = read_text_skipping_presence(&mut bob_d1_ws).await;
+    let d1: Value = serde_json::from_str(&d1_text).unwrap();
+    assert_eq!(d1["type"], "new_message", "device 1 should get new_message");
+    assert_eq!(
+        d1["content"], bob_d1_ct,
+        "device 1 must receive its own ciphertext on live fanout"
+    );
+
+    // Bob device #2 (offline at send time) connects now and must receive
+    // the replayed message via the per-device ledger. Pre-#829 this branch
+    // returned nothing because `messages.delivered` was flipped by device #1.
+    let bob_d2_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 32).await;
+    let mut bob_d2_ws = connect_ws(&base, &bob_d2_ticket).await;
+    let d2 = common::recv_until_event(&mut bob_d2_ws, &["new_message"]).await;
+    assert_eq!(
+        d2["type"], "new_message",
+        "device 2 must replay the message"
+    );
+    assert_eq!(
+        d2["content"], bob_d2_ct,
+        "device 2 must replay with its own per-device ciphertext"
+    );
+
+    // Bob device #3 (also offline at send time) connects last.
+    let bob_d3_ticket = common::get_ws_ticket_for_device(&client, &base, &bob_token, 33).await;
+    let mut bob_d3_ws = connect_ws(&base, &bob_d3_ticket).await;
+    let d3 = common::recv_until_event(&mut bob_d3_ws, &["new_message"]).await;
+    assert_eq!(
+        d3["type"], "new_message",
+        "device 3 must replay the message"
+    );
+    assert_eq!(
+        d3["content"], bob_d3_ct,
+        "device 3 must replay with its own per-device ciphertext"
+    );
+
+    // The original online device (#1) must NOT receive the same message a
+    // second time -- its per-device ledger row from fan-out should keep it
+    // out of any subsequent `get_undelivered` results.
+    let no_replay = tokio::time::timeout(
+        std::time::Duration::from_millis(300),
+        common::recv_until_event(&mut bob_d1_ws, &["new_message"]),
+    )
+    .await;
+    assert!(
+        no_replay.is_err(),
+        "device 1 must not see the same message replayed after siblings reconnect"
+    );
+
+    let _ = alice_ws.close(None).await;
+    let _ = bob_d1_ws.close(None).await;
+    let _ = bob_d2_ws.close(None).await;
+    let _ = bob_d3_ws.close(None).await;
+}

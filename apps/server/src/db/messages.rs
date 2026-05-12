@@ -236,7 +236,7 @@ pub async fn get_messages(
                 COALESCE(rx.reactions, '[]'::json) AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
-         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id AND rm.deleted_at IS NULL \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          LEFT JOIN ( \
              SELECT reply_to_id, COUNT(*) AS reply_count \
@@ -307,6 +307,20 @@ pub async fn get_undelivered(
     // (O(N+M)) rather than a LATERAL correlated subquery that re-executes for
     // every returned row (O(N*M)).
     //
+    // #829: this query MUST NOT filter on `m.delivered = false`. The global
+    // `delivered` flag is flipped on first-device delivery (see
+    // `send_delivery_confirmation`), so a sibling device coming online later
+    // would never receive a replay. The per-device `message_deliveries`
+    // ledger is the correct gate -- the fanout path is responsible for
+    // populating it for online deliveries.
+    //
+    // System messages (sentinel-prefixed; e.g. `__system__:member_joined:...`)
+    // are best-effort UI pills broadcast at the moment of the event via
+    // `broadcast_json`; they intentionally do not flow through the ledger or
+    // mark_delivered path. We exclude them from replay so a member who was
+    // offline when a join/leave happened does NOT get a stale pill on
+    // reconnect, while real chat traffic still replays through the ledger.
+    //
     // The NOT EXISTS guard filters messages that were already pushed to THIS
     // device (either successfully decryptable or as an undecryptable marker).
     // Without it a device that can't decrypt a frame would receive the same
@@ -322,7 +336,7 @@ pub async fn get_undelivered(
                 '[]'::json AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
-         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id AND rm.deleted_at IS NULL \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          LEFT JOIN ( \
              SELECT reply_to_id, COUNT(*) AS reply_count \
@@ -332,7 +346,8 @@ pub async fn get_undelivered(
          ) rc ON rc.reply_to_id = m.id \
          JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = $1 \
                   AND cm.is_removed = false \
-         WHERE m.sender_id != $1 AND m.delivered = false AND m.deleted_at IS NULL \
+         WHERE m.sender_id != $1 AND m.deleted_at IS NULL \
+                  AND m.content NOT LIKE '\\_\\_system\\_\\_:%' ESCAPE '\\' \
                   AND NOT EXISTS ( \
                       SELECT 1 FROM message_deliveries md \
                       WHERE md.message_id = m.id \
@@ -372,6 +387,32 @@ pub async fn mark_device_delivered(
     .bind(message_id)
     .bind(recipient_user_id)
     .bind(device_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Record that a single message was accepted by the hub for a batch of
+/// `(recipient_user_id, device_id)` pairs. Idempotent via ON CONFLICT
+/// DO NOTHING.  Used by the fanout path (#829) so sibling devices that
+/// come online later are correctly excluded from `get_undelivered` replay.
+pub async fn mark_devices_delivered_pairs(
+    pool: &PgPool,
+    message_id: Uuid,
+    pairs: &[(Uuid, i32)],
+) -> Result<(), sqlx::Error> {
+    if pairs.is_empty() {
+        return Ok(());
+    }
+    let (user_ids, device_ids): (Vec<Uuid>, Vec<i32>) = pairs.iter().copied().unzip();
+    sqlx::query(
+        "INSERT INTO message_deliveries (message_id, recipient_user_id, device_id) \
+         SELECT $1, uid, did FROM UNNEST($2::uuid[], $3::int[]) AS t(uid, did) \
+         ON CONFLICT (message_id, recipient_user_id, device_id) DO NOTHING",
+    )
+    .bind(message_id)
+    .bind(&user_ids)
+    .bind(&device_ids)
     .execute(pool)
     .await?;
     Ok(())
@@ -549,7 +590,7 @@ pub async fn search_messages(
                 '[]'::json AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
-         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id AND rm.deleted_at IS NULL \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          LEFT JOIN LATERAL ( \
              SELECT COUNT(*) AS cnt FROM messages r \
@@ -911,7 +952,7 @@ pub async fn get_thread_replies(
                 COALESCE(rx.reactions, '[]'::json) AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
-         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id AND rm.deleted_at IS NULL \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          LEFT JOIN LATERAL ( \
              SELECT COUNT(*) AS cnt FROM messages r \

@@ -207,17 +207,23 @@ async fn broadcast_voice_session_left(
     }
 }
 
-/// Delete empty groups (zero members) and all their dependent rows.
+/// Delete empty groups (zero ACTIVE members) and all their dependent rows.
+///
+/// #829: previously the inner SELECT did not filter `is_removed = false`,
+/// so a group whose only members were all soft-removed (tombstones) was
+/// never reaped. The query is now in `db::groups::find_empty_group_ids`
+/// (so the integration test can exercise it directly) and uses `NOT EXISTS`
+/// for cleaner planner behaviour on large `conversation_members` tables.
 async fn cleanup_empty_groups(pool: &PgPool) {
-    let empty_group_ids: Vec<(uuid::Uuid,)> = sqlx::query_as(
-        "SELECT id FROM conversations WHERE kind = 'group' \
-         AND id NOT IN (SELECT DISTINCT conversation_id FROM conversation_members)",
-    )
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let empty_group_ids = match db::groups::find_empty_group_ids(pool).await {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::error!("cleanup_empty_groups: find_empty_group_ids failed: {e}");
+            return;
+        }
+    };
 
-    for (gid,) in &empty_group_ids {
+    for gid in &empty_group_ids {
         delete_group_dependents(pool, *gid).await;
     }
 }

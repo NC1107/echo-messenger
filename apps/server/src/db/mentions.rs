@@ -128,6 +128,28 @@ pub async fn extract_and_persist(
         return Ok(0);
     }
 
+    // #829: defence-in-depth -- verify the sender is a non-removed member of
+    // the conversation before persisting any mention rows. The upstream
+    // `send_message` path already enforces membership, but a future caller
+    // that forgets to gate could otherwise turn `@everyone` into an
+    // unauthenticated broadcast against an arbitrary group. Bail with an
+    // empty result so callers' logging stays quiet on legitimate misses.
+    let is_member: (bool,) = sqlx::query_as(
+        "SELECT EXISTS ( \
+             SELECT 1 FROM conversation_members \
+             WHERE conversation_id = $1 \
+               AND user_id = $2 \
+               AND is_removed = false \
+         )",
+    )
+    .bind(conversation_id)
+    .bind(sender_id)
+    .fetch_one(pool)
+    .await?;
+    if !is_member.0 {
+        return Ok(0);
+    }
+
     // Resolve to user_ids.  For broadcast keywords we pull every member;
     // for `@<username>` we pull only matching members.  In either case
     // the sender is filtered out client-side below.
