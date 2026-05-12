@@ -26,11 +26,11 @@ ChatMessage _msg({required bool isMine}) => ChatMessage(
 );
 
 // Find the hover-overlay Positioned widget — uniquely identified by its
-// top: -28 placement (the affordance bar floats just above the bubble).
+// top: -8 placement (Slice 4: bar now overlaps the bubble's top edge).
 Positioned _hoverPositioned(WidgetTester tester) {
   return tester
       .widgetList<Positioned>(find.byType(Positioned))
-      .firstWhere((p) => p.top == -28);
+      .firstWhere((p) => p.top == -8);
 }
 
 void main() {

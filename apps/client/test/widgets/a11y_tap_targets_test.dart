@@ -25,9 +25,12 @@ ChatMessage _peerMsg() {
 
 void main() {
   group('A11y tap targets - hover action buttons (#497)', () {
-    testWidgets('_HoverActionButton has 44×44 outer hit target', (
+    testWidgets('_HoverActionButton has 33×33 outer hit target', (
       tester,
     ) async {
+      // Slice 4: hover-action chips were scaled to 75% (33×33 hit /
+      // 21×21 visual). Still well above the Material 24px minimum for
+      // dense desktop UIs.
       await mockNetworkImagesFor(() async {
         // Force a desktop-sized window so the hover bar can render.
         tester.view.physicalSize = const Size(1600, 900);
@@ -53,33 +56,33 @@ void main() {
         await gesture.moveTo(tester.getCenter(find.byType(MessageItem)));
         await tester.pump();
 
-        // The hover bar contains InkWell-wrapped 44×44 SizedBoxes. Find
-        // every InkWell whose ancestor SizedBox is 44×44.
+        // The hover bar contains InkWell-wrapped 33×33 SizedBoxes. Find
+        // every InkWell whose ancestor SizedBox is 33×33.
         final inkWells = find.byType(InkWell);
         expect(inkWells, findsWidgets);
 
-        var found44 = false;
+        var found33 = false;
         for (final element in inkWells.evaluate()) {
           // Walk up to find the nearest SizedBox ancestor.
           SizedBox? sb;
           element.visitAncestorElements((ancestor) {
             final w = ancestor.widget;
-            if (w is SizedBox && w.width == 44 && w.height == 44) {
+            if (w is SizedBox && w.width == 33 && w.height == 33) {
               sb = w;
               return false;
             }
             return true;
           });
           if (sb != null) {
-            found44 = true;
+            found33 = true;
             break;
           }
         }
         expect(
-          found44,
+          found33,
           isTrue,
           reason:
-              'expected at least one 44×44 SizedBox ancestor of an '
+              'expected at least one 33×33 SizedBox ancestor of an '
               'InkWell in the hover bar',
         );
       });

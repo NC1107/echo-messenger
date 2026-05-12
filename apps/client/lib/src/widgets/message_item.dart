@@ -1474,7 +1474,9 @@ class _MessageItemState extends State<MessageItem>
     // bubble (#prod-2026-05-08).  Use the bubble's actual visual side.
     final bubbleOnRight = isMine && !widget.compactLayout;
     return Positioned(
-      top: -28,
+      // Slice 4: overlap the bubble's top edge by ~10px instead of parking
+      // the bar fully above it.
+      top: -8,
       // Anchor only the side closest to the bubble so the overlay sizes to
       // its child action row (#723).  Setting both left & right would force
       // it to span the entire chat width — sent (right-aligned) bubbles set
