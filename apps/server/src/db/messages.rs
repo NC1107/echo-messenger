@@ -236,7 +236,7 @@ pub async fn get_messages(
                 COALESCE(rx.reactions, '[]'::json) AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
-         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id AND rm.deleted_at IS NULL \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          LEFT JOIN ( \
              SELECT reply_to_id, COUNT(*) AS reply_count \
@@ -336,7 +336,7 @@ pub async fn get_undelivered(
                 '[]'::json AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
-         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id AND rm.deleted_at IS NULL \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          LEFT JOIN ( \
              SELECT reply_to_id, COUNT(*) AS reply_count \
@@ -590,7 +590,7 @@ pub async fn search_messages(
                 '[]'::json AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
-         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id AND rm.deleted_at IS NULL \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          LEFT JOIN LATERAL ( \
              SELECT COUNT(*) AS cnt FROM messages r \
@@ -952,7 +952,7 @@ pub async fn get_thread_replies(
                 COALESCE(rx.reactions, '[]'::json) AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
-         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id \
+         LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id AND rm.deleted_at IS NULL \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
          LEFT JOIN LATERAL ( \
              SELECT COUNT(*) AS cnt FROM messages r \
