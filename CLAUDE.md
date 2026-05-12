@@ -130,7 +130,37 @@ Conventional commits, short and human-readable. One line subject, optional brief
 
 Keep it concise -- no multi-paragraph explanations, no bullet lists in commit messages. No co-author tags.
 
-Allowed types: `feat fix docs style refactor perf test build ci chore revert security`. Optional scopes: `core server client infra proto crypto ci deps`. Subject must be lowercase, max 72 chars.
+Allowed types: `feat fix docs style refactor perf test build ci chore revert security`. Optional scopes: `core server client infra proto crypto ci deps`. Subject must be lowercase, max 80 chars (commitlint hard cap; aim for 72 to leave headroom for the `(#N)` suffix).
+
+### Release-quality subjects (commit messages AND PR titles)
+
+The "What's New" modal on the next app update renders the GitHub release notes verbatim. Release notes are auto-generated from merged PR titles and their commit subjects. So every PR title and every commit subject is one row of the changelog that the user sees on first launch after the update.
+
+Optimize for the reader who is NOT a contributor:
+
+- **Lead with the user-visible behavior**, not the implementation mechanism.
+  - Bad: `refactor(client): consolidate hardcoded ui colors into 4 new theme tokens`
+  - Good: `style(client): unify component colors across themes`
+  - Bad: `fix(server): revalidate invite token inside consume tx to prevent toctou over-use`
+  - Good: `fix(server): close invite-link race that let groups exceed max-uses`
+  - Bad: `perf(server): hoist heartbeat payload const + abort ping on disconnect`
+  - Good: `perf(server): trim per-WS heartbeat allocation and stale-task overhead`
+
+- **Drop the internal vocabulary** users don't have:
+  - Avoid: `toctou`, `codegen`, `cte`, `riverpod`, `provider`, `mixin`, `hook`, `dart format`, `clippy`, `lefthook`, `valuenotifier`, `widget tree`, `ledger`, `fanout`, `dedupe`.
+  - When the mechanism is unavoidable (e.g. you literally split a file), say so plainly: `refactor(client): split chat panel into smaller widgets`.
+
+- **PR titles especially** become the headline of the release-notes section for that change. Treat the PR title as marketing copy, not a code summary:
+  - Internal: `fix(server): backend audit batch — multi-device delivery, invite toctou, mention fanout (#829)`
+  - Release-quality: `Fix message delivery to offline phones and tighten group-invite limits (#829)`
+
+- **Skip the changelog for noise**: `chore(deps)`, `ci(...)`, `build(...)`, `docs(...)` commits do not need user-facing language — they're naturally filtered out of the modal by `sanitizeReleaseBody` in `apps/client/lib/src/providers/update_provider.dart` (Dependabot bump URLs, `Co-Authored-By`, the auto-generated Full Changelog trailer all get stripped). Write these for fellow contributors.
+
+- **Group the impact in PR bodies**. When a PR bundles several slices, the PR body becomes the body of the release-notes section. Lead with a 1-2 sentence summary that describes what the user gets, then list bullets grouped as `New`, `Improved`, `Fixed`, `Behind the scenes`. The "Behind the scenes" group is where refactors / test additions / build changes go — they can stay technical because the section header pre-frames them.
+
+- **Reference issues** with `(#N)` so the modal links back, but don't lead the subject with the issue number.
+
+When in doubt: read the subject aloud as if you were narrating an app update to a non-technical friend. If it sounds like API docs, rewrite.
 
 ## Project Commands
 
