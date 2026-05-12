@@ -31,6 +31,7 @@ import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
 import '../theme/responsive.dart';
 import '../utils/clipboard_image_helper.dart';
+import 'chat_input_controller.dart';
 import 'chat_input_bar/attach_file_button.dart';
 import 'chat_input_bar/attach_option.dart';
 import 'chat_input_bar/media_marker_helpers.dart';
@@ -89,8 +90,14 @@ class ChatInputBar extends ConsumerStatefulWidget {
 }
 
 class ChatInputBarState extends ConsumerState<ChatInputBar> {
-  final _messageController = TextEditingController();
-  final _inputFocusNode = FocusNode();
+  // The text composer, focus node, edit-message state, and (in a later
+  // slice) mention controller live on [_controller]. Forwarders below
+  // preserve the existing `_messageController` / `_inputFocusNode` /
+  // `_editingMessage` call sites so the file diff stays focused on state
+  // ownership and the `GlobalKey<ChatInputBarState>` API contract.
+  late final ChatInputController _controller;
+  TextEditingController get _messageController => _controller.text;
+  FocusNode get _inputFocusNode => _controller.focus;
 
   bool _isTextEmpty = true;
   bool _showMediaPicker = false;
@@ -118,14 +125,16 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // File picker guard
   bool _isPickingFile = false;
 
-  // Edit mode state
-  ChatMessage? _editingMessage;
-  bool get _isEditing => _editingMessage != null;
+  // Edit mode state — lives on [_controller]. The widget's `_editingMessage`
+  // setter funnels through `_controller.enterEditMode` / `exitEditMode` so
+  // the notifier-fire order stays consistent.
+  ChatMessage? get _editingMessage => _controller.editingMessage;
+  bool get _isEditing => _controller.isEditing;
 
   // Mention autocomplete state — owned by a controller so the logic is
-  // unit-testable without pumping the whole composer (#513).
-  final MentionComposerController _mentionController =
-      MentionComposerController();
+  // unit-testable without pumping the whole composer (#513). Composed
+  // (not inherited) by [_controller] so its dispose hook is wired through.
+  MentionComposerController get _mentionController => _controller.mention;
 
   // Pending attachments staged for the current send. Single-pick uses one
   // entry (with the caption-and-send flow); multi-pick stages all picked
@@ -162,6 +171,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   @override
   void initState() {
     super.initState();
+    _controller = ChatInputController();
     _messageController.addListener(_onTextChanged);
     _mentionController.addListener(_onMentionChanged);
     _loadDraft(widget.conversation.id);
@@ -186,7 +196,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       // leaking notifiers for the rest.
       _clearAllPendingAttachments();
       _messageController.clear();
-      _editingMessage = null;
+      _controller.exitEditMode();
       _isTextEmpty = true;
       _showMediaPicker = false;
       _showInlinePicker = false;
@@ -204,10 +214,10 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _recordingTimer?.cancel();
     _recorder.dispose();
     _messageController.removeListener(_onTextChanged);
-    _messageController.dispose();
     _mentionController.removeListener(_onMentionChanged);
-    _mentionController.dispose();
-    _inputFocusNode.dispose();
+    // [_controller.dispose] handles text controller + focus node + mention
+    // controller dispose so their order stays in one place (#513).
+    _controller.dispose();
     // Release every staged attachment's ValueNotifier (#623). Calling
     // setState here would be unsafe during dispose; just walk the list
     // and dispose each one directly.
@@ -227,8 +237,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     // Clear any active reply — editing and replying are mutually exclusive.
     ref.read(chatProvider.notifier).clearReplyTo();
     setState(() {
-      _editingMessage = message;
-      _messageController.text = message.content;
+      _controller.enterEditMode(message);
       _isTextEmpty = false;
     });
     _inputFocusNode.requestFocus();
@@ -930,7 +939,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _draftSaveTimer?.cancel();
     _suppressDraftSave = true;
     setState(() {
-      _editingMessage = null;
+      _controller.exitEditMode();
       _messageController.clear();
       _isTextEmpty = true;
     });
