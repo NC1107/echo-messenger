@@ -30,9 +30,12 @@ class AuthVersionFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appLine = Text(
-      'Echo v$appVersion',
+      'v$appVersion',
       textAlign: TextAlign.center,
-      style: TextStyle(color: context.textMuted, fontSize: 11),
+      style: TextStyle(
+        color: context.textMuted.withValues(alpha: 0.5),
+        fontSize: 10,
+      ),
     );
     if (!kDebugMode) return appLine;
     return Column(

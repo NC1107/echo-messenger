@@ -382,6 +382,20 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
               ),
             ),
           ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 16,
+            child: Center(
+              child: Text(
+                'v$appVersion',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: context.textMuted.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
