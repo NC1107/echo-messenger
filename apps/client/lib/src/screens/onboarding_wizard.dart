@@ -600,26 +600,28 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   Widget _buildBottomControls(BuildContext context) {
     return Column(
       children: [
-        // Dot indicators
+        // Page-indicator dots: active dot expands into an 18×6 accent pill,
+        // inactive dots stay as 6×6 muted circles. 6px gap between dots,
+        // 200ms ease.
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(3, (i) {
             final isActive = i == _currentPage;
             return AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              width: isActive ? 24 : 8,
-              height: 8,
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: isActive ? 18 : 6,
+              height: 6,
               decoration: BoxDecoration(
                 color: isActive
                     ? context.accent
-                    : context.textMuted.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(4),
+                    : context.textMuted.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(3),
               ),
             );
           }),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
 
         // Buttons
         Builder(
