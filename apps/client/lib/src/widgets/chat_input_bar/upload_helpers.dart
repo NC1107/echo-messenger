@@ -10,6 +10,26 @@ library;
 /// Default MIME subtype when we can't infer the file type.
 const kOctetStream = 'octet-stream';
 
+/// Extension → `[type, subtype]` map used by every attachment path
+/// (file picker, image picker, camera, clipboard paste, drag-and-drop).
+/// Unknown extensions fall back to `['application', kOctetStream]`.
+const kMimeTypes = <String, List<String>>{
+  'jpg': ['image', 'jpeg'],
+  'jpeg': ['image', 'jpeg'],
+  'png': ['image', 'png'],
+  'gif': ['image', 'gif'],
+  'webp': ['image', 'webp'],
+  'mp4': ['video', 'mp4'],
+  'mov': ['video', 'quicktime'],
+  'webm': ['video', 'webm'],
+  'pdf': ['application', 'pdf'],
+  'mp3': ['audio', 'mpeg'],
+  'ogg': ['audio', 'ogg'],
+  'wav': ['audio', 'wav'],
+  'm4a': ['audio', 'mp4'],
+  'aac': ['audio', 'aac'],
+};
+
 /// Mirror of `MAX_FILE_SIZE` in `apps/server/src/routes/media.rs`. Both must
 /// be bumped together. Cloudflare Free also caps request bodies at 100 MB,
 /// so going higher than this without proxy work will 502 on prod.

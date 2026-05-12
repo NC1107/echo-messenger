@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show File;
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:path_provider/path_provider.dart';
@@ -31,7 +30,9 @@ import '../theme/echo_theme.dart';
 import '../theme/motion_tokens.dart';
 import '../theme/responsive.dart';
 import '../utils/clipboard_image_helper.dart';
+import 'chat_input_controller.dart';
 import 'chat_input_bar/attach_file_button.dart';
+import 'chat_input_bar/file_pickers.dart' as pickers;
 import 'chat_input_bar/attach_option.dart';
 import 'chat_input_bar/media_marker_helpers.dart';
 import 'chat_input_bar/media_picker_toggle.dart';
@@ -47,14 +48,7 @@ import 'input/reply_preview_bar.dart';
 import 'media_picker_panel.dart';
 import 'mobile_media_picker_panel.dart';
 
-// Upload constants + pure-Dart helpers (kOctetStream, kMaxUploadBytes,
-// genericFilename, formatBytes) live in chat_input_bar/upload_helpers.dart.
-// Marker / MIME helpers live in chat_input_bar/media_marker_helpers.dart.
-// Local alias preserves the `_kImageGif` symbol used at three call sites
-// in this file without touching them.
-const _kImageGif = kImageGifMimeType;
-
-/// Extracted chat input bar from ChatPanel (~850 lines).
+/// Extracted chat input bar from ChatPanel.
 ///
 /// Manages:
 /// - Text composition with mention autocomplete
@@ -89,8 +83,14 @@ class ChatInputBar extends ConsumerStatefulWidget {
 }
 
 class ChatInputBarState extends ConsumerState<ChatInputBar> {
-  final _messageController = TextEditingController();
-  final _inputFocusNode = FocusNode();
+  // The text composer, focus node, edit-message state, and (in a later
+  // slice) mention controller live on [_controller]. Forwarders below
+  // preserve the existing `_messageController` / `_inputFocusNode` /
+  // `_editingMessage` call sites so the file diff stays focused on state
+  // ownership and the `GlobalKey<ChatInputBarState>` API contract.
+  late final ChatInputController _controller;
+  TextEditingController get _messageController => _controller.text;
+  FocusNode get _inputFocusNode => _controller.focus;
 
   bool _isTextEmpty = true;
   bool _showMediaPicker = false;
@@ -118,40 +118,38 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   // File picker guard
   bool _isPickingFile = false;
 
-  // Edit mode state
-  ChatMessage? _editingMessage;
-  bool get _isEditing => _editingMessage != null;
+  // Edit mode state — lives on [_controller]. The widget's `_editingMessage`
+  // setter funnels through `_controller.enterEditMode` / `exitEditMode` so
+  // the notifier-fire order stays consistent.
+  ChatMessage? get _editingMessage => _controller.editingMessage;
+  bool get _isEditing => _controller.isEditing;
 
   // Mention autocomplete state — owned by a controller so the logic is
-  // unit-testable without pumping the whole composer (#513).
-  final MentionComposerController _mentionController =
-      MentionComposerController();
+  // unit-testable without pumping the whole composer (#513). Composed
+  // (not inherited) by [_controller] so its dispose hook is wired through.
+  MentionComposerController get _mentionController => _controller.mention;
 
-  // Pending attachments staged for the current send. Single-pick uses one
-  // entry (with the caption-and-send flow); multi-pick stages all picked
-  // files here so the user can review, cancel individual files, and watch
-  // progress before sending. Each entry carries its own ValueNotifier for
-  // upload progress so chip rebuilds don't ripple through the whole bar.
-  final List<PendingAttachment> _pendingAttachments = [];
-
-  bool get _hasPendingAttachment => _pendingAttachments.isNotEmpty;
+  // Pending attachments + voice recording state live on [_controller].
+  // Forwarders preserve the existing `_pendingAttachments` / `_isRecording`
+  // / `_recorder` call sites.
+  List<PendingAttachment> get _pendingAttachments =>
+      _controller.pendingAttachments;
+  bool get _hasPendingAttachment => _controller.hasPendingAttachment;
   bool get _isAnyPendingAttachmentUploading =>
-      _pendingAttachments.any((a) => a.isUploading);
+      _controller.isAnyPendingAttachmentUploading;
   bool get _allPendingAttachmentsReady =>
-      _pendingAttachments.isNotEmpty &&
-      _pendingAttachments.every((a) => a.uploadedUrl != null);
+      _controller.allPendingAttachmentsReady;
 
-  // Voice recording state
-  final AudioRecorder _recorder = AudioRecorder();
-  bool _isRecording = false;
-  DateTime? _recordingStartTime;
-  Timer? _recordingTimer;
-  Duration _recordingDuration = Duration.zero;
-  final List<double> _recordingAmplitudes = [];
-
-  // Debounce for search (used by _detectMention indirectly via parent, but
-  // kept here to match the cancel contract in dispose/didUpdateWidget).
-  Timer? _searchDebounce;
+  AudioRecorder get _recorder => _controller.recorder;
+  bool get _isRecording => _controller.isRecording;
+  set _isRecording(bool v) => _controller.isRecording = v;
+  DateTime? get _recordingStartTime => _controller.recordingStartTime;
+  set _recordingStartTime(DateTime? v) => _controller.recordingStartTime = v;
+  Timer? get _recordingTimer => _controller.recordingTimer;
+  set _recordingTimer(Timer? v) => _controller.recordingTimer = v;
+  Duration get _recordingDuration => _controller.recordingDuration;
+  set _recordingDuration(Duration v) => _controller.recordingDuration = v;
+  List<double> get _recordingAmplitudes => _controller.recordingAmplitudes;
 
   // Draft auto-save
   static const _draftKeyPrefix = 'chat_draft_';
@@ -162,6 +160,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   @override
   void initState() {
     super.initState();
+    _controller = ChatInputController();
     _messageController.addListener(_onTextChanged);
     _mentionController.addListener(_onMentionChanged);
     _loadDraft(widget.conversation.id);
@@ -180,13 +179,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
       _draftSaveTimer?.cancel();
 
       _mentionController.dismiss();
-      _searchDebounce?.cancel();
       // Release every staged attachment's ValueNotifier — switching
       // conversations was previously only releasing the last one (#623),
       // leaking notifiers for the rest.
       _clearAllPendingAttachments();
       _messageController.clear();
-      _editingMessage = null;
+      _controller.exitEditMode();
       _isTextEmpty = true;
       _showMediaPicker = false;
       _showInlinePicker = false;
@@ -200,22 +198,12 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
   @override
   void dispose() {
     _draftSaveTimer?.cancel();
-    _searchDebounce?.cancel();
-    _recordingTimer?.cancel();
-    _recorder.dispose();
     _messageController.removeListener(_onTextChanged);
-    _messageController.dispose();
     _mentionController.removeListener(_onMentionChanged);
-    _mentionController.dispose();
-    _inputFocusNode.dispose();
-    // Release every staged attachment's ValueNotifier (#623). Calling
-    // setState here would be unsafe during dispose; just walk the list
-    // and dispose each one directly.
-    for (final att in _pendingAttachments) {
-      att.cancelled = true;
-      att.dispose();
-    }
-    _pendingAttachments.clear();
+    // [_controller.dispose] handles text controller + focus node + mention
+    // controller + voice ticker + recorder + pending attachments dispose
+    // so the cancel-then-tear-down order stays in one place (#513, #623).
+    _controller.dispose();
     super.dispose();
   }
 
@@ -227,8 +215,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     // Clear any active reply — editing and replying are mutually exclusive.
     ref.read(chatProvider.notifier).clearReplyTo();
     setState(() {
-      _editingMessage = message;
-      _messageController.text = message.content;
+      _controller.enterEditMode(message);
       _isTextEmpty = false;
     });
     _inputFocusNode.requestFocus();
@@ -282,23 +269,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     final ext = fileName.contains('.')
         ? fileName.split('.').last.toLowerCase()
         : '';
-    final mimeTypes = <String, List<String>>{
-      'jpg': ['image', 'jpeg'],
-      'jpeg': ['image', 'jpeg'],
-      'png': ['image', 'png'],
-      'gif': ['image', 'gif'],
-      'webp': ['image', 'webp'],
-      'mp4': ['video', 'mp4'],
-      'mov': ['video', 'quicktime'],
-      'webm': ['video', 'webm'],
-      'pdf': ['application', 'pdf'],
-      'mp3': ['audio', 'mpeg'],
-      'ogg': ['audio', 'ogg'],
-      'wav': ['audio', 'wav'],
-      'm4a': ['audio', 'mp4'],
-      'aac': ['audio', 'aac'],
-    };
-    final mime = mimeTypes[ext] ?? ['application', kOctetStream];
+    final mime = kMimeTypes[ext] ?? ['application', kOctetStream];
 
     _setPendingAttachment(
       bytes: fileBytes,
@@ -772,27 +743,6 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _onInputChanged(_messageController.text);
   }
 
-  // ---------------------------------------------------------------------------
-  // File mime resolution (shared between pickers)
-  // ---------------------------------------------------------------------------
-
-  static const _kMimeTypes = <String, List<String>>{
-    'jpg': ['image', 'jpeg'],
-    'jpeg': ['image', 'jpeg'],
-    'png': ['image', 'png'],
-    'gif': ['image', 'gif'],
-    'webp': ['image', 'webp'],
-    'mp4': ['video', 'mp4'],
-    'mov': ['video', 'quicktime'],
-    'webm': ['video', 'webm'],
-    'pdf': ['application', 'pdf'],
-    'mp3': ['audio', 'mpeg'],
-    'ogg': ['audio', 'ogg'],
-    'wav': ['audio', 'wav'],
-    'm4a': ['audio', 'mp4'],
-    'aac': ['audio', 'aac'],
-  };
-
   /// Upload [bytes] and immediately send the result as a message.
   /// Used for the 2nd..Nth files when multiple are selected at once.
   Future<void> _sendFileImmediately({
@@ -813,114 +763,25 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     await _doSend(marker);
   }
 
-  Future<void> _pickFile() async {
-    if (_isPickingFile) return;
-    _isPickingFile = true;
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.any,
-        allowMultiple: true,
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty) return;
-      if (!mounted) return;
-
-      // Single pick → preview flow (caption + send). Multi pick → send all
-      // immediately as separate messages; mixing the two creates races where
-      // the user may interact with the pending preview while the rest are
-      // still uploading in the background.
-      final isMulti = result.files.length > 1;
-      if (isMulti) {
-        ToastService.show(
-          context,
-          'Sending ${result.files.length} files...',
-          type: ToastType.info,
-        );
-      }
-
-      var sentCount = 0;
-      for (final file in result.files) {
-        if (file.size > kMaxUploadBytes) {
-          if (mounted) {
-            ToastService.show(
-              context,
-              '${file.name} is ${formatBytes(file.size)} — limit is '
-              '${formatBytes(kMaxUploadBytes)}',
-              type: ToastType.error,
-            );
-          }
-          continue;
-        }
-
-        // On mobile, withData:true may still yield null bytes for larger files
-        // or certain content URIs. Fall back to reading from the file path.
-        Uint8List? bytes = file.bytes;
-        if (bytes == null && file.path != null && !kIsWeb) {
-          try {
-            bytes = await File(file.path!).readAsBytes();
-          } catch (e) {
-            debugPrint('[ChatInput] Failed to read file from path: $e');
-          }
-        }
-
-        if (bytes == null) {
-          if (mounted) {
-            ToastService.show(
-              context,
-              'Could not read file: ${file.name}',
-              type: ToastType.error,
-            );
-          }
-          continue;
-        }
-
-        final ext = (file.extension ?? '').toLowerCase();
-        final mime = _kMimeTypes[ext] ?? ['application', kOctetStream];
-        final mimeType = '${mime[0]}/${mime[1]}';
-
-        if (isMulti) {
-          try {
-            await _sendFileImmediately(
-              bytes: bytes,
-              fileName: file.name,
-              mimeType: mimeType,
-              ext: ext,
-            );
-            sentCount++;
-          } catch (e) {
-            debugPrint('[ChatInput] Send failed for ${file.name}: $e');
-            if (mounted) {
-              ToastService.show(
-                context,
-                'Failed to send ${file.name}',
-                type: ToastType.error,
-              );
-            }
-          }
-        } else {
-          _setPendingAttachment(
-            bytes: bytes,
-            fileName: file.name,
-            mimeType: mimeType,
-            ext: ext,
-          );
-        }
-      }
-      if (isMulti && mounted && sentCount < result.files.length) {
-        final failed = result.files.length - sentCount;
-        ToastService.show(
-          context,
-          '$failed of ${result.files.length} failed to send',
-          type: ToastType.error,
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ToastService.show(context, 'File pick error: $e', type: ToastType.error);
-    } finally {
-      _isPickingFile = false;
-    }
-  }
+  Future<void> _pickFile() => pickers.pickFile(
+    context: context,
+    mounted: () => mounted,
+    isPicking: () => _isPickingFile,
+    setIsPicking: (v) => _isPickingFile = v,
+    stage:
+        ({
+          required List<int> bytes,
+          required String fileName,
+          required String mimeType,
+          required String ext,
+        }) => _setPendingAttachment(
+          bytes: bytes,
+          fileName: fileName,
+          mimeType: mimeType,
+          ext: ext,
+        ),
+    sendImmediately: _sendFileImmediately,
+  );
 
   // ---------------------------------------------------------------------------
   // Edit mode
@@ -930,7 +791,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     _draftSaveTimer?.cancel();
     _suppressDraftSave = true;
     setState(() {
-      _editingMessage = null;
+      _controller.exitEditMode();
       _messageController.clear();
       _isTextEmpty = true;
     });
@@ -1227,130 +1088,44 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
     );
   }
 
-  Future<void> _pickImageFromGallery() async {
-    if (_isPickingFile) return;
-    _isPickingFile = true;
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.media,
-        allowMultiple: true,
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty) return;
-      if (!mounted) return;
+  Future<void> _pickImageFromGallery() => pickers.pickImageFromGallery(
+    context: context,
+    mounted: () => mounted,
+    isPicking: () => _isPickingFile,
+    setIsPicking: (v) => _isPickingFile = v,
+    stage:
+        ({
+          required List<int> bytes,
+          required String fileName,
+          required String mimeType,
+          required String ext,
+        }) => _setPendingAttachment(
+          bytes: bytes,
+          fileName: fileName,
+          mimeType: mimeType,
+          ext: ext,
+        ),
+    sendImmediately: _sendFileImmediately,
+  );
 
-      final isMulti = result.files.length > 1;
-      if (isMulti) {
-        ToastService.show(
-          context,
-          'Sending ${result.files.length} files...',
-          type: ToastType.info,
-        );
-      }
-
-      var sentCount = 0;
-      for (final file in result.files) {
-        if (file.size > kMaxUploadBytes) {
-          if (mounted) {
-            ToastService.show(
-              context,
-              '${file.name} is ${formatBytes(file.size)} — limit is '
-              '${formatBytes(kMaxUploadBytes)}',
-              type: ToastType.error,
-            );
-          }
-          continue;
-        }
-
-        Uint8List? bytes = file.bytes;
-        if (bytes == null && file.path != null && !kIsWeb) {
-          try {
-            bytes = await File(file.path!).readAsBytes();
-          } catch (_) {}
-        }
-        if (bytes == null) continue;
-
-        final ext = (file.extension ?? '').toLowerCase();
-        final mime = _kMimeTypes[ext] ?? ['application', kOctetStream];
-        final mimeType = '${mime[0]}/${mime[1]}';
-
-        if (isMulti) {
-          try {
-            await _sendFileImmediately(
-              bytes: bytes,
-              fileName: file.name,
-              mimeType: mimeType,
-              ext: ext,
-            );
-            sentCount++;
-          } catch (e) {
-            debugPrint('[ChatInput] Send failed for ${file.name}: $e');
-            if (mounted) {
-              ToastService.show(
-                context,
-                'Failed to send ${file.name}',
-                type: ToastType.error,
-              );
-            }
-          }
-        } else {
-          _setPendingAttachment(
-            bytes: bytes,
-            fileName: file.name,
-            mimeType: mimeType,
-            ext: ext,
-          );
-        }
-      }
-      if (isMulti && mounted && sentCount < result.files.length) {
-        final failed = result.files.length - sentCount;
-        ToastService.show(
-          context,
-          '$failed of ${result.files.length} failed to send',
-          type: ToastType.error,
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ToastService.show(context, 'Pick error: $e', type: ToastType.error);
-    } finally {
-      _isPickingFile = false;
-    }
-  }
-
-  Future<void> _pickImageFromCamera() async {
-    if (_isPickingFile) return;
-    _isPickingFile = true;
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
-        withData: true,
-      );
-      if (result == null || result.files.isEmpty) return;
-      if (!mounted) return;
-      final file = result.files.first;
-      Uint8List? bytes = file.bytes;
-      if (bytes == null && file.path != null && !kIsWeb) {
-        try {
-          bytes = await File(file.path!).readAsBytes();
-        } catch (_) {}
-      }
-      if (bytes == null) return;
-      final ext = (file.extension ?? 'jpg').toLowerCase();
-      _setPendingAttachment(
-        bytes: bytes,
-        fileName: file.name,
-        mimeType: 'image/${ext == 'jpg' ? 'jpeg' : ext}',
-        ext: ext,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ToastService.show(context, 'Camera error: $e', type: ToastType.error);
-    } finally {
-      _isPickingFile = false;
-    }
-  }
+  Future<void> _pickImageFromCamera() => pickers.pickImageFromCamera(
+    context: context,
+    mounted: () => mounted,
+    isPicking: () => _isPickingFile,
+    setIsPicking: (v) => _isPickingFile = v,
+    stage:
+        ({
+          required List<int> bytes,
+          required String fileName,
+          required String mimeType,
+          required String ext,
+        }) => _setPendingAttachment(
+          bytes: bytes,
+          fileName: fileName,
+          mimeType: mimeType,
+          ext: ext,
+        ),
+  );
 
   /// Toggles the inline (mobile) or overlay (desktop) media picker. Shared
   /// callback wired into [MediaPickerToggle] from `_buildInputRow`.
@@ -1808,7 +1583,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
         _setPendingExternalAttachment(
           url: gifUrl,
           fileName: 'gif',
-          mimeType: _kImageGif,
+          mimeType: kImageGifMimeType,
           ext: 'gif',
         );
       },
@@ -1965,7 +1740,7 @@ class ChatInputBarState extends ConsumerState<ChatInputBar> {
                             _setPendingExternalAttachment(
                               url: gifUrl,
                               fileName: 'gif',
-                              mimeType: _kImageGif,
+                              mimeType: kImageGifMimeType,
                               ext: 'gif',
                             );
                           },
