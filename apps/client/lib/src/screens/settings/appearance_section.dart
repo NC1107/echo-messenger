@@ -113,6 +113,9 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
   @override
   Widget build(BuildContext context) {
     final currentTheme = ref.watch(themeProvider);
+    // Card order (palette reduction 2026-05-11): Indigo, Graphite, Ember,
+    // Paper, Sakura, High contrast. System lives at the top as the "follow
+    // device" affordance and is not part of the six-palette set.
     const themeOptions = <_ThemeCardData>[
       _ThemeCardData(
         selection: AppThemeSelection.system,
@@ -123,26 +126,26 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
       _ThemeCardData(
         selection: AppThemeSelection.indigo,
         label: 'Indigo',
-        subtitle: 'Easy on the eyes',
+        subtitle: 'Default accent',
         preview: _darkPreview,
+      ),
+      _ThemeCardData(
+        selection: AppThemeSelection.graphite,
+        label: 'Graphite',
+        subtitle: 'Teal on cool black',
+        preview: _graphitePreview,
+      ),
+      _ThemeCardData(
+        selection: AppThemeSelection.ember,
+        label: 'Ember',
+        subtitle: 'Amber on warm black',
+        preview: _emberPreview,
       ),
       _ThemeCardData(
         selection: AppThemeSelection.paper,
         label: 'Paper',
         subtitle: 'Warm off-white',
         preview: _lightPreview,
-      ),
-      _ThemeCardData(
-        selection: AppThemeSelection.graphite,
-        label: 'Graphite',
-        subtitle: 'Teal accents',
-        preview: _graphitePreview,
-      ),
-      _ThemeCardData(
-        selection: AppThemeSelection.ember,
-        label: 'Ember',
-        subtitle: 'Amber accents',
-        preview: _emberPreview,
       ),
       _ThemeCardData(
         selection: AppThemeSelection.sakura,
