@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/saved_messages_service.dart';
 import '../theme/echo_theme.dart';
 import '../utils/time_utils.dart';
+import '../widgets/empty_state.dart';
 
 /// Displays all bookmarked messages in a scrollable list.
 ///
@@ -68,36 +69,10 @@ class _SavedMessagesScreenState extends State<SavedMessagesScreen> {
   }
 
   Widget _buildEmpty(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.bookmark_border_outlined,
-              size: 56,
-              color: context.textMuted,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No saved messages',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-                color: context.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Bookmark messages to access them later. '
-              'Long-press any message and tap Save.',
-              style: TextStyle(fontSize: 14, color: context.textMuted),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
+    return const EmptyState(
+      icon: Icons.bookmark_outline,
+      title: 'No saved messages',
+      body: 'Long-press any message and choose Save to bookmark it.',
     );
   }
 

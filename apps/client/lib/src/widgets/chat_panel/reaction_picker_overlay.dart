@@ -15,7 +15,8 @@ OverlayEntry buildReactionPickerOverlay({
   required void Function(String emoji, bool alreadyReacted) onToggleReaction,
   required VoidCallback onPickFromFull,
 }) {
-  const pickerWidth = 385.0; // wider to accommodate the "+" button
+  // 5 emojis × 40 (36 button + 4 margin) + 40 for "+" + 16 padding ≈ 256.
+  const pickerWidth = 280.0;
   const pickerHeight = 44.0;
   final screenWidth = MediaQuery.of(context).size.width;
 

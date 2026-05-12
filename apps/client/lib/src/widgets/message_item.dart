@@ -35,8 +35,10 @@ import 'message/sender_name_label.dart';
 import 'message/system_event_pill.dart';
 import 'message/youtube_embed.dart';
 
-/// Common emojis for the reaction picker.
-const reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👎', '🎉'];
+/// Default 5-emoji quick-react set shared by mobile long-press and desktop
+/// hover-action button. The "+" affordance to open the full picker is rendered
+/// separately by each surface, matching the design canvas.
+const reactionEmojis = ['👍', '❤️', '😂', '🔥', '🙏'];
 
 const _forwardedPrefix = '[Forwarded] ';
 
