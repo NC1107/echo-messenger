@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart'
     show Curves, ScrollController, WidgetsBinding;
@@ -59,16 +61,49 @@ class ChatPanelController extends ChangeNotifier {
   String cacheKeyFor(String conversationId) =>
       '$conversationId:${selectedTextChannelId ?? ""}';
 
+  // --- Unread boundary + new-messages pill (invariant #6) -----------------
+  //
+  // The unread boundary is captured ONCE per channel session (first time
+  // the conversation opens with `unreadCount > 0`, or the first time
+  // messages arrive after an empty channel open). `unreadBoundaryMessageId`
+  // gates that single-capture guard; resetting to `null` re-arms it. The
+  // widget resets these fields on conversation switch and on
+  // `onTextChannelChanged`.
+
+  String? unreadBoundaryMessageId;
+  int unreadBoundaryCount = 0;
+
+  /// True when a new message arrives while the user has scrolled up.
+  bool hasNewMessagesBelow = false;
+  int newMessagesBelowCount = 0;
+
+  // --- Floating date label state ------------------------------------------
+  //
+  // The pill shows the date of the topmost visible message and fades out 2s
+  // after the user stops scrolling. The timer is cancelled on conversation
+  // switch + dispose so it never fires after the widget is gone.
+
+  String? floatingDate;
+  bool floatingDateVisible = false;
+  Timer? floatingDateTimer;
+
   // --- Keyboard / near-bottom tracking (invariant #4) ----------------------
   //
-  // `wasNearBottom` is updated on every scroll event BEFORE the soft
-  // keyboard shrinks the viewport. `handleKeyboardScroll` reads it to decide
-  // whether to re-pin to the bottom when the keyboard opens/closes; using
-  // the live `isNearBottom()` after the resize is unreliable because the
+  // `wasNearBottom` (originally `_wasNearBottom` on `_ChatPanelState`) is
+  // updated on every scroll event BEFORE the soft keyboard shrinks the
+  // viewport. `handleKeyboardScroll` reads it to decide whether to re-pin
+  // to the bottom when the keyboard opens/closes; using the live
+  // `isNearBottom()` after the resize is unreliable because the
   // maxScrollExtent has already shifted.
 
   bool wasNearBottom = true;
   double lastKeyboardInset = 0;
+
+  @override
+  void dispose() {
+    floatingDateTimer?.cancel();
+    super.dispose();
+  }
 
   /// Wire in the [ScrollController] managed by the widget's `State`. The
   /// widget keeps ownership (creates + disposes); the controller only reads
@@ -226,7 +261,7 @@ class ChatPanelController extends ChangeNotifier {
 
   /// Apply channel + delete-for-me filters to a pre-fetched message list.
   /// Used by the build path so a `.select` on the per-conversation list ref
-  /// keeps unrelated conversations from rebuilding.
+  /// keeps unrelated conversations from rebuilding (PR #838 perf).
   List<ChatMessage> filterChannelAndDeleted(
     Conversation conv,
     List<ChatMessage> raw,

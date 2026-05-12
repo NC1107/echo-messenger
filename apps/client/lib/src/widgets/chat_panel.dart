@@ -123,10 +123,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   String? _activeVoiceChannelId;
 
   /// The message ID at which the "New Messages" divider should appear.
-  /// Set when opening a conversation with unread messages, cleared when
-  /// the unread count drops to 0.
-  String? _unreadBoundaryMessageId;
-  int _unreadBoundaryCount = 0;
+  /// Set when opening a conversation with unread messages, cleared when the
+  /// unread count drops to 0. Captured ONCE per channel session — see
+  /// `ChatPanelController.unreadBoundaryMessageId` (invariant #6).
+  String? get _unreadBoundaryMessageId => _controller.unreadBoundaryMessageId;
+  set _unreadBoundaryMessageId(String? v) =>
+      _controller.unreadBoundaryMessageId = v;
+  int get _unreadBoundaryCount => _controller.unreadBoundaryCount;
+  set _unreadBoundaryCount(int v) => _controller.unreadBoundaryCount = v;
 
   /// GlobalKeys for rendered message items, keyed by message ID.
   /// Used by [_scrollToMessage] for pixel-accurate scrolling (via
@@ -153,10 +157,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   /// correct bookmark icon without async round-trips.
   final Set<String> _savedIds = {};
 
-  /// Floating date label state
-  String? _floatingDate;
-  bool _floatingDateVisible = false;
-  Timer? _floatingDateTimer;
+  /// Floating date label state — owned by the controller so the 2s fade-out
+  /// timer is cancelled in one place (controller `dispose`).
+  String? get _floatingDate => _controller.floatingDate;
+  set _floatingDate(String? v) => _controller.floatingDate = v;
+  bool get _floatingDateVisible => _controller.floatingDateVisible;
+  set _floatingDateVisible(bool v) => _controller.floatingDateVisible = v;
+  Timer? get _floatingDateTimer => _controller.floatingDateTimer;
+  set _floatingDateTimer(Timer? v) => _controller.floatingDateTimer = v;
   // Tracks near-bottom state from the user's last scroll event, before any
   // viewport resize (keyboard open/close). Used in _handleKeyboardScroll so
   // we don't lose context when maxScrollExtent shifts under us. Lives on
@@ -166,8 +174,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   set _wasNearBottom(bool v) => _controller.wasNearBottom = v;
 
   /// True when a new message arrives while the user has scrolled up.
-  bool _hasNewMessagesBelow = false;
-  int _newMessagesBelowCount = 0;
+  /// Lives on the controller; the widget still drives `setState` via the
+  /// pill toggle so the new-messages-pill animates in/out at the same
+  /// frame the underlying state flips.
+  bool get _hasNewMessagesBelow => _controller.hasNewMessagesBelow;
+  set _hasNewMessagesBelow(bool v) => _controller.hasNewMessagesBelow = v;
+  int get _newMessagesBelowCount => _controller.newMessagesBelowCount;
+  set _newMessagesBelowCount(int v) => _controller.newMessagesBelowCount = v;
 
   /// Hidden Semantics live-region label for screen-reader announcements
   /// when peer messages arrive (#495). Empty until the first announcement,
@@ -1693,6 +1706,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     // flag for this channel — `messagesByConversation` keeps inner list
     // refs stable across copyWith for unaffected conversations, so adding
     // a message to conv B no longer rebuilds conv A's panel (#834 F6).
+    // PR #838 perf: keep this as .select
     final convMessages = ref.watch(
       chatProvider.select((s) => s.messagesByConversation[conv.id]),
     );
