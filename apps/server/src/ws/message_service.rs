@@ -448,11 +448,30 @@ pub(super) async fn store_and_confirm(
 
     // Store per-device ciphertexts if present. Per-user device IDs collide
     // across users, so each entry is keyed by (recipient_user_id, device_id).
+    //
+    // #829: drop ciphertext destined for recipients that have blocked the
+    // sender BEFORE writing to `message_device_contents`. The fanout path
+    // already filters blockers out of live delivery, but persisting their
+    // rows wastes storage and leaks ciphertext that should never be readable
+    // by anyone (blocked users never receive it, and a future audit-leak
+    // scenario would expose it for no benefit).
     if let Some(rdc) = recipient_device_contents {
+        let recipient_ids: Vec<Uuid> = rdc.keys().filter_map(|s| Uuid::parse_str(s).ok()).collect();
+        let blockers: Vec<Uuid> = if recipient_ids.is_empty() {
+            Vec::new()
+        } else {
+            db::contacts::get_blockers_of(&state.pool, &recipient_ids, sender_id)
+                .await
+                .unwrap_or_default()
+        };
+
         let entries: Vec<(Uuid, i32, &str)> = rdc
             .iter()
             .filter_map(|(uid_str, devices)| {
                 let recipient_id = Uuid::parse_str(uid_str).ok()?;
+                if blockers.contains(&recipient_id) {
+                    return None;
+                }
                 Some((recipient_id, devices))
             })
             .flat_map(|(recipient_id, devices)| {
