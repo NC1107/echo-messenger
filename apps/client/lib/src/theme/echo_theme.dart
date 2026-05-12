@@ -69,49 +69,61 @@ class EchoTheme {
         ? ThemeData.dark().textTheme
         : ThemeData.light().textTheme;
     final baseTextTheme = GoogleFonts.interTextTheme(base);
+    // Route any glyph not present in Inter (notably emoji codepoints) to the
+    // bundled NotoEmoji font. Without this fallback, AppImage builds render
+    // tofu boxes when the host system fonts are missing.
+    const emojiFallback = ['NotoEmoji'];
     return baseTextTheme.copyWith(
       headlineLarge: baseTextTheme.headlineLarge?.copyWith(
         fontSize: 24,
         fontWeight: FontWeight.w700,
         letterSpacing: -0.5,
         color: primaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
       headlineMedium: baseTextTheme.headlineMedium?.copyWith(
         fontSize: 22,
         fontWeight: FontWeight.w700,
         color: primaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
       titleLarge: baseTextTheme.titleLarge?.copyWith(
         fontSize: 16,
         fontWeight: FontWeight.w600,
         color: primaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
       titleMedium: baseTextTheme.titleMedium?.copyWith(
         fontSize: 14,
         fontWeight: FontWeight.w600,
         color: primaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
       bodyLarge: baseTextTheme.bodyLarge?.copyWith(
         fontSize: 15,
         fontWeight: FontWeight.w400,
         height: 1.47,
         color: primaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
       bodyMedium: baseTextTheme.bodyMedium?.copyWith(
         fontSize: 13,
         fontWeight: FontWeight.w400,
         color: secondaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
       bodySmall: baseTextTheme.bodySmall?.copyWith(
         fontSize: 12,
         fontWeight: FontWeight.w400,
         color: mutedColor,
+        fontFamilyFallback: emojiFallback,
       ),
       labelLarge: baseTextTheme.labelLarge?.copyWith(
         fontSize: 11,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.5,
         color: secondaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
     );
   }
