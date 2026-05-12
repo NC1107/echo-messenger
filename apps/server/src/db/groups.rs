@@ -927,3 +927,25 @@ pub async fn accept_invite_token(
         AcceptInviteOutcome::AlreadyMember
     })
 }
+
+/// Return the IDs of every group conversation whose only members are soft-removed.
+///
+/// #829: the historical query used `NOT IN (SELECT DISTINCT conversation_id
+/// FROM conversation_members)` without filtering `is_removed`, so a group
+/// whose only members were tombstones never qualified for reaping. The
+/// `NOT EXISTS` form below excludes soft-removed rows explicitly and is
+/// also a cleaner planner shape on large tables.
+pub async fn find_empty_group_ids(pool: &PgPool) -> Result<Vec<Uuid>, sqlx::Error> {
+    let rows: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT c.id FROM conversations c \
+         WHERE c.kind = 'group' \
+           AND NOT EXISTS ( \
+               SELECT 1 FROM conversation_members cm \
+               WHERE cm.conversation_id = c.id \
+                 AND cm.is_removed = false \
+           )",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
+}
