@@ -36,28 +36,40 @@ class AppTheme extends _$AppTheme {
     return AppThemeSelection.indigo;
   }
 
+  /// Legacy-string migration table. The 9 -> 6 palette reduction renamed
+  /// `dark` -> `indigo`, `light` -> `paper`, collapsed `highContrast{Dark,Light}`
+  /// into a single `highContrast`, and removed `neon` / `aurora`. Any value
+  /// not in [AppThemeSelection.values] by name is migrated silently here.
+  static AppThemeSelection _migrateLegacy(String? value) => switch (value) {
+    'paper' => AppThemeSelection.paper,
+    'indigo' => AppThemeSelection.indigo,
+    'system' => AppThemeSelection.system,
+    'graphite' => AppThemeSelection.graphite,
+    'ember' => AppThemeSelection.ember,
+    'sakura' => AppThemeSelection.sakura,
+    'highContrast' => AppThemeSelection.highContrast,
+    // Legacy renames + cuts (silent migration).
+    'dark' => AppThemeSelection.indigo,
+    'light' => AppThemeSelection.paper,
+    'aurora' => AppThemeSelection.indigo,
+    'neon' => AppThemeSelection.highContrast,
+    'highContrastDark' => AppThemeSelection.highContrast,
+    'highContrastLight' => AppThemeSelection.paper,
+    // Unknown / null -> default.
+    _ => AppThemeSelection.indigo,
+  };
+
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getString(_kThemeKey);
-    state = switch (value) {
-      'paper' => AppThemeSelection.paper,
-      'light' =>
-        AppThemeSelection.paper, // legacy alias for migration (slice 6)
-      'indigo' => AppThemeSelection.indigo,
-      'dark' =>
-        AppThemeSelection.indigo, // legacy alias for migration (slice 6)
-      'system' => AppThemeSelection.system,
-      'graphite' => AppThemeSelection.graphite,
-      'ember' => AppThemeSelection.ember,
-      'neon' => AppThemeSelection.highContrast, // legacy alias (slice 6)
-      'sakura' => AppThemeSelection.sakura,
-      'aurora' => AppThemeSelection.indigo, // legacy alias (slice 6)
-      'highContrast' => AppThemeSelection.highContrast,
-      'highContrastDark' =>
-        AppThemeSelection.highContrast, // legacy alias (slice 6)
-      'highContrastLight' => AppThemeSelection.paper, // legacy alias (slice 6)
-      _ => AppThemeSelection.indigo,
-    };
+    final migrated = _migrateLegacy(value);
+    state = migrated;
+    // One-shot write-back: if the persisted string isn't already the new
+    // canonical name, normalise it so subsequent loads skip the migration
+    // path and a manual prefs-file inspection shows the new value.
+    if (value != migrated.name) {
+      await prefs.setString(_kThemeKey, migrated.name);
+    }
   }
 
   Future<void> setTheme(AppThemeSelection selection) async {
