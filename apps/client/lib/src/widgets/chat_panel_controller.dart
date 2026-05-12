@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart' show ScrollController;
+import 'package:flutter/widgets.dart'
+    show Curves, ScrollController, WidgetsBinding;
 
 import '../models/chat_message.dart';
 import '../models/conversation.dart';
@@ -11,9 +12,13 @@ import '../providers/chat_provider.dart';
 /// widget's `State` can focus on the build tree. Receives data via method
 /// args; it never holds a `WidgetRef` or calls `ref.watch/read/select`.
 ///
-/// Slice 1 (#512): pure helpers only — `isNearBottom`,
-/// `filterChannelAndDeleted`, `resolveMessages`. Subsequent slices move
-/// scroll, pagination, and unread-boundary state.
+/// Slice 1 (#512): pure helpers — `isNearBottom`, `filterChannelAndDeleted`,
+/// `resolveMessages`.
+/// Slice 2 (#512): scroll-position cache, channel-scoped loading keys,
+/// pagination cursor helper, keyboard-resize state, restore-with-retry, and
+/// scroll-to-bottom. Riverpod-driven calls (`loadHistory`,
+/// `loadOlderMessages`, `onTextChannelChanged`) stay in the widget because
+/// they need `WidgetRef`; the channel-scoped keys they consult live here.
 class ChatPanelController extends ChangeNotifier {
   ScrollController? _scrollController;
 
@@ -22,6 +27,48 @@ class ChatPanelController extends ChangeNotifier {
   /// [filterChannelAndDeleted]. Will move into the controller in a later
   /// slice once the SharedPreferences load path migrates.
   Set<String> deletedForMeIds = const {};
+
+  // --- Channel-scoped loading keys (invariant #3) ---------------------------
+  //
+  // `loadedHistoryKey` and `loadedChannelsConversationId` dedupe per
+  // (conversationId, channelId). `autoScrollConversationKey` gates the
+  // `ref.listen<ChatState>(...)` wiring so it isn't installed twice per
+  // visible channel.
+
+  String? selectedTextChannelId;
+  String? loadedHistoryKey;
+  String? loadedChannelsConversationId;
+  String? autoScrollConversationKey;
+
+  // --- Per-channel scroll position cache (invariant #1, #5) ----------------
+  //
+  // Keyed by `${conversationId}:${channelId ?? ""}` so switching text
+  // channels within a group preserves separate scroll positions. Capped at
+  // [kMaxScrollPositions] entries to prevent unbounded growth; oldest entries
+  // are evicted when over the limit (eviction policy is invariant #5).
+
+  static const int kMaxScrollPositions = 50;
+  final Map<String, double> scrollPositions = {};
+
+  void evictScrollPositions() {
+    while (scrollPositions.length > kMaxScrollPositions) {
+      scrollPositions.remove(scrollPositions.keys.first);
+    }
+  }
+
+  String cacheKeyFor(String conversationId) =>
+      '$conversationId:${selectedTextChannelId ?? ""}';
+
+  // --- Keyboard / near-bottom tracking (invariant #4) ----------------------
+  //
+  // `wasNearBottom` is updated on every scroll event BEFORE the soft
+  // keyboard shrinks the viewport. `handleKeyboardScroll` reads it to decide
+  // whether to re-pin to the bottom when the keyboard opens/closes; using
+  // the live `isNearBottom()` after the resize is unreliable because the
+  // maxScrollExtent has already shifted.
+
+  bool wasNearBottom = true;
+  double lastKeyboardInset = 0;
 
   /// Wire in the [ScrollController] managed by the widget's `State`. The
   /// widget keeps ownership (creates + disposes); the controller only reads
@@ -38,6 +85,121 @@ class ChatPanelController extends ChangeNotifier {
     if (c == null || !c.hasClients) return true;
     final pos = c.position;
     return pos.maxScrollExtent - pos.pixels < 150;
+  }
+
+  /// Pick the oldest non-system message as the pagination cursor.
+  ///
+  /// System events (`member_joined`, `voice_session_started`, ...) live at
+  /// the conversation root with `channelId == null` and surface in every
+  /// channel view, but their timestamps predate the actual channel messages
+  /// — they're created when the group is born. If we use them as the
+  /// pagination cursor, the server's `?channel_id=X&before=<system_ts>`
+  /// query (correctly) returns zero rows, `hasMore` flips to false, and
+  /// the message list dead-locks at the first page (#prod-2026-05-08).
+  /// Falls back to the first message when none is non-system.
+  ChatMessage paginationCursor(List<ChatMessage> messages) {
+    return messages.firstWhere(
+      (m) => !m.isSystemEvent,
+      orElse: () => messages.first,
+    );
+  }
+
+  /// Re-jump to the cached offset across a few frames so we don't land at the
+  /// bottom of an empty list while message history is still loading async (#563).
+  /// Stops retrying once `maxScrollExtent >= cached`, or after [retries] frames.
+  void restoreCachedOffsetWithRetry(double cached, {int retries = 3}) {
+    final c = _scrollController;
+    if (c == null || !c.hasClients) return;
+    final max = c.position.maxScrollExtent;
+    c.jumpTo(cached.clamp(0, max));
+    if (max < cached && retries > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        restoreCachedOffsetWithRetry(cached, retries: retries - 1);
+      });
+    }
+  }
+
+  /// Update the per-channel scroll cache and run [evictScrollPositions].
+  void cacheCurrentOffset(String conversationId) {
+    final c = _scrollController;
+    if (c == null || !c.hasClients) return;
+    scrollPositions[cacheKeyFor(conversationId)] = c.offset;
+    evictScrollPositions();
+  }
+
+  /// Drop cached offset for [conversationId] under the current channel.
+  void clearCachedOffset(String conversationId) {
+    scrollPositions.remove(cacheKeyFor(conversationId));
+  }
+
+  /// Animate or jump the scroll controller to its maxScrollExtent and
+  /// retry-settle so new content (e.g. an image that just resolved) doesn't
+  /// leave the user a few pixels short. Returns a future that completes
+  /// once the settle pass is finished. [onSettleComplete] runs on the same
+  /// frame the cache is updated; the widget passes a callback to clear its
+  /// `_hasNewMessagesBelow` pill.
+  ///
+  /// Pure mechanics — no `ref` here. The widget invokes this from a
+  /// `WidgetsBinding.instance.addPostFrameCallback` wrapper so the pill
+  /// `setState` happens in the correct phase.
+  void scrollToBottom({
+    required String? conversationId,
+    bool animated = true,
+    int settleRetries = 3,
+    VoidCallback? onSettleComplete,
+  }) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final c = _scrollController;
+      if (c == null || !c.hasClients) return;
+
+      final target = c.position.maxScrollExtent;
+      final alreadyAtBottom = (target - c.position.pixels).abs() < 1;
+      if (alreadyAtBottom) return;
+
+      Future<void> settleIfNeeded() async {
+        if (settleRetries <= 0 ||
+            _scrollController == null ||
+            !_scrollController!.hasClients) {
+          return;
+        }
+        // Wait for layout to settle so maxScrollExtent includes new content
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        final cc = _scrollController;
+        if (cc == null || !cc.hasClients) return;
+        final newTarget = cc.position.maxScrollExtent;
+        if ((newTarget - cc.position.pixels).abs() > 1) {
+          cc.jumpTo(newTarget);
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        scrollToBottom(
+          conversationId: conversationId,
+          animated: false,
+          settleRetries: settleRetries - 1,
+          onSettleComplete: onSettleComplete,
+        );
+      }
+
+      if (animated) {
+        c
+            .animateTo(
+              target,
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+            )
+            .whenComplete(settleIfNeeded);
+      } else {
+        c.jumpTo(target);
+        settleIfNeeded();
+      }
+
+      // Update the scroll cache. Key includes channel ID so switching text
+      // channels within a group preserves separate scroll positions.
+      if (conversationId != null) {
+        scrollPositions[cacheKeyFor(conversationId)] = target;
+        evictScrollPositions();
+      }
+      onSettleComplete?.call();
+    });
   }
 
   /// Resolve messages for the current conversation and channel.

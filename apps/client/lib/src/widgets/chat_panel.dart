@@ -89,19 +89,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   final _chatInputBarKey = GlobalKey<ChatInputBarState>();
   final _controller = ChatPanelController();
 
-  /// Cache scroll offsets keyed by conversation ID so switching conversations
-  /// preserves the user's position. Capped at [_kMaxScrollPositions] entries
-  /// to prevent unbounded growth as the user visits many conversations.
-  static final Map<String, double> _scrollPositions = {};
-  static const int _kMaxScrollPositions = 50;
-
-  /// Evict the oldest entries from [_scrollPositions] when over the limit.
-  static void _evictScrollPositions() {
-    while (_scrollPositions.length > _kMaxScrollPositions) {
-      _scrollPositions.remove(_scrollPositions.keys.first);
-    }
-  }
-
   String _newMessagesBannerText() {
     if (_newMessagesBelowCount <= 0) return 'New messages';
     final noun = _newMessagesBelowCount == 1 ? 'message' : 'messages';
@@ -117,11 +104,23 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   static const _deletedForMeKey = 'deleted_for_me_ids';
   static Set<String> _deletedForMeIds = {};
   static bool _deletedForMeLoaded = false;
-  String? _selectedTextChannelId;
+  // Channel-scoped loading keys + the currently-selected text channel live
+  // on the controller (invariant #3); these forwarders keep the existing
+  // call sites readable without leaking the controller into every line.
+  String? get _selectedTextChannelId => _controller.selectedTextChannelId;
+  set _selectedTextChannelId(String? v) =>
+      _controller.selectedTextChannelId = v;
+  String? get _loadedHistoryKey => _controller.loadedHistoryKey;
+  set _loadedHistoryKey(String? v) => _controller.loadedHistoryKey = v;
+  String? get _loadedChannelsConversationId =>
+      _controller.loadedChannelsConversationId;
+  set _loadedChannelsConversationId(String? v) =>
+      _controller.loadedChannelsConversationId = v;
+  String? get _autoScrollConversationKey =>
+      _controller.autoScrollConversationKey;
+  set _autoScrollConversationKey(String? v) =>
+      _controller.autoScrollConversationKey = v;
   String? _activeVoiceChannelId;
-  String? _loadedHistoryKey;
-  String? _loadedChannelsConversationId;
-  String? _autoScrollConversationKey;
 
   /// The message ID at which the "New Messages" divider should appear.
   /// Set when opening a conversation with unread messages, cleared when
@@ -141,7 +140,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   String? _highlightedMessageId;
   String? _pendingInitialMessageId;
   Timer? _highlightTimer;
-  double _lastKeyboardInset = 0;
+  // Last keyboard inset lives on the controller so `handleKeyboardScroll`
+  // can read/write it without re-piping it through method args. The widget
+  // accessor preserves the original `_lastKeyboardInset` name.
+  double get _lastKeyboardInset => _controller.lastKeyboardInset;
+  set _lastKeyboardInset(double v) => _controller.lastKeyboardInset = v;
 
   /// True while a file is being dragged over the chat area.
   bool _isDragOver = false;
@@ -156,8 +159,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   Timer? _floatingDateTimer;
   // Tracks near-bottom state from the user's last scroll event, before any
   // viewport resize (keyboard open/close). Used in _handleKeyboardScroll so
-  // we don't lose context when maxScrollExtent shifts under us.
-  bool _wasNearBottom = true;
+  // we don't lose context when maxScrollExtent shifts under us. Lives on
+  // the controller (invariant #4 — `_wasNearBottom` check must run BEFORE
+  // the keyboard shrinks the viewport).
+  bool get _wasNearBottom => _controller.wasNearBottom;
+  set _wasNearBottom(bool v) => _controller.wasNearBottom = v;
 
   /// True when a new message arrives while the user has scrolled up.
   bool _hasNewMessagesBelow = false;
@@ -235,10 +241,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     if (widget.conversation?.id != oldWidget.conversation?.id) {
       // Save scroll offset for the old conversation+channel
       final oldId = oldWidget.conversation?.id;
-      if (oldId != null && _scrollController.hasClients) {
-        final oldKey = '$oldId:${_selectedTextChannelId ?? ""}';
-        _scrollPositions[oldKey] = _scrollController.offset;
-        _evictScrollPositions();
+      if (oldId != null) {
+        _controller.cacheCurrentOffset(oldId);
       }
 
       _selectedTextChannelId = null;
@@ -268,8 +272,8 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       // defer to the first-load callback which scrolls to the divider.
       final newId = widget.conversation?.id;
       if (newId != null) {
-        final newKey = '$newId:${_selectedTextChannelId ?? ""}';
-        final cached = _scrollPositions[newKey];
+        final cached =
+            _controller.scrollPositions[_controller.cacheKeyFor(newId)];
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!_scrollController.hasClients) return;
           // Defer to the first-load callback if unread boundary will be set
@@ -280,26 +284,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
               .firstOrNull;
           if (convData != null && convData.unreadCount > 0) return;
           if (cached != null) {
-            _restoreCachedOffsetWithRetry(cached);
+            _controller.restoreCachedOffsetWithRetry(cached);
           } else {
             _scrollToBottom(animated: false, settleRetries: 3);
           }
         });
       }
-    }
-  }
-
-  /// Re-jump to the cached offset across a few frames so we don't land at the
-  /// bottom of an empty list while message history is still loading async (#563).
-  /// Stops retrying once `maxScrollExtent >= cached`, or after 3 frames.
-  void _restoreCachedOffsetWithRetry(double cached, {int retries = 3}) {
-    if (!_scrollController.hasClients) return;
-    final max = _scrollController.position.maxScrollExtent;
-    _scrollController.jumpTo(cached.clamp(0, max));
-    if (max < cached && retries > 0) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _restoreCachedOffsetWithRetry(cached, retries: retries - 1);
-      });
     }
   }
 
@@ -418,56 +408,19 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   }
 
   void _scrollToBottom({bool animated = true, int settleRetries = 3}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-
-      final target = _scrollController.position.maxScrollExtent;
-      final alreadyAtBottom =
-          (target - _scrollController.position.pixels).abs() < 1;
-      if (alreadyAtBottom) return;
-
-      Future<void> settleIfNeeded() async {
-        if (settleRetries <= 0 || !_scrollController.hasClients) return;
-        // Wait for layout to settle so maxScrollExtent includes new content
-        await Future<void>.delayed(const Duration(milliseconds: 150));
-        if (!_scrollController.hasClients) return;
-        final newTarget = _scrollController.position.maxScrollExtent;
-        if ((newTarget - _scrollController.position.pixels).abs() > 1) {
-          _scrollController.jumpTo(newTarget);
+    _controller.scrollToBottom(
+      conversationId: widget.conversation?.id,
+      animated: animated,
+      settleRetries: settleRetries,
+      onSettleComplete: () {
+        if (_hasNewMessagesBelow) {
+          setState(() {
+            _hasNewMessagesBelow = false;
+            _newMessagesBelowCount = 0;
+          });
         }
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-        _scrollToBottom(animated: false, settleRetries: settleRetries - 1);
-      }
-
-      if (animated) {
-        _scrollController
-            .animateTo(
-              target,
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOut,
-            )
-            .whenComplete(settleIfNeeded);
-      } else {
-        _scrollController.jumpTo(target);
-        settleIfNeeded();
-      }
-
-      // Update the scroll cache and dismiss the new-messages pill.
-      // Key includes channel ID so switching text channels within a group
-      // preserves separate scroll positions.
-      final convId = widget.conversation?.id;
-      if (convId != null) {
-        final cacheKey = '$convId:${_selectedTextChannelId ?? ""}';
-        _scrollPositions[cacheKey] = target;
-        _evictScrollPositions();
-      }
-      if (_hasNewMessagesBelow) {
-        setState(() {
-          _hasNewMessagesBelow = false;
-          _newMessagesBelowCount = 0;
-        });
-      }
-    });
+      },
+    );
   }
 
   bool _isNearBottom() => _controller.isNearBottom();
@@ -556,19 +509,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         : chatState.messagesForConversation(conv.id);
     if (messages.isEmpty) return;
 
-    // System events (member_joined, voice_session_started, ...) live at the
-    // conversation root with `channelId == null` and surface in every
-    // channel view, but their timestamps predate the actual channel messages
-    // -- they're created when the group is born.  If we use them as the
-    // pagination cursor, the server's `?channel_id=X&before=<system_ts>`
-    // query (correctly) returns zero rows, `hasMore` flips to false, and
-    // the message list dead-locks at the first page (#prod-2026-05-08).
-    // Use the oldest channel-scoped real message instead.
-    final paginationCursor = messages.firstWhere(
-      (m) => !m.isSystemEvent,
-      orElse: () => messages.first,
-    );
-    final oldestTimestamp = paginationCursor.timestamp;
+    // Use the oldest channel-scoped non-system message as the pagination
+    // cursor — see `ChatPanelController.paginationCursor` for the
+    // `#prod-2026-05-08` rationale.
+    final oldestTimestamp = _controller.paginationCursor(messages).timestamp;
     final auth = ref.read(authProvider);
     if (auth.token == null || auth.userId == null) return;
 
@@ -818,12 +762,9 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       );
       if (loaded.isEmpty) break;
       // Use the oldest channel-scoped (non-system) message as the
-      // pagination cursor; system events live at the conversation root
-      // and would dead-end the channel-scoped ?before= query.
-      final cursor = loaded.firstWhere(
-        (m) => !m.isSystemEvent,
-        orElse: () => loaded.first,
-      );
+      // pagination cursor — see `ChatPanelController.paginationCursor` for
+      // the `#prod-2026-05-08` rationale.
+      final cursor = _controller.paginationCursor(loaded);
 
       await ref
           .read(chatProvider.notifier)
