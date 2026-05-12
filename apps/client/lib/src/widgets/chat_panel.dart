@@ -11,10 +11,13 @@ import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/crypto_provider.dart';
 import '../providers/media_ticket_provider.dart';
 import '../providers/privacy_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/websocket_provider.dart';
+import '../screens/safety_number_screen.dart';
+import '../services/toast_service.dart';
 import '../theme/responsive.dart';
 import 'chat_input_bar.dart';
 import 'chat_panel_controller.dart';
@@ -67,7 +70,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     return '$_newMessagesBelowCount new $noun';
   }
 
-  Set<String> get _dismissedBannerIds => DismissedBannersStorage.ids;
   String? get _selectedTextChannelId => _controller.selectedTextChannelId;
   set _selectedTextChannelId(String? v) =>
       _controller.selectedTextChannelId = v;
@@ -114,17 +116,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   Timer? _liveRegionClearTimer;
   OverlayEntry? _reactionOverlay;
 
-  bool get _hideEncryptionBanner {
-    final convId = widget.conversation?.id;
-    return convId != null && _dismissedBannerIds.contains(convId);
-  }
-
-  Future<void> _dismissEncryptionBanner() async {
-    final convId = widget.conversation?.id;
-    if (convId == null) return;
-    setState(() {});
-    await DismissedBannersStorage.add(convId);
-  }
+  // Previous-state trackers for transition-only toasts (replacing the
+  // four full-width banners). A toast fires when the relevant state
+  // crosses a boundary, never on every rebuild.
+  bool? _prevWsConnected;
+  bool? _prevWsReplaced;
+  bool _prevWsMaxAttempts = false;
+  bool _prevCryptoDegraded = false;
+  String? _identityPolledPeerId;
+  bool _prevIdentityChanged = false;
+  String? _corruptionPolledPeerId;
+  bool _prevCorrupted = false;
+  Timer? _peerStateTimer;
 
   @override
   void initState() {
@@ -133,11 +136,17 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     _controller.deletedForMeIds = DeletedForMeStorage.ids;
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addObserver(this);
-    DismissedBannersStorage.ensureLoaded();
     DeletedForMeStorage.ensureLoaded().then((_) {
       if (mounted) _controller.deletedForMeIds = DeletedForMeStorage.ids;
     });
     _pendingInitialMessageId = widget.initialMessageId;
+    // Poll the peer-specific crypto flags every 4s while a DM is open. The
+    // old IdentityChangedBadge/SessionCorruptedBanner widgets each polled
+    // independently on rebuild; this single timer covers both transitions.
+    _peerStateTimer = Timer.periodic(
+      const Duration(seconds: 4),
+      (_) => _refreshPeerCryptoFlags(),
+    );
   }
 
   @override
@@ -171,6 +180,11 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       _lastAnnouncedMessageId = null;
       _liveRegionClearTimer?.cancel();
       _dismissReactionPicker();
+      // Reset peer crypto trackers — they are scoped to the active DM.
+      _identityPolledPeerId = null;
+      _prevIdentityChanged = false;
+      _corruptionPolledPeerId = null;
+      _prevCorrupted = false;
 
       // Restore cached scroll position for the new conversation, or scroll
       // to bottom if no cached position exists. If there's an unread boundary,
@@ -204,6 +218,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     _dismissReactionPicker();
     _highlightTimer?.cancel();
     _liveRegionClearTimer?.cancel();
+    _peerStateTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _controller.dispose();
@@ -550,9 +565,170 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
     includeUnchanneled,
   );
 
+  /// Wire ref.listen for the four banner-replacement toasts. Called from
+  /// build (the only Riverpod-sanctioned slot for listeners).
+  void _wireTransitionToasts(Conversation? conv) {
+    ref.listen<WebSocketState>(websocketProvider, (prev, next) {
+      _handleWsTransition(prev, next);
+    });
+    ref.listen<CryptoState>(cryptoProvider, (prev, next) {
+      _handleCryptoTransition(prev, next);
+    });
+    // Track the active DM peer for the polled crypto flags below.
+    if (conv != null && !conv.isGroup) {
+      final peer = conv.members
+          .where((m) => m.userId != _myUserIdOrEmpty())
+          .firstOrNull;
+      _identityPolledPeerId = peer?.userId;
+      _corruptionPolledPeerId = peer?.userId;
+    } else {
+      _identityPolledPeerId = null;
+      _corruptionPolledPeerId = null;
+    }
+  }
+
+  String _myUserIdOrEmpty() => ref.read(authProvider).userId ?? '';
+
+  void _handleWsTransition(WebSocketState? prev, WebSocketState next) {
+    if (!mounted) return;
+    final wasMaxAttempts = _prevWsMaxAttempts;
+    final isMaxAttempts = !next.isConnected && next.reconnectAttempts >= 10;
+
+    // false -> true on isConnected: success toast
+    if (_prevWsConnected == false && next.isConnected) {
+      ToastService.show(context, 'Connected', type: ToastType.success);
+    }
+    // true -> false on isConnected: warning toast (reconnecting)
+    if (_prevWsConnected == true && !next.isConnected) {
+      ToastService.show(context, 'Reconnecting...', type: ToastType.warning);
+    }
+    // session-replaced or max-attempts edge: actionable error toast
+    if ((next.wasReplaced && _prevWsReplaced != true) ||
+        (isMaxAttempts && !wasMaxAttempts)) {
+      ToastService.show(
+        context,
+        next.wasReplaced
+            ? 'Signed in on another device'
+            : 'Connection lost -- messages may be pending',
+        type: ToastType.error,
+        actionLabel: 'Retry',
+        onAction: () => ref.read(websocketProvider.notifier).connect(),
+      );
+    }
+
+    _prevWsConnected = next.isConnected;
+    _prevWsReplaced = next.wasReplaced;
+    _prevWsMaxAttempts = isMaxAttempts;
+  }
+
+  void _handleCryptoTransition(CryptoState? prev, CryptoState next) {
+    if (!mounted) return;
+    final degraded = !next.isInitialized && next.error != null;
+    if (degraded && !_prevCryptoDegraded) {
+      ToastService.show(
+        context,
+        next.error ?? 'Encryption unavailable',
+        type: ToastType.error,
+        actionLabel: 'Retry',
+        onAction: () => ref.read(cryptoProvider.notifier).initAndUploadKeys(),
+      );
+    }
+    _prevCryptoDegraded = degraded;
+  }
+
+  Future<void> _refreshPeerCryptoFlags() async {
+    if (!mounted) return;
+    final cryptoState = ref.read(cryptoProvider);
+    if (!cryptoState.isInitialized) return;
+
+    final identityPeer = _identityPolledPeerId;
+    if (identityPeer != null) {
+      final changed = await ref
+          .read(cryptoProvider.notifier)
+          .hasPeerIdentityKeyChanged(identityPeer);
+      if (!mounted) return;
+      // Only fire toast if the polled peer matches the currently-tracked
+      // peer (avoids races when the user navigates between DMs).
+      if (changed &&
+          !_prevIdentityChanged &&
+          identityPeer == _identityPolledPeerId) {
+        final myName = ref.read(authProvider).username ?? 'You';
+        ToastService.show(
+          context,
+          'Identity key changed for this contact',
+          type: ToastType.warning,
+          actionLabel: 'Verify',
+          onAction: () => SafetyNumberScreen.show(
+            context,
+            ref,
+            peerUserId: identityPeer,
+            peerUsername: identityPeer,
+            myUsername: myName,
+          ),
+        );
+      }
+      _prevIdentityChanged = changed;
+    }
+
+    final corruptionPeer = _corruptionPolledPeerId;
+    if (corruptionPeer != null) {
+      final corrupted = ref
+          .read(cryptoProvider.notifier)
+          .hasCorruptedSession(corruptionPeer);
+      if (corrupted &&
+          !_prevCorrupted &&
+          corruptionPeer == _corruptionPolledPeerId) {
+        final convId = widget.conversation?.id;
+        ToastService.show(
+          context,
+          'Encryption session needs a reset',
+          type: ToastType.error,
+          actionLabel: 'Reset',
+          onAction: () => _resetCorruptedSession(corruptionPeer, convId),
+        );
+      }
+      _prevCorrupted = corrupted;
+    }
+  }
+
+  Future<void> _resetCorruptedSession(
+    String peerUserId,
+    String? conversationId,
+  ) async {
+    try {
+      await ref.read(cryptoProvider.notifier).forceResetSession(peerUserId);
+      if (conversationId != null) {
+        ref.read(websocketProvider.notifier).sendKeyReset(conversationId);
+        ref
+            .read(chatProvider.notifier)
+            .addSystemEvent(
+              conversationId,
+              'Encryption session reset -- next message will establish a new session',
+            );
+      }
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Encryption reset. Next message will establish a fresh session.',
+          type: ToastType.success,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastService.show(
+          context,
+          'Failed to reset session: $e',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final conv = widget.conversation;
+
+    _wireTransitionToasts(conv);
 
     if (conv == null) return const NoConversationPlaceholder();
 
@@ -666,7 +842,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         liveRegionAnnouncement: _liveRegionAnnouncement,
         showSearch: _showSearch,
         hideVoiceDock: widget.hideVoiceDock,
-        hideEncryptionBanner: _hideEncryptionBanner,
         typingUsers: typingUsers,
         isDragOver: _isDragOver,
         chatInputBarKey: _chatInputBarKey,
@@ -679,7 +854,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
           if (mounted) setState(() => _activeVoiceChannelId = channelId);
         },
         onSetShowSearch: (v) => setState(() => _showSearch = v),
-        onDismissEncryptionBanner: _dismissEncryptionBanner,
         onHighlightMessage: _highlightMessage,
         onShowReactionPicker: _showReactionPicker,
         onToggleReaction: _toggleReaction,
