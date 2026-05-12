@@ -66,6 +66,35 @@ static void my_application_activate(GApplication* application) {
 
   gtk_window_set_default_size(window, 1280, 720);
 
+  // Slice 9: alt-tab in GNOME/KDE shows a placeholder until the running
+  // window's WM_CLASS matches an installed .desktop entry AND the GTK
+  // window has its own _NET_WM_ICON. Set both here.
+  //
+  // 1) WM_CLASS: pin to "echo-messenger" so the StartupWMClass= line in
+  //    our .desktop file links the running window to the installed icon.
+  // 2) Icon: look up the bundled PNG relative to the binary (CMake installs
+  //    it into the `data/` sibling directory). Fall back to a system theme
+  //    lookup so developer builds with no install layout still get an icon.
+  gtk_window_set_role(window, "echo-messenger");
+  g_autofree gchar* exe_path = g_file_read_link("/proc/self/exe", nullptr);
+  if (exe_path != nullptr) {
+    g_autofree gchar* exe_dir = g_path_get_dirname(exe_path);
+    g_autofree gchar* icon_path =
+        g_build_filename(exe_dir, "data", "echo-messenger.png", nullptr);
+    if (g_file_test(icon_path, G_FILE_TEST_EXISTS)) {
+      g_autoptr(GError) icon_err = nullptr;
+      gtk_window_set_icon_from_file(window, icon_path, &icon_err);
+      if (icon_err != nullptr) {
+        g_warning("Failed to load window icon %s: %s", icon_path,
+                  icon_err->message);
+      }
+    } else {
+      gtk_window_set_icon_name(window, "echo");
+    }
+  } else {
+    gtk_window_set_icon_name(window, "echo-messenger");
+  }
+
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);

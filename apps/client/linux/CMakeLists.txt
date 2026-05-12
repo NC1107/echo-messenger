@@ -126,3 +126,10 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# Slice 9: bundle the Echo PNG into the install dir so the GTK runner can
+# point gtk_window_set_icon_from_file at a known path. Also makes the icon
+# easy for the AppImage assembly step to copy into the AppDir.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runner/echo-messenger.png"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
+  COMPONENT Runtime)
