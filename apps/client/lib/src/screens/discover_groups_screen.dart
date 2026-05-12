@@ -11,6 +11,7 @@ import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/avatar_utils.dart' show groupAvatarColor;
+import '../widgets/empty_state.dart';
 
 /// A public group returned by the discovery endpoint.
 class _PublicGroup {
@@ -326,31 +327,10 @@ class _DiscoverGroupsScreenState extends ConsumerState<DiscoverGroupsScreen> {
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.explore_outlined,
-            size: 48,
-            color: context.textMuted.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No public groups found',
-            style: TextStyle(
-              color: context.textSecondary,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Try a different search or create a public group',
-            style: TextStyle(color: context.textMuted, fontSize: 13),
-          ),
-        ],
-      ),
+    return const EmptyState(
+      icon: Icons.travel_explore,
+      title: 'No public groups found',
+      body: 'Try a different search, or check back later.',
     );
   }
 

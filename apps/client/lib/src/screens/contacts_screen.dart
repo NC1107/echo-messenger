@@ -15,6 +15,7 @@ import '../providers/server_url_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import '../widgets/empty_state.dart';
 import 'user_profile_screen.dart';
 
 /// A user returned from the /api/users/search endpoint.
@@ -532,30 +533,12 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         contactsState.pendingRequests.isNotEmpty) {
       return const SizedBox.shrink();
     }
-    return Padding(
-      padding: const EdgeInsets.all(48),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.people_outline, size: 48, color: context.textMuted),
-            const SizedBox(height: 12),
-            Text(
-              'No contacts yet',
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Search for users above to add them',
-              style: TextStyle(color: context.textMuted, fontSize: 13),
-            ),
-          ],
-        ),
-      ),
+    return EmptyState(
+      icon: Icons.person_outline,
+      title: 'No contacts yet',
+      body: 'Add friends by username, or scan a QR code.',
+      ctaLabel: 'Add contact',
+      onCta: () => _searchFocusNode.requestFocus(),
     );
   }
 }

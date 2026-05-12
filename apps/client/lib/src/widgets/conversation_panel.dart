@@ -22,6 +22,7 @@ import '../utils/time_utils.dart';
 import 'avatar_utils.dart';
 import 'conversation_item.dart';
 import 'echo_logo_icon.dart';
+import 'empty_state.dart';
 import 'skeleton_loader.dart';
 import 'voice_footer.dart';
 
@@ -1303,68 +1304,12 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     }
 
     // No conversations yet — show onboarding guidance.
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.chat_bubble_outline,
-              size: 64,
-              color: context.textMuted.withValues(alpha: 0.45),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No conversations yet',
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Start chatting by adding a contact or joining a group',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: context.textSecondary,
-                fontSize: 14,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: widget.onNewChat,
-                icon: const Icon(Icons.person_add_outlined, size: 18),
-                label: const Text('Add Contact'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  side: BorderSide(color: context.accent),
-                  foregroundColor: context.accent,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: widget.onDiscover,
-                icon: const Icon(Icons.groups_outlined, size: 18),
-                label: const Text('Browse Groups'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  side: BorderSide(color: context.border),
-                  foregroundColor: context.textSecondary,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return EmptyState(
+      icon: Icons.forum_outlined,
+      title: 'No conversations yet',
+      body: 'Start a new chat or wait for friends to message you.',
+      ctaLabel: 'Start a new chat',
+      onCta: widget.onNewChat,
     );
   }
 

@@ -1,0 +1,85 @@
+import 'package:flutter/material.dart';
+
+import '../theme/echo_theme.dart';
+
+/// Illustrated empty-state placeholder used across screens.
+///
+/// Renders a 64px circular accent-tinted badge containing [icon], the [title]
+/// in `titleMedium` bold, then [body] in `bodySmall` constrained to 320px, all
+/// centered. If [ctaLabel] is provided, an additional [FilledButton.tonal]
+/// is shown that invokes [onCta] on press.
+class EmptyState extends StatelessWidget {
+  /// Material icon glyph rendered inside the tinted badge at ~32px.
+  final IconData icon;
+
+  /// Primary headline above the body copy.
+  final String title;
+
+  /// Supporting copy describing what the user can do next.
+  final String body;
+
+  /// Optional CTA button label. When null, no button is rendered.
+  final String? ctaLabel;
+
+  /// Invoked when the CTA button is pressed.
+  final VoidCallback? onCta;
+
+  const EmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.body,
+    this.ctaLabel,
+    this.onCta,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 64px circular badge with light accent fill and accent-colored icon.
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: context.accentLight,
+                shape: BoxShape.circle,
+              ),
+              child: Center(child: Icon(icon, size: 32, color: context.accent)),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: context.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: Text(
+                body,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: context.textSecondary,
+                  height: 1.4,
+                ),
+              ),
+            ),
+            if (ctaLabel != null) ...[
+              const SizedBox(height: 16),
+              FilledButton.tonal(onPressed: onCta, child: Text(ctaLabel!)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
