@@ -15,16 +15,14 @@ void main() {
           AppThemeSelection.paper,
           AppThemeSelection.graphite,
           AppThemeSelection.ember,
-          AppThemeSelection.neon,
           AppThemeSelection.sakura,
-          AppThemeSelection.aurora,
           AppThemeSelection.highContrast,
         ]),
       );
     });
 
-    test('has 9 theme options', () {
-      expect(AppThemeSelection.values, hasLength(9));
+    test('has 7 theme options', () {
+      expect(AppThemeSelection.values, hasLength(7));
     });
   });
 

@@ -41,9 +41,10 @@ void main() {
         'light': AppThemeSelection.paper, // legacy alias migrates to paper
         'graphite': AppThemeSelection.graphite,
         'ember': AppThemeSelection.ember,
-        'neon': AppThemeSelection.neon,
         'sakura': AppThemeSelection.sakura,
-        'aurora': AppThemeSelection.aurora,
+        'neon': AppThemeSelection.highContrast, // legacy alias migrates
+        'aurora': AppThemeSelection.indigo, // legacy alias migrates
+        'highContrast': AppThemeSelection.highContrast,
       }.entries) {
         SharedPreferences.setMockInitialValues({'echo_theme_mode': entry.key});
         final container = ProviderContainer();

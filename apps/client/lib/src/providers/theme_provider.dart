@@ -16,9 +16,7 @@ enum AppThemeSelection {
   paper,
   graphite,
   ember,
-  neon,
   sakura,
-  aurora,
   highContrast,
 }
 
@@ -51,9 +49,9 @@ class AppTheme extends _$AppTheme {
       'system' => AppThemeSelection.system,
       'graphite' => AppThemeSelection.graphite,
       'ember' => AppThemeSelection.ember,
-      'neon' => AppThemeSelection.neon,
+      'neon' => AppThemeSelection.highContrast, // legacy alias (slice 6)
       'sakura' => AppThemeSelection.sakura,
-      'aurora' => AppThemeSelection.aurora,
+      'aurora' => AppThemeSelection.indigo, // legacy alias (slice 6)
       'highContrast' => AppThemeSelection.highContrast,
       'highContrastDark' =>
         AppThemeSelection.highContrast, // legacy alias (slice 6)

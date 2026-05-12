@@ -76,17 +76,6 @@ const _emberPreview = _ThemePreviewColors(
   textSecondary: EchoTheme.emberTextSecondary,
 );
 
-const _neonPreview = _ThemePreviewColors(
-  sidebarBg: EchoTheme.neonSidebarBg,
-  mainBg: EchoTheme.neonMainBg,
-  sentBubble: EchoTheme.neonSentBubble,
-  recvBubble: EchoTheme.neonRecvBubble,
-  accent: EchoTheme.neonAccent,
-  border: EchoTheme.neonBorder,
-  textPrimary: EchoTheme.neonTextPrimary,
-  textSecondary: EchoTheme.neonTextSecondary,
-);
-
 const _sakuraPreview = _ThemePreviewColors(
   sidebarBg: EchoTheme.sakuraSidebarBg,
   mainBg: EchoTheme.sakuraMainBg,
@@ -96,17 +85,6 @@ const _sakuraPreview = _ThemePreviewColors(
   border: EchoTheme.sakuraBorder,
   textPrimary: EchoTheme.sakuraTextPrimary,
   textSecondary: EchoTheme.sakuraTextSecondary,
-);
-
-const _auroraPreview = _ThemePreviewColors(
-  sidebarBg: EchoTheme.auroraSidebarBg,
-  mainBg: EchoTheme.auroraMainBg,
-  sentBubble: EchoTheme.auroraSentBubble,
-  recvBubble: EchoTheme.auroraRecvBubble,
-  accent: EchoTheme.auroraAccent,
-  border: EchoTheme.auroraBorder,
-  textPrimary: EchoTheme.auroraTextPrimary,
-  textSecondary: EchoTheme.auroraTextSecondary,
 );
 
 const _highContrastPreview = _ThemePreviewColors(
@@ -167,22 +145,10 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
         preview: _emberPreview,
       ),
       _ThemeCardData(
-        selection: AppThemeSelection.neon,
-        label: 'Neon',
-        subtitle: 'Electric green gamer',
-        preview: _neonPreview,
-      ),
-      _ThemeCardData(
         selection: AppThemeSelection.sakura,
         label: 'Sakura',
         subtitle: 'Soft pink pastels',
         preview: _sakuraPreview,
-      ),
-      _ThemeCardData(
-        selection: AppThemeSelection.aurora,
-        label: 'Aurora',
-        subtitle: 'Violet gradient',
-        preview: _auroraPreview,
       ),
       _ThemeCardData(
         selection: AppThemeSelection.highContrast,

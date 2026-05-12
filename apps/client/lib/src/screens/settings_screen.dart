@@ -255,12 +255,8 @@ class SettingsRootView extends ConsumerWidget {
         return 'Graphite';
       case AppThemeSelection.ember:
         return 'Ember';
-      case AppThemeSelection.neon:
-        return 'Neon';
       case AppThemeSelection.sakura:
         return 'Sakura';
-      case AppThemeSelection.aurora:
-        return 'Aurora';
       case AppThemeSelection.highContrast:
         return 'High contrast';
     }
