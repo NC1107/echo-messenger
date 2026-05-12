@@ -132,8 +132,8 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
         preview: null, // special split preview
       ),
       _ThemeCardData(
-        selection: AppThemeSelection.dark,
-        label: 'Dark',
+        selection: AppThemeSelection.indigo,
+        label: 'Indigo',
         subtitle: 'Easy on the eyes',
         preview: _darkPreview,
       ),

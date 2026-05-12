@@ -51,7 +51,7 @@ class EchoApp extends ConsumerWidget {
 
     final themeMode = switch (themeSelection) {
       AppThemeSelection.system => ThemeMode.system,
-      AppThemeSelection.dark => ThemeMode.dark,
+      AppThemeSelection.indigo => ThemeMode.dark,
       AppThemeSelection.light => ThemeMode.light,
       AppThemeSelection.graphite => ThemeMode.dark,
       AppThemeSelection.ember => ThemeMode.dark,

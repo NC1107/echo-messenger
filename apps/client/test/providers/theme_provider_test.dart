@@ -15,12 +15,12 @@ void main() {
       SharedPreferences.setMockInitialValues({});
     });
 
-    test('default theme is dark', () async {
+    test('default theme is indigo', () async {
       final container = ProviderContainer();
       addTearDown(container.dispose);
       container.read(appThemeProvider);
       await _flushLoad();
-      expect(container.read(appThemeProvider), AppThemeSelection.dark);
+      expect(container.read(appThemeProvider), AppThemeSelection.indigo);
     });
 
     test('loads persisted theme from SharedPreferences', () async {
@@ -35,7 +35,8 @@ void main() {
     test('loads all theme variants', () async {
       for (final entry in {
         'system': AppThemeSelection.system,
-        'dark': AppThemeSelection.dark,
+        'indigo': AppThemeSelection.indigo,
+        'dark': AppThemeSelection.indigo, // legacy alias migrates to indigo
         'light': AppThemeSelection.light,
         'graphite': AppThemeSelection.graphite,
         'ember': AppThemeSelection.ember,
@@ -56,13 +57,13 @@ void main() {
       }
     });
 
-    test('unknown theme value falls back to dark', () async {
+    test('unknown theme value falls back to indigo', () async {
       SharedPreferences.setMockInitialValues({'echo_theme_mode': 'unknown'});
       final container = ProviderContainer();
       addTearDown(container.dispose);
       container.read(appThemeProvider);
       await _flushLoad();
-      expect(container.read(appThemeProvider), AppThemeSelection.dark);
+      expect(container.read(appThemeProvider), AppThemeSelection.indigo);
     });
 
     test('setTheme updates state and persists', () async {
@@ -91,7 +92,7 @@ void main() {
       expect(container.read(appThemeProvider), AppThemeSelection.light);
 
       await notifier.setThemeMode(ThemeMode.dark);
-      expect(container.read(appThemeProvider), AppThemeSelection.dark);
+      expect(container.read(appThemeProvider), AppThemeSelection.indigo);
 
       await notifier.setThemeMode(ThemeMode.system);
       expect(container.read(appThemeProvider), AppThemeSelection.system);

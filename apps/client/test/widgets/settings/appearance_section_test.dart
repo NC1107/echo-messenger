@@ -11,7 +11,7 @@ void main() {
         AppThemeSelection.values,
         containsAll([
           AppThemeSelection.system,
-          AppThemeSelection.dark,
+          AppThemeSelection.indigo,
           AppThemeSelection.light,
           AppThemeSelection.graphite,
           AppThemeSelection.ember,

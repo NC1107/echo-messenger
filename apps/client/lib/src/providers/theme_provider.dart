@@ -12,7 +12,7 @@ const kCustomAccentColorKey = 'theme.accent_color';
 
 enum AppThemeSelection {
   system,
-  dark,
+  indigo,
   light,
   graphite,
   ember,
@@ -34,7 +34,7 @@ class AppTheme extends _$AppTheme {
   @override
   AppThemeSelection build() {
     _load();
-    return AppThemeSelection.dark;
+    return AppThemeSelection.indigo;
   }
 
   Future<void> _load() async {
@@ -42,14 +42,16 @@ class AppTheme extends _$AppTheme {
     final value = prefs.getString(_kThemeKey);
     state = switch (value) {
       'light' => AppThemeSelection.light,
-      'dark' => AppThemeSelection.dark,
+      'indigo' => AppThemeSelection.indigo,
+      'dark' =>
+        AppThemeSelection.indigo, // legacy alias for migration (slice 6)
       'system' => AppThemeSelection.system,
       'graphite' => AppThemeSelection.graphite,
       'ember' => AppThemeSelection.ember,
       'neon' => AppThemeSelection.neon,
       'sakura' => AppThemeSelection.sakura,
       'aurora' => AppThemeSelection.aurora,
-      _ => AppThemeSelection.dark,
+      _ => AppThemeSelection.indigo,
     };
   }
 
@@ -63,7 +65,7 @@ class AppTheme extends _$AppTheme {
   Future<void> setThemeMode(ThemeMode mode) async {
     final selection = switch (mode) {
       ThemeMode.system => AppThemeSelection.system,
-      ThemeMode.dark => AppThemeSelection.dark,
+      ThemeMode.dark => AppThemeSelection.indigo,
       ThemeMode.light => AppThemeSelection.light,
     };
     await setTheme(selection);

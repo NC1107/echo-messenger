@@ -16,8 +16,9 @@ class EchoTheme {
   static const textPrimary = Color(0xFFEDEDEF);
   static const textSecondary = Color(0xFFABABB0);
   static const textMuted = Color(0xFF848490);
-  static const sentBubble = Color(0xFF5254D4);
-  static const recvBubble = Color(0xFF242428);
+  // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
+  static const sentBubble = accent;
+  static const recvBubble = surface;
   static const border = Color(0xFF27272A);
   static const online = Color(0xFF22C55E);
   static const danger = Color(0xFFEF4444);
@@ -277,8 +278,9 @@ class EchoTheme {
   static const lightTextPrimary = Color(0xFF1A1A1E);
   static const lightTextSecondary = Color(0xFF5C5C66);
   static const lightTextMuted = Color(0xFF72727E);
-  static const lightSentBubble = Color(0xFF5B5EE6);
-  static const lightRecvBubble = Color(0xFFE8E8EC);
+  // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
+  static const lightSentBubble = accent;
+  static const lightRecvBubble = lightSurface;
   static const lightBorder = Color(0xFFDFDFE5);
   static const lightAccentLight = Color(0x1A5B5EE6);
 
@@ -298,8 +300,9 @@ class EchoTheme {
   static const graphiteTextPrimary = Color(0xFFE7F4F8);
   static const graphiteTextSecondary = Color(0xFFA3BAC2);
   static const graphiteTextMuted = Color(0xFF8FA8B2);
-  static const graphiteSentBubble = Color(0xFF0FA594);
-  static const graphiteRecvBubble = Color(0xFF22333B);
+  // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
+  static const graphiteSentBubble = graphiteAccent;
+  static const graphiteRecvBubble = graphiteSurface;
   static const graphiteBorder = Color(0xFF2C434D);
 
   // Ember theme colors (warm dark with amber accent)
@@ -318,10 +321,9 @@ class EchoTheme {
   static const emberTextPrimary = Color(0xFFF5F0E8);
   static const emberTextSecondary = Color(0xFFA89F91);
   static const emberTextMuted = Color(0xFF91867A);
-  // sentBubble matches the accent so dark-on-accent text passes WCAG AA;
-  // the previous darker brown was unreadable with dark onPrimary text.
-  static const emberSentBubble = Color(0xFFE9960A);
-  static const emberRecvBubble = Color(0xFF252019);
+  // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
+  static const emberSentBubble = emberAccent;
+  static const emberRecvBubble = emberSurface;
   static const emberBorder = Color(0xFF332D24);
 
   // Neon theme colors (gamer aesthetic -- dark with electric green/cyan accents)
@@ -336,8 +338,9 @@ class EchoTheme {
   static const neonTextPrimary = Color(0xFFE0E0E8);
   static const neonTextSecondary = Color(0xFFA0A0B8);
   static const neonTextMuted = Color(0xFF7C7C99);
-  static const neonSentBubble = Color(0xFF00CC6A);
-  static const neonRecvBubble = Color(0xFF1A1A28);
+  // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
+  static const neonSentBubble = neonAccent;
+  static const neonRecvBubble = neonSurface;
   static const neonBorder = Color(0xFF222235);
 
   // Aurora theme colors (deep violet dark with gradient chat background)
@@ -354,25 +357,28 @@ class EchoTheme {
   static const auroraTextPrimary = Color(0xFFEDE9F6);
   static const auroraTextSecondary = Color(0xFFABA4BE);
   static const auroraTextMuted = Color(0xFF8780A0);
-  static const auroraSentBubble = Color(0xFF7C3AED);
-  static const auroraRecvBubble = Color(0xFF1E1A2E);
+  // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
+  static const auroraSentBubble = auroraAccent;
+  static const auroraRecvBubble = auroraSurface;
   static const auroraBorder = Color(0xFF2D2744);
 
   // Sakura theme colors (feminine aesthetic -- light pink with soft pastels)
-  static const sakuraMainBg = Color(0xFFFFF5F7);
+  // Accent darkened from 0xFFDD1C85 -> 0xFFC0186E for WCAG AA on white text.
+  // Bg warmed from 0xFFFFF5F7 -> 0xFFFFF7F5.
+  static const sakuraMainBg = Color(0xFFFFF7F5);
   static const sakuraSidebarBg = Color(0xFFFFF0F3);
   static const sakuraChatBg = Color(0xFFFFF8FA);
   static const sakuraSurface = Color(0xFFFFFAFC);
   static const sakuraSurfaceHover = Color(0xFFFFE8EE);
-  // Darkened ~5% from 0xFFE91E8C for stronger white-on-accent contrast.
-  static const sakuraAccent = Color(0xFFDD1C85);
+  static const sakuraAccent = Color(0xFFC0186E);
   static const sakuraAccentHover = Color(0xFFFF45A8);
-  static const sakuraAccentLight = Color(0x1ADD1C85);
+  static const sakuraAccentLight = Color(0x1AC0186E);
   static const sakuraTextPrimary = Color(0xFF2D1B2E);
   static const sakuraTextSecondary = Color(0xFF7B5A7E);
   static const sakuraTextMuted = Color(0xFF89698C);
-  static const sakuraSentBubble = Color(0xFFDD1C85);
-  static const sakuraRecvBubble = Color(0xFFFFE8EE);
+  // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
+  static const sakuraSentBubble = sakuraAccent;
+  static const sakuraRecvBubble = sakuraSurface;
   static const sakuraBorder = Color(0xFFF0D4DC);
 
   // ---------------------------------------------------------------------------
@@ -968,12 +974,16 @@ class EchoTheme {
 
   static ThemeData get highContrastDarkTheme {
     final base = darkTheme;
+    // High-contrast accent: #7C9BFF on pure-black bg with white text.
+    const hcAccent = Color(0xFF7C9BFF);
+    const hcSurface = Colors.black;
     return base.copyWith(
       colorScheme: base.colorScheme.copyWith(
-        surface: Colors.black,
+        surface: hcSurface,
         onSurface: Colors.white,
-        primary: Colors.yellow,
-        secondary: const Color(0xFFFFFF66),
+        primary: hcAccent,
+        secondary: hcAccent,
+        onPrimary: Colors.black,
         onSurfaceVariant: const Color(0xFFCCCCCC),
       ),
       dividerColor: Colors.white54,
@@ -983,10 +993,11 @@ class EchoTheme {
           sidebarBg: const Color(0xFF0A0A0A),
           chatBg: Colors.black,
           surfaceHover: const Color(0xFF1A1A1A),
-          sentBubble: const Color(0xFF444400),
-          recvBubble: const Color(0xFF1A1A1A),
+          // Locked bubble rule: sent = primary, recv = surface.
+          sentBubble: hcAccent,
+          recvBubble: hcSurface,
           textMuted: const Color(0xFFAAAAAA),
-          accentLight: const Color(0x33FFFF00),
+          accentLight: const Color(0x337C9BFF),
         ),
       ],
     );
@@ -1009,8 +1020,9 @@ class EchoTheme {
           sidebarBg: const Color(0xFFF0F0F0),
           chatBg: Colors.white,
           surfaceHover: const Color(0xFFE8E8E8),
+          // Locked bubble rule: sent = primary, recv = surface.
           sentBubble: const Color(0xFF0000CC),
-          recvBubble: const Color(0xFFE8E8E8),
+          recvBubble: Colors.white,
           textMuted: const Color(0xFF555555),
           accentLight: const Color(0x220000CC),
         ),

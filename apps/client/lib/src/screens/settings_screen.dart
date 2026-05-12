@@ -247,8 +247,8 @@ class SettingsRootView extends ConsumerWidget {
     switch (selection) {
       case AppThemeSelection.system:
         return 'System';
-      case AppThemeSelection.dark:
-        return 'Dark';
+      case AppThemeSelection.indigo:
+        return 'Indigo';
       case AppThemeSelection.light:
         return 'Light';
       case AppThemeSelection.graphite:

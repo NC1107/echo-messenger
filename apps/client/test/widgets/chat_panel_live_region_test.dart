@@ -72,7 +72,7 @@ class _FakeVoiceRtcNotifier extends LiveKitVoiceNotifier {
 
 class _FakeTheme extends AppTheme {
   @override
-  AppThemeSelection build() => AppThemeSelection.dark;
+  AppThemeSelection build() => AppThemeSelection.indigo;
 }
 
 class _FakeMessageLayoutNotifier extends MessageLayoutNotifier {
