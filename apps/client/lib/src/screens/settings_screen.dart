@@ -247,20 +247,18 @@ class SettingsRootView extends ConsumerWidget {
     switch (selection) {
       case AppThemeSelection.system:
         return 'System';
-      case AppThemeSelection.dark:
-        return 'Dark';
-      case AppThemeSelection.light:
-        return 'Light';
+      case AppThemeSelection.indigo:
+        return 'Indigo';
+      case AppThemeSelection.paper:
+        return 'Paper';
       case AppThemeSelection.graphite:
         return 'Graphite';
       case AppThemeSelection.ember:
         return 'Ember';
-      case AppThemeSelection.neon:
-        return 'Neon';
       case AppThemeSelection.sakura:
         return 'Sakura';
-      case AppThemeSelection.aurora:
-        return 'Aurora';
+      case AppThemeSelection.highContrast:
+        return 'High contrast';
     }
   }
 }

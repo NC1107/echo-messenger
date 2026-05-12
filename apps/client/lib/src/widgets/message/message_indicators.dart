@@ -94,9 +94,9 @@ class LockIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const icon = Padding(
-      padding: EdgeInsets.only(left: 3),
-      child: Icon(Icons.lock, size: 10, color: EchoTheme.online),
+    final icon = Padding(
+      padding: const EdgeInsets.only(left: 3),
+      child: Icon(Icons.lock, size: 10, color: context.textMuted),
     );
 
     if (isMine || onVerifyIdentity == null) {

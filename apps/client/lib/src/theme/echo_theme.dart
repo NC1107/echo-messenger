@@ -16,8 +16,9 @@ class EchoTheme {
   static const textPrimary = Color(0xFFEDEDEF);
   static const textSecondary = Color(0xFFABABB0);
   static const textMuted = Color(0xFF848490);
-  static const sentBubble = Color(0xFF5254D4);
-  static const recvBubble = Color(0xFF242428);
+  // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
+  static const sentBubble = accent;
+  static const recvBubble = surface;
   static const border = Color(0xFF27272A);
   static const online = Color(0xFF22C55E);
   static const danger = Color(0xFFEF4444);
@@ -268,19 +269,24 @@ class EchoTheme {
     );
   }
 
-  // Light theme colors — tuned to avoid harsh pure white
-  static const lightMainBg = Color(0xFFF5F5F7);
-  static const lightSidebarBg = Color(0xFFF0F0F3);
-  static const lightChatBg = Color(0xFFF8F8FA);
-  static const lightSurface = Color(0xFFFAFAFC);
-  static const lightSurfaceHover = Color(0xFFEEEEF1);
+  // Paper theme colors (light) — warm off-white with darkened indigo accent.
+  // Replaces the legacy "Light" palette: bg warmed from #F5F5F7 -> #FAFAF7,
+  // accent darkened from #5B5EE6 -> #4F46E5 for stronger WCAG AA contrast.
+  static const paperAccent = Color(0xFF4F46E5);
+  static const paperAccentHover = Color(0xFF6366F1);
+  static const lightMainBg = Color(0xFFFAFAF7);
+  static const lightSidebarBg = Color(0xFFF3F3EF);
+  static const lightChatBg = Color(0xFFF8F8F5);
+  static const lightSurface = Color(0xFFFFFFFC);
+  static const lightSurfaceHover = Color(0xFFEEEEEA);
   static const lightTextPrimary = Color(0xFF1A1A1E);
   static const lightTextSecondary = Color(0xFF5C5C66);
   static const lightTextMuted = Color(0xFF72727E);
-  static const lightSentBubble = Color(0xFF5B5EE6);
-  static const lightRecvBubble = Color(0xFFE8E8EC);
-  static const lightBorder = Color(0xFFDFDFE5);
-  static const lightAccentLight = Color(0x1A5B5EE6);
+  // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
+  static const lightSentBubble = paperAccent;
+  static const lightRecvBubble = lightSurface;
+  static const lightBorder = Color(0xFFDFDFD5);
+  static const lightAccentLight = Color(0x1A4F46E5);
 
   // Graphite theme colors (high-contrast dark with teal accent)
   // Dark onPrimary used because the high-luminance teal accent fails WCAG AA
@@ -298,8 +304,9 @@ class EchoTheme {
   static const graphiteTextPrimary = Color(0xFFE7F4F8);
   static const graphiteTextSecondary = Color(0xFFA3BAC2);
   static const graphiteTextMuted = Color(0xFF8FA8B2);
-  static const graphiteSentBubble = Color(0xFF0FA594);
-  static const graphiteRecvBubble = Color(0xFF22333B);
+  // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
+  static const graphiteSentBubble = graphiteAccent;
+  static const graphiteRecvBubble = graphiteSurface;
   static const graphiteBorder = Color(0xFF2C434D);
 
   // Ember theme colors (warm dark with amber accent)
@@ -318,61 +325,28 @@ class EchoTheme {
   static const emberTextPrimary = Color(0xFFF5F0E8);
   static const emberTextSecondary = Color(0xFFA89F91);
   static const emberTextMuted = Color(0xFF91867A);
-  // sentBubble matches the accent so dark-on-accent text passes WCAG AA;
-  // the previous darker brown was unreadable with dark onPrimary text.
-  static const emberSentBubble = Color(0xFFE9960A);
-  static const emberRecvBubble = Color(0xFF252019);
+  // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
+  static const emberSentBubble = emberAccent;
+  static const emberRecvBubble = emberSurface;
   static const emberBorder = Color(0xFF332D24);
 
-  // Neon theme colors (gamer aesthetic -- dark with electric green/cyan accents)
-  static const neonMainBg = Color(0xFF0A0A0F);
-  static const neonSidebarBg = Color(0xFF0D0D14);
-  static const neonChatBg = Color(0xFF0E0E16);
-  static const neonSurface = Color(0xFF14141E);
-  static const neonSurfaceHover = Color(0xFF1A1A28);
-  static const neonAccent = Color(0xFF00FF88);
-  static const neonAccentHover = Color(0xFF33FFaa);
-  static const neonAccentLight = Color(0x1A00FF88);
-  static const neonTextPrimary = Color(0xFFE0E0E8);
-  static const neonTextSecondary = Color(0xFFA0A0B8);
-  static const neonTextMuted = Color(0xFF7C7C99);
-  static const neonSentBubble = Color(0xFF00CC6A);
-  static const neonRecvBubble = Color(0xFF1A1A28);
-  static const neonBorder = Color(0xFF222235);
-
-  // Aurora theme colors (deep violet dark with gradient chat background)
-  static const auroraMainBg = Color(0xFF0D0B14);
-  static const auroraSidebarBg = Color(0xFF110E1A);
-  static const auroraChatBg = Color(0xFF0D0B14);
-  static const auroraChatBgEnd = Color(0xFF0B0F1A);
-  static const auroraSurface = Color(0xFF1A1628);
-  static const auroraSurfaceHover = Color(0xFF231E34);
-  // Darkened ~5% from 0xFF8B5CF6 for stronger white-on-accent contrast.
-  static const auroraAccent = Color(0xFF8458E9);
-  static const auroraAccentHover = Color(0xFFA78BFA);
-  static const auroraAccentLight = Color(0x1A8458E9);
-  static const auroraTextPrimary = Color(0xFFEDE9F6);
-  static const auroraTextSecondary = Color(0xFFABA4BE);
-  static const auroraTextMuted = Color(0xFF8780A0);
-  static const auroraSentBubble = Color(0xFF7C3AED);
-  static const auroraRecvBubble = Color(0xFF1E1A2E);
-  static const auroraBorder = Color(0xFF2D2744);
-
   // Sakura theme colors (feminine aesthetic -- light pink with soft pastels)
-  static const sakuraMainBg = Color(0xFFFFF5F7);
+  // Accent darkened from 0xFFDD1C85 -> 0xFFC0186E for WCAG AA on white text.
+  // Bg warmed from 0xFFFFF5F7 -> 0xFFFFF7F5.
+  static const sakuraMainBg = Color(0xFFFFF7F5);
   static const sakuraSidebarBg = Color(0xFFFFF0F3);
   static const sakuraChatBg = Color(0xFFFFF8FA);
   static const sakuraSurface = Color(0xFFFFFAFC);
   static const sakuraSurfaceHover = Color(0xFFFFE8EE);
-  // Darkened ~5% from 0xFFE91E8C for stronger white-on-accent contrast.
-  static const sakuraAccent = Color(0xFFDD1C85);
+  static const sakuraAccent = Color(0xFFC0186E);
   static const sakuraAccentHover = Color(0xFFFF45A8);
-  static const sakuraAccentLight = Color(0x1ADD1C85);
+  static const sakuraAccentLight = Color(0x1AC0186E);
   static const sakuraTextPrimary = Color(0xFF2D1B2E);
   static const sakuraTextSecondary = Color(0xFF7B5A7E);
   static const sakuraTextMuted = Color(0xFF89698C);
-  static const sakuraSentBubble = Color(0xFFDD1C85);
-  static const sakuraRecvBubble = Color(0xFFFFE8EE);
+  // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
+  static const sakuraSentBubble = sakuraAccent;
+  static const sakuraRecvBubble = sakuraSurface;
   static const sakuraBorder = Color(0xFFF0D4DC);
 
   // ---------------------------------------------------------------------------
@@ -393,8 +367,8 @@ class EchoTheme {
       scaffoldBackgroundColor: lightMainBg,
       textTheme: textTheme,
       colorScheme: const ColorScheme.light(
-        primary: accent,
-        secondary: accentHover,
+        primary: paperAccent,
+        secondary: paperAccentHover,
         surface: lightSurface,
         onSurfaceVariant: lightTextSecondary,
         error: danger,
@@ -423,12 +397,12 @@ class EchoTheme {
       inputDecorationTheme: _buildInputTheme(
         fillColor: lightSurface,
         borderColor: lightBorder,
-        focusBorderColor: accent,
+        focusBorderColor: paperAccent,
         hintColor: lightTextMuted,
         labelColor: lightTextSecondary,
       ),
-      filledButtonTheme: _buildFilledButtonTheme(accent),
-      textButtonTheme: _buildTextButtonTheme(accent),
+      filledButtonTheme: _buildFilledButtonTheme(paperAccent),
+      textButtonTheme: _buildTextButtonTheme(paperAccent),
       outlinedButtonTheme: _buildOutlinedButtonTheme(
         lightTextPrimary,
         lightBorder,
@@ -671,103 +645,6 @@ class EchoTheme {
   }
 
   // ---------------------------------------------------------------------------
-  // Neon theme
-  // ---------------------------------------------------------------------------
-
-  static ThemeData get neonTheme {
-    final textTheme = _buildTextTheme(
-      brightness: Brightness.dark,
-      primaryColor: neonTextPrimary,
-      secondaryColor: neonTextSecondary,
-      mutedColor: neonTextMuted,
-    );
-
-    return ThemeData(
-      brightness: Brightness.dark,
-      extensions: const [EchoColorExtension.neon],
-      scaffoldBackgroundColor: neonMainBg,
-      textTheme: textTheme,
-      colorScheme: const ColorScheme.dark(
-        primary: neonAccent,
-        secondary: neonAccentHover,
-        surface: neonSurface,
-        onSurfaceVariant: neonTextSecondary,
-        error: danger,
-        onPrimary: Color(0xFF0A0A0F),
-        onSecondary: Color(0xFF0A0A0F),
-        onSurface: neonTextPrimary,
-        onError: Colors.white,
-      ),
-      appBarTheme: AppBarTheme(
-        backgroundColor: neonSidebarBg,
-        foregroundColor: neonTextPrimary,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        titleTextStyle: GoogleFonts.inter(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: neonTextPrimary,
-        ),
-      ),
-      dividerColor: neonBorder,
-      dividerTheme: const DividerThemeData(
-        color: neonBorder,
-        thickness: 1,
-        space: 1,
-      ),
-      inputDecorationTheme: _buildInputTheme(
-        fillColor: neonSurface,
-        borderColor: neonBorder,
-        focusBorderColor: neonAccent,
-        hintColor: neonTextMuted,
-        labelColor: neonTextSecondary,
-      ),
-      filledButtonTheme: _buildFilledButtonTheme(
-        neonAccent,
-        foregroundColor: const Color(0xFF0A0A0F),
-      ),
-      textButtonTheme: _buildTextButtonTheme(neonAccent),
-      outlinedButtonTheme: _buildOutlinedButtonTheme(
-        neonTextPrimary,
-        neonBorder,
-      ),
-      iconTheme: const IconThemeData(color: neonTextSecondary, size: 20),
-      tooltipTheme: TooltipThemeData(
-        decoration: BoxDecoration(
-          color: neonSurface,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: neonBorder, width: 1),
-        ),
-        textStyle: GoogleFonts.inter(color: neonTextPrimary, fontSize: 12),
-        waitDuration: const Duration(milliseconds: 500),
-      ),
-      dialogTheme: DialogThemeData(
-        backgroundColor: neonSurface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: neonBorder),
-        ),
-      ),
-      bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: neonSurface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-        ),
-      ),
-      snackBarTheme: SnackBarThemeData(
-        backgroundColor: neonSurface,
-        contentTextStyle: GoogleFonts.inter(
-          color: neonTextPrimary,
-          fontSize: 13,
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        behavior: SnackBarBehavior.floating,
-        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
   // Sakura theme
   // ---------------------------------------------------------------------------
 
@@ -869,111 +746,23 @@ class EchoTheme {
   }
 
   // ---------------------------------------------------------------------------
-  // Aurora theme
-  // ---------------------------------------------------------------------------
-
-  static ThemeData get auroraTheme {
-    final textTheme = _buildTextTheme(
-      brightness: Brightness.dark,
-      primaryColor: auroraTextPrimary,
-      secondaryColor: auroraTextSecondary,
-      mutedColor: auroraTextMuted,
-    );
-
-    return ThemeData(
-      brightness: Brightness.dark,
-      extensions: const [EchoColorExtension.aurora],
-      scaffoldBackgroundColor: auroraMainBg,
-      textTheme: textTheme,
-      colorScheme: const ColorScheme.dark(
-        primary: auroraAccent,
-        secondary: auroraAccentHover,
-        surface: auroraSurface,
-        onSurfaceVariant: auroraTextSecondary,
-        error: danger,
-        onPrimary: Colors.white,
-        onSecondary: Colors.white,
-        onSurface: auroraTextPrimary,
-        onError: Colors.white,
-      ),
-      appBarTheme: AppBarTheme(
-        backgroundColor: auroraSidebarBg,
-        foregroundColor: auroraTextPrimary,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        titleTextStyle: GoogleFonts.inter(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: auroraTextPrimary,
-        ),
-      ),
-      dividerColor: auroraBorder,
-      dividerTheme: const DividerThemeData(
-        color: auroraBorder,
-        thickness: 1,
-        space: 1,
-      ),
-      inputDecorationTheme: _buildInputTheme(
-        fillColor: auroraSurface,
-        borderColor: auroraBorder,
-        focusBorderColor: auroraAccent,
-        hintColor: auroraTextMuted,
-        labelColor: auroraTextSecondary,
-      ),
-      filledButtonTheme: _buildFilledButtonTheme(auroraAccent),
-      textButtonTheme: _buildTextButtonTheme(auroraAccent),
-      outlinedButtonTheme: _buildOutlinedButtonTheme(
-        auroraTextPrimary,
-        auroraBorder,
-      ),
-      iconTheme: const IconThemeData(color: auroraTextSecondary, size: 20),
-      tooltipTheme: TooltipThemeData(
-        decoration: BoxDecoration(
-          color: auroraSurface,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: auroraBorder, width: 1),
-        ),
-        textStyle: GoogleFonts.inter(color: auroraTextPrimary, fontSize: 12),
-        waitDuration: const Duration(milliseconds: 500),
-      ),
-      dialogTheme: DialogThemeData(
-        backgroundColor: auroraSurface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: auroraBorder),
-        ),
-      ),
-      bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: auroraSurface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-        ),
-      ),
-      snackBarTheme: SnackBarThemeData(
-        backgroundColor: auroraSurface,
-        contentTextStyle: GoogleFonts.inter(
-          color: auroraTextPrimary,
-          fontSize: 13,
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        behavior: SnackBarBehavior.floating,
-        insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
   // High-contrast themes
   // ---------------------------------------------------------------------------
 
-  static ThemeData get highContrastDarkTheme {
+  /// Single high-contrast theme: #7C9BFF accent on pure black with white text.
+  /// Replaces the legacy `highContrastDarkTheme` + `highContrastLightTheme`
+  /// split (collapsed in the 9 -> 6 palette reduction).
+  static ThemeData get highContrastTheme {
     final base = darkTheme;
+    const hcAccent = Color(0xFF7C9BFF);
+    const hcSurface = Colors.black;
     return base.copyWith(
       colorScheme: base.colorScheme.copyWith(
-        surface: Colors.black,
+        surface: hcSurface,
         onSurface: Colors.white,
-        primary: Colors.yellow,
-        secondary: const Color(0xFFFFFF66),
+        primary: hcAccent,
+        secondary: hcAccent,
+        onPrimary: Colors.black,
         onSurfaceVariant: const Color(0xFFCCCCCC),
       ),
       dividerColor: Colors.white54,
@@ -983,36 +772,11 @@ class EchoTheme {
           sidebarBg: const Color(0xFF0A0A0A),
           chatBg: Colors.black,
           surfaceHover: const Color(0xFF1A1A1A),
-          sentBubble: const Color(0xFF444400),
-          recvBubble: const Color(0xFF1A1A1A),
+          // Locked bubble rule: sent = primary, recv = surface.
+          sentBubble: hcAccent,
+          recvBubble: hcSurface,
           textMuted: const Color(0xFFAAAAAA),
-          accentLight: const Color(0x33FFFF00),
-        ),
-      ],
-    );
-  }
-
-  static ThemeData get highContrastLightTheme {
-    final base = lightTheme;
-    return base.copyWith(
-      colorScheme: base.colorScheme.copyWith(
-        surface: Colors.white,
-        onSurface: Colors.black,
-        primary: const Color(0xFF0000CC),
-        secondary: const Color(0xFF0000AA),
-        onSurfaceVariant: const Color(0xFF333333),
-      ),
-      dividerColor: Colors.black54,
-      scaffoldBackgroundColor: Colors.white,
-      extensions: [
-        EchoColorExtension.light.copyWith(
-          sidebarBg: const Color(0xFFF0F0F0),
-          chatBg: Colors.white,
-          surfaceHover: const Color(0xFFE8E8E8),
-          sentBubble: const Color(0xFF0000CC),
-          recvBubble: const Color(0xFFE8E8E8),
-          textMuted: const Color(0xFF555555),
-          accentLight: const Color(0x220000CC),
+          accentLight: const Color(0x337C9BFF),
         ),
       ],
     );
@@ -1104,17 +868,6 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     recvBubble: EchoTheme.emberRecvBubble,
   );
 
-  /// Neon theme colors
-  static const neon = EchoColorExtension(
-    sidebarBg: EchoTheme.neonSidebarBg,
-    chatBg: EchoTheme.neonChatBg,
-    surfaceHover: EchoTheme.neonSurfaceHover,
-    accentLight: EchoTheme.neonAccentLight,
-    textMuted: EchoTheme.neonTextMuted,
-    sentBubble: EchoTheme.neonSentBubble,
-    recvBubble: EchoTheme.neonRecvBubble,
-  );
-
   /// Sakura theme colors
   static const sakura = EchoColorExtension(
     sidebarBg: EchoTheme.sakuraSidebarBg,
@@ -1124,22 +877,6 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     textMuted: EchoTheme.sakuraTextMuted,
     sentBubble: EchoTheme.sakuraSentBubble,
     recvBubble: EchoTheme.sakuraRecvBubble,
-  );
-
-  /// Aurora theme colors
-  static const aurora = EchoColorExtension(
-    sidebarBg: EchoTheme.auroraSidebarBg,
-    chatBg: EchoTheme.auroraChatBg,
-    surfaceHover: EchoTheme.auroraSurfaceHover,
-    accentLight: EchoTheme.auroraAccentLight,
-    textMuted: EchoTheme.auroraTextMuted,
-    sentBubble: EchoTheme.auroraSentBubble,
-    recvBubble: EchoTheme.auroraRecvBubble,
-    chatBgGradient: LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [EchoTheme.auroraChatBg, EchoTheme.auroraChatBgEnd],
-    ),
   );
 
   @override

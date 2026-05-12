@@ -12,13 +12,12 @@ const kCustomAccentColorKey = 'theme.accent_color';
 
 enum AppThemeSelection {
   system,
-  dark,
-  light,
+  indigo,
+  paper,
   graphite,
   ember,
-  neon,
   sakura,
-  aurora,
+  highContrast,
 }
 
 const _kThemeKey = 'echo_theme_mode';
@@ -34,23 +33,43 @@ class AppTheme extends _$AppTheme {
   @override
   AppThemeSelection build() {
     _load();
-    return AppThemeSelection.dark;
+    return AppThemeSelection.indigo;
   }
+
+  /// Legacy-string migration table. The 9 -> 6 palette reduction renamed
+  /// `dark` -> `indigo`, `light` -> `paper`, collapsed `highContrast{Dark,Light}`
+  /// into a single `highContrast`, and removed `neon` / `aurora`. Any value
+  /// not in [AppThemeSelection.values] by name is migrated silently here.
+  static AppThemeSelection _migrateLegacy(String? value) => switch (value) {
+    'paper' => AppThemeSelection.paper,
+    'indigo' => AppThemeSelection.indigo,
+    'system' => AppThemeSelection.system,
+    'graphite' => AppThemeSelection.graphite,
+    'ember' => AppThemeSelection.ember,
+    'sakura' => AppThemeSelection.sakura,
+    'highContrast' => AppThemeSelection.highContrast,
+    // Legacy renames + cuts (silent migration).
+    'dark' => AppThemeSelection.indigo,
+    'light' => AppThemeSelection.paper,
+    'aurora' => AppThemeSelection.indigo,
+    'neon' => AppThemeSelection.highContrast,
+    'highContrastDark' => AppThemeSelection.highContrast,
+    'highContrastLight' => AppThemeSelection.paper,
+    // Unknown / null -> default.
+    _ => AppThemeSelection.indigo,
+  };
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     final value = prefs.getString(_kThemeKey);
-    state = switch (value) {
-      'light' => AppThemeSelection.light,
-      'dark' => AppThemeSelection.dark,
-      'system' => AppThemeSelection.system,
-      'graphite' => AppThemeSelection.graphite,
-      'ember' => AppThemeSelection.ember,
-      'neon' => AppThemeSelection.neon,
-      'sakura' => AppThemeSelection.sakura,
-      'aurora' => AppThemeSelection.aurora,
-      _ => AppThemeSelection.dark,
-    };
+    final migrated = _migrateLegacy(value);
+    state = migrated;
+    // One-shot write-back: if the persisted string isn't already the new
+    // canonical name, normalise it so subsequent loads skip the migration
+    // path and a manual prefs-file inspection shows the new value.
+    if (value != migrated.name) {
+      await prefs.setString(_kThemeKey, migrated.name);
+    }
   }
 
   Future<void> setTheme(AppThemeSelection selection) async {
@@ -63,8 +82,8 @@ class AppTheme extends _$AppTheme {
   Future<void> setThemeMode(ThemeMode mode) async {
     final selection = switch (mode) {
       ThemeMode.system => AppThemeSelection.system,
-      ThemeMode.dark => AppThemeSelection.dark,
-      ThemeMode.light => AppThemeSelection.light,
+      ThemeMode.dark => AppThemeSelection.indigo,
+      ThemeMode.light => AppThemeSelection.paper,
     };
     await setTheme(selection);
   }

@@ -51,34 +51,33 @@ class EchoApp extends ConsumerWidget {
 
     final themeMode = switch (themeSelection) {
       AppThemeSelection.system => ThemeMode.system,
-      AppThemeSelection.dark => ThemeMode.dark,
-      AppThemeSelection.light => ThemeMode.light,
+      AppThemeSelection.indigo => ThemeMode.dark,
+      AppThemeSelection.paper => ThemeMode.light,
       AppThemeSelection.graphite => ThemeMode.dark,
       AppThemeSelection.ember => ThemeMode.dark,
-      AppThemeSelection.neon => ThemeMode.dark,
-      AppThemeSelection.aurora => ThemeMode.dark,
       AppThemeSelection.sakura => ThemeMode.light,
+      AppThemeSelection.highContrast => ThemeMode.dark,
     };
     final darkThemeBase = switch (themeSelection) {
       AppThemeSelection.graphite => EchoTheme.graphiteTheme,
       AppThemeSelection.ember => EchoTheme.emberTheme,
-      AppThemeSelection.neon => EchoTheme.neonTheme,
-      AppThemeSelection.aurora => EchoTheme.auroraTheme,
+      AppThemeSelection.highContrast => EchoTheme.highContrastTheme,
       _ => EchoTheme.darkTheme,
     };
     final lightThemeBase = switch (themeSelection) {
       AppThemeSelection.sakura => EchoTheme.sakuraTheme,
+      AppThemeSelection.highContrast => EchoTheme.highContrastTheme,
       _ =>
         accessibility.highContrast
-            ? EchoTheme.highContrastLightTheme
+            ? EchoTheme.highContrastTheme
             : EchoTheme.lightTheme,
     };
 
     // Apply user-defined color overrides on top of the selected theme.
+    // The accessibility.highContrast toggle still forces HC regardless of the
+    // theme selection (overlay behavior, independent of the picker).
     final darkTheme = _applyCustomColors(
-      accessibility.highContrast
-          ? EchoTheme.highContrastDarkTheme
-          : darkThemeBase,
+      accessibility.highContrast ? EchoTheme.highContrastTheme : darkThemeBase,
       customColors,
     );
     final lightTheme = _applyCustomColors(lightThemeBase, customColors);

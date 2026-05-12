@@ -11,19 +11,18 @@ void main() {
         AppThemeSelection.values,
         containsAll([
           AppThemeSelection.system,
-          AppThemeSelection.dark,
-          AppThemeSelection.light,
+          AppThemeSelection.indigo,
+          AppThemeSelection.paper,
           AppThemeSelection.graphite,
           AppThemeSelection.ember,
-          AppThemeSelection.neon,
           AppThemeSelection.sakura,
-          AppThemeSelection.aurora,
+          AppThemeSelection.highContrast,
         ]),
       );
     });
 
-    test('has 8 theme options', () {
-      expect(AppThemeSelection.values, hasLength(8));
+    test('has 7 theme options', () {
+      expect(AppThemeSelection.values, hasLength(7));
     });
   });
 

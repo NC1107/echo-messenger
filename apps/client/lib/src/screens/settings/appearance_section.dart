@@ -48,7 +48,7 @@ const _lightPreview = _ThemePreviewColors(
   mainBg: EchoTheme.lightMainBg,
   sentBubble: EchoTheme.lightSentBubble,
   recvBubble: EchoTheme.lightRecvBubble,
-  accent: EchoTheme.accent,
+  accent: EchoTheme.paperAccent,
   border: EchoTheme.lightBorder,
   textPrimary: EchoTheme.lightTextPrimary,
   textSecondary: EchoTheme.lightTextSecondary,
@@ -76,17 +76,6 @@ const _emberPreview = _ThemePreviewColors(
   textSecondary: EchoTheme.emberTextSecondary,
 );
 
-const _neonPreview = _ThemePreviewColors(
-  sidebarBg: EchoTheme.neonSidebarBg,
-  mainBg: EchoTheme.neonMainBg,
-  sentBubble: EchoTheme.neonSentBubble,
-  recvBubble: EchoTheme.neonRecvBubble,
-  accent: EchoTheme.neonAccent,
-  border: EchoTheme.neonBorder,
-  textPrimary: EchoTheme.neonTextPrimary,
-  textSecondary: EchoTheme.neonTextSecondary,
-);
-
 const _sakuraPreview = _ThemePreviewColors(
   sidebarBg: EchoTheme.sakuraSidebarBg,
   mainBg: EchoTheme.sakuraMainBg,
@@ -98,15 +87,15 @@ const _sakuraPreview = _ThemePreviewColors(
   textSecondary: EchoTheme.sakuraTextSecondary,
 );
 
-const _auroraPreview = _ThemePreviewColors(
-  sidebarBg: EchoTheme.auroraSidebarBg,
-  mainBg: EchoTheme.auroraMainBg,
-  sentBubble: EchoTheme.auroraSentBubble,
-  recvBubble: EchoTheme.auroraRecvBubble,
-  accent: EchoTheme.auroraAccent,
-  border: EchoTheme.auroraBorder,
-  textPrimary: EchoTheme.auroraTextPrimary,
-  textSecondary: EchoTheme.auroraTextSecondary,
+const _highContrastPreview = _ThemePreviewColors(
+  sidebarBg: Color(0xFF0A0A0A),
+  mainBg: Color(0xFF000000),
+  sentBubble: Color(0xFF7C9BFF),
+  recvBubble: Color(0xFF000000),
+  accent: Color(0xFF7C9BFF),
+  border: Color(0xFF8A8A8A),
+  textPrimary: Color(0xFFFFFFFF),
+  textSecondary: Color(0xFFCCCCCC),
 );
 
 class AppearanceSection extends ConsumerStatefulWidget {
@@ -124,6 +113,9 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
   @override
   Widget build(BuildContext context) {
     final currentTheme = ref.watch(themeProvider);
+    // Card order (palette reduction 2026-05-11): Indigo, Graphite, Ember,
+    // Paper, Sakura, High contrast. System lives at the top as the "follow
+    // device" affordance and is not part of the six-palette set.
     const themeOptions = <_ThemeCardData>[
       _ThemeCardData(
         selection: AppThemeSelection.system,
@@ -132,34 +124,28 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
         preview: null, // special split preview
       ),
       _ThemeCardData(
-        selection: AppThemeSelection.dark,
-        label: 'Dark',
-        subtitle: 'Easy on the eyes',
+        selection: AppThemeSelection.indigo,
+        label: 'Indigo',
+        subtitle: 'Default accent',
         preview: _darkPreview,
-      ),
-      _ThemeCardData(
-        selection: AppThemeSelection.light,
-        label: 'Light',
-        subtitle: 'Classic bright look',
-        preview: _lightPreview,
       ),
       _ThemeCardData(
         selection: AppThemeSelection.graphite,
         label: 'Graphite',
-        subtitle: 'Teal accents',
+        subtitle: 'Teal on cool black',
         preview: _graphitePreview,
       ),
       _ThemeCardData(
         selection: AppThemeSelection.ember,
         label: 'Ember',
-        subtitle: 'Amber accents',
+        subtitle: 'Amber on warm black',
         preview: _emberPreview,
       ),
       _ThemeCardData(
-        selection: AppThemeSelection.neon,
-        label: 'Neon',
-        subtitle: 'Electric green gamer',
-        preview: _neonPreview,
+        selection: AppThemeSelection.paper,
+        label: 'Paper',
+        subtitle: 'Warm off-white',
+        preview: _lightPreview,
       ),
       _ThemeCardData(
         selection: AppThemeSelection.sakura,
@@ -168,10 +154,10 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
         preview: _sakuraPreview,
       ),
       _ThemeCardData(
-        selection: AppThemeSelection.aurora,
-        label: 'Aurora',
-        subtitle: 'Violet gradient',
-        preview: _auroraPreview,
+        selection: AppThemeSelection.highContrast,
+        label: 'High contrast',
+        subtitle: 'WCAG AAA accessibility',
+        preview: _highContrastPreview,
       ),
     ];
 

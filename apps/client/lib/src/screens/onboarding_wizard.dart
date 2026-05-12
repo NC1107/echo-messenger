@@ -430,7 +430,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       child: Column(
         children: [
           const SizedBox(height: 24),
-          Icon(Icons.lock_outline, size: 64, color: context.accent),
+          Icon(Icons.lock_outline, size: 64, color: context.textMuted),
           const SizedBox(height: 24),
           Text(
             'Your messages are private',

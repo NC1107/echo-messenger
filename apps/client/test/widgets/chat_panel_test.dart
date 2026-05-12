@@ -87,7 +87,7 @@ List<Override> _chatPanelOverrides({ChatState chatState = const ChatState()}) {
 /// `state` from the value `build()` returns.
 class _FakeTheme extends AppTheme {
   @override
-  AppThemeSelection build() => AppThemeSelection.dark;
+  AppThemeSelection build() => AppThemeSelection.indigo;
 }
 
 class _FakeMessageLayoutNotifier extends MessageLayoutNotifier {

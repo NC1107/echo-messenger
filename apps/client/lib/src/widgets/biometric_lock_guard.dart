@@ -96,7 +96,7 @@ class _BiometricLockGuardState extends ConsumerState<BiometricLockGuard>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lock_rounded, size: 64, color: context.accent),
+            Icon(Icons.lock_rounded, size: 64, color: context.textMuted),
             const SizedBox(height: 24),
             Text(
               'Echo is locked',
