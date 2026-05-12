@@ -62,7 +62,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     with WidgetsBindingObserver {
   Conversation? _selectedConversation;
   String? _pendingMessageId;
-  bool _showMembers = false;
+  // Slice 7: members panel defaults to on so group context (roles, online
+  // status) is visible without an explicit toggle. Users can still hide it.
+  bool _showMembers = true;
   Timer? _pendingRefreshTimer;
   late final LiveKitVoiceNotifier _voiceRtcNotifier;
   StreamSubscription<String>? _notificationTapSub;
