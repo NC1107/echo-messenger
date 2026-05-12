@@ -344,9 +344,9 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                   visible[i].username.isNotEmpty
                       ? visible[i].username[0].toUpperCase()
                       : '?',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 8,
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.onPrimary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -663,7 +663,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
       constraints: const BoxConstraints(maxHeight: 300),
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.black,
+        color: context.videoOverlayBg,
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
       child: GridView.count(
@@ -875,7 +875,7 @@ class _LiveKitVideoTile extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
       child: Container(
-        color: Colors.black87,
+        color: context.videoOverlayBg,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -892,7 +892,7 @@ class _LiveKitVideoTile extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.black54,
+                  color: context.overlayScrim,
                   borderRadius: BorderRadius.circular(3),
                 ),
                 child: Text(

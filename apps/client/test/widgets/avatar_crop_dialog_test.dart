@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:echo_app/src/theme/echo_theme.dart';
 import 'package:echo_app/src/widgets/avatar_crop_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -342,7 +343,12 @@ final _tiny1x1Jpeg = Uint8List.fromList([
 ]);
 
 void main() {
-  Widget buildHost(Widget child) => MaterialApp(home: Scaffold(body: child));
+  // Slice 8: dialog now reads `context.overlayScrim` from EchoColorExtension,
+  // so the test host needs a theme that registers it.
+  Widget buildHost(Widget child) => MaterialApp(
+    theme: EchoTheme.darkTheme,
+    home: Scaffold(body: child),
+  );
 
   group('_CircleMaskPainter', () {
     test('should repaint returns false', () {

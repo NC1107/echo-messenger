@@ -101,7 +101,11 @@ class ChatHeaderBar extends ConsumerWidget {
           imageUrl: headerAvatarUrl,
           bgColor: conv.isGroup ? groupAvatarColor(displayName) : null,
           fallbackIcon: conv.isGroup
-              ? const Icon(Icons.group, size: 14, color: Colors.white)
+              ? Icon(
+                  Icons.group,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.onPrimary,
+                )
               : null,
         );
         if (conv.isGroup && onGroupInfo != null) {

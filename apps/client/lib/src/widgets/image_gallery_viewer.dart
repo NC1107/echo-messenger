@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../services/media_cache_service.dart';
 import '../services/toast_service.dart';
+import '../theme/echo_theme.dart';
 import '../utils/download_helper.dart';
 
 /// Opens a fullscreen swipeable image gallery over the current route.
@@ -175,7 +176,8 @@ class _ImageGalleryViewerState extends State<ImageGalleryViewer>
           }
         },
         child: Material(
-          color: Colors.black.withValues(alpha: 0.92),
+          // Slice 8: gallery fullscreen scrim via theme token.
+          color: context.overlayScrim,
           child: Stack(
             children: [
               // Full-screen page swipe area.

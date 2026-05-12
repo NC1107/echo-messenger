@@ -477,7 +477,11 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
           imageUrl: conv.isGroup ? widget.groupIconUrl : widget.peerAvatarUrl,
           bgColor: conv.isGroup ? groupAvatarColor(displayName) : null,
           fallbackIcon: conv.isGroup
-              ? Icon(Icons.group, size: groupIconSize, color: Colors.white)
+              ? Icon(
+                  Icons.group,
+                  size: groupIconSize,
+                  color: Theme.of(context).colorScheme.onPrimary,
+                )
               : null,
         ),
         if (!conv.isGroup)
@@ -850,7 +854,9 @@ class _ConversationItemState extends ConsumerState<ConversationItem> {
                       ? '99+'
                       : '${widget.conversation.unreadCount}',
                   style: GoogleFonts.inter(
-                    color: conv.isMuted ? context.textMuted : Colors.white,
+                    color: conv.isMuted
+                        ? context.textMuted
+                        : Theme.of(context).colorScheme.onPrimary,
                     fontSize: density == UIDensity.compact ? 10 : 11,
                     fontWeight: FontWeight.w700,
                     height: 1,

@@ -69,49 +69,61 @@ class EchoTheme {
         ? ThemeData.dark().textTheme
         : ThemeData.light().textTheme;
     final baseTextTheme = GoogleFonts.interTextTheme(base);
+    // Route any glyph not present in Inter (notably emoji codepoints) to the
+    // bundled NotoEmoji font. Without this fallback, AppImage builds render
+    // tofu boxes when the host system fonts are missing.
+    const emojiFallback = ['NotoEmoji'];
     return baseTextTheme.copyWith(
       headlineLarge: baseTextTheme.headlineLarge?.copyWith(
         fontSize: 24,
         fontWeight: FontWeight.w700,
         letterSpacing: -0.5,
         color: primaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
       headlineMedium: baseTextTheme.headlineMedium?.copyWith(
         fontSize: 22,
         fontWeight: FontWeight.w700,
         color: primaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
       titleLarge: baseTextTheme.titleLarge?.copyWith(
         fontSize: 16,
         fontWeight: FontWeight.w600,
         color: primaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
       titleMedium: baseTextTheme.titleMedium?.copyWith(
         fontSize: 14,
         fontWeight: FontWeight.w600,
         color: primaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
       bodyLarge: baseTextTheme.bodyLarge?.copyWith(
         fontSize: 15,
         fontWeight: FontWeight.w400,
         height: 1.47,
         color: primaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
       bodyMedium: baseTextTheme.bodyMedium?.copyWith(
         fontSize: 13,
         fontWeight: FontWeight.w400,
         color: secondaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
       bodySmall: baseTextTheme.bodySmall?.copyWith(
         fontSize: 12,
         fontWeight: FontWeight.w400,
         color: mutedColor,
+        fontFamilyFallback: emojiFallback,
       ),
       labelLarge: baseTextTheme.labelLarge?.copyWith(
         fontSize: 11,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.5,
         color: secondaryColor,
+        fontFamilyFallback: emojiFallback,
       ),
     );
   }
@@ -272,16 +284,19 @@ class EchoTheme {
   // Paper theme colors (light) — warm off-white with darkened indigo accent.
   // Replaces the legacy "Light" palette: bg warmed from #F5F5F7 -> #FAFAF7,
   // accent darkened from #5B5EE6 -> #4F46E5 for stronger WCAG AA contrast.
+  // Slice 6 (May 2026): pushed further into warm-cream territory — base bg
+  // moved from cool off-white toward a paper-cream tone for less harsh
+  // glare. Accent kept at indigo since it still clears AA on the warmer bg.
   static const paperAccent = Color(0xFF4F46E5);
   static const paperAccentHover = Color(0xFF6366F1);
-  static const lightMainBg = Color(0xFFFAFAF7);
-  static const lightSidebarBg = Color(0xFFF3F3EF);
-  static const lightChatBg = Color(0xFFF8F8F5);
-  static const lightSurface = Color(0xFFFFFFFC);
-  static const lightSurfaceHover = Color(0xFFEEEEEA);
-  static const lightTextPrimary = Color(0xFF1A1A1E);
-  static const lightTextSecondary = Color(0xFF5C5C66);
-  static const lightTextMuted = Color(0xFF72727E);
+  static const lightMainBg = Color(0xFFF8F5F0);
+  static const lightSidebarBg = Color(0xFFF3EFEA);
+  static const lightChatBg = Color(0xFFFCF9F6);
+  static const lightSurface = Color(0xFFFEF9F5);
+  static const lightSurfaceHover = Color(0xFFEFEAE2);
+  static const lightTextPrimary = Color(0xFF2C2618);
+  static const lightTextSecondary = Color(0xFF5C5448);
+  static const lightTextMuted = Color(0xFF72685A);
   // Locked bubble rule: sentBubble = primary (accent), recvBubble = surface.
   static const lightSentBubble = paperAccent;
   static const lightRecvBubble = lightSurface;
@@ -333,10 +348,13 @@ class EchoTheme {
   // Sakura theme colors (feminine aesthetic -- light pink with soft pastels)
   // Accent darkened from 0xFFDD1C85 -> 0xFFC0186E for WCAG AA on white text.
   // Bg warmed from 0xFFFFF5F7 -> 0xFFFFF7F5.
+  // Slice 6: nudge surface a touch warmer (it sits behind avatars + cards;
+  // the cooler pink read as fluorescent in side-by-side comparisons with
+  // Paper).
   static const sakuraMainBg = Color(0xFFFFF7F5);
   static const sakuraSidebarBg = Color(0xFFFFF0F3);
   static const sakuraChatBg = Color(0xFFFFF8FA);
-  static const sakuraSurface = Color(0xFFFFFAFC);
+  static const sakuraSurface = Color(0xFFFFF8F4);
   static const sakuraSurfaceHover = Color(0xFFFFE8EE);
   static const sakuraAccent = Color(0xFFC0186E);
   static const sakuraAccentHover = Color(0xFFFF45A8);
@@ -804,6 +822,26 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
   /// Optional gradient for the chat background. Null means use flat [chatBg].
   final Gradient? chatBgGradient;
 
+  /// Slice 8 tokens (May 2026): consolidate hardcoded UI colors that were
+  /// previously sprinkled across widgets as `Colors.white/black.withValues`
+  /// calls. Each theme can tune them; defaults are derived from brightness.
+  ///
+  /// Hairline dividers (channel bar separators, popup borders, etc.).
+  final Color dividerTint;
+
+  /// Background fill for video tiles + black-letterbox surfaces (the LiveKit
+  /// grid, fullscreen video preview, etc.). Always near-black even on light
+  /// themes — video reads best on a true dark backdrop.
+  final Color videoOverlayBg;
+
+  /// Shadow color for cards/popups. Theme-aware (deeper on dark, lighter on
+  /// light) so cards lift cleanly without looking dirty.
+  final Color shadowColor;
+
+  /// Modal/gallery scrim — sits over the entire UI when a fullscreen viewer
+  /// (image gallery, avatar crop, etc.) is open.
+  final Color overlayScrim;
+
   const EchoColorExtension({
     required this.sidebarBg,
     required this.chatBg,
@@ -814,6 +852,10 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     required this.recvBubble,
     this.cardRowBg,
     this.chatBgGradient,
+    this.dividerTint = const Color(0x14FFFFFF),
+    this.videoOverlayBg = const Color(0xFF0A0A0A),
+    this.shadowColor = const Color(0x66000000),
+    this.overlayScrim = const Color(0x8C000000),
   });
 
   /// Resolved card row surface color. Defaults to [surfaceHover] when no
@@ -844,6 +886,8 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     textMuted: EchoTheme.lightTextMuted,
     sentBubble: EchoTheme.lightSentBubble,
     recvBubble: EchoTheme.lightRecvBubble,
+    dividerTint: Color(0x14000000),
+    shadowColor: Color(0x26000000),
   );
 
   /// Graphite theme colors
@@ -877,6 +921,8 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     textMuted: EchoTheme.sakuraTextMuted,
     sentBubble: EchoTheme.sakuraSentBubble,
     recvBubble: EchoTheme.sakuraRecvBubble,
+    dividerTint: Color(0x14000000),
+    shadowColor: Color(0x26000000),
   );
 
   @override
@@ -890,6 +936,10 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
     Color? recvBubble,
     Color? cardRowBg,
     Gradient? chatBgGradient,
+    Color? dividerTint,
+    Color? videoOverlayBg,
+    Color? shadowColor,
+    Color? overlayScrim,
   }) {
     return EchoColorExtension(
       sidebarBg: sidebarBg ?? this.sidebarBg,
@@ -901,6 +951,10 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
       recvBubble: recvBubble ?? this.recvBubble,
       cardRowBg: cardRowBg ?? this.cardRowBg,
       chatBgGradient: chatBgGradient ?? this.chatBgGradient,
+      dividerTint: dividerTint ?? this.dividerTint,
+      videoOverlayBg: videoOverlayBg ?? this.videoOverlayBg,
+      shadowColor: shadowColor ?? this.shadowColor,
+      overlayScrim: overlayScrim ?? this.overlayScrim,
     );
   }
 
@@ -929,6 +983,10 @@ class EchoColorExtension extends ThemeExtension<EchoColorExtension> {
       recvBubble: Color.lerp(recvBubble, other.recvBubble, t)!,
       cardRowBg: lerpedCardRowBg,
       chatBgGradient: t < 0.5 ? chatBgGradient : other.chatBgGradient,
+      dividerTint: Color.lerp(dividerTint, other.dividerTint, t)!,
+      videoOverlayBg: Color.lerp(videoOverlayBg, other.videoOverlayBg, t)!,
+      shadowColor: Color.lerp(shadowColor, other.shadowColor, t)!,
+      overlayScrim: Color.lerp(overlayScrim, other.overlayScrim, t)!,
     );
   }
 }
@@ -957,6 +1015,12 @@ extension EchoColors on BuildContext {
   Color get textMuted => echo.textMuted;
   Color get sentBubble => echo.sentBubble;
   Color get recvBubble => echo.recvBubble;
+
+  // Slice 8 tokens.
+  Color get dividerTint => echo.dividerTint;
+  Color get videoOverlayBg => echo.videoOverlayBg;
+  Color get shadowColor => echo.shadowColor;
+  Color get overlayScrim => echo.overlayScrim;
 
   /// Foreground color for content rendered on top of [sentBubble].
   /// Resolves to `ColorScheme.onPrimary` because most themes keep the sent

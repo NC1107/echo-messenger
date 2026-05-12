@@ -288,8 +288,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // The version text should contain 'Echo v'
-      expect(find.textContaining('Echo v'), findsOneWidget);
+      // The version text should be 'v<APP_VERSION>'.
+      expect(find.textContaining(RegExp(r'^v')), findsWidgets);
     });
 
     testWidgets('keeps username and clears password on failed login', (

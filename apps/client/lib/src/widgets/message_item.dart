@@ -109,6 +109,10 @@ class MessageItem extends StatefulWidget {
   /// True for the no-background plain (Slack) layout.
   bool get _isPlain => layout == MessageLayout.plain;
 
+  /// True for the Discord-style compact layout (avatars + transparent rows,
+  /// distinct from [_isPlain] which is the Slack-style no-background layout).
+  bool get _isCompact => layout == MessageLayout.compact;
+
   /// When true, messages whose content matches a decrypt-failure sentinel are
   /// hidden entirely (render as [SizedBox.shrink]). When false (the default)
   /// they show the lock-icon pill (#668). Controlled by the
@@ -416,7 +420,7 @@ class _MessageItemState extends State<MessageItem>
               border: Border.all(color: context.border),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.6),
+                  color: context.shadowColor,
                   blurRadius: 40,
                   offset: const Offset(0, 16),
                 ),
@@ -1003,7 +1007,9 @@ class _MessageItemState extends State<MessageItem>
   // Locked rule: sent bubble = primary, recv bubble = surface — pinned in EchoColorExtension across all themes. Do not drift shades here.
   Color _bubbleColor({required bool isMine, required bool isFailed}) {
     if (isFailed) return EchoTheme.danger.withValues(alpha: 0.2);
-    if (widget._isPlain) return Colors.transparent;
+    // Slice 5: compact (Discord) also drops the bubble fill — only the
+    // legacy "bubbles" layout draws a coloured recv/sent background.
+    if (widget._isPlain || widget._isCompact) return Colors.transparent;
     if (isMine) return context.sentBubble;
     return context.recvBubble;
   }
@@ -1208,7 +1214,11 @@ class _MessageItemState extends State<MessageItem>
   }) {
     return [
       if (msg.pinnedAt != null) PinnedIndicator(isMine: isMine),
-      if (widget.showHeader && (!isMine || widget.compactLayout))
+      // Slice 5: in compact mode (Discord-style) show the sender name on
+      // EVERY message, not only first-in-group. In bubbles/plain we keep
+      // the grouped-header behaviour.
+      if ((widget._isCompact || widget.showHeader) &&
+          (!isMine || widget.compactLayout))
         SenderNameLabel(
           message: msg,
           hasMedia: hasMedia,
@@ -1257,6 +1267,10 @@ class _MessageItemState extends State<MessageItem>
     final EdgeInsets padding;
     if (hasMedia) {
       padding = const EdgeInsets.all(4);
+    } else if (widget._isCompact) {
+      // Slice 5: Discord has no horizontal inset around compact messages —
+      // the avatar column already provides the indent.
+      padding = const EdgeInsets.symmetric(horizontal: 0, vertical: 4);
     } else if (widget.compactLayout) {
       padding = const EdgeInsets.symmetric(horizontal: 8, vertical: 4);
     } else {
@@ -1303,6 +1317,21 @@ class _MessageItemState extends State<MessageItem>
     required Widget reactionPill,
   }) {
     if (!hasReactions) return bubble;
+    // Slice 5: in plain (Slack) mode, render reactions inline directly
+    // beneath the message body instead of using a Stack overlay — Slack's
+    // reactions sit in the same column as the timestamp row, never as a
+    // floating pill.
+    if (widget._isPlain) {
+      return Column(
+        crossAxisAlignment: isMine
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
+        children: [
+          bubble,
+          Padding(padding: const EdgeInsets.only(top: 2), child: reactionPill),
+        ],
+      );
+    }
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -1337,11 +1366,15 @@ class _MessageItemState extends State<MessageItem>
             ? () => widget.onAvatarTap!(msg.fromUserId)
             : null,
         child: SizedBox(
-          width: widget.compactLayout ? 24 : 28,
+          // Slice 5: bump compact avatar to 32px (closer to Discord's 40)
+          // for legibility while staying tighter than the bubbles layout.
+          width: widget._isCompact ? 32 : (widget.compactLayout ? 24 : 28),
           child: showAvatar
               ? buildAvatar(
                   name: msg.fromUsername,
-                  radius: widget.compactLayout ? 12 : 14,
+                  radius: widget._isCompact
+                      ? 16
+                      : (widget.compactLayout ? 12 : 14),
                   bgColor: _getAvatarColor(msg.fromUserId),
                   imageUrl: avatarImageUrl,
                 )
@@ -1474,7 +1507,9 @@ class _MessageItemState extends State<MessageItem>
     // bubble (#prod-2026-05-08).  Use the bubble's actual visual side.
     final bubbleOnRight = isMine && !widget.compactLayout;
     return Positioned(
-      top: -28,
+      // Slice 4: overlap the bubble's top edge by ~10px instead of parking
+      // the bar fully above it.
+      top: -8,
       // Anchor only the side closest to the bubble so the overlay sizes to
       // its child action row (#723).  Setting both left & right would force
       // it to span the entire chat width — sent (right-aligned) bubbles set
@@ -1679,20 +1714,35 @@ class _MessageItemState extends State<MessageItem>
         UIDensity.compact => 3,
       };
     } else {
+      // Slice 3: collapse same-sender gap to 1-2px to remove "floaty" look.
       topPad = switch (widget.density) {
-        UIDensity.cozy => 4,
+        UIDensity.cozy => 2,
         UIDensity.normal => 2,
         UIDensity.compact => 1,
       };
     }
 
+    // Slice 5: in plain (Slack) mode, paint a 3px accent rule along the left
+    // edge while hovering — mirrors Slack's selected-message treatment so
+    // affordances feel anchored without drawing a full bubble.
+    final showPlainHoverAccent = widget._isPlain && _isHovered;
     final messageWidget = Container(
       padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
+        left: 12,
+        right: 12,
         top: topPad,
         bottom: hasReactions ? 4 : 2,
       ),
+      decoration: showPlainHoverAccent
+          ? BoxDecoration(
+              border: Border(
+                left: BorderSide(
+                  color: context.accent.withValues(alpha: 0.4),
+                  width: 3,
+                ),
+              ),
+            )
+          : null,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -1717,6 +1767,7 @@ class _MessageItemState extends State<MessageItem>
                   message: msg,
                   isMine: isMine,
                   onTap: widget.onViewThread,
+                  inlineStyle: widget._isPlain,
                 ),
               if (widget.isLastInGroup)
                 _buildTimestampRow(msg: msg, isMine: isMine)

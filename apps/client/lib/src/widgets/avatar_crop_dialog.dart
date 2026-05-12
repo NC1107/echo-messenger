@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 
+import '../theme/echo_theme.dart';
+
 /// Decodes [bytes] into an [img.Image] suitable for cropping.
 ///
 /// The `image` package handles JPEG, PNG, GIF, WebP, BMP and TIFF directly.
@@ -347,7 +349,7 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
               // Circular mask overlay — darkened corners, bright circle border.
               CustomPaint(
                 size: const Size(_previewSize, _previewSize),
-                painter: _CircleMaskPainter(),
+                painter: _CircleMaskPainter(scrim: context.overlayScrim),
               ),
             ],
           ),
@@ -360,23 +362,24 @@ class _AvatarCropDialogState extends State<_AvatarCropDialog> {
 /// Paints a semi-transparent dark overlay with a circular cut-out and a
 /// light ring border to guide the user's framing.
 class _CircleMaskPainter extends CustomPainter {
+  final Color scrim;
+
+  _CircleMaskPainter({required this.scrim});
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2 - 2;
 
-    // Dark overlay excluding the circle.
+    // Dark overlay excluding the circle (Slice 8: themed scrim).
     final path = Path()
       ..addRect(Offset.zero & size)
       ..addOval(Rect.fromCircle(center: center, radius: radius))
       ..fillType = PathFillType.evenOdd;
 
-    canvas.drawPath(
-      path,
-      Paint()..color = Colors.black.withValues(alpha: 0.55),
-    );
+    canvas.drawPath(path, Paint()..color = scrim);
 
-    // Circle border.
+    // Circle border — stays white so the guide remains visible on any scrim.
     canvas.drawCircle(
       center,
       radius,
@@ -388,5 +391,6 @@ class _CircleMaskPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_CircleMaskPainter oldDelegate) => false;
+  bool shouldRepaint(_CircleMaskPainter oldDelegate) =>
+      oldDelegate.scrim != scrim;
 }

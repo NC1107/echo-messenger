@@ -40,26 +40,43 @@ class MembersPanel extends ConsumerWidget {
     final isOwner = myRole == 'owner';
     final canRemove = isOwner || myRole == 'admin';
 
-    // Split members into online / offline sections
-    final onlineMembers = members
-        .where((m) => onlineUsers.contains(m.userId))
-        .toList();
-    final offlineMembers = members
-        .where((m) => !onlineUsers.contains(m.userId))
-        .toList();
+    // Slice 7: group members by role (OWNER / ADMIN / MEMBERS) instead of
+    // online/offline. Online presence is still surfaced as a subtle dot
+    // and "online"/"away" activity line within each row.
+    int sortByName(ConversationMember a, ConversationMember b) =>
+        a.username.toLowerCase().compareTo(b.username.toLowerCase());
 
-    // Build flat list items: section header + rows
+    final owners = members.where((m) => m.role == 'owner').toList()
+      ..sort(sortByName);
+    final admins = members.where((m) => m.role == 'admin').toList()
+      ..sort(sortByName);
+    final regulars =
+        members.where((m) => m.role != 'owner' && m.role != 'admin').toList()
+          ..sort(sortByName);
+
     final items = <_MemberListItem>[];
-    if (onlineMembers.isNotEmpty) {
-      items.add(_MemberListItem.header('ONLINE — ${onlineMembers.length}'));
-      for (final m in onlineMembers) {
-        items.add(_MemberListItem.member(m, isOnline: true));
+    if (owners.isNotEmpty) {
+      items.add(_MemberListItem.header('OWNER — ${owners.length}'));
+      for (final m in owners) {
+        items.add(
+          _MemberListItem.member(m, isOnline: onlineUsers.contains(m.userId)),
+        );
       }
     }
-    if (offlineMembers.isNotEmpty) {
-      items.add(_MemberListItem.header('OFFLINE — ${offlineMembers.length}'));
-      for (final m in offlineMembers) {
-        items.add(_MemberListItem.member(m, isOnline: false));
+    if (admins.isNotEmpty) {
+      items.add(_MemberListItem.header('ADMIN — ${admins.length}'));
+      for (final m in admins) {
+        items.add(
+          _MemberListItem.member(m, isOnline: onlineUsers.contains(m.userId)),
+        );
+      }
+    }
+    if (regulars.isNotEmpty) {
+      items.add(_MemberListItem.header('MEMBERS — ${regulars.length}'));
+      for (final m in regulars) {
+        items.add(
+          _MemberListItem.member(m, isOnline: onlineUsers.contains(m.userId)),
+        );
       }
     }
 
@@ -332,7 +349,9 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
           onEnter: (_) => setState(() => _isHovered = true),
           onExit: (_) => setState(() => _isHovered = false),
           child: Container(
-            height: 40,
+            // Slice 7: a touch taller so the activity line under each name
+            // fits without crowding the avatar.
+            height: 48,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
@@ -359,40 +378,54 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Username + role icon
+                // Username + role icon + activity line (slice 7).
                 Expanded(
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      if (member.role == 'owner') ...[
-                        const Icon(
-                          Icons.star_rounded,
-                          size: 14,
-                          color: Colors.amber,
-                          semanticLabel: 'owner',
-                        ),
-                        const SizedBox(width: 4),
-                      ] else if (member.role == 'admin') ...[
-                        const Icon(
-                          Icons.shield_rounded,
-                          size: 14,
-                          color: Colors.blue,
-                          semanticLabel: 'admin',
-                        ),
-                        const SizedBox(width: 4),
-                      ],
-                      Flexible(
-                        child: Text(
-                          member.username,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: context.textSecondary,
-                            fontSize: 13,
+                      Row(
+                        children: [
+                          if (member.role == 'owner') ...[
+                            const Icon(
+                              Icons.star_rounded,
+                              size: 14,
+                              color: Colors.amber,
+                              semanticLabel: 'owner',
+                            ),
+                            const SizedBox(width: 4),
+                          ] else if (member.role == 'admin') ...[
+                            const Icon(
+                              Icons.shield_rounded,
+                              size: 14,
+                              color: Colors.blue,
+                              semanticLabel: 'admin',
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          Flexible(
+                            child: Text(
+                              member.username,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: context.textSecondary,
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
+                          if (member.role != null &&
+                              (member.role == 'owner' ||
+                                  member.role == 'admin'))
+                            _buildRoleBadge(member.role!),
+                        ],
+                      ),
+                      Text(
+                        widget.isOnline ? 'online' : 'away',
+                        style: TextStyle(
+                          color: context.textMuted,
+                          fontSize: 11,
                         ),
                       ),
-                      if (member.role != null &&
-                          (member.role == 'owner' || member.role == 'admin'))
-                        _buildRoleBadge(member.role!),
                     ],
                   ),
                 ),

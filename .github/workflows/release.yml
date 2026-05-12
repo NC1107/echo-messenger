@@ -422,6 +422,11 @@ jobs:
           magick public/white_echo_icon.png -gravity center -background none -extent 1408x1408 -resize 256x256 Echo.AppDir/echo.png || \
           cp public/white_echo_icon.png Echo.AppDir/echo.png
           cp Echo.AppDir/echo.png Echo.AppDir/usr/share/icons/hicolor/256x256/apps/
+          # Slice 9: ship the same icon next to the binary so the GTK
+          # runner's gtk_window_set_icon_from_file("<exe>/data/echo-messenger.png")
+          # path resolves at runtime → alt-tab thumbnail.
+          mkdir -p Echo.AppDir/usr/bin/data
+          cp Echo.AppDir/echo.png Echo.AppDir/usr/bin/data/echo-messenger.png
           cat > Echo.AppDir/AppRun << 'APPRUN'
           #!/bin/bash
           HERE="$(dirname "$(readlink -f "$0")")"

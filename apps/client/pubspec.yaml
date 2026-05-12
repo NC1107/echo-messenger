@@ -76,6 +76,10 @@ flutter:
   assets:
     - assets/images/
     - assets/sounds/
+  fonts:
+    - family: NotoEmoji
+      fonts:
+        - asset: assets/fonts/NotoColorEmoji.ttf
 
 dependency_overrides:
   # Stub out broken record_linux — voice recording is mobile/web only.
