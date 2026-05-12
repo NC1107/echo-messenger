@@ -13,17 +13,49 @@ class ReplyCountBadge extends StatelessWidget {
   final bool isMine;
   final ValueChanged<ChatMessage>? onTap;
 
+  /// When true, render as a subtle inline accent-coloured "N replies" link
+  /// (no rounded pill). Used by the plain (Slack-style) layout where the
+  /// chrome of a pill clashes with the surrounding text-only treatment.
+  final bool inlineStyle;
+
   const ReplyCountBadge({
     super.key,
     required this.message,
     required this.isMine,
     this.onTap,
+    this.inlineStyle = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final count = message.replyCount;
     final label = count == 1 ? '1 reply' : '$count replies';
+    if (inlineStyle) {
+      return Padding(
+        padding: EdgeInsets.only(top: 2, left: isMine ? 0 : 36),
+        child: Align(
+          alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+          child: Semantics(
+            label: 'View $label',
+            button: true,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(2),
+              onTap: onTap == null ? null : () => onTap!(message),
+              child: Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: context.accent,
+                  fontWeight: FontWeight.w500,
+                  decoration: TextDecoration.underline,
+                  decorationColor: context.accent.withValues(alpha: 0.4),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: EdgeInsets.only(top: 4, left: isMine ? 0 : 36),
       child: Align(
