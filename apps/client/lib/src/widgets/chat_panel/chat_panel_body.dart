@@ -10,12 +10,8 @@ import '../../screens/user_profile_screen.dart';
 import '../../services/saved_messages_service.dart';
 import '../../theme/echo_theme.dart';
 import '../channel_bar.dart';
-import '../chat/session_corrupted_banner.dart';
 import '../chat_header_bar.dart';
 import '../chat_input_bar.dart';
-import '../connection_status_banner.dart';
-import '../crypto_degraded_banner.dart';
-import '../identity_key_changed_banner.dart';
 import '../message_search_overlay.dart';
 import 'chat_message_list.dart';
 import 'drop_overlay.dart';
@@ -54,7 +50,6 @@ class ChatPanelBodyParams {
     required this.liveRegionAnnouncement,
     required this.showSearch,
     required this.hideVoiceDock,
-    required this.hideEncryptionBanner,
     required this.typingUsers,
     required this.isDragOver,
     required this.chatInputBarKey,
@@ -65,7 +60,6 @@ class ChatPanelBodyParams {
     required this.onTextChannelChanged,
     required this.onVoiceChannelChanged,
     required this.onSetShowSearch,
-    required this.onDismissEncryptionBanner,
     required this.onHighlightMessage,
     required this.onShowReactionPicker,
     required this.onToggleReaction,
@@ -112,7 +106,6 @@ class ChatPanelBodyParams {
   final String liveRegionAnnouncement;
   final bool showSearch;
   final bool hideVoiceDock;
-  final bool hideEncryptionBanner;
   final List<String> typingUsers;
   final bool isDragOver;
   final GlobalKey<ChatInputBarState> chatInputBarKey;
@@ -123,7 +116,6 @@ class ChatPanelBodyParams {
   final ValueChanged<String?> onTextChannelChanged;
   final ValueChanged<String?> onVoiceChannelChanged;
   final ValueChanged<bool> onSetShowSearch;
-  final VoidCallback onDismissEncryptionBanner;
   final ValueChanged<String> onHighlightMessage;
   final void Function(ChatMessage, Offset) onShowReactionPicker;
   final void Function(ChatMessage, String, bool) onToggleReaction;
@@ -177,8 +169,6 @@ Widget buildChatContentBox(
               onToggleSearch: () => p.onSetShowSearch(!p.showSearch),
               onMembersToggle: p.onMembersToggle,
               onGroupInfo: p.onGroupInfo,
-              onDismissEncryptionBanner: p.onDismissEncryptionBanner,
-              hideEncryptionBanner: p.hideEncryptionBanner,
             ),
             if (p.conv.isGroup)
               ChannelBar(
@@ -204,23 +194,6 @@ Widget buildChatContentBox(
                 minHeight: 2,
                 color: context.accent,
                 backgroundColor: context.surface,
-              ),
-            const ConnectionStatusBanner(),
-            const CryptoDegradedBanner(),
-            if (!p.conv.isGroup) IdentityKeyChangedBanner(conversation: p.conv),
-            if (!p.conv.isGroup)
-              Builder(
-                builder: (ctx) {
-                  final peer = p.conv.members
-                      .where((m) => m.userId != p.myUserId)
-                      .firstOrNull;
-                  if (peer == null) return const SizedBox.shrink();
-                  return SessionCorruptedBanner(
-                    conversationId: p.conv.id,
-                    peerUserId: peer.userId,
-                    peerName: peer.username,
-                  );
-                },
               ),
             Expanded(
               child: GestureDetector(

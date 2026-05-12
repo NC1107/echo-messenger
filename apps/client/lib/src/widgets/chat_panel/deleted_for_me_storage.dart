@@ -25,26 +25,3 @@ class DeletedForMeStorage {
     await prefs.setStringList(_key, ids.toList());
   }
 }
-
-/// Persistent set of conversation IDs the user dismissed the encryption
-/// banner on. Mirrors [DeletedForMeStorage] semantics.
-class DismissedBannersStorage {
-  DismissedBannersStorage._();
-
-  static const _key = 'dismissed_encryption_banners';
-  static Set<String> ids = {};
-  static bool _loaded = false;
-
-  static Future<void> ensureLoaded() async {
-    if (_loaded) return;
-    _loaded = true;
-    final prefs = await SharedPreferences.getInstance();
-    ids = (prefs.getStringList(_key) ?? []).toSet();
-  }
-
-  static Future<void> add(String conversationId) async {
-    ids.add(conversationId);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_key, ids.toList());
-  }
-}

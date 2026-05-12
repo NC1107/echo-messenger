@@ -19,6 +19,7 @@ import '../models/chat_message.dart';
 import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/crypto_provider.dart';
+import '../screens/safety_number_screen.dart';
 import '../services/message_cache.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
@@ -69,6 +70,97 @@ class _IdentityChangedBadgeState extends ConsumerState<IdentityChangedBadge> {
     if (flag != _changed) setState(() => _changed = flag);
   }
 
+  /// Open a small action sheet offering "Verify safety number" (jumps to the
+  /// safety-number screen) and "Trust new key" (drops the old session and
+  /// clears the change flag). Replaces the standalone identity-key-changed
+  /// banner so the warning lives entirely in the header.
+  Future<void> _showActions() async {
+    final myName = ref.read(authProvider).username ?? 'You';
+    // Username is cosmetic on the safety-number screen; falling back to the
+    // userId keeps the badge self-contained without plumbing the peer's
+    // display name down from the header.
+    final peerLabel = widget.peerUserId;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        size: 18,
+                        color: EchoTheme.warning,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Identity key changed',
+                          style: GoogleFonts.inter(
+                            color: sheetCtx.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ListTile(
+                  leading: Icon(
+                    Icons.verified_user_outlined,
+                    color: sheetCtx.accent,
+                  ),
+                  title: const Text('Verify safety number'),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    SafetyNumberScreen.show(
+                      context,
+                      ref,
+                      peerUserId: widget.peerUserId,
+                      peerUsername: peerLabel,
+                      myUsername: myName,
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.check_circle_outline,
+                    color: EchoTheme.warning,
+                  ),
+                  title: const Text('Trust new key'),
+                  onTap: () async {
+                    Navigator.of(sheetCtx).pop();
+                    await ref
+                        .read(cryptoProvider.notifier)
+                        .acceptIdentityKeyChange(widget.peerUserId);
+                    if (mounted) {
+                      setState(() => _changed = false);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_changed) return const SizedBox.shrink();
@@ -76,12 +168,20 @@ class _IdentityChangedBadgeState extends ConsumerState<IdentityChangedBadge> {
       padding: const EdgeInsets.only(left: 4),
       child: Semantics(
         label: 'identity changed warning',
-        child: const Tooltip(
-          message: "Identity changed -- verify safety number",
-          child: Icon(
-            Icons.warning_amber_rounded,
-            size: 14,
-            color: EchoTheme.warning,
+        button: true,
+        child: Tooltip(
+          message: 'Identity changed -- tap to verify or trust',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: _showActions,
+            child: const Padding(
+              padding: EdgeInsets.all(2),
+              child: Icon(
+                Icons.warning_amber_rounded,
+                size: 14,
+                color: EchoTheme.warning,
+              ),
+            ),
           ),
         ),
       ),
@@ -92,7 +192,7 @@ class _IdentityChangedBadgeState extends ConsumerState<IdentityChangedBadge> {
 /// Tiny green check shown next to a DM peer's name when the user has
 /// previously verified their safety number. Reads `echo_safety_verified_<id>`
 /// from SharedPreferences. Clears itself if the pref changes between rebuilds
-/// (see IdentityKeyChangedBanner which removes the pref on TOFU).
+/// (the crypto layer removes the pref on TOFU when a peer key changes).
 class VerifiedBadge extends StatefulWidget {
   final String peerUserId;
 

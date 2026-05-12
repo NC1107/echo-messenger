@@ -34,8 +34,6 @@ class ChatHeaderBar extends ConsumerWidget {
   final VoidCallback onToggleSearch;
   final VoidCallback? onMembersToggle;
   final VoidCallback? onGroupInfo;
-  final VoidCallback onDismissEncryptionBanner;
-  final bool hideEncryptionBanner;
 
   const ChatHeaderBar({
     super.key,
@@ -47,8 +45,6 @@ class ChatHeaderBar extends ConsumerWidget {
     required this.onToggleSearch,
     this.onMembersToggle,
     this.onGroupInfo,
-    required this.onDismissEncryptionBanner,
-    this.hideEncryptionBanner = false,
   });
 
   @override
@@ -56,46 +52,34 @@ class ChatHeaderBar extends ConsumerWidget {
     final conv = conversation;
     final displayName = conv.displayName(myUserId);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          height: 60,
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: BoxDecoration(
-            color: context.sidebarBg,
-            border: Border(bottom: BorderSide(color: context.border, width: 1)),
-          ),
-          child: Row(
-            children: [
-              if (onBack != null) ...[
-                IconButton(
-                  icon: const Icon(Icons.arrow_back, size: 20),
-                  color: context.textSecondary,
-                  tooltip: 'Back',
-                  onPressed: onBack,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 44,
-                    minHeight: 44,
-                  ),
-                ),
-                const SizedBox(width: 4),
-              ],
-              _buildHeaderAvatar(conv, displayName),
-              const SizedBox(width: 12),
-              _buildNameAndStatus(context, ref, conv, displayName),
-              ..._buildActionButtons(context, ref, conv),
-            ],
-          ),
-        ),
-        _buildEncryptionBanner(
-          context,
-          conv.isGroup,
-          isEncrypted: conv.isEncrypted,
-        ),
-        _buildCorruptionBanner(context, ref, conv),
-      ],
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: context.sidebarBg,
+        border: Border(bottom: BorderSide(color: context.border, width: 1)),
+      ),
+      child: Row(
+        children: [
+          if (onBack != null) ...[
+            IconButton(
+              icon: const Icon(Icons.arrow_back, size: 20),
+              color: context.textSecondary,
+              tooltip: 'Back',
+              onPressed: onBack,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            ),
+            const SizedBox(width: 4),
+          ],
+          _buildHeaderAvatar(conv, displayName),
+          const SizedBox(width: 12),
+          _buildNameAndStatus(context, ref, conv, displayName),
+          ..._buildActionButtons(context, ref, conv),
+          const SizedBox(width: 4),
+          const _ConnectionStatusDot(),
+        ],
+      ),
     );
   }
 
@@ -195,7 +179,11 @@ class ChatHeaderBar extends ConsumerWidget {
           )
         : null;
 
-    final lockGlyph = conv.isEncrypted
+    // For DMs, render an amber lock-open glyph when the conversation is not
+    // encrypted (explicit "plaintext DM" warning replaces the old banner).
+    // Groups never show the unlock-open glyph because group plaintext is
+    // expected today.
+    final Widget? lockGlyph = conv.isEncrypted
         ? Padding(
             padding: const EdgeInsets.only(left: 5),
             child: Tooltip(
@@ -203,7 +191,19 @@ class ChatHeaderBar extends ConsumerWidget {
               child: Icon(Icons.lock, size: 12, color: context.textMuted),
             ),
           )
-        : null;
+        : (!conv.isGroup
+              ? const Padding(
+                  padding: EdgeInsets.only(left: 5),
+                  child: Tooltip(
+                    message: 'Not encrypted -- plaintext DM',
+                    child: Icon(
+                      Icons.lock_open,
+                      size: 12,
+                      color: EchoTheme.warning,
+                    ),
+                  ),
+                )
+              : null);
 
     if (conv.isGroup) {
       return Row(
@@ -500,62 +500,6 @@ class ChatHeaderBar extends ConsumerWidget {
     );
   }
 
-  Widget _buildEncryptionBanner(
-    BuildContext context,
-    bool isGroup, {
-    bool isEncrypted = false,
-  }) {
-    // Encryption banner removed — status shown via lock icon in header instead.
-    // Only show banner for unencrypted DMs as a warning.
-    if (hideEncryptionBanner || isGroup || isEncrypted) {
-      return const SizedBox.shrink();
-    }
-
-    const label = 'Encryption is off — messages are sent as plaintext';
-
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: context.surface,
-        border: Border.all(color: EchoTheme.warning.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.lock_open_outlined,
-            size: 14,
-            color: EchoTheme.warning,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              label,
-              style: GoogleFonts.inter(fontSize: 11, color: EchoTheme.warning),
-            ),
-          ),
-          Semantics(
-            label: 'dismiss encryption banner',
-            button: true,
-            child: GestureDetector(
-              onTap: onDismissEncryptionBanner,
-              child: Icon(Icons.close, size: 14, color: context.textMuted),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Session-corruption recovery is surfaced by the standalone
-  // SessionCorruptedBanner widget mounted in chat_panel.dart.
-  Widget _buildCorruptionBanner(
-    BuildContext context,
-    WidgetRef ref,
-    Conversation conv,
-  ) => const SizedBox.shrink();
-
   void _openSharedMedia(BuildContext context, Conversation conv) {
     showModalBottomSheet<void>(
       context: context,
@@ -798,5 +742,57 @@ class ChatHeaderBar extends ConsumerWidget {
         );
       }
     }
+  }
+}
+
+/// Small connection-state indicator rendered in the header actions row.
+///
+/// Replaces the standalone full-width [ConnectionStatusBanner]. Color codes:
+/// green when connected, amber while reconnecting, red after max attempts
+/// or session-replaced. Tap to force a reconnect.
+class _ConnectionStatusDot extends ConsumerWidget {
+  const _ConnectionStatusDot();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ws = ref.watch(websocketProvider);
+    final maxAttempts = !ws.isConnected && ws.reconnectAttempts >= 10;
+    final isError = ws.wasReplaced || maxAttempts;
+    final Color color;
+    final String tooltip;
+    if (ws.isConnected) {
+      color = EchoTheme.online;
+      tooltip = 'Connected';
+    } else if (isError) {
+      color = EchoTheme.danger;
+      tooltip = ws.wasReplaced
+          ? 'Signed in on another device -- tap to reconnect'
+          : 'Connection lost -- tap to retry';
+    } else {
+      color = EchoTheme.warning;
+      tooltip = ws.reconnectAttempts > 0
+          ? 'Reconnecting (${ws.reconnectAttempts})...'
+          : 'Reconnecting...';
+    }
+
+    return Semantics(
+      label: tooltip,
+      button: true,
+      child: Tooltip(
+        message: tooltip,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => ref.read(websocketProvider.notifier).connect(),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -11,10 +11,17 @@ class ToastService {
   static OverlayEntry? _currentEntry;
   static Timer? _dismissTimer;
 
+  /// Show a toast. Optionally include an inline action button (rendered to
+  /// the right of the message) that calls [onAction] then dismisses. When
+  /// [actionLabel] is set, the toast defaults to a 6-second duration unless
+  /// [duration] is provided explicitly.
   static void show(
     BuildContext context,
     String message, {
     ToastType type = ToastType.info,
+    String? actionLabel,
+    VoidCallback? onAction,
+    Duration? duration,
   }) {
     // Mirror error and warning toasts into the debug log so they are always
     // visible in Settings > Debug Logs, even if the on-screen toast was missed.
@@ -29,11 +36,19 @@ class ToastService {
 
     final overlay = Overlay.of(context);
 
+    final hasAction = actionLabel != null;
+    final effectiveDuration =
+        duration ??
+        (hasAction ? const Duration(seconds: 6) : const Duration(seconds: 3));
+
     late OverlayEntry entry;
     entry = OverlayEntry(
       builder: (_) => _ToastWidget(
         message: message,
         type: type,
+        actionLabel: actionLabel,
+        onAction: onAction,
+        totalDuration: effectiveDuration,
         onDismiss: () {
           _dismiss();
         },
@@ -43,7 +58,7 @@ class ToastService {
     _currentEntry = entry;
     overlay.insert(entry);
 
-    _dismissTimer = Timer(const Duration(seconds: 3), _dismiss);
+    _dismissTimer = Timer(effectiveDuration, _dismiss);
   }
 
   static void _dismiss() {
@@ -58,11 +73,17 @@ class _ToastWidget extends StatefulWidget {
   final String message;
   final ToastType type;
   final VoidCallback onDismiss;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final Duration totalDuration;
 
   const _ToastWidget({
     required this.message,
     required this.type,
     required this.onDismiss,
+    required this.totalDuration,
+    this.actionLabel,
+    this.onAction,
   });
 
   @override
@@ -89,8 +110,10 @@ class _ToastWidgetState extends State<_ToastWidget>
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
     _controller.forward();
 
-    // Start fade-out before auto-dismiss.
-    Future.delayed(const Duration(milliseconds: 2500), () {
+    // Start fade-out 500ms before the auto-dismiss timer fires so the
+    // reverse animation has time to complete before the entry is removed.
+    final fadeStart = widget.totalDuration - const Duration(milliseconds: 500);
+    Future.delayed(fadeStart.isNegative ? Duration.zero : fadeStart, () {
       if (mounted) {
         _controller.reverse().then((_) {
           if (mounted) widget.onDismiss();
@@ -133,6 +156,7 @@ class _ToastWidgetState extends State<_ToastWidget>
 
   @override
   Widget build(BuildContext context) {
+    final actionLabel = widget.actionLabel;
     return Positioned(
       bottom: 24,
       right: 24,
@@ -143,7 +167,7 @@ class _ToastWidgetState extends State<_ToastWidget>
           child: Material(
             color: Colors.transparent,
             child: Container(
-              constraints: const BoxConstraints(maxWidth: 320),
+              constraints: const BoxConstraints(maxWidth: 360),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: _backgroundColor(),
@@ -172,6 +196,41 @@ class _ToastWidgetState extends State<_ToastWidget>
                       ),
                     ),
                   ),
+                  if (actionLabel != null) ...[
+                    const SizedBox(width: 10),
+                    Semantics(
+                      label: actionLabel.toLowerCase(),
+                      button: true,
+                      child: GestureDetector(
+                        onTap: () {
+                          widget.onAction?.call();
+                          widget.onDismiss();
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.45),
+                            ),
+                          ),
+                          child: Text(
+                            actionLabel,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(width: 8),
                   GestureDetector(
                     onTap: widget.onDismiss,
