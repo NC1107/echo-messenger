@@ -998,6 +998,7 @@ class _MessageItemState extends State<MessageItem>
 
   /// Resolve the bubble background color based on message state.
   /// Plain (Slack) layout drops the bubble fill entirely (#564).
+  // Locked rule: sent bubble = primary, recv bubble = surface — pinned in EchoColorExtension across all themes. Do not drift shades here.
   Color _bubbleColor({required bool isMine, required bool isFailed}) {
     if (isFailed) return EchoTheme.danger.withValues(alpha: 0.2);
     if (widget._isPlain) return Colors.transparent;
