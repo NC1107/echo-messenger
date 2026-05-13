@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/version_utils.dart';
+import '../widgets/auth/auth_layout.dart';
 import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/echo_logo_icon.dart';
 
@@ -162,46 +163,40 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       body: Stack(
         children: [
           const AuthBackground(),
-          SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildHeader(context),
-                        const SizedBox(height: 32),
-                        _buildUsernameField(),
-                        const SizedBox(height: 16),
-                        _buildPasswordField(),
-                        if (_passwordText.isNotEmpty ||
-                            _passwordFocused ||
-                            _hasAttemptedSubmit)
-                          _buildPasswordHint(context)
-                        else
-                          const SizedBox.shrink(),
-                        _buildStrengthIndicator(context, strength),
-                        const SizedBox(height: 12),
-                        _buildConfirmPasswordField(),
-                        _buildErrorMessage(context, authState),
-                        const SizedBox(height: 24),
-                        _buildSubmitButton(authState),
-                        const SizedBox(height: 12),
-                        TextButton(
-                          onPressed: () => context.go('/login'),
-                          style: TextButton.styleFrom(
-                            foregroundColor: context.textSecondary,
-                          ),
-                          child: const Text('Already have an account? Log in'),
-                        ),
-                      ],
+          AuthLayout(
+            tagline: 'Sign up. Talk privately.',
+            formTitle: 'Create your account',
+            compactHeader: _buildHeader(context),
+            narrowPadding: const EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
+            formColumn: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildUsernameField(),
+                  const SizedBox(height: 16),
+                  _buildPasswordField(),
+                  if (_passwordText.isNotEmpty ||
+                      _passwordFocused ||
+                      _hasAttemptedSubmit)
+                    _buildPasswordHint(context)
+                  else
+                    const SizedBox.shrink(),
+                  _buildStrengthIndicator(context, strength),
+                  const SizedBox(height: 12),
+                  _buildConfirmPasswordField(),
+                  _buildErrorMessage(context, authState),
+                  const SizedBox(height: 24),
+                  _buildSubmitButton(authState),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => context.go('/login'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: context.textSecondary,
                     ),
+                    child: const Text('Already have an account? Log in'),
                   ),
-                ),
+                ],
               ),
             ),
           ),
