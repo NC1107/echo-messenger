@@ -13,14 +13,20 @@ import '../theme/echo_theme.dart';
 import '../theme/responsive.dart';
 import '../utils/fuzzy_score.dart';
 
-/// Global message search overlay (Ctrl+Shift+F or search icon).
+/// Universal search overlay (Ctrl+Shift+F or search icon).
 ///
-/// Searches messages across ALL conversations the user is a member of,
-/// using the server's full-text search endpoint (GIN index on messages).
+/// Searches messages (full-text, non-encrypted), contacts (by
+/// username/display name), and groups (by title) in a single request.
+/// Results are grouped by category with click-through navigation.
 class GlobalSearchOverlay extends ConsumerStatefulWidget {
   final void Function(String conversationId, String messageId) onResultTap;
+  final void Function(String userId, String username) onContactTap;
 
-  const GlobalSearchOverlay({super.key, required this.onResultTap});
+  const GlobalSearchOverlay({
+    super.key,
+    required this.onResultTap,
+    required this.onContactTap,
+  });
 
   @override
   ConsumerState<GlobalSearchOverlay> createState() =>
@@ -32,7 +38,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   final _focusNode = FocusNode();
   final _keyboardFocusNode = FocusNode();
   Timer? _debounce;
-  List<_SearchResult> _results = [];
+  _UniversalResults? _results;
   bool _loading = false;
   String _lastQuery = '';
 
@@ -55,7 +61,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     _debounce?.cancel();
     if (query.trim().length < 2) {
       setState(() {
-        _results = [];
+        _results = null;
         _loading = false;
       });
       return;
@@ -73,7 +79,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     final serverUrl = ref.read(serverUrlProvider);
     final token = ref.read(authProvider).token ?? '';
     final uri = Uri.parse(
-      '$serverUrl/api/messages/search?q=${Uri.encodeQueryComponent(query)}&limit=20',
+      '$serverUrl/api/search?q=${Uri.encodeQueryComponent(query)}&limit=15',
     );
 
     try {
@@ -83,14 +89,16 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
       );
       if (!mounted) return;
       if (response.statusCode == 200) {
-        final list = jsonDecode(response.body) as List;
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
         final conversations = ref.read(conversationsProvider).conversations;
         final myUserId = ref.read(authProvider).userId ?? '';
-        final parsed = list.map((item) {
+
+        final rawMessages = (body['messages'] as List? ?? []);
+        final messages = rawMessages.map((item) {
           final e = item as Map<String, dynamic>;
           final convId = (e['conversation_id'] ?? '').toString();
           final conv = conversations.where((c) => c.id == convId).firstOrNull;
-          return _SearchResult(
+          return _MessageResult(
             messageId: (e['message_id'] ?? '').toString(),
             conversationId: convId,
             conversationName: conv?.displayName(myUserId) ?? 'Unknown',
@@ -99,7 +107,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
             timestamp: (e['created_at'] ?? '').toString(),
           );
         }).toList();
-        parsed.sort((a, b) {
+        messages.sort((a, b) {
           final sa =
               fuzzyScore(query, a.content) +
               0.5 * fuzzyScore(query, a.conversationName) +
@@ -110,24 +118,63 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
               0.25 * fuzzyScore(query, b.senderUsername);
           return sb.compareTo(sa);
         });
+
+        final rawContacts = (body['contacts'] as List? ?? []);
+        final contacts = rawContacts.map((item) {
+          final e = item as Map<String, dynamic>;
+          return _ContactResult(
+            userId: (e['user_id'] ?? '').toString(),
+            username: (e['username'] ?? '').toString(),
+            displayName: e['display_name'] as String?,
+            avatarUrl: e['avatar_url'] as String?,
+          );
+        }).toList();
+
+        final rawGroups = (body['groups'] as List? ?? []);
+        final groups = rawGroups.map((item) {
+          final e = item as Map<String, dynamic>;
+          return _GroupResult(
+            conversationId: (e['conversation_id'] ?? '').toString(),
+            title: (e['title'] ?? 'Unnamed Group').toString(),
+            description: e['description'] as String?,
+            memberCount: (e['member_count'] as num?)?.toInt() ?? 0,
+          );
+        }).toList();
+
         setState(() {
-          _results = parsed;
+          _results = _UniversalResults(
+            messages: messages,
+            contacts: contacts,
+            groups: groups,
+          );
           _loading = false;
         });
       } else {
         setState(() {
-          _results = [];
+          _results = _UniversalResults.empty();
           _loading = false;
         });
       }
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _results = [];
+        _results = _UniversalResults.empty();
         _loading = false;
       });
     }
   }
+
+  bool get _hasResults =>
+      _results != null &&
+      (_results!.messages.isNotEmpty ||
+          _results!.contacts.isNotEmpty ||
+          _results!.groups.isNotEmpty);
+
+  bool get _showEmpty =>
+      _results != null &&
+      !_loading &&
+      !_hasResults &&
+      _controller.text.trim().length >= 2;
 
   @override
   Widget build(BuildContext context) {
@@ -148,11 +195,11 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
           color: Colors.black54,
           child: Center(
             child: GestureDetector(
-              onTap: () {}, // absorb taps on card
+              onTap: () {},
               child: Container(
                 width: width,
                 constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.7,
+                  maxHeight: MediaQuery.of(context).size.height * 0.75,
                 ),
                 margin: const EdgeInsets.symmetric(vertical: 48),
                 decoration: BoxDecoration(
@@ -170,7 +217,6 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Search input
                     Padding(
                       padding: const EdgeInsets.all(12),
                       child: TextField(
@@ -182,7 +228,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
                           fontSize: 15,
                         ),
                         decoration: InputDecoration(
-                          hintText: 'Search all messages...',
+                          hintText: 'Search messages, contacts, groups...',
                           hintStyle: TextStyle(color: context.textMuted),
                           prefixIcon: Icon(
                             Icons.search,
@@ -214,25 +260,32 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
                         ),
                       ),
                     ),
-                    // Results
-                    if (_results.isNotEmpty)
+                    if (_hasResults)
                       Flexible(
-                        child: ListView.builder(
-                          itemCount: _results.length,
-                          padding: const EdgeInsets.only(bottom: 8),
-                          itemBuilder: (context, index) {
-                            final r = _results[index];
-                            return _buildResultTile(r);
-                          },
+                        child: ListView(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.only(bottom: 12),
+                          children: [
+                            if (_results!.messages.isNotEmpty) ...[
+                              _buildSectionHeader('Messages'),
+                              ..._results!.messages.map(_buildMessageTile),
+                            ],
+                            if (_results!.contacts.isNotEmpty) ...[
+                              _buildSectionHeader('Contacts'),
+                              ..._results!.contacts.map(_buildContactTile),
+                            ],
+                            if (_results!.groups.isNotEmpty) ...[
+                              _buildSectionHeader('Groups'),
+                              ..._results!.groups.map(_buildGroupTile),
+                            ],
+                          ],
                         ),
                       ),
-                    if (_results.isEmpty &&
-                        !_loading &&
-                        _controller.text.trim().length >= 2)
+                    if (_showEmpty)
                       Padding(
                         padding: const EdgeInsets.all(24),
                         child: Text(
-                          'No messages found',
+                          'No results found',
                           style: TextStyle(
                             color: context.textMuted,
                             fontSize: 14,
@@ -249,8 +302,22 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     );
   }
 
-  Widget _buildResultTile(_SearchResult r) {
-    // Truncate content for display
+  Widget _buildSectionHeader(String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: context.textMuted,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageTile(_MessageResult r) {
     final preview = r.content.length > 120
         ? '${r.content.substring(0, 120)}...'
         : r.content;
@@ -258,8 +325,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     String timeLabel = '';
     final dt = DateTime.tryParse(r.timestamp);
     if (dt != null) {
-      final now = DateTime.now();
-      final diff = now.difference(dt);
+      final diff = DateTime.now().difference(dt);
       if (diff.inDays > 0) {
         timeLabel = '${diff.inDays}d ago';
       } else if (diff.inHours > 0) {
@@ -272,7 +338,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     }
 
     return Semantics(
-      label: 'search result by ${r.senderUsername}',
+      label: 'message from ${r.senderUsername} in ${r.conversationName}',
       button: true,
       child: InkWell(
         onTap: () {
@@ -295,11 +361,13 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  Text(
-                    'in ${r.conversationName}',
-                    style: TextStyle(color: context.textMuted, fontSize: 12),
+                  Expanded(
+                    child: Text(
+                      'in ${r.conversationName}',
+                      style: TextStyle(color: context.textMuted, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  const Spacer(),
                   Text(
                     timeLabel,
                     style: TextStyle(color: context.textMuted, fontSize: 11),
@@ -319,9 +387,147 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
       ),
     );
   }
+
+  Widget _buildContactTile(_ContactResult r) {
+    final label = (r.displayName != null && r.displayName!.isNotEmpty)
+        ? r.displayName!
+        : r.username;
+
+    return Semantics(
+      label: 'contact $label',
+      button: true,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).pop();
+          widget.onContactTap(r.userId, r.username);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: context.accent.withValues(alpha: 0.15),
+                backgroundImage: r.avatarUrl != null
+                    ? NetworkImage(r.avatarUrl!)
+                    : null,
+                child: r.avatarUrl == null
+                    ? Text(
+                        label.isNotEmpty ? label[0].toUpperCase() : '?',
+                        style: TextStyle(
+                          color: context.accent,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (r.displayName != null && r.displayName!.isNotEmpty)
+                      Text(
+                        '@${r.username}',
+                        style: TextStyle(
+                          color: context.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chat_bubble_outline,
+                size: 16,
+                color: context.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupTile(_GroupResult r) {
+    return Semantics(
+      label: 'group ${r.title}',
+      button: true,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).pop();
+          widget.onResultTap(r.conversationId, '');
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: context.accent.withValues(alpha: 0.15),
+                child: Text(
+                  r.title.isNotEmpty ? r.title[0].toUpperCase() : '#',
+                  style: TextStyle(
+                    color: context.accent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r.title,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      '${r.memberCount} member${r.memberCount == 1 ? '' : 's'}',
+                      style: TextStyle(color: context.textMuted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.group_outlined, size: 16, color: context.textMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _SearchResult {
+class _UniversalResults {
+  final List<_MessageResult> messages;
+  final List<_ContactResult> contacts;
+  final List<_GroupResult> groups;
+
+  const _UniversalResults({
+    required this.messages,
+    required this.contacts,
+    required this.groups,
+  });
+
+  factory _UniversalResults.empty() =>
+      const _UniversalResults(messages: [], contacts: [], groups: []);
+}
+
+class _MessageResult {
   final String messageId;
   final String conversationId;
   final String conversationName;
@@ -329,12 +535,40 @@ class _SearchResult {
   final String content;
   final String timestamp;
 
-  _SearchResult({
+  _MessageResult({
     required this.messageId,
     required this.conversationId,
     required this.conversationName,
     required this.senderUsername,
     required this.content,
     required this.timestamp,
+  });
+}
+
+class _ContactResult {
+  final String userId;
+  final String username;
+  final String? displayName;
+  final String? avatarUrl;
+
+  _ContactResult({
+    required this.userId,
+    required this.username,
+    required this.displayName,
+    required this.avatarUrl,
+  });
+}
+
+class _GroupResult {
+  final String conversationId;
+  final String title;
+  final String? description;
+  final int memberCount;
+
+  _GroupResult({
+    required this.conversationId,
+    required this.title,
+    required this.description,
+    required this.memberCount,
   });
 }

@@ -104,6 +104,15 @@ pub async fn create_group_with_visibility(
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize)]
+pub struct GroupSearchResult {
+    pub conversation_id: Uuid,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub member_count: i64,
+    pub icon_url: Option<String>,
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize)]
 pub struct PublicGroupRow {
     pub id: Uuid,
     pub title: Option<String>,
@@ -178,6 +187,36 @@ pub async fn list_public_groups(
 
 /// Join a public group. Returns an error if the group is not public.
 ///
+/// Search groups the requesting user is a member of, filtered by title (case-insensitive).
+pub async fn search_user_groups(
+    pool: &PgPool,
+    user_id: Uuid,
+    query: &str,
+    limit: i64,
+) -> Result<Vec<GroupSearchResult>, sqlx::Error> {
+    let escaped = query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let pattern = format!("%{escaped}%");
+    sqlx::query_as::<_, GroupSearchResult>(
+        "SELECT c.id AS conversation_id, c.title, c.description, \
+                c.member_count::BIGINT AS member_count, c.icon_url \
+         FROM conversations c \
+         JOIN conversation_members cm ON cm.conversation_id = c.id \
+              AND cm.user_id = $1 AND cm.is_removed = false \
+         WHERE c.kind = 'group' \
+           AND c.title ILIKE $2 ESCAPE '\\' \
+         ORDER BY c.title \
+         LIMIT $3",
+    )
+    .bind(user_id)
+    .bind(&pattern)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+}
+
 /// Uses a single atomic INSERT ... SELECT to avoid a TOCTOU race between
 /// checking `is_public` and inserting the membership row. Increments
 /// `member_count` on the conversation when a new (or previously removed)

@@ -10,6 +10,7 @@ pub mod media;
 pub mod messages;
 pub mod push;
 pub mod reactions;
+pub mod search;
 pub mod server_info;
 pub mod users;
 pub mod voice;
@@ -366,6 +367,7 @@ pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Rout
             "/api/link-preview",
             post(link_preview::fetch_preview).layer(middleware::from_fn(link_preview_limit)),
         )
+        .route("/api/search", get(search::universal_search))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/api/health", get(health))

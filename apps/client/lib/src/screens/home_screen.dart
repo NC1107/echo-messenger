@@ -368,6 +368,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               .firstOrNull;
           if (conv != null) _selectConversation(conv);
         },
+        onContactTap: (userId, username) => _messageContact(userId, username),
       ),
     );
   }
