@@ -4,11 +4,46 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// True on Linux or Windows where we need custom window control buttons.
-/// macOS provides native traffic-light controls via TitleBarStyle.hiddenInset.
+/// True on any desktop platform — all three use [TitleBarStyle.hidden] for
+/// the integrated chrome, so all three need custom window control buttons.
 bool get _needsCustomButtons {
   if (kIsWeb) return false;
-  return Platform.isLinux || Platform.isWindows;
+  return Platform.isLinux || Platform.isWindows || Platform.isMacOS;
+}
+
+/// Wraps a region of the app chrome so dragging it moves the native window.
+///
+/// Uses [GestureDetector.onPanDown] (fires on pointer-down, before gesture
+/// resolution) rather than [onPanStart] for reliable GTK/X11 compatibility —
+/// [gtk_window_begin_move_drag] must be called as close to the button-press
+/// event as possible; [onPanStart] fires too late on many compositors.
+///
+/// Double-tapping the area toggles maximize/restore.
+/// No-op on web and mobile.
+class AppDragArea extends StatelessWidget {
+  const AppDragArea({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (kIsWeb) return child;
+    if (!Platform.isLinux && !Platform.isWindows && !Platform.isMacOS) {
+      return child;
+    }
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onPanDown: (_) => windowManager.startDragging(),
+      onDoubleTap: () async {
+        if (await windowManager.isMaximized()) {
+          windowManager.unmaximize();
+        } else {
+          windowManager.maximize();
+        }
+      },
+      child: child,
+    );
+  }
 }
 
 /// Compact minimize / maximize-restore / close buttons that replace the

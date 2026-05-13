@@ -21,14 +21,13 @@ import '../theme/echo_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/theme_provider.dart' show uiDensityProvider;
 import '../utils/time_utils.dart';
-import 'package:window_manager/window_manager.dart';
-
 import 'avatar_utils.dart';
 import 'conversation_item.dart';
 import 'echo_logo_icon.dart';
 import 'empty_state.dart';
 import 'skeleton_loader.dart';
 import 'voice_footer.dart';
+import 'window_chrome.dart';
 
 // Re-export avatar utilities so existing `show` imports keep working.
 export 'avatar_utils.dart'
@@ -584,13 +583,7 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final titleWeight = isMobile ? FontWeight.w700 : FontWeight.w700;
     final headerHeight = isMobile ? 64.0 : 56.0;
 
-    final isDesktop =
-        !kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.linux ||
-            defaultTargetPlatform == TargetPlatform.windows ||
-            defaultTargetPlatform == TargetPlatform.macOS);
-
-    Widget header = Container(
+    return Container(
       height: headerHeight,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -598,23 +591,31 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       ),
       child: Row(
         children: [
-          if (!isMobile) ...[
-            const EchoLogoIcon(size: 22),
-            const SizedBox(width: 8),
-          ],
-          Text(
-            isMobile ? 'Chats' : 'Echo',
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: titleSize,
-              fontWeight: titleWeight,
-              letterSpacing: isMobile ? -0.5 : 0,
+          // Left: draggable logo + title. AppDragArea wraps only this area
+          // so the action buttons on the right remain fully interactive.
+          Expanded(
+            child: AppDragArea(
+              child: Row(
+                children: [
+                  if (!isMobile) ...[
+                    const EchoLogoIcon(size: 22),
+                    const SizedBox(width: 8),
+                  ],
+                  Text(
+                    isMobile ? 'Chats' : 'Echo',
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: titleSize,
+                      fontWeight: titleWeight,
+                      letterSpacing: isMobile ? -0.5 : 0,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          const Spacer(),
-          // All action icons at 18px with uniform 44x44 tap targets per
-          // WCAG 2.5.5, with consistent color so they read as a cohesive
-          // action group.
+          // Right: non-draggable action buttons.
+          // All icons at 18px with uniform 44x44 tap targets per WCAG 2.5.5.
           if (widget.onScanQr != null)
             IconButton(
               icon: const Icon(Icons.qr_code_scanner, size: 18),
@@ -651,11 +652,6 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ],
       ),
     );
-
-    if (isDesktop) {
-      header = DragToMoveArea(child: header);
-    }
-    return header;
   }
 
   Widget _buildNewActionMenu(BuildContext context, int pendingCount) {

@@ -1,5 +1,5 @@
 import 'dart:io' show Platform;
-import 'dart:ui' show Offset, Size;
+import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,8 +16,6 @@ import 'package:window_manager/window_manager.dart';
 class WindowStateService {
   static const _kWidthKey = 'window.width';
   static const _kHeightKey = 'window.height';
-  static const _kXKey = 'window.x';
-  static const _kYKey = 'window.y';
 
   /// Default window size on first launch (matches the GTK runner's
   /// `gtk_window_set_default_size(1280, 720)`).
@@ -29,17 +27,17 @@ class WindowStateService {
     return Platform.isLinux || Platform.isWindows || Platform.isMacOS;
   }
 
-  /// Save the current window size + position to SharedPreferences.
+  /// Save the current window size to SharedPreferences.
+  ///
+  /// Position (x, y) is intentionally not saved: restoring a splash-era
+  /// centered position pushes the full-size window off-screen.
   static Future<void> save() async {
     if (!_isDesktop) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final size = await windowManager.getSize();
-      final position = await windowManager.getPosition();
       await prefs.setDouble(_kWidthKey, size.width);
       await prefs.setDouble(_kHeightKey, size.height);
-      await prefs.setDouble(_kXKey, position.dx);
-      await prefs.setDouble(_kYKey, position.dy);
     } catch (_) {
       // Never block app shutdown on a failed window-state save.
     }
@@ -64,13 +62,9 @@ class WindowStateService {
         height.clamp(480.0, 10000.0),
       );
       await windowManager.setSize(size);
-      final x = prefs.getDouble(_kXKey);
-      final y = prefs.getDouble(_kYKey);
-      if (x != null && y != null) {
-        await windowManager.setPosition(Offset(x, y));
-      } else {
-        await windowManager.center();
-      }
+      // Always center — restoring saved (x, y) risks placing the full-size
+      // window at the splash-era center coordinates, pushing it off-screen.
+      await windowManager.center();
     } catch (_) {
       // Falling back to whatever size the splash set is acceptable.
     }
