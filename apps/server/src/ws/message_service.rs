@@ -82,6 +82,21 @@ pub(super) fn validate_message_length(state: &AppState, sender_id: Uuid, content
     true
 }
 
+/// Error string surfaced to the sender on any ciphertext-shape rejection.
+/// Kept as a single const so the six rejection sites in
+/// [`validate_encrypted_payload`] stay byte-for-byte identical and can be
+/// grep'd as one symbol from logs / clients.
+const ENCRYPTED_PAYLOAD_REQUIRED: &str = "Encrypted conversation requires ciphertext payload";
+
+/// Send the canonical "requires ciphertext payload" error to `sender_id`.
+/// The caller is expected to have already emitted a `tracing::warn!` with
+/// the specific rejection context (conversation_id, recipient, device_id,
+/// etc.) — this helper just removes the repeated `send_error(..., LITERAL)`
+/// boilerplate at the six rejection sites.
+fn send_payload_error(state: &AppState, sender_id: Uuid) {
+    send_error(state, sender_id, ENCRYPTED_PAYLOAD_REQUIRED);
+}
+
 /// Reject inbound messages on encrypted conversations whose payload isn't
 /// shaped like an Echo ciphertext wire frame.
 ///
@@ -113,11 +128,7 @@ pub(super) fn validate_encrypted_payload(
                     sender_id = %sender_id,
                     "rejected encrypted DM: canonical content is not ciphertext-shaped"
                 );
-                send_error(
-                    state,
-                    sender_id,
-                    "Encrypted conversation requires ciphertext payload",
-                );
+                send_payload_error(state, sender_id);
                 return false;
             }
             let Some(rdc) = recipient_device_contents else {
@@ -126,11 +137,7 @@ pub(super) fn validate_encrypted_payload(
                     sender_id = %sender_id,
                     "rejected encrypted DM with no recipient_device_contents"
                 );
-                send_error(
-                    state,
-                    sender_id,
-                    "Encrypted conversation requires ciphertext payload",
-                );
+                send_payload_error(state, sender_id);
                 return false;
             };
             if rdc.is_empty() {
@@ -139,11 +146,7 @@ pub(super) fn validate_encrypted_payload(
                     sender_id = %sender_id,
                     "rejected encrypted DM with empty recipient_device_contents"
                 );
-                send_error(
-                    state,
-                    sender_id,
-                    "Encrypted conversation requires ciphertext payload",
-                );
+                send_payload_error(state, sender_id);
                 return false;
             }
             for (recipient, devices) in rdc.iter() {
@@ -154,11 +157,7 @@ pub(super) fn validate_encrypted_payload(
                         recipient = %recipient,
                         "rejected encrypted DM: empty per-recipient device map"
                     );
-                    send_error(
-                        state,
-                        sender_id,
-                        "Encrypted conversation requires ciphertext payload",
-                    );
+                    send_payload_error(state, sender_id);
                     return false;
                 }
                 for (device_id, ciphertext) in devices.iter() {
@@ -170,11 +169,7 @@ pub(super) fn validate_encrypted_payload(
                             device_id = %device_id,
                             "rejected encrypted DM: per-device payload is not ciphertext-shaped"
                         );
-                        send_error(
-                            state,
-                            sender_id,
-                            "Encrypted conversation requires ciphertext payload",
-                        );
+                        send_payload_error(state, sender_id);
                         return false;
                     }
                 }
@@ -188,11 +183,7 @@ pub(super) fn validate_encrypted_payload(
                     sender_id = %sender_id,
                     "rejected encrypted group message: content is not ciphertext-shaped"
                 );
-                send_error(
-                    state,
-                    sender_id,
-                    "Encrypted conversation requires ciphertext payload",
-                );
+                send_payload_error(state, sender_id);
                 return false;
             }
             true
