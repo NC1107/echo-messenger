@@ -21,6 +21,8 @@ import '../theme/echo_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/theme_provider.dart' show uiDensityProvider;
 import '../utils/time_utils.dart';
+import 'package:window_manager/window_manager.dart';
+
 import 'avatar_utils.dart';
 import 'conversation_item.dart';
 import 'echo_logo_icon.dart';
@@ -582,7 +584,13 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final titleWeight = isMobile ? FontWeight.w700 : FontWeight.w700;
     final headerHeight = isMobile ? 64.0 : 56.0;
 
-    return Container(
+    final isDesktop =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.macOS);
+
+    Widget header = Container(
       height: headerHeight,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -643,6 +651,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ],
       ),
     );
+
+    if (isDesktop) {
+      header = DragToMoveArea(child: header);
+    }
+    return header;
   }
 
   Widget _buildNewActionMenu(BuildContext context, int pendingCount) {

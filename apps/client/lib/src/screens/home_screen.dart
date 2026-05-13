@@ -34,6 +34,7 @@ import '../widgets/global_search_overlay.dart';
 import '../widgets/whats_new_modal.dart';
 import '../widgets/quick_switcher_overlay.dart';
 import '../widgets/voice_dock.dart';
+import '../widgets/window_chrome.dart';
 import 'contacts_screen.dart';
 import 'new_message_screen.dart';
 import 'saved_messages_screen.dart';
@@ -1011,6 +1012,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ? _sidebarCollapsedWidth
         : sidebarWidth;
 
+    // Show the overlay window controls when the right panel is not a
+    // ChatPanel (which provides its own AppWindowButtons in its header).
+    final showWindowOverlay =
+        _showSettings ||
+        _selectedConversation == null ||
+        (voiceActive && _showingLounge);
+
     return Scaffold(
       body: Stack(
         children: [
@@ -1024,6 +1032,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
           if (voiceActive && !_showSettings)
             _buildDesktopVoiceDock(animatedSidebarWidth),
+          if (showWindowOverlay)
+            const Positioned(top: 0, right: 0, child: AppWindowButtons()),
         ],
       ),
     );
@@ -1225,18 +1235,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       rightPanel = _buildEmptyState();
     }
 
+    final showWindowOverlay =
+        _showSettings ||
+        _selectedConversation == null ||
+        (voiceActive && _showingLounge);
+
     return Scaffold(
-      body: Row(
+      body: Stack(
         children: [
-          // Left sidebar
-          if (_showSettings)
-            _buildSettingsSidebar(300)
-          else
-            SizedBox(width: 300, child: _buildConversationPanel()),
-          // Thin vertical divider
-          Container(width: 1, color: context.border),
-          // Right: content area
-          Expanded(child: rightPanel),
+          Row(
+            children: [
+              // Left sidebar
+              if (_showSettings)
+                _buildSettingsSidebar(300)
+              else
+                SizedBox(width: 300, child: _buildConversationPanel()),
+              // Thin vertical divider
+              Container(width: 1, color: context.border),
+              // Right: content area
+              Expanded(child: rightPanel),
+            ],
+          ),
+          if (showWindowOverlay)
+            const Positioned(top: 0, right: 0, child: AppWindowButtons()),
         ],
       ),
     );
