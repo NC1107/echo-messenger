@@ -24,8 +24,103 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  paths:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      client-shared: ${{ steps.filter.outputs.client-shared }}
+      linux: ${{ steps.filter.outputs.linux }}
+      windows: ${{ steps.filter.outputs.windows }}
+      android: ${{ steps.filter.outputs.android }}
+      ios: ${{ steps.filter.outputs.ios }}
+      macos: ${{ steps.filter.outputs.macos }}
+      web: ${{ steps.filter.outputs.web }}
+      server: ${{ steps.filter.outputs.server }}
+      rust-deps: ${{ steps.filter.outputs.rust-deps }}
+      any-client: ${{ steps.filter.outputs.any-client }}
+      release-workflow: ${{ steps.filter.outputs.release-workflow }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # Release runs on push to main; compare against the previous
+          # commit so the filter reflects the merge's changes.
+          base: ${{ github.event.before }}
+          filters: |
+            client-shared:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+            linux:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+              - 'apps/client/linux/**'
+            windows:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+              - 'apps/client/windows/**'
+            android:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+              - 'apps/client/android/**'
+            ios:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+              - 'apps/client/ios/**'
+            macos:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+              - 'apps/client/macos/**'
+            web:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+              - 'apps/client/web/**'
+              - 'apps/client/Dockerfile.web'
+            server:
+              - 'apps/server/**'
+              - 'core/rust-core/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'apps/server/Dockerfile'
+            rust-deps:
+              - 'Cargo.lock'
+              - 'Cargo.toml'
+              - '**/Cargo.toml'
+              - 'deny.toml'
+              - '.cargo/audit.toml'
+            any-client:
+              - 'apps/client/**'
+              - '.flutter-version'
+            release-workflow:
+              - '.github/workflows/release.yml'
+
   security-pre-release:
     name: Security pre-release scan
+    needs: [paths]
+    if: needs.paths.outputs.rust-deps == 'true' || needs.paths.outputs.release-workflow == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -40,9 +135,16 @@ jobs:
       - run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097
       - uses: EmbarkStudios/cargo-deny-action@175dc7fd4fb85ec8f46948fb98f44db001149081 # v2.0.16
 
-  lint-test:
-    name: Lint + Test Gate
-    needs: [security-pre-release]
+  lint-test-rust:
+    name: Lint + Test (Rust)
+    needs: [paths, security-pre-release]
+    # When security-pre-release is skipped (no Rust dep changes) GitHub
+    # propagates the skip; `always() && (...)` lets this job run on its
+    # own gate as long as security didn't actively fail.
+    if: |
+      always()
+      && (needs.security-pre-release.result == 'success' || needs.security-pre-release.result == 'skipped')
+      && (needs.paths.outputs.server == 'true' || needs.paths.outputs.release-workflow == 'true')
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -65,7 +167,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
-          shared-key: release-lint
+          shared-key: release-lint-rust
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Rust tests
@@ -73,6 +175,17 @@ jobs:
         env:
           DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
           JWT_SECRET: ${{ format('ci-test-secret-{0}-attempt-{1}-padding', github.run_id, github.run_attempt) }}
+
+  lint-test-flutter:
+    name: Lint + Test (Flutter)
+    needs: [paths, security-pre-release]
+    if: |
+      always()
+      && (needs.security-pre-release.result == 'success' || needs.security-pre-release.result == 'skipped')
+      && (needs.paths.outputs.any-client == 'true' || needs.paths.outputs.release-workflow == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: .flutter-version
@@ -102,7 +215,14 @@ jobs:
 
   version:
     name: Calculate Version
-    needs: [lint-test]
+    needs: [paths, lint-test-rust, lint-test-flutter]
+    # Tag every main push (builds always run on main), but only after
+    # whichever lint jobs ran have actually passed.  A skipped lint job
+    # (no Rust or no Flutter changes) is fine; a failed one blocks.
+    if: |
+      always()
+      && (needs.lint-test-rust.result == 'success' || needs.lint-test-rust.result == 'skipped')
+      && (needs.lint-test-flutter.result == 'success' || needs.lint-test-flutter.result == 'skipped')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -180,7 +300,11 @@ jobs:
   build-linux:
     name: Build Linux Desktop
     runs-on: ubuntu-latest
-    needs: [lint-test, version]
+    needs: [paths, version, lint-test-flutter]
+    if: |
+      always()
+      && needs.version.result == 'success'
+      && (needs.lint-test-flutter.result == 'success' || needs.lint-test-flutter.result == 'skipped')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -471,7 +595,11 @@ jobs:
   build-windows:
     name: Build Windows Desktop
     runs-on: windows-latest
-    needs: [lint-test, version]
+    needs: [paths, version, lint-test-flutter]
+    if: |
+      always()
+      && needs.version.result == 'success'
+      && (needs.lint-test-flutter.result == 'success' || needs.lint-test-flutter.result == 'skipped')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -541,7 +669,11 @@ jobs:
   build-android:
     name: Build Android APK
     runs-on: ubuntu-latest
-    needs: [lint-test, version]
+    needs: [paths, version, lint-test-flutter]
+    if: |
+      always()
+      && needs.version.result == 'success'
+      && (needs.lint-test-flutter.result == 'success' || needs.lint-test-flutter.result == 'skipped')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
@@ -612,7 +744,11 @@ jobs:
   build-ios:
     name: Build iOS IPA
     runs-on: macos-15
-    needs: [lint-test, version]
+    needs: [paths, version, lint-test-flutter]
+    if: |
+      always()
+      && needs.version.result == 'success'
+      && (needs.lint-test-flutter.result == 'success' || needs.lint-test-flutter.result == 'skipped')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -771,7 +907,11 @@ jobs:
   build-macos:
     name: Build macOS Desktop
     runs-on: macos-15
-    needs: [lint-test, version]
+    needs: [paths, version, lint-test-flutter]
+    if: |
+      always()
+      && needs.version.result == 'success'
+      && (needs.lint-test-flutter.result == 'success' || needs.lint-test-flutter.result == 'skipped')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -815,7 +955,11 @@ jobs:
   build-server:
     name: Build Server Binary
     runs-on: ubuntu-latest
-    needs: [lint-test, version]
+    needs: [paths, version, lint-test-rust]
+    if: |
+      always()
+      && needs.version.result == 'success'
+      && (needs.lint-test-rust.result == 'success' || needs.lint-test-rust.result == 'skipped')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -845,7 +989,11 @@ jobs:
   docker:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [lint-test, version]
+    needs: [paths, version, lint-test-rust]
+    if: |
+      always()
+      && needs.version.result == 'success'
+      && (needs.lint-test-rust.result == 'success' || needs.lint-test-rust.result == 'skipped')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Set version in Cargo.toml
@@ -879,7 +1027,11 @@ jobs:
   build-web:
     name: Build Web
     runs-on: ubuntu-latest
-    needs: [lint-test, version]
+    needs: [paths, version, lint-test-flutter]
+    if: |
+      always()
+      && needs.version.result == 'success'
+      && (needs.lint-test-flutter.result == 'success' || needs.lint-test-flutter.result == 'skipped')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -938,6 +1090,21 @@ jobs:
     name: Tag + Publish Release
     runs-on: ubuntu-latest
     needs: [version, build-linux, build-windows, build-macos, build-android, build-ios, build-web, build-server, docker]
+    # build-* jobs use always()-gated `if:` expressions on the upstream
+    # lint jobs (which may have been skipped if their language didn't
+    # change). Don't require strict success of every build-*: each must
+    # be success OR skipped. Any failure blocks the release.
+    if: |
+      always()
+      && needs.version.result == 'success'
+      && (needs.build-linux.result == 'success' || needs.build-linux.result == 'skipped')
+      && (needs.build-windows.result == 'success' || needs.build-windows.result == 'skipped')
+      && (needs.build-macos.result == 'success' || needs.build-macos.result == 'skipped')
+      && (needs.build-android.result == 'success' || needs.build-android.result == 'skipped')
+      && (needs.build-ios.result == 'success' || needs.build-ios.result == 'skipped')
+      && (needs.build-web.result == 'success' || needs.build-web.result == 'skipped')
+      && (needs.build-server.result == 'success' || needs.build-server.result == 'skipped')
+      && (needs.docker.result == 'success' || needs.docker.result == 'skipped')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
