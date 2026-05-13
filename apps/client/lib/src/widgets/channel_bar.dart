@@ -208,25 +208,34 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
 
   /// Phase 2 follow-up: per-density chip metrics.  Same shape as the
   /// switch tables in conversation_item.dart and message_item.dart.
-  ({EdgeInsets padding, double iconSize, double labelSize, double radius})
+  ({
+    EdgeInsets padding,
+    double iconSize,
+    double labelSize,
+    double radius,
+    double gap,
+  })
   _chipMetrics(UIDensity density) => switch (density) {
     UIDensity.cozy => (
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
       iconSize: 16,
       labelSize: 14,
       radius: 22,
+      gap: 8,
     ),
     UIDensity.normal => (
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       iconSize: 14,
       labelSize: 12,
       radius: 20,
+      gap: 6,
     ),
     UIDensity.compact => (
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       iconSize: 12,
       labelSize: 11,
       radius: 18,
+      gap: 4,
     ),
   };
 
@@ -466,7 +475,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                 children: [
                   for (final channel in textChannels) ...[
                     _buildTextChannelChip(channel, density),
-                    const SizedBox(width: 6),
+                    SizedBox(width: _chipMetrics(density).gap),
                   ],
                   if (textChannels.isNotEmpty && voiceChannels.isNotEmpty)
                     const SizedBox(
@@ -481,7 +490,7 @@ class _ChannelBarState extends ConsumerState<ChannelBar> {
                       activeVoiceChannelId,
                       density,
                     ),
-                    const SizedBox(width: 6),
+                    SizedBox(width: _chipMetrics(density).gap),
                   ],
                 ],
               ),

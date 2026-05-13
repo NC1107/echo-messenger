@@ -1307,7 +1307,21 @@ class _MessageItemState extends State<MessageItem>
     } else if (widget.compactLayout) {
       padding = const EdgeInsets.symmetric(horizontal: 8, vertical: 4);
     } else {
-      padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 8);
+      // Bubbles layout: scale inner padding with density.
+      padding = switch (widget.density) {
+        UIDensity.cozy => const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 10,
+        ),
+        UIDensity.normal => const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 8,
+        ),
+        UIDensity.compact => const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 6,
+        ),
+      };
     }
 
     // Compact / Plain layouts (#794) flow to the full chat-pane width like
