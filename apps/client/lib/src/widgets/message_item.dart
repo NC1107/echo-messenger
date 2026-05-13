@@ -813,7 +813,6 @@ class _MessageItemState extends State<MessageItem>
               child: HoverActionButton(
                 icon: Icons.reply_outlined,
                 tooltip: 'Reply',
-                size: style.buttonSize,
                 iconSize: style.iconSize,
                 iconOpacity: style.iconOpacity,
                 iconColor: style.iconColor,
@@ -824,7 +823,6 @@ class _MessageItemState extends State<MessageItem>
           HoverActionButton(
             icon: Icons.add_reaction_outlined,
             tooltip: 'React',
-            size: style.buttonSize,
             iconSize: style.iconSize,
             iconOpacity: style.iconOpacity,
             iconColor: style.iconColor,
@@ -862,9 +860,10 @@ class _MessageItemState extends State<MessageItem>
         message: 'More',
         child: PopupMenuButton<String>(
           padding: EdgeInsets.zero,
+          // Keep WCAG hit-target floor across all layouts.
           constraints: BoxConstraints(
-            minWidth: hoverStyle.buttonSize,
-            minHeight: hoverStyle.buttonSize,
+            minWidth: hoverStyle.buttonSize < 44 ? 44 : hoverStyle.buttonSize,
+            minHeight: hoverStyle.buttonSize < 44 ? 44 : hoverStyle.buttonSize,
           ),
           iconSize: hoverStyle.iconSize,
           icon: Opacity(
@@ -1925,11 +1924,11 @@ class _HoverStyleSpec {
           ],
           borderWidth: 1,
           containerRadius: 8,
-          buttonSize: 36,
+          buttonSize: 33,
           buttonRadius: 5,
           iconSize: 13,
           iconOpacity: 0.82,
-          overlayTop: -10,
+          overlayTop: -8,
           leftInset: 36,
           hiddenSlideOffset: const Offset(0, -0.1),
         );
@@ -1947,7 +1946,7 @@ class _HoverStyleSpec {
           ],
           borderWidth: 1,
           containerRadius: 10,
-          buttonSize: 34,
+          buttonSize: 33,
           buttonRadius: 6,
           iconSize: 12,
           iconOpacity: 0.8,
