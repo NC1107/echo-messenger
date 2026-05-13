@@ -170,208 +170,227 @@ class _NotificationSectionState extends State<NotificationSection> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        Text(
-          'Notifications',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Configure how you receive notifications and alerts.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 13,
-            height: 1.5,
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        // ---- DND active banner -------------------------------------------
-        if (_dndEnabled) ...[
-          Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: context.accent.withValues(alpha: 0.12),
-              border: Border.all(color: context.accent.withValues(alpha: 0.31)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.do_not_disturb_on, color: context.accent, size: 18),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Do Not Disturb is on — all notifications are muted.',
-                    style: TextStyle(
-                      color: context.accent,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-
-        // ---- Do Not Disturb toggle ----------------------------------------
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          secondary: Icon(
-            Icons.do_not_disturb_on_outlined,
-            color: _dndEnabled ? context.accent : context.textSecondary,
-            size: 22,
-          ),
-          title: Text(
-            'Do Not Disturb',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'Mute all notifications until manually disabled.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: _dndEnabled,
-          onChanged: _setDndEnabled,
-        ),
-
-        // ---- Quiet Hours --------------------------------------------------
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          secondary: Icon(
-            Icons.bedtime_outlined,
-            color: _quietHoursEnabled ? context.accent : context.textSecondary,
-            size: 22,
-          ),
-          title: Text(
-            'Quiet Hours',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'Silence notifications during a scheduled time window.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: _quietHoursEnabled,
-          onChanged: _setQuietHoursEnabled,
-        ),
-        if (_quietHoursEnabled) ...[
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(left: 16, right: 4, bottom: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _TimeTile(
-                    label: 'Start time',
-                    time: _quietStart,
-                    onTap: _pickQuietStart,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _TimeTile(
-                    label: 'End time',
-                    time: _quietEnd,
-                    onTap: _pickQuietEnd,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-
-        const Divider(height: 32),
-
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Enable Notifications',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'Show desktop/mobile notifications for new messages.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: _notificationsEnabled,
-          onChanged: _setNotificationsEnabled,
-        ),
-        if (_notificationsEnabled) ...[
-          SwitchListTile.adaptive(
-            contentPadding: const EdgeInsets.only(left: 16),
-            title: Text(
-              'Direct Messages',
-              style: TextStyle(color: context.textPrimary, fontSize: 14),
-            ),
-            subtitle: Text(
-              'Notify for incoming DMs.',
-              style: TextStyle(color: context.textMuted, fontSize: 12),
-            ),
-            value: _dmNotifications,
-            onChanged: _setDmNotifications,
-          ),
-          SwitchListTile.adaptive(
-            contentPadding: const EdgeInsets.only(left: 16),
-            title: Text(
-              'Group Messages',
-              style: TextStyle(color: context.textPrimary, fontSize: 14),
-            ),
-            subtitle: Text(
-              'Notify for messages in group conversations.',
-              style: TextStyle(color: context.textMuted, fontSize: 12),
-            ),
-            value: _groupNotifications,
-            onChanged: _setGroupNotifications,
-          ),
-        ],
-        const Divider(height: 32),
-        _SoundPickerRow(
-          selected: _notificationSound,
-          onChanged: _setNotificationSound,
-        ),
-        if (_notificationsEnabled) ...[
-          const SizedBox(height: 24),
-          Text(
-            'Test',
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Send a test notification to verify your settings.',
-            style: TextStyle(
-              color: context.textSecondary,
-              fontSize: 13,
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _sendTestNotification,
-              icon: const Icon(Icons.notifications_active_outlined, size: 18),
-              label: const Text('Send Test Notification'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: context.accent,
-                side: BorderSide(color: context.accent),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            Text(
+              'Notifications',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
               ),
             ),
-          ),
-        ],
-      ],
+            const SizedBox(height: 8),
+            Text(
+              'Configure how you receive notifications and alerts.',
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ---- DND active banner -------------------------------------------
+            if (_dndEnabled) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: context.accent.withValues(alpha: 0.12),
+                  border: Border.all(
+                    color: context.accent.withValues(alpha: 0.31),
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.do_not_disturb_on,
+                      color: context.accent,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Do Not Disturb is on — all notifications are muted.',
+                        style: TextStyle(
+                          color: context.accent,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // ---- Do Not Disturb toggle ----------------------------------------
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(
+                Icons.do_not_disturb_on_outlined,
+                color: _dndEnabled ? context.accent : context.textSecondary,
+                size: 22,
+              ),
+              title: Text(
+                'Do Not Disturb',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Mute all notifications until manually disabled.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: _dndEnabled,
+              onChanged: _setDndEnabled,
+            ),
+
+            // ---- Quiet Hours --------------------------------------------------
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              secondary: Icon(
+                Icons.bedtime_outlined,
+                color: _quietHoursEnabled
+                    ? context.accent
+                    : context.textSecondary,
+                size: 22,
+              ),
+              title: Text(
+                'Quiet Hours',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Silence notifications during a scheduled time window.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: _quietHoursEnabled,
+              onChanged: _setQuietHoursEnabled,
+            ),
+            if (_quietHoursEnabled) ...[
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.only(left: 16, right: 4, bottom: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _TimeTile(
+                        label: 'Start time',
+                        time: _quietStart,
+                        onTap: _pickQuietStart,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _TimeTile(
+                        label: 'End time',
+                        time: _quietEnd,
+                        onTap: _pickQuietEnd,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const Divider(height: 32),
+
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'Enable Notifications',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Show desktop/mobile notifications for new messages.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: _notificationsEnabled,
+              onChanged: _setNotificationsEnabled,
+            ),
+            if (_notificationsEnabled) ...[
+              SwitchListTile.adaptive(
+                contentPadding: const EdgeInsets.only(left: 16),
+                title: Text(
+                  'Direct Messages',
+                  style: TextStyle(color: context.textPrimary, fontSize: 14),
+                ),
+                subtitle: Text(
+                  'Notify for incoming DMs.',
+                  style: TextStyle(color: context.textMuted, fontSize: 12),
+                ),
+                value: _dmNotifications,
+                onChanged: _setDmNotifications,
+              ),
+              SwitchListTile.adaptive(
+                contentPadding: const EdgeInsets.only(left: 16),
+                title: Text(
+                  'Group Messages',
+                  style: TextStyle(color: context.textPrimary, fontSize: 14),
+                ),
+                subtitle: Text(
+                  'Notify for messages in group conversations.',
+                  style: TextStyle(color: context.textMuted, fontSize: 12),
+                ),
+                value: _groupNotifications,
+                onChanged: _setGroupNotifications,
+              ),
+            ],
+            const Divider(height: 32),
+            _SoundPickerRow(
+              selected: _notificationSound,
+              onChanged: _setNotificationSound,
+            ),
+            if (_notificationsEnabled) ...[
+              const SizedBox(height: 24),
+              Text(
+                'Test',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Send a test notification to verify your settings.',
+                style: TextStyle(
+                  color: context.textSecondary,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _sendTestNotification,
+                  icon: const Icon(
+                    Icons.notifications_active_outlined,
+                    size: 18,
+                  ),
+                  label: const Text('Send Test Notification'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: context.accent,
+                    side: BorderSide(color: context.accent),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -882,248 +901,260 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
     final outputDevices = _audioOutputDevices;
     final cameraDevices = _videoInputDevices;
 
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        Text(
-          'Voice & Video',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Configure voice device preferences and push-to-talk behavior.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 13,
-            height: 1.5,
-          ),
-        ),
-        const SizedBox(height: 18),
-        _buildDevicePicker(
-          label: 'Input Device',
-          devices: inputDevices,
-          currentId: voice.inputDeviceId,
-          onChanged: notifier.setInputDevice,
-        ),
-        const SizedBox(height: 12),
-        _buildDevicePicker(
-          label: 'Output Device',
-          devices: outputDevices,
-          currentId: voice.outputDeviceId,
-          onChanged: notifier.setOutputDevice,
-        ),
-        const SizedBox(height: 12),
-        _buildDevicePicker(
-          label: 'Camera',
-          devices: cameraDevices,
-          currentId: voice.cameraDeviceId,
-          onChanged: notifier.setCameraDevice,
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Microphone Gain',
-          style: TextStyle(color: context.textPrimary, fontSize: 13),
-        ),
-        Semantics(
-          label: 'Microphone gain',
-          slider: true,
-          value: '${(voice.inputGain * 100).toInt()}%',
-          child: Slider(
-            value: voice.inputGain,
-            min: 0,
-            max: 2,
-            divisions: 20,
-            label: voice.inputGain.toStringAsFixed(1),
-            onChanged: notifier.setInputGain,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Output Volume',
-          style: TextStyle(color: context.textPrimary, fontSize: 13),
-        ),
-        Semantics(
-          label: 'Output volume',
-          slider: true,
-          value: '${(voice.outputVolume * 100).toInt()}%',
-          child: Slider(
-            value: voice.outputVolume,
-            min: 0,
-            max: 1,
-            divisions: 20,
-            label: (voice.outputVolume * 100).round().toString(),
-            onChanged: notifier.setOutputVolume,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: ListView(
+          padding: const EdgeInsets.all(24),
           children: [
-            OutlinedButton.icon(
-              onPressed: _isPlayingTestSound ? null : _playTestSound,
-              icon: Icon(
-                _isPlayingTestSound ? Icons.volume_up : Icons.play_arrow,
-                size: 18,
+            Text(
+              'Voice & Video',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
               ),
-              label: Text(_isPlayingTestSound ? 'Playing...' : 'Test Sound'),
             ),
-            const SizedBox(width: 12),
-            OutlinedButton.icon(
-              onPressed: _isMicTesting ? _stopMicTest : _startMicTest,
-              icon: Icon(_isMicTesting ? Icons.stop : Icons.mic, size: 18),
-              label: Text(_isMicTesting ? 'Stop' : 'Test Microphone'),
+            const SizedBox(height: 8),
+            Text(
+              'Configure voice device preferences and push-to-talk behavior.',
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 13,
+                height: 1.5,
+              ),
             ),
-          ],
-        ),
-        if (_isMicTesting) ...[
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Icon(Icons.mic, size: 16, color: context.textSecondary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: _micLevel,
-                    minHeight: 8,
-                    backgroundColor: context.surface,
-                    valueColor: AlwaysStoppedAnimation<Color>(_micLevelColor()),
+            const SizedBox(height: 18),
+            _buildDevicePicker(
+              label: 'Input Device',
+              devices: inputDevices,
+              currentId: voice.inputDeviceId,
+              onChanged: notifier.setInputDevice,
+            ),
+            const SizedBox(height: 12),
+            _buildDevicePicker(
+              label: 'Output Device',
+              devices: outputDevices,
+              currentId: voice.outputDeviceId,
+              onChanged: notifier.setOutputDevice,
+            ),
+            const SizedBox(height: 12),
+            _buildDevicePicker(
+              label: 'Camera',
+              devices: cameraDevices,
+              currentId: voice.cameraDeviceId,
+              onChanged: notifier.setCameraDevice,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Microphone Gain',
+              style: TextStyle(color: context.textPrimary, fontSize: 13),
+            ),
+            Semantics(
+              label: 'Microphone gain',
+              slider: true,
+              value: '${(voice.inputGain * 100).toInt()}%',
+              child: Slider(
+                value: voice.inputGain,
+                min: 0,
+                max: 2,
+                divisions: 20,
+                label: voice.inputGain.toStringAsFixed(1),
+                onChanged: notifier.setInputGain,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Output Volume',
+              style: TextStyle(color: context.textPrimary, fontSize: 13),
+            ),
+            Semantics(
+              label: 'Output volume',
+              slider: true,
+              value: '${(voice.outputVolume * 100).toInt()}%',
+              child: Slider(
+                value: voice.outputVolume,
+                min: 0,
+                max: 1,
+                divisions: 20,
+                label: (voice.outputVolume * 100).round().toString(),
+                onChanged: notifier.setOutputVolume,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _isPlayingTestSound ? null : _playTestSound,
+                  icon: Icon(
+                    _isPlayingTestSound ? Icons.volume_up : Icons.play_arrow,
+                    size: 18,
+                  ),
+                  label: Text(
+                    _isPlayingTestSound ? 'Playing...' : 'Test Sound',
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${(_micLevel * 100).round()}%',
-                style: TextStyle(color: context.textSecondary, fontSize: 12),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  onPressed: _isMicTesting ? _stopMicTest : _startMicTest,
+                  icon: Icon(_isMicTesting ? Icons.stop : Icons.mic, size: 18),
+                  label: Text(_isMicTesting ? 'Stop' : 'Test Microphone'),
+                ),
+              ],
+            ),
+            if (_isMicTesting) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Icon(Icons.mic, size: 16, color: context.textSecondary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: _micLevel,
+                        minHeight: 8,
+                        backgroundColor: context.surface,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          _micLevelColor(),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${(_micLevel * 100).round()}%',
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
             ],
-          ),
-        ],
-        const SizedBox(height: 10),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Push-to-Talk',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'When enabled, your mic transmits only while push-to-talk is active.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: voice.pushToTalkEnabled,
-          onChanged: notifier.setPushToTalkEnabled,
-        ),
-        AnimatedOpacity(
-          opacity: voice.pushToTalkEnabled ? 1.0 : 0.4,
-          duration: const Duration(milliseconds: 200),
-          child: IgnorePointer(
-            ignoring: !voice.pushToTalkEnabled,
-            child: ListTile(
+            const SizedBox(height: 10),
+            SwitchListTile.adaptive(
               contentPadding: EdgeInsets.zero,
               title: Text(
-                'Push-to-Talk Key',
+                'Push-to-Talk',
                 style: TextStyle(color: context.textPrimary, fontSize: 14),
               ),
               subtitle: Text(
-                voice.pushToTalkKeyLabel,
+                'When enabled, your mic transmits only while push-to-talk is active.',
                 style: TextStyle(color: context.textMuted, fontSize: 12),
               ),
-              trailing: OutlinedButton(
-                onPressed: () => _capturePushToTalkKey(notifier),
-                child: const Text('Set Key'),
+              value: voice.pushToTalkEnabled,
+              onChanged: notifier.setPushToTalkEnabled,
+            ),
+            AnimatedOpacity(
+              opacity: voice.pushToTalkEnabled ? 1.0 : 0.4,
+              duration: const Duration(milliseconds: 200),
+              child: IgnorePointer(
+                ignoring: !voice.pushToTalkEnabled,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    'Push-to-Talk Key',
+                    style: TextStyle(color: context.textPrimary, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    voice.pushToTalkKeyLabel,
+                    style: TextStyle(color: context.textMuted, fontSize: 12),
+                  ),
+                  trailing: OutlinedButton(
+                    onPressed: () => _capturePushToTalkKey(notifier),
+                    child: const Text('Set Key'),
+                  ),
+                ),
               ),
             ),
-          ),
+            const SizedBox(height: 16),
+            Divider(color: context.border),
+            const SizedBox(height: 16),
+            Text(
+              'Audio Processing',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'These settings apply the next time you join a voice channel.',
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'Noise Suppression',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Reduce background noise like fans, typing, and ambient sounds.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: voice.noiseSuppression,
+              onChanged: (v) => notifier.setNoiseSuppression(v),
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'Echo Cancellation',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Prevent your speakers from feeding back into your microphone.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: voice.echoCancellation,
+              onChanged: (v) => notifier.setEchoCancellation(v),
+            ),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'Auto Gain Control',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Automatically adjust microphone volume for consistent levels.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: voice.autoGainControl,
+              onChanged: (v) => notifier.setAutoGainControl(v),
+            ),
+            const SizedBox(height: 16),
+            Divider(color: context.border),
+            const SizedBox(height: 16),
+            Text(
+              'Channel Behaviour',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                'Confirm before joining voice channel',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Show a confirmation dialog before connecting to a voice channel.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              value: voice.confirmBeforeJoinVoice,
+              onChanged: notifier.setConfirmBeforeJoinVoice,
+            ),
+          ],
         ),
-        const SizedBox(height: 16),
-        Divider(color: context.border),
-        const SizedBox(height: 16),
-        Text(
-          'Audio Processing',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'These settings apply the next time you join a voice channel.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 12,
-            height: 1.5,
-          ),
-        ),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Noise Suppression',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'Reduce background noise like fans, typing, and ambient sounds.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: voice.noiseSuppression,
-          onChanged: (v) => notifier.setNoiseSuppression(v),
-        ),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Echo Cancellation',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'Prevent your speakers from feeding back into your microphone.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: voice.echoCancellation,
-          onChanged: (v) => notifier.setEchoCancellation(v),
-        ),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Auto Gain Control',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'Automatically adjust microphone volume for consistent levels.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: voice.autoGainControl,
-          onChanged: (v) => notifier.setAutoGainControl(v),
-        ),
-        const SizedBox(height: 16),
-        Divider(color: context.border),
-        const SizedBox(height: 16),
-        Text(
-          'Channel Behaviour',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 4),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            'Confirm before joining voice channel',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'Show a confirmation dialog before connecting to a voice channel.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          value: voice.confirmBeforeJoinVoice,
-          onChanged: notifier.setConfirmBeforeJoinVoice,
-        ),
-      ],
+      ),
     );
   }
 }

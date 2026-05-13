@@ -611,143 +611,148 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        Text(
-          'Echo Messenger',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Client v$appVersion',
-          style: TextStyle(color: context.textMuted, fontSize: 14),
-        ),
-        SelectableText(
-          'Build $appCommit'
-          '${appBuildTime.isEmpty ? '' : ' · $appBuildTime'}',
-          style: TextStyle(
-            color: context.textMuted,
-            fontSize: 12,
-            fontFamily: 'monospace',
-          ),
-        ),
-        const SizedBox(height: 16),
-        _buildCheckForUpdates(),
-        const SizedBox(height: 24),
-        Divider(color: context.border),
-        const SizedBox(height: 16),
-        // Server info (merged from former Server section)
-        Text(
-          'Server',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 12),
-        _buildServersList(),
-        const SizedBox(height: 8),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(
-            Icons.add_circle_outline,
-            color: context.textSecondary,
-            size: 22,
-          ),
-          title: Text(
-            'Add server',
-            style: TextStyle(color: context.textPrimary, fontSize: 15),
-          ),
-          subtitle: Text(
-            'Verifies the URL before adding it to your list.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          trailing: Icon(
-            Icons.chevron_right,
-            color: context.textMuted,
-            size: 20,
-          ),
-          onTap: _showAddServerDialog,
-        ),
-        const SizedBox(height: 16),
-        Divider(color: context.border),
-        const SizedBox(height: 16),
-        // Debug logs entry (absorbed from former Debug section).
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(
-            Icons.bug_report_outlined,
-            color: context.textSecondary,
-            size: 22,
-          ),
-          title: Text(
-            'Debug Logs',
-            style: TextStyle(color: context.textPrimary, fontSize: 15),
-          ),
-          subtitle: Text(
-            'View recent in-app log entries.',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          trailing: Icon(
-            Icons.chevron_right,
-            color: context.textMuted,
-            size: 20,
-          ),
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const _DebugLogsSubpage(),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            Text(
+              'Echo Messenger',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
               ),
-            );
-          },
-        ),
-        const SizedBox(height: 16),
-        Divider(color: context.border),
-        const SizedBox(height: 16),
-        Text(
-          'Open source',
-          style: TextStyle(
-            color: context.accent,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Echo is a decentralized, end-to-end encrypted messenger. '
-          'Contributions and self-hosting are welcome.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 13,
-            height: 1.5,
-          ),
-        ),
-        const SizedBox(height: 32),
-        Divider(color: context.border),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _deleteAccount,
-            icon: const Icon(Icons.delete_forever_outlined, size: 18),
-            label: const Text('Delete Account'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: EchoTheme.danger,
-              side: const BorderSide(color: EchoTheme.danger),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
             ),
-          ),
+            const SizedBox(height: 8),
+            Text(
+              'Client v$appVersion',
+              style: TextStyle(color: context.textMuted, fontSize: 14),
+            ),
+            SelectableText(
+              'Build $appCommit'
+              '${appBuildTime.isEmpty ? '' : ' · $appBuildTime'}',
+              style: TextStyle(
+                color: context.textMuted,
+                fontSize: 12,
+                fontFamily: 'monospace',
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildCheckForUpdates(),
+            const SizedBox(height: 24),
+            Divider(color: context.border),
+            const SizedBox(height: 16),
+            // Server info (merged from former Server section)
+            Text(
+              'Server',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildServersList(),
+            const SizedBox(height: 8),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.add_circle_outline,
+                color: context.textSecondary,
+                size: 22,
+              ),
+              title: Text(
+                'Add server',
+                style: TextStyle(color: context.textPrimary, fontSize: 15),
+              ),
+              subtitle: Text(
+                'Verifies the URL before adding it to your list.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              trailing: Icon(
+                Icons.chevron_right,
+                color: context.textMuted,
+                size: 20,
+              ),
+              onTap: _showAddServerDialog,
+            ),
+            const SizedBox(height: 16),
+            Divider(color: context.border),
+            const SizedBox(height: 16),
+            // Debug logs entry (absorbed from former Debug section).
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.bug_report_outlined,
+                color: context.textSecondary,
+                size: 22,
+              ),
+              title: Text(
+                'Debug Logs',
+                style: TextStyle(color: context.textPrimary, fontSize: 15),
+              ),
+              subtitle: Text(
+                'View recent in-app log entries.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              trailing: Icon(
+                Icons.chevron_right,
+                color: context.textMuted,
+                size: 20,
+              ),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const _DebugLogsSubpage(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            Divider(color: context.border),
+            const SizedBox(height: 16),
+            Text(
+              'Open source',
+              style: TextStyle(
+                color: context.accent,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Echo is a decentralized, end-to-end encrypted messenger. '
+              'Contributions and self-hosting are welcome.',
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 32),
+            Divider(color: context.border),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _deleteAccount,
+                icon: const Icon(Icons.delete_forever_outlined, size: 18),
+                label: const Text('Delete Account'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: EchoTheme.danger,
+                  side: const BorderSide(color: EchoTheme.danger),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

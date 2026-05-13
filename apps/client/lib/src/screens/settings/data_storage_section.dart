@@ -171,88 +171,96 @@ class _DataStorageSectionState extends ConsumerState<DataStorageSection> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        Text(
-          'Data & Storage',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Manage cached data and storage usage.',
-          style: TextStyle(
-            color: context.textSecondary,
-            fontSize: 13,
-            height: 1.5,
-          ),
-        ),
-        const Divider(height: 24),
-        // Cache size
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(Icons.storage, color: context.textSecondary),
-          title: Text(
-            'Message Cache',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'Estimated size: $_cacheSize',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-          trailing: OutlinedButton(
-            onPressed: _clearMessageCache,
-            child: const Text('Clear'),
-          ),
-        ),
-        const SizedBox(height: 24),
-        // Export section
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: Icon(Icons.download_outlined, color: context.textSecondary),
-          title: Text(
-            'Export My Data',
-            style: TextStyle(color: context.textPrimary, fontSize: 14),
-          ),
-          subtitle: Text(
-            'Save your locally cached messages as a JSON file. '
-            'Only decrypted message content is included — private keys are never exported.',
-            style: TextStyle(
-              color: context.textSecondary,
-              fontSize: 12,
-              height: 1.4,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: ListView(
+          padding: const EdgeInsets.all(24),
           children: [
-            OutlinedButton.icon(
-              onPressed: _isExporting ? null : _exportChats,
-              icon: _isExporting
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.download_outlined, size: 16),
-              label: Text(
-                _isExporting ? 'Exporting...' : 'Export chats (JSON)',
+            Text(
+              'Data & Storage',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            OutlinedButton.icon(
-              onPressed: _copyAccountInfo,
-              icon: const Icon(Icons.copy, size: 16),
-              label: const Text('Copy Account Info'),
+            const SizedBox(height: 4),
+            Text(
+              'Manage cached data and storage usage.',
+              style: TextStyle(
+                color: context.textSecondary,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+            const Divider(height: 24),
+            // Cache size
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.storage, color: context.textSecondary),
+              title: Text(
+                'Message Cache',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Estimated size: $_cacheSize',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              trailing: OutlinedButton(
+                onPressed: _clearMessageCache,
+                child: const Text('Clear'),
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Export section
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.download_outlined,
+                color: context.textSecondary,
+              ),
+              title: Text(
+                'Export My Data',
+                style: TextStyle(color: context.textPrimary, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Save your locally cached messages as a JSON file. '
+                'Only decrypted message content is included — private keys are never exported.',
+                style: TextStyle(
+                  color: context.textSecondary,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _isExporting ? null : _exportChats,
+                  icon: _isExporting
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download_outlined, size: 16),
+                  label: Text(
+                    _isExporting ? 'Exporting...' : 'Export chats (JSON)',
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _copyAccountInfo,
+                  icon: const Icon(Icons.copy, size: 16),
+                  label: const Text('Copy Account Info'),
+                ),
+              ],
             ),
           ],
         ),
-      ],
+      ),
     );
   }
 }

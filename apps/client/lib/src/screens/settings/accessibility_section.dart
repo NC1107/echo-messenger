@@ -24,7 +24,7 @@ class AccessibilitySection extends ConsumerWidget {
 
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 600),
+        constraints: const BoxConstraints(maxWidth: 900),
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
