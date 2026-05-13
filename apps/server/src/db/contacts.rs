@@ -13,6 +13,14 @@ pub const LIST_BLOCKED_LIMIT: i64 = 1_000;
 pub const LIST_PENDING_LIMIT: i64 = 1_000;
 
 #[derive(Debug, sqlx::FromRow, serde::Serialize)]
+pub struct ContactSearchResult {
+    pub user_id: Uuid,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, sqlx::FromRow, serde::Serialize)]
 pub struct ContactRow {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -116,6 +124,36 @@ pub async fn list_contacts(pool: &PgPool, user_id: Uuid) -> Result<Vec<ContactRo
     )
     .bind(user_id)
     .bind(LIST_CONTACTS_LIMIT)
+    .fetch_all(pool)
+    .await
+}
+
+/// Search accepted contacts by username or display_name prefix (case-insensitive).
+pub async fn search_contacts(
+    pool: &PgPool,
+    user_id: Uuid,
+    query: &str,
+    limit: i64,
+) -> Result<Vec<ContactSearchResult>, sqlx::Error> {
+    let escaped = query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let pattern = format!("%{escaped}%");
+    sqlx::query_as::<_, ContactSearchResult>(
+        "SELECT \
+                CASE WHEN c.requester_id = $1 THEN c.target_id ELSE c.requester_id END AS user_id, \
+                u.username, u.display_name, u.avatar_url \
+         FROM contacts c \
+         JOIN users u ON u.id = CASE WHEN c.requester_id = $1 THEN c.target_id ELSE c.requester_id END \
+         WHERE (c.requester_id = $1 OR c.target_id = $1) AND c.status = 'accepted' \
+           AND (u.username ILIKE $2 ESCAPE '\\' OR u.display_name ILIKE $2 ESCAPE '\\') \
+         ORDER BY u.username \
+         LIMIT $3",
+    )
+    .bind(user_id)
+    .bind(&pattern)
+    .bind(limit)
     .fetch_all(pool)
     .await
 }
