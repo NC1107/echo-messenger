@@ -8,15 +8,15 @@ Echo Messenger -- encrypted cross-platform chat app (Discord alternative). Rust 
 
 ## Git Workflow
 
-**Always work on the `dev` branch.** Push to `dev`, then merge to `main` via PR.
+**Always work on the `dev` branch (or a `feature/**` / `fix/**` branch).** Push, then merge to `main` via PR.
 
-- `dev` branch: runs lint CI (Rust CI + Flutter CI) + dev builds (Linux AppImage + Web only)
-- `main` branch: runs the full release pipeline (Linux, Windows, Android, iOS, Web, Server, Docker, GitHub Release). Auto-increments patch version from git tags.
+- `dev` / `feature/**` / `fix/**` branches: runs lint CI (Rust CI + Flutter CI) + path-gated dev builds. Only the platforms whose files actually changed get a build artifact — push Android-only changes and only the unsigned debug APK builds; push shared Dart and every client platform builds. iOS is cost-gated (see CI section). See the filter map under `## CI` below for which paths trigger which platform.
+- `main` branch: runs the full release pipeline (Linux, Windows, Android, iOS, Web, Server, Docker, GitHub Release) — every platform builds on every release. Auto-increments patch version from git tags.
 - **Never push directly to `main`** unless it's a hotfix. Use `git checkout dev && git merge main` to sync.
 
 ```bash
-git checkout dev                    # Work here
-git push origin dev                 # Triggers lint + dev builds only
+git checkout dev                    # Or feature/foo / fix/bar
+git push origin dev                 # Triggers lint + path-gated dev builds
 gh pr create --base main            # When ready for release
 ```
 
@@ -66,7 +66,7 @@ cd apps/client && flutter analyze --fatal-infos   # Dart lint
 
 Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warnings` on .rs files, dart format + flutter analyze on .dart files, commitlint on commit messages. Conventional commits enforced.
 
-**Security CI** (runs on push): cargo audit (RUSTSEC-2023-0071 ignored -- jsonwebtoken timing sidechannel, no patch), cargo-deny (license + ban checks), trufflehog (secret detection). The release workflow also runs a `security-pre-release` gate (cargo audit + cargo-deny) before any artifact-producing job.
+**Security CI** (runs on push): cargo audit (RUSTSEC-2023-0071 ignored -- jsonwebtoken timing sidechannel, no patch), cargo-deny (license + ban checks), trufflehog (secret detection). The release workflow's `security-pre-release` gate is path-gated on Rust dep files (see `## CI` below); the nightly `security-nightly.yml` at 06:00 UTC catches advisory-database drift even on days with no Rust changes.
 
 **CI secrets**: `CODECOV_TOKEN` (recommended) lets the Flutter CI codecov upload authenticate; without it the action falls back to OIDC. `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEY_PROPERTIES` are required by the release workflow's Android job and fail-fast if missing.
 
