@@ -73,7 +73,11 @@ pub(super) async fn check_membership_cached(
 }
 
 /// Fetch conversation member IDs with a 60-second in-memory cache.
-pub(super) async fn get_member_ids_cached(
+///
+/// Exposed at `pub(crate)` so non-WS broadcast paths (e.g. the reactions
+/// route) can reuse the same LRU instead of opening a fresh DB round-trip
+/// per fanout (#834 finding 13).
+pub(crate) async fn get_member_ids_cached(
     pool: &sqlx::PgPool,
     conversation_id: Uuid,
 ) -> Result<Vec<Uuid>, sqlx::Error> {
@@ -276,11 +280,16 @@ pub(super) async fn send_presence_snapshot(state: &AppState, user_id: Uuid) {
     }
 
     // Build per-user status entries, filtering out invisible contacts.
+    // Batched lookup (#834 finding 7): one round-trip with ANY($1) replaces
+    // the prior per-contact query inside this loop.
+    let statuses = db::users::get_presence_statuses_for(&state.pool, &online_contacts)
+        .await
+        .unwrap_or_default();
     let mut entries: Vec<serde_json::Value> = Vec::with_capacity(online_contacts.len());
     for cid in &online_contacts {
-        let stored = db::users::get_presence_status(&state.pool, *cid)
-            .await
-            .unwrap_or(None)
+        let stored = statuses
+            .get(cid)
+            .cloned()
             .unwrap_or_else(|| "online".to_string());
         if stored == "invisible" {
             continue; // invisible users appear offline

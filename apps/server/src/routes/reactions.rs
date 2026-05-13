@@ -181,14 +181,22 @@ async fn broadcast_to_conversation<T: Serialize>(
     event: &T,
     exclude_user_id: Option<Uuid>,
 ) {
-    let member_ids =
-        match db::groups::get_conversation_member_ids(&state.pool, conversation_id).await {
-            Ok(ids) => ids,
-            Err(e) => {
-                tracing::error!("Failed to get conversation members for broadcast: {:?}", e);
-                return;
-            }
-        };
+    // #834 finding 13: reuse the WS layer's LRU member cache instead of
+    // opening a fresh DB round-trip per reaction broadcast. The cache is
+    // already populated by typing/presence fanout, so this is effectively
+    // free in steady-state and bounds the per-reaction overhead.
+    let member_ids = match crate::ws::typing_service::get_member_ids_cached(
+        &state.pool,
+        conversation_id,
+    )
+    .await
+    {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::error!("Failed to get conversation members for broadcast: {:?}", e);
+            return;
+        }
+    };
 
     let json = match serde_json::to_string(event) {
         Ok(j) => j,

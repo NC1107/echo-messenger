@@ -247,9 +247,60 @@ pub(super) async fn validate_conversation_security(
 /// `recipient_user_id (UUID string) -> { device_id (i32 string) -> ciphertext }`.
 /// Per-user device IDs collide across users, so the storage and fanout
 /// addressing must include the recipient. Conversion to typed
-/// `(Uuid, i32)` happens at the storage/fanout boundaries; rows that fail to
-/// parse are logged and skipped.
+/// `(Uuid, i32)` happens at the deserialization boundary (see
+/// [`ParsedRecipientDeviceContents::from_wire`]) so downstream code doesn't
+/// re-parse the same UUID + i32 fields once per fanout stage (#834
+/// finding 15).
 pub(super) type RecipientDeviceContents = HashMap<String, HashMap<String, String>>;
+
+/// Pre-parsed form of [`RecipientDeviceContents`]: UUID + i32 fields are
+/// parsed once at the entry boundary so the storage, revoked-filter,
+/// per-device JSON build, and self-device delivery paths all read typed
+/// values instead of re-parsing strings (#834 finding 15).
+///
+/// Rows that fail to parse (malformed UUID or non-integer device id) are
+/// logged once and dropped here — historically each downstream stage
+/// silently skipped them via `Uuid::parse_str(...).ok()?`, which made it
+/// impossible to tell from logs whether a client was sending garbage.
+#[derive(Debug, Default, Clone)]
+pub(super) struct ParsedRecipientDeviceContents {
+    pub by_user: HashMap<Uuid, HashMap<i32, String>>,
+}
+
+impl ParsedRecipientDeviceContents {
+    /// Parse the wire-shape map once. Returns `None` if the input is `None`;
+    /// otherwise always returns `Some` (possibly empty if every row was
+    /// malformed). The caller keeps the original `RecipientDeviceContents`
+    /// usage where the wire form is still needed (e.g. `validate_encrypted_payload`
+    /// reports `recipient`/`device_id` strings in its `tracing::warn!` context).
+    pub fn from_wire(rdc: &RecipientDeviceContents) -> Self {
+        let mut by_user: HashMap<Uuid, HashMap<i32, String>> = HashMap::with_capacity(rdc.len());
+        for (uid_str, devices) in rdc {
+            let Ok(uid) = Uuid::parse_str(uid_str) else {
+                tracing::debug!(uid = %uid_str, "dropped recipient_device_contents row: bad uuid");
+                continue;
+            };
+            let mut by_device: HashMap<i32, String> = HashMap::with_capacity(devices.len());
+            for (did_str, ciphertext) in devices {
+                let Ok(did) = did_str.parse::<i32>() else {
+                    tracing::debug!(
+                        uid = %uid_str,
+                        did = %did_str,
+                        "dropped recipient_device_contents row: bad device id"
+                    );
+                    continue;
+                };
+                by_device.insert(did, ciphertext.clone());
+            }
+            by_user.insert(uid, by_device);
+        }
+        Self { by_user }
+    }
+
+    pub fn recipient_ids(&self) -> Vec<Uuid> {
+        self.by_user.keys().copied().collect()
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_send_message(
@@ -297,6 +348,15 @@ pub(super) async fn handle_send_message(
         return;
     }
 
+    // #834 finding 15: parse the wire-shape recipient_device_contents exactly
+    // once here, after validation. Downstream consumers (store_and_confirm,
+    // fanout_message, build_per_device_json, the self-device-delivery loop)
+    // all read the typed `HashMap<Uuid, HashMap<i32, String>>` instead of
+    // reparsing the same UUID + i32 fields up to three times per device.
+    let parsed_rdc = recipient_device_contents
+        .as_ref()
+        .map(ParsedRecipientDeviceContents::from_wire);
+
     let (reply_content, reply_username) =
         lookup_reply_context(&state.pool, reply_to_id, conv_id).await;
 
@@ -309,7 +369,7 @@ pub(super) async fn handle_send_message(
         resolved_channel_id,
         &content,
         reply_to_id,
-        &recipient_device_contents,
+        parsed_rdc.as_ref(),
         ttl_seconds,
         conv_security.is_encrypted,
     )
@@ -343,7 +403,7 @@ pub(super) async fn handle_send_message(
         stored.id,
         conv_security.is_encrypted,
         conv_kind == Some(ConversationKind::Group),
-        recipient_device_contents,
+        parsed_rdc,
     )
     .await;
 }
@@ -361,7 +421,7 @@ pub(super) async fn store_and_confirm(
     resolved_channel_id: Option<Uuid>,
     content: &str,
     reply_to_id: Option<Uuid>,
-    recipient_device_contents: &Option<RecipientDeviceContents>,
+    recipient_device_contents: Option<&ParsedRecipientDeviceContents>,
     ttl_seconds: Option<i64>,
     is_encrypted: bool,
 ) -> Option<db::messages::MessageRow> {
@@ -447,7 +507,7 @@ pub(super) async fn store_and_confirm(
     // by anyone (blocked users never receive it, and a future audit-leak
     // scenario would expose it for no benefit).
     if let Some(rdc) = recipient_device_contents {
-        let recipient_ids: Vec<Uuid> = rdc.keys().filter_map(|s| Uuid::parse_str(s).ok()).collect();
+        let recipient_ids = rdc.recipient_ids();
         let blockers: Vec<Uuid> = if recipient_ids.is_empty() {
             Vec::new()
         } else {
@@ -457,19 +517,13 @@ pub(super) async fn store_and_confirm(
         };
 
         let entries: Vec<(Uuid, i32, &str)> = rdc
+            .by_user
             .iter()
-            .filter_map(|(uid_str, devices)| {
-                let recipient_id = Uuid::parse_str(uid_str).ok()?;
-                if blockers.contains(&recipient_id) {
-                    return None;
-                }
-                Some((recipient_id, devices))
-            })
+            .filter(|(recipient_id, _)| !blockers.contains(recipient_id))
             .flat_map(|(recipient_id, devices)| {
-                devices.iter().filter_map(move |(did_str, ct)| {
-                    let did = did_str.parse::<i32>().ok()?;
-                    Some((recipient_id, did, ct.as_str()))
-                })
+                devices
+                    .iter()
+                    .map(move |(did, ct)| (*recipient_id, *did, ct.as_str()))
             })
             .collect();
         if !entries.is_empty()
@@ -497,13 +551,10 @@ pub(super) async fn store_and_confirm(
     // Self-device delivery: notify sender's OTHER devices about outgoing message.
     // Only the sender's own slice of recipient_device_contents is relevant here.
     if let Some(rdc) = recipient_device_contents
-        && let Some(self_devices) = rdc.get(&sender_id.to_string())
+        && let Some(self_devices) = rdc.by_user.get(&sender_id)
     {
-        for (did_str, ciphertext) in self_devices {
-            let Ok(did) = did_str.parse::<i32>() else {
-                continue;
-            };
-            if did == sender_device_id {
+        for (did, ciphertext) in self_devices {
+            if *did == sender_device_id {
                 continue; // Don't send to the originating device
             }
             let self_msg = ServerMessage::SelfMessage {
@@ -518,7 +569,7 @@ pub(super) async fn store_and_confirm(
             if let Ok(json) = serde_json::to_string(&self_msg) {
                 state
                     .hub
-                    .send_to_device(&sender_id, did, WsMessage::Text(json.into()));
+                    .send_to_device(&sender_id, *did, WsMessage::Text(json.into()));
             }
         }
     }
@@ -756,7 +807,7 @@ impl NewMessageFields {
 ///    fanout loop are O(1) — no string copying per recipient.
 pub(super) fn build_per_device_json(
     fields: &NewMessageFields,
-    recipient_device_contents: &RecipientDeviceContents,
+    recipient_device_contents: &ParsedRecipientDeviceContents,
 ) -> HashMap<Uuid, Vec<(i32, WsMessage)>> {
     // Serialize the invariant portion once via serde so skip_serializing_if
     // is respected for optional fields (channel_id, reply_to_*, expires_at,
@@ -781,22 +832,21 @@ pub(super) fn build_per_device_json(
     };
 
     recipient_device_contents
+        .by_user
         .iter()
-        .filter_map(|(uid_str, devices)| {
-            let recipient_id = Uuid::parse_str(uid_str).ok()?;
+        .map(|(recipient_id, devices)| {
             let entries: Vec<(i32, WsMessage)> = devices
                 .iter()
-                .filter_map(|(did_str, ciphertext)| {
-                    let did = did_str.parse::<i32>().ok()?;
+                .filter_map(|(did, ciphertext)| {
                     // Clone the invariant Value and mutate only `content`.
                     let mut val = base_value.clone();
                     val["content"] = serde_json::Value::String(ciphertext.clone());
                     let json = serde_json::to_string(&val).ok()?;
                     // Wrap as WsMessage::Text (Bytes) once; fanout clones are O(1).
-                    Some((did, WsMessage::Text(json.into())))
+                    Some((*did, WsMessage::Text(json.into())))
                 })
                 .collect();
-            Some((recipient_id, entries))
+            (*recipient_id, entries)
         })
         .collect()
 }
@@ -929,7 +979,7 @@ pub(super) async fn fanout_message(
     stored_id: Uuid,
     is_encrypted: bool,
     is_group: bool,
-    recipient_device_contents: Option<RecipientDeviceContents>,
+    recipient_device_contents: Option<ParsedRecipientDeviceContents>,
 ) {
     let Some(fields) = NewMessageFields::extract(message) else {
         tracing::error!("fanout_message called with non-NewMessage variant");
@@ -953,33 +1003,19 @@ pub(super) async fn fanout_message(
     // building per-device frames. Devices with NO identity_keys row at all
     // (test fixtures, fresh registrations) are passed through unchanged — only
     // rows with a non-NULL revoked_at are dropped.
-    let recipient_device_contents = if let Some(rdc) = recipient_device_contents {
-        let recipient_ids: Vec<Uuid> = rdc.keys().filter_map(|s| Uuid::parse_str(s).ok()).collect();
+    let recipient_device_contents = if let Some(mut rdc) = recipient_device_contents {
+        let recipient_ids = rdc.recipient_ids();
         let revoked_map = db::keys::get_revoked_devices_for_users(&state.pool, &recipient_ids)
             .await
             .unwrap_or_default();
-        if revoked_map.is_empty() {
-            Some(rdc)
-        } else {
-            let filtered: RecipientDeviceContents = rdc
-                .into_iter()
-                .filter_map(|(uid_str, devices)| {
-                    let uid = Uuid::parse_str(&uid_str).ok()?;
-                    let revoked_dids = revoked_map.get(&uid);
-                    let kept: HashMap<String, String> = devices
-                        .into_iter()
-                        .filter(|(did_str, _)| {
-                            let Ok(did) = did_str.parse::<i32>() else {
-                                return true;
-                            };
-                            !revoked_dids.is_some_and(|rv| rv.contains(&did))
-                        })
-                        .collect();
-                    Some((uid_str, kept))
-                })
-                .collect();
-            Some(filtered)
+        if !revoked_map.is_empty() {
+            for (uid, devices) in rdc.by_user.iter_mut() {
+                if let Some(revoked_dids) = revoked_map.get(uid) {
+                    devices.retain(|did, _| !revoked_dids.contains(did));
+                }
+            }
         }
+        Some(rdc)
     } else {
         None
     };

@@ -356,6 +356,29 @@ pub async fn get_presence_status(
     Ok(row.map(|(s,)| s))
 }
 
+/// Batched variant of [`get_presence_status`] for one round-trip lookup
+/// across N user_ids — used by the presence snapshot hot path which
+/// previously fired one query per online contact (#834 finding 7).
+///
+/// Returns a `HashMap` keyed by `user_id`; users with no row in the result
+/// set (e.g. deleted users) are simply absent from the map. Callers should
+/// treat "missing" the same way they would treat an `Ok(None)` from the
+/// single-row helper.
+pub async fn get_presence_statuses_for(
+    pool: &PgPool,
+    user_ids: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, String>, sqlx::Error> {
+    if user_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let rows: Vec<(Uuid, String)> =
+        sqlx::query_as("SELECT id, presence_status FROM users WHERE id = ANY($1)")
+            .bind(user_ids)
+            .fetch_all(pool)
+            .await?;
+    Ok(rows.into_iter().collect())
+}
+
 pub async fn update_privacy_preferences(
     pool: &PgPool,
     user_id: Uuid,
