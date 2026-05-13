@@ -14,11 +14,15 @@ import '../providers/contacts_provider.dart';
 import '../providers/conversation_filter_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../providers/update_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../providers/theme_provider.dart' show uiDensityProvider;
 import '../utils/time_utils.dart';
+import 'package:window_manager/window_manager.dart';
+
 import 'avatar_utils.dart';
 import 'conversation_item.dart';
 import 'echo_logo_icon.dart';
@@ -521,6 +525,8 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
               // Hide the status bar on mobile narrow — redundant with the
               // bottom tab bar that already exposes Settings + identity.
               if (MediaQuery.sizeOf(context).width >= 600)
+                _buildSidebarUpdateBanner(context),
+              if (MediaQuery.sizeOf(context).width >= 600)
                 _buildUserStatusBar(
                   context,
                   myUsername: username,
@@ -578,7 +584,13 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     final titleWeight = isMobile ? FontWeight.w700 : FontWeight.w700;
     final headerHeight = isMobile ? 64.0 : 56.0;
 
-    return Container(
+    final isDesktop =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.macOS);
+
+    Widget header = Container(
       height: headerHeight,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -639,6 +651,11 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ],
       ),
     );
+
+    if (isDesktop) {
+      header = DragToMoveArea(child: header);
+    }
+    return header;
   }
 
   Widget _buildNewActionMenu(BuildContext context, int pendingCount) {
@@ -1040,6 +1057,177 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         ),
         const SizedBox(height: 4),
       ],
+    );
+  }
+
+  Widget _buildSidebarUpdateBanner(BuildContext context) {
+    final update = ref.watch(updateProvider);
+
+    const activeStatuses = {
+      UpdateStatus.downloading,
+      UpdateStatus.readyToInstall,
+      UpdateStatus.installing,
+    };
+    final isActive = activeStatuses.contains(update.status);
+    final isVisible =
+        update.updateAvailable ||
+        isActive ||
+        update.status == UpdateStatus.error;
+    if (!isVisible) return const SizedBox.shrink();
+    if (update.dismissed && !isActive) return const SizedBox.shrink();
+
+    final String label;
+    final Widget? action;
+    final bool showDismiss;
+    Widget? progress;
+
+    switch (update.status) {
+      case UpdateStatus.downloading:
+        final pct = (update.downloadProgress * 100).toInt();
+        label = 'Downloading update... $pct%';
+        action = TextButton(
+          onPressed: () => ref.read(updateProvider.notifier).cancelDownload(),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: context.textMuted, fontSize: 11),
+          ),
+        );
+        showDismiss = false;
+        progress = LinearProgressIndicator(
+          value: update.downloadProgress,
+          color: context.accent,
+          backgroundColor: context.border,
+          minHeight: 2,
+        );
+      case UpdateStatus.readyToInstall:
+        label = 'v${update.latestVersion} ready';
+        action = TextButton(
+          onPressed: () => ref.read(updateProvider.notifier).applyUpdate(),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            'Restart',
+            style: TextStyle(
+              color: context.accent,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        );
+        showDismiss = true;
+        progress = null;
+      case UpdateStatus.installing:
+        label = 'Installing update...';
+        action = const SizedBox(
+          width: 12,
+          height: 12,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        );
+        showDismiss = false;
+        progress = null;
+      case UpdateStatus.error:
+        label = 'Update failed';
+        action = TextButton(
+          onPressed: () => ref.read(updateProvider.notifier).downloadUpdate(),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            'Retry',
+            style: TextStyle(color: context.accent, fontSize: 11),
+          ),
+        );
+        showDismiss = true;
+        progress = null;
+      default: // idle, update available
+        if (kIsWeb) {
+          label = 'New version available';
+          action = null;
+        } else {
+          label = 'v${update.latestVersion} available';
+          action = TextButton(
+            onPressed: update.assetDownloadUrl != null
+                ? () => ref.read(updateProvider.notifier).downloadUpdate()
+                : () {
+                    final url = update.downloadUrl;
+                    if (url != null) launchUrl(Uri.parse(url));
+                  },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              update.assetDownloadUrl != null ? 'Update' : 'Download',
+              style: TextStyle(
+                color: context.accent,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          );
+        }
+        showDismiss = true;
+        progress = null;
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: context.mainBg,
+        border: Border(top: BorderSide(color: context.border, width: 1)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.system_update_outlined,
+                  size: 14,
+                  color: context.accent,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                ?action,
+                if (showDismiss)
+                  IconButton(
+                    icon: Icon(Icons.close, size: 12, color: context.textMuted),
+                    onPressed: () =>
+                        ref.read(updateProvider.notifier).dismiss(),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 28,
+                      minHeight: 28,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          ?progress,
+        ],
+      ),
     );
   }
 

@@ -51,9 +51,8 @@ class WindowStateService {
   static Future<void> restore() async {
     if (!_isDesktop) return;
     try {
-      // Re-attach the title bar before resizing so the user doesn't see a
-      // chromeless full-sized window for a frame.
-      await windowManager.setTitleBarStyle(TitleBarStyle.normal);
+      // Keep the window frameless permanently for the integrated title bar.
+      await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
 
       final prefs = await SharedPreferences.getInstance();
       final width = prefs.getDouble(_kWidthKey) ?? defaultSize.width;

@@ -1,9 +1,11 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:window_manager/window_manager.dart';
 
 import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
@@ -21,6 +23,7 @@ import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import 'chat_header_widgets.dart';
 import 'shared_media_gallery.dart';
+import 'window_chrome.dart';
 
 const _disappearingMessagesLabel = 'Disappearing messages';
 const _kAuthorizationHeader = 'Authorization';
@@ -52,7 +55,13 @@ class ChatHeaderBar extends ConsumerWidget {
     final conv = conversation;
     final displayName = conv.displayName(myUserId);
 
-    return Container(
+    final isDesktop =
+        !kIsWeb &&
+        (Theme.of(context).platform == TargetPlatform.linux ||
+            Theme.of(context).platform == TargetPlatform.windows ||
+            Theme.of(context).platform == TargetPlatform.macOS);
+
+    Widget header = Container(
       height: 60,
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
@@ -78,9 +87,15 @@ class ChatHeaderBar extends ConsumerWidget {
           ..._buildActionButtons(context, ref, conv),
           const SizedBox(width: 4),
           const _ConnectionStatusDot(),
+          if (isDesktop) const AppWindowButtons(),
         ],
       ),
     );
+
+    if (isDesktop) {
+      header = DragToMoveArea(child: header);
+    }
+    return header;
   }
 
   Widget _buildHeaderAvatar(Conversation conv, String displayName) {
