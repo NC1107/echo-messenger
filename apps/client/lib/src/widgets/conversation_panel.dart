@@ -980,8 +980,13 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       children: [
         GestureDetector(
           onTap: () {
-            // Trigger a fresh connect (clears wasReplaced and reconnects)
-            ref.read(websocketProvider.notifier).connect();
+            // Trigger a fresh connect, clearing wasReplaced if applicable
+            final ws = ref.read(websocketProvider.notifier);
+            if (ref.read(websocketProvider).wasReplaced) {
+              ws.reconnectAfterReplacement();
+            } else {
+              ws.connect();
+            }
           },
           child: Container(
             height: 56,

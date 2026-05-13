@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -141,15 +142,27 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
 
     disconnect();
     _reconnectAttempts = 0;
-    // Clear wasReplaced so a manual reconnect (e.g. page refresh) works.
-    state = state.copyWith(wasReplaced: false);
-
-    // Attempt ticket-based connection, falling back to token-based for
-    // backward compatibility with servers that don't support ws-ticket.
+    // wasReplaced is intentionally NOT cleared here. Only [reconnectAfterReplacement]
+    // resets it, which is called explicitly by the user dismissing the banner.
     _connectWithTicketOrFallback();
   }
 
+  /// Called when the user acknowledges a session-replaced banner and requests
+  /// a fresh connection. Clears [wasReplaced] so the banner disappears and
+  /// auto-reconnect resumes normally.
+  void reconnectAfterReplacement() {
+    state = state.copyWith(wasReplaced: false);
+    connect();
+  }
+
   Future<void> _connectWithTicketOrFallback() async {
+    // Guard against concurrent reconnect calls that can create parallel channels.
+    // Channel is nulled in onDone/onError, so a non-null channel means we're
+    // actively connected or mid-connect.
+    if (_channel != null) {
+      return;
+    }
+
     final serverUrl = ref.read(serverUrlProvider);
     final wsBase = wsUrlFromHttpUrl(serverUrl);
 
@@ -170,7 +183,24 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     }
 
     final uri = Uri.parse('$wsBase/ws?ticket=$ticket');
-    _channel = WebSocketChannel.connect(uri);
+
+    try {
+      _channel = WebSocketChannel.connect(uri);
+    } catch (e) {
+      // WebSocketChannel.connect can throw synchronously (e.g., invalid URI
+      // on web, mixed-content ws:// from https origin). Don't leave
+      // isConnected=true without a valid channel.
+      debugPrint('[WebSocket] connect() threw: $e');
+      DebugLogService.instance.log(
+        LogLevel.error,
+        'WebSocket',
+        'Connection failed: $e',
+      );
+      state = state.copyWith(isConnected: false);
+      _scheduleReconnect();
+      return;
+    }
+
     state = state.copyWith(isConnected: true, reconnectAttempts: 0);
     _reconnectAttempts = 0;
     DebugLogService.instance.log(
@@ -189,6 +219,10 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     _subscription = _channel!.stream.listen(
       (data) => _onMessage(data as String),
       onDone: () {
+        // Null out channel/subscription so _connectWithTicketOrFallback
+        // guard passes on the next reconnect attempt.
+        _subscription = null;
+        _channel = null;
         DebugLogService.instance.log(
           LogLevel.warning,
           'WebSocket',
@@ -201,6 +235,9 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
         _scheduleReconnect();
       },
       onError: (_) {
+        // Same cleanup as onDone.
+        _subscription = null;
+        _channel = null;
         DebugLogService.instance.log(
           LogLevel.error,
           'WebSocket',
@@ -284,6 +321,8 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
     _subscription?.cancel();
     _channel?.sink.close();
     _channel = null;
+    // Clear queued messages to prevent leaks on reconnect to different account
+    clearPendingDecryptQueue();
     state = state.copyWith(isConnected: false);
     DebugLogService.instance.log(LogLevel.info, 'WebSocket', 'Disconnected');
   }
@@ -695,6 +734,8 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
   }
 
   /// Remove stale typing indicators (older than 5 seconds).
+  /// Also prune throttle timestamps from this client's sendTyping() calls (audit
+  /// 2026-05-12, finding #9) to prevent unbounded growth across long sessions.
   void _cleanupTyping() {
     final now = DateTime.now();
     var changed = false;
@@ -721,6 +762,15 @@ class WebSocketNotifier extends _$WebSocketNotifier with WsMessageHandler {
 
     if (changed) {
       state = state.copyWith(typingUsers: updatedTyping);
+    }
+
+    // Prune our own _lastTypingSent map (> 10s old entries are safe to evict).
+    final staleThrottleKeys = _lastTypingSent.entries
+        .where((e) => now.difference(e.value).inSeconds > 10)
+        .map((e) => e.key)
+        .toList();
+    for (final key in staleThrottleKeys) {
+      _lastTypingSent.remove(key);
     }
   }
 }

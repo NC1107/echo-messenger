@@ -17,7 +17,7 @@ import '../services/message_cache.dart';
 import '../services/push_token_service.dart';
 import '../services/update_service.dart' as update_svc;
 import '../services/window_state_service.dart';
-import '../router/app_router.dart' show pendingDeepLink;
+import '../router/app_router.dart' show pendingDeepLinkProvider;
 import '../screens/onboarding_wizard.dart' show kOnboardingCompletedKey;
 import '../theme/echo_theme.dart';
 import '../widgets/auth/animated_gradient_background.dart';
@@ -175,16 +175,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   /// Navigate to the appropriate screen after init completes.
   void _navigateAfterInit(bool loggedIn) {
     final isLoggedIn = ref.read(authProvider).isLoggedIn;
+    final deepLink = ref.read(pendingDeepLinkProvider.notifier).takeAndClear();
 
     // Slice 10: restore the user's last-known window geometry as soon as we
     // know we're leaving the splash. Fire-and-forget — navigation must not
     // wait for the OS window resize.
     unawaited(WindowStateService.restore());
 
-    if (isLoggedIn && pendingDeepLink != null) {
-      final destination = pendingDeepLink!;
-      pendingDeepLink = null;
-      context.go(destination);
+    if (isLoggedIn && deepLink != null) {
+      context.go(deepLink);
       return;
     }
 
