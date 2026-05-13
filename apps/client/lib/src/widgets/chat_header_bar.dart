@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'package:window_manager/window_manager.dart';
 
 import '../models/conversation.dart';
 import '../providers/auth_provider.dart';
@@ -61,41 +60,68 @@ class ChatHeaderBar extends ConsumerWidget {
             Theme.of(context).platform == TargetPlatform.windows ||
             Theme.of(context).platform == TargetPlatform.macOS);
 
-    Widget header = Container(
+    return Container(
       height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
         color: context.sidebarBg,
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
       child: Row(
         children: [
-          if (onBack != null) ...[
-            IconButton(
-              icon: const Icon(Icons.arrow_back, size: 20),
-              color: context.textSecondary,
-              tooltip: 'Back',
-              onPressed: onBack,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          // Left: draggable region (back button + avatar + name/status).
+          // AppDragArea wraps only this passive area so the interactive
+          // controls on the right are never inside the drag recogniser.
+          Expanded(
+            child: AppDragArea(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 20),
+                child: Row(
+                  children: [
+                    if (onBack != null) ...[
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, size: 20),
+                        color: context.textSecondary,
+                        tooltip: 'Back',
+                        onPressed: onBack,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 44,
+                          minHeight: 44,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    _buildHeaderAvatar(conv, displayName),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildNameAndStatus(
+                        context,
+                        ref,
+                        conv,
+                        displayName,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(width: 4),
-          ],
-          _buildHeaderAvatar(conv, displayName),
-          const SizedBox(width: 12),
-          _buildNameAndStatus(context, ref, conv, displayName),
-          ..._buildActionButtons(context, ref, conv),
-          const SizedBox(width: 4),
-          const _ConnectionStatusDot(),
-          if (isDesktop) const AppWindowButtons(),
+          ),
+          // Right: non-draggable interactive controls.
+          Padding(
+            padding: const EdgeInsets.only(right: 20),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ..._buildActionButtons(context, ref, conv),
+                const SizedBox(width: 4),
+                const _ConnectionStatusDot(),
+                if (isDesktop) const AppWindowButtons(),
+              ],
+            ),
+          ),
         ],
       ),
     );
-
-    if (isDesktop) {
-      header = DragToMoveArea(child: header);
-    }
-    return header;
   }
 
   Widget _buildHeaderAvatar(Conversation conv, String displayName) {
@@ -141,29 +167,27 @@ class ChatHeaderBar extends ConsumerWidget {
     Conversation conv,
     String displayName,
   ) {
-    return Expanded(
-      child: Semantics(
-        label: 'view $displayName details',
-        button: true,
-        child: GestureDetector(
-          onTap: conv.isGroup
-              ? onGroupInfo
-              : () {
-                  final peer = conv.members
-                      .where((m) => m.userId != myUserId)
-                      .firstOrNull;
-                  if (peer != null) {
-                    UserProfileScreen.show(context, ref, peer.userId);
-                  }
-                },
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildNameRow(context, ref, conv, displayName),
-              _buildStatusLine(context, ref, conv),
-            ],
-          ),
+    return Semantics(
+      label: 'view $displayName details',
+      button: true,
+      child: GestureDetector(
+        onTap: conv.isGroup
+            ? onGroupInfo
+            : () {
+                final peer = conv.members
+                    .where((m) => m.userId != myUserId)
+                    .firstOrNull;
+                if (peer != null) {
+                  UserProfileScreen.show(context, ref, peer.userId);
+                }
+              },
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildNameRow(context, ref, conv, displayName),
+            _buildStatusLine(context, ref, conv),
+          ],
         ),
       ),
     );
