@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/version_utils.dart';
+import '../widgets/auth/auth_layout.dart';
 import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/echo_logo_icon.dart';
 
@@ -111,61 +112,55 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       body: Stack(
         children: [
           const AuthBackground(),
-          SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
-                  child: Form(
-                    key: _formKey,
-                    child: AutofillGroup(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _buildHeader(),
-                          const SizedBox(height: 32),
-                          _buildUsernameField(),
-                          const SizedBox(height: 16),
-                          _buildPasswordField(),
-                          _buildErrorMessage(authState),
-                          const SizedBox(height: 24),
-                          _buildLoginButton(authState),
-                          const SizedBox(height: 4),
-                          SizedBox(
-                            height: 44,
-                            child: Semantics(
-                              button: true,
-                              label: 'forgot-password',
-                              child: TextButton(
-                                onPressed: () => context.go('/forgot-password'),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: context.textSecondary,
-                                ),
-                                child: const Text('Forgot password?'),
-                              ),
-                            ),
+          AuthLayout(
+            tagline: 'Welcome back.',
+            formTitle: 'Welcome back.',
+            compactHeader: _buildHeader(),
+            narrowPadding: const EdgeInsets.fromLTRB(24, 24, 24, _bottomPad),
+            formColumn: Form(
+              key: _formKey,
+              child: AutofillGroup(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildUsernameField(),
+                    const SizedBox(height: 16),
+                    _buildPasswordField(),
+                    _buildErrorMessage(authState),
+                    const SizedBox(height: 24),
+                    _buildLoginButton(authState),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      height: 44,
+                      child: Semantics(
+                        button: true,
+                        label: 'forgot-password',
+                        child: TextButton(
+                          onPressed: () => context.go('/forgot-password'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: context.textSecondary,
                           ),
-                          SizedBox(
-                            height: 44,
-                            // TextButton + Text already produce a
-                            // button-role accessibility node named "Create an
-                            // account" — wrapping in another Semantics
-                            // duplicates the node and trips strict-mode
-                            // selectors (`getByRole('button', { name: /create
-                            // an account/i })` resolves to 2).
-                            child: TextButton(
-                              onPressed: () => context.go('/register'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: context.textSecondary,
-                              ),
-                              child: const Text('Create an account'),
-                            ),
-                          ),
-                        ],
+                          child: const Text('Forgot password?'),
+                        ),
                       ),
                     ),
-                  ),
+                    SizedBox(
+                      height: 44,
+                      // TextButton + Text already produce a
+                      // button-role accessibility node named "Create an
+                      // account" — wrapping in another Semantics
+                      // duplicates the node and trips strict-mode
+                      // selectors (`getByRole('button', { name: /create
+                      // an account/i })` resolves to 2).
+                      child: TextButton(
+                        onPressed: () => context.go('/register'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: context.textSecondary,
+                        ),
+                        child: const Text('Create an account'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
