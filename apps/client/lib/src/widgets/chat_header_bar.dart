@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -22,7 +21,6 @@ import '../utils/time_utils.dart';
 import 'avatar_utils.dart' show buildAvatar, groupAvatarColor, resolveAvatarUrl;
 import 'chat_header_widgets.dart';
 import 'shared_media_gallery.dart';
-import 'window_chrome.dart';
 
 const _disappearingMessagesLabel = 'Disappearing messages';
 const _kAuthorizationHeader = 'Authorization';
@@ -54,71 +52,32 @@ class ChatHeaderBar extends ConsumerWidget {
     final conv = conversation;
     final displayName = conv.displayName(myUserId);
 
-    final isDesktop =
-        !kIsWeb &&
-        (Theme.of(context).platform == TargetPlatform.linux ||
-            Theme.of(context).platform == TargetPlatform.windows ||
-            Theme.of(context).platform == TargetPlatform.macOS);
-
     return Container(
       height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
         color: context.sidebarBg,
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
       ),
       child: Row(
         children: [
-          // Left: draggable region (back button + avatar + name/status).
-          // AppDragArea wraps only this passive area so the interactive
-          // controls on the right are never inside the drag recogniser.
-          Expanded(
-            child: AppDragArea(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 20),
-                child: Row(
-                  children: [
-                    if (onBack != null) ...[
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back, size: 20),
-                        color: context.textSecondary,
-                        tooltip: 'Back',
-                        onPressed: onBack,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 44,
-                          minHeight: 44,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                    ],
-                    _buildHeaderAvatar(conv, displayName),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildNameAndStatus(
-                        context,
-                        ref,
-                        conv,
-                        displayName,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          if (onBack != null) ...[
+            IconButton(
+              icon: const Icon(Icons.arrow_back, size: 20),
+              color: context.textSecondary,
+              tooltip: 'Back',
+              onPressed: onBack,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             ),
-          ),
-          // Right: non-draggable interactive controls.
-          Padding(
-            padding: const EdgeInsets.only(right: 20),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ..._buildActionButtons(context, ref, conv),
-                const SizedBox(width: 4),
-                const _ConnectionStatusDot(),
-                if (isDesktop) const AppWindowButtons(),
-              ],
-            ),
-          ),
+            const SizedBox(width: 4),
+          ],
+          _buildHeaderAvatar(conv, displayName),
+          const SizedBox(width: 12),
+          Expanded(child: _buildNameAndStatus(context, ref, conv, displayName)),
+          ..._buildActionButtons(context, ref, conv),
+          const SizedBox(width: 4),
+          const _ConnectionStatusDot(),
         ],
       ),
     );
