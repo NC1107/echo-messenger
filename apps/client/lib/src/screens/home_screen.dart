@@ -1,12 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../models/conversation.dart';
 import '../providers/contacts_provider.dart';
@@ -1020,14 +1018,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             children: [
               _buildDesktopSidebar(sidebarWidth, animatedSidebarWidth),
               _buildResizeHandle(),
-              Expanded(
-                child: Column(
-                  children: [
-                    _buildUpdateBanner(),
-                    Expanded(child: rightPanel),
-                  ],
-                ),
-              ),
+              Expanded(child: rightPanel),
               ..._buildMembersPanel(),
             ],
           ),
@@ -1244,15 +1235,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             SizedBox(width: 300, child: _buildConversationPanel()),
           // Thin vertical divider
           Container(width: 1, color: context.border),
-          // Right: content area + optional update banner
-          Expanded(
-            child: Column(
-              children: [
-                _buildUpdateBanner(),
-                Expanded(child: rightPanel),
-              ],
-            ),
-          ),
+          // Right: content area
+          Expanded(child: rightPanel),
         ],
       ),
     );
@@ -1494,187 +1478,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   double? _swipeStartX;
-
-  /// Whether the update banner should be hidden for the given state.
-  bool _shouldHideUpdateBanner(UpdateState update) {
-    const activeStatuses = {
-      UpdateStatus.downloading,
-      UpdateStatus.readyToInstall,
-      UpdateStatus.installing,
-    };
-    if (!update.updateAvailable &&
-        !activeStatuses.contains(update.status) &&
-        update.status != UpdateStatus.error) {
-      return true;
-    }
-    if (update.dismissed && !activeStatuses.contains(update.status)) {
-      return true;
-    }
-    return false;
-  }
-
-  Widget _buildUpdateBanner() {
-    final update = ref.watch(updateProvider);
-
-    if (_shouldHideUpdateBanner(update)) {
-      return const SizedBox.shrink();
-    }
-
-    String label;
-    Widget action;
-    Widget? trailing;
-    Widget? progress;
-
-    switch (update.status) {
-      case UpdateStatus.downloading:
-        final pct = (update.downloadProgress * 100).toInt();
-        label = 'Downloading update... $pct%';
-        action = TextButton(
-          onPressed: () => ref.read(updateProvider.notifier).cancelDownload(),
-          child: Text(
-            'Cancel',
-            style: TextStyle(color: context.textMuted, fontSize: 13),
-          ),
-        );
-        trailing = null;
-        progress = LinearProgressIndicator(
-          value: update.downloadProgress,
-          color: context.accent,
-          backgroundColor: context.border,
-          minHeight: 3,
-        );
-      case UpdateStatus.readyToInstall:
-        label = 'Echo v${update.latestVersion} ready to install';
-        action = FilledButton.icon(
-          onPressed: () => ref.read(updateProvider.notifier).applyUpdate(),
-          icon: const Icon(Icons.restart_alt, size: 16),
-          label: const Text(
-            'Restart to Update',
-            style: TextStyle(fontSize: 12),
-          ),
-          style: FilledButton.styleFrom(
-            backgroundColor: context.accent,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          ),
-        );
-        trailing = TextButton(
-          onPressed: () => ref.read(updateProvider.notifier).dismiss(),
-          child: Text(
-            'Later',
-            style: TextStyle(color: context.textMuted, fontSize: 12),
-          ),
-        );
-        progress = null;
-      case UpdateStatus.installing:
-        label = 'Installing update...';
-        action = const SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        );
-        trailing = null;
-        progress = null;
-      case UpdateStatus.error:
-        label = 'Update failed';
-        action = TextButton(
-          onPressed: () => ref.read(updateProvider.notifier).downloadUpdate(),
-          child: Text(
-            'Retry',
-            style: TextStyle(color: context.accent, fontSize: 13),
-          ),
-        );
-        trailing = IconButton(
-          icon: Icon(Icons.close, size: 16, color: context.textMuted),
-          onPressed: () => ref.read(updateProvider.notifier).dismiss(),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-        );
-        progress = null;
-      default: // idle with updateAvailable
-        if (kIsWeb) {
-          label = 'A new version is available. Ask your admin to update.';
-          action = const SizedBox.shrink();
-        } else {
-          label = 'Echo v${update.latestVersion} is available';
-          action = TextButton(
-            onPressed: update.assetDownloadUrl != null
-                ? () => ref.read(updateProvider.notifier).downloadUpdate()
-                : () {
-                    final url = update.downloadUrl;
-                    if (url != null) launchUrl(Uri.parse(url));
-                  },
-            child: Text(
-              update.assetDownloadUrl != null ? 'Update' : 'Download',
-              style: TextStyle(
-                color: context.accent,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          );
-        }
-        trailing = IconButton(
-          icon: Icon(Icons.close, size: 16, color: context.textMuted),
-          onPressed: () => ref.read(updateProvider.notifier).dismiss(),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-        );
-        progress = null;
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
-          child: Container(
-            decoration: BoxDecoration(
-              color: context.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: context.border),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.system_update,
-                        size: 16,
-                        color: context.accent,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            color: context.textPrimary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      action,
-                      ?trailing,
-                    ],
-                  ),
-                ),
-                ?progress,
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _buildEmptyState() {
     return Container(

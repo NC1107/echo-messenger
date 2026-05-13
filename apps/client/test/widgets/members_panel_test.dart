@@ -35,7 +35,9 @@ void main() {
       expect(find.text('Leave Group'), findsNothing);
     });
 
-    testWidgets('non-owner still sees leave group action', (tester) async {
+    testWidgets('non-owner does not see leave group in sidebar', (
+      tester,
+    ) async {
       const memberConversation = Conversation(
         id: 'group-2',
         name: 'Core Team',
@@ -56,7 +58,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Leave Group'), findsOneWidget);
+      // Leave Group was removed from the members sidebar.
+      expect(find.text('Leave Group'), findsNothing);
       expect(find.text('Delete Group'), findsNothing);
     });
   });

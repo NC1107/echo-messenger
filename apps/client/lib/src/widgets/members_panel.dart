@@ -138,23 +138,6 @@ class MembersPanel extends ConsumerWidget {
               },
             ),
           ),
-          // Leave group button (non-owners only)
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: context.border, width: 1)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (!isOwner)
-                  _LeaveGroupButton(
-                    conversationId: conv.id,
-                    onLeft: onGroupLeft,
-                  ),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -458,94 +441,6 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LeaveGroupButton extends ConsumerStatefulWidget {
-  final String conversationId;
-  final VoidCallback? onLeft;
-
-  const _LeaveGroupButton({required this.conversationId, this.onLeft});
-
-  @override
-  ConsumerState<_LeaveGroupButton> createState() => _LeaveGroupButtonState();
-}
-
-class _LeaveGroupButtonState extends ConsumerState<_LeaveGroupButton> {
-  bool _isLoading = false;
-
-  Future<void> _leaveGroup() async {
-    final serverUrl = ref.read(serverUrlProvider);
-    final token = ref.read(authProvider).token;
-
-    setState(() => _isLoading = true);
-
-    try {
-      final response = await http
-          .post(
-            Uri.parse('$serverUrl/api/groups/${widget.conversationId}/leave'),
-            headers: {
-              'Authorization': 'Bearer ${token ?? ""}',
-              'Content-Type': 'application/json',
-            },
-          )
-          .timeout(const Duration(seconds: 10));
-
-      if (!mounted) return;
-
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        await ref.read(conversationsProvider.notifier).loadConversations();
-        widget.onLeft?.call();
-        if (mounted) {
-          ToastService.show(context, 'Left group', type: ToastType.success);
-        }
-      } else {
-        setState(() => _isLoading = false);
-        if (mounted) {
-          ToastService.show(
-            context,
-            'Failed to leave group (${response.statusCode})',
-            type: ToastType.error,
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ToastService.show(
-          context,
-          'Failed to leave group',
-          type: ToastType.error,
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 36,
-      child: OutlinedButton.icon(
-        onPressed: _isLoading ? null : _leaveGroup,
-        icon: _isLoading
-            ? const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: EchoTheme.danger,
-                ),
-              )
-            : const Icon(Icons.logout, size: 16),
-        label: const Text('Leave Group'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: EchoTheme.danger,
-          side: const BorderSide(color: EchoTheme.danger),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
         ),
       ),
     );

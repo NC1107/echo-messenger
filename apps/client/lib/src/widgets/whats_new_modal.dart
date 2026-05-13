@@ -15,32 +15,53 @@ import '../theme/echo_theme.dart';
 /// [maybeShowWhatsNew].
 class WhatsNewModal extends ConsumerWidget {
   final ReleaseNotesView notes;
+  final bool isDialog;
 
-  const WhatsNewModal({super.key, required this.notes});
+  const WhatsNewModal({super.key, required this.notes, this.isDialog = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final mediaQuery = MediaQuery.of(context);
-    // Cap the sheet height at 80% of screen so long release notes
-    // don't push the dismiss button off-screen on shorter devices.
-    final maxHeight = mediaQuery.size.height * 0.8;
 
+    final content = _buildContent(context, theme, ref, mediaQuery);
+
+    if (isDialog) {
+      return Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: context.surface,
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480, maxHeight: 560),
+          child: content,
+        ),
+      );
+    }
+
+    // Mobile: bottom sheet presentation.
     return Container(
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      padding: EdgeInsets.only(
-        // Safe-area + visual-density-aware paddings.
-        bottom: mediaQuery.padding.bottom + 16,
-      ),
+      constraints: BoxConstraints(maxHeight: mediaQuery.size.height * 0.8),
+      padding: EdgeInsets.only(bottom: mediaQuery.padding.bottom + 16),
       decoration: BoxDecoration(
         color: context.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Drag-handle indicator (matches other bottom sheets in app).
+      child: content,
+    );
+  }
+
+  Widget _buildContent(
+    BuildContext context,
+    ThemeData theme,
+    WidgetRef ref,
+    MediaQueryData mediaQuery,
+  ) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!isDialog) ...[
+          // Drag-handle indicator for bottom sheet.
           const SizedBox(height: 8),
           Center(
             child: Container(
@@ -52,104 +73,109 @@ class WhatsNewModal extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(height: 16),
-
-          // Title row.
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.celebration_outlined,
-                  color: context.accent,
-                  size: 28,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "What's New",
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        'Echo v${notes.version}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: context.textMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Scrollable markdown body.
-          Flexible(
-            child: Markdown(
-              data: notes.body,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              shrinkWrap: true,
-              selectable: true,
-              styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-                p: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
-                h1: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-                h2: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-                h3: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-                listBullet: theme.textTheme.bodyMedium,
-                code: theme.textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
-                  backgroundColor: context.surfaceHover,
-                ),
-                codeblockDecoration: BoxDecoration(
-                  color: context.surfaceHover,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                a: theme.textTheme.bodyMedium?.copyWith(
-                  color: context.accent,
-                  decoration: TextDecoration.underline,
-                ),
-              ),
-              onTapLink: (text, href, title) {
-                if (href != null) {
-                  launchUrl(
-                    Uri.parse(href),
-                    mode: LaunchMode.externalApplication,
-                  );
-                }
-              },
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Dismiss button.
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: FilledButton(
-              onPressed: () async {
-                await ref.read(releaseNotesProvider.notifier).markShown();
-                if (context.mounted) Navigator.of(context).pop();
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: context.accent,
-                minimumSize: const Size.fromHeight(48),
-              ),
-              child: const Text('Got it'),
-            ),
-          ),
         ],
-      ),
+        const SizedBox(height: 16),
+
+        // Title row.
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            children: [
+              Icon(Icons.celebration_outlined, color: context.accent, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "What's New",
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'Echo v${notes.version}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: context.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (isDialog)
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  color: context.textMuted,
+                  onPressed: () async {
+                    await ref.read(releaseNotesProvider.notifier).markShown();
+                    if (context.mounted) Navigator.of(context).pop();
+                  },
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Scrollable markdown body.
+        Flexible(
+          child: Markdown(
+            data: notes.body,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            shrinkWrap: true,
+            selectable: true,
+            styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+              p: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
+              h1: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+              h2: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+              h3: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              listBullet: theme.textTheme.bodyMedium,
+              code: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                backgroundColor: context.surfaceHover,
+              ),
+              codeblockDecoration: BoxDecoration(
+                color: context.surfaceHover,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              a: theme.textTheme.bodyMedium?.copyWith(
+                color: context.accent,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+            onTapLink: (text, href, title) {
+              if (href != null) {
+                launchUrl(
+                  Uri.parse(href),
+                  mode: LaunchMode.externalApplication,
+                );
+              }
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Dismiss button.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+          child: FilledButton(
+            onPressed: () async {
+              await ref.read(releaseNotesProvider.notifier).markShown();
+              if (context.mounted) Navigator.of(context).pop();
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: context.accent,
+              minimumSize: const Size.fromHeight(48),
+            ),
+            child: const Text('Got it'),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -162,10 +188,19 @@ Future<void> maybeShowWhatsNew(BuildContext context, WidgetRef ref) async {
   final view = ref.read(releaseNotesProvider).value;
   if (view == null) return;
   if (!context.mounted) return;
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => WhatsNewModal(notes: view),
-  );
+  final isDesktop = MediaQuery.sizeOf(context).width >= 600;
+  if (isDesktop) {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => WhatsNewModal(notes: view, isDialog: true),
+    );
+  } else {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => WhatsNewModal(notes: view),
+    );
+  }
 }
