@@ -27,7 +27,6 @@ import 'echo_logo_icon.dart';
 import 'empty_state.dart';
 import 'skeleton_loader.dart';
 import 'voice_footer.dart';
-import 'window_chrome.dart';
 
 // Re-export avatar utilities so existing `show` imports keep working.
 export 'avatar_utils.dart'
@@ -591,27 +590,23 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
       ),
       child: Row(
         children: [
-          // Left: draggable logo + title. AppDragArea wraps only this area
-          // so the action buttons on the right remain fully interactive.
           Expanded(
-            child: AppDragArea(
-              child: Row(
-                children: [
-                  if (!isMobile) ...[
-                    const EchoLogoIcon(size: 22),
-                    const SizedBox(width: 8),
-                  ],
-                  Text(
-                    isMobile ? 'Chats' : 'Echo',
-                    style: TextStyle(
-                      color: context.textPrimary,
-                      fontSize: titleSize,
-                      fontWeight: titleWeight,
-                      letterSpacing: isMobile ? -0.5 : 0,
-                    ),
-                  ),
+            child: Row(
+              children: [
+                if (!isMobile) ...[
+                  const EchoLogoIcon(size: 22),
+                  const SizedBox(width: 8),
                 ],
-              ),
+                Text(
+                  isMobile ? 'Chats' : 'Echo',
+                  style: TextStyle(
+                    color: context.textPrimary,
+                    fontSize: titleSize,
+                    fontWeight: titleWeight,
+                    letterSpacing: isMobile ? -0.5 : 0,
+                  ),
+                ),
+              ],
             ),
           ),
           // Right: non-draggable action buttons.

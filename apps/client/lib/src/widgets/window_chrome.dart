@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../theme/echo_theme.dart';
+
 /// True on any desktop platform — all three use [TitleBarStyle.hidden] for
 /// the integrated chrome, so all three need custom window control buttons.
 bool get _needsCustomButtons {
@@ -91,7 +93,7 @@ class _AppWindowButtonsState extends State<AppWindowButtons>
     if (!_needsCustomButtons) return const SizedBox.shrink();
 
     return SizedBox(
-      height: 60,
+      height: 36,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -112,6 +114,65 @@ class _AppWindowButtonsState extends State<AppWindowButtons>
             tooltip: 'Close',
             onTap: windowManager.close,
             isClose: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Full-width integrated title bar that replaces the OS window chrome.
+///
+/// Spans the entire app width above all content panels. The whole bar is a
+/// drag region; [title] is centered and shows the active conversation name;
+/// window controls are anchored to the right edge.
+///
+/// No-op (zero height) on web and mobile.
+class AppTitleBar extends StatelessWidget {
+  const AppTitleBar({super.key, this.title});
+
+  /// Text centered in the bar — typically the active conversation or group name.
+  final String? title;
+
+  @override
+  Widget build(BuildContext context) {
+    if (kIsWeb) return const SizedBox.shrink();
+    if (!Platform.isLinux && !Platform.isWindows && !Platform.isMacOS) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      height: 36,
+      decoration: BoxDecoration(
+        color: context.sidebarBg,
+        border: Border(bottom: BorderSide(color: context.border, width: 1)),
+      ),
+      child: Stack(
+        children: [
+          // Full-width drag area underneath everything.
+          const Positioned.fill(child: AppDragArea(child: SizedBox.expand())),
+          // Centered name — IgnorePointer so clicks fall through to drag area.
+          if (title != null && title!.isNotEmpty)
+            Center(
+              child: IgnorePointer(
+                child: Text(
+                  title!,
+                  style: TextStyle(
+                    color: context.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          // Window controls on top — rendered above drag area so they
+          // receive pointer events before the GestureDetector beneath.
+          const Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            child: AppWindowButtons(),
           ),
         ],
       ),
@@ -160,7 +221,7 @@ class _WinButtonState extends State<_WinButton> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 100),
             width: 40,
-            height: 60,
+            height: 36,
             color: _hovered ? hoverBg : Colors.transparent,
             alignment: Alignment.center,
             child: Icon(widget.icon, size: 14, color: iconColor),

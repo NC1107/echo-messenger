@@ -1014,26 +1014,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     // Show the overlay window controls when the right panel is not a
     // ChatPanel (which provides its own AppWindowButtons in its header).
-    final showWindowOverlay =
-        _showSettings ||
-        _selectedConversation == null ||
-        (voiceActive && _showingLounge);
+    final myUserId = ref.watch(authProvider).userId ?? '';
+    final titleBarText = (!_showSettings && _selectedConversation != null)
+        ? _selectedConversation!.displayName(myUserId)
+        : null;
 
     return Scaffold(
-      body: Stack(
+      body: Column(
         children: [
-          Row(
-            children: [
-              _buildDesktopSidebar(sidebarWidth, animatedSidebarWidth),
-              _buildResizeHandle(),
-              Expanded(child: rightPanel),
-              ..._buildMembersPanel(),
-            ],
+          AppTitleBar(title: titleBarText),
+          Expanded(
+            child: Stack(
+              children: [
+                Row(
+                  children: [
+                    _buildDesktopSidebar(sidebarWidth, animatedSidebarWidth),
+                    _buildResizeHandle(),
+                    Expanded(child: rightPanel),
+                    ..._buildMembersPanel(),
+                  ],
+                ),
+                if (voiceActive && !_showSettings)
+                  _buildDesktopVoiceDock(animatedSidebarWidth),
+              ],
+            ),
           ),
-          if (voiceActive && !_showSettings)
-            _buildDesktopVoiceDock(animatedSidebarWidth),
-          if (showWindowOverlay)
-            const Positioned(top: 0, right: 0, child: AppWindowButtons()),
         ],
       ),
     );
@@ -1235,29 +1240,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       rightPanel = _buildEmptyState();
     }
 
-    final showWindowOverlay =
-        _showSettings ||
-        _selectedConversation == null ||
-        (voiceActive && _showingLounge);
+    final myUserId = ref.watch(authProvider).userId ?? '';
+    final titleBarText = (!_showSettings && _selectedConversation != null)
+        ? _selectedConversation!.displayName(myUserId)
+        : null;
 
     return Scaffold(
-      body: Stack(
+      body: Column(
         children: [
-          Row(
-            children: [
-              // Left sidebar
-              if (_showSettings)
-                _buildSettingsSidebar(300)
-              else
-                SizedBox(width: 300, child: _buildConversationPanel()),
-              // Thin vertical divider
-              Container(width: 1, color: context.border),
-              // Right: content area
-              Expanded(child: rightPanel),
-            ],
+          AppTitleBar(title: titleBarText),
+          Expanded(
+            child: Row(
+              children: [
+                // Left sidebar
+                if (_showSettings)
+                  _buildSettingsSidebar(300)
+                else
+                  SizedBox(width: 300, child: _buildConversationPanel()),
+                // Thin vertical divider
+                Container(width: 1, color: context.border),
+                // Right: content area
+                Expanded(child: rightPanel),
+              ],
+            ),
           ),
-          if (showWindowOverlay)
-            const Positioned(top: 0, right: 0, child: AppWindowButtons()),
         ],
       ),
     );
