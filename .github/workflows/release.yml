@@ -326,18 +326,24 @@ jobs:
         with:
           path: ~/.cache/echo-appimage-tools
           key: appimage-tools-v1
-      - name: Install Linux dependencies (cached)
-        # Caches the .deb archives so the ~500 MB GTK + GStreamer + libmpv
-        # stack only downloads once. libsndio-dev + libjack-jackd2-dev are
-        # required so the bundling step can resolve libmpv's hard-linked
-        # audio backends via ldd (sndio is OpenBSD's audio daemon, jack is
-        # pro-audio — neither is on typical Linux desktops, so without them
-        # ldd reports "not found" and walk_deps silently skips them,
-        # shipping a broken bundle).
-        uses: awalsh128/cache-apt-pkgs-action@0e3c11464a8cfae52ee6ceb2b33777bcc9187892 # v1.6.0
-        with:
-          packages: clang cmake ninja-build libgtk-3-dev libfuse2 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-good libsecret-1-dev libayatana-appindicator3-dev libasound2-dev libmpv-dev libsndio-dev libjack-jackd2-dev
-          version: "1.0"
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          # libsndio7-dev + libjack-jackd2-dev are required so the
+          # bundling step can resolve libmpv's hard-linked audio
+          # backends via ldd.  Without them, ldd reports "not found"
+          # and walk_deps silently skips them, shipping a bundle that
+          # fails on every user host that doesn't have them either
+          # (sndio is OpenBSD's audio daemon, jack is pro-audio —
+          # neither is on typical Linux desktops).
+          sudo apt-get install -y \
+            clang cmake ninja-build \
+            libgtk-3-dev libfuse2 \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-plugins-good \
+            libsecret-1-dev libayatana-appindicator3-dev \
+            libasound2-dev libmpv-dev \
+            libsndio-dev libjack-jackd2-dev
       - name: Build
         working-directory: apps/client
         run: flutter build linux --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
