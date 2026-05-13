@@ -2,7 +2,10 @@ name: Dev Build
 
 on:
   push:
-    branches: [dev]
+    branches:
+      - dev
+      - 'feature/**'
+      - 'fix/**'
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -12,15 +15,95 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: dev-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  paths:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      client-shared: ${{ steps.filter.outputs.client-shared }}
+      linux: ${{ steps.filter.outputs.linux }}
+      windows: ${{ steps.filter.outputs.windows }}
+      android: ${{ steps.filter.outputs.android }}
+      ios: ${{ steps.filter.outputs.ios }}
+      macos: ${{ steps.filter.outputs.macos }}
+      web: ${{ steps.filter.outputs.web }}
+      server: ${{ steps.filter.outputs.server }}
+      dev-build-workflow: ${{ steps.filter.outputs.dev-build-workflow }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            client-shared:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+            linux:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+              - 'apps/client/linux/**'
+            windows:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+              - 'apps/client/windows/**'
+            android:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+              - 'apps/client/android/**'
+            ios:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+              - 'apps/client/ios/**'
+            macos:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+              - 'apps/client/macos/**'
+            web:
+              - 'apps/client/pubspec.yaml'
+              - 'apps/client/pubspec.lock'
+              - 'apps/client/lib/**'
+              - 'apps/client/test/**'
+              - '.flutter-version'
+              - 'apps/client/web/**'
+              - 'apps/client/Dockerfile.web'
+            server:
+              - 'apps/server/**'
+              - 'core/rust-core/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'apps/server/Dockerfile'
+            dev-build-workflow:
+              - '.github/workflows/dev-build.yml'
+
   build-linux:
     name: Build Linux AppImage
     runs-on: ubuntu-latest
+    needs: [paths]
+    if: needs.paths.outputs.linux == 'true' || needs.paths.outputs.dev-build-workflow == 'true'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -60,11 +143,138 @@ jobs:
           path: echo-linux-dev.tar.gz
           retention-days: 7
 
+  build-windows:
+    name: Build Windows Portable Zip
+    runs-on: windows-latest
+    needs: [paths]
+    if: needs.paths.outputs.windows == 'true' || needs.paths.outputs.dev-build-workflow == 'true'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: .flutter-version
+          channel: stable
+          cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      - name: Build
+        working-directory: apps/client
+        run: flutter build windows --release --dart-define=APP_VERSION=dev
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path apps/client/build/windows/x64/runner/Release/* -DestinationPath echo-windows-dev-portable.zip
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dev-windows
+          path: echo-windows-dev-portable.zip
+          retention-days: 7
+
+  build-android:
+    name: Build Android Debug APK
+    runs-on: ubuntu-latest
+    needs: [paths]
+    if: needs.paths.outputs.android == 'true' || needs.paths.outputs.dev-build-workflow == 'true'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: .flutter-version
+          channel: stable
+          cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            apps/client/android/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('apps/client/android/**/*.gradle*', 'apps/client/android/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+      - name: Build debug APK
+        working-directory: apps/client
+        run: flutter build apk --debug --dart-define=APP_VERSION=dev
+      - name: Rename APK
+        run: |
+          cp apps/client/build/app/outputs/flutter-apk/app-debug.apk \
+             echo-android-dev.apk
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dev-android
+          path: echo-android-dev.apk
+          retention-days: 7
+
+  build-ios:
+    name: Build iOS (no-codesign)
+    # iOS uses macOS-15 runners which cost 10x Linux.  Gate on either an
+    # explicit workflow_dispatch OR a `[ci-ios]` marker in the commit
+    # message to avoid burning minutes on every iOS-adjacent push.
+    runs-on: macos-15
+    needs: [paths]
+    if: |
+      (needs.paths.outputs.ios == 'true' || needs.paths.outputs.dev-build-workflow == 'true')
+      && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[ci-ios]'))
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: .flutter-version
+          channel: stable
+          cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/client/ios/Pods
+            ~/.cocoapods
+          key: ${{ runner.os }}-pods-ios-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-ios-
+      - name: Build iOS (no codesign)
+        working-directory: apps/client
+        run: flutter build ios --release --no-codesign --dart-define=APP_VERSION=dev
+
   build-macos:
     name: Build macOS
-    # macOS runners are 10x cost — only build on manual trigger or weekly
-    if: github.event_name == 'workflow_dispatch'
+    # macOS runners are 10x cost — keep behind manual dispatch in addition
+    # to the path gate.
     runs-on: macos-15
+    needs: [paths]
+    if: |
+      github.event_name == 'workflow_dispatch'
+      && (needs.paths.outputs.macos == 'true' || needs.paths.outputs.dev-build-workflow == 'true')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -119,6 +329,8 @@ jobs:
   build-web:
     name: Build Web
     runs-on: ubuntu-latest
+    needs: [paths]
+    if: needs.paths.outputs.web == 'true' || needs.paths.outputs.dev-build-workflow == 'true'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -147,4 +359,50 @@ jobs:
         with:
           name: dev-web
           path: echo-web-dev.tar.gz
+          retention-days: 7
+
+  build-server:
+    name: Build Server (cargo build + test)
+    runs-on: ubuntu-latest
+    needs: [paths]
+    if: needs.paths.outputs.server == 'true' || needs.paths.outputs.dev-build-workflow == 'true'
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: echo_test
+          POSTGRES_USER: echo
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U echo -d echo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: dev-build-server
+      - name: Build release
+        run: cargo build --release --package echo-server
+      - name: Run server tests
+        run: cargo test --package echo-server
+        env:
+          DATABASE_URL: postgres://echo:test_password@localhost:5432/echo_test
+          JWT_SECRET: ${{ format('ci-test-secret-{0}-attempt-{1}-padding', github.run_id, github.run_attempt) }}
+      - name: Package
+        run: |
+          mkdir -p echo-server-pkg
+          cp target/release/echo-server echo-server-pkg/
+          cp -r apps/server/migrations echo-server-pkg/
+          cp .env.example echo-server-pkg/
+          cd echo-server-pkg && tar czf ${{ github.workspace }}/echo-server-dev-linux-x64.tar.gz .
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dev-server
+          path: echo-server-dev-linux-x64.tar.gz
           retention-days: 7
