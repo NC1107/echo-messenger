@@ -797,12 +797,10 @@ class _DebugLogsSubpageState extends State<_DebugLogsSubpage> {
     }
     Clipboard.setData(ClipboardData(text: buffer.toString()));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${entries.length} log entries copied to clipboard'),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
+      ToastService.show(
+        context,
+        '${entries.length} log entries copied to clipboard',
+        type: ToastType.success,
       );
     }
   }
