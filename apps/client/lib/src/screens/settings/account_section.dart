@@ -599,180 +599,188 @@ class _AccountSectionState extends ConsumerState<AccountSection> {
     final authState = ref.watch(authProvider);
     final username = authState.username ?? 'Unknown';
 
-    return ListView(
-      padding: const EdgeInsets.all(24),
-      children: [
-        _buildProfileCard(authState, username),
-        const SizedBox(height: 16),
-        // Action buttons row
-        Row(
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: ListView(
+          padding: const EdgeInsets.all(24),
           children: [
-            Expanded(
+            _buildProfileCard(authState, username),
+            const SizedBox(height: 16),
+            // Action buttons row
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _uploadAvatar,
+                    icon: const Icon(Icons.upload, size: 16),
+                    label: const Text('Upload Avatar'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _showQrCodeDialog,
+                    icon: const Icon(Icons.qr_code, size: 16),
+                    label: const Text('QR Code'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: _uploadAvatar,
-                icon: const Icon(Icons.upload, size: 16),
-                label: const Text('Upload Avatar'),
+                onPressed: _copyInviteLink,
+                icon: const Icon(Icons.link, size: 16),
+                label: const Text('Share Invite Link'),
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _showQrCodeDialog,
-                icon: const Icon(Icons.qr_code, size: 16),
-                label: const Text('QR Code'),
+            if (_profileError) ...[
+              const Divider(height: 40),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 18,
+                    color: EchoTheme.danger,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Failed to load profile. Check your connection.',
+                      style: TextStyle(color: EchoTheme.danger, fontSize: 13),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _loadProfile,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ],
+            if (_profileLoaded) ...[
+              const Divider(height: 40),
+              Text(
+                'Profile',
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Customize your public profile information.',
+                style: TextStyle(
+                  color: context.textSecondary,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
+              ),
+              const Divider(height: 24),
+              _profileField(
+                controller: _displayNameController,
+                label: 'Display Name',
+                hint: 'How others see you',
+                maxLength: 50,
+              ),
+              const SizedBox(height: 12),
+              _buildPronounsField(),
+              const SizedBox(height: 12),
+              _profileField(
+                controller: _statusController,
+                label: 'Status',
+                hint: 'What are you up to?',
+                maxLength: 100,
+              ),
+              const SizedBox(height: 12),
+              _profileField(
+                controller: _bioController,
+                label: 'Bio',
+                hint: 'Tell people about yourself',
+                maxLength: 280,
+                maxLines: 3,
+              ),
+              const SizedBox(height: 12),
+              _buildTimezoneDropdown(),
+              const SizedBox(height: 12),
+              _profileField(
+                controller: _websiteController,
+                label: 'Website',
+                hint: 'https://example.com',
+                maxLength: 200,
+              ),
+              const SizedBox(height: 12),
+              _profileField(
+                controller: _emailController,
+                label: 'Email',
+                hint: 'you@example.com',
+                maxLength: 254,
+              ),
+              const SizedBox(height: 12),
+              _buildPhoneField(),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _saving ? null : _saveProfile,
+                  child: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Save Profile'),
+                ),
+              ),
+            ],
+            // Password change section (always visible, outside _profileLoaded gate)
+            const Divider(height: 40),
+            Text(
+              'Change Password',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _profileField(
+              controller: _currentPasswordController,
+              label: 'Current Password',
+              hint: 'Enter your current password',
+              maxLength: 128,
+              obscure: true,
+            ),
+            const SizedBox(height: 12),
+            _profileField(
+              controller: _newPasswordController,
+              label: 'New Password',
+              hint: 'At least 8 characters',
+              maxLength: 128,
+              obscure: true,
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _changingPassword ? null : _changePassword,
+                child: _changingPassword
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Change Password'),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 8),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _copyInviteLink,
-            icon: const Icon(Icons.link, size: 16),
-            label: const Text('Share Invite Link'),
-          ),
-        ),
-        if (_profileError) ...[
-          const Divider(height: 40),
-          Row(
-            children: [
-              const Icon(
-                Icons.error_outline,
-                size: 18,
-                color: EchoTheme.danger,
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Failed to load profile. Check your connection.',
-                  style: TextStyle(color: EchoTheme.danger, fontSize: 13),
-                ),
-              ),
-              TextButton(onPressed: _loadProfile, child: const Text('Retry')),
-            ],
-          ),
-        ],
-        if (_profileLoaded) ...[
-          const Divider(height: 40),
-          Text(
-            'Profile',
-            style: TextStyle(
-              color: context.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Customize your public profile information.',
-            style: TextStyle(
-              color: context.textSecondary,
-              fontSize: 13,
-              height: 1.5,
-            ),
-          ),
-          const Divider(height: 24),
-          _profileField(
-            controller: _displayNameController,
-            label: 'Display Name',
-            hint: 'How others see you',
-            maxLength: 50,
-          ),
-          const SizedBox(height: 12),
-          _buildPronounsField(),
-          const SizedBox(height: 12),
-          _profileField(
-            controller: _statusController,
-            label: 'Status',
-            hint: 'What are you up to?',
-            maxLength: 100,
-          ),
-          const SizedBox(height: 12),
-          _profileField(
-            controller: _bioController,
-            label: 'Bio',
-            hint: 'Tell people about yourself',
-            maxLength: 280,
-            maxLines: 3,
-          ),
-          const SizedBox(height: 12),
-          _buildTimezoneDropdown(),
-          const SizedBox(height: 12),
-          _profileField(
-            controller: _websiteController,
-            label: 'Website',
-            hint: 'https://example.com',
-            maxLength: 200,
-          ),
-          const SizedBox(height: 12),
-          _profileField(
-            controller: _emailController,
-            label: 'Email',
-            hint: 'you@example.com',
-            maxLength: 254,
-          ),
-          const SizedBox(height: 12),
-          _buildPhoneField(),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: _saving ? null : _saveProfile,
-              child: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('Save Profile'),
-            ),
-          ),
-        ],
-        // Password change section (always visible, outside _profileLoaded gate)
-        const Divider(height: 40),
-        Text(
-          'Change Password',
-          style: TextStyle(
-            color: context.textPrimary,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 16),
-        _profileField(
-          controller: _currentPasswordController,
-          label: 'Current Password',
-          hint: 'Enter your current password',
-          maxLength: 128,
-          obscure: true,
-        ),
-        const SizedBox(height: 12),
-        _profileField(
-          controller: _newPasswordController,
-          label: 'New Password',
-          hint: 'At least 8 characters',
-          maxLength: 128,
-          obscure: true,
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            onPressed: _changingPassword ? null : _changePassword,
-            child: _changingPassword
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Change Password'),
-          ),
-        ),
-      ],
+      ),
     );
   }
 

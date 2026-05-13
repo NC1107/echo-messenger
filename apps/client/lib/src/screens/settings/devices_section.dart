@@ -417,62 +417,69 @@ class _DevicesSectionState extends ConsumerState<DevicesSection> {
         ? ref.watch(cryptoServiceProvider).deviceId
         : null;
 
-    return ListView(
-      shrinkWrap: true,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-          child: Row(
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+              child: Row(
                 children: [
-                  Text(
-                    'My Devices',
-                    style: TextStyle(
-                      color: context.textPrimary,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'My Devices',
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Manage devices that have access to your account.',
+                        style: TextStyle(
+                          color: context.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Manage devices that have access to your account.',
-                    style: TextStyle(
-                      color: context.textSecondary,
-                      fontSize: 13,
-                    ),
+                  const Spacer(),
+                  IconButton(
+                    icon: Icon(Icons.refresh, color: context.textSecondary),
+                    tooltip: 'Refresh',
+                    onPressed: _loading ? null : _loadDevices,
                   ),
                 ],
               ),
-              const Spacer(),
-              IconButton(
-                icon: Icon(Icons.refresh, color: context.textSecondary),
-                tooltip: 'Refresh',
-                onPressed: _loading ? null : _loadDevices,
-              ),
-            ],
-          ),
-        ),
-        const Divider(height: 1),
-        _buildDeviceListBody(context, myDeviceId),
-        if (!_loading &&
-            _error == null &&
-            myDeviceId != null &&
-            _devices.any((d) => d.deviceId != myDeviceId))
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => _revokeOtherDevices(myDeviceId),
-                icon: const Icon(Icons.devices_other, size: 18),
-                label: const Text('Log out all other devices'),
-                style: TextButton.styleFrom(foregroundColor: EchoTheme.danger),
-              ),
             ),
-          ),
-      ],
+            const Divider(height: 1),
+            _buildDeviceListBody(context, myDeviceId),
+            if (!_loading &&
+                _error == null &&
+                myDeviceId != null &&
+                _devices.any((d) => d.deviceId != myDeviceId))
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => _revokeOtherDevices(myDeviceId),
+                    icon: const Icon(Icons.devices_other, size: 18),
+                    label: const Text('Log out all other devices'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: EchoTheme.danger,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
