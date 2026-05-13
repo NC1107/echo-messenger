@@ -586,16 +586,18 @@ pub async fn search_messages(
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                COALESCE(rc.cnt, 0) AS reply_count, \
+                COALESCE(rc.reply_count, 0) AS reply_count, \
                 '[]'::json AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id AND rm.deleted_at IS NULL \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
-         LEFT JOIN LATERAL ( \
-             SELECT COUNT(*) AS cnt FROM messages r \
-             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
-         ) rc ON true \
+         LEFT JOIN ( \
+             SELECT reply_to_id, COUNT(*) AS reply_count \
+             FROM messages \
+             WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL \
+             GROUP BY reply_to_id \
+         ) rc ON rc.reply_to_id = m.id \
          WHERE m.conversation_id = $1 \
            AND m.deleted_at IS NULL \
            AND to_tsvector('english', m.content) @@ plainto_tsquery('english', $2) \
@@ -948,16 +950,18 @@ pub async fn get_thread_replies(
                 m.content, m.created_at, m.edited_at, m.reply_to_id, \
                 rm.content AS reply_to_content, \
                 ru.username AS reply_to_username, \
-                COALESCE(rc.cnt, 0) AS reply_count, \
+                COALESCE(rc.reply_count, 0) AS reply_count, \
                 COALESCE(rx.reactions, '[]'::json) AS reactions \
          FROM messages m \
          JOIN users u ON u.id = m.sender_id \
          LEFT JOIN messages rm ON rm.id = m.reply_to_id AND rm.conversation_id = m.conversation_id AND rm.deleted_at IS NULL \
          LEFT JOIN users ru ON ru.id = rm.sender_id \
-         LEFT JOIN LATERAL ( \
-             SELECT COUNT(*) AS cnt FROM messages r \
-             WHERE r.reply_to_id = m.id AND r.deleted_at IS NULL \
-         ) rc ON true \
+         LEFT JOIN ( \
+             SELECT reply_to_id, COUNT(*) AS reply_count \
+             FROM messages \
+             WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL \
+             GROUP BY reply_to_id \
+         ) rc ON rc.reply_to_id = m.id \
          LEFT JOIN LATERAL ( \
              SELECT json_agg(json_build_object( \
                  'message_id', r.message_id, \
