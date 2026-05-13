@@ -70,6 +70,33 @@ Pre-commit hooks (lefthook, run in parallel): cargo fmt check + clippy `-D warni
 
 **CI secrets**: `CODECOV_TOKEN` (recommended) lets the Flutter CI codecov upload authenticate; without it the action falls back to OIDC. `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEY_PROPERTIES` are required by the release workflow's Android job and fail-fast if missing.
 
+## CI
+
+**Caching** is applied across every workflow: cargo registry + `target/` via `Swatinem/rust-cache`, `~/.pub-cache` + `apps/client/.dart_tool` keyed on `pubspec.lock`, Gradle caches keyed on `apps/client/android/**/*.gradle*`, CocoaPods (`apps/client/ios/Pods`, `apps/client/macos/Pods`, `~/.cocoapods`) keyed on `pubspec.lock`, and the Linux AppImage tool downloads. Cold runs prime the caches; warm runs typically drop 5-10 min off Rust-heavy jobs.
+
+**Path-gated dev builds** (`dev-build.yml`): runs on push to `dev`, `feature/**`, `fix/**`. A `paths` job using `dorny/paths-filter@v3` declares one filter per platform. Each `build-*` job only runs if its filter matches OR `dev-build-workflow` matches (= workflow file changed → rebuild everything). The filter map:
+
+| Filter | Triggers on changes to |
+|--------|------------------------|
+| `linux` | Dart sources + `apps/client/linux/**` |
+| `windows` | Dart sources + `apps/client/windows/**` |
+| `android` | Dart sources + `apps/client/android/**` |
+| `ios` | Dart sources + `apps/client/ios/**` |
+| `macos` | Dart sources + `apps/client/macos/**` |
+| `web` | Dart sources + `apps/client/web/**` + `Dockerfile.web` |
+| `server` | `apps/server/**`, `core/rust-core/**`, `Cargo.{toml,lock}` |
+| `dev-build-workflow` | `.github/workflows/dev-build.yml` (force-rebuild all) |
+
+"Dart sources" = `apps/client/{pubspec.yaml,pubspec.lock,lib/**,test/**}` + `.flutter-version`.
+
+**iOS cost gate**: macOS-15 runners cost ~10x Linux. `build-ios` only runs when its path filter is true AND the trigger is `workflow_dispatch` OR the commit message contains the literal `[ci-ios]` marker. `build-macos` stays `workflow_dispatch`-only. Android and Windows have no cost gate (Linux runner + 2x Windows respectively).
+
+**Main releases unchanged**: `release.yml` still builds every platform on every push to `main`. The two new pieces are (1) `security-pre-release` is gated on Rust dep paths (`Cargo.lock`, `Cargo.toml`, `**/Cargo.toml`, `deny.toml`) ∨ workflow-file changes -- audit on every commit is wasteful when deps haven't moved -- and (2) the old monolithic `lint-test` job is split into `lint-test-rust` (gated on `server` filter) and `lint-test-flutter` (gated on any client filter). Each `build-*` job's `needs:` references only the relevant lint job. The `version` job and every `build-*` accept `success || skipped` on their lint dependency so a Rust-only release still runs every Flutter build and vice versa.
+
+**Nightly security drift** (`security-nightly.yml`): runs `cargo audit` + `cargo deny check` at 06:00 UTC daily. Catches RustSec advisories published against an unchanged lockfile within 24h. Failure opens (or updates) a Security-labelled GitHub issue via `peter-evans/create-issue-from-file`.
+
+**Triggering an iOS dev build**: either `gh workflow run dev-build.yml --ref feature/my-branch` or append `[ci-ios]` to the latest commit message on the branch.
+
 ## Architecture
 
 **Workspace** (Cargo workspace at root):
