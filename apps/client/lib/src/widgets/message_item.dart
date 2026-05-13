@@ -1791,7 +1791,12 @@ class _MessageItemState extends State<MessageItem>
                 mainAxisAlignment: isAlignedEnd
                     ? MainAxisAlignment.end
                     : MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.end,
+                // Bubbles: avatar anchors to the bottom of the bubble (iMessage
+                // style). Discord/Slack: avatar anchors to the top so it lines
+                // up with the sender name on the first line of the group.
+                crossAxisAlignment: widget.compactLayout
+                    ? CrossAxisAlignment.start
+                    : CrossAxisAlignment.end,
                 children: _buildMessageRowChildren(
                   msg: msg,
                   isMine: isMine,

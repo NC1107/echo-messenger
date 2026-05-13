@@ -212,8 +212,8 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
             ),
             const SizedBox(height: 16),
             _LayoutOption(
-              label: 'Bubbles',
-              subtitle: 'Chat bubbles aligned left and right',
+              label: 'Default',
+              subtitle: 'Bubbles aligned by sender, like iMessage or WhatsApp',
               icon: Icons.chat_bubble_outline,
               isSelected:
                   ref.watch(messageLayoutProvider) == MessageLayout.bubbles,
@@ -223,8 +223,9 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
             ),
             const SizedBox(height: 8),
             _LayoutOption(
-              label: 'Compact',
-              subtitle: 'Discord-style, all messages left-aligned',
+              label: 'Discord',
+              subtitle:
+                  'Left-aligned with avatars and usernames, grouped by sender',
               icon: Icons.format_align_left_outlined,
               isSelected:
                   ref.watch(messageLayoutProvider) == MessageLayout.compact,
@@ -234,8 +235,8 @@ class _AppearanceSectionState extends ConsumerState<AppearanceSection> {
             ),
             const SizedBox(height: 8),
             _LayoutOption(
-              label: 'Plain',
-              subtitle: 'Slack-style, no bubble background',
+              label: 'Slack',
+              subtitle: 'Left-aligned, no bubbles — clean document-style feed',
               icon: Icons.notes_outlined,
               isSelected:
                   ref.watch(messageLayoutProvider) == MessageLayout.plain,
