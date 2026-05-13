@@ -13,12 +13,22 @@ class HoverActionButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
   final VoidCallback onPressed;
+  final double size;
+  final double iconSize;
+  final double iconOpacity;
+  final Color? iconColor;
+  final double cornerRadius;
 
   const HoverActionButton({
     super.key,
     required this.icon,
     required this.tooltip,
     required this.onPressed,
+    this.size = 33,
+    this.iconSize = 11,
+    this.iconOpacity = 0.75,
+    this.iconColor,
+    this.cornerRadius = 4,
   });
 
   @override
@@ -32,19 +42,23 @@ class HoverActionButton extends StatelessWidget {
       child: Tooltip(
         message: tooltip,
         child: SizedBox(
-          width: 33,
-          height: 33,
+          width: size,
+          height: size,
           child: InkWell(
             onTap: onPressed,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(cornerRadius),
             child: Center(
               child: SizedBox(
-                width: 21,
-                height: 21,
+                width: iconSize + 10,
+                height: iconSize + 10,
                 child: Center(
                   child: Opacity(
-                    opacity: 0.75,
-                    child: Icon(icon, size: 11, color: context.textSecondary),
+                    opacity: iconOpacity,
+                    child: Icon(
+                      icon,
+                      size: iconSize,
+                      color: iconColor ?? context.textSecondary,
+                    ),
                   ),
                 ),
               ),
