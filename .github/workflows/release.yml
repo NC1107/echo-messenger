@@ -133,7 +133,7 @@ jobs:
       # RUSTSEC-2023-0071: transitive rsa advisory via jsonwebtoken (no upstream patch).
       # RUSTSEC-2026-0097: rand 0.8.5 unsound advisory, pinned by sqlx 0.8.6 transitively.
       - run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097
-      - uses: EmbarkStudios/cargo-deny-action@175dc7fd4fb85ec8f46948fb98f44db001149081 # v2.0.16
+      - uses: EmbarkStudios/cargo-deny-action@6c8f9facfa5047ec02d8485b6bf52b587b7777d1 # v2.0.18
 
   lint-test-rust:
     name: Lint + Test (Rust)
