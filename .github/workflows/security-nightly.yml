@@ -1,0 +1,94 @@
+name: Security Nightly
+
+# Run cargo-audit + cargo-deny every day so RustSec advisories published
+# against unchanged lockfiles still surface within 24h.  The path-gated
+# security-pre-release in release.yml only fires when Rust deps change,
+# which is intentional (cheap) but blind to advisory drift.
+
+on:
+  schedule:
+    # 06:00 UTC daily.  Picks up new RustSec entries from the previous
+    # UTC day and Embark's cargo-deny rule updates.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: security-nightly
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: cargo audit + cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          shared-key: security-nightly
+      - name: Cache cargo-audit + cargo-deny binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-audit
+            ~/.cargo/bin/cargo-deny
+          key: ${{ runner.os }}-security-tools-v1
+      - name: Install audit + deny (if not cached)
+        run: |
+          if ! command -v cargo-audit >/dev/null; then
+            cargo install --locked cargo-audit
+          fi
+          if ! command -v cargo-deny >/dev/null; then
+            cargo install --locked cargo-deny
+          fi
+      - name: cargo audit
+        id: audit
+        # Mirrors security.yml ignore set:
+        # RUSTSEC-2023-0071: rsa via jsonwebtoken (no upstream patch).
+        # RUSTSEC-2026-0097: rand 0.8.5 via sqlx 0.8.6 transitive.
+        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097
+      - name: cargo deny check
+        id: deny
+        run: cargo deny check
+      - name: Build issue body
+        if: failure()
+        run: |
+          cat > /tmp/security-issue.md <<EOF
+          ## Nightly security drift detected
+
+          The scheduled \`cargo audit\` and/or \`cargo deny check\` run failed
+          even though the workspace lockfile has not changed.  This usually
+          means a new RustSec advisory was published against an existing
+          dependency, or an Embark cargo-deny rule update flagged an
+          already-allowed crate.
+
+          - Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - Triggered by: \`${{ github.event_name }}\` at \`${{ github.event.schedule || github.event.workflow_run.created_at }}\`
+
+          Re-run locally with:
+
+          \`\`\`
+          cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2026-0097
+          cargo deny check
+          \`\`\`
+
+          If the advisory genuinely cannot be patched, add it to the ignore
+          list in both \`security.yml\` and \`security-nightly.yml\` with a
+          one-line justification.
+          EOF
+      - name: Open issue on failure
+        # Pin to a specific commit SHA before merging to main — see the
+        # other workflows for the pattern (`action@<sha> # <tag>`).
+        # The latest published version at time of writing is v5.
+        if: failure()
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "Security: nightly cargo audit/deny failure"
+          content-filepath: /tmp/security-issue.md
+          labels: |
+            security
+            ci
