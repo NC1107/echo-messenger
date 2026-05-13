@@ -81,11 +81,8 @@ jobs:
           one-line justification.
           EOF
       - name: Open issue on failure
-        # Pin to a specific commit SHA before merging to main — see the
-        # other workflows for the pattern (`action@<sha> # <tag>`).
-        # The latest published version at time of writing is v5.
         if: failure()
-        uses: peter-evans/create-issue-from-file@v5
+        uses: peter-evans/create-issue-from-file@e8ef132d6df98ed982188e460ebb3b5d4ef3a9cd # v5.0.1
         with:
           title: "Security: nightly cargo audit/deny failure"
           content-filepath: /tmp/security-issue.md
