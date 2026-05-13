@@ -519,7 +519,10 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                   wsOnlineUsers,
                 ),
               ),
-              VoiceFooter(onNavigateToLounge: widget.onNavigateToLounge),
+              // On narrow (mobile), VoiceFooter is rendered at the Scaffold
+              // level in home_screen.dart above the bottom tab bar.
+              if (MediaQuery.sizeOf(context).width >= 600)
+                VoiceFooter(onNavigateToLounge: widget.onNavigateToLounge),
               // Hide the status bar on mobile narrow — redundant with the
               // bottom tab bar that already exposes Settings + identity.
               if (MediaQuery.sizeOf(context).width >= 600)

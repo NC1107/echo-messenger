@@ -34,6 +34,7 @@ import '../widgets/global_search_overlay.dart';
 import '../widgets/whats_new_modal.dart';
 import '../widgets/quick_switcher_overlay.dart';
 import '../widgets/voice_dock.dart';
+import '../widgets/voice_footer.dart';
 import '../widgets/window_chrome.dart';
 import 'contacts_screen.dart';
 import 'new_message_screen.dart';
@@ -332,9 +333,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _pendingMessageId = messageId;
       _narrowPanelIndex = 1;
       _showSettings = false;
-      // Dismiss the voice lounge so the selected chat is visible.
+      // Collapse the lounge so the selected chat is visible.
+      // Only lock the auto-show when voice is already active (i.e., the user
+      // is deliberately navigating away from an in-progress call).  When
+      // voice is NOT yet active, leaving _userDismissedLounge false lets the
+      // lounge auto-show the moment the user joins voice from this chat.
       _showingLounge = false;
-      _userDismissedLounge = true;
+      if (ref.read(voiceRtcProvider).isActive) {
+        _userDismissedLounge = true;
+      }
     });
     // Clear notifications for this conversation now that the user is viewing it.
     NotificationService().cancelConversationNotifications(conv.id);
@@ -1374,7 +1381,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         body = SafeArea(child: _buildConversationPanel());
     }
 
-    return Scaffold(body: body, bottomNavigationBar: _buildMobileTabBar());
+    return Scaffold(
+      body: Column(
+        children: [
+          Expanded(child: body),
+          // Show the voice footer between the content and the tab bar when
+          // the user is in a call but has dismissed the lounge overlay.
+          if (voiceActive && !_showingLounge)
+            VoiceFooter(
+              onNavigateToLounge: () => setState(() {
+                _showingLounge = true;
+                _userDismissedLounge = false;
+              }),
+            ),
+        ],
+      ),
+      bottomNavigationBar: _buildMobileTabBar(),
+    );
   }
 
   /// Bottom tab bar shown on the mobile narrow viewport. Switching tabs
