@@ -153,13 +153,25 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   void didUpdateWidget(covariant ChatPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.conversation?.id != oldWidget.conversation?.id) {
-      // Save scroll offset for the old conversation+channel
+      // Save scroll offset + current channel for the old conversation so a
+      // later return restores both. Order matters: capture channel BEFORE
+      // resetting selectedTextChannelId, and cache offset under the still-
+      // current cacheKeyFor (which uses that channel id).
       final oldId = oldWidget.conversation?.id;
       if (oldId != null) {
+        _controller.lastChannelByConversation[oldId] = _selectedTextChannelId;
         _controller.cacheCurrentOffset(oldId);
       }
 
-      _selectedTextChannelId = null;
+      // Restore the channel the user last viewed in this conversation BEFORE
+      // anything reads cacheKeyFor — otherwise the per-channel scroll cache
+      // misses on the very lookup that should be hitting.
+      final newId = widget.conversation?.id;
+      final restoredChannel = newId != null
+          ? _controller.lastChannelByConversation[newId]
+          : null;
+
+      _selectedTextChannelId = restoredChannel;
       _activeVoiceChannelId = null;
       _loadedHistoryKey = null;
       _controller.autoScrollConversationKey = null;
@@ -189,7 +201,6 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       // Restore cached scroll position for the new conversation, or scroll
       // to bottom if no cached position exists. If there's an unread boundary,
       // defer to the first-load callback which scrolls to the divider.
-      final newId = widget.conversation?.id;
       if (newId != null) {
         final cached =
             _controller.scrollPositions[_controller.cacheKeyFor(newId)];
