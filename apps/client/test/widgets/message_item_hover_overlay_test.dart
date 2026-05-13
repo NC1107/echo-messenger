@@ -1,11 +1,9 @@
-// Verifies the hover-actions overlay sizes to its child instead of
-// stretching across the chat pane on left-side received bubbles (#723).
-//
-// The overlay is a Positioned widget at top:-28. Anchoring only the side
-// closest to the bubble (left for received, right for sent) lets the inner
-// action row determine the overlay's width. Setting both `left` and `right`
-// would force the overlay to span the full chat width, which is the bug
-// #723 reported.
+// Verifies the hover-actions overlay is anchored to the right side of the
+// message row at a fixed right: 8 inset, regardless of sender — matching
+// the Discord convention where the action bar always appears top-right.
+// Previously the overlay anchored to the bubble side (left for received,
+// right for sent), which caused asymmetric layout. Both cases are tested
+// to confirm neither regresses to the full-width stretch bug (#723).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -36,7 +34,7 @@ Positioned _hoverPositioned(WidgetTester tester) {
 void main() {
   group('Hover overlay anchoring (#723)', () {
     testWidgets(
-      'received (left-side) overlay anchors only at left so it sizes to child',
+      'received (left-side) overlay anchors right:8 regardless of sender',
       (tester) async {
         await tester.pumpApp(
           MessageItem(
@@ -49,32 +47,31 @@ void main() {
         await tester.pump();
 
         final overlay = _hoverPositioned(tester);
-        expect(overlay.left, 36);
+        expect(overlay.right, 8);
         expect(
-          overlay.right,
+          overlay.left,
           isNull,
-          reason: 'received bubble overlay must not pin its right edge',
+          reason: 'overlay must not pin its left edge',
         );
       },
     );
 
-    testWidgets(
-      'sent (right-side) overlay anchors only at right so it sizes to child',
-      (tester) async {
-        await tester.pumpApp(
-          MessageItem(
-            message: _msg(isMine: true),
-            showHeader: true,
-            isLastInGroup: true,
-            myUserId: 'me',
-          ),
-        );
-        await tester.pump();
+    testWidgets('sent (right-side) overlay also anchors right:8', (
+      tester,
+    ) async {
+      await tester.pumpApp(
+        MessageItem(
+          message: _msg(isMine: true),
+          showHeader: true,
+          isLastInGroup: true,
+          myUserId: 'me',
+        ),
+      );
+      await tester.pump();
 
-        final overlay = _hoverPositioned(tester);
-        expect(overlay.left, isNull);
-        expect(overlay.right, 0);
-      },
-    );
+      final overlay = _hoverPositioned(tester);
+      expect(overlay.right, 8);
+      expect(overlay.left, isNull);
+    });
   });
 }

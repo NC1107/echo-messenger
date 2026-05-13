@@ -1535,24 +1535,13 @@ class _MessageItemState extends State<MessageItem>
     required String? mediaUrl,
   }) {
     final style = _hoverStyle;
-    // In bubbles layout, "my" messages are right-aligned so the overlay
-    // anchors to the right edge.  In compact / plain layouts every message
-    // is left-aligned regardless of sender, so right-anchoring the
-    // overlay parks it on the far right of the chat -- nowhere near the
-    // bubble (#prod-2026-05-08).  Use the bubble's actual visual side.
-    final bubbleOnRight = isMine && !widget.compactLayout;
+    // Always anchor to the right side of the row at a fixed inset,
+    // matching the Discord convention: action bar is always top-right
+    // regardless of which side the bubble is on. This removes the
+    // bubbleOnRight branching that used to vary left/right per sender.
     return Positioned(
-      // Slice 4: overlap the bubble's top edge by ~10px instead of parking
-      // the bar fully above it.
       top: style.overlayTop,
-      // Anchor only the side closest to the bubble so the overlay sizes to
-      // its child action row (#723).  Setting both left & right would force
-      // it to span the entire chat width — sent (right-aligned) bubbles set
-      // `right: 0`, but received bubbles previously also set `right: 8`,
-      // which is what produced the asymmetric full-width hover bar on
-      // left-side messages.
-      left: bubbleOnRight ? null : style.leftInset,
-      right: bubbleOnRight ? 0 : null,
+      right: 8,
       // Defensive `IntrinsicWidth` wrap: in CanvasKit (web) the action
       // row's `Container > Row(MainAxisSize.min)` was still expanding to
       // the full Stack width despite the Positioned only setting one
@@ -1757,10 +1746,31 @@ class _MessageItemState extends State<MessageItem>
       };
     }
 
-    // Slice 5: in plain (Slack) mode, paint a 3px accent rule along the left
-    // edge while hovering — mirrors Slack's selected-message treatment so
-    // affordances feel anchored without drawing a full bubble.
-    final showPlainHoverAccent = widget._isPlain && _isHovered;
+    // On hover: tint the row background and draw a subtle border so the
+    // focused message stands out. Plain (Slack) layout also keeps its
+    // 3px left accent rule. All colors come from _HoverStyleSpec so
+    // they are fully theme-aware.
+    final hoverSpec = _hoverStyle;
+    BoxDecoration? rowHoverDecoration() {
+      if (!_isHovered) return null;
+      if (widget._isPlain) {
+        return BoxDecoration(
+          color: hoverSpec.rowHoverColor,
+          border: Border(
+            left: BorderSide(
+              color: context.accent.withValues(alpha: 0.4),
+              width: 3,
+            ),
+          ),
+        );
+      }
+      return BoxDecoration(
+        color: hoverSpec.rowHoverColor,
+        border: Border.all(color: hoverSpec.rowHoverBorderColor, width: 0.5),
+        borderRadius: BorderRadius.circular(4),
+      );
+    }
+
     final messageWidget = Container(
       padding: EdgeInsets.only(
         left: 12,
@@ -1768,16 +1778,7 @@ class _MessageItemState extends State<MessageItem>
         top: topPad,
         bottom: hasReactions ? 4 : 2,
       ),
-      decoration: showPlainHoverAccent
-          ? BoxDecoration(
-              border: Border(
-                left: BorderSide(
-                  color: context.accent.withValues(alpha: 0.4),
-                  width: 3,
-                ),
-              ),
-            )
-          : null,
+      decoration: rowHoverDecoration(),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -1886,8 +1887,9 @@ class _HoverStyleSpec {
   final double iconSize;
   final double iconOpacity;
   final double overlayTop;
-  final double leftInset;
   final Offset hiddenSlideOffset;
+  final Color rowHoverColor;
+  final Color rowHoverBorderColor;
 
   const _HoverStyleSpec({
     required this.background,
@@ -1901,8 +1903,9 @@ class _HoverStyleSpec {
     required this.iconSize,
     required this.iconOpacity,
     required this.overlayTop,
-    required this.leftInset,
     required this.hiddenSlideOffset,
+    required this.rowHoverColor,
+    required this.rowHoverBorderColor,
   });
 
   factory _HoverStyleSpec.forLayout({
@@ -1929,8 +1932,9 @@ class _HoverStyleSpec {
           iconSize: 13,
           iconOpacity: 0.82,
           overlayTop: -8,
-          leftInset: 36,
           hiddenSlideOffset: const Offset(0, -0.1),
+          rowHoverColor: context.textPrimary.withValues(alpha: 0.04),
+          rowHoverBorderColor: context.border.withValues(alpha: 0.15),
         );
       case MessageLayout.plain:
         return _HoverStyleSpec(
@@ -1951,8 +1955,9 @@ class _HoverStyleSpec {
           iconSize: 12,
           iconOpacity: 0.8,
           overlayTop: -6,
-          leftInset: 34,
           hiddenSlideOffset: const Offset(0, -0.08),
+          rowHoverColor: context.accent.withValues(alpha: 0.04),
+          rowHoverBorderColor: context.accent.withValues(alpha: 0.18),
         );
       case MessageLayout.compact:
         return _HoverStyleSpec(
@@ -1967,8 +1972,9 @@ class _HoverStyleSpec {
           iconSize: 11,
           iconOpacity: 0.75,
           overlayTop: -8,
-          leftInset: 36,
           hiddenSlideOffset: const Offset(0, -0.12),
+          rowHoverColor: context.textPrimary.withValues(alpha: 0.03),
+          rowHoverBorderColor: context.border.withValues(alpha: 0.09),
         );
     }
   }
