@@ -28,6 +28,20 @@ jobs:
           flutter-version-file: .flutter-version
           channel: stable
           cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      - name: Cache AppImage tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/echo-appimage-tools
+          key: appimage-tools-v1
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
@@ -58,6 +72,24 @@ jobs:
           flutter-version-file: .flutter-version
           channel: stable
           cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/client/macos/Pods
+            ~/.cocoapods
+          key: ${{ runner.os }}-pods-macos-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-macos-
       - name: Disable sandbox for dev build
         run: |
           # Dev builds are unsigned — sandbox blocks Keychain without a valid
@@ -94,6 +126,15 @@ jobs:
           flutter-version-file: .flutter-version
           channel: stable
           cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
       - name: Build
         working-directory: apps/client
         run: flutter build web --release --pwa-strategy=none --dart-define=APP_VERSION=dev

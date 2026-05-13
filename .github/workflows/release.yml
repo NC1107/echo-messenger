@@ -78,6 +78,15 @@ jobs:
           flutter-version-file: .flutter-version
           channel: stable
           cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
       - name: Flutter dependencies
         working-directory: apps/client
         run: flutter pub get
@@ -179,6 +188,20 @@ jobs:
           flutter-version-file: .flutter-version
           channel: stable
           cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      - name: Cache AppImage tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/echo-appimage-tools
+          key: appimage-tools-v1
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
@@ -456,6 +479,15 @@ jobs:
           flutter-version-file: .flutter-version
           channel: stable
           cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
       - name: Build
         working-directory: apps/client
         run: flutter build windows --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
@@ -521,6 +553,25 @@ jobs:
           flutter-version-file: .flutter-version
           channel: stable
           cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            apps/client/android/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('apps/client/android/**/*.gradle*', 'apps/client/android/**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
       - name: Check signing secrets
         id: signing
         env:
@@ -569,6 +620,24 @@ jobs:
           flutter-version-file: .flutter-version
           channel: stable
           cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/client/ios/Pods
+            ~/.cocoapods
+          key: ${{ runner.os }}-pods-ios-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-ios-
       - name: Select latest Xcode
         run: |
           # Find the highest-versioned Xcode on the runner
@@ -710,6 +779,24 @@ jobs:
           flutter-version-file: .flutter-version
           channel: stable
           cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/client/macos/Pods
+            ~/.cocoapods
+          key: ${{ runner.os }}-pods-macos-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-macos-
       - name: Build
         working-directory: apps/client
         run: flutter build macos --release --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
@@ -800,6 +887,15 @@ jobs:
           flutter-version-file: .flutter-version
           channel: stable
           cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
       - name: Build
         working-directory: apps/client
         run: flutter build web --release --pwa-strategy=none --dart-define=APP_VERSION=${{ needs.version.outputs.version }}
