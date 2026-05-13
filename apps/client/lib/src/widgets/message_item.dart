@@ -171,6 +171,9 @@ class _MessageItemState extends State<MessageItem>
   Animation<double>? _swipeAnimation;
   late void Function() _swipeAnimListener;
 
+  _HoverStyleSpec get _hoverStyle =>
+      _HoverStyleSpec.forLayout(layout: widget.layout, context: context);
+
   @override
   void initState() {
     super.initState();
@@ -789,14 +792,16 @@ class _MessageItemState extends State<MessageItem>
 
   Widget _buildHoverActions(ChatMessage msg, bool isMine, {String? mediaUrl}) {
     final isImage = mediaUrl != null && _isImageMedia(msg.content, mediaUrl);
+    final style = _hoverStyle;
     return Container(
       // Clip the InkWell ripples on the 44x44 chips so they don't bleed
       // past the rounded card boundary into the adjacent message bubble.
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: context.surface.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: context.border, width: 1),
+        color: style.background,
+        borderRadius: BorderRadius.circular(style.containerRadius),
+        border: Border.all(color: style.borderColor, width: style.borderWidth),
+        boxShadow: style.shadow,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -808,12 +813,22 @@ class _MessageItemState extends State<MessageItem>
               child: HoverActionButton(
                 icon: Icons.reply_outlined,
                 tooltip: 'Reply',
+                size: style.buttonSize,
+                iconSize: style.iconSize,
+                iconOpacity: style.iconOpacity,
+                iconColor: style.iconColor,
+                cornerRadius: style.buttonRadius,
                 onPressed: () => widget.onReply?.call(msg),
               ),
             ),
           HoverActionButton(
             icon: Icons.add_reaction_outlined,
             tooltip: 'React',
+            size: style.buttonSize,
+            iconSize: style.iconSize,
+            iconOpacity: style.iconOpacity,
+            iconColor: style.iconColor,
+            cornerRadius: style.buttonRadius,
             onPressed: () {
               final box = context.findRenderObject() as RenderBox?;
               final pos = box?.localToGlobal(Offset.zero) ?? Offset.zero;
@@ -821,7 +836,13 @@ class _MessageItemState extends State<MessageItem>
             },
           ),
           // Overflow menu: copy, pin, edit, delete
-          _buildOverflowMenu(msg, isMine, mediaUrl: mediaUrl, isImage: isImage),
+          _buildOverflowMenu(
+            msg,
+            isMine,
+            mediaUrl: mediaUrl,
+            isImage: isImage,
+            hoverStyle: style,
+          ),
         ],
       ),
     );
@@ -832,6 +853,7 @@ class _MessageItemState extends State<MessageItem>
     bool isMine, {
     String? mediaUrl,
     bool isImage = false,
+    required _HoverStyleSpec hoverStyle,
   }) {
     return Semantics(
       label: 'More actions',
@@ -840,15 +862,17 @@ class _MessageItemState extends State<MessageItem>
         message: 'More',
         child: PopupMenuButton<String>(
           padding: EdgeInsets.zero,
-          // 44×44 minimum tap target per WCAG 2.5.5; visual icon stays 14px.
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          iconSize: 14,
+          constraints: BoxConstraints(
+            minWidth: hoverStyle.buttonSize,
+            minHeight: hoverStyle.buttonSize,
+          ),
+          iconSize: hoverStyle.iconSize,
           icon: Opacity(
-            opacity: 0.75,
+            opacity: hoverStyle.iconOpacity,
             child: Icon(
               Icons.more_horiz,
-              size: 14,
-              color: context.textSecondary,
+              size: hoverStyle.iconSize,
+              color: hoverStyle.iconColor,
             ),
           ),
           onSelected: (value) {
@@ -1511,6 +1535,7 @@ class _MessageItemState extends State<MessageItem>
     required bool isMine,
     required String? mediaUrl,
   }) {
+    final style = _hoverStyle;
     // In bubbles layout, "my" messages are right-aligned so the overlay
     // anchors to the right edge.  In compact / plain layouts every message
     // is left-aligned regardless of sender, so right-anchoring the
@@ -1520,14 +1545,14 @@ class _MessageItemState extends State<MessageItem>
     return Positioned(
       // Slice 4: overlap the bubble's top edge by ~10px instead of parking
       // the bar fully above it.
-      top: -8,
+      top: style.overlayTop,
       // Anchor only the side closest to the bubble so the overlay sizes to
       // its child action row (#723).  Setting both left & right would force
       // it to span the entire chat width — sent (right-aligned) bubbles set
       // `right: 0`, but received bubbles previously also set `right: 8`,
       // which is what produced the asymmetric full-width hover bar on
       // left-side messages.
-      left: bubbleOnRight ? null : 36,
+      left: bubbleOnRight ? null : style.leftInset,
       right: bubbleOnRight ? 0 : null,
       // Defensive `IntrinsicWidth` wrap: in CanvasKit (web) the action
       // row's `Container > Row(MainAxisSize.min)` was still expanding to
@@ -1545,7 +1570,7 @@ class _MessageItemState extends State<MessageItem>
             duration: const Duration(milliseconds: 140),
             curve: Curves.easeOut,
             child: AnimatedSlide(
-              offset: _isHovered ? Offset.zero : const Offset(0, -0.12),
+              offset: _isHovered ? Offset.zero : style.hiddenSlideOffset,
               duration: const Duration(milliseconds: 140),
               curve: Curves.easeOut,
               child: IntrinsicWidth(
@@ -1847,5 +1872,105 @@ class _MessageItemState extends State<MessageItem>
         ),
       ),
     );
+  }
+}
+
+class _HoverStyleSpec {
+  final Color background;
+  final Color borderColor;
+  final Color iconColor;
+  final List<BoxShadow> shadow;
+  final double borderWidth;
+  final double containerRadius;
+  final double buttonSize;
+  final double buttonRadius;
+  final double iconSize;
+  final double iconOpacity;
+  final double overlayTop;
+  final double leftInset;
+  final Offset hiddenSlideOffset;
+
+  const _HoverStyleSpec({
+    required this.background,
+    required this.borderColor,
+    required this.iconColor,
+    required this.shadow,
+    required this.borderWidth,
+    required this.containerRadius,
+    required this.buttonSize,
+    required this.buttonRadius,
+    required this.iconSize,
+    required this.iconOpacity,
+    required this.overlayTop,
+    required this.leftInset,
+    required this.hiddenSlideOffset,
+  });
+
+  factory _HoverStyleSpec.forLayout({
+    required MessageLayout layout,
+    required BuildContext context,
+  }) {
+    switch (layout) {
+      case MessageLayout.bubbles:
+        return _HoverStyleSpec(
+          background: context.surface.withValues(alpha: 0.98),
+          borderColor: context.border,
+          iconColor: context.textPrimary,
+          shadow: const [
+            BoxShadow(
+              color: Color(0x3D000000),
+              blurRadius: 14,
+              offset: Offset(0, 4),
+            ),
+          ],
+          borderWidth: 1,
+          containerRadius: 8,
+          buttonSize: 36,
+          buttonRadius: 5,
+          iconSize: 13,
+          iconOpacity: 0.82,
+          overlayTop: -10,
+          leftInset: 36,
+          hiddenSlideOffset: const Offset(0, -0.1),
+        );
+      case MessageLayout.plain:
+        return _HoverStyleSpec(
+          background: context.surface.withValues(alpha: 0.76),
+          borderColor: context.accent.withValues(alpha: 0.28),
+          iconColor: context.textPrimary,
+          shadow: const [
+            BoxShadow(
+              color: Color(0x29000000),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+          borderWidth: 1,
+          containerRadius: 10,
+          buttonSize: 34,
+          buttonRadius: 6,
+          iconSize: 12,
+          iconOpacity: 0.8,
+          overlayTop: -6,
+          leftInset: 34,
+          hiddenSlideOffset: const Offset(0, -0.08),
+        );
+      case MessageLayout.compact:
+        return _HoverStyleSpec(
+          background: context.surface.withValues(alpha: 0.95),
+          borderColor: context.border,
+          iconColor: context.textSecondary,
+          shadow: const [],
+          borderWidth: 1,
+          containerRadius: 6,
+          buttonSize: 33,
+          buttonRadius: 4,
+          iconSize: 11,
+          iconOpacity: 0.75,
+          overlayTop: -8,
+          leftInset: 36,
+          hiddenSlideOffset: const Offset(0, -0.12),
+        );
+    }
   }
 }
