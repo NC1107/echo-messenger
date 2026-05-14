@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -36,11 +37,21 @@ class GlobalSearchOverlay extends ConsumerStatefulWidget {
 class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
-  final _keyboardFocusNode = FocusNode();
+  final _listScrollController = ScrollController();
   Timer? _debounce;
   _UniversalResults? _results;
   bool _loading = false;
   String _lastQuery = '';
+
+  /// Selected index across the flattened activator list. Held as a
+  /// [ValueNotifier] so arrow-key updates only repaint the previously
+  /// selected and newly selected row instead of every visible tile.
+  final ValueNotifier<int> _selectedIndex = ValueNotifier<int>(0);
+
+  /// Per-result GlobalKeys so [Scrollable.ensureVisible] can resolve the
+  /// real (variable-height) bounds of the currently selected row.
+  /// Regenerated whenever the result set is replaced.
+  List<GlobalKey> _rowKeys = const <GlobalKey>[];
 
   @override
   void initState() {
@@ -52,9 +63,86 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
-    _keyboardFocusNode.dispose();
+    _listScrollController.dispose();
+    _selectedIndex.dispose();
     _debounce?.cancel();
     super.dispose();
+  }
+
+  /// Flatten all result categories into a single linear list for keyboard
+  /// navigation. Each entry knows how to open itself when activated.
+  List<VoidCallback> _flatResultActivators() {
+    final r = _results;
+    if (r == null) return const <VoidCallback>[];
+    return <VoidCallback>[
+      for (final m in r.messages)
+        () {
+          Navigator.of(context).pop();
+          widget.onResultTap(m.conversationId, m.messageId);
+        },
+      for (final c in r.contacts)
+        () {
+          Navigator.of(context).pop();
+          widget.onContactTap(c.userId, c.username);
+        },
+      for (final g in r.groups)
+        () {
+          Navigator.of(context).pop();
+          widget.onResultTap(g.conversationId, '');
+        },
+    ];
+  }
+
+  int get _totalResultCount {
+    final r = _results;
+    if (r == null) return 0;
+    return r.messages.length + r.contacts.length + r.groups.length;
+  }
+
+  /// Scroll the selected row into view. Uses the row's GlobalKey instead of
+  /// a fixed average row height so mixed-height tiles and section headers
+  /// don't drift the math.
+  void _scrollToSelected() {
+    final i = _selectedIndex.value;
+    if (i < 0 || i >= _rowKeys.length) return;
+    final ctx = _rowKeys[i].currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 100),
+      curve: Curves.easeOut,
+      alignment: 0.5,
+    );
+  }
+
+  KeyEventResult _handleKeyNavigation(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      Navigator.of(context).pop();
+      return KeyEventResult.handled;
+    }
+    final total = _totalResultCount;
+    if (total == 0) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      _selectedIndex.value = (_selectedIndex.value + 1).clamp(0, total - 1);
+      _scrollToSelected();
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      _selectedIndex.value = (_selectedIndex.value - 1).clamp(0, total - 1);
+      _scrollToSelected();
+      return KeyEventResult.handled;
+    } else if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      // Resolve the activator at Enter-time from the current result list so
+      // we never fire a stale closure captured before results changed.
+      final activators = _flatResultActivators();
+      final idx = _selectedIndex.value;
+      if (idx >= 0 && idx < activators.length) {
+        activators[idx]();
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   void _onQueryChanged(String query) {
@@ -63,13 +151,36 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
       setState(() {
         _results = null;
         _loading = false;
+        _rowKeys = const <GlobalKey>[];
       });
+      _selectedIndex.value = 0;
       return;
     }
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+    });
+    _selectedIndex.value = 0;
     _debounce = Timer(const Duration(milliseconds: 400), () {
       _search(query.trim());
     });
+  }
+
+  void _applyResults(_UniversalResults results) {
+    final total =
+        results.messages.length +
+        results.contacts.length +
+        results.groups.length;
+    setState(() {
+      _results = results;
+      _loading = false;
+      _rowKeys = List<GlobalKey>.generate(total, (_) => GlobalKey());
+    });
+    // Clamp after results changed: e.g. shrink 20→3 must not leave a stale
+    // index that no longer maps to any row.
+    _selectedIndex.value = _selectedIndex.value.clamp(
+      0,
+      math.max(0, total - 1),
+    );
   }
 
   Future<void> _search(String query) async {
@@ -141,26 +252,19 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
           );
         }).toList();
 
-        setState(() {
-          _results = _UniversalResults(
+        _applyResults(
+          _UniversalResults(
             messages: messages,
             contacts: contacts,
             groups: groups,
-          );
-          _loading = false;
-        });
+          ),
+        );
       } else {
-        setState(() {
-          _results = _UniversalResults.empty();
-          _loading = false;
-        });
+        _applyResults(_UniversalResults.empty());
       }
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        _results = _UniversalResults.empty();
-        _loading = false;
-      });
+      _applyResults(_UniversalResults.empty());
     }
   }
 
@@ -181,14 +285,14 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     final isMobile = Responsive.isMobile(context);
     final width = isMobile ? MediaQuery.of(context).size.width - 32 : 560.0;
 
-    return KeyboardListener(
-      focusNode: _keyboardFocusNode,
-      onKeyEvent: (event) {
-        if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.escape) {
-          Navigator.of(context).pop();
-        }
-      },
+    // A non-focusable Focus observer: it sees raw key events but never owns
+    // primary focus, so it can't steal the user's first keystroke from the
+    // TextField below.
+    return Focus(
+      canRequestFocus: false,
+      descendantsAreFocusable: true,
+      skipTraversal: true,
+      onKeyEvent: _handleKeyNavigation,
       child: GestureDetector(
         onTap: () => Navigator.of(context).pop(),
         child: Material(
@@ -260,27 +364,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
                         ),
                       ),
                     ),
-                    if (_hasResults)
-                      Flexible(
-                        child: ListView(
-                          shrinkWrap: true,
-                          padding: const EdgeInsets.only(bottom: 12),
-                          children: [
-                            if (_results!.messages.isNotEmpty) ...[
-                              _buildSectionHeader('Messages'),
-                              ..._results!.messages.map(_buildMessageTile),
-                            ],
-                            if (_results!.contacts.isNotEmpty) ...[
-                              _buildSectionHeader('Contacts'),
-                              ..._results!.contacts.map(_buildContactTile),
-                            ],
-                            if (_results!.groups.isNotEmpty) ...[
-                              _buildSectionHeader('Groups'),
-                              ..._results!.groups.map(_buildGroupTile),
-                            ],
-                          ],
-                        ),
-                      ),
+                    if (_hasResults) Flexible(child: _buildResultsList()),
                     if (_showEmpty)
                       Padding(
                         padding: const EdgeInsets.all(24),
@@ -298,6 +382,79 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Build the flat row list (headers + tiles) and render it lazily via
+  /// [ListView.builder] so off-screen rows aren't materialized.
+  Widget _buildResultsList() {
+    final items = _flattenRows();
+    return ListView.builder(
+      controller: _listScrollController,
+      shrinkWrap: true,
+      padding: const EdgeInsets.only(bottom: 12),
+      itemCount: items.length,
+      itemBuilder: (context, index) => items[index],
+    );
+  }
+
+  /// Assemble the rendered rows in the same order as
+  /// [_flatResultActivators] so the selection index aligns with what
+  /// the user sees and what Enter activates.
+  List<Widget> _flattenRows() {
+    final rows = <Widget>[];
+    final r = _results;
+    if (r == null) return rows;
+    var globalIndex = 0;
+    if (r.messages.isNotEmpty) {
+      rows.add(_buildSectionHeader('Messages'));
+      for (final m in r.messages) {
+        rows.add(_buildSelectableRow(globalIndex, _buildMessageTile(m)));
+        globalIndex++;
+      }
+    }
+    if (r.contacts.isNotEmpty) {
+      rows.add(_buildSectionHeader('Contacts'));
+      for (final c in r.contacts) {
+        rows.add(_buildSelectableRow(globalIndex, _buildContactTile(c)));
+        globalIndex++;
+      }
+    }
+    if (r.groups.isNotEmpty) {
+      rows.add(_buildSectionHeader('Groups'));
+      for (final g in r.groups) {
+        rows.add(_buildSelectableRow(globalIndex, _buildGroupTile(g)));
+        globalIndex++;
+      }
+    }
+    return rows;
+  }
+
+  /// Wraps a result tile in a [ValueListenableBuilder] keyed on
+  /// [_selectedIndex] so only the previously-selected and newly-selected
+  /// tiles repaint when the user presses arrow keys.
+  Widget _buildSelectableRow(int index, Widget child) {
+    final key = (index < _rowKeys.length) ? _rowKeys[index] : null;
+    return KeyedSubtree(
+      key: key,
+      child: ValueListenableBuilder<int>(
+        valueListenable: _selectedIndex,
+        builder: (context, selected, _) {
+          final isSelected = selected == index;
+          return Container(
+            decoration: BoxDecoration(
+              color: isSelected ? context.accent.withValues(alpha: 0.1) : null,
+              border: Border(
+                left: BorderSide(
+                  color: isSelected ? context.accent : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+            ),
+            child: _SelectionSemantics(isSelected: isSelected, child: child),
+          );
+        },
       ),
     );
   }
@@ -337,9 +494,8 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
       }
     }
 
-    return Semantics(
+    return _RowSemanticsLabel(
       label: 'message from ${r.senderUsername} in ${r.conversationName}',
-      button: true,
       child: InkWell(
         onTap: () {
           Navigator.of(context).pop();
@@ -393,9 +549,8 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
         ? r.displayName!
         : r.username;
 
-    return Semantics(
+    return _RowSemanticsLabel(
       label: 'contact $label',
-      button: true,
       child: InkWell(
         onTap: () {
           Navigator.of(context).pop();
@@ -459,9 +614,8 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   }
 
   Widget _buildGroupTile(_GroupResult r) {
-    return Semantics(
+    return _RowSemanticsLabel(
       label: 'group ${r.title}',
-      button: true,
       child: InkWell(
         onTap: () {
           Navigator.of(context).pop();
@@ -509,6 +663,34 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
         ),
       ),
     );
+  }
+}
+
+/// Selection-aware semantics wrapper. Sits inside the [ValueListenableBuilder]
+/// so the `selected` flag stays in sync with the keyboard cursor without
+/// forcing the underlying tile widgets to rebuild.
+class _SelectionSemantics extends StatelessWidget {
+  final bool isSelected;
+  final Widget child;
+  const _SelectionSemantics({required this.isSelected, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(selected: isSelected, button: true, child: child);
+  }
+}
+
+/// Adds a stable accessibility label to a row tile. Kept separate from the
+/// selection semantics so we can rebuild the `selected` flag without
+/// recomputing the label string.
+class _RowSemanticsLabel extends StatelessWidget {
+  final String label;
+  final Widget child;
+  const _RowSemanticsLabel({required this.label, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(label: label, child: child);
   }
 }
 

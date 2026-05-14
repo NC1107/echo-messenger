@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart'
@@ -1332,10 +1333,14 @@ class _MessageItemState extends State<MessageItem>
 
     // Compact / Plain layouts (#794) flow to the full chat-pane width like
     // Discord/Slack — no centered-bubble cap. Bubble layout keeps 520px so
-    // bubbles don't stretch awkwardly on wide windows.
+    // bubbles don't stretch awkwardly on wide windows; ultrawide (≥1600px)
+    // grows the cap up to 720px or 45% of viewport, whichever is smaller
+    // (#403).
+    final width = MediaQuery.of(context).size.width;
+    final maxBubble = width >= 1600 ? math.min(720.0, width * 0.45) : 520.0;
     final bubbleConstraints = widget.compactLayout
         ? const BoxConstraints()
-        : const BoxConstraints(maxWidth: 520);
+        : BoxConstraints(maxWidth: maxBubble);
 
     return Container(
       constraints: bubbleConstraints,
@@ -1966,7 +1971,7 @@ class _HoverStyleSpec {
           containerRadius: 8,
           buttonSize: 33,
           buttonRadius: 5,
-          iconSize: 13,
+          iconSize: 16,
           iconOpacity: 0.82,
           overlayTop: -8,
           hiddenSlideOffset: const Offset(0, -0.1),
@@ -1989,7 +1994,7 @@ class _HoverStyleSpec {
           containerRadius: 10,
           buttonSize: 33,
           buttonRadius: 6,
-          iconSize: 12,
+          iconSize: 15,
           iconOpacity: 0.8,
           overlayTop: -6,
           hiddenSlideOffset: const Offset(0, -0.08),
@@ -2006,7 +2011,7 @@ class _HoverStyleSpec {
           containerRadius: 6,
           buttonSize: 33,
           buttonRadius: 4,
-          iconSize: 11,
+          iconSize: 14,
           iconOpacity: 0.75,
           overlayTop: -8,
           hiddenSlideOffset: const Offset(0, -0.12),

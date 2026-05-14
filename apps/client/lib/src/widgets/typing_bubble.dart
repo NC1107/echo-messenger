@@ -11,12 +11,17 @@ class TypingDots extends StatefulWidget {
   const TypingDots({super.key, this.color, this.dotSize = 8});
 
   @override
-  State<TypingDots> createState() => _TypingDotsState();
+  State<TypingDots> createState() => TypingDotsState();
 }
 
-class _TypingDotsState extends State<TypingDots>
+class TypingDotsState extends State<TypingDots>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+
+  /// Exposed for tests verifying the reduced-motion gate. Reading this in
+  /// production code is a smell — the controller is private state.
+  @visibleForTesting
+  bool get isAnimating => _controller.isAnimating;
 
   @override
   void initState() {
@@ -24,7 +29,20 @@ class _TypingDotsState extends State<TypingDots>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
-    )..repeat();
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Respect the platform reduced-motion preference: hold the dots at
+    // a static frame instead of looping the bounce animation.
+    if (MediaQuery.of(context).disableAnimations) {
+      if (_controller.isAnimating) _controller.stop();
+      _controller.value = 0.0;
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
   }
 
   @override

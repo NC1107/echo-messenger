@@ -63,6 +63,7 @@ class VoiceDock extends ConsumerWidget {
         padding: EdgeInsets.symmetric(horizontal: m.hPad, vertical: m.vPad),
         decoration: BoxDecoration(
           color: context.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
           border: Border(
             top: BorderSide(color: context.border, width: 1),
             right: BorderSide(color: context.border, width: 1),
