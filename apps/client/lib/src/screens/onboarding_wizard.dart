@@ -38,11 +38,16 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   PlatformFile? _pickedAvatar;
   bool _uploadingAvatar = false;
 
-  // TODO: move to Settings > Profile (bio, pronouns, timezone)
+  // Profile fields shown inline on the Welcome page (the user can also edit
+  // these later under Settings > Profile).
   final _pronounsController = TextEditingController();
   final _bioController = TextEditingController();
   final _statusController = TextEditingController();
   final _timezoneController = TextEditingController();
+
+  /// Selected presence status. Mirrors the values used by the in-app status
+  /// picker (see `conversation_panel.dart`). Defaults to "online".
+  String _presenceStatus = 'online';
 
   // Page 3 -- Add contact
   final _contactUsernameController = TextEditingController();
@@ -131,6 +136,18 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           );
     } catch (e) {
       debugPrint('[Onboarding] profile save failed: $e');
+    }
+
+    // Presence status is a separate endpoint -- push only if the user
+    // changed it from the default to avoid spurious WS broadcasts.
+    if (_presenceStatus != 'online') {
+      try {
+        await ref
+            .read(authProvider.notifier)
+            .setPresenceStatus(_presenceStatus);
+      } catch (e) {
+        debugPrint('[Onboarding] presence save failed: $e');
+      }
     }
   }
 
@@ -397,7 +414,66 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             hint: 'How others will see you',
             maxLength: 50,
           ),
+          const SizedBox(height: 12),
+          _buildField(
+            controller: _bioController,
+            label: 'Bio',
+            hint: 'Tell people a little about yourself',
+            maxLength: 200,
+            maxLines: 3,
+          ),
+          const SizedBox(height: 12),
+          _buildField(
+            controller: _pronounsController,
+            label: 'Pronouns',
+            hint: 'e.g. she/her, they/them',
+            maxLength: 32,
+          ),
+          const SizedBox(height: 12),
+          _buildField(
+            controller: _timezoneController,
+            label: 'Timezone',
+            hint: 'Auto-detected; edit if needed',
+            maxLength: 64,
+          ),
+          const SizedBox(height: 12),
+          _buildPresenceDropdown(context),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPresenceDropdown(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: 'Status',
+        labelStyle: TextStyle(color: context.textSecondary),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: context.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: context.accent),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isDense: true,
+          isExpanded: true,
+          value: _presenceStatus,
+          style: TextStyle(color: context.textPrimary, fontSize: 14),
+          onChanged: (v) {
+            if (v != null) setState(() => _presenceStatus = v);
+          },
+          items: const [
+            DropdownMenuItem(value: 'online', child: Text('Online')),
+            DropdownMenuItem(value: 'away', child: Text('Away')),
+            DropdownMenuItem(value: 'dnd', child: Text('Do Not Disturb')),
+            DropdownMenuItem(value: 'invisible', child: Text('Invisible')),
+          ],
+        ),
       ),
     );
   }
