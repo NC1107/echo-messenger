@@ -18,6 +18,7 @@ import '../providers/contacts_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/media_ticket_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../providers/websocket_provider.dart';
 import '../utils/fuzzy_score.dart';
 import '../widgets/avatar_crop_dialog.dart';
 import '../widgets/avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
@@ -939,6 +940,11 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     );
   }
 
+  /// Compact role pill shown beside the member's username.
+  ///
+  /// Color mapping matches the desktop members panel (#769):
+  ///   Owner -> warning amber (rare, high authority)
+  ///   Admin -> accent blue
   List<Widget> _buildRoleBadge(String role) {
     if (role == 'owner') {
       return [
@@ -946,17 +952,16 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
           decoration: BoxDecoration(
-            color: Theme.of(
-              context,
-            ).colorScheme.primary.withValues(alpha: 0.15),
+            color: EchoTheme.warning.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(4),
           ),
-          child: Text(
+          child: const Text(
             'Owner',
             style: TextStyle(
-              fontSize: 11,
-              color: Theme.of(context).colorScheme.primary,
+              fontSize: 10,
+              color: EchoTheme.warning,
               fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
             ),
           ),
         ),
@@ -968,15 +973,16 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
           decoration: BoxDecoration(
-            color: EchoTheme.warning.withValues(alpha: 0.15),
+            color: context.accent.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(4),
           ),
-          child: const Text(
+          child: Text(
             'Admin',
             style: TextStyle(
-              fontSize: 11,
-              color: EchoTheme.warning,
+              fontSize: 10,
+              color: context.accentHover,
               fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
             ),
           ),
         ),
@@ -1042,36 +1048,163 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     );
   }
 
+  /// Single roster row. Matches the desktop members panel styling (#769):
+  /// avatar -> online dot -> role icon + username + role pill, activity line
+  /// underneath ("online" / "away" / "You").
   Widget _buildMemberTile({
     required ConversationMember member,
     required String myUserId,
     required bool isOwnerOrAdmin,
+    required bool isOnline,
   }) {
     final serverUrl = ref.read(serverUrlProvider);
     final isMe = member.userId == myUserId;
     final role = member.role ?? 'member';
-    return ListTile(
-      leading: buildAvatar(
-        name: member.username,
-        radius: 20,
-        imageUrl: resolveAvatarUrl(member.avatarUrl, serverUrl),
-      ),
-      title: Row(children: [Text(member.username), ..._buildRoleBadge(role)]),
-      subtitle: isMe ? const Text('You') : null,
-      trailing: _buildMemberActions(
-        member: member,
-        isOwnerOrAdmin: isOwnerOrAdmin,
-        isMe: isMe,
-        role: role,
+    final activity = isMe ? 'You' : (isOnline ? 'online' : 'away');
+
+    return InkWell(
+      onTap: () {
+        // Tapping a row opens the member's profile sheet, matching the
+        // desktop members panel.
+        // Avoid for self -- you can already see your own settings.
+        if (!isMe) {
+          showUserProfileSheet(context, ref, member.userId);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            buildAvatar(
+              name: member.username,
+              radius: 18,
+              imageUrl: resolveAvatarUrl(member.avatarUrl, serverUrl),
+            ),
+            const SizedBox(width: 10),
+            // Online presence dot, ringed in the surface color so it reads
+            // against any avatar background.
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: isOnline ? EchoTheme.online : context.textMuted,
+                shape: BoxShape.circle,
+                border: Border.all(color: context.surface, width: 1.5),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(
+                    children: [
+                      if (role == 'owner') ...[
+                        const Icon(
+                          Icons.star_rounded,
+                          size: 14,
+                          color: Colors.amber,
+                          semanticLabel: 'owner',
+                        ),
+                        const SizedBox(width: 4),
+                      ] else if (role == 'admin') ...[
+                        const Icon(
+                          Icons.shield_rounded,
+                          size: 14,
+                          color: Colors.blue,
+                          semanticLabel: 'admin',
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Flexible(
+                        child: Text(
+                          member.username,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      ..._buildRoleBadge(role),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    activity,
+                    style: TextStyle(color: context.textMuted, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            ?_buildMemberActions(
+              member: member,
+              isOwnerOrAdmin: isOwnerOrAdmin,
+              isMe: isMe,
+              role: role,
+            ),
+          ],
+        ),
       ),
     );
   }
 
+  /// Member roster grouped by role (Owner / Admin / Members), matching the
+  /// desktop members panel (#769). Each section header is uppercase with a
+  /// muted color + letter-spacing; rows sort alphabetically within a section.
   List<Widget> _buildMembersSection({
     required Conversation conv,
     required String myUserId,
     required bool isOwnerOrAdmin,
   }) {
+    final onlineUsers = ref.watch(
+      websocketProvider.select((s) => s.onlineUsers),
+    );
+
+    int sortByName(ConversationMember a, ConversationMember b) =>
+        a.username.toLowerCase().compareTo(b.username.toLowerCase());
+
+    final owners = conv.members.where((m) => m.role == 'owner').toList()
+      ..sort(sortByName);
+    final admins = conv.members.where((m) => m.role == 'admin').toList()
+      ..sort(sortByName);
+    final regulars =
+        conv.members
+            .where((m) => m.role != 'owner' && m.role != 'admin')
+            .toList()
+          ..sort(sortByName);
+
+    Widget sectionHeader(String label) => Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: context.textMuted,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.6,
+        ),
+      ),
+    );
+
+    Iterable<Widget> renderGroup(
+      String label,
+      List<ConversationMember> group,
+    ) sync* {
+      if (group.isEmpty) return;
+      yield sectionHeader('$label — ${group.length}');
+      for (final m in group) {
+        yield _buildMemberTile(
+          member: m,
+          myUserId: myUserId,
+          isOwnerOrAdmin: isOwnerOrAdmin,
+          isOnline: onlineUsers.contains(m.userId),
+        );
+      }
+    }
+
     return [
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -1092,13 +1225,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           ],
         ),
       ),
-      ...conv.members.map(
-        (member) => _buildMemberTile(
-          member: member,
-          myUserId: myUserId,
-          isOwnerOrAdmin: isOwnerOrAdmin,
-        ),
-      ),
+      ...renderGroup('OWNER', owners),
+      ...renderGroup('ADMIN', admins),
+      ...renderGroup('MEMBERS', regulars),
     ];
   }
 
