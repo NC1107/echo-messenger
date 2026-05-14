@@ -171,16 +171,25 @@ class _FakeContacts extends Contacts {
 // WebSocket
 // ---------------------------------------------------------------------------
 
-/// Override [websocketProvider] with a disconnected state.
-Override webSocketOverride() {
-  return websocketProvider.overrideWith(() => _FakeWebSocketNotifier());
+/// Override [websocketProvider] with a connected state by default. Pass
+/// [initial] to override (e.g. tests for disconnect/reconnect flows).
+///
+/// Default = connected because the [ConnectionStatusBadge] in the sidebar
+/// runs a pulse animation while reconnecting, which would otherwise prevent
+/// [WidgetTester.pumpAndSettle] from ever terminating in widget tests.
+Override webSocketOverride([
+  WebSocketState initial = const WebSocketState(isConnected: true),
+]) {
+  return websocketProvider.overrideWith(() => _FakeWebSocketNotifier(initial));
 }
 
 class _FakeWebSocketNotifier extends WebSocketNotifier {
-  _FakeWebSocketNotifier();
+  _FakeWebSocketNotifier(this._initial);
+
+  final WebSocketState _initial;
 
   @override
-  WebSocketState build() => const WebSocketState();
+  WebSocketState build() => _initial;
 
   @override
   void connect() {}

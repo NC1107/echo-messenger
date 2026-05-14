@@ -76,8 +76,6 @@ class ChatHeaderBar extends ConsumerWidget {
           const SizedBox(width: 12),
           Expanded(child: _buildNameAndStatus(context, ref, conv, displayName)),
           ..._buildActionButtons(context, ref, conv),
-          const SizedBox(width: 4),
-          const _ConnectionStatusDot(),
         ],
       ),
     );
@@ -744,64 +742,5 @@ class ChatHeaderBar extends ConsumerWidget {
         );
       }
     }
-  }
-}
-
-/// Small connection-state indicator rendered in the header actions row.
-///
-/// Replaces the standalone full-width [ConnectionStatusBanner]. Color codes:
-/// green when connected, amber while reconnecting, red after max attempts
-/// or session-replaced. Tap to force a reconnect.
-class _ConnectionStatusDot extends ConsumerWidget {
-  const _ConnectionStatusDot();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ws = ref.watch(websocketProvider);
-    final maxAttempts = !ws.isConnected && ws.reconnectAttempts >= 10;
-    final isError = ws.wasReplaced || maxAttempts;
-    final Color color;
-    final String tooltip;
-    if (ws.isConnected) {
-      color = EchoTheme.online;
-      tooltip = 'Connected';
-    } else if (isError) {
-      color = EchoTheme.danger;
-      tooltip = ws.wasReplaced
-          ? 'Signed in on another device -- tap to reconnect'
-          : 'Connection lost -- tap to retry';
-    } else {
-      color = EchoTheme.warning;
-      tooltip = ws.reconnectAttempts > 0
-          ? 'Reconnecting (${ws.reconnectAttempts})...'
-          : 'Reconnecting...';
-    }
-
-    return Semantics(
-      label: tooltip,
-      button: true,
-      child: Tooltip(
-        message: tooltip,
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: () {
-            final notifier = ref.read(websocketProvider.notifier);
-            if (ref.read(websocketProvider).wasReplaced) {
-              notifier.reconnectAfterReplacement();
-            } else {
-              notifier.connect();
-            }
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }

@@ -195,7 +195,16 @@ void main() {
       await tester.tap(find.byKey(const Key('status-picker')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Online'), findsOneWidget);
+      // The sidebar status bar also shows the current presence label
+      // ("Online") so we scope the menu-item check to the popup-menu
+      // descendants.
+      expect(
+        find.descendant(
+          of: find.byType(PopupMenuItem<String>),
+          matching: find.text('Online'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Away'), findsOneWidget);
       expect(find.text('Do Not Disturb'), findsOneWidget);
       expect(find.text('Invisible'), findsOneWidget);
@@ -227,8 +236,16 @@ void main() {
       await tester.tap(find.text('Away'));
       await tester.pumpAndSettle();
 
-      // After selecting Away, the menu dismisses and 'Away' is no longer visible.
-      expect(find.text('Online'), findsNothing);
+      // After selecting Away, the menu dismisses; no menu item with the
+      // text 'Online' remains. The status bar still shows the current
+      // presence label, so we scope to popup-menu descendants.
+      expect(
+        find.descendant(
+          of: find.byType(PopupMenuItem<String>),
+          matching: find.text('Online'),
+        ),
+        findsNothing,
+      );
     });
   });
 
