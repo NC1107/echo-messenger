@@ -574,6 +574,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   void _openSavedMessages() {
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
+    if (isMobile) {
+      context.push('/saved');
+      return;
+    }
     showDialog(
       context: context,
       builder: (dialogContext) {

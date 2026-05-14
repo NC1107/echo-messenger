@@ -16,6 +16,7 @@ import '../screens/onboarding_wizard.dart';
 import '../screens/register_screen.dart';
 import '../screens/reset_password_screen.dart';
 import '../screens/safety_number_screen.dart';
+import '../screens/saved_messages_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/splash_screen.dart';
 import '../screens/username_invite_screen.dart';
@@ -254,6 +255,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/settings',
         pageBuilder: (context, state) =>
             _fadePage(key: state.pageKey, child: const SettingsScreen()),
+      ),
+      GoRoute(
+        path: '/saved',
+        pageBuilder: (context, state) =>
+            _fadePage(key: state.pageKey, child: const SavedMessagesScreen()),
       ),
       GoRoute(
         path: '/safety-number/:peerId',
