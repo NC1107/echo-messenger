@@ -62,8 +62,8 @@ async fn spawn_server_inner(trusted_proxies: Vec<IpAddr>) -> String {
         pool,
         jwt_secret: TEST_JWT_SECRET.to_string(),
         hub,
-        ticket_store: dashmap::DashMap::new(),
-        media_tickets: dashmap::DashMap::new(),
+        ticket_store: Arc::new(dashmap::DashMap::new()),
+        media_tickets: Arc::new(dashmap::DashMap::new()),
     });
 
     let app = routes::create_router(state, trusted_proxies);

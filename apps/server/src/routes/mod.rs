@@ -18,7 +18,7 @@ pub mod ws;
 
 use axum::Json;
 use axum::Router;
-use axum::extract::{DefaultBodyLimit, State};
+use axum::extract::{DefaultBodyLimit, FromRef, State};
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware;
 use axum::response::IntoResponse;
@@ -37,10 +37,13 @@ use crate::ws::hub::Hub;
 
 /// Map from ticket string to (user_id, device_id, created_at).
 /// Uses DashMap for lock-free concurrent access in async context.
-pub type TicketStore = DashMap<String, (Uuid, i32, Instant)>;
+/// Wrapped in `Arc` so it can be cheaply cloned into per-handler
+/// `FromRef` extractors without deep-copying the map.
+pub type TicketStore = Arc<DashMap<String, (Uuid, i32, Instant)>>;
 
 /// Map from media ticket string to (user_id, created_at).
-pub type MediaTicketStore = DashMap<String, (Uuid, Instant)>;
+/// Wrapped in `Arc` for the same reason as `TicketStore`.
+pub type MediaTicketStore = Arc<DashMap<String, (Uuid, Instant)>>;
 
 pub struct AppState {
     pub pool: PgPool,
@@ -48,6 +51,34 @@ pub struct AppState {
     pub hub: Hub,
     pub ticket_store: TicketStore,
     pub media_tickets: MediaTicketStore,
+}
+
+/// Narrow view of [`AppState`] for the auth handlers (`register`, `login`,
+/// `refresh`, `logout`, `ws_ticket`, `forgot_password`, `reset_password`).
+/// These handlers only need the DB pool, the JWT secret, and the in-memory
+/// WS-ticket store -- they have no business reaching the WebSocket hub or
+/// the media-ticket store. Extracting via `State<AuthExtract>` instead of
+/// `State<Arc<AppState>>` makes those dependencies explicit at the
+/// signature level so reviewers can see at a glance that, e.g., `register`
+/// cannot accidentally start broadcasting on the hub.
+///
+/// All fields are cheap to clone: `PgPool` and `Arc<DashMap>` are both
+/// already `Arc`-internal, and `jwt_secret` is a short owned `String`.
+#[derive(Clone)]
+pub struct AuthExtract {
+    pub pool: PgPool,
+    pub jwt_secret: String,
+    pub ticket_store: TicketStore,
+}
+
+impl FromRef<Arc<AppState>> for AuthExtract {
+    fn from_ref(state: &Arc<AppState>) -> Self {
+        Self {
+            pool: state.pool.clone(),
+            jwt_secret: state.jwt_secret.clone(),
+            ticket_store: Arc::clone(&state.ticket_store),
+        }
+    }
 }
 
 pub fn create_router(state: Arc<AppState>, trusted_proxies: Vec<IpAddr>) -> Router {

@@ -139,17 +139,6 @@ async fn ensure_channel_in_group(
     Ok(channel)
 }
 
-async fn broadcast_to_group(state: &AppState, group_id: Uuid, event: &serde_json::Value) {
-    let member_ids = match db::groups::get_conversation_member_ids(&state.pool, group_id).await {
-        Ok(ids) => ids,
-        Err(_) => return,
-    };
-
-    if let Ok(json) = serde_json::to_string(event) {
-        state.hub.broadcast_json(&member_ids, &json, None);
-    }
-}
-
 /// GET /api/groups/:id/channels
 pub async fn list_channels(
     auth: AuthUser,
@@ -239,7 +228,7 @@ pub async fn create_channel(
         created_at: created.created_at,
     };
 
-    broadcast_to_group(
+    crate::ws::broadcast::broadcast_to_conversation(
         &state,
         group_id,
         &serde_json::json!({
@@ -301,7 +290,7 @@ pub async fn update_channel(
         created_at: updated.created_at,
     };
 
-    broadcast_to_group(
+    crate::ws::broadcast::broadcast_to_conversation(
         &state,
         group_id,
         &serde_json::json!({
@@ -333,7 +322,7 @@ pub async fn delete_channel(
         return Err(AppError::bad_request("Channel not found"));
     }
 
-    broadcast_to_group(
+    crate::ws::broadcast::broadcast_to_conversation(
         &state,
         group_id,
         &serde_json::json!({
@@ -404,7 +393,7 @@ pub async fn join_voice_channel(
         if old_channel_id == channel.id {
             continue;
         }
-        broadcast_to_group(
+        crate::ws::broadcast::broadcast_to_conversation(
             &state,
             group_id,
             &serde_json::json!({
@@ -417,7 +406,7 @@ pub async fn join_voice_channel(
         .await;
     }
 
-    broadcast_to_group(
+    crate::ws::broadcast::broadcast_to_conversation(
         &state,
         group_id,
         &serde_json::json!({
@@ -456,7 +445,7 @@ pub async fn leave_voice_channel(
         return Ok(Json(serde_json::json!({ "status": "already_left" })));
     }
 
-    broadcast_to_group(
+    crate::ws::broadcast::broadcast_to_conversation(
         &state,
         group_id,
         &serde_json::json!({
@@ -497,7 +486,7 @@ pub async fn update_voice_state(
     .db_ctx("update_voice_state")?
     .ok_or_else(|| AppError::bad_request("Voice session not found"))?;
 
-    broadcast_to_group(
+    crate::ws::broadcast::broadcast_to_conversation(
         &state,
         group_id,
         &serde_json::json!({

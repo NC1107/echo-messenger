@@ -370,9 +370,7 @@ class _ThreadViewPanelState extends ConsumerState<ThreadViewPanel> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: isMine
-                  ? context.accent.withValues(alpha: 0.1)
-                  : context.chatBg,
+              color: isMine ? context.sentBubble : context.recvBubble,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(

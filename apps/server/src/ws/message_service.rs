@@ -4,6 +4,7 @@ use axum::extract::ws::Message as WsMessage;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use chrono::{DateTime, Utc};
+use smallvec::SmallVec;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -864,7 +865,9 @@ pub(super) fn build_per_device_json(
 /// online later still replay the message (#829).
 pub(super) struct MemberDeliveryOutcome {
     pub delivered: bool,
-    pub accepted_device_ids: Vec<i32>,
+    /// SmallVec keeps the typical 1-4 device case heap-free; spills to
+    /// the heap automatically for users with more devices (#834).
+    pub accepted_device_ids: SmallVec<[i32; 4]>,
 }
 
 pub(super) fn deliver_to_member(
@@ -878,7 +881,7 @@ pub(super) fn deliver_to_member(
     {
         // Deliver to ALL recipient devices; OR-accumulate instead of short-circuiting
         // so a successful send to device #1 doesn't skip device #2.
-        let mut accepted = Vec::with_capacity(device_msgs.len());
+        let mut accepted: SmallVec<[i32; 4]> = SmallVec::with_capacity(device_msgs.len());
         for (did, msg) in device_msgs {
             // WsMessage::Text is Bytes-backed; clone is O(1).
             if hub.send_to_device(member_id, *did, msg.clone()) {
@@ -903,7 +906,7 @@ pub(super) fn deliver_to_member(
     }
     MemberDeliveryOutcome {
         delivered: false,
-        accepted_device_ids: Vec::new(),
+        accepted_device_ids: SmallVec::new(),
     }
 }
 

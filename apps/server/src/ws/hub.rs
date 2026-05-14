@@ -5,6 +5,7 @@
 
 use axum::extract::ws::Message as WsMessage;
 use dashmap::DashMap;
+use smallvec::SmallVec;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -112,13 +113,17 @@ impl Hub {
     /// Used by the fanout path (#829) so the per-device `message_deliveries`
     /// ledger can be populated even on the legacy/plaintext code path that
     /// doesn't carry a per-device frame map.
-    pub fn send_to_user_collecting(&self, user_id: &Uuid, msg: WsMessage) -> Vec<i32> {
+    pub fn send_to_user_collecting(&self, user_id: &Uuid, msg: WsMessage) -> SmallVec<[i32; 4]> {
         // Snapshot the device IDs while holding the read ref so we can
         // mutate `connections` (via `unregister`) without re-entrant locks
         // on the slow-consumer eviction path below.
-        let device_ids: Vec<(i32, WsTx)> = {
+        //
+        // SmallVec<[_; 4]> keeps the snapshot and accepted-IDs buffer on
+        // the stack for the typical 1-4 devices/user case so the hot
+        // fanout path stays heap-free (#834).
+        let device_ids: SmallVec<[(i32, WsTx); 4]> = {
             let Some(devices) = self.inner.connections.get(user_id) else {
-                return Vec::new();
+                return SmallVec::new();
             };
             devices
                 .iter()
@@ -126,7 +131,7 @@ impl Hub {
                 .collect()
         };
 
-        let mut accepted = Vec::with_capacity(device_ids.len());
+        let mut accepted: SmallVec<[i32; 4]> = SmallVec::with_capacity(device_ids.len());
         for (device_id, tx) in device_ids {
             if self.try_send_tracked(*user_id, device_id, &tx, msg.clone()) {
                 accepted.push(device_id);

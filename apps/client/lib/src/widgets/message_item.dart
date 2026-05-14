@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart'
@@ -163,7 +164,12 @@ class MessageItem extends StatefulWidget {
 
 class _MessageItemState extends State<MessageItem>
     with SingleTickerProviderStateMixin {
-  bool _isHovered = false;
+  // Hover state is intentionally a ValueNotifier rather than `setState`-driven
+  // state: scoping mouse-enter/exit to the three subtrees that actually depend
+  // on it (the row-tint Container, the inline timestamp, and the action
+  // overlay) avoids rebuilding the bubble — including any embedded media —
+  // every time the cursor crosses the row (#834, closes #872).
+  final _hoverNotifier = ValueNotifier<bool>(false);
   double _swipeDx = 0;
   bool _swipeTriggered = false;
   Timer? _expireTimer;
@@ -202,6 +208,7 @@ class _MessageItemState extends State<MessageItem>
   @override
   void dispose() {
     _swipeAnimController.dispose();
+    _hoverNotifier.dispose();
     _expireTimer?.cancel();
     super.dispose();
   }
@@ -1326,10 +1333,14 @@ class _MessageItemState extends State<MessageItem>
 
     // Compact / Plain layouts (#794) flow to the full chat-pane width like
     // Discord/Slack — no centered-bubble cap. Bubble layout keeps 520px so
-    // bubbles don't stretch awkwardly on wide windows.
+    // bubbles don't stretch awkwardly on wide windows; ultrawide (≥1600px)
+    // grows the cap up to 720px or 45% of viewport, whichever is smaller
+    // (#403).
+    final width = MediaQuery.of(context).size.width;
+    final maxBubble = width >= 1600 ? math.min(720.0, width * 0.45) : 520.0;
     final bubbleConstraints = widget.compactLayout
         ? const BoxConstraints()
-        : const BoxConstraints(maxWidth: 520);
+        : BoxConstraints(maxWidth: maxBubble);
 
     return Container(
       constraints: bubbleConstraints,
@@ -1511,9 +1522,13 @@ class _MessageItemState extends State<MessageItem>
       UIDensity.normal => 11.0,
       UIDensity.compact => 10.0,
     };
-    return AnimatedOpacity(
-      opacity: _isHovered ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 140),
+    return ValueListenableBuilder<bool>(
+      valueListenable: _hoverNotifier,
+      builder: (context, isHovered, child) => AnimatedOpacity(
+        opacity: isHovered ? 1.0 : 0.0,
+        duration: const Duration(milliseconds: 140),
+        child: child,
+      ),
       child: Padding(
         // Compact / plain layouts left-align every message regardless of
         // sender, so even "my" messages need the 36px avatar-gutter inset
@@ -1563,23 +1578,27 @@ class _MessageItemState extends State<MessageItem>
       // IntrinsicWidth forces the child subtree to size to its
       // own intrinsic content regardless of the parent's loose
       // constraints, giving us the snug action bar everywhere.
-      child: ExcludeSemantics(
-        excluding: !_isHovered,
-        child: IgnorePointer(
-          ignoring: !_isHovered,
-          child: AnimatedOpacity(
-            opacity: _isHovered ? 1 : 0,
-            duration: const Duration(milliseconds: 140),
-            curve: Curves.easeOut,
-            child: AnimatedSlide(
-              offset: _isHovered ? Offset.zero : style.hiddenSlideOffset,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _hoverNotifier,
+        builder: (context, isHovered, child) => ExcludeSemantics(
+          excluding: !isHovered,
+          child: IgnorePointer(
+            ignoring: !isHovered,
+            child: AnimatedOpacity(
+              opacity: isHovered ? 1 : 0,
               duration: const Duration(milliseconds: 140),
               curve: Curves.easeOut,
-              child: IntrinsicWidth(
-                child: _buildHoverActions(msg, isMine, mediaUrl: mediaUrl),
+              child: AnimatedSlide(
+                offset: isHovered ? Offset.zero : style.hiddenSlideOffset,
+                duration: const Duration(milliseconds: 140),
+                curve: Curves.easeOut,
+                child: child,
               ),
             ),
           ),
+        ),
+        child: IntrinsicWidth(
+          child: _buildHoverActions(msg, isMine, mediaUrl: mediaUrl),
         ),
       ),
     );
@@ -1765,8 +1784,8 @@ class _MessageItemState extends State<MessageItem>
     // 3px left accent rule. All colors come from _HoverStyleSpec so
     // they are fully theme-aware.
     final hoverSpec = _hoverStyle;
-    BoxDecoration? rowHoverDecoration() {
-      if (!_isHovered) return null;
+    BoxDecoration? rowHoverDecoration(bool isHovered) {
+      if (!isHovered) return null;
       if (widget._isPlain) {
         return BoxDecoration(
           color: hoverSpec.rowHoverColor,
@@ -1785,14 +1804,18 @@ class _MessageItemState extends State<MessageItem>
       );
     }
 
-    final messageWidget = Container(
-      padding: EdgeInsets.only(
-        left: 12,
-        right: 12,
-        top: topPad,
-        bottom: hasReactions ? 4 : 2,
+    final messageWidget = ValueListenableBuilder<bool>(
+      valueListenable: _hoverNotifier,
+      builder: (context, isHovered, child) => Container(
+        padding: EdgeInsets.only(
+          left: 12,
+          right: 12,
+          top: topPad,
+          bottom: hasReactions ? 4 : 2,
+        ),
+        decoration: rowHoverDecoration(isHovered),
+        child: child,
       ),
-      decoration: rowHoverDecoration(),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -1846,8 +1869,8 @@ class _MessageItemState extends State<MessageItem>
       duration: const Duration(milliseconds: 300),
       opacity: isSending ? 0.5 : 1.0,
       child: MouseRegion(
-        onEnter: (_) => setState(() => _isHovered = true),
-        onExit: (_) => setState(() => _isHovered = false),
+        onEnter: (_) => _hoverNotifier.value = true,
+        onExit: (_) => _hoverNotifier.value = false,
         child: Semantics(
           label: _composeMessageSemanticsLabel(msg, isMine),
           button: true,
@@ -1948,7 +1971,7 @@ class _HoverStyleSpec {
           containerRadius: 8,
           buttonSize: 33,
           buttonRadius: 5,
-          iconSize: 13,
+          iconSize: 16,
           iconOpacity: 0.82,
           overlayTop: -8,
           hiddenSlideOffset: const Offset(0, -0.1),
@@ -1971,7 +1994,7 @@ class _HoverStyleSpec {
           containerRadius: 10,
           buttonSize: 33,
           buttonRadius: 6,
-          iconSize: 12,
+          iconSize: 15,
           iconOpacity: 0.8,
           overlayTop: -6,
           hiddenSlideOffset: const Offset(0, -0.08),
@@ -1988,7 +2011,7 @@ class _HoverStyleSpec {
           containerRadius: 6,
           buttonSize: 33,
           buttonRadius: 4,
-          iconSize: 11,
+          iconSize: 14,
           iconOpacity: 0.75,
           overlayTop: -8,
           hiddenSlideOffset: const Offset(0, -0.12),

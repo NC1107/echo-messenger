@@ -11,6 +11,7 @@ import '../screens/user_profile_screen.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
 import 'avatar_utils.dart' show buildAvatar, resolveAvatarUrl;
+import 'conversation_item.dart' show presenceStatusDotColor;
 
 class MembersPanel extends ConsumerWidget {
   final Conversation? conversation;
@@ -29,10 +30,26 @@ class MembersPanel extends ConsumerWidget {
     }
 
     final members = conv.members;
-    final myUserId = ref.watch(authProvider).userId ?? '';
+    final auth = ref.watch(authProvider);
+    final myUserId = auth.userId ?? '';
+    final myPresenceStatus = auth.presenceStatus;
     final onlineUsers = ref.watch(
       websocketProvider.select((s) => s.onlineUsers),
     );
+    final presenceStatuses = ref.watch(
+      websocketProvider.select((s) => s.presenceStatuses),
+    );
+
+    // Resolve presence for any member: self is always online (server doesn't
+    // broadcast presence to self); others come from the WS-tracked maps.
+    ({bool isOnline, String status}) presenceFor(ConversationMember m) {
+      if (m.userId == myUserId) {
+        return (isOnline: true, status: myPresenceStatus);
+      }
+      final online = onlineUsers.contains(m.userId);
+      final status = presenceStatuses[m.userId] ?? 'online';
+      return (isOnline: online, status: status);
+    }
 
     // Determine if current user is owner or admin
     final myMember = members.where((m) => m.userId == myUserId).firstOrNull;
@@ -55,30 +72,20 @@ class MembersPanel extends ConsumerWidget {
           ..sort(sortByName);
 
     final items = <_MemberListItem>[];
-    if (owners.isNotEmpty) {
-      items.add(_MemberListItem.header('OWNER — ${owners.length}'));
-      for (final m in owners) {
+    void addGroup(String headerLabel, List<ConversationMember> roster) {
+      if (roster.isEmpty) return;
+      items.add(_MemberListItem.header(headerLabel));
+      for (final m in roster) {
+        final p = presenceFor(m);
         items.add(
-          _MemberListItem.member(m, isOnline: onlineUsers.contains(m.userId)),
+          _MemberListItem.member(m, isOnline: p.isOnline, status: p.status),
         );
       }
     }
-    if (admins.isNotEmpty) {
-      items.add(_MemberListItem.header('ADMIN — ${admins.length}'));
-      for (final m in admins) {
-        items.add(
-          _MemberListItem.member(m, isOnline: onlineUsers.contains(m.userId)),
-        );
-      }
-    }
-    if (regulars.isNotEmpty) {
-      items.add(_MemberListItem.header('MEMBERS — ${regulars.length}'));
-      for (final m in regulars) {
-        items.add(
-          _MemberListItem.member(m, isOnline: onlineUsers.contains(m.userId)),
-        );
-      }
-    }
+
+    addGroup('OWNER — ${owners.length}', owners);
+    addGroup('ADMIN — ${admins.length}', admins);
+    addGroup('MEMBERS — ${regulars.length}', regulars);
 
     return Container(
       width: 280,
@@ -134,6 +141,7 @@ class MembersPanel extends ConsumerWidget {
                   canRemove: canRemove && member.role != 'owner',
                   isMe: member.userId == myUserId,
                   isOnline: item.isOnline,
+                  presenceStatus: item.status,
                 );
               },
             ),
@@ -150,12 +158,14 @@ class _MemberListItem {
   final String? headerLabel;
   final ConversationMember? member;
   final bool isOnline;
+  final String status;
 
   const _MemberListItem._({
     required this.isHeader,
     this.headerLabel,
     this.member,
     this.isOnline = false,
+    this.status = 'offline',
   });
 
   factory _MemberListItem.header(String label) =>
@@ -164,7 +174,24 @@ class _MemberListItem {
   factory _MemberListItem.member(
     ConversationMember m, {
     required bool isOnline,
-  }) => _MemberListItem._(isHeader: false, member: m, isOnline: isOnline);
+    required String status,
+  }) => _MemberListItem._(
+    isHeader: false,
+    member: m,
+    isOnline: isOnline,
+    status: status,
+  );
+}
+
+/// Map a presence status to the activity-line label shown under the username.
+String _presenceLabel(String status, bool isOnline) {
+  if (!isOnline || status == 'invisible') return 'offline';
+  return switch (status) {
+    'online' => 'online',
+    'away' => 'away',
+    'dnd' => 'do not disturb',
+    _ => 'online',
+  };
 }
 
 class _MemberRow extends ConsumerStatefulWidget {
@@ -173,6 +200,7 @@ class _MemberRow extends ConsumerStatefulWidget {
   final bool canRemove;
   final bool isMe;
   final bool isOnline;
+  final String presenceStatus;
 
   const _MemberRow({
     required this.member,
@@ -180,6 +208,7 @@ class _MemberRow extends ConsumerStatefulWidget {
     required this.canRemove,
     required this.isMe,
     required this.isOnline,
+    required this.presenceStatus,
   });
 
   @override
@@ -338,29 +367,41 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                // Avatar
-                buildAvatar(
-                  name: member.username,
-                  radius: 14,
-                  imageUrl: resolveAvatarUrl(
-                    member.avatarUrl,
-                    ref.watch(serverUrlProvider),
-                  ),
+                // Avatar with presence dot overlaid (matches conversation list
+                // pattern in conversation_item.dart — #403).
+                Stack(
+                  children: [
+                    buildAvatar(
+                      name: member.username,
+                      radius: 14,
+                      imageUrl: resolveAvatarUrl(
+                        member.avatarUrl,
+                        ref.watch(serverUrlProvider),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: presenceStatusDotColor(
+                            context,
+                            widget.presenceStatus,
+                            widget.isOnline,
+                          ),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: context.sidebarBg,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                // Online dot
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: widget.isOnline
-                        ? EchoTheme.online
-                        : context.textMuted,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: context.sidebarBg, width: 1.5),
-                  ),
-                ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 // Username + role icon + activity line (slice 7).
                 Expanded(
                   child: Column(
@@ -403,7 +444,7 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
                         ],
                       ),
                       Text(
-                        widget.isOnline ? 'online' : 'away',
+                        _presenceLabel(widget.presenceStatus, widget.isOnline),
                         style: TextStyle(
                           color: context.textMuted,
                           fontSize: 11,

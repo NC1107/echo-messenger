@@ -8,14 +8,13 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 use crate::auth::middleware::AuthUser;
 use crate::auth::{jwt, password};
 use crate::db;
 use crate::error::{AppError, DbErrCtx, ErrorCode};
 
-use super::AppState;
+use super::AuthExtract;
 
 // ---------------------------------------------------------------------------
 // Refresh token cookie helpers
@@ -191,7 +190,7 @@ async fn issue_refresh_token(
 // ---------------------------------------------------------------------------
 
 pub async fn register(
-    State(state): State<Arc<AppState>>,
+    State(state): State<AuthExtract>,
     jar: CookieJar,
     Json(body): Json<AuthRequest>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -231,7 +230,7 @@ pub async fn register(
 // ---------------------------------------------------------------------------
 
 pub async fn login(
-    State(state): State<Arc<AppState>>,
+    State(state): State<AuthExtract>,
     jar: CookieJar,
     Json(body): Json<AuthRequest>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -293,7 +292,7 @@ pub async fn login(
 /// where both callers observed `revoked = false` in the old non-transactional
 /// code path.
 pub async fn refresh(
-    State(state): State<Arc<AppState>>,
+    State(state): State<AuthExtract>,
     jar: CookieJar,
     // `Result<Json<_>, _>` (not `Option<Json<_>>`): when the web client sends
     // `Content-Type: application/json` with a zero-length body, axum's
@@ -447,7 +446,7 @@ pub async fn refresh(
 // ---------------------------------------------------------------------------
 
 pub async fn logout(
-    State(state): State<Arc<AppState>>,
+    State(state): State<AuthExtract>,
     jar: CookieJar,
     auth_user: AuthUser,
 ) -> Result<impl IntoResponse, AppError> {
@@ -473,7 +472,7 @@ pub struct ForgotPasswordRequest {
 /// (Option A: admin-mediated, no SMTP infra yet -- #476). A follow-up issue
 /// should add SMTP support for production deployments.
 pub async fn forgot_password(
-    State(state): State<Arc<AppState>>,
+    State(state): State<AuthExtract>,
     Json(body): Json<ForgotPasswordRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     // Look up the user. Errors are swallowed so the response is identical
@@ -531,7 +530,7 @@ pub struct ResetPasswordRequest {
 }
 
 pub async fn reset_password(
-    State(state): State<Arc<AppState>>,
+    State(state): State<AuthExtract>,
     Json(body): Json<ResetPasswordRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     validate_password(&body.new_password)?;
@@ -589,7 +588,7 @@ pub struct WsTicketRequest {
 }
 
 pub async fn ws_ticket(
-    State(state): State<Arc<AppState>>,
+    State(state): State<AuthExtract>,
     auth_user: AuthUser,
     body: Option<Json<WsTicketRequest>>,
 ) -> Result<impl IntoResponse, AppError> {
