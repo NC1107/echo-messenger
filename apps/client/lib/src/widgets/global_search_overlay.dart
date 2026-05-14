@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -36,13 +37,21 @@ class GlobalSearchOverlay extends ConsumerStatefulWidget {
 class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
-  final _keyboardFocusNode = FocusNode();
   final _listScrollController = ScrollController();
   Timer? _debounce;
   _UniversalResults? _results;
   bool _loading = false;
   String _lastQuery = '';
-  int _selectedIndex = 0;
+
+  /// Selected index across the flattened activator list. Held as a
+  /// [ValueNotifier] so arrow-key updates only repaint the previously
+  /// selected and newly selected row instead of every visible tile.
+  final ValueNotifier<int> _selectedIndex = ValueNotifier<int>(0);
+
+  /// Per-result GlobalKeys so [Scrollable.ensureVisible] can resolve the
+  /// real (variable-height) bounds of the currently selected row.
+  /// Regenerated whenever the result set is replaced.
+  List<GlobalKey> _rowKeys = const <GlobalKey>[];
 
   @override
   void initState() {
@@ -54,8 +63,8 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
-    _keyboardFocusNode.dispose();
     _listScrollController.dispose();
+    _selectedIndex.dispose();
     _debounce?.cancel();
     super.dispose();
   }
@@ -84,47 +93,56 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     ];
   }
 
-  /// Approximate row height — sections vary in height but this is close
-  /// enough for "scroll to keep the selected row in view".
-  static const double _avgRowHeight = 56.0;
+  int get _totalResultCount {
+    final r = _results;
+    if (r == null) return 0;
+    return r.messages.length + r.contacts.length + r.groups.length;
+  }
 
+  /// Scroll the selected row into view. Uses the row's GlobalKey instead of
+  /// a fixed average row height so mixed-height tiles and section headers
+  /// don't drift the math.
   void _scrollToSelected() {
-    if (!_listScrollController.hasClients) return;
-    final offset = (_selectedIndex * _avgRowHeight).clamp(
-      0.0,
-      _listScrollController.position.maxScrollExtent,
-    );
-    _listScrollController.animateTo(
-      offset,
+    final i = _selectedIndex.value;
+    if (i < 0 || i >= _rowKeys.length) return;
+    final ctx = _rowKeys[i].currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
       duration: const Duration(milliseconds: 100),
       curve: Curves.easeOut,
+      alignment: 0.5,
     );
   }
 
-  void _handleKeyNavigation(KeyEvent event) {
-    if (event is! KeyDownEvent) return;
-    final activators = _flatResultActivators();
+  KeyEventResult _handleKeyNavigation(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.escape) {
       Navigator.of(context).pop();
-      return;
+      return KeyEventResult.handled;
     }
-    if (activators.isEmpty) return;
+    final total = _totalResultCount;
+    if (total == 0) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      setState(() {
-        _selectedIndex = (_selectedIndex + 1).clamp(0, activators.length - 1);
-      });
+      _selectedIndex.value = (_selectedIndex.value + 1).clamp(0, total - 1);
       _scrollToSelected();
+      return KeyEventResult.handled;
     } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-      setState(() {
-        _selectedIndex = (_selectedIndex - 1).clamp(0, activators.length - 1);
-      });
+      _selectedIndex.value = (_selectedIndex.value - 1).clamp(0, total - 1);
       _scrollToSelected();
+      return KeyEventResult.handled;
     } else if (event.logicalKey == LogicalKeyboardKey.enter ||
         event.logicalKey == LogicalKeyboardKey.numpadEnter) {
-      if (_selectedIndex < activators.length) {
-        activators[_selectedIndex]();
+      // Resolve the activator at Enter-time from the current result list so
+      // we never fire a stale closure captured before results changed.
+      final activators = _flatResultActivators();
+      final idx = _selectedIndex.value;
+      if (idx >= 0 && idx < activators.length) {
+        activators[idx]();
       }
+      return KeyEventResult.handled;
     }
+    return KeyEventResult.ignored;
   }
 
   void _onQueryChanged(String query) {
@@ -133,17 +151,36 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
       setState(() {
         _results = null;
         _loading = false;
-        _selectedIndex = 0;
+        _rowKeys = const <GlobalKey>[];
       });
+      _selectedIndex.value = 0;
       return;
     }
     setState(() {
       _loading = true;
-      _selectedIndex = 0;
     });
+    _selectedIndex.value = 0;
     _debounce = Timer(const Duration(milliseconds: 400), () {
       _search(query.trim());
     });
+  }
+
+  void _applyResults(_UniversalResults results) {
+    final total =
+        results.messages.length +
+        results.contacts.length +
+        results.groups.length;
+    setState(() {
+      _results = results;
+      _loading = false;
+      _rowKeys = List<GlobalKey>.generate(total, (_) => GlobalKey());
+    });
+    // Clamp after results changed: e.g. shrink 20→3 must not leave a stale
+    // index that no longer maps to any row.
+    _selectedIndex.value = _selectedIndex.value.clamp(
+      0,
+      math.max(0, total - 1),
+    );
   }
 
   Future<void> _search(String query) async {
@@ -215,26 +252,19 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
           );
         }).toList();
 
-        setState(() {
-          _results = _UniversalResults(
+        _applyResults(
+          _UniversalResults(
             messages: messages,
             contacts: contacts,
             groups: groups,
-          );
-          _loading = false;
-        });
+          ),
+        );
       } else {
-        setState(() {
-          _results = _UniversalResults.empty();
-          _loading = false;
-        });
+        _applyResults(_UniversalResults.empty());
       }
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        _results = _UniversalResults.empty();
-        _loading = false;
-      });
+      _applyResults(_UniversalResults.empty());
     }
   }
 
@@ -255,9 +285,13 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     final isMobile = Responsive.isMobile(context);
     final width = isMobile ? MediaQuery.of(context).size.width - 32 : 560.0;
 
-    return KeyboardListener(
-      focusNode: _keyboardFocusNode,
-      autofocus: true,
+    // A non-focusable Focus observer: it sees raw key events but never owns
+    // primary focus, so it can't steal the user's first keystroke from the
+    // TextField below.
+    return Focus(
+      canRequestFocus: false,
+      descendantsAreFocusable: true,
+      skipTraversal: true,
       onKeyEvent: _handleKeyNavigation,
       child: GestureDetector(
         onTap: () => Navigator.of(context).pop(),
@@ -330,15 +364,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
                         ),
                       ),
                     ),
-                    if (_hasResults)
-                      Flexible(
-                        child: ListView(
-                          controller: _listScrollController,
-                          shrinkWrap: true,
-                          padding: const EdgeInsets.only(bottom: 12),
-                          children: _buildResultRows(),
-                        ),
-                      ),
+                    if (_hasResults) Flexible(child: _buildResultsList()),
                     if (_showEmpty)
                       Padding(
                         padding: const EdgeInsets.all(24),
@@ -360,10 +386,23 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     );
   }
 
+  /// Build the flat row list (headers + tiles) and render it lazily via
+  /// [ListView.builder] so off-screen rows aren't materialized.
+  Widget _buildResultsList() {
+    final items = _flattenRows();
+    return ListView.builder(
+      controller: _listScrollController,
+      shrinkWrap: true,
+      padding: const EdgeInsets.only(bottom: 12),
+      itemCount: items.length,
+      itemBuilder: (context, index) => items[index],
+    );
+  }
+
   /// Assemble the rendered rows in the same order as
   /// [_flatResultActivators] so the selection index aligns with what
   /// the user sees and what Enter activates.
-  List<Widget> _buildResultRows() {
+  List<Widget> _flattenRows() {
     final rows = <Widget>[];
     final r = _results;
     if (r == null) return rows;
@@ -371,40 +410,52 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     if (r.messages.isNotEmpty) {
       rows.add(_buildSectionHeader('Messages'));
       for (final m in r.messages) {
-        rows.add(_buildMessageTile(m, globalIndex == _selectedIndex));
+        rows.add(_buildSelectableRow(globalIndex, _buildMessageTile(m)));
         globalIndex++;
       }
     }
     if (r.contacts.isNotEmpty) {
       rows.add(_buildSectionHeader('Contacts'));
       for (final c in r.contacts) {
-        rows.add(_buildContactTile(c, globalIndex == _selectedIndex));
+        rows.add(_buildSelectableRow(globalIndex, _buildContactTile(c)));
         globalIndex++;
       }
     }
     if (r.groups.isNotEmpty) {
       rows.add(_buildSectionHeader('Groups'));
       for (final g in r.groups) {
-        rows.add(_buildGroupTile(g, globalIndex == _selectedIndex));
+        rows.add(_buildSelectableRow(globalIndex, _buildGroupTile(g)));
         globalIndex++;
       }
     }
     return rows;
   }
 
-  /// Wraps a result tile in the keyboard-selection highlight.
-  Widget _selectionWrap({required bool isSelected, required Widget child}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isSelected ? context.accent.withValues(alpha: 0.1) : null,
-        border: Border(
-          left: BorderSide(
-            color: isSelected ? context.accent : Colors.transparent,
-            width: 2,
-          ),
-        ),
+  /// Wraps a result tile in a [ValueListenableBuilder] keyed on
+  /// [_selectedIndex] so only the previously-selected and newly-selected
+  /// tiles repaint when the user presses arrow keys.
+  Widget _buildSelectableRow(int index, Widget child) {
+    final key = (index < _rowKeys.length) ? _rowKeys[index] : null;
+    return KeyedSubtree(
+      key: key,
+      child: ValueListenableBuilder<int>(
+        valueListenable: _selectedIndex,
+        builder: (context, selected, _) {
+          final isSelected = selected == index;
+          return Container(
+            decoration: BoxDecoration(
+              color: isSelected ? context.accent.withValues(alpha: 0.1) : null,
+              border: Border(
+                left: BorderSide(
+                  color: isSelected ? context.accent : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+            ),
+            child: _SelectionSemantics(isSelected: isSelected, child: child),
+          );
+        },
       ),
-      child: child,
     );
   }
 
@@ -423,7 +474,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     );
   }
 
-  Widget _buildMessageTile(_MessageResult r, bool isSelected) {
+  Widget _buildMessageTile(_MessageResult r) {
     final preview = r.content.length > 120
         ? '${r.content.substring(0, 120)}...'
         : r.content;
@@ -443,196 +494,203 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
       }
     }
 
-    return _selectionWrap(
-      isSelected: isSelected,
-      child: Semantics(
-        label: 'message from ${r.senderUsername} in ${r.conversationName}',
-        button: true,
-        selected: isSelected,
-        child: InkWell(
-          onTap: () {
-            Navigator.of(context).pop();
-            widget.onResultTap(r.conversationId, r.messageId);
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+    return _RowSemanticsLabel(
+      label: 'message from ${r.senderUsername} in ${r.conversationName}',
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).pop();
+          widget.onResultTap(r.conversationId, r.messageId);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    r.senderUsername,
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'in ${r.conversationName}',
+                      style: TextStyle(color: context.textMuted, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Text(
+                    timeLabel,
+                    style: TextStyle(color: context.textMuted, fontSize: 11),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                preview,
+                style: TextStyle(color: context.textSecondary, fontSize: 13),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContactTile(_ContactResult r) {
+    final label = (r.displayName != null && r.displayName!.isNotEmpty)
+        ? r.displayName!
+        : r.username;
+
+    return _RowSemanticsLabel(
+      label: 'contact $label',
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).pop();
+          widget.onContactTap(r.userId, r.username);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: context.accent.withValues(alpha: 0.15),
+                backgroundImage: r.avatarUrl != null
+                    ? NetworkImage(r.avatarUrl!)
+                    : null,
+                child: r.avatarUrl == null
+                    ? Text(
+                        label.isNotEmpty ? label[0].toUpperCase() : '?',
+                        style: TextStyle(
+                          color: context.accent,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      r.senderUsername,
+                      label,
                       style: TextStyle(
                         color: context.textPrimary,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'in ${r.conversationName}',
+                    if (r.displayName != null && r.displayName!.isNotEmpty)
+                      Text(
+                        '@${r.username}',
                         style: TextStyle(
                           color: context.textMuted,
                           fontSize: 12,
                         ),
-                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chat_bubble_outline,
+                size: 16,
+                color: context.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupTile(_GroupResult r) {
+    return _RowSemanticsLabel(
+      label: 'group ${r.title}',
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).pop();
+          widget.onResultTap(r.conversationId, '');
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: context.accent.withValues(alpha: 0.15),
+                child: Text(
+                  r.title.isNotEmpty ? r.title[0].toUpperCase() : '#',
+                  style: TextStyle(
+                    color: context.accent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r.title,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     Text(
-                      timeLabel,
-                      style: TextStyle(color: context.textMuted, fontSize: 11),
+                      '${r.memberCount} member${r.memberCount == 1 ? '' : 's'}',
+                      style: TextStyle(color: context.textMuted, fontSize: 12),
                     ),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  preview,
-                  style: TextStyle(color: context.textSecondary, fontSize: 13),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+              ),
+              Icon(Icons.group_outlined, size: 16, color: context.textMuted),
+            ],
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildContactTile(_ContactResult r, bool isSelected) {
-    final label = (r.displayName != null && r.displayName!.isNotEmpty)
-        ? r.displayName!
-        : r.username;
+/// Selection-aware semantics wrapper. Sits inside the [ValueListenableBuilder]
+/// so the `selected` flag stays in sync with the keyboard cursor without
+/// forcing the underlying tile widgets to rebuild.
+class _SelectionSemantics extends StatelessWidget {
+  final bool isSelected;
+  final Widget child;
+  const _SelectionSemantics({required this.isSelected, required this.child});
 
-    return _selectionWrap(
-      isSelected: isSelected,
-      child: Semantics(
-        label: 'contact $label',
-        button: true,
-        selected: isSelected,
-        child: InkWell(
-          onTap: () {
-            Navigator.of(context).pop();
-            widget.onContactTap(r.userId, r.username);
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: context.accent.withValues(alpha: 0.15),
-                  backgroundImage: r.avatarUrl != null
-                      ? NetworkImage(r.avatarUrl!)
-                      : null,
-                  child: r.avatarUrl == null
-                      ? Text(
-                          label.isNotEmpty ? label[0].toUpperCase() : '?',
-                          style: TextStyle(
-                            color: context.accent,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        label,
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (r.displayName != null && r.displayName!.isNotEmpty)
-                        Text(
-                          '@${r.username}',
-                          style: TextStyle(
-                            color: context.textMuted,
-                            fontSize: 12,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.chat_bubble_outline,
-                  size: 16,
-                  color: context.textMuted,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(selected: isSelected, button: true, child: child);
   }
+}
 
-  Widget _buildGroupTile(_GroupResult r, bool isSelected) {
-    return _selectionWrap(
-      isSelected: isSelected,
-      child: Semantics(
-        label: 'group ${r.title}',
-        button: true,
-        selected: isSelected,
-        child: InkWell(
-          onTap: () {
-            Navigator.of(context).pop();
-            widget.onResultTap(r.conversationId, '');
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: context.accent.withValues(alpha: 0.15),
-                  child: Text(
-                    r.title.isNotEmpty ? r.title[0].toUpperCase() : '#',
-                    style: TextStyle(
-                      color: context.accent,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        r.title,
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        '${r.memberCount} member${r.memberCount == 1 ? '' : 's'}',
-                        style: TextStyle(
-                          color: context.textMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(Icons.group_outlined, size: 16, color: context.textMuted),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+/// Adds a stable accessibility label to a row tile. Kept separate from the
+/// selection semantics so we can rebuild the `selected` flag without
+/// recomputing the label string.
+class _RowSemanticsLabel extends StatelessWidget {
+  final String label;
+  final Widget child;
+  const _RowSemanticsLabel({required this.label, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(label: label, child: child);
   }
 }
 
