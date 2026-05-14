@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../providers/theme_provider.dart';
 import '../services/toast_service.dart';
 import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
@@ -86,8 +87,12 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     );
   }
 
+  /// Total number of wizard pages. Kept in sync with the `PageView` children
+  /// built below. Update both when adding/removing a step.
+  static const int _pageCount = 4;
+
   void _next() {
-    if (_currentPage < 2) {
+    if (_currentPage < _pageCount - 1) {
       _goToPage(_currentPage + 1);
     } else {
       _finish();
@@ -288,6 +293,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                       onPageChanged: (i) => setState(() => _currentPage = i),
                       children: [
                         _buildWelcomePage(context),
+                        _buildThemePage(context),
                         _buildEncryptionPage(context),
                         _buildContactPage(context),
                       ],
@@ -498,6 +504,93 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   }
 
   // ---------------------------------------------------------------------------
+  // Theme picker page
+  // ---------------------------------------------------------------------------
+
+  /// Data for one tappable theme card in the wizard. Mirrors the six themes
+  /// shown under Settings > Appearance so users see the same options.
+  static const List<({AppThemeSelection selection, String label, Color swatch})>
+  _wizardThemes = [
+    (
+      selection: AppThemeSelection.indigo,
+      label: 'Indigo',
+      swatch: Color(0xFF6366F1),
+    ),
+    (
+      selection: AppThemeSelection.graphite,
+      label: 'Graphite',
+      swatch: Color(0xFF14B8A6),
+    ),
+    (
+      selection: AppThemeSelection.ember,
+      label: 'Ember',
+      swatch: Color(0xFFF59E0B),
+    ),
+    (
+      selection: AppThemeSelection.paper,
+      label: 'Paper',
+      swatch: Color(0xFFF5EFE6),
+    ),
+    (
+      selection: AppThemeSelection.sakura,
+      label: 'Sakura',
+      swatch: Color(0xFFF8B4C4),
+    ),
+    (
+      selection: AppThemeSelection.highContrast,
+      label: 'High contrast',
+      swatch: Color(0xFF000000),
+    ),
+  ];
+
+  Widget _buildThemePage(BuildContext context) {
+    final current = ref.watch(themeProvider);
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          Text(
+            'Choose your look',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Pick a theme. You can change this any time in Settings.',
+            style: TextStyle(color: context.textSecondary, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            height: 120,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              itemCount: _wizardThemes.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (_, i) {
+                final t = _wizardThemes[i];
+                final isSelected = current == t.selection;
+                return _WizardThemeCard(
+                  label: t.label,
+                  swatch: t.swatch,
+                  isSelected: isSelected,
+                  onTap: () =>
+                      ref.read(themeProvider.notifier).setTheme(t.selection),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Encryption explanation page
   // ---------------------------------------------------------------------------
 
@@ -681,7 +774,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         // 200ms ease.
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(3, (i) {
+          children: List.generate(_pageCount, (i) {
             final isActive = i == _currentPage;
             return AnimatedContainer(
               duration: const Duration(milliseconds: 200),
@@ -702,7 +795,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         // Buttons
         Builder(
           builder: (_) {
-            final buttonLabel = _currentPage == 2 ? 'Get Started' : 'Next';
+            final isLast = _currentPage == _pageCount - 1;
+            final buttonLabel = isLast ? 'Get Started' : 'Next';
             return Row(
               children: [
                 // Back button (hidden on first page)
@@ -717,7 +811,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                     ),
                   ),
                 // Skip button (hidden on last page -- "Skip for now" is inline)
-                if (_currentPage < 2)
+                if (!isLast)
                   TextButton(
                     onPressed: _saving ? null : _skip,
                     child: Text(
@@ -786,6 +880,75 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
           vertical: 10,
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact theme card used by the onboarding wizard. Keeps the card private
+/// to this file rather than reaching into the private `_ThemeCard` widget in
+/// `appearance_section.dart`.
+class _WizardThemeCard extends StatelessWidget {
+  final String label;
+  final Color swatch;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _WizardThemeCard({
+    required this.label,
+    required this.swatch,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '$label theme',
+      button: true,
+      selected: isSelected,
+      child: SizedBox(
+        width: 96,
+        child: Material(
+          color: isSelected ? context.accentLight : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSelected ? context.accent : context.border,
+                  width: isSelected ? 2 : 1,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: swatch,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: isSelected ? context.accent : context.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
