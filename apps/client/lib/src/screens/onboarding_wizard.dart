@@ -14,6 +14,8 @@ import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/server_url_provider.dart';
 import '../providers/theme_provider.dart';
+import '../services/notification_service.dart';
+import '../services/sound_service.dart';
 import '../services/toast_service.dart';
 import '../services/upload_client.dart';
 import '../theme/echo_theme.dart';
@@ -51,6 +53,15 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   /// picker (see `conversation_panel.dart`). Defaults to "online".
   String _presenceStatus = 'online';
 
+  // Notifications wizard page state. Mirrors prefs used by Settings >
+  // Notifications so the user's choices here are picked up the same way.
+  bool _soundEnabled = true;
+  bool _mentionOnly = false;
+  bool _notificationPermissionGranted = false;
+  bool _requestingPermission = false;
+
+  static const String _kMentionOnlyPref = 'notifications_mention_only';
+
   // Page 3 -- Add contact
   final _contactUsernameController = TextEditingController();
   bool _sendingRequest = false;
@@ -62,6 +73,16 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   void initState() {
     super.initState();
     _timezoneController.text = DateTime.now().timeZoneName;
+    _loadNotificationPrefs();
+  }
+
+  Future<void> _loadNotificationPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _soundEnabled = SoundService().enabled;
+      _mentionOnly = prefs.getBool(_kMentionOnlyPref) ?? false;
+    });
   }
 
   @override
@@ -90,7 +111,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
   /// Total number of wizard pages. Kept in sync with the `PageView` children
   /// built below. Update both when adding/removing a step.
-  static const int _pageCount = 5;
+  static const int _pageCount = 6;
 
   void _next() {
     if (_currentPage < _pageCount - 1) {
@@ -296,6 +317,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                         _buildWelcomePage(context),
                         _buildThemePage(context),
                         _buildAccessibilityPage(context),
+                        _buildNotificationsPage(context),
                         _buildEncryptionPage(context),
                         _buildContactPage(context),
                       ],
@@ -682,6 +704,139 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             value: a11y.highContrast,
             onChanged: (v) =>
                 ref.read(accessibilityProvider.notifier).setHighContrast(v),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Notifications prefs page
+  // ---------------------------------------------------------------------------
+
+  Future<void> _setSoundEnabled(bool value) async {
+    setState(() => _soundEnabled = value);
+    SoundService().enabled = value;
+  }
+
+  Future<void> _setMentionOnly(bool value) async {
+    setState(() => _mentionOnly = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kMentionOnlyPref, value);
+  }
+
+  Future<void> _grantNotificationPermission() async {
+    setState(() => _requestingPermission = true);
+    try {
+      final granted = await NotificationService().promptPermission();
+      if (mounted) {
+        setState(() {
+          _notificationPermissionGranted = granted;
+          _requestingPermission = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[Onboarding] permission request failed: $e');
+      if (mounted) setState(() => _requestingPermission = false);
+    }
+  }
+
+  Widget _buildNotificationsPage(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 8),
+          Text(
+            'Stay in the loop',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Pick how Echo should ping you. Adjust later under '
+            'Settings > Notifications.',
+            style: TextStyle(color: context.textSecondary, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              'Notification sounds',
+              style: TextStyle(color: context.textPrimary, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Play a tone for new messages.',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+            value: _soundEnabled,
+            onChanged: _setSoundEnabled,
+          ),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              'Only notify on mentions',
+              style: TextStyle(color: context.textPrimary, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Stay quiet unless someone @mentions you.',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+            value: _mentionOnly,
+            onChanged: _setMentionOnly,
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: context.border),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  _notificationPermissionGranted
+                      ? Icons.check_circle_outline
+                      : Icons.notifications_off_outlined,
+                  size: 18,
+                  color: _notificationPermissionGranted
+                      ? EchoTheme.online
+                      : context.textMuted,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _notificationPermissionGranted
+                        ? 'OS notifications enabled.'
+                        : 'OS notifications are off.',
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                if (!_notificationPermissionGranted)
+                  TextButton(
+                    onPressed: _requestingPermission
+                        ? null
+                        : _grantNotificationPermission,
+                    child: _requestingPermission
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Grant'),
+                  ),
+              ],
+            ),
           ),
         ],
       ),
