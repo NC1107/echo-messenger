@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../providers/accessibility_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/server_url_provider.dart';
@@ -89,7 +90,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
   /// Total number of wizard pages. Kept in sync with the `PageView` children
   /// built below. Update both when adding/removing a step.
-  static const int _pageCount = 4;
+  static const int _pageCount = 5;
 
   void _next() {
     if (_currentPage < _pageCount - 1) {
@@ -294,6 +295,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                       children: [
                         _buildWelcomePage(context),
                         _buildThemePage(context),
+                        _buildAccessibilityPage(context),
                         _buildEncryptionPage(context),
                         _buildContactPage(context),
                       ],
@@ -584,6 +586,102 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                 );
               },
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Accessibility prefs page
+  // ---------------------------------------------------------------------------
+
+  Widget _buildAccessibilityPage(BuildContext context) {
+    final a11y = ref.watch(accessibilityProvider);
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 8),
+          Text(
+            'Make Echo comfortable',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Tune text size and motion. You can change these later in '
+            'Settings > Accessibility.',
+            style: TextStyle(color: context.textSecondary, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Text size',
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          Slider(
+            value: a11y.fontScale.clamp(0.8, 1.4),
+            min: 0.8,
+            max: 1.4,
+            divisions: 6,
+            label: '${(a11y.fontScale * 100).round()}%',
+            onChanged: (v) =>
+                ref.read(accessibilityProvider.notifier).setFontScale(v),
+          ),
+          // Live preview so the slider has visible feedback.
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: context.border),
+            ),
+            child: Text(
+              'The quick brown fox jumps over the lazy dog.',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 14 * a11y.fontScale,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              'Reduce motion',
+              style: TextStyle(color: context.textPrimary, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Limits animations and transitions.',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+            value: a11y.reducedMotion,
+            onChanged: (v) =>
+                ref.read(accessibilityProvider.notifier).setReducedMotion(v),
+          ),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              'High contrast',
+              style: TextStyle(color: context.textPrimary, fontSize: 14),
+            ),
+            subtitle: Text(
+              'Boosts text and border contrast on top of your chosen theme.',
+              style: TextStyle(color: context.textMuted, fontSize: 12),
+            ),
+            value: a11y.highContrast,
+            onChanged: (v) =>
+                ref.read(accessibilityProvider.notifier).setHighContrast(v),
           ),
         ],
       ),
