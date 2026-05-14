@@ -54,7 +54,7 @@ class ChatHeaderBar extends ConsumerWidget {
 
     return Container(
       height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: context.sidebarBg,
         border: Border(bottom: BorderSide(color: context.border, width: 1)),
