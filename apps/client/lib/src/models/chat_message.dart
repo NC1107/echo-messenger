@@ -91,11 +91,11 @@ class ChatMessage {
             .toList() ??
         [];
 
-    final id = (json['message_id'] ?? json['id'] ?? '').toString();
-    var fromUserId = (json['from_user_id'] ?? json['sender_id'] ?? '')
+    final id = (json['id'] ?? json['message_id'] ?? '').toString();
+    var fromUserId = (json['sender_id'] ?? json['from_user_id'] ?? '')
         .toString();
     var fromUsername =
-        (json['from_username'] ?? json['sender_username'] ?? 'Unknown')
+        (json['sender_username'] ?? json['from_username'] ?? 'Unknown')
             .toString();
     final conversationId = (json['conversation_id'] ?? '').toString();
     final channelId = (json['channel_id'] as String?)?.trim();

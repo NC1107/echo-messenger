@@ -103,14 +103,11 @@ pub struct LastMessageInfo {
 #[derive(Debug, Serialize)]
 pub struct MessageDto {
     pub id: Uuid,
-    pub message_id: Uuid,
     pub conversation_id: Uuid,
     pub channel_id: Option<Uuid>,
     pub sender_id: Uuid,
-    pub from_user_id: Uuid,
     pub from_device_id: Option<i32>,
     pub sender_username: String,
-    pub from_username: String,
     pub content: String,
     pub created_at: DateTime<Utc>,
     pub edited_at: Option<DateTime<Utc>>,
@@ -129,14 +126,11 @@ impl From<db::messages::MessageWithSender> for MessageDto {
     fn from(m: db::messages::MessageWithSender) -> Self {
         Self {
             id: m.id,
-            message_id: m.id,
             conversation_id: m.conversation_id,
             channel_id: m.channel_id,
             sender_id: m.sender_id,
-            from_user_id: m.sender_id,
             from_device_id: m.sender_device_id,
-            sender_username: m.sender_username.clone(),
-            from_username: m.sender_username,
+            sender_username: m.sender_username,
             content: m.content,
             created_at: m.created_at,
             edited_at: m.edited_at,
