@@ -3,9 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/conversation.dart';
+import '../providers/auth_provider.dart';
 import '../providers/conversations_provider.dart';
+import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
 import '../utils/fuzzy_score.dart';
+import 'avatar_utils.dart';
 
 /// A Ctrl+K quick-switcher overlay for searching conversations, contacts,
 /// and groups. Shows as a centered floating card with a search input.
@@ -94,7 +97,18 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
 
   /// Build a single result row in the conversation list.
   Widget _buildResultItem(Conversation conv, bool isSelected) {
-    final title = conv.name ?? conv.id;
+    final myUserId = ref.watch(authProvider).userId ?? '';
+    final serverUrl = ref.watch(serverUrlProvider);
+    final title = conv.displayName(myUserId);
+    // Pick the same avatar source the sidebar uses: group icon for groups,
+    // peer's avatar for DMs (#403).
+    final String? rawAvatar = conv.isGroup
+        ? conv.iconUrl
+        : conv.members
+              .where((m) => m.userId != myUserId)
+              .map((m) => m.avatarUrl)
+              .firstWhere((u) => u != null && u.isNotEmpty, orElse: () => null);
+    final imageUrl = resolveAvatarUrl(rawAvatar, serverUrl);
     return Container(
       height: _itemHeight,
       decoration: isSelected
@@ -118,10 +132,17 @@ class _QuickSwitcherOverlayState extends ConsumerState<QuickSwitcherOverlay> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 children: [
-                  Icon(
-                    conv.isGroup ? Icons.group : Icons.person,
-                    size: 20,
-                    color: context.textSecondary,
+                  buildAvatar(
+                    name: title,
+                    radius: 14,
+                    imageUrl: imageUrl,
+                    fallbackIcon: conv.isGroup
+                        ? Icon(
+                            Icons.group,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.onPrimary,
+                          )
+                        : null,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
