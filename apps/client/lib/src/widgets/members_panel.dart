@@ -338,29 +338,39 @@ class _MemberRowState extends ConsumerState<_MemberRow> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                // Avatar
-                buildAvatar(
-                  name: member.username,
-                  radius: 14,
-                  imageUrl: resolveAvatarUrl(
-                    member.avatarUrl,
-                    ref.watch(serverUrlProvider),
-                  ),
+                // Avatar with presence dot overlaid (matches conversation list
+                // pattern in conversation_item.dart — #403).
+                Stack(
+                  children: [
+                    buildAvatar(
+                      name: member.username,
+                      radius: 14,
+                      imageUrl: resolveAvatarUrl(
+                        member.avatarUrl,
+                        ref.watch(serverUrlProvider),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: widget.isOnline
+                              ? EchoTheme.online
+                              : context.textMuted,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: context.sidebarBg,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                // Online dot
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: widget.isOnline
-                        ? EchoTheme.online
-                        : context.textMuted,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: context.sidebarBg, width: 1.5),
-                  ),
-                ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 // Username + role icon + activity line (slice 7).
                 Expanded(
                   child: Column(
