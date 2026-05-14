@@ -129,33 +129,36 @@ void main() {
       expect(msg.isMine, isTrue);
     });
 
-    test('REST-style canonical field names take precedence over WS aliases', () {
-      // #834: MessageDto no longer carries the legacy `message_id`,
-      // `from_user_id`, `from_username` aliases. WS events still use
-      // them, but in any blob that carries both the canonical REST keys
-      // are the authoritative source — so when both are present (e.g.
-      // a relay payload that gets reused as a history entry), REST
-      // wins.
-      final json = {
-        'message_id': 'ws-id',
-        'id': 'rest-id',
-        'from_user_id': 'ws-user',
-        'sender_id': 'rest-user',
-        'from_username': 'ws-name',
-        'sender_username': 'rest-name',
-        'conversation_id': 'conv-1',
-        'content': 'test',
-        'timestamp': '2026-03-31T15:00:00Z',
-        'created_at': '2026-03-31T14:00:00Z',
-      };
+    test(
+      'REST-style canonical field names take precedence over WS aliases',
+      () {
+        // #834: MessageDto no longer carries the legacy `message_id`,
+        // `from_user_id`, `from_username` aliases. WS events still use
+        // them, but in any blob that carries both the canonical REST keys
+        // are the authoritative source — so when both are present (e.g.
+        // a relay payload that gets reused as a history entry), REST
+        // wins.
+        final json = {
+          'message_id': 'ws-id',
+          'id': 'rest-id',
+          'from_user_id': 'ws-user',
+          'sender_id': 'rest-user',
+          'from_username': 'ws-name',
+          'sender_username': 'rest-name',
+          'conversation_id': 'conv-1',
+          'content': 'test',
+          'timestamp': '2026-03-31T15:00:00Z',
+          'created_at': '2026-03-31T14:00:00Z',
+        };
 
-      final msg = ChatMessage.fromServerJson(json, 'other');
+        final msg = ChatMessage.fromServerJson(json, 'other');
 
-      expect(msg.id, 'rest-id');
-      expect(msg.fromUserId, 'rest-user');
-      expect(msg.fromUsername, 'rest-name');
-      expect(msg.timestamp, '2026-03-31T15:00:00Z');
-    });
+        expect(msg.id, 'rest-id');
+        expect(msg.fromUserId, 'rest-user');
+        expect(msg.fromUsername, 'rest-name');
+        expect(msg.timestamp, '2026-03-31T15:00:00Z');
+      },
+    );
 
     test('copyWith to decrypt-failure preserves identity fields', () {
       const msg = ChatMessage(
