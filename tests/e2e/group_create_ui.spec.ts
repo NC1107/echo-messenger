@@ -137,7 +137,7 @@ test.describe('Group Creation UI Flow', () => {
     await setupContacts(aliceData.access_token, BOB, bobData.access_token);
   });
 
-  test.fixme('alice can create a group with bob via UI (no Create Group button — see #782)', async ({ browser }) => {
+  test('alice can create a group with bob via UI', async ({ browser }) => {
     test.setTimeout(120_000);
     console.log('\n--- Group creation flow ---');
 
@@ -150,25 +150,17 @@ test.describe('Group Creation UI Flow', () => {
     await login(page, ALICE, PW);
     await ss(page, '01-alice-home');
 
-    // Step 2: Navigate to Groups tab to find the "New Group" button
-    // The "New Group" icon button has tooltip 'New Group' which Flutter
-    // exposes as an accessible name.
-    const newGroupBtn = page.getByRole('button', { name: /new group/i });
-    // If the button is directly visible in the sidebar header, click it.
-    // Otherwise, navigate to the Groups tab first.
-    if (!(await newGroupBtn.isVisible({ timeout: 3000 }).catch(() => false))) {
-      const groupsTab = page.getByRole('button', { name: /groups tab/i });
-      if (await groupsTab.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await groupsTab.click();
-        await page.waitForTimeout(1000);
-      }
-    }
+    // Step 2: Open the New-action menu, then pick "New Group".
+    // The trigger is the "New" IconButton (tooltip "New") in the sidebar
+    // header — clicking it opens a popup menu containing "New Group".
+    const newTrigger = page.getByRole('button', { name: /^new$/i });
+    await expect(newTrigger).toBeVisible({ timeout: 5000 });
+    await newTrigger.click();
+    await page.waitForTimeout(500);
 
-    // The "New Group" button should now be visible (either in header or
-    // in the empty-state "Create Group" button).
-    const createGroupBtn = page.getByRole('button', { name: /new group|create group/i }).first();
-    await expect(createGroupBtn).toBeVisible({ timeout: 5000 });
-    await createGroupBtn.click();
+    const newGroupItem = page.getByRole('menuitem', { name: /new group/i });
+    await expect(newGroupItem).toBeVisible({ timeout: 5000 });
+    await newGroupItem.click();
     await page.waitForTimeout(2000);
     await ss(page, '02-create-group-screen');
 
