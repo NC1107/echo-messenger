@@ -24,7 +24,7 @@ class AccessibilitySection extends ConsumerWidget {
 
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 600),
+        constraints: const BoxConstraints(maxWidth: 900),
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
@@ -45,6 +45,109 @@ class AccessibilitySection extends ConsumerWidget {
                 height: 1.5,
               ),
             ),
+
+            const SizedBox(height: 20),
+
+            // ── Live Preview ─────────────────────────────────────────────
+            // Reflects the font-scale and high-contrast settings below in
+            // real time so users can see effects without leaving Settings.
+            Text(
+              'Preview',
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            MediaQuery.withClampedTextScaling(
+              minScaleFactor: state.fontScale,
+              maxScaleFactor: state.fontScale,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: context.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Theme.of(context).dividerColor),
+                ),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: context.accent,
+                          child: Text(
+                            'SP',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onPrimary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Sam Patel',
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: context.accent.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'ADMIN',
+                            style: TextStyle(
+                              color: context.accent,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: context.accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'End-to-end encrypted. Self-hosted. '
+                        'Your messages stay yours.',
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 14,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '7:38 PM',
+                      style: TextStyle(color: context.textMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
             const Divider(height: 32),
 
             // ── Reduce Motion ─────────────────────────────────────────────

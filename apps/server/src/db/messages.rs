@@ -579,6 +579,12 @@ pub async fn search_messages(
     query: &str,
     limit: i64,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
+    // reply_count is computed via a single aggregating subquery joined once
+    // (O(N+M)) rather than the prior LATERAL correlated subquery that
+    // re-executed per row (O(N*M)). The partial index on
+    // `(reply_to_id) WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL`
+    // (added in an earlier migration) backs the GROUP BY scan (#834
+    // finding 8).
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \
@@ -943,6 +949,12 @@ pub async fn get_thread_replies(
     before: Option<chrono::DateTime<chrono::Utc>>,
     limit: i64,
 ) -> Result<Vec<MessageWithSender>, sqlx::Error> {
+    // reply_count is computed via a single aggregating subquery joined once
+    // (O(N+M)) rather than the prior LATERAL correlated subquery that
+    // re-executed per row (O(N*M)). The partial index on
+    // `(reply_to_id) WHERE reply_to_id IS NOT NULL AND deleted_at IS NULL`
+    // (added in an earlier migration) backs the GROUP BY scan (#834
+    // finding 8).
     sqlx::query_as::<_, MessageWithSender>(
         "SELECT m.id, m.conversation_id, m.channel_id, m.sender_id, \
                 m.sender_device_id, \

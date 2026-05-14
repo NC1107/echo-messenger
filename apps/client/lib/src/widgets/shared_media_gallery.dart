@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/chat_message.dart';
 import '../providers/auth_provider.dart';
@@ -82,6 +83,7 @@ class SharedMediaGallery extends ConsumerWidget {
               authToken: authToken,
               mediaTicket: mediaTicket,
               emptyLabel: 'No videos shared yet',
+              isVideo: true,
             ),
             _FileList(
               items: mediaItems.where(_isFile).toList(),
@@ -116,12 +118,19 @@ class _MediaItem {
 }
 
 /// Grid of image/video thumbnails.
+///
+/// When [isVideo] is true, each tile fetches the server-generated first-frame
+/// thumbnail from `<rawUrl>/thumb` instead of trying to render the raw video
+/// file as an image (which always failed and showed the placeholder, #735).
+/// Video tiles also get a play-icon overlay and open the video externally on
+/// tap rather than launching the in-app image gallery.
 class _MediaGrid extends StatelessWidget {
   final List<_MediaItem> items;
   final String serverUrl;
   final String authToken;
   final String? mediaTicket;
   final String emptyLabel;
+  final bool isVideo;
 
   const _MediaGrid({
     required this.items,
@@ -129,6 +138,7 @@ class _MediaGrid extends StatelessWidget {
     required this.authToken,
     this.mediaTicket,
     required this.emptyLabel,
+    this.isVideo = false,
   });
 
   @override
@@ -139,7 +149,7 @@ class _MediaGrid extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.image_outlined,
+              isVideo ? Icons.videocam_outlined : Icons.image_outlined,
               size: 48,
               color: context.textMuted.withValues(alpha: 0.4),
             ),
@@ -153,18 +163,32 @@ class _MediaGrid extends StatelessWidget {
       );
     }
 
-    // Pre-resolve the full list of image URLs once so every tile knows its
-    // index within the gallery, and can hand the full ordered list to the
-    // multi-image viewer for swipe navigation.
-    final resolvedUrls = [
+    // For images, the resolved URL points to the file itself. For videos, the
+    // file URL would be the .mp4/.webm bytes, so we resolve `<rawUrl>/thumb`
+    // for the tile preview instead. Building the `/thumb` path off the raw URL
+    // (before resolveMediaUrl appends any `?ticket=`) keeps the query string
+    // at the very end of the URL — matches the InlineVideoPlayer fix in #411.
+    final resolvedThumbUrls = [
       for (final item in items)
         resolveMediaUrl(
-          item.rawUrl,
+          isVideo ? '${item.rawUrl}/thumb' : item.rawUrl,
           serverUrl: serverUrl,
           authToken: authToken,
           mediaTicket: mediaTicket,
         ),
     ];
+    // For video tap-to-open we still want the raw file URL, not /thumb.
+    final resolvedFileUrls = isVideo
+        ? [
+            for (final item in items)
+              resolveMediaUrl(
+                item.rawUrl,
+                serverUrl: serverUrl,
+                authToken: authToken,
+                mediaTicket: mediaTicket,
+              ),
+          ]
+        : resolvedThumbUrls;
     final headers = mediaHeaders(authToken: authToken);
 
     return GridView.builder(
@@ -176,37 +200,72 @@ class _MediaGrid extends StatelessWidget {
       ),
       itemCount: items.length,
       itemBuilder: (context, index) {
-        final resolvedUrl = resolvedUrls[index];
+        final thumbUrl = resolvedThumbUrls[index];
+        final fileUrl = resolvedFileUrls[index];
 
         return Semantics(
-          label: 'view media',
+          label: isVideo ? 'play video' : 'view media',
           button: true,
           child: GestureDetector(
-            onTap: () => showImageGallery(
-              context: context,
-              imageUrls: resolvedUrls,
-              initialIndex: index,
-              headers: headers,
-            ),
+            onTap: () {
+              if (isVideo) {
+                final uri = Uri.tryParse(fileUrl);
+                if (uri != null) {
+                  launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              } else {
+                showImageGallery(
+                  context: context,
+                  imageUrls: resolvedThumbUrls,
+                  initialIndex: index,
+                  headers: headers,
+                );
+              }
+            },
             child: ClipRRect(
               borderRadius: BorderRadius.circular(2),
-              child: resolvedUrl.endsWith('.gif')
-                  ? Image.network(
-                      resolvedUrl,
-                      headers: headers,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                      errorBuilder: (_, _, _) => _placeholder(context),
-                    )
-                  : CachedNetworkImage(
-                      imageUrl: resolvedUrl,
-                      cacheKey: stableMediaCacheKey(resolvedUrl),
-                      cacheManager: chatMediaCacheManager,
-                      httpHeaders: headers,
-                      fit: BoxFit.cover,
-                      placeholder: (_, _) => _placeholder(context),
-                      errorWidget: (_, _, _) => _placeholder(context),
+              child: Stack(
+                fit: StackFit.passthrough,
+                children: [
+                  thumbUrl.endsWith('.gif')
+                      ? Image.network(
+                          thumbUrl,
+                          headers: headers,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, _, _) =>
+                              _placeholder(context, isVideo: isVideo),
+                        )
+                      : CachedNetworkImage(
+                          imageUrl: thumbUrl,
+                          cacheKey: stableMediaCacheKey(thumbUrl),
+                          cacheManager: chatMediaCacheManager,
+                          httpHeaders: headers,
+                          fit: BoxFit.cover,
+                          placeholder: (_, _) =>
+                              _placeholder(context, isVideo: isVideo),
+                          errorWidget: (_, _, _) =>
+                              _placeholder(context, isVideo: isVideo),
+                        ),
+                  if (isVideo)
+                    const Center(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Color(0x80000000),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.all(6),
+                          child: Icon(
+                            Icons.play_arrow,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                      ),
                     ),
+                ],
+              ),
             ),
           ),
         );
@@ -214,10 +273,14 @@ class _MediaGrid extends StatelessWidget {
     );
   }
 
-  Widget _placeholder(BuildContext context) {
+  Widget _placeholder(BuildContext context, {bool isVideo = false}) {
     return Container(
       color: context.surface,
-      child: Icon(Icons.image_outlined, color: context.textMuted, size: 24),
+      child: Icon(
+        isVideo ? Icons.videocam_outlined : Icons.image_outlined,
+        color: context.textMuted,
+        size: 24,
+      ),
     );
   }
 }

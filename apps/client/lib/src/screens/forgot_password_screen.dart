@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 
 import '../providers/server_url_provider.dart';
 import '../theme/echo_theme.dart';
+import '../widgets/auth/auth_layout.dart';
 import '../widgets/auth/auth_scaffold_chrome.dart';
 import '../widgets/echo_logo_icon.dart';
 
@@ -78,16 +79,11 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
       body: Stack(
         children: [
           const AuthBackground(),
-          SafeArea(
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 56),
-                  child: _submitted ? _buildSuccess(context) : _buildForm(),
-                ),
-              ),
-            ),
+          AuthLayout(
+            tagline: 'Reset your password.',
+            formTitle: 'Reset your password.',
+            compactHeader: _buildHeader(),
+            formColumn: _submitted ? _buildSuccess(context) : _buildForm(),
           ),
         ],
       ),
@@ -100,8 +96,6 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _buildHeader(),
-          const SizedBox(height: 32),
           TextFormField(
             controller: _usernameController,
             autofillHints: const [AutofillHints.username],
@@ -164,8 +158,6 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildHeader(),
-        const SizedBox(height: 32),
         Icon(
           Icons.mark_email_read_outlined,
           size: 48,
