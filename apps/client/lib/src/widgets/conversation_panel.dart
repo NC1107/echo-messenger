@@ -46,6 +46,10 @@ class ConversationPanel extends ConsumerStatefulWidget {
   final VoidCallback? onGlobalSearch;
   final VoidCallback? onSavedMessages;
 
+  /// Opens the keyboard-shortcuts overlay (also bindable to Ctrl+/).
+  /// When null, the help icon in the header is hidden.
+  final VoidCallback? onShowKeyboardShortcuts;
+
   /// Opens a QR-scan flow to add a contact. When null, the QR icon in the
   /// header is hidden.
   final VoidCallback? onScanQr;
@@ -72,6 +76,7 @@ class ConversationPanel extends ConsumerStatefulWidget {
     this.onShowContacts,
     this.onGlobalSearch,
     this.onSavedMessages,
+    this.onShowKeyboardShortcuts,
     this.onScanQr,
     this.onMessageContact,
     this.externalSearchFocusNode,
@@ -640,6 +645,17 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
             ),
           const SizedBox(width: 2),
           _buildNewActionMenu(context, pendingCount),
+          if (!isMobile && widget.onShowKeyboardShortcuts != null) ...[
+            const SizedBox(width: 2),
+            IconButton(
+              icon: const Icon(Icons.help_outline, size: 18),
+              color: context.textSecondary,
+              tooltip: 'Keyboard shortcuts (Ctrl+/)',
+              onPressed: widget.onShowKeyboardShortcuts,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            ),
+          ],
           if (!isMobile && widget.onGlobalSearch != null) ...[
             const SizedBox(width: 2),
             IconButton(
@@ -1508,12 +1524,23 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
     }
 
     // No conversations yet — show onboarding guidance.
+    final isMobile = MediaQuery.sizeOf(context).width < 600;
     return EmptyState(
       icon: Icons.forum_outlined,
       title: 'No conversations yet',
       body: 'Start a new chat or wait for friends to message you.',
       ctaLabel: 'Start a new chat',
       onCta: widget.onNewChat,
+      footer: (!isMobile && widget.onShowKeyboardShortcuts != null)
+          ? Text(
+              'Keyboard shortcuts (Ctrl+/)',
+              style: TextStyle(
+                color: context.textMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            )
+          : null,
     );
   }
 

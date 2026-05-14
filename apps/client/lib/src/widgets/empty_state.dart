@@ -24,6 +24,10 @@ class EmptyState extends StatelessWidget {
   /// Invoked when the CTA button is pressed.
   final VoidCallback? onCta;
 
+  /// Optional widget rendered below the CTA. Useful for secondary hints
+  /// (e.g. keyboard-shortcut tip) without competing with the primary CTA.
+  final Widget? footer;
+
   const EmptyState({
     super.key,
     required this.icon,
@@ -31,6 +35,7 @@ class EmptyState extends StatelessWidget {
     required this.body,
     this.ctaLabel,
     this.onCta,
+    this.footer,
   });
 
   @override
@@ -77,6 +82,7 @@ class EmptyState extends StatelessWidget {
               const SizedBox(height: 16),
               FilledButton.tonal(onPressed: onCta, child: Text(ctaLabel!)),
             ],
+            if (footer != null) ...[const SizedBox(height: 20), footer!],
           ],
         ),
       ),

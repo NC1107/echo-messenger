@@ -681,6 +681,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       onSettings: _openSettings,
       onShowContacts: _openContacts,
       onGlobalSearch: _showGlobalSearch,
+      onShowKeyboardShortcuts: _showKeyboardShortcuts,
       onMessageContact: _messageContact,
       externalSearchFocusNode: _searchFocusNode,
       onNavigateToLounge: () => setState(() {
