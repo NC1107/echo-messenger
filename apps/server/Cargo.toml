@@ -39,6 +39,10 @@ tokio-util = { version = "0.7", features = ["io"] }
 
 # Connection hub
 dashmap = "6"
+# Stack-allocated small vec for hot fanout buffers (#834). Most users
+# have <=4 active devices so SmallVec<[T; 4]> keeps Hub::send_to_user
+# and its collecting variant free of per-message heap allocations.
+smallvec = "1"
 
 # Config
 dotenvy = "0.15"
