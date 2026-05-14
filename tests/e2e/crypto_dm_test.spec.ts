@@ -60,7 +60,7 @@ async function setupContacts(token1: string, username2: string, token2: string) 
   await apiPost('/api/contacts/request', { username: username2 }, token1);
   const { data: pending } = await apiGet('/api/contacts/pending', token2);
   for (const req of (pending as any[])) {
-    await apiPost(`/api/contacts/accept/${req.id}`, {}, token2);
+    await apiPost('/api/contacts/accept', { contact_id: req.id }, token2);
   }
   console.log('  Contacts established');
 }
@@ -199,7 +199,7 @@ test.describe('Encrypted DM Tests', () => {
     await setupContacts(aliceData.access_token, BOB, bobData.access_token);
   });
 
-  test.fixme('1. Key bundles upload after browser login (apiGet pending shape — see #782)', async ({ browser }) => {
+  test('1. Key bundles upload after browser login', async ({ browser }) => {
     test.setTimeout(120000);
     console.log('\n--- Test 1: Key bundle upload ---');
 
@@ -218,7 +218,7 @@ test.describe('Encrypted DM Tests', () => {
     await ctx.close();
   });
 
-  test.fixme('2. Both users can exchange encrypted DMs (apiGet pending shape — see #782)', async ({ browser }) => {
+  test('2. Both users can exchange encrypted DMs', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test 2: Encrypted DM exchange ---');
 
@@ -290,7 +290,7 @@ test.describe('Encrypted DM Tests', () => {
     await bobCtx.close();
   });
 
-  test.fixme('3. Messages work after one browser restarts (apiGet pending shape — see #782)', async ({ browser }) => {
+  test('3. Messages work after one browser restarts', async ({ browser }) => {
     test.setTimeout(180000);
     console.log('\n--- Test 3: Messaging after browser restart ---');
 
@@ -337,7 +337,7 @@ test.describe('Encrypted DM Tests', () => {
     await bobCtx.close();
   });
 
-  test.fixme('4. Key bundles visible via API after all sessions close (shared beforeAll setupContacts — see #782)', async ({ browser }) => {
+  test('4. Key bundles visible via API after all sessions close', async ({ browser }) => {
     test.setTimeout(60000);
     console.log('\n--- Test 4: Key persistence after all browsers close ---');
 
