@@ -51,7 +51,7 @@ pub async fn broadcast_to_conversation<T: Serialize>(
     let json = match serde_json::to_string(event) {
         Ok(j) => j,
         Err(e) => {
-            tracing::warn!(
+            tracing::error!(
                 %conversation_id,
                 "broadcast_to_conversation: serialize failed: {e:?}"
             );
@@ -84,7 +84,7 @@ pub async fn broadcast_to_conversation_cached<T: Serialize>(
     let json = match serde_json::to_string(event) {
         Ok(j) => j,
         Err(e) => {
-            tracing::warn!(
+            tracing::error!(
                 %conversation_id,
                 "broadcast_to_conversation_cached: serialize failed: {e:?}"
             );
