@@ -59,21 +59,16 @@ async fn rotate_group_key_after_member_loss(state: &Arc<AppState>, group_id: Uui
             }
         };
 
-    let remaining = db::groups::get_conversation_member_ids(&state.pool, group_id)
-        .await
-        .unwrap_or_default();
-    if remaining.is_empty() {
-        return;
-    }
-
-    let event = serde_json::json!({
-        "type": "group_key_rotation_requested",
-        "conversation_id": group_id,
-        "key_version": new_version,
-    });
-    if let Ok(s) = serde_json::to_string(&event) {
-        state.hub.broadcast_json(&remaining, &s, None);
-    }
+    crate::ws::broadcast::broadcast_to_conversation(
+        state,
+        group_id,
+        &serde_json::json!({
+            "type": "group_key_rotation_requested",
+            "conversation_id": group_id,
+            "key_version": new_version,
+        }),
+    )
+    .await;
 }
 
 #[derive(Debug, Deserialize)]

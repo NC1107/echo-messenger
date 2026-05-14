@@ -35,8 +35,8 @@ async fn main() {
         pool: pool.clone(),
         jwt_secret: config.jwt_secret,
         hub: hub.clone(),
-        ticket_store: dashmap::DashMap::new(),
-        media_tickets: dashmap::DashMap::new(),
+        ticket_store: Arc::new(dashmap::DashMap::new()),
+        media_tickets: Arc::new(dashmap::DashMap::new()),
     });
 
     // Per-task cleanup loops with panic recovery; cadence per task.

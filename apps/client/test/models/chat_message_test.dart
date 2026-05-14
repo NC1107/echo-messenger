@@ -129,7 +129,13 @@ void main() {
       expect(msg.isMine, isTrue);
     });
 
-    test('WS-style field names take precedence over REST-style', () {
+    test('REST-style canonical field names take precedence over WS aliases', () {
+      // #834: MessageDto no longer carries the legacy `message_id`,
+      // `from_user_id`, `from_username` aliases. WS events still use
+      // them, but in any blob that carries both the canonical REST keys
+      // are the authoritative source — so when both are present (e.g.
+      // a relay payload that gets reused as a history entry), REST
+      // wins.
       final json = {
         'message_id': 'ws-id',
         'id': 'rest-id',
@@ -145,9 +151,9 @@ void main() {
 
       final msg = ChatMessage.fromServerJson(json, 'other');
 
-      expect(msg.id, 'ws-id');
-      expect(msg.fromUserId, 'ws-user');
-      expect(msg.fromUsername, 'ws-name');
+      expect(msg.id, 'rest-id');
+      expect(msg.fromUserId, 'rest-user');
+      expect(msg.fromUsername, 'rest-name');
       expect(msg.timestamp, '2026-03-31T15:00:00Z');
     });
 
