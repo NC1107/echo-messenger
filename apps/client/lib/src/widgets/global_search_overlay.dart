@@ -37,10 +37,12 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   final _keyboardFocusNode = FocusNode();
+  final _listScrollController = ScrollController();
   Timer? _debounce;
   _UniversalResults? _results;
   bool _loading = false;
   String _lastQuery = '';
+  int _selectedIndex = 0;
 
   @override
   void initState() {
@@ -53,8 +55,76 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     _controller.dispose();
     _focusNode.dispose();
     _keyboardFocusNode.dispose();
+    _listScrollController.dispose();
     _debounce?.cancel();
     super.dispose();
+  }
+
+  /// Flatten all result categories into a single linear list for keyboard
+  /// navigation. Each entry knows how to open itself when activated.
+  List<VoidCallback> _flatResultActivators() {
+    final r = _results;
+    if (r == null) return const <VoidCallback>[];
+    return <VoidCallback>[
+      for (final m in r.messages)
+        () {
+          Navigator.of(context).pop();
+          widget.onResultTap(m.conversationId, m.messageId);
+        },
+      for (final c in r.contacts)
+        () {
+          Navigator.of(context).pop();
+          widget.onContactTap(c.userId, c.username);
+        },
+      for (final g in r.groups)
+        () {
+          Navigator.of(context).pop();
+          widget.onResultTap(g.conversationId, '');
+        },
+    ];
+  }
+
+  /// Approximate row height — sections vary in height but this is close
+  /// enough for "scroll to keep the selected row in view".
+  static const double _avgRowHeight = 56.0;
+
+  void _scrollToSelected() {
+    if (!_listScrollController.hasClients) return;
+    final offset = (_selectedIndex * _avgRowHeight).clamp(
+      0.0,
+      _listScrollController.position.maxScrollExtent,
+    );
+    _listScrollController.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 100),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void _handleKeyNavigation(KeyEvent event) {
+    if (event is! KeyDownEvent) return;
+    final activators = _flatResultActivators();
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      Navigator.of(context).pop();
+      return;
+    }
+    if (activators.isEmpty) return;
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      setState(() {
+        _selectedIndex = (_selectedIndex + 1).clamp(0, activators.length - 1);
+      });
+      _scrollToSelected();
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      setState(() {
+        _selectedIndex = (_selectedIndex - 1).clamp(0, activators.length - 1);
+      });
+      _scrollToSelected();
+    } else if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      if (_selectedIndex < activators.length) {
+        activators[_selectedIndex]();
+      }
+    }
   }
 
   void _onQueryChanged(String query) {
@@ -63,10 +133,14 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
       setState(() {
         _results = null;
         _loading = false;
+        _selectedIndex = 0;
       });
       return;
     }
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _selectedIndex = 0;
+    });
     _debounce = Timer(const Duration(milliseconds: 400), () {
       _search(query.trim());
     });
@@ -183,12 +257,8 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
 
     return KeyboardListener(
       focusNode: _keyboardFocusNode,
-      onKeyEvent: (event) {
-        if (event is KeyDownEvent &&
-            event.logicalKey == LogicalKeyboardKey.escape) {
-          Navigator.of(context).pop();
-        }
-      },
+      autofocus: true,
+      onKeyEvent: _handleKeyNavigation,
       child: GestureDetector(
         onTap: () => Navigator.of(context).pop(),
         child: Material(
@@ -263,22 +333,10 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
                     if (_hasResults)
                       Flexible(
                         child: ListView(
+                          controller: _listScrollController,
                           shrinkWrap: true,
                           padding: const EdgeInsets.only(bottom: 12),
-                          children: [
-                            if (_results!.messages.isNotEmpty) ...[
-                              _buildSectionHeader('Messages'),
-                              ..._results!.messages.map(_buildMessageTile),
-                            ],
-                            if (_results!.contacts.isNotEmpty) ...[
-                              _buildSectionHeader('Contacts'),
-                              ..._results!.contacts.map(_buildContactTile),
-                            ],
-                            if (_results!.groups.isNotEmpty) ...[
-                              _buildSectionHeader('Groups'),
-                              ..._results!.groups.map(_buildGroupTile),
-                            ],
-                          ],
+                          children: _buildResultRows(),
                         ),
                       ),
                     if (_showEmpty)
@@ -302,6 +360,54 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     );
   }
 
+  /// Assemble the rendered rows in the same order as
+  /// [_flatResultActivators] so the selection index aligns with what
+  /// the user sees and what Enter activates.
+  List<Widget> _buildResultRows() {
+    final rows = <Widget>[];
+    final r = _results;
+    if (r == null) return rows;
+    var globalIndex = 0;
+    if (r.messages.isNotEmpty) {
+      rows.add(_buildSectionHeader('Messages'));
+      for (final m in r.messages) {
+        rows.add(_buildMessageTile(m, globalIndex == _selectedIndex));
+        globalIndex++;
+      }
+    }
+    if (r.contacts.isNotEmpty) {
+      rows.add(_buildSectionHeader('Contacts'));
+      for (final c in r.contacts) {
+        rows.add(_buildContactTile(c, globalIndex == _selectedIndex));
+        globalIndex++;
+      }
+    }
+    if (r.groups.isNotEmpty) {
+      rows.add(_buildSectionHeader('Groups'));
+      for (final g in r.groups) {
+        rows.add(_buildGroupTile(g, globalIndex == _selectedIndex));
+        globalIndex++;
+      }
+    }
+    return rows;
+  }
+
+  /// Wraps a result tile in the keyboard-selection highlight.
+  Widget _selectionWrap({required bool isSelected, required Widget child}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isSelected ? context.accent.withValues(alpha: 0.1) : null,
+        border: Border(
+          left: BorderSide(
+            color: isSelected ? context.accent : Colors.transparent,
+            width: 2,
+          ),
+        ),
+      ),
+      child: child,
+    );
+  }
+
   Widget _buildSectionHeader(String label) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
@@ -317,7 +423,7 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
     );
   }
 
-  Widget _buildMessageTile(_MessageResult r) {
+  Widget _buildMessageTile(_MessageResult r, bool isSelected) {
     final preview = r.content.length > 120
         ? '${r.content.substring(0, 120)}...'
         : r.content;
@@ -337,174 +443,192 @@ class _GlobalSearchOverlayState extends ConsumerState<GlobalSearchOverlay> {
       }
     }
 
-    return Semantics(
-      label: 'message from ${r.senderUsername} in ${r.conversationName}',
-      button: true,
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).pop();
-          widget.onResultTap(r.conversationId, r.messageId);
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    r.senderUsername,
-                    style: TextStyle(
-                      color: context.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'in ${r.conversationName}',
-                      style: TextStyle(color: context.textMuted, fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Text(
-                    timeLabel,
-                    style: TextStyle(color: context.textMuted, fontSize: 11),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 2),
-              Text(
-                preview,
-                style: TextStyle(color: context.textSecondary, fontSize: 13),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildContactTile(_ContactResult r) {
-    final label = (r.displayName != null && r.displayName!.isNotEmpty)
-        ? r.displayName!
-        : r.username;
-
-    return Semantics(
-      label: 'contact $label',
-      button: true,
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).pop();
-          widget.onContactTap(r.userId, r.username);
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: context.accent.withValues(alpha: 0.15),
-                backgroundImage: r.avatarUrl != null
-                    ? NetworkImage(r.avatarUrl!)
-                    : null,
-                child: r.avatarUrl == null
-                    ? Text(
-                        label.isNotEmpty ? label[0].toUpperCase() : '?',
-                        style: TextStyle(
-                          color: context.accent,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return _selectionWrap(
+      isSelected: isSelected,
+      child: Semantics(
+        label: 'message from ${r.senderUsername} in ${r.conversationName}',
+        button: true,
+        selected: isSelected,
+        child: InkWell(
+          onTap: () {
+            Navigator.of(context).pop();
+            widget.onResultTap(r.conversationId, r.messageId);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
                     Text(
-                      label,
+                      r.senderUsername,
                       style: TextStyle(
                         color: context.textPrimary,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    if (r.displayName != null && r.displayName!.isNotEmpty)
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'in ${r.conversationName}',
+                        style: TextStyle(
+                          color: context.textMuted,
+                          fontSize: 12,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      timeLabel,
+                      style: TextStyle(color: context.textMuted, fontSize: 11),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  preview,
+                  style: TextStyle(color: context.textSecondary, fontSize: 13),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContactTile(_ContactResult r, bool isSelected) {
+    final label = (r.displayName != null && r.displayName!.isNotEmpty)
+        ? r.displayName!
+        : r.username;
+
+    return _selectionWrap(
+      isSelected: isSelected,
+      child: Semantics(
+        label: 'contact $label',
+        button: true,
+        selected: isSelected,
+        child: InkWell(
+          onTap: () {
+            Navigator.of(context).pop();
+            widget.onContactTap(r.userId, r.username);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: context.accent.withValues(alpha: 0.15),
+                  backgroundImage: r.avatarUrl != null
+                      ? NetworkImage(r.avatarUrl!)
+                      : null,
+                  child: r.avatarUrl == null
+                      ? Text(
+                          label.isNotEmpty ? label[0].toUpperCase() : '?',
+                          style: TextStyle(
+                            color: context.accent,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        '@${r.username}',
+                        label,
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (r.displayName != null && r.displayName!.isNotEmpty)
+                        Text(
+                          '@${r.username}',
+                          style: TextStyle(
+                            color: context.textMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chat_bubble_outline,
+                  size: 16,
+                  color: context.textMuted,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupTile(_GroupResult r, bool isSelected) {
+    return _selectionWrap(
+      isSelected: isSelected,
+      child: Semantics(
+        label: 'group ${r.title}',
+        button: true,
+        selected: isSelected,
+        child: InkWell(
+          onTap: () {
+            Navigator.of(context).pop();
+            widget.onResultTap(r.conversationId, '');
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: context.accent.withValues(alpha: 0.15),
+                  child: Text(
+                    r.title.isNotEmpty ? r.title[0].toUpperCase() : '#',
+                    style: TextStyle(
+                      color: context.accent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        r.title,
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '${r.memberCount} member${r.memberCount == 1 ? '' : 's'}',
                         style: TextStyle(
                           color: context.textMuted,
                           fontSize: 12,
                         ),
                       ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.chat_bubble_outline,
-                size: 16,
-                color: context.textMuted,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGroupTile(_GroupResult r) {
-    return Semantics(
-      label: 'group ${r.title}',
-      button: true,
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).pop();
-          widget.onResultTap(r.conversationId, '');
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: context.accent.withValues(alpha: 0.15),
-                child: Text(
-                  r.title.isNotEmpty ? r.title[0].toUpperCase() : '#',
-                  style: TextStyle(
-                    color: context.accent,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      r.title,
-                      style: TextStyle(
-                        color: context.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      '${r.memberCount} member${r.memberCount == 1 ? '' : 's'}',
-                      style: TextStyle(color: context.textMuted, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.group_outlined, size: 16, color: context.textMuted),
-            ],
+                Icon(Icons.group_outlined, size: 16, color: context.textMuted),
+              ],
+            ),
           ),
         ),
       ),
