@@ -18,6 +18,7 @@ import '../providers/update_provider.dart';
 import '../providers/websocket_provider.dart';
 import '../services/toast_service.dart';
 import '../theme/echo_theme.dart';
+import '../theme/motion_tokens.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/theme_provider.dart' show uiDensityProvider;
 import '../utils/time_utils.dart';
@@ -924,7 +925,9 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
         // visual pill -- the inner Container keeps the compact 28px chip.
         constraints: const BoxConstraints(minHeight: 44),
         alignment: Alignment.center,
-        child: Container(
+        child: AnimatedContainer(
+          duration: MotionDurations.quick,
+          curve: MotionCurves.emphasis,
           height: 28,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
