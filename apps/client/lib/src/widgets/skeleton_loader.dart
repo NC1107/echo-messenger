@@ -24,7 +24,20 @@ class _ShimmerEffectState extends State<_ShimmerEffect>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
-    )..repeat();
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Respect the platform reduced-motion preference: hold the shimmer at
+    // a still frame instead of repeating the sweep.
+    if (MediaQuery.of(context).disableAnimations) {
+      if (_controller.isAnimating) _controller.stop();
+      _controller.value = 0.0;
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
   }
 
   @override
@@ -37,6 +50,12 @@ class _ShimmerEffectState extends State<_ShimmerEffect>
   Widget build(BuildContext context) {
     final surface = context.surface;
     final surfaceHover = context.surfaceHover;
+    final disableAnimations = MediaQuery.of(context).disableAnimations;
+
+    if (disableAnimations) {
+      // Render the still surface tint without the animated gradient sweep.
+      return widget.child;
+    }
 
     return AnimatedBuilder(
       animation: _controller,
