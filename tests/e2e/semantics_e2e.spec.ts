@@ -75,6 +75,32 @@ async function register(page: Page, username: string, password: string) {
 
   await page.waitForTimeout(6000);
   await dismissDialogs(page);
+  await skipOnboarding(page);
+}
+
+/**
+ * After register, the app may land on `/onboarding`. Click any "Skip" /
+ * "Skip for now" buttons until the wizard is gone (or until a reasonable
+ * upper bound is hit, so we never block forever on UI churn).
+ */
+async function skipOnboarding(page: Page) {
+  for (let i = 0; i < 10; i++) {
+    if (!page.url().includes('/onboarding')) return;
+    const skipBtn = page.getByRole('button', { name: /skip/i }).first();
+    if (await skipBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await skipBtn.click();
+      await page.waitForTimeout(800);
+      continue;
+    }
+    // No skip button — try Next / Done as a fallback so we still escape.
+    const nextBtn = page.getByRole('button', { name: /next|done|finish|get started/i }).first();
+    if (await nextBtn.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await nextBtn.click();
+      await page.waitForTimeout(800);
+      continue;
+    }
+    break;
+  }
 }
 
 /** Login via the UI. */
@@ -127,7 +153,7 @@ test.describe('Flutter Semantics E2E', () => {
     await ss(page, '02-login-filled');
   });
 
-  test.fixme('register -> land on home with tabs (auth flow regression — see #782)', async ({ page }) => {
+  test('register -> land on home with tabs', async ({ page }) => {
     const ts = Date.now().toString().slice(-5);
     await register(page, `e2e_${ts}`, 'TestPass123!');
     await ss(page, '03-after-register');
@@ -138,7 +164,7 @@ test.describe('Flutter Semantics E2E', () => {
     await ss(page, '04-home-screen');
   });
 
-  test.fixme('sidebar tab navigation via ARIA (auth flow regression — see #782)', async ({ page }) => {
+  test('sidebar tab navigation via ARIA', async ({ page }) => {
     const ts = Date.now().toString().slice(-5);
     await register(page, `e2e_tabs_${ts}`, 'TestPass123!');
 
