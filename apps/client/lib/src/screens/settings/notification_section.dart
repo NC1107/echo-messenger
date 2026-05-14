@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -945,6 +946,8 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
               currentId: voice.cameraDeviceId,
               onChanged: notifier.setCameraDevice,
             ),
+            const SizedBox(height: 12),
+            _CameraPreview(deviceId: voice.cameraDeviceId),
             const SizedBox(height: 16),
             Text(
               'Microphone Gain',
@@ -1153,6 +1156,222 @@ class _VoiceVideoSectionState extends ConsumerState<VoiceVideoSection> {
               onChanged: notifier.setConfirmBeforeJoinVoice,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Live camera preview
+// ---------------------------------------------------------------------------
+
+/// Renders a live preview of the selected camera so users can confirm framing
+/// and focus before joining a call. Tears down + re-opens the stream when the
+/// selected [deviceId] changes, and stops tracks on dispose.
+///
+/// Supported on Android, iOS, macOS and Web (any platform where
+/// `flutter_webrtc`'s `getUserMedia` is reliable). Linux/Windows desktop fall
+/// back to a "preview not supported" placeholder.
+class _CameraPreview extends StatefulWidget {
+  /// The voice-settings camera device id. Empty string means "default".
+  final String deviceId;
+
+  const _CameraPreview({required this.deviceId});
+
+  @override
+  State<_CameraPreview> createState() => _CameraPreviewState();
+}
+
+class _CameraPreviewState extends State<_CameraPreview> {
+  final webrtc.RTCVideoRenderer _renderer = webrtc.RTCVideoRenderer();
+  webrtc.MediaStream? _stream;
+  bool _rendererInitialized = false;
+  bool _starting = false;
+  String? _error;
+  bool _permissionDenied = false;
+
+  bool get _platformSupported {
+    if (kIsWeb) return true;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (_platformSupported) {
+      _initRenderer();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _CameraPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.deviceId != widget.deviceId && _platformSupported) {
+      _restart();
+    }
+  }
+
+  Future<void> _initRenderer() async {
+    await _renderer.initialize();
+    if (!mounted) return;
+    setState(() => _rendererInitialized = true);
+    await _startStream();
+  }
+
+  Future<void> _restart() async {
+    await _stopStream();
+    await _startStream();
+  }
+
+  Future<void> _startStream() async {
+    if (_starting) return;
+    setState(() {
+      _starting = true;
+      _error = null;
+      _permissionDenied = false;
+    });
+    try {
+      final constraints = <String, dynamic>{
+        'audio': false,
+        'video': widget.deviceId.isEmpty
+            ? true
+            : {
+                'deviceId': {'exact': widget.deviceId},
+              },
+      };
+      final stream = await webrtc.navigator.mediaDevices.getUserMedia(
+        constraints,
+      );
+      if (!mounted) {
+        for (final t in stream.getTracks()) {
+          t.stop();
+        }
+        await stream.dispose();
+        return;
+      }
+      _stream = stream;
+      _renderer.srcObject = stream;
+      setState(() => _starting = false);
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString().toLowerCase();
+      setState(() {
+        _starting = false;
+        _permissionDenied =
+            msg.contains('permission') || msg.contains('notallowed');
+        _error = _permissionDenied
+            ? 'Camera access blocked.'
+            : 'Could not start camera preview.';
+      });
+    }
+  }
+
+  Future<void> _stopStream() async {
+    final stream = _stream;
+    _stream = null;
+    _renderer.srcObject = null;
+    if (stream != null) {
+      for (final t in stream.getTracks()) {
+        t.stop();
+      }
+      await stream.dispose();
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopStream();
+    if (_rendererInitialized) _renderer.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_platformSupported) {
+      return _buildPlaceholder(
+        context,
+        icon: Icons.videocam_off_outlined,
+        message: 'Preview not supported on this platform.',
+      );
+    }
+    if (_error != null) {
+      return _buildPlaceholder(
+        context,
+        icon: _permissionDenied ? Icons.lock_outline : Icons.error_outline,
+        message: _error!,
+        action: _permissionDenied
+            ? TextButton(
+                onPressed: _starting ? null : _startStream,
+                child: const Text('Grant camera access'),
+              )
+            : null,
+      );
+    }
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 320),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              color: Colors.black,
+              child: _rendererInitialized && _stream != null
+                  ? webrtc.RTCVideoView(
+                      _renderer,
+                      objectFit: webrtc
+                          .RTCVideoViewObjectFit
+                          .RTCVideoViewObjectFitCover,
+                      mirror: true,
+                    )
+                  : const Center(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaceholder(
+    BuildContext context, {
+    required IconData icon,
+    required String message,
+    Widget? action,
+  }) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 320),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Container(
+            decoration: BoxDecoration(
+              color: context.surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: context.border),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: context.textMuted, size: 28),
+                const SizedBox(height: 8),
+                Text(
+                  message,
+                  style: TextStyle(color: context.textMuted, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+                if (action != null) ...[const SizedBox(height: 8), action],
+              ],
+            ),
+          ),
         ),
       ),
     );
