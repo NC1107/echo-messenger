@@ -49,6 +49,18 @@ export default defineConfig({
       ],
       use: { browserName: 'chromium' },
     },
+    {
+      // Screenshots: one-shot tour for marketing / README / release notes.
+      // Run on demand:  npx playwright test --project=screenshots
+      // Requires a local server on :8080 + web build on :8081.  Output PNGs
+      // land in docs/screenshots/.
+      name: 'screenshots',
+      testMatch: ['screenshot_tour.spec.ts'],
+      use: {
+        browserName: 'chromium',
+        viewport: { width: 1920, height: 1080 },
+      },
+    },
   ],
   outputDir: './test-results',
 });
