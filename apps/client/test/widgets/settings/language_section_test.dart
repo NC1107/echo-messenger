@@ -66,5 +66,25 @@ void main() {
       // Confirm the selected text is styled differently (accent color).
       expect(find.text('Français'), findsOneWidget);
     });
+
+    testWidgets('renders coming-soon banner so testers expect English only', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_wrap(const LanguageSection()));
+      await tester.pump(_kLoadDelay);
+      expect(find.textContaining('Only English is fully'), findsOneWidget);
+    });
+
+    testWidgets('non-English options carry a Coming soon subtitle', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_wrap(const LanguageSection()));
+      await tester.pump(_kLoadDelay);
+      // One "Coming soon" subtitle per non-English locale.
+      final nonEnglishCount = kSupportedLocales
+          .where((e) => e.tag != 'en')
+          .length;
+      expect(find.text('Coming soon'), findsNWidgets(nonEnglishCount));
+    });
   });
 }
