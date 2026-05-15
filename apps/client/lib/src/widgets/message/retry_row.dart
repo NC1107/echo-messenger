@@ -65,7 +65,7 @@ class RetryRow extends StatelessWidget {
                   'Retry',
                   style: GoogleFonts.inter(
                     fontSize: 12,
-                    color: Colors.white,
+                    color: context.onAccent,
                     fontWeight: FontWeight.w600,
                   ),
                 ),

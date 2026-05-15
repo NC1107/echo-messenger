@@ -222,12 +222,12 @@ class _FeedbackDialogState extends ConsumerState<_FeedbackDialog> {
           key: const Key('feedback-send-button'),
           onPressed: _canSend ? _send : null,
           icon: _sending
-              ? const SizedBox(
+              ? SizedBox(
                   width: 14,
                   height: 14,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Colors.white,
+                    color: context.onAccent,
                   ),
                 )
               : const Icon(Icons.send, size: 16),

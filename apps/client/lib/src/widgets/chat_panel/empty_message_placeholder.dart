@@ -24,7 +24,7 @@ class EmptyMessagePlaceholder extends StatelessWidget {
             backgroundColor: context.accent,
             child: Text(
               displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
-              style: const TextStyle(fontSize: 22, color: Colors.white),
+              style: TextStyle(fontSize: 22, color: context.onAccent),
             ),
           ),
           const SizedBox(height: 12),
