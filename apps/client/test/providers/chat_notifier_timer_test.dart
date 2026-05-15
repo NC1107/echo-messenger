@@ -200,5 +200,97 @@ void main() {
       expect(conv1.first.status, MessageStatus.sending);
       expect(conv1.first.id, startsWith('pending_'));
     });
+
+    test('failed reply send rolls back the parent replyCount (#830)', () {
+      fakeAsync((async) {
+        final container = _createContainer();
+        addTearDown(container.dispose);
+        final notifier = container.read(chatProvider.notifier);
+
+        // Seed a parent message already on the server (replyCount=0).
+        const parent = ChatMessage(
+          id: 'parent-1',
+          fromUserId: 'peer-1',
+          fromUsername: 'peer',
+          conversationId: 'conv-1',
+          content: 'top-level',
+          timestamp: '2026-01-01T11:59:00Z',
+          isMine: false,
+          status: MessageStatus.sent,
+        );
+        notifier.addMessage(parent);
+        expect(
+          container
+              .read(chatProvider)
+              .messagesForConversation('conv-1')
+              .firstWhere((m) => m.id == 'parent-1')
+              .replyCount,
+          0,
+        );
+
+        // Optimistically reply — parent.replyCount bumps to 1.
+        notifier.addOptimistic(
+          'peer-1',
+          'reply that will fail',
+          'me',
+          conversationId: 'conv-1',
+          replyToId: 'parent-1',
+        );
+        expect(
+          container
+              .read(chatProvider)
+              .messagesForConversation('conv-1')
+              .firstWhere((m) => m.id == 'parent-1')
+              .replyCount,
+          1,
+        );
+
+        // Let the 15s send-timeout fire — message transitions to failed.
+        async.elapse(const Duration(seconds: 16));
+
+        // Parent replyCount must roll back to 0 (#830).
+        final afterFail = container
+            .read(chatProvider)
+            .messagesForConversation('conv-1');
+        expect(
+          afterFail.firstWhere((m) => m.id == 'parent-1').replyCount,
+          0,
+          reason: 'failed reply should not inflate parent replyCount',
+        );
+
+        // Retry: status flips back to sending — replyCount re-increments.
+        final failedReply = afterFail.firstWhere(
+          (m) => m.status == MessageStatus.failed,
+        );
+        notifier.updateMessageStatus(
+          'conv-1',
+          failedReply.id,
+          MessageStatus.sending,
+        );
+        expect(
+          container
+              .read(chatProvider)
+              .messagesForConversation('conv-1')
+              .firstWhere((m) => m.id == 'parent-1')
+              .replyCount,
+          1,
+        );
+
+        // Force the retry to fail again — count rolls back to 0 once more.
+        notifier.updateMessageStatus(
+          'conv-1',
+          failedReply.id,
+          MessageStatus.failed,
+        );
+        expect(
+          container
+              .read(chatProvider)
+              .messagesForConversation('conv-1')
+              .firstWhere((m) => m.id == 'parent-1')
+              .replyCount,
+          0,
+        );
+      });
+    });
   });
 }
