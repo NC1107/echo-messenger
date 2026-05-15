@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
@@ -20,6 +21,7 @@ import '../../services/secure_key_store.dart';
 import '../../services/toast_service.dart';
 import '../../theme/echo_theme.dart';
 import '../../version.dart';
+import '../../widgets/feedback_dialog.dart';
 
 class AboutSection extends ConsumerStatefulWidget {
   const AboutSection({super.key});
@@ -708,6 +710,72 @@ class _AboutSectionState extends ConsumerState<AboutSection> {
                     builder: (_) => const _DebugLogsSubpage(),
                   ),
                 );
+              },
+            ),
+            const SizedBox(height: 8),
+            // Beta-prep #4c: surface the feedback dialog from About so testers
+            // have a one-tap path to report issues without leaving the app.
+            ListTile(
+              key: const Key('about-send-feedback'),
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.feedback_outlined,
+                color: context.textSecondary,
+                size: 22,
+              ),
+              title: Text(
+                'Send feedback',
+                style: TextStyle(color: context.textPrimary, fontSize: 15),
+              ),
+              subtitle: Text(
+                'Report a bug or share a suggestion.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              trailing: Icon(
+                Icons.chevron_right,
+                color: context.textMuted,
+                size: 20,
+              ),
+              onTap: () => showFeedbackDialog(context),
+            ),
+            // Privacy link — opens the GitHub-rendered docs/PRIVACY.md so the
+            // canonical text isn't bundled in every app build.
+            ListTile(
+              key: const Key('about-privacy-link'),
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.privacy_tip_outlined,
+                color: context.textSecondary,
+                size: 22,
+              ),
+              title: Text(
+                'Privacy',
+                style: TextStyle(color: context.textPrimary, fontSize: 15),
+              ),
+              subtitle: Text(
+                'What Echo stores, what it does not, and where the data lives.',
+                style: TextStyle(color: context.textMuted, fontSize: 12),
+              ),
+              trailing: Icon(
+                Icons.open_in_new,
+                color: context.textMuted,
+                size: 18,
+              ),
+              onTap: () async {
+                final uri = Uri.parse(
+                  'https://github.com/NC1107/echo-messenger/blob/main/docs/PRIVACY.md',
+                );
+                final ok = await launchUrl(
+                  uri,
+                  mode: LaunchMode.externalApplication,
+                );
+                if (!ok && context.mounted) {
+                  ToastService.show(
+                    context,
+                    'Could not open privacy link.',
+                    type: ToastType.error,
+                  );
+                }
               },
             ),
             const SizedBox(height: 16),

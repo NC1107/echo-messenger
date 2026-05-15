@@ -349,6 +349,36 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     return SingleChildScrollView(
       child: Column(
         children: [
+          // Beta banner.  We don't want testers surprised when something
+          // breaks or when their account gets wiped before launch.  Subtle
+          // accent treatment -- not a scary red -- so it reads as info.
+          Container(
+            margin: const EdgeInsets.only(bottom: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: context.accentLight,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: context.accent, width: 1),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.science_outlined, size: 16, color: context.accent),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Echo is in beta. Bugs and breakage are expected, and '
+                    'your data may be reset before the public release.',
+                    style: TextStyle(
+                      color: context.textMuted,
+                      fontSize: 12.5,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           Text(
             'Welcome to Echo!',
             style: TextStyle(
