@@ -415,6 +415,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    environment:
+      name: development
+      url: https://dev.echo-messenger.us
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -453,8 +456,30 @@ jobs:
     permissions:
       contents: read
       packages: write
+    environment:
+      name: development
+      url: https://dev.echo-messenger.us
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: .flutter-version
+          channel: stable
+          cache: true
+      - name: Cache pub-cache + .dart_tool
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            apps/client/.dart_tool
+          key: ${{ runner.os }}-pubcache-${{ hashFiles('apps/client/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pubcache-
+      - name: Build Flutter web
+        working-directory: apps/client
+        run: |
+          flutter pub get
+          flutter build web --release --pwa-strategy=none --dart-define=APP_VERSION=dev
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
