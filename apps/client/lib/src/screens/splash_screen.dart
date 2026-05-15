@@ -76,6 +76,19 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     // last-known size after navigation lands on home/login.
     await WindowStateService.enterSplash();
 
+    // Prime the iOS/macOS local-network permission popup with an in-app
+    // explainer BEFORE any non-loopback request — auto-login below contacts
+    // the server, which is what triggers the OS popup. Running the
+    // explainer after auto-login (the previous ordering) was a no-op:
+    // testers hit "Don't Allow" on the bare OS dialog and silently broke
+    // server connectivity. No-op on other platforms and after the first
+    // run. Not gated on login state so first-launch unauthenticated users
+    // also see the context before the register/login form's first request.
+    if (mounted) {
+      await LocalNetworkPermissionService.showIfNeeded(context);
+      if (!mounted) return;
+    }
+
     _setStatus('Checking session…');
     final loggedIn = await _attemptAutoLogin();
 
@@ -100,15 +113,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     }
 
     if (!mounted) return;
-
-    // Prime the iOS/macOS local-network permission popup with an in-app
-    // explainer so beta testers don't tap "Don't Allow" by reflex and
-    // silently break server connectivity. No-op on other platforms and
-    // after the first run.
-    if (loggedIn && mounted) {
-      await LocalNetworkPermissionService.showIfNeeded(context);
-      if (!mounted) return;
-    }
 
     // On desktop, if an update is available, show the update prompt
     // instead of navigating immediately.
