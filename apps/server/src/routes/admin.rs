@@ -182,7 +182,9 @@ pub async fn list_feedback(
     }
     let limit = q.limit.clamp(1, 200);
 
-    let rows: Vec<(
+    // Wrap the wide row tuple in a typedef so clippy::type_complexity is
+    // satisfied without an `#[allow]`.
+    type Row = (
         uuid::Uuid,
         uuid::Uuid,
         Option<String>,
@@ -191,7 +193,8 @@ pub async fn list_feedback(
         bool,
         String,
         chrono::DateTime<chrono::Utc>,
-    )> = sqlx::query_as(
+    );
+    let rows: Vec<Row> = sqlx::query_as(
         "SELECT f.id, f.user_id, u.username, f.title, f.body, f.public_ok, f.status, f.created_at \
          FROM feedback f LEFT JOIN users u ON u.id = f.user_id \
          WHERE f.status = $1 \
