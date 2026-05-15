@@ -527,14 +527,19 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
                   wsOnlineUsers,
                 ),
               ),
+              // Hide the status bar on mobile narrow — redundant with the
+              // bottom tab bar that already exposes Settings + identity.
+              //
+              // The update banner / bug-report row sits ABOVE the VoiceFooter
+              // so the desktop voice-dock overlay (`_buildDesktopVoiceDock`,
+              // anchored at `bottom: 60`) can't cover the bug-report button
+              // when a call is active (#913).
+              if (MediaQuery.sizeOf(context).width >= 600)
+                _buildSidebarUpdateBanner(context),
               // On narrow (mobile), VoiceFooter is rendered at the Scaffold
               // level in home_screen.dart above the bottom tab bar.
               if (MediaQuery.sizeOf(context).width >= 600)
                 VoiceFooter(onNavigateToLounge: widget.onNavigateToLounge),
-              // Hide the status bar on mobile narrow — redundant with the
-              // bottom tab bar that already exposes Settings + identity.
-              if (MediaQuery.sizeOf(context).width >= 600)
-                _buildSidebarUpdateBanner(context),
               if (MediaQuery.sizeOf(context).width >= 600)
                 _buildUserStatusBar(
                   context,

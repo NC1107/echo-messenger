@@ -97,6 +97,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
   String? _highlightedMessageId;
   String? _pendingInitialMessageId;
   Timer? _highlightTimer;
+
+  /// Set on first open of a conversation. Cleared when the history load that
+  /// followed the initial `_scrollToBottom` finishes. While true, the listener
+  /// in [build] re-triggers `_scrollToBottom` so we land at the genuinely
+  /// newest message even when history pages render after the first scroll
+  /// (#919).
+  bool _initialScrollPending = false;
   double get _lastKeyboardInset => _controller.lastKeyboardInset;
   set _lastKeyboardInset(double v) => _controller.lastKeyboardInset = v;
   bool _isDragOver = false;
@@ -183,6 +190,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
       _newMessagesBelowCount = 0;
       _unreadBoundaryMessageId = null;
       _unreadBoundaryCount = 0;
+      _initialScrollPending = false;
       _controller.floatingDate = null;
       _controller.floatingDateVisible = false;
       _controller.floatingDateTimer?.cancel();
@@ -761,9 +769,41 @@ class _ChatPanelState extends ConsumerState<ChatPanel>
         } else if (_unreadBoundaryMessageId != null) {
           _scrollToUnreadBoundary();
         } else {
+          // First open: history is loading async in parallel and may render
+          // additional rows over the next several hundred ms. Mark the scroll
+          // as pending so we re-trigger it when the load completes; landing
+          // on the genuinely-newest message requires waiting for the layout
+          // pass that includes those new rows (#919).
+          _initialScrollPending = true;
           _scrollToBottom(settleRetries: 3);
         }
       });
+    }
+
+    // Re-scroll to bottom when the initial history load completes. The first
+    // `_scrollToBottom` above fires before any rows are rendered; once the
+    // server returns and the list grows downward, we want to land at the
+    // newest message rather than wherever the partial list ended (#919).
+    if (_initialScrollPending) {
+      ref.listen(
+        chatProvider.select(
+          (s) => s.isLoadingHistory(conv.id, channelId: _selectedTextChannelId),
+        ),
+        (prev, next) {
+          // Only react to the load FINISHING (true -> false) and only on
+          // the initial open.
+          if (!_initialScrollPending) return;
+          if (prev == true && next == false) {
+            _initialScrollPending = false;
+            // Defer to the next frame so the layout pass with the loaded
+            // messages has actually run before we read maxScrollExtent.
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              _scrollToBottom(animated: false, settleRetries: 3);
+            });
+          }
+        },
+      );
     }
 
     _handleKeyboardScroll();

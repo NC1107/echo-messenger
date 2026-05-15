@@ -1,5 +1,5 @@
 import 'dart:io' show Platform;
-import 'dart:ui' show Size;
+import 'dart:ui' show Offset, Size;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,6 +16,8 @@ import 'package:window_manager/window_manager.dart';
 class WindowStateService {
   static const _kWidthKey = 'window.width';
   static const _kHeightKey = 'window.height';
+  static const _kXKey = 'window.x';
+  static const _kYKey = 'window.y';
 
   /// Default window size on first launch (matches the GTK runner's
   /// `gtk_window_set_default_size(1280, 720)`).
@@ -27,10 +29,10 @@ class WindowStateService {
     return Platform.isLinux || Platform.isWindows || Platform.isMacOS;
   }
 
-  /// Save the current window size to SharedPreferences.
+  /// Save the current window size + position to SharedPreferences.
   ///
-  /// Position (x, y) is intentionally not saved: restoring a splash-era
-  /// centered position pushes the full-size window off-screen.
+  /// Position is clamped on restore to stay on-screen; here we just store
+  /// whatever the user last positioned the window to.
   static Future<void> save() async {
     if (!_isDesktop) return;
     try {
@@ -38,6 +40,13 @@ class WindowStateService {
       final size = await windowManager.getSize();
       await prefs.setDouble(_kWidthKey, size.width);
       await prefs.setDouble(_kHeightKey, size.height);
+      try {
+        final pos = await windowManager.getPosition();
+        await prefs.setDouble(_kXKey, pos.dx);
+        await prefs.setDouble(_kYKey, pos.dy);
+      } catch (_) {
+        // getPosition isn't reliable on all platforms; size alone is fine.
+      }
     } catch (_) {
       // Never block app shutdown on a failed window-state save.
     }
@@ -62,9 +71,21 @@ class WindowStateService {
         height.clamp(480.0, 10000.0),
       );
       await windowManager.setSize(size);
-      // Always center — restoring saved (x, y) risks placing the full-size
-      // window at the splash-era center coordinates, pushing it off-screen.
-      await windowManager.center();
+      // Restore saved (x, y) if present and within a sane range. Falls back
+      // to centre when no position is saved OR the saved coordinates look
+      // off-screen (multi-monitor disconnect, resolution change, garbage
+      // stored from an older build).
+      final savedX = prefs.getDouble(_kXKey);
+      final savedY = prefs.getDouble(_kYKey);
+      const sanityMin = -10000.0;
+      const sanityMax = 10000.0;
+      final saneX = savedX != null && savedX > sanityMin && savedX < sanityMax;
+      final saneY = savedY != null && savedY > -50.0 && savedY < sanityMax;
+      if (saneX && saneY) {
+        await windowManager.setPosition(Offset(savedX, savedY));
+      } else {
+        await windowManager.center();
+      }
     } catch (_) {
       // Falling back to whatever size the splash set is acceptable.
     }

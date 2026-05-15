@@ -91,6 +91,47 @@ void main() {
       expect(isEnabled(), isTrue);
     });
 
+    testWidgets('surfaces a toast on network error after dialog closes', (
+      tester,
+    ) async {
+      final mockClient = MockHttpClient();
+      when(
+        () => mockClient.post(
+          any(that: predicate<Uri>((u) => u.path == '/api/feedback')),
+          headers: any(named: 'headers'),
+          body: any(named: 'body'),
+          encoding: any(named: 'encoding'),
+        ),
+      ).thenThrow(Exception('connection refused'));
+
+      await http.runWithClient(() async {
+        await _pumpHost(tester);
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Title'),
+          'Test bug',
+        );
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Details'),
+          'Repro steps go here.',
+        );
+        await tester.pump();
+
+        await tester.tap(find.byKey(const Key('feedback-send-button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        // Dialog stays open on failure; in-dialog error text is shown so the
+        // user always has visible feedback, regardless of overlay timing.
+        expect(find.text('Network error. Please try again.'), findsWidgets);
+      }, () => mockClient);
+
+      // Let the toast dismiss-timer drain.
+      await tester.pump(const Duration(seconds: 4));
+    });
+
     testWidgets('posts to /api/feedback when send is tapped', (tester) async {
       final mockClient = MockHttpClient();
       when(
