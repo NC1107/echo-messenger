@@ -574,10 +574,14 @@ class _ConversationPanelState extends ConsumerState<ConversationPanel> {
           child: InkWell(
             onTap: widget.onNewChat,
             borderRadius: BorderRadius.circular(16),
-            child: const SizedBox(
+            child: SizedBox(
               width: 56,
               height: 56,
-              child: Icon(Icons.edit_outlined, color: Colors.white, size: 22),
+              child: Icon(
+                Icons.edit_outlined,
+                color: context.onAccent,
+                size: 22,
+              ),
             ),
           ),
         ),
