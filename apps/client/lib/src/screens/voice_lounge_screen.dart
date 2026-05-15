@@ -1,7 +1,13 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/channels_provider.dart';
@@ -9,6 +15,7 @@ import '../providers/conversations_provider.dart';
 import '../providers/livekit_voice_provider.dart';
 import '../providers/screen_share_provider.dart';
 import '../providers/server_url_provider.dart';
+import '../providers/voice_lounge_background_provider.dart';
 import '../providers/voice_settings_provider.dart';
 import '../services/pip_controller.dart';
 import '../theme/echo_theme.dart';
@@ -432,6 +439,146 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
     return null;
   }
 
+  /// Opens the system file picker, copies the chosen image into the app's
+  /// document directory (so it survives package data clears that wipe the
+  /// picker's temp cache), and persists the resolved path via
+  /// [voiceLoungeBackgroundProvider].
+  ///
+  /// On web there is no [File] backing — we fall back to using the picker's
+  /// returned `path` directly (typically a blob URL handled by [Image.network]
+  /// — but on web the lounge background simply skips rendering because
+  /// `dart:io`'s [File] is unavailable).  Mobile/desktop is the supported
+  /// surface for MVP.
+  Future<void> _pickBackground() async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+        withData: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final picked = result.files.single;
+      final srcPath = picked.path;
+      if (srcPath == null || srcPath.isEmpty) return;
+
+      String resolved = srcPath;
+      if (!kIsWeb) {
+        try {
+          final docs = await getApplicationDocumentsDirectory();
+          final ext = p.extension(srcPath).isNotEmpty
+              ? p.extension(srcPath)
+              : '.img';
+          final destName =
+              'voice_lounge_bg_${DateTime.now().millisecondsSinceEpoch}$ext';
+          final destPath = p.join(docs.path, destName);
+          await File(srcPath).copy(destPath);
+          resolved = destPath;
+        } catch (e) {
+          debugPrint('[VoiceLoungeScreen] copy background failed: $e');
+          // Fall back to the original path; it may still load if the source
+          // file is in a stable location.
+        }
+      }
+
+      await ref
+          .read(voiceLoungeBackgroundProvider.notifier)
+          .setCustomBackgroundPath(resolved);
+    } catch (e) {
+      debugPrint('[VoiceLoungeScreen] pick background failed: $e');
+    }
+  }
+
+  Future<void> _clearBackground() async {
+    await ref.read(voiceLoungeBackgroundProvider.notifier).clear();
+  }
+
+  /// Show a tiny bottom-sheet with "Choose image" + "Reset to default" so the
+  /// single icon button covers both operations.
+  Future<void> _openBackgroundMenu(BuildContext ctx) async {
+    final hasCustom =
+        ref.read(voiceLoungeBackgroundProvider).customBackgroundPath != null;
+    await showModalBottomSheet<void>(
+      context: ctx,
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.image_outlined),
+                title: const Text('Choose voice lounge background'),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  _pickBackground();
+                },
+              ),
+              if (hasCustom)
+                ListTile(
+                  leading: const Icon(Icons.restore),
+                  title: const Text('Reset to default'),
+                  onTap: () {
+                    Navigator.of(sheetCtx).pop();
+                    _clearBackground();
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Resolves the active background widget for the lounge.  When the user
+  /// has picked a custom image AND the file still exists on disk, renders
+  /// it as a [BoxFit.cover] backdrop with a 50% black overlay for legibility.
+  /// Otherwise falls back to the original [VertexMeshBackground].
+  Widget _buildBackground(BuildContext context) {
+    final bg = ref.watch(voiceLoungeBackgroundProvider);
+    final path = bg.customBackgroundPath;
+    if (customBackgroundFileExists(path)) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.file(
+            File(path!),
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => VertexMeshBackground(
+              accentColor: context.accent,
+              backgroundColor: context.mainBg,
+            ),
+          ),
+          const ColoredBox(color: Color(0x80000000)),
+        ],
+      );
+    }
+    return VertexMeshBackground(
+      accentColor: context.accent,
+      backgroundColor: context.mainBg,
+    );
+  }
+
+  /// Small circular icon button that opens the background-picker menu.  This
+  /// is the ONE settings entry-point for the customizable voice-lounge
+  /// background feature.
+  Widget _buildBackgroundPickerButton(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Voice lounge background settings',
+      child: Material(
+        color: Colors.black54,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => _openBackgroundMenu(context),
+          child: const Padding(
+            padding: EdgeInsets.all(8),
+            child: Icon(Icons.wallpaper, size: 18, color: Colors.white),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _closeSubmenu() => setState(() => _activeSubmenu = null);
 
   /// Build all dock submenu follower widgets for the current [_activeSubmenu].
@@ -578,12 +725,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
               child: ClipRect(
                 child: Stack(
                   children: [
-                    Positioned.fill(
-                      child: VertexMeshBackground(
-                        accentColor: context.accent,
-                        backgroundColor: context.mainBg,
-                      ),
-                    ),
+                    Positioned.fill(child: _buildBackground(context)),
                     Column(children: [Expanded(child: contentArea)]),
                     if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
                     ..._buildSubmenuFollowers(conversationId),
@@ -596,6 +738,11 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                         channelName,
                         totalParticipants,
                       ),
+                    ),
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: _buildBackgroundPickerButton(context),
                     ),
                   ],
                 ),
@@ -616,12 +763,7 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
             child: ClipRect(
               child: Stack(
                 children: [
-                  Positioned.fill(
-                    child: VertexMeshBackground(
-                      accentColor: context.accent,
-                      backgroundColor: context.mainBg,
-                    ),
-                  ),
+                  Positioned.fill(child: _buildBackground(context)),
                   Column(
                     children: [
                       LoungeHeader(
@@ -637,6 +779,11 @@ class _VoiceLoungeScreenState extends ConsumerState<VoiceLoungeScreen> {
                   if (!_spotlightMode) Positioned.fill(child: drawingOverlay),
                   ..._buildSubmenuFollowers(conversationId),
                   Positioned(bottom: 16, left: 0, right: 0, child: dock),
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: _buildBackgroundPickerButton(context),
+                  ),
                 ],
               ),
             ),
