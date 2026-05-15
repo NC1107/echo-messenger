@@ -2,6 +2,13 @@
 
 Last updated: 2026-05-15. Echo is in beta; this doc evolves with the product.
 
+## Scope of this document
+
+This privacy policy covers the **centralized public server** hosted at `echo-messenger.us` and
+operated by GitHub user `NC1107`. It does **not** apply to self-hosted deployments — if you run
+your own Echo server, you are the operator and you control all data stored on it.
+`NC1107` has no access to data on any instance other than `echo-messenger.us`.
+
 ## What Echo stores
 
 | Data | Where | Why |
@@ -24,7 +31,16 @@ Last updated: 2026-05-15. Echo is in beta; this doc evolves with the product.
 
 ## Where the data lives
 
-PostgreSQL on the self-hosted server (`echo-messenger.us`). Access is restricted to the operator (GitHub user `NC1107`).
+PostgreSQL on the server at `echo-messenger.us`. Access is restricted to the operator (GitHub user `NC1107`).
+
+## Self-hosting
+
+Echo is open-source and designed to be self-hosted. If you deploy your own instance:
+
+- All data — accounts, messages, keys, media — lives exclusively on your server.
+- You are the sole operator and data controller; `NC1107` receives nothing from your instance.
+- This privacy policy does not govern your deployment. You are responsible for your own data
+  handling practices and, where applicable, compliance with local privacy regulations.
 
 ## Retention
 
